@@ -251,3 +251,7 @@ operation adopts retained, remotely verified SDK artifacts through original Effe
 it creates no PR, grants no test/Review/Task completion and respects current execution
 exit/requirements/authorization. Public role/App status never returns credentials.
 [Wire contract](../openapi/flybot.openapi.json).
+
+## Exit retirement command (#2375)
+
+`attempt.reconcile-exit` is a configure-authorized command over the existing delivery/pool services and command receipts. It returns the committed retirement and new generation. Stale claims, incomplete exit or unresolved external writes remain errors. It neither stops a worker nor chooses recovery routing.

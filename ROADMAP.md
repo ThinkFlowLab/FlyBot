@@ -1,5 +1,8 @@
 # FlyBot — Roadmap
 
+
+#2375: retire proven exited responsibility before fresh integration admission; source/isolated tests remain separate from live recovery.
+
 ## Resource authentication reliability — 2026-11-04
 
 #2398: existing profile binding, correct SDK auth feedback and same-profile setup;

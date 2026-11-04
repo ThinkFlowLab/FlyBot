@@ -287,3 +287,7 @@ Inspection projects recipient/delivery/claim/reply and recovery-budget metadata;
 other Chief schedules expose actual native nextDueAt. Generation, requirements,
 Attempt/candidate and contact/role changes supersede old assistance. See
 [operator and API guide](../chief-assistance.md).
+
+## Shared exit verification (#2375)
+
+The existing inspection exit verifier is also used by explicit claim retirement for native/SDK Chief runs. Only exact invocation evidence can discharge responsibility; the generic unmanaged-process predicate is unchanged. Recovery facts are not business routing instructions.

@@ -466,7 +466,7 @@ export function createProjectChiefControl(rt) {
     for (const run of Object.values(rt.state.projectExecutions ?? {})) if (run.kind === 'chief-control' && run.status === 'running') { run.status = 'interrupted'; run.waitingFor = 'recovery'; run.recoveryIssue = { version: 'chief-recovery/v1', kind: 'host-recovering', retryable: true, conditions: ['prior execution exit reconciliation'], actions: ['wait for the existing recovery pass'] }; run.failure = 'Host restarted before Chief result was validated'; changed = true }
     return changed
   }
-  return { configure, view, request, scheduled, scheduledState, pump, recover, requireJobActor, validateActor, applyDecision, template: structuredClone(template) }
+  return { exitConfirmed: inspectionExited, configure, view, request, scheduled, scheduledState, pump, recover, requireJobActor, validateActor, applyDecision, template: structuredClone(template) }
 }
 export function install(rt) {
   rt.projectChiefControl = createProjectChiefControl(rt)

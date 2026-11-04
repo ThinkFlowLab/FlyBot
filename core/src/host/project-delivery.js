@@ -456,15 +456,52 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     if (attempt.protocol !== 'project-handoff/v1') throw reject('Integration input admission requires Project Bot pools')
     return { attempt, task }
   }
-  function integrationReleased(attempt, permit) {
-    if (permit?.[childPermit]) { childInputs.assertProof(attempt.taskId, permit.proof.claim, permit.proof); return }
+  function integrationBlockers(attempt, permit, retiringClaim) {
     const chief = row => row?.kind === 'chief-control' && row.projectId === attempt.projectId
-    const claim = taskOf(attempt.taskId)?.collaboration?.claim
-    const ownChiefRun = permit?.[chiefInputPermit]
-    // Old released Chief turns never owned this workspace. The current Chief
-    // claim and any unreleased Project Chief still require exact exit proof.
-    const currentWorker = row => !(ownChiefRun && row.role === 'chief' && row.chiefRunId === ownChiefRun) && (row.attemptId === attempt.id || row.projectId === attempt.projectId && row.chiefRunId && (row.status !== 'released' || row.chiefRunId === claim?.chiefRunId))
-    if (claim?.status === 'active' && !(ownChiefRun && claim.chiefRunId === ownChiefRun && claim.botId === `${attempt.projectId}:chief`) || Object.values(state.projectExecutions ?? {}).some(row => chief(row) && row.status === 'running' && row.id !== ownChiefRun) || Object.values(state.projectResourceLeases ?? {}).some(row => (row.attemptId === attempt.id || chief(state.projectExecutions?.[row.attemptId])) && row.status !== 'released') || Object.values(state.projectHarnessWorkers ?? {}).some(row => currentWorker(row) && !confirmedWorkerExit(state, row)) || Object.values(state.bots ?? {}).some(row => row.ephemeral && row.attemptId === attempt.id)) throw reject('Integration input is waiting for confirmed execution exit')
+    const claim = taskOf(attempt.taskId)?.collaboration?.claim, ownChiefRun = permit?.[chiefInputPermit]
+    const blockers = []
+    if (claim?.status === 'active' && claim !== retiringClaim && !(ownChiefRun && claim.chiefRunId === ownChiefRun && claim.botId === `${attempt.projectId}:chief`)) blockers.push({ kind: 'claim-active', claimId: claim.id, action: 'attempt.reconcile-exit after result and exit reconciliation' })
+    if (claim?.retirement && !rt.projectEffects?.intentCommitted(claim.retirement.effect)) blockers.push({ kind: 'claim-retirement-uncommitted', claimId: claim.id })
+    for (const row of Object.values(state.projectExecutions ?? {})) if (chief(row) && row.status === 'running' && row.id !== ownChiefRun) blockers.push({ kind: 'chief-running', runId: row.id })
+    for (const row of Object.values(state.projectResourceLeases ?? {})) if ((row.attemptId === attempt.id || chief(state.projectExecutions?.[row.attemptId])) && (row.status !== 'released' || row.preparation && row.preparation.exitConfirmed === false)) blockers.push({ kind: row.preparation?.exitConfirmed === false ? 'preparation-exit-unknown' : 'lease-not-released', leaseId: row.id })
+    // Old released Chief turns never owned this workspace. Unknown current workers stay held.
+    for (const row of Object.values(state.projectHarnessWorkers ?? {})) {
+      const relevant = !(ownChiefRun && row.role === 'chief' && row.chiefRunId === ownChiefRun) && (row.attemptId === attempt.id || row.projectId === attempt.projectId && row.chiefRunId && (row.status !== 'released' || row.chiefRunId === claim?.chiefRunId))
+      if (relevant && !confirmedWorkerExit(state, row)) blockers.push({ kind: 'worker-exit-unknown', workerId: row.id })
+    }
+    for (const row of Object.values(state.bots ?? {})) if (row.ephemeral && row.attemptId === attempt.id) blockers.push({ kind: 'native-worker-present', workerId: row.id })
+    return blockers
+  }
+  function integrationReleased(attempt, permit, retiringClaim) {
+    if (permit?.[childPermit]) { childInputs.assertProof(attempt.taskId, permit.proof.claim, permit.proof); return }
+    const blockers = integrationBlockers(attempt, permit, retiringClaim)
+    if (blockers.length) throw Object.assign(reject(`Integration input is waiting for confirmed execution exit: ${blockers.map(row => row.kind).join(', ')}`), { details: { kind: 'execution-checkpoint', attemptId: attempt.id, blockers } })
+  }
+  async function reconcileExit(body, actor) {
+    const { attempt, task } = integrationAttempt(body, actor)
+    if (!['running', 'interrupted', 'failed'].includes(attempt.status) || attempt.cancelRequested || ['accepted', 'cancelled'].includes(task.status)) throw reject('Exit retirement cannot revive a cancelled or completed Attempt')
+    return rt.projectPools.retireExited(task.id, body, actor, async (currentTask, claim) => {
+      await rt.projectDelegations?.background(actor.memberId)
+      if (claim.attemptId !== attempt.id || claim.taskId !== task.id || claim.projectId !== task.projectId || task.deliveryAttemptId !== attempt.id) throw reject('Execution retirement requires the exact current Task/Attempt claim')
+      const worker = ownEntry(state.projectHarnessWorkers ?? {}, claim.workerId), native = ownEntry(state.projectNativeWorkers ?? {}, claim.workerId)
+      let proof
+      if (claim.chiefRunId) {
+        const run = ownEntry(state.projectExecutions ?? {}, claim.chiefRunId)
+        if (!run || run.projectId !== task.projectId || run.status === 'running' || !await rt.projectChiefControl.exitConfirmed(run)) throw reject('Chief retirement is waiting for confirmed execution exit')
+        proof = { chiefRunId: run.id, invocation: run.invocation, exitProof: run.exitProof ?? run.recovery?.proof ?? null }
+      } else {
+        const record = worker ?? native, lease = record && ownEntry(state.projectResourceLeases ?? {}, record.leaseId)
+        if (!record || record.id !== claim.workerId || record.projectId !== task.projectId || record.taskId !== task.id || record.attemptId !== attempt.id || ![attempt.roleSessions?.[record.role], ...(attempt.roleSessionHistory ?? [])].some(session => session?.id === record.sessionKey && session.poolClaimId === claim.id && session.generation === claim.generation) || !executionExitConfirmed(rt, record.id)) throw reject('Claim retirement is waiting for matching confirmed execution exit')
+        if (worker && (!lease || lease.status !== 'released' || lease.projectId !== record.projectId || lease.attemptId !== record.attemptId || lease.role !== record.role || lease.resourceId !== record.resourceId || lease.generation !== record.generation || lease.worker?.handle !== record.id || worker.releaseProof?.workerId !== record.id && worker.releaseProof?.kind !== 'systemd-prior-invocation-exited' || lease.releaseProof?.kind !== record.releaseProof?.kind || lease.releaseProof?.generation !== record.releaseProof?.generation || lease.releaseProof?.at !== record.releaseProof?.at)) throw reject('Claim retirement exit proof does not match its allocation')
+        if (worker?.resultHash && !claim.decision || claim.inputCorrection?.status === 'pending') throw reject('Reconcile the pending worker result or input correction before retiring its responsibility')
+        proof = { workerId: record.id, leaseId: record.leaseId, generation: record.generation, releaseProof: record.releaseProof }
+      }
+      if (Object.values(state.projectEffects ?? {}).some(row => row.taskId === task.id && row.payload?.attemptId === attempt.id && ['pending', 'running', 'failed'].includes(row.status) && ['github.candidate', 'github.publish', 'github.review', 'github.merge'].includes(row.kind))) throw reject('Reconcile pending external writes before retiring execution responsibility')
+      integrationReleased(attempt, undefined, claim)
+      rt.requireProjectAccess(actor, task.projectId, 'configure', task)
+      if (task.deliveryAttemptId !== attempt.id || attempt.cancelRequested) throw reject('Execution retirement Attempt changed during validation')
+      return proof
+    })
   }
   async function integrationSnapshot(attempt) {
     const workspace = workspaceFor(attempt, 'developer')
@@ -546,7 +583,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     if (!attempt || attempt.taskId !== task.id || attempt.projectId !== task.projectId) return null
     try {
       const project = projectOf(task.projectId, attempt)
-      return { baseSha: attempt.baseSha ?? null, checkoutSha: attempt.candidateSha ?? attempt.seedSha ?? attempt.baseSha ?? null,
+      return { executionCheckpoint: { generation: task.collaboration?.generation ?? 0, claimId: task.collaboration?.claim?.id ?? null, blockers: integrationBlockers(attempt) }, baseSha: attempt.baseSha ?? null, checkoutSha: attempt.candidateSha ?? attempt.seedSha ?? attempt.baseSha ?? null,
         availableInputs: await approvedRepositoryInputs(project), snapshot: await integrationSnapshot(attempt),
         preparationFailure: attempt.preparationFailures?.at(-1) ?? null,
         materialization: workspaceFor(attempt, 'developer')?.materialization ?? null, verificationRecovery: { attemptStatus: attempt.status, sealedCandidate: Boolean(attempt.candidateSha && attempt.evidence.implementation?.sha === attempt.candidateSha), testsPassedForCandidate: Boolean(attempt.evidence.tests?.passed && attempt.evidence.tests.sha === attempt.candidateSha), requires: ['current requirements and repository binding', 'clean sealed candidate', 'all old allocation exits confirmed', 'normal Task-role context admission'], reviewerRequires: 'matching passing host test command and immutable log' } }
@@ -920,6 +957,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       integrationReleased(attempt)
       return { attemptId: attempt.id, generation: task.collaboration?.generation ?? 0, inputs: structuredClone(attempt.integrationInputs ?? []), availableInputs: await approvedRepositoryInputs(projectOf(task.projectId, attempt)), materialization: workspaceFor(attempt, 'developer')?.materialization ?? null, snapshot: await integrationSnapshot(attempt) }
     }
+    if (endpoint === 'project-attempt-reconcile-exit') return reconcileExit(body, actor)
     if (endpoint === 'project-attempt-integration-bind') return serialAttempt(body.attemptId, () => bindIntegrations(body, actor))
     if (endpoint === 'project-task-run') return serial(() => start(body, actor))
     if (endpoint === 'project-task-reject') return serialAttempt(body.attemptId, async () => {

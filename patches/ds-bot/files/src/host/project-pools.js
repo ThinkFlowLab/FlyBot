@@ -66,6 +66,7 @@ export function createProjectPools(rt) {
       acceptanceEffects = rt.projectEffects
     }
   }
+  rt.projectEffects?.register('pool.retire', { run: effect => ({ claimId: effect.payload.claimId, status: 'durable-exit-retirement' }) })
   acceptanceAdapter() // Register on restart even when no new claim has been made.
   const taskOf = id => { const task = ownEntry(rt.state.tasks, id); if (!task?.projectId) throw refuse('Unknown Project Task'); return task }
   const definitions = projectId => rt.projectAgents.deliveryDefinitions(projectId)
@@ -487,6 +488,35 @@ export function createProjectPools(rt) {
       }
     }
   }
+  async function retireExited(taskId, body, actor, verify) {
+    const task = taskOf(taskId), c = task.collaboration, claim = c?.claim
+    if (rt.readOnly?.() !== undefined) throw refuse('Execution retirement requires a writable host')
+    rt.requireProjectAccess(actor, task.projectId, 'configure', task)
+    rt.projects.requireActive(task.projectId)
+    if (claim?.id === body.claimId && claim.retirement && rt.projectEffects?.intentCommitted(claim.retirement.effect) && [c.generation, claim.retirement.previousGeneration].includes(body.generation)) return { retirement: clone(claim.retirement), generation: c.generation }
+    if (!claim || claim.id !== body.claimId || c.generation !== body.generation || !['active', 'interrupted', 'blocked', 'waiting-human'].includes(claim.status)) throw refuse('Execution retirement snapshot is stale')
+    reasonOf(body.reason)
+    const proof = await verify(task, claim)
+    rt.requireProjectAccess(actor, task.projectId, 'configure', task)
+    rt.projects.requireActive(task.projectId)
+    if (task.collaboration !== c || c.claim !== claim || c.generation !== body.generation || claim.id !== body.claimId) throw refuse('Execution retirement snapshot changed during validation')
+    const previous = clone(c), receipt = c.history.find(row => row.id === c.currentHandoffId)
+    if (!rt.projectEffects) throw refuse('Execution retirement requires durable Effects')
+    const token = rt.projectEffects.stage({ kind: 'pool.retire', key: claim.id, projectId: task.projectId, taskId, payload: { claimId: claim.id, generation: claim.generation, proof } })
+    claim.status = 'interrupted'; claim.exitConfirmed = true
+    claim.retirement = { claimId: claim.id, generation: claim.generation, previousGeneration: body.generation, by: actor.memberId, reason: body.reason, proof, effect: token, at: Date.now() }
+    ++c.generation; c.status = 'blocked'
+    if (receipt) { receipt.status = 'interrupted'; receipt.finishedAt = Date.now(); receipt.execution = clone(claim) }
+    try { await rt.projectEffects.persist(token) }
+    catch (error) {
+      if (rt.projectEffects.discardUncommitted(token) && c.claim === claim && c.generation === body.generation + 1) {
+        for (const key of Object.keys(c)) delete c[key]
+        Object.assign(c, previous)
+      }
+      throw error
+    }
+    return { retirement: clone(claim.retirement), generation: c.generation }
+  }
   async function revokeExecution(taskId, claimId, reason) {
     const task = taskOf(taskId), c = task.collaboration
     if (!c || c.claim?.id !== claimId || c.claim.status !== 'active') return false
@@ -638,7 +668,7 @@ export function createProjectPools(rt) {
     return changed
   }
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
-    correct,
+    correct, retireExited: (id, body, actor, verify) => serial(() => retireExited(id, body, actor, verify)),
     resumeChildren: (id, waitId) => serial(() => resumeChildren(id, waitId)),
     claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), validateChiefRoute: (body, actor) => serial(() => validateChiefRoute(body, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }

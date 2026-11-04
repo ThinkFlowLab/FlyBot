@@ -14787,6 +14787,174 @@
           "value"
         ]
       },
+      "DevelopmentCommandAttemptReconcileExitPayload": {
+        "type": "object",
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "claimId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "attemptId",
+          "generation",
+          "claimId",
+          "reason"
+        ]
+      },
+      "DevelopmentCommandAttemptReconcileExitRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "attempt.reconcile-exit",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandAttemptReconcileExitPayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandAttemptReconcileExitResult": {
+        "type": "object",
+        "properties": {
+          "retirement": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "retirement",
+          "generation"
+        ]
+      },
+      "DevelopmentCommandAttemptReconcileExitSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandAttemptReconcileExitResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
       "DevelopmentCommandAttemptIntegrationBindPayload": {
         "type": "object",
         "properties": {
@@ -30451,6 +30619,9 @@
             "$ref": "#/components/schemas/DevelopmentCommandAttemptPublicationRetryRequest"
           },
           {
+            "$ref": "#/components/schemas/DevelopmentCommandAttemptReconcileExitRequest"
+          },
+          {
             "$ref": "#/components/schemas/DevelopmentCommandAttemptIntegrationBindRequest"
           },
           {
@@ -30989,7 +31160,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       }
     },
     {
@@ -31067,7 +31238,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       }
     },
     {
@@ -31145,7 +31316,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       }
     },
     {
@@ -31223,7 +31394,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       }
     },
     {
@@ -31623,7 +31794,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883"
+        "sha256": "1b5dbcbe1ad81c81f00192126fdf06e6a2c31710786441077898809dabaab9f7"
       }
     },
     {
@@ -31701,7 +31872,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883"
+        "sha256": "1b5dbcbe1ad81c81f00192126fdf06e6a2c31710786441077898809dabaab9f7"
       }
     },
     {
@@ -31779,7 +31950,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       }
     },
     {
@@ -32101,7 +32272,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       }
     },
     {
@@ -32183,7 +32354,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -32261,7 +32432,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -32422,7 +32593,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
+        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
       }
     },
     {
@@ -34310,7 +34481,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -34418,7 +34589,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -34525,7 +34696,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -34619,7 +34790,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -34723,7 +34894,117 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+      }
+    },
+    {
+      "operationId": "development.command.attempt.reconcile-exit",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "attempt.reconcile-exit",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandAttemptReconcileExitRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandAttemptReconcileExitResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandAttemptReconcileExitSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "configure",
+      "humanRoles": [
+        "owner",
+        "maintainer"
+      ],
+      "condition": "current-manager-and-active-project",
+      "personalAgent": {
+        "safe": false,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "active-project",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "writable-store",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "exact-current-claim-and-generation",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "verified-allocation-exit",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "no-pending-results-or-unknown-external-writes",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "not-cancelled",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "durable-claim-retirement-and-generation-fence",
+          "preserve-drafts-and-evidence-no-business-routing"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Fetch attempt.integration-state again after retirement; attempt.stop remains cancellation.",
+      "implementation": {
+        "path": "core/src/host/project-delivery.js",
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -34832,7 +35113,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       }
     },
     {
@@ -35407,7 +35688,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
+        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
       }
     },
     {
@@ -35512,7 +35793,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
+        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
       }
     },
     {
@@ -44801,7 +45082,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883"
+        "sha256": "1b5dbcbe1ad81c81f00192126fdf06e6a2c31710786441077898809dabaab9f7"
       },
       "aliasOf": "development.query.handoff.get"
     },
@@ -44877,7 +45158,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883"
+        "sha256": "1b5dbcbe1ad81c81f00192126fdf06e6a2c31710786441077898809dabaab9f7"
       },
       "aliasOf": "development.query.handoff.list"
     },
@@ -45157,7 +45438,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -45254,7 +45535,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -45347,7 +45628,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -45439,7 +45720,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -45531,7 +45812,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -45920,7 +46201,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -45996,7 +46277,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
+        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -46304,7 +46585,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
+        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -46407,7 +46688,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
+        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -46483,7 +46764,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
+        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -46928,7 +47209,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
+        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
       },
       "aliasOf": "development.query.pools"
     },
@@ -47189,6 +47470,7 @@
       "task.run",
       "task.accept",
       "task.reject",
+      "attempt.reconcile-exit",
       "attempt.stop",
       "attempt.cleanup",
       "attempt.integration-bind",
@@ -47236,6 +47518,7 @@
       "task.detail": "project-task-detail",
       "task.accept": "project-task-accept",
       "task.reject": "project-task-reject",
+      "attempt.reconcile-exit": "project-attempt-reconcile-exit",
       "attempt.stop": "project-attempt-stop",
       "attempt.cleanup": "project-attempt-cleanup",
       "attempt.integration-state": "project-attempt-integration-state",
@@ -47295,8 +47578,8 @@
     ],
     "nativeEndpointCount": 104,
     "versionedQueryCount": 29,
-    "versionedCommandCount": 34,
-    "dispatchVariantCount": 186,
+    "versionedCommandCount": 35,
+    "dispatchVariantCount": 187,
     "sources": {
       "core/src/host/agents.js": "79908a1904312d18b8ddac4bde534210eb1bc5f8e92136bbf35a3591042e9692",
       "core/src/host/approvals.js": "0892ca1bad7c996854d91f56c57068e407b508ba8d42c34868a4eae221e30e2a",
@@ -47348,7 +47631,7 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6",
+      "core/src/host/project-chief-control.js": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
       "core/src/host/project-chief-protocol.js": "d56d4970a8a86f620005ad93ab70fecbd557d2f4980679c5c228237768fcd8d4",
       "core/src/host/project-chief-recovery.js": "b4efeef007222a87249a808bc49deb84e0e6014c700bb661629a9eb8426327f7",
@@ -47363,8 +47646,8 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
-      "core/src/host/project-delivery.js": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35",
-      "core/src/host/project-development-service.js": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca",
+      "core/src/host/project-delivery.js": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b",
+      "core/src/host/project-development-service.js": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
@@ -47390,7 +47673,7 @@
       "core/src/host/project-merge-policy.js": "78b5c4830e5466d102298d5ded6665f65f89537d908e1cf85b0438b868548552",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
       "core/src/host/project-native-sessions.js": "cbc3c32cfd21f4364440a84dbab33fe9ea7018f464959574342029d848def48e",
-      "core/src/host/project-pools.js": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883",
+      "core/src/host/project-pools.js": "1b5dbcbe1ad81c81f00192126fdf06e6a2c31710786441077898809dabaab9f7",
       "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "d4c7e8b4f0d2dd177c3e02fd0afe62b4c13ca10348d8f1caf43c011cda47388b",
       "core/src/host/project-receipt-correction.js": "7162d771d2e28fb4f55af6d492d9b9dc18c9e96f7fbacf660b84c551281ec167",
