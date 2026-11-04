@@ -7,9 +7,9 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { findAll, reactStub, renderToString } from './render.js'
 
-const loadClient = () => {
+const loadClient = (react = reactStub) => {
   let mod
-  globalThis.window = { __ModuleLoader__: { load: ({ factory }) => { mod = factory(() => reactStub) } } }
+  globalThis.window = { __ModuleLoader__: { load: ({ factory }) => { mod = factory(() => react) } } }
   new Function(readFileSync(new URL('../client.js', import.meta.url), 'utf8'))()
   return mod
 }
@@ -137,4 +137,33 @@ test('#810: the section is registered on the sidebar slot, and archived Bots sta
   const off = []
   mod.apply({ flybot: { ...flybot, slots: { register: (name, entry) => { if (name === 'flybot.sidebar.section') off.push(entry.id); return () => {} } } } }, { archivedSection: false })
   assert.ok(!off.includes('flybot-tree-archived'), 'config.archivedSection: false turns the section off')
+})
+
+// #2450: `archive_bot` hides the retired Bot from the default list, so this section is the way back
+// to its chat. Its field-change subscription must refresh on `retired` itself, like the structure
+// entry does (docs/subsystems/tree.md says both consumers refresh on `retired`), not one 10 s poll later.
+test('#2450: a retired Bot reaches the Archived section on the change, not the next poll', () => {
+  const effects = []
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    useEffect: fn => effects.push(fn),
+    useCallback: fn => fn,
+  }
+  const mod = loadClient(react)
+  const calls = []
+  const feed = { subscribe: () => () => {}, refresh: () => calls.push('refresh'), get: () => [] }
+  const flybot = { fields: { on: (event, fn) => { if (event === 'change') calls.push(fn); return () => {} } } }
+  mod.makeArchivedSection(flybot, feed)({})
+  for (const fn of effects) fn()
+  const onChange = calls.find(v => typeof v === 'function')
+  assert.equal(typeof onChange, 'function', 'the section subscribes to field changes')
+
+  calls.length = 0
+  onChange({ key: 'parent' })
+  assert.equal(calls.filter(v => v === 'refresh').length, 1, 'control: parent still refreshes')
+
+  calls.length = 0
+  onChange({ key: 'retired', value: true })
+  assert.equal(calls.filter(v => v === 'refresh').length, 1, 'a retired change refreshes the archived list')
 })
