@@ -391,7 +391,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
    const nav = useGlide(shown, { axis: 'y' })
    // A page enters from the right when it is one level in, from the left when it comes
-@@ -178,31 +178,46 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -178,38 +178,155 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
    // rendered state off screen (content-visibility).
    const [usageOpened, setUsageOpened] = useState(shown === 'usage')
    if (shown === 'usage' && !usageOpened) setUsageOpened(true)
@@ -445,7 +445,11 @@ diff --git a/src/client/settings.js b/src/client/settings.js
            shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
            shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,
            shown === 'secrets' ? h(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
-@@ -213,3 +213,105 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+-          shown === 'feedback' ? h(FeedbackPage, { actions, run, Section: SetSection, Row: SetRow }) : null,
++          shown === 'feedback' ? h(FeedbackPage, { roster, actions, run, Section: SetSection, Row: SetRow }) : null,
+           shown === 'about' ? h(AboutPage, { useUpdate, actions, run, Section: SetSection, Row: SetRow }) : null),
+         usageOpened ? h('div', { key: 'usage', className: 'bt-settings-scroll bt-settings-usage', 'data-off': shown === 'usage' ? undefined : '', 'aria-hidden': shown === 'usage' ? undefined : true },
+           shown === 'usage' ? errorLine : null,
            h(UsagePage, { roster, actions, focusId: usageFocus })) : null),
        h('button', { type: 'button', className: 'bt-settings-close', 'aria-label': t('Close settings'), onClick: close }, h(CloseIcon))))
  }

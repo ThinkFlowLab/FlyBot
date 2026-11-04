@@ -129,6 +129,10 @@ const WRITES = [
   ['set-prefs', { theme: 'deepseek' }],
   ['create-bot', { name: 'Writer' }],
   ['workflow-save', { id: 'x', doc: {} }],
+  // #2302: `diagnostics-clear` rewrites `<home>/logs/diagnostics.jsonl` to zero bytes, and it sat
+  // in the reading channel's `READS` list, so a read-only window truncated the log a bug report is
+  // supposed to carry.
+  ['diagnostics-clear', {}],
 ]
 
 // The Composio host, stubbed: the status read asks it for the apps of the saved session, and the
