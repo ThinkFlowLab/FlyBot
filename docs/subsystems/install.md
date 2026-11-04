@@ -53,7 +53,7 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 1. Owned-file changes require a matching subsystem doc in the same PR (or a `Docs-not-needed:` trailer).
 2. Empty diff vs base passes.
 3. A new peer plugin is added to the install doctor (and its test), `check-pack.mjs`, the CI plugin matrix, `local-ci.sh` and `plugins/README.md` in the same PR. `@flybot/workflow` is one of the default commands. `@flybot/timeline` stays opt-in.
-4. The container image holds no key or token, runs as a normal user, and `compose.yaml` publishes the port on the host's `127.0.0.1` only. CI (`.github/workflows/docker.yml`) builds and start-checks it; nothing is pushed to a registry (owner decision on #352).
+4. The container image holds no key or token, runs as a normal user, and `compose.yaml` uses the host's network (`network_mode: host`) so the web server's own `127.0.0.1` bind is the only exposure — no port is published. CI (`.github/workflows/docker.yml`) builds and start-checks it; nothing is pushed to a registry (owner decision on #352).
 
 ## Tests
 
