@@ -8745,7 +8745,7 @@
                       "at"
                     ]
                   },
-                  "maxItems": 5
+                  "maxItems": 9
                 }
               },
               "additionalProperties": true,
@@ -14259,7 +14259,7 @@
                       "at"
                     ]
                   },
-                  "maxItems": 5
+                  "maxItems": 9
                 }
               },
               "additionalProperties": true,
@@ -19573,7 +19573,7 @@
                           "at"
                         ]
                       },
-                      "maxItems": 5
+                      "maxItems": 9
                     }
                   },
                   "additionalProperties": true,
@@ -27137,7 +27137,7 @@
                       "at"
                     ]
                   },
-                  "maxItems": 5
+                  "maxItems": 9
                 }
               },
               "additionalProperties": true,
@@ -27378,7 +27378,7 @@
                       "at"
                     ]
                   },
-                  "maxItems": 5
+                  "maxItems": 9
                 }
               },
               "additionalProperties": true,
