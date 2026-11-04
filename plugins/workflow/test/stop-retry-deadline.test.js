@@ -179,6 +179,65 @@ test('the retry only happens at the deadline the run reached', async () => {
   assert.equal(after.history[0].failure?.code, 'paused-expired')
 })
 
+// Saving the graph is one of the ways a live run's timers are re-synced
+// (`saveGraph` → `syncTimers`), and an unchanged save used to take the deadline
+// away from a run a failed Stop had frozen: the run then had no retry left and
+// kept its slot until the owner pressed Stop again. The save has to leave the
+// deadline alone for that one state, while an owner's own Pause still clears it.
+test('saving the graph keeps the deadline a failed Stop left as its only retry', async () => {
+  const releaseFails = new Set()
+  const { svc, released, timers, flow, run } = await stoppedButHeld({ releaseFails })
+
+  // The canvas saves the graph as it stands: the same nodes and edges the run is on.
+  const item = row(svc.state(), flow.id)
+  const saved = svc.saveGraph({ workflowId: flow.id, nodes: item.nodes, edges: item.edges })
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(row(svc.state(), flow.id).run?.paused, true, 'the save leaves the frozen run where it was')
+  assert.equal(timers.pending(), 1, 'the deadline the failed Stop left is still armed after a save')
+
+  releaseFails.clear()
+  await svc.assign({ workflowId: flow.id, taskId: '#2605', title: 'Waiting behind it' })
+  assert.equal(row(svc.state(), flow.id).queueDepth, 1, 'the frozen run still holds the only slot')
+
+  await timers.tick(STEP_DEADLINE_MS)
+
+  const after = row(svc.state(), flow.id)
+  assert.equal(after.run?.task?.id, '#2605', 'the next deadline still frees the slot and starts the parked task')
+  assert.equal(after.activeCount, 1)
+  assert.equal(after.queueDepth, 0)
+  assert.ok(released.includes(run.ephemeral.plan), 'the deadline retried the release that failed')
+  assert.equal(after.history[0].failure?.code, 'paused-expired', 'the frozen run ends paused-expired instead of holding the lane')
+  assert.equal(timers.pending(), 1, 'the run that started holds its own deadline and nothing else')
+
+  // With nothing parked behind it, the same deadline frees the lane and leaves it idle.
+  const soloFails = new Set()
+  const solo = await stoppedButHeld({ releaseFails: soloFails })
+  const soloItem = row(solo.svc.state(), solo.flow.id)
+  assert.equal(solo.svc.saveGraph({ workflowId: solo.flow.id, nodes: soloItem.nodes, edges: soloItem.edges }).ok, true)
+  soloFails.clear()
+  await solo.timers.tick(STEP_DEADLINE_MS)
+  const idle = row(solo.svc.state(), solo.flow.id)
+  assert.equal(idle.activeCount, 0, 'nothing is left holding the lane')
+  assert.equal(idle.history[0].failure?.code, 'paused-expired')
+  assert.equal(solo.timers.pending(), 0, 'and no timer is left behind')
+
+  // An owner's own Pause still draws no deadline, and saving the graph does not put one back.
+  const byHand = harness()
+  const handFlow = make(byHand.svc)
+  await byHand.svc.assign({ workflowId: handFlow.id, taskId: '#2606', title: 'Paused by hand' })
+  const handRun = row(byHand.svc.state(), handFlow.id).run
+  await byHand.svc.pause({ workflowId: handFlow.id, runId: handRun.id })
+  const handItem = row(byHand.svc.state(), handFlow.id)
+  assert.equal(byHand.svc.saveGraph({ workflowId: handFlow.id, nodes: handItem.nodes, edges: handItem.edges }).ok, true)
+  assert.equal(byHand.timers.pending(), 0, 'a save puts no deadline back on the run the owner paused')
+  await byHand.timers.tick(STEP_DEADLINE_MS)
+  const still = row(byHand.svc.state(), handFlow.id)
+  assert.equal(still.run?.paused, true, 'the owner Pause is still not timed out')
+  assert.equal(still.activeCount, 1)
+  assert.equal(still.history.length, 0)
+  assert.deepEqual(byHand.released, [], 'and nothing is released behind the owner')
+})
+
 test('a run nobody stopped still fails at its deadline and releases its Bots', async () => {
   const { svc, released, timers } = harness()
   const flow = make(svc)
