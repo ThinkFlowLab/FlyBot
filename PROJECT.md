@@ -8,6 +8,12 @@ architecture lives in [docs/architecture.md](docs/architecture.md) and
 Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 [docs/governance.md](docs/governance.md). Dated decisions: [decisions/](decisions/README.md).
 
+## SDK authentication — 2026-11-04
+
+#2398 binds readiness and setup to the existing resource profile, preserving its
+paths and Task-role context. Known SDK authentication failures reach authRequired
+without becoming code verdicts. No OAuth broker, credential copying or live login.
+
 ## Role App delivery — 2026-11-04
 
 #2365 opts Project roles into explicit App connections and dedicated short-lived

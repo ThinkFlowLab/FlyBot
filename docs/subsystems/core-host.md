@@ -1017,3 +1017,10 @@ no credential HTTP endpoint or second execution service. App-bound native roles 
 saved Owner secrets; other personal/group behavior is unchanged. Dedicated helpers,
 redacted tools/model inputs and safe execution projections implement the explicit
 [Owner boundary](../../decisions/2026-11-04-role-github-apps.md).
+
+
+## Resource SDK authentication — #2398
+
+#2398 adds safe profile/authentication facts through original worker/health/Task/Chief
+views. Authentication errors do not manufacture code/test/Review outcomes. Configuration
+and actual login stay in the authorized resource terminal, not a new credential service.

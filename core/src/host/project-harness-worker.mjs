@@ -37,7 +37,7 @@ async function turn(message) {
     busy = false
     write(response)
     if (settings.probe) void shutdown()
-  } catch (error) { write({ type: 'failure', ...(message.turnId ? { turnId: message.turnId } : {}), reason: ['bot/harness-capability', 'bot/context-resume'].includes(error?.code) ? error.message : 'SDK execution failed; inspect the redacted event evidence and resource environment', ...(error?.code === 'bot/context-resume' ? { contextFailure: { code: error.code, kind: 'backend-session-mismatch', contextPreserved: true } } : {}), ...(error?.code === 'bot/harness-capability' ? { capabilityFailure: { code: error.code, kind: error.capability, stage: 'configuration', modelInvoked: false } } : {}) }) }
+  } catch (error) { write({ type: 'failure', ...(message.turnId ? { turnId: message.turnId } : {}), ...(error?.code === 'bot/harness-auth' ? { authenticationFailure: error.authenticationFailure } : {}), reason: ['bot/harness-capability', 'bot/context-resume', 'bot/harness-auth'].includes(error?.code) ? error.message : 'SDK execution failed; inspect the redacted event evidence and resource environment', ...(error?.code === 'bot/context-resume' ? { contextFailure: { code: error.code, kind: 'backend-session-mismatch', contextPreserved: true } } : {}), ...(error?.code === 'bot/harness-capability' ? { capabilityFailure: { code: error.code, kind: error.capability, stage: 'configuration', modelInvoked: false } } : {}) }) }
   finally { busy = false }
 }
 input.on('line', line => {

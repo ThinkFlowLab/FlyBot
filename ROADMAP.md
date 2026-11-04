@@ -1,5 +1,10 @@
 # FlyBot — Roadmap
 
+## Resource authentication reliability — 2026-11-04
+
+#2398: existing profile binding, correct SDK auth feedback and same-profile setup;
+source/fixture acceptance does not prove a live OAuth cache has been repaired.
+
 ## Role App execution — 2026-11-04
 
 #2365 targets delivery with trusted role binding, local/Docker credential helpers,

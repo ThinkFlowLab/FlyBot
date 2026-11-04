@@ -1,3 +1,4 @@
+import { harnessProfile } from './project-harness-auth.js'
 // Operator-provisioned execution capabilities; Project configuration only references IDs.
 import { nativeExitConfirmed } from './project-native-sessions.js'
 import { captureProcessScope, priorScopeExited, supervisorProofMatches } from './project-process-proof.js'
@@ -40,13 +41,21 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     if (lease.bindingHash && bindingHash(item) !== lease.bindingHash) throw failure('Execution resource binding changed; migration is not permitted')
     return item
   }
+  function harnessHealth(projectId, resourceId, harness) {
+    const saved = ownEntry(state.projectHarnessHealth ?? {}, `${projectId}:${resourceId}:${harness}`)
+    if (harness === 'flybot') return saved ?? { status: 'native-host-provider' }
+    let profile
+    try { profile = harnessProfile(setting(projectId, resourceId), rt.readProject(projectId), resourceId, harness).profile }
+    catch { return { status: 'unconfigured', reason: 'Explicit SDK profile is unavailable', at: null } }
+    return saved?.profile?.id === profile.id ? saved : { status: 'unconfigured', reason: 'Selected SDK profile has not been checked; open its resource configuration terminal', profile, at: null }
+  }
   function list(projectId, actor) {
     return Object.keys(resources()).flatMap(id => {
       try {
         const item = setting(projectId, id)
         const observation = ownEntry(state.projectResourceHealth ?? {}, id)
         return [{ id, type: item.type, canManage: Boolean(actor && item.adminMemberIds?.includes(actor.memberId)), capacity: { configured: item.capacity, occupied: occupied(id) }, harnesses: item.harnesses ?? [],
-          harnessStatus: (item.harnesses ?? []).map(harness => ({ harness, ...(ownEntry(state.projectHarnessHealth ?? {}, `${projectId}:${id}:${harness}`) ?? { status: harness === 'flybot' ? 'native-host-provider' : 'unconfigured' }) })),
+          harnessStatus: (item.harnesses ?? []).map(harness => ({ harness, ...harnessHealth(projectId, id, harness) })),
           health: observation ?? { status: 'unconfigured', reason: 'Environment has not been probed', at: null },
           metrics: { cpu: null, memory: null, basis: 'unavailable' }, platformInstanceId: item.platformInstanceId ?? null }]
       } catch { return [] /* Unauthorized/malformed resources are not enumerable. */ }
@@ -64,7 +73,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     if (!candidates.length) throw failure('No compatible execution resource in the selected pool')
     const available = candidates.filter(({ id, item }) => {
       const health = ownEntry(state.projectResourceHealth ?? {}, id)
-      const auth = ownEntry(state.projectHarnessHealth ?? {}, `${projectId}:${id}:${harness}`)
+      const auth = harnessHealth(projectId, id, harness)
       return health?.status === 'ready' && (harness === 'flybot' || request.purpose === 'probe' || auth?.status === 'ready') && usage(id) < item.capacity
     })
     if (!available.length) throw failure('Execution resource capacity or readiness is unavailable')
@@ -352,7 +361,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     state.projectResourceHealth ??= {}; setEntry(state.projectResourceHealth, resourceId, row); await rt.save()
     return structuredClone(row)
   }
-  return { setting, requireBinding, uploadFile, downloadFile, list, checkPool, plan, command, startProcess, probe, occupied, reconcile, recover,
+  return { harnessHealth, setting, requireBinding, uploadFile, downloadFile, list, checkPool, plan, command, startProcess, probe, occupied, reconcile, recover,
     preparationUncertain: reference => serial(() => preparationUncertain(reference)), beginPreparation: (...args) => serial(() => beginPreparation(...args)), endPreparation: (...args) => serial(() => endPreparation(...args)), abortReservation: (...args) => serial(() => abortReservation(...args)), fenceSpawn: (...args) => serial(() => fenceSpawn(...args)), reserveRoles: (...args) => serial(() => reserveRoles(...args)),
     reserve: request => serial(() => reserve(request)), markStarted: (...args) => serial(() => markStarted(...args)), release: (...args) => serial(() => release(...args)) }
 }

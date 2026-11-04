@@ -177,3 +177,31 @@ SDK validation](task-session-recovery.md). No live deployment follows source mer
 
 Chief 运维接收、签名通知接入、safe/watch 权限与可配置小时补偿，见
 [协助闭环](chief-assistance.md)。按实际运行的插件路径核对升级版本；代码合入不代表实例已升级。
+
+
+## SDK登录态与资源profile
+
+SDK 模型登录与 GitHub App 身份独立。显式 `profiles[OWNER_ID].codex` 的
+home/configDir 决定 HOME/CODEX_HOME；`profileRoot` 的既有生成路径保持兼容。
+多个角色和 Attempt 使用同一选定 profile，无需为每个 Task 复制 auth.json。
+配置目录由操作员预置；若需要复用现有登录，显式选择获准的持久化目录/挂载，
+不复制旧缓存，也不把整个个人 .codex 随意挂入执行器。
+
+使用现有 `project-runtime-check`、`project-resources` 查看 profile 身份与健康状态。
+检查结果绑定资源、用户、Harness 和 profile；升级前没有绑定的 ready 以及目录/目标
+改变后的 ready 均需重新检查。profile ID 不包含凭据内容，公开查询不返回目录。
+`ready` 只证明那次最小 SDK 推理成功，不能保证未来 refresh 一直有效。
+
+已有权限的资源管理员通过 `project-terminal-open` 打开实际目标资源终端；返回的
+profile.home/configDir 是这次终端真实使用的位置，和 SDK worker 使用同一个选择器。
+Codex 终端会解析资源内 SDK 自带的 CLI 并放到 PATH；codexLoginAvailable=false
+表示先安装/修复该资源的锁定 SDK，不能拿宿主的全局 CLI 代替容器配置。
+在该终端执行 `codex login --device-auth` 或所安装 CLI 支持的登录方式；
+不要在宿主默认目录登录后误以为容器已更新。关闭终端会重新检查，跳过旧健康缓存。
+目录配置变化时，原终端拒绝继续输入，需重新打开；不会迁移或删除登录态。
+
+`refresh_token_reused` 等错误显示为原资源/profile 的 `authRequired`，保留安全错误码。
+缓存文件存在和 `codex login status` 显示已登录，都不等于刷新凭据仍有效。
+真正失效的 OAuth token 仍需原生登录流程；源码合入不会自动修复现场凭据。
+网络超时不会被当成重新登录要求，工具自身的认证错误也不会冒充模型登录失效。
+Task/Session/候选/Review 证据保留；Chief 决定换用已授权资源、等待或请求协助。

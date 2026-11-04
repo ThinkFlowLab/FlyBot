@@ -116,3 +116,13 @@ validated persistent watch actors through the same current Project/resource poli
 They do not require a browser cookie when a current user grant exists. Revocation
 still denies or closes the terminal; other users' resources remain unavailable.
 See [delegation contract](project-delegations.md).
+
+
+## Resource SDK authentication — #2398
+
+#2398 returns the actual profile HOME/configDir only to the explicit terminal admin;
+public health exposes safe profile IDs. Setup resolves the selected resource SDK CLI,
+not the host/global CLI. Login/check/worker use the same selector; changed profiles
+invalidate terminal input and ready caches. Close triggers a fresh original probe.
+SDK auth codes reach authRequired without raw provider text or new business routing.
+No auth.json copying, credential migration, automatic login or live repair is implied.

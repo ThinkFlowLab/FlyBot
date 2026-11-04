@@ -95,3 +95,6 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 
 项目角色可选择以独立 GitHub App 直接提交、开 Draft PR 和 Review；复用现有连接与资源配置。
 见 [角色 App 配置、认证与恢复](docs/role-github-apps.md)。默认不启用，不需要全局 gh 登录。
+
+SDK 鉴权失效请使用该 Resource 的配置终端处理；宿主登录不会自动同步到容器。
+查看[登录态与资源 profile](docs/backend-operations.md#sdk登录态与资源profile)，无需为每个角色/Task重新登录。

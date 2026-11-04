@@ -136,3 +136,17 @@ test('receipt correction resumes the original SDK Session without tools or chang
   } }) })
   assert.equal(asked, false)
 })
+
+test('Codex refresh-token reuse is a safe authentication failure before provider error text reaches evidence', async () => {
+  const emitted = [], secret = 'fixture-private-provider-material'
+  for (const event of [{ type: 'turn.failed', error: { message: 'Your refresh token has already been used. Please log in again. ' + secret } }, { type: 'error', message: 'refresh_token_reused ' + secret }]) {
+    await assert.rejects(runHarnessTurn(request, { emit: value => emitted.push(value), loadCodex: codex([event]) }), error => error.code === 'bot/harness-auth' && error.authenticationFailure.code === 'refresh_token_reused' && !error.message.includes(secret))
+  }
+  assert.equal(emitted.length, 0)
+  await assert.rejects(runHarnessTurn(request, { emit() {}, loadCodex: codex([{ type: 'turn.failed', error: { message: 'Network connection timed out' } }]) }), error => error.code !== 'bot/harness-auth')
+})
+
+test('a tool command reporting its own authentication failure does not invalidate the model login', async () => {
+  const result = await runHarnessTurn(request,{emit(){},loadCodex:codex([{type:'thread.started',thread_id:'tool-scope'},{type:'item.completed',item:{type:'command_execution',exit_code:1,aggregated_output:'refresh_token_reused in a tool integration'}},{type:'turn.completed'}])})
+  assert.equal(result.sessionId,'tool-scope')
+})
