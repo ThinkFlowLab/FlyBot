@@ -1063,6 +1063,7 @@ var ZH = {
   "Writing the summary…": "正在生成摘要…",
   "The summary is out of date: {reason}": "摘要不是最新的：{reason}",
   "The summary could not be written: {reason}": "摘要没能生成：{reason}",
+  "The memory could not be read: {reason}": "记忆读不出来：{reason}",
   "{name} has not saved anything yet": "{name} 还没有记住任何内容",
   "Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.": "Bot 会记住长期的偏好、做过的决定，以及你让它记住的事。可以在下面告诉 {name}，也可以在对话里说。",
   "The memory folder {path} is not a plain directory, so it cannot be read.": "记忆文件夹 {path} 不是普通目录，里面的内容读不到。",
@@ -14137,33 +14138,54 @@ var import_react28 = require("react");
 var POLL_MS5 = 1500;
 var MENU_EXIT_MS2 = 120;
 var counts = /* @__PURE__ */ new Map();
+var failures = /* @__PURE__ */ new Map();
 var countListeners = /* @__PURE__ */ new Set();
-function noteCount(botId, count) {
-  if (counts.get(botId) === count) return;
-  counts.set(botId, count);
+var notify = () => {
   for (const listener of countListeners) listener();
+};
+function noteCount(botId, count) {
+  const same2 = counts.get(botId) === count;
+  const recovered = failures.delete(botId);
+  if (same2 && !recovered) return;
+  counts.set(botId, count);
+  notify();
 }
+function noteFailure(botId, reason) {
+  failures.set(botId, reason);
+  notify();
+}
+var countState = (botId) => ({ count: counts.get(botId) ?? null, failure: failures.get(botId) ?? null });
 function useMemoryCount(botId, actions) {
-  const [count, setCount] = (0, import_react28.useState)(counts.get(botId) ?? null);
+  const [state, setState] = (0, import_react28.useState)(() => countState(botId));
   (0, import_react28.useEffect)(() => {
-    const listener = () => setCount(counts.get(botId) ?? null);
+    const listener = () => setState(countState(botId));
     countListeners.add(listener);
     listener();
     let stop = false;
-    void actions.memoryView?.(botId).then((view) => {
-      if (!stop) noteCount(botId, view.entries.length);
-    }).catch(() => {
-    });
+    const pending = actions.memoryView?.(botId);
+    if (pending) {
+      void Promise.resolve(pending).then((view) => {
+        if (!stop) noteCount(botId, view.entries.length);
+      }).catch((error) => {
+        if (!stop) noteFailure(botId, hostText(error?.message ?? String(error)));
+      });
+    }
     return () => {
       stop = true;
       countListeners.delete(listener);
     };
   }, [botId]);
-  return count;
+  return state;
+}
+function memoryCountText({ count, failure }) {
+  if (failure) return t("The memory could not be read: {reason}", { reason: failure });
+  if (count === null) return t("Loading…");
+  if (count === 0) return t("Nothing saved yet");
+  return count === 1 ? t("1 entry") : t("{count} entries", { count });
 }
 function MemoryRow({ bot, actions }) {
-  const count = useMemoryCount(bot.id, actions);
-  const label = count === null ? t("Loading…") : count === 0 ? t("Nothing saved yet") : count === 1 ? t("1 entry") : t("{count} entries", { count });
+  const { count, failure } = useMemoryCount(bot.id, actions);
+  const label = memoryCountText({ count, failure });
   return (0, import_react28.createElement)(
     "div",
     null,
@@ -14781,8 +14803,8 @@ function AvatarEditor({ bot, actions, run, onClose }) {
   );
 }
 function MemoryCard({ bot, actions }) {
-  const count = useMemoryCount(bot.id, actions);
-  const label = count === null ? t("Loading…") : count === 0 ? t("Nothing saved yet") : count === 1 ? t("1 entry") : t("{count} entries", { count });
+  const { count, failure } = useMemoryCount(bot.id, actions);
+  const label = memoryCountText({ count, failure });
   return (0, import_react30.createElement)(
     Card,
     { title: t("Memory") },
@@ -21684,20 +21706,20 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
     await post("browser-result", await job).catch((error) => console.warn("[ds-bot] browser result", error));
   };
   const loop = async () => {
-    let failures = 0;
+    let failures2 = 0;
     while (!stopped) {
       poll = new AbortController();
       const open = browsers.openPages();
       reported = JSON.stringify(open);
       try {
         const requests = await post("browser-wait", { clientId, open }, poll.signal);
-        failures = 0;
+        failures2 = 0;
         for (const request of Array.isArray(requests) ? requests : []) void answer(request);
       } catch {
         if (stopped) return;
         if (poll.signal.aborted) continue;
-        failures += 1;
-        await sleep(Math.min(3e4, retryMs * 2 ** Math.min(failures, 5)));
+        failures2 += 1;
+        await sleep(Math.min(3e4, retryMs * 2 ** Math.min(failures2, 5)));
       }
     }
   };
@@ -22066,7 +22088,7 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
   const told = /* @__PURE__ */ new Set();
   const unseen = /* @__PURE__ */ new Map();
   let timer;
-  const notify = () => {
+  const notify2 = () => {
     timers.clearTimeout?.(timer);
     timer = void 0;
     const { approvals = [], ended = [] } = work.getSnapshot();
@@ -22082,7 +22104,7 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
       if (!current.has(id)) told.delete(id);
     }
     const next = Math.min(...approvals.map(lateAt).filter((due) => due > at));
-    if (Number.isFinite(next)) timer = timers.setTimeout?.(notify, next - at);
+    if (Number.isFinite(next)) timer = timers.setTimeout?.(notify2, next - at);
     if (typeof Notification !== "function" || Notification.permission !== "granted") return;
     const { byId, roomsById, prefs } = roster.getSnapshot();
     const on = prefs?.notifications !== false;
@@ -22120,8 +22142,8 @@ function noticeApprovals({ work, roster, shownSession, openSession, since: since
       };
     }
   };
-  notify();
-  const off = work.subscribe(notify);
+  notify2();
+  const off = work.subscribe(notify2);
   return () => {
     off();
     timers.clearTimeout?.(timer);

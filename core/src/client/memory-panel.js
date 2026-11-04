@@ -12,32 +12,59 @@ import { useLinger } from './motion.js'
 const POLL_MS = 1500
 const MENU_EXIT_MS = 120
 
-// Entry counts per Bot, for the details pane; the dialog updates them as it loads.
+// Entry counts per Bot, for the details pane; the dialog updates them as it loads. A refused read
+// is kept beside the count, because the row used to drop it and say "Loading…" forever (#2395).
 const counts = new Map()
+const failures = new Map()
 const countListeners = new Set()
+const notify = () => { for (const listener of countListeners) listener() }
+// Only a read that worked comes through here, so it is also what takes a failure back.
 function noteCount(botId, count) {
-  if (counts.get(botId) === count) return
+  const same = counts.get(botId) === count
+  const recovered = failures.delete(botId)
+  if (same && !recovered) return
   counts.set(botId, count)
-  for (const listener of countListeners) listener()
+  notify()
 }
+function noteFailure(botId, reason) {
+  failures.set(botId, reason)
+  notify()
+}
+const countState = botId => ({ count: counts.get(botId) ?? null, failure: failures.get(botId) ?? null })
 
 export function useMemoryCount(botId, actions) {
-  const [count, setCount] = useState(counts.get(botId) ?? null)
+  const [state, setState] = useState(() => countState(botId))
   useEffect(() => {
-    const listener = () => setCount(counts.get(botId) ?? null)
+    const listener = () => setState(countState(botId))
     countListeners.add(listener)
     listener()
     let stop = false
-    void actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
+    // A client without the action asks nothing, and the row keeps its "Loading…" because no read
+    // was ever started; a refusal is a sentence, never an exception thrown out of this effect.
+    const pending = actions.memoryView?.(botId)
+    if (pending) {
+      void Promise.resolve(pending)
+        .then((view) => { if (!stop) noteCount(botId, view.entries.length) })
+        .catch((error) => { if (!stop) noteFailure(botId, hostText(error?.message ?? String(error))) })
+    }
     return () => { stop = true; countListeners.delete(listener) }
   }, [botId])
-  return count
+  return state
+}
+
+// What the row says. A failed read is a sentence, not a spinner that never ends; `count` stays
+// null then, so no number is drawn for a read that did not happen.
+export function memoryCountText({ count, failure }) {
+  if (failure) return t('The memory could not be read: {reason}', { reason: failure })
+  if (count === null) return t('Loading…')
+  if (count === 0) return t('Nothing saved yet')
+  return count === 1 ? t('1 entry') : t('{count} entries', { count })
 }
 
 // The details pane's row: how much the Bot keeps, and the way into the dialog.
 export function MemoryRow({ bot, actions }) {
-  const count = useMemoryCount(bot.id, actions)
-  const label = count === null ? t('Loading…') : count === 0 ? t('Nothing saved yet') : count === 1 ? t('1 entry') : t('{count} entries', { count })
+  const { count, failure } = useMemoryCount(bot.id, actions)
+  const label = memoryCountText({ count, failure })
   return h('div', null,
     h('div', { className: 'bt-section-title' }, t('Memory')),
     h('button', { type: 'button', className: 'bt-mem-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },

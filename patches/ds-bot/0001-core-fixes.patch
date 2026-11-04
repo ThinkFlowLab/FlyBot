@@ -1398,8 +1398,11 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Save key': '保存密钥',
    'Keys your Bots asked for. Bots never see the values: they use them as ': '你的 Bot 请求过的密钥。Bot 永远看不到值：它们在 shell 里通过 ',
    ' in their shell, and every value is replaced by ': ' 使用，而且发给模型之前，每个值都会被替换成 ',
-@@ -557,6 +557,7 @@ const ZH = {
+@@ -555,8 +555,10 @@ const ZH = {
+   'Writing the summary…': '正在生成摘要…',
+   'The summary is out of date: {reason}': '摘要不是最新的：{reason}',
    'The summary could not be written: {reason}': '摘要没能生成：{reason}',
++  'The memory could not be read: {reason}': '记忆读不出来：{reason}',
    '{name} has not saved anything yet': '{name} 还没有记住任何内容',
    'Bots keep lasting preferences, decisions, and what you ask them to remember. Tell {name} below, or in its chat.': 'Bot 会记住长期的偏好、做过的决定，以及你让它记住的事。可以在下面告诉 {name}，也可以在对话里说。',
 +  'The memory folder {path} is not a plain directory, so it cannot be read.': '记忆文件夹 {path} 不是普通目录，里面的内容读不到。',
@@ -1984,7 +1987,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 --- a/src/client/memory-panel.js
 +++ b/src/client/memory-panel.js
-@@ -5,6 +5,7 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState
+@@ -5,38 +5,66 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState
  import { useEscape } from './overlay-hooks.js'
  import { ArrowUpIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DotsIcon, MemoryIcon, TrashIcon } from './icons.js'
  import { dateLocale, hostText, t } from './i18n.js'
@@ -1992,15 +1995,74 @@ diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
  import { summaryBlocks } from './text.js'
  import { useLinger } from './motion.js'
  
-@@ -27,7 +27,7 @@ export function useMemoryCount(botId, actions) {
+ const POLL_MS = 1500
+ const MENU_EXIT_MS = 120
+ 
+-// Entry counts per Bot, for the details pane; the dialog updates them as it loads.
++// Entry counts per Bot, for the details pane; the dialog updates them as it loads. A refused read
++// is kept beside the count, because the row used to drop it and say "Loading…" forever (#2395).
+ const counts = new Map()
++const failures = new Map()
+ const countListeners = new Set()
++const notify = () => { for (const listener of countListeners) listener() }
++// Only a read that worked comes through here, so it is also what takes a failure back.
+ function noteCount(botId, count) {
+-  if (counts.get(botId) === count) return
++  const same = counts.get(botId) === count
++  const recovered = failures.delete(botId)
++  if (same && !recovered) return
+   counts.set(botId, count)
+-  for (const listener of countListeners) listener()
++  notify()
+ }
++function noteFailure(botId, reason) {
++  failures.set(botId, reason)
++  notify()
++}
++const countState = botId => ({ count: counts.get(botId) ?? null, failure: failures.get(botId) ?? null })
+ 
+ export function useMemoryCount(botId, actions) {
+-  const [count, setCount] = useState(counts.get(botId) ?? null)
++  const [state, setState] = useState(() => countState(botId))
+   useEffect(() => {
+-    const listener = () => setCount(counts.get(botId) ?? null)
++    const listener = () => setState(countState(botId))
      countListeners.add(listener)
      listener()
      let stop = false
 -    actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
-+    void actions.memoryView?.(botId).then((view) => { if (!stop) noteCount(botId, view.entries.length) }).catch(() => {})
++    // A client without the action asks nothing, and the row keeps its "Loading…" because no read
++    // was ever started; a refusal is a sentence, never an exception thrown out of this effect.
++    const pending = actions.memoryView?.(botId)
++    if (pending) {
++      void Promise.resolve(pending)
++        .then((view) => { if (!stop) noteCount(botId, view.entries.length) })
++        .catch((error) => { if (!stop) noteFailure(botId, hostText(error?.message ?? String(error))) })
++    }
      return () => { stop = true; countListeners.delete(listener) }
    }, [botId])
-   return count
+-  return count
++  return state
++}
++
++// What the row says. A failed read is a sentence, not a spinner that never ends; `count` stays
++// null then, so no number is drawn for a read that did not happen.
++export function memoryCountText({ count, failure }) {
++  if (failure) return t('The memory could not be read: {reason}', { reason: failure })
++  if (count === null) return t('Loading…')
++  if (count === 0) return t('Nothing saved yet')
++  return count === 1 ? t('1 entry') : t('{count} entries', { count })
+ }
+ 
+ // The details pane's row: how much the Bot keeps, and the way into the dialog.
+ export function MemoryRow({ bot, actions }) {
+-  const count = useMemoryCount(bot.id, actions)
+-  const label = count === null ? t('Loading…') : count === 0 ? t('Nothing saved yet') : count === 1 ? t('1 entry') : t('{count} entries', { count })
++  const { count, failure } = useMemoryCount(bot.id, actions)
++  const label = memoryCountText({ count, failure })
+   return h('div', null,
+     h('div', { className: 'bt-section-title' }, t('Memory')),
+     h('button', { type: 'button', className: 'bt-mem-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },
 @@ -66,8 +66,10 @@ function Skeleton({ label }) {
  
  function Summary({ bot, view, regenerate }) {
