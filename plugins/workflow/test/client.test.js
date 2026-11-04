@@ -4684,3 +4684,38 @@ test('#2260: the held more-count promises only what the wider page reaches, and 
     document.body = prevBody
   }
 })
+
+// A run frozen by a Stop that could not release its Bot stays `status: 'running'` with
+// `paused: true` (#1476), and nothing more is handed. The strip called that state by the
+// action's name ("Pause"), and runHistoryRows dropped `paused` altogether, so the Runs tab
+// drew the frozen run as "Running" — the one tab a reader checks to see what is going on.
+test('a paused run is named Paused in the strip and in the Runs history', async () => {
+  const graph = delivery()
+  graph.activeCount = 1
+  graph.runs = [{ ...graph.run, id: 'run-p', paused: true, status: 'running' }]
+  graph.run = graph.runs[0]
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+  try {
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+    await settle()
+    const strip = findAll(view.tree, node => node.props?.['data-run-id'] === 'run-p')[0]
+    assert.ok(strip, 'the paused run has a strip')
+    const stripChips = findAll(strip, node => String(node.props?.className ?? '').includes('wf-chip')).map(textOf)
+    assert.deepEqual(stripChips, ['Paused'], 'the strip names the frozen run Paused, not by the Pause action')
+    assert.equal(findAll(view.tree, node => node.type === 'button' && textOf(node) === 'Resume').length, 1, 'a paused run still offers Resume')
+
+    button(view.tree, 'Progress').props.onClick()
+    await settle()
+    const rows = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-hist'))
+    assert.equal(rows.length, 1, 'the Runs tab lists the paused run')
+    const chips = findAll(rows[0], node => String(node.props?.className ?? '').includes('wf-chip')).map(textOf)
+    assert.deepEqual(chips, ['Paused'], 'the Runs tab says Paused instead of Running')
+  } finally {
+    view.unmount()
+  }
+})
