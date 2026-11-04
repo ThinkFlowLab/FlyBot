@@ -124,7 +124,8 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 -import { GroupSettingsForm, ROOM_MODES, roomSubtitle, shownMode } from './group-settings.js'
 +import { FaceLead, FacePersonRow, GroupSettingsForm, ROOM_MODES, facePeople, roomSubtitle, shownMode } from './group-settings.js'
  import { ModelMenu, modelOf } from './model-menu.js'
- import { FolderMenu } from './folder-menu.js'
+-import { FolderMenu } from './folder-menu.js'
++import { FolderMenu, folderName } from './folder-menu.js'
  import { MemoryRow } from './memory-panel.js'
 -import { ScheduleSummary } from './schedules.js'
 +import { RoomSchedules, ScheduleSummary, lockedWindow } from './schedules.js'
@@ -150,6 +151,42 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  
  const TAB_LABELS = { details: 'Details', browser: 'Browser' }
  
+@@ -62,6 +62,35 @@ function PermissionRow({ bot, roster, actions, run }) {
+       }, PERMISSION_LABELS[option.value] ? t(PERMISSION_LABELS[option.value]) : option.name))))
+ }
+ 
++// P-547: a locked window refuses the overview's writes, not its reading. The model, permission and
++// folder cards kept their writer's form or vanished whole, so their saved values went with the
++// controls; here each keeps its title and its value as plain text — the shape the name above
++// already has (#2391: the value stays, the control goes) — and no menu, preset or button is drawn.
++function ReadOnlyOverview({ bot, roster }) {
++  const shown = modelOf(bot, roster)
++  const models = roster.models ?? []
++  const catalog = roster.permissions
++  const preset = catalog?.options?.find(option => option.value === (bot.permission ?? catalog?.defaultPreset))
++  const folder = bot.workDir ?? ''
++  return h(Fragment, null,
++    h('div', { key: 'model', className: 'bt-drawer-model' },
++      h('div', { className: 'bt-section-title' }, t('Model')),
++      h('div', { className: 'bt-model-copy bt-readonly-value', title: shown?.ref },
++        h('span', { className: 'bt-model-name' }, shown?.name ?? t('Not set')),
++        shown ? h('span', { className: 'bt-model-provider' }, shown.served || models.length === 0
++          ? shown.provider
++          : t('{provider} · not available', { provider: shown.provider })) : null)),
++    preset ? h('div', { key: 'permission', className: 'bt-drawer-model' },
++      h('div', { className: 'bt-section-title' }, t('Permissions')),
++      h('div', { className: 'bt-model-copy bt-readonly-value' },
++        h('span', { className: 'bt-model-name' }, PERMISSION_LABELS[preset.value] ? t(PERMISSION_LABELS[preset.value]) : preset.name))) : null,
++    h('div', { key: 'folder', className: 'bt-drawer-model' },
++      h('div', { className: 'bt-section-title' }, t('Working folder')),
++      h('div', { className: 'bt-model-copy bt-readonly-value', title: folder || undefined },
++        h('span', { className: 'bt-model-name' }, folder ? folderName(folder) : t('Team workspace')),
++        folder ? h('span', { className: 'bt-model-provider' }, folder) : null)))
++}
++
+ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) {
+   const state = useBrowserTabs(map => map[bot.id] ?? EMPTY_TABS)
+   const pages = useBrowserPages(map => map)
 @@ -113,16 +113,127 @@ function About({ text, title = 'About' }) {
  
  // A group's overview: what members read, who is in it, and who answers. Changes are
@@ -372,7 +409,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
      hasStrip ? null : h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon)))
    if (!bot && !room) {
      return [h(Fragment, { key: 'top' }, top),
-@@ -213,28 +213,50 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+@@ -213,28 +213,52 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
      h('div', { key: 'id', className: 'bt-drawer-id', 'data-move': side },
        bot ? h(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== undefined), main: isMainBot, badge: false, gaze: true, pokeable: true })
          : h(RoomAvatar, { room, roster, size: 64 }),
@@ -424,9 +461,11 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +      ] : null,
 +      bot && !bot.remote && tab === 'details' ? [
 +        // P-542/P-487: the overview's own model, permission and folder entries are writes too, and a
-+        // locked window refuses every one of them. Say so once at the top and draw the read half only;
-+        // the name above is already text, and the settings gear still opens the page that explains it.
++        // locked window refuses every one of them. Say so once at the top and draw the read half only,
++        // which is the values themselves (P-547) — the name above is already text, and the settings
++        // gear still opens the page that explains the window.
 +        lockedWindow(roster) ? h('div', { key: 'read-only', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
++        lockedWindow(roster) ? h(ReadOnlyOverview, { key: 'read', bot, roster }) : null,
 +        lockedWindow(roster) ? null : h('div', { key: 'model', className: 'bt-drawer-model' },
            h('div', { className: 'bt-section-title' }, t('Model')),
            h(ModelMenu, { bot, roster, actions, run, wide: true }),

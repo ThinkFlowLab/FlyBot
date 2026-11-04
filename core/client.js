@@ -19793,6 +19793,49 @@ function PermissionRow({ bot, roster, actions, run }) {
     )
   );
 }
+function ReadOnlyOverview({ bot, roster }) {
+  const shown = modelOf(bot, roster);
+  const models = roster.models ?? [];
+  const catalog = roster.permissions;
+  const preset = catalog?.options?.find((option) => option.value === (bot.permission ?? catalog?.defaultPreset));
+  const folder = bot.workDir ?? "";
+  return (0, import_react44.createElement)(
+    import_react44.Fragment,
+    null,
+    (0, import_react44.createElement)(
+      "div",
+      { key: "model", className: "bt-drawer-model" },
+      (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Model")),
+      (0, import_react44.createElement)(
+        "div",
+        { className: "bt-model-copy bt-readonly-value", title: shown?.ref },
+        (0, import_react44.createElement)("span", { className: "bt-model-name" }, shown?.name ?? t("Not set")),
+        shown ? (0, import_react44.createElement)("span", { className: "bt-model-provider" }, shown.served || models.length === 0 ? shown.provider : t("{provider} · not available", { provider: shown.provider })) : null
+      )
+    ),
+    preset ? (0, import_react44.createElement)(
+      "div",
+      { key: "permission", className: "bt-drawer-model" },
+      (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Permissions")),
+      (0, import_react44.createElement)(
+        "div",
+        { className: "bt-model-copy bt-readonly-value" },
+        (0, import_react44.createElement)("span", { className: "bt-model-name" }, PERMISSION_LABELS[preset.value] ? t(PERMISSION_LABELS[preset.value]) : preset.name)
+      )
+    ) : null,
+    (0, import_react44.createElement)(
+      "div",
+      { key: "folder", className: "bt-drawer-model" },
+      (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Working folder")),
+      (0, import_react44.createElement)(
+        "div",
+        { className: "bt-model-copy bt-readonly-value", title: folder || void 0 },
+        (0, import_react44.createElement)("span", { className: "bt-model-name" }, folder ? folderName(folder) : t("Team workspace")),
+        folder ? (0, import_react44.createElement)("span", { className: "bt-model-provider" }, folder) : null
+      )
+    )
+  );
+}
 function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrowserPages }) {
   const state = useBrowserTabs((map) => map[bot.id] ?? EMPTY_TABS);
   const pages = useBrowserPages((map) => map);
@@ -20186,9 +20229,11 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       ] : null,
       bot && !bot.remote && tab === "details" ? [
         // P-542/P-487: the overview's own model, permission and folder entries are writes too, and a
-        // locked window refuses every one of them. Say so once at the top and draw the read half only;
-        // the name above is already text, and the settings gear still opens the page that explains it.
+        // locked window refuses every one of them. Say so once at the top and draw the read half only,
+        // which is the values themselves (P-547) — the name above is already text, and the settings
+        // gear still opens the page that explains the window.
         lockedWindow(roster) ? (0, import_react44.createElement)("div", { key: "read-only", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+        lockedWindow(roster) ? (0, import_react44.createElement)(ReadOnlyOverview, { key: "read", bot, roster }) : null,
         lockedWindow(roster) ? null : (0, import_react44.createElement)(
           "div",
           { key: "model", className: "bt-drawer-model" },

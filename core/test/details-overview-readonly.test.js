@@ -200,3 +200,52 @@ test('P-544: a read-only group overview says why once and draws the name as plai
   assert.deepEqual(modelTriggers(entries), [], 'a group never had a model menu')
   assert.deepEqual(permissionRows(entries), [], 'a group never had permission presets')
 })
+
+// P-547: the same locked window dropped the overview's Model, Permissions and Working folder
+// cards whole, so their values went with the controls even though the name above is already
+// "value kept, control removed" (`details-drawer.js`'.bt-drawer-name' as plain text). Product's
+// probe on a locked window read `model name drawn = false`, `permission label = false`,
+// `workDir = false`; in a writable window all three were true. A locked window refuses the
+// writes, not the reading, so the three values stay on the page as text and none of the three
+// controls is drawn.
+const withModel = { ...bot, model: 'deepseek/deepseek-v4.1-flash', workDir: '/home/xuke/flybot' }
+const modelsCatalog = [{ ref: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', providerName: 'DeepSeek' }]
+const rosterModelWith = (readOnly) => ({
+  ...base, bots: [withModel], byId: { a: withModel }, models: modelsCatalog,
+  ...(readOnly === undefined ? {} : { readOnly }),
+})
+const readOnlyValues = (entries) => entries.filter(({ node }) => hasClass(node, 'bt-readonly-value'))
+// The value line itself, without the note under it (the provider, the full path).
+const readOnlyNames = (entries) => entries.filter(({ node }) => hasClass(node, 'bt-model-name')).map(({ node }) => ownText(node).trim())
+const sectionTitles = (entries) => nodes(entries).filter(node => hasClass(node, 'bt-section-title')).map(node => ownText(node).trim())
+
+test('P-547: a locked overview keeps the model, permission and folder values and draws no control', () => {
+  slots = []
+  const entries = tree(rosterModelWith(SENTENCE))
+  assert.equal(statusLine(entries).length, 1, "the host's sentence is still drawn once")
+  assert.equal(readOnlyValues(entries).length, 3, 'the three values are drawn, not dropped with their controls')
+  const names = readOnlyNames(entries)
+  assert.equal(names[0], 'DeepSeek V4.1 Flash', 'the model name is on the page')
+  assert.equal(names[1], 'Workspace', 'the permission preset is on the page, by its label')
+  assert.equal(names[2], 'flybot', 'the working folder is on the page by its last segment')
+  const titles = sectionTitles(entries)
+  for (const title of ['Model', 'Permissions', 'Working folder']) assert.ok(titles.includes(title), `${title} keeps its section`)
+  const folder = readOnlyValues(entries)[2].node
+  assert.equal(folder.props.title, '/home/xuke/flybot', 'the full folder path is kept as the value title')
+  assert.deepEqual(modelTriggers(entries), [], 'no model menu the host would refuse')
+  assert.deepEqual(permissionRows(entries), [], 'no permission preset the host would refuse')
+  assert.deepEqual(folderTriggers(entries), [], 'no working-folder menu the host would refuse')
+  assert.deepEqual(nodes(entries).filter(node => node.props?.['aria-haspopup'] === 'menu'), [],
+    'no anchored menu of any kind is drawn in a locked overview')
+})
+
+test('P-547: a writable overview keeps its controls and draws no read-only value', () => {
+  slots = []
+  const entries = tree(rosterModelWith(undefined))
+  assert.deepEqual(readOnlyValues(entries), [], 'the read-only values are a locked window only')
+  assert.equal(modelTriggers(entries).length, 1, 'the model menu is still the writable control')
+  assert.equal(permissionRows(entries).length, 1, 'the permission presets are still the writable control')
+  assert.equal(folderTriggers(entries).length, 1, 'the working-folder menu is still the writable control')
+  assert.equal(ownText(modelTriggers(entries)[0].node).includes('DeepSeek V4.1 Flash'), true,
+    'the writable trigger still shows the same model name')
+})
