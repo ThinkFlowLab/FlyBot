@@ -1199,6 +1199,8 @@ const ZH = {
   'Opened a new GitHub issue. Copy the diagnostics below into it.': '已打开新的 GitHub issue。请把下面的诊断信息复制进去。',
   'Downloaded the log. Keys, tokens, and your home folder are hidden in it.': '已下载日志。里面的密钥、令牌和用户目录都已隐藏。',
   'Cleared the error log.': '已清空错误日志。',
+  'Cleared the error log, but its rotated copy (logs/diagnostics.jsonl.1) could not be removed.': '已清空错误日志，但轮转出去的副本（logs/diagnostics.jsonl.1）没能删除。',
+  'The error log was not cleared: the host could not truncate it.': '错误日志没有清空：宿主没能把它截断。',
   'Recent errors': '最近的错误',
   'Recent errors · {count}': '最近的错误 · {count}',
   'No errors recorded.': '没有错误记录。',

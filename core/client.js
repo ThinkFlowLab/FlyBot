@@ -1246,6 +1246,8 @@ var ZH = {
   "Opened a new GitHub issue. Copy the diagnostics below into it.": "已打开新的 GitHub issue。请把下面的诊断信息复制进去。",
   "Downloaded the log. Keys, tokens, and your home folder are hidden in it.": "已下载日志。里面的密钥、令牌和用户目录都已隐藏。",
   "Cleared the error log.": "已清空错误日志。",
+  "Cleared the error log, but its rotated copy (logs/diagnostics.jsonl.1) could not be removed.": "已清空错误日志，但轮转出去的副本（logs/diagnostics.jsonl.1）没能删除。",
+  "The error log was not cleared: the host could not truncate it.": "错误日志没有清空：宿主没能把它截断。",
   "Recent errors": "最近的错误",
   "Recent errors · {count}": "最近的错误 · {count}",
   "No errors recorded.": "没有错误记录。",
@@ -18713,6 +18715,11 @@ function entrySummary(entry) {
   return entry.text;
 }
 var SOURCES = { turn: "Model call", host: "FlyBot", api: "FlyBot", browser: "This window" };
+function clearNote(result) {
+  if (result?.leaf === "kept") return t("The error log was not cleared: the host could not truncate it.");
+  if (result?.rotated === "kept") return t("Cleared the error log, but its rotated copy (logs/diagnostics.jsonl.1) could not be removed.");
+  return t("Cleared the error log.");
+}
 function FeedbackPage({ roster, actions, run, Section, Row: Row4 }) {
   const [what, setWhat] = (0, import_react40.useState)("");
   const [report, setReport] = (0, import_react40.useState)(null);
@@ -18754,7 +18761,10 @@ function FeedbackPage({ roster, actions, run, Section, Row: Row4 }) {
     download("ds-bot-diagnostics.log", text2 || "No entries.\n");
     setNote(t("Downloaded the log. Keys, tokens, and your home folder are hidden in it."));
   }));
-  const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t("Cleared the error log."))));
+  const clearLog = () => run(actions.diagnosticsClear().then((result) => {
+    clearClientErrors();
+    return load().then(() => setNote(clearNote(result)));
+  }));
   const locked = lockedWindow(roster);
   const browserErrors = report ? clientErrors().map((entry) => ({ ...entry, source: "browser" })) : [];
   const entries2 = [...report?.entries ?? [], ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time));

@@ -1175,7 +1175,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
    const short = issueUrl(base, { what: 'Writer failed\nin the group', diagnostics: '| DS Bot | 0.1.0 |' })
    assert.equal(short.inline, true)
    const params = new URL(short.url).searchParams
-@@ -253,3 +253,157 @@ test('a browser error is noted once, repeats are counted, and clear empties the
+@@ -253,3 +253,258 @@ test('a browser error is noted once, repeats are counted, and clear empties the
    clearClientErrors()
    assert.equal(clientErrors().length, 0)
  })
@@ -1332,4 +1332,105 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  chmodSync(logs, 0o755)
 +  await rt.diagnostics.clear()
 +  assert.equal(existsSync(rotated), false, 'once the folder allows it, the same clear removes the copy')
++})
++// #2360: Clear answered a constant, so the window could not tell a truncated leaf from a refused
++// one, or a removed rotated copy from a leftover, and it said "cleared" whatever happened. Clear
++// resolves what it did; the shapes #2352 and #2358 left behind are asserted here as values.
++test('#2360: clear reports the leaf it truncated and the rotated copy it removed', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  const rt = host(home)
++  t.after(async () => { await rt.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const logPath = join(home, 'logs', 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  writeFileSync(logPath, 'OLD LINE\n')
++  writeFileSync(rotated, 'ROTATED\n')
++
++  assert.deepEqual(await rt.diagnostics.clear(), { leaf: 'truncated', rotated: 'removed' })
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'the leaf is empty after the reported truncate')
++  assert.equal(existsSync(rotated), false, 'the reported removal really removed the copy')
++})
++
++test('#2360: clear reports a rotated copy that could not be removed, and truncates anyway', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  const rt = host(home)
++  t.after(async () => { await rt.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const logPath = join(home, 'logs', 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  writeFileSync(logPath, 'OLD LINE\n'.repeat(4))
++  mkdirSync(rotated) // `rm` without recursive refuses a directory: EISDIR
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const result = await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.deepEqual(result, { leaf: 'truncated', rotated: 'kept' }, 'the leaf says it was truncated, the copy says it stayed')
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'the reported truncate really emptied the leaf')
++  assert.equal(lstatSync(rotated).isDirectory(), true, 'the reported leftover is still there')
++  assert.equal(stderr.filter(line => /rotated copy/.test(line)).length, 1, 'one line says the copy was not removed')
++})
++
++test('#2360: clear reports a folder that refused the removal, and truncates anyway', async (t) => {
++  if (process.getuid?.() === 0) {
++    t.skip('root removes from a folder without its write bit')
++    return
++  }
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  const logs = join(home, 'logs')
++  const rt = host(home)
++  t.after(async () => {
++    await rt.dispose()
++    try { chmodSync(logs, 0o755) } catch { /* the folder may already be gone */ }
++    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
++  })
++  mkdirSync(logs, { recursive: true })
++  const logPath = join(logs, 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  writeFileSync(logPath, 'OLD LINE\n'.repeat(4))
++  writeFileSync(rotated, 'ROTATED\n'.repeat(8))
++  chmodSync(logs, 0o555)
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const result = await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.deepEqual(result, { leaf: 'truncated', rotated: 'kept' }, 'the leaf says it was truncated, the copy says it stayed')
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'the reported truncate really emptied the leaf')
++  assert.equal(readFileSync(rotated, 'utf8'), 'ROTATED\n'.repeat(8), 'the reported leftover keeps its bytes')
++  assert.equal(stderr.filter(line => /rotated copy/.test(line)).length, 1, 'one line says the copy was not removed')
++})
++
++test('#2360: clear reports a leaf it did not truncate, and writes nothing through the link', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
++  const rt = host(home)
++  t.after(async () => {
++    await rt.dispose()
++    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
++    rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 })
++  })
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const target = join(elsewhere, 'diagnostics.jsonl')
++  writeFileSync(target, 'PRE-EXISTING LINE\n')
++  symlinkSync(target, join(home, 'logs', 'diagnostics.jsonl'))
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const result = await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.deepEqual(result, { leaf: 'kept', rotated: 'none' }, 'the leaf says it was left alone')
++  assert.equal(readFileSync(target, 'utf8'), 'PRE-EXISTING LINE\n', 'not one byte was written through the link')
++})
++
++test('#2360: a home with no log folder answers absent and leaves the disk as it found it', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  const rt = host(home)
++  t.after(async () => { await rt.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++
++  assert.deepEqual(await rt.diagnostics.clear(), { leaf: 'absent', rotated: 'none' }, 'nothing was there and nothing was written')
++  assert.equal(existsSync(join(home, 'logs')), false, 'the truncate did not create the folder it never created before')
 +})

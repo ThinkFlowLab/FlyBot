@@ -661,8 +661,7 @@ export function install(rt) {
         case 'diagnostics-log':
           return ok(await rt.diagnostics.logText())
         case 'diagnostics-clear':
-          await rt.diagnostics.clear()
-          return ok(true)
+          return ok(await rt.diagnostics.clear())
         case 'tasks':
         case 'task-create':
         case 'task-update':

@@ -284,25 +284,44 @@ export function install(rt) {
   async function clear() {
     cleared = Date.now()
     fresh = []
-    if (!toFile) return
+    // What the window's sentence is chosen from (#2360): the leaf is only `truncated` once the
+    // truncate ran and the rotated copy only `removed` once its name is gone, so a page cannot say
+    // "cleared" about a file it left alone.
+    const result = { leaf: 'absent', rotated: 'none' }
+    if (!toFile) return result
     // Clearing truncates the leaf, so it is the same question as the append: a link is not ours to
     // truncate, and the old file behind it stays exactly as it was.
     writing = writing.then(async () => {
-      if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
+      const kind = await fileKind(logPath)
+      if (kind === 'other') { refuseLeaf(); result.leaf = 'kept'; return }
       // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
       // on disk after the user asked for the error log to be cleared. That one name belongs to this
       // log, so it goes in the same chain and behind the same guard. The removal keeps a try of its
       // own: a copy that cannot be removed (a directory under that name, a folder without its write
       // bit) must not reject the chain before the truncate runs, or the window says "cleared" while
       // the leaf still holds every line. The line names the leftover, never the folder.
+      const rotatedKind = await fileKind(`${logPath}.1`)
+      if (rotatedKind !== 'absent') result.rotated = 'kept'
       try {
         await rm(`${logPath}.1`, { force: true })
+        if (rotatedKind !== 'absent') result.rotated = 'removed'
       } catch (error) {
         console.error('[ds-bot] diagnostics log rotated copy not removed:', error?.code ?? clean(error?.message ?? String(error)))
       }
-      await writeFile(logPath, '', 'utf8')
+      // The truncate runs exactly as it did before #2360, a leaf that is not there yet included (the
+      // write lands a new empty file, as this line always did): only the answer is new. A folder
+      // that is not there makes the write fail the way it always did, and nothing is on disk to
+      // report as kept, so that answer stays `absent` rather than sending the page a refusal.
+      try {
+        await writeFile(logPath, '', 'utf8')
+        result.leaf = 'truncated'
+      } catch (error) {
+        result.leaf = error?.code === 'ENOENT' ? 'absent' : 'kept'
+        throw error
+      }
     }).catch(() => {})
     await writing
+    return result
   }
 
   Object.assign(rt, { warn, noteFailure: note, diagnostics: { report, logText, clear, entries } })

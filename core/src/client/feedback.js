@@ -40,6 +40,17 @@ function entrySummary(entry) {
 
 const SOURCES = { turn: 'Model call', host: 'FlyBot', api: 'FlyBot', browser: 'This window' }
 
+// #2360: the host reports what a Clear did, so the sentence can match it. A leaf it left alone is
+// not a cleared log, and a rotated copy it could not remove is named instead of being passed over;
+// an answer that carries no result (an older host) keeps the sentence this page always used.
+// `kept` covers both a leaf the guard refused (a link, a shared name) and a plain leaf the host
+// could not truncate (a write-protected file, a read-only mount), so the sentence names neither.
+function clearNote(result) {
+  if (result?.leaf === 'kept') return t('The error log was not cleared: the host could not truncate it.')
+  if (result?.rotated === 'kept') return t('Cleared the error log, but its rotated copy (logs/diagnostics.jsonl.1) could not be removed.')
+  return t('Cleared the error log.')
+}
+
 export function FeedbackPage({ roster, actions, run, Section, Row }) {
   const [what, setWhat] = useState('')
   const [report, setReport] = useState(null)
@@ -84,7 +95,10 @@ export function FeedbackPage({ roster, actions, run, Section, Row }) {
     download('ds-bot-diagnostics.log', text || 'No entries.\n')
     setNote(t('Downloaded the log. Keys, tokens, and your home folder are hidden in it.'))
   }))
-  const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t('Cleared the error log.'))))
+  const clearLog = () => run(actions.diagnosticsClear().then((result) => {
+    clearClientErrors()
+    return load().then(() => setNote(clearNote(result)))
+  }))
 
   // Clear truncates the shared error log on the host, so a window that only reads draws no Clear:
   // the log it would erase is the file this page exists to hand over (#2302). Download stays.
