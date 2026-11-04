@@ -6,7 +6,7 @@ export const INPUT_PROTOCOL = 'project-task-input/v1'
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const clone = value => structuredClone(value)
 const bodyHash = text => createHash('sha256').update(text).digest('hex')
-const verify = row => { if (typeof row.text !== 'string' || bodyHash(row.text) !== row.sha256) throw refuse('Task input content changed after acceptance') }
+const verify = row => { if (typeof row.text !== 'string' || bodyHash(row.text) !== row.sha256) throw Object.assign(refuse('Task input content changed after acceptance'), { inputIssue: { kind: 'content-changed' } }) }
 const refuse = text => Object.assign(new Error(text), { code: 'bot/task-input' })
 const ended = task => ['accepted', 'cancelled'].includes(task.status) || ['cancelled', 'closed', 'stopping'].includes(task.collaboration?.status)
 const stable = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(value)

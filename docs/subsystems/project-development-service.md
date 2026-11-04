@@ -259,3 +259,7 @@ exit/requirements/authorization. Public role/App status never returns credential
 ## Explicit successor continuation (#2377)
 
 `attempt.continuation-state` is a configure query. `task.run.continuation` additionally requires configure permission and exact draft/generation facts. The ordinary capacity queue carries the choice unchanged; stale queued snapshots refuse on admission. Metadata exposes safe predecessor/workspace references rather than private Session contents.
+
+## Chief diagnostics (#2393)
+
+TaskView.chiefIssue references the current Run fault without replacing business phase or evidence. chief.state distinguishes last received response hash from dispatch/executor diagnostic hash and records the actual failure stage/criteria. Current generation and scope govern Task markers; older failures remain audit history.

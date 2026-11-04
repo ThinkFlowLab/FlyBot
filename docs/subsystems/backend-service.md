@@ -160,3 +160,7 @@ The API inventory describes attempt.continuation-state and the optional task.run
 ## Reviewer evidence API (#2378)
 
 The GitHub read contract adds page/includeStatuses and independent completeness/source-hash metadata. Actions/log access remains under explicit role Apps/resource policy; no new login service, generic URL proxy or Review store is introduced.
+
+## Chief feedback contract (#2393)
+
+OpenAPI describes Chief lastResult/failureDetail, per-Task correction feedback and safe TaskView.chiefIssue. No new transport endpoint or automatic routing rule is introduced; fresh snapshots retain original receipt authorization and content gates.

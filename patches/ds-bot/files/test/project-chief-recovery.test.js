@@ -35,3 +35,11 @@ test('legacy unmanaged namespace assurance is operator-owned and bound to one ex
   assert.equal(corroboratedNativeScope(old, run, [record]).pidNamespace, 'pid:[123]')
   assert.equal(old.pidNamespace, undefined)
 })
+
+test('input snapshot, authority and content failures retain distinct recovery facts', () => {
+  for (const [kind, expected] of [['stale-snapshot', 'stale-snapshot'], ['stale-or-foreign-batch', 'stale-snapshot'], ['foreign-input', 'authority-unavailable'], ['source-revoked', 'authority-unavailable'], ['content-changed', 'source-changed'], ['snapshot-schema', 'input-protocol']]) {
+    const result = classifyChiefRecovery({ message: 'Receipt was refused', receiptFeedback: { kind } })
+    assert.equal(result.kind, expected); assert.equal(result.retryable, false)
+    assert.match(result.actions[0], /never rebase/)
+  }
+})

@@ -169,7 +169,9 @@ proposal and feedback but fences the old claim; recovery must confirm exit and
 reconcile context, never replay the business proposal from an expired receipt.
 
 Chief uses the same bounded feedback constructor and its existing resident-Session
-correction mechanism. All receipt plans are checked before proposals or Task effects.
+correction mechanism. Each Chief Task receipt is checked before that Task effects; invalid Task items defer global role proposals while independent valid decisions may commit. Frozen role-worker receipt-only correction remains unchanged.
 A corrected response declares the current snapshot explicitly; no old batch is
 silently translated. Candidate-stage evidence already produced by an SDK stays
 immutable and is not re-recorded as a second execution during receipt correction.
+
+#2393 reports pre-dispatch input integrity failures as typed source-changed facts; corrupted text is never injected or acknowledged. A correction transport failure remains incomplete on its original Run rather than a phantom pending invocation.

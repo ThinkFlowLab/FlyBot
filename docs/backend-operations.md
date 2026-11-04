@@ -218,3 +218,18 @@ writes, preparations or another running Chief remain explicit blockers. Read
 snapshot for `attempt.integration-bind`. Neither command creates a candidate,
 claims a PR, grants test/Review success or selects the next role. Chief context
 includes the current execution checkpoint and blocker references.
+
+### Diagnose Chief coordination separately from Task acceptance
+
+Read chief.state Run.lastResult/failureDetail: source, invocation, stage and safe
+hashes distinguish dispatch/transport/execution, parsing, preflight and application.
+A failed diagnostic hash is not a model response or acceptance verdict. Per-Task
+feedback lists current allowed IDs, changed snapshot fields and already applied
+IDs; do not replay applied actions. Stale receipts require a fresh same-Session
+judgement, never changing an old batch's generation or claiming it handled.
+
+TaskView.chiefIssue points to a current Run problem while the original business
+block and exact candidate/tests/Review/merge records remain. Inspect actual merge
+policy/checks separately from Reviewer approve. Explicit reconcile-exit retires
+only a proven-exited old claim; inspect unknown SDK/Docker/native/preparation exit
+through their original contracts. Chief chooses subsequent actions or consultation.

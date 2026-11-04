@@ -104,7 +104,7 @@ test('a new Chief request wakes execution and duplicate receipts do not create a
 test('Chief results cannot close a Task that progressed during reasoning or whose actor lost permission', async () => {
   const f = await controlFixture(); ++f.task.collaboration.generation
   await f.request.onResult(f.result())
-  assert.equal(f.accepted(), 0); assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed')
+  assert.equal(f.accepted(), 0); assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'correction-pending')
   const g = await controlFixture(); g.revokeRole(); await g.request.onResult(g.result())
   assert.equal(g.accepted(), 0)
 })
@@ -213,7 +213,7 @@ test('Chief admission rejects changed requirements and revoked authority before 
   await f.rt.projectEffects.drain()
   assert.equal(f.accepted(), 0)
   assert.equal(f.task.projectTask.admission.status, 'proposed')
-  assert.match(f.rt.state.projectExecutions[f.request.runId].failure, /requirements changed/)
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].correction.feedback.at(-1).recovery.kind, 'stale-snapshot')
   await f.rt.projectEffects.close()
   const g = await controlFixture({ modern: true }); g.revokeRole()
   await g.request.onResult(g.result({ action: 'admit' }))
@@ -304,7 +304,8 @@ test('correction budget exhaustion remains an explicit incomplete judgement and 
   await f.request.onResult(f.result({ action: 'route' })); await f.control.pump()
   await f.request.onResult(f.result({ action: 'route' }))
   assert.equal(run.status, 'incomplete'); assert.equal(run.correction.status, 'exhausted')
-  assert.equal(f.task.collaboration.block.waitingFor, 'chief-recovery')
+  assert.equal(f.task.chiefDecisionIssue.status, 'exhausted')
+  assert.equal(f.task.collaboration.block, undefined)
   assert.equal(consultations, 0); assert.equal(f.task.chiefQuestion, undefined)
 })
 
@@ -322,8 +323,8 @@ test('permission revocation or a stale corrected snapshot cannot gain authority 
   assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed'); assert.equal(f.accepted(), 0)
   const g = await controlFixture(); await g.request.onResult(g.result({ action: 'route' })); await g.control.pump(); ++g.task.collaboration.generation
   await g.request.onResult(g.result({ action: 'route', targetBotId: 'p:developer' }))
-  assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'failed')
-  assert.match(g.rt.state.projectExecutions[g.request.runId].failure, /snapshot.*stale/)
+  assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'correction-pending')
+  assert.equal(g.rt.state.projectExecutions[g.request.runId].correction.feedback.at(-1).recovery.kind, 'stale-snapshot')
 })
 test('SDK correction waits for the exact prior worker generation and confirmed resource release', async () => {
   const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
@@ -520,4 +521,142 @@ test('Chief consultation decisions carry bounded assistance to the selected oper
   assert.equal(f.task.chiefQuestion.recipient.agentId, 'ops')
   assert.match(f.request.prompt, /watch does not grant SSH/)
   assert.equal(f.request.projectFacts.autonomy.maxRecoveryActions, 4)
+})
+
+test('Chief transport failure belongs to its Run and preserves business block and approved evidence', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  const evidence = { tests: { sha: 'candidate', passed: true }, review: { sha: 'candidate', verdict: 'approve' } }
+  f.rt.state.projectAttempts.a.evidence = structuredClone(evidence)
+  f.task.collaboration.block = { reason: 'Await the configured merge check', decisionId: 'business-decision' }
+  const block = structuredClone(f.task.collaboration.block)
+  await f.request.onResult({ ok: false, text: 'private transport response', recoveryIssue: { kind: 'worker-exit-unknown', retryable: false, conditions: ['exact worker exit'] } })
+  assert.equal(run.status, 'failed')
+  assert.deepEqual(f.task.collaboration.block, block)
+  assert.deepEqual(f.rt.state.projectAttempts.a.evidence, evidence)
+  assert.equal(run.failureDetail.stage, 'execution')
+  assert.equal(run.failureDetail.responseSha256, null)
+  assert.equal(run.failureDetail.diagnosticSha256.length, 64)
+  assert.ok(!JSON.stringify(run).includes('private transport response'))
+})
+
+test('an out-of-snapshot Task gets correction without dropping or replaying a valid Task decision', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  f.rt.state.tasks.other = { id: 'other', projectId: 'p', title: 'Outside scoped arbitration', criteria: 'unrelated', status: 'working' }
+  const response = f.result(), body = JSON.parse(response.text)
+  body.decisions.push({ taskId: 'other', action: 'continue', reason: 'This Task is outside this invocation scope' })
+  await f.request.onResult({ ...response, text: JSON.stringify(body) })
+  assert.equal(f.accepted(), 1)
+  assert.equal(run.status, 'correction-pending')
+  assert.equal(f.rt.state.tasks.other.status, 'working')
+  assert.deepEqual(run.correction.feedback.at(-1).appliedTaskIds, ['t'])
+  await f.control.pump()
+  await f.request.onResult({ ...f.result(), text: JSON.stringify({ summary: 'Keep the applied decision; no other Task was in scope', decisions: [] }) })
+  assert.equal(run.status, 'done', run.failure); assert.equal(f.accepted(), 1)
+})
+
+test('stale Chief receipts get fresh-snapshot feedback without consuming input or blocking the new generation', async () => {
+  const f = await controlFixture({ withInputs: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  const old = f.request.projectFacts.tasks[0].taskInbox
+  const input = Object.values(f.rt.state.projectTaskInputs)[0]
+  const block = { reason: 'Current business wait', decisionId: 'current' }
+  f.task.collaboration.block = structuredClone(block); f.task.collaboration.generation++
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Assess current evidence', inputReceipts: { batchId: old.batchId, read: [input.id], handled: [input.id] } }))
+  assert.equal(run.status, 'correction-pending')
+  assert.equal(run.correction.feedback.at(-1).recovery.kind, 'stale-snapshot')
+  assert.equal(input.status, 'accepted'); assert.deepEqual(f.task.collaboration.block, block)
+  assert.equal(f.task.chiefDecisionIssue, undefined)
+  await f.control.pump()
+  const fresh = f.request.projectFacts.tasks[0].taskInbox
+  assert.notEqual(fresh.batchId, old.batchId)
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Current input is understood; retain responsibility', inputReceipts: { batchId: fresh.batchId, read: [input.id], handled: [input.id] } }))
+  assert.equal(run.status, 'done', run.failure); assert.equal(input.status, 'handled')
+  assert.ok(!input.deliveries.find(row => row.batchId === old.batchId).handledAt)
+  await f.rt.projectEffects.close()
+})
+
+test('an old Chief failure cannot change a newer active claim or its business block', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  const claim = { id: 'new-claim', status: 'active', botId: 'p:developer', generation: ++f.task.collaboration.generation }
+  f.task.collaboration.claim = claim; f.task.collaboration.block = { reason: 'New-generation facts', decisionId: 'new' }
+  await f.request.onResult({ ok: false, text: 'Old result' })
+  assert.equal(run.status, 'failed'); assert.equal(claim.status, 'active')
+  assert.equal(f.task.collaboration.block.decisionId, 'new'); assert.equal(f.task.chiefActionIssue, undefined)
+})
+
+test('malformed JSON uses existing correction with response hash and never repairs acceptance booleans', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  await f.request.onResult({ ...f.result(), text: f.result().text.replace('"passed":true', '"passed:true,"') })
+  assert.equal(run.status, 'correction-pending'); assert.equal(f.accepted(), 0)
+  assert.equal(run.invocationHistory[0].responseSha256, run.lastResult.responseSha256)
+  assert.equal(run.correction.feedback[0].fields[0].field, 'response')
+  assert.ok(!/SyntaxError|Expected.*property/.test(run.failure))
+})
+
+test('close refusal names the missing acceptance evidence rather than revoking an existing Review', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  f.rt.state.projectAttempts.a.evidence.review = { verdict: 'approve', sha: 'candidate' }
+  await f.request.onResult(f.result({ criteria: [{ criterion: 'Actual condition', passed: false, evidence: '' }] }))
+  assert.equal(run.recoveryIssue.kind, 'acceptance-evidence-missing')
+  assert.ok(run.failureDetail.criteriaIssues.some(row => row.startsWith('criteria[0].evidence')))
+  assert.equal(f.rt.state.projectAttempts.a.evidence.review.verdict, 'approve')
+})
+
+test('same protocol feedback permits different lawful Chief choices rather than a fixed recovery route', async () => {
+  for (const action of ['continue', 'route']) {
+    const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+    assert.match(f.request.prompt, /Choose an evidence-supported role after environment or execution repair/)
+    assert.ok(!f.request.prompt.includes('Use route to Developer after an environment preparation fix'))
+    f.rt.projectPools.connect({ validate: () => ({ ok: true }), rework: async () => 'a' })
+    await f.request.onResult(f.result({ action: 'route' }))
+    assert.equal(run.status, 'correction-pending')
+    await f.control.pump()
+    await f.request.onResult(f.result({ action, ...(action === 'route' ? { targetBotId: 'p:developer' } : {}), reason: 'Choose this legal next step from current facts' }))
+    assert.equal(run.status, 'done', run.failure)
+    assert.equal(f.task.chiefQuestion, undefined)
+    assert.equal(f.task.collaboration.status, action === 'route' ? 'queued' : 'blocked')
+  }
+})
+
+test('Chief explicitly invokes the shared exit-retirement action without the host choosing a next role', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  const saved = f.request.projectFacts.tasks[0], calls = []
+  f.rt.projectDelivery.reconcileExit = async (body, actor) => { calls.push(body); f.control.requireJobActor(actor, 'p'); return { generation: body.generation + 1 } }
+  await f.request.onResult(f.result({ action: 'reconcile-exit', reason: 'The old exact execution is proven exited; retire responsibility only' }))
+  assert.equal(run.status, 'done', run.failure); assert.equal(calls.length, 1)
+  assert.equal(calls[0].claimId, saved.execution.claimId)
+  assert.equal(calls[0].generation, saved.generation)
+  assert.notEqual(f.task.collaboration.status, 'queued'); assert.equal(f.task.chiefQuestion, undefined)
+})
+
+test('typed criteria and null decisions return protocol correction rather than a host TypeError', async () => {
+  for (const value of ['wrong-criteria', null]) {
+    const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+    const result = f.result(), body = JSON.parse(result.text)
+    if (value === null) body.decisions = [null]
+    else body.decisions[0].criteria = value
+    await f.request.onResult({ ...result, text: JSON.stringify(body) })
+    assert.equal(run.status, 'correction-pending'); assert.equal(f.accepted(), 0)
+    assert.ok(!/TypeError|SyntaxError/.test(run.failure))
+  }
+})
+
+test('corrupt input during correction dispatch is a source failure, not a model response or phantom pending correction', async () => {
+  const f = await controlFixture({ withInputs: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  const originalBlock = { reason: 'Business evidence remains pending', decisionId: 'original-business' }
+  f.task.collaboration.block = structuredClone(originalBlock)
+  await f.request.onResult({ ...f.result(), text: '{invalid JSON' })
+  assert.equal(run.status, 'correction-pending')
+  const input = Object.values(f.rt.state.projectTaskInputs)[0]
+  input.text = 'Changed after the immutable source receipt'
+  await f.control.pump()
+  assert.equal(run.status, 'failed', run.failure)
+  assert.equal(run.recoveryIssue.kind, 'source-changed')
+  assert.equal(run.failureDetail.stage, 'dispatch')
+  assert.equal(run.failureDetail.responseSha256, null)
+  assert.equal(run.failureDetail.diagnosticSha256.length, 64)
+  assert.equal(run.correction.status, 'transport-incomplete')
+  assert.equal(f.task.chiefDecisionIssue.status, 'transport-incomplete')
+  assert.deepEqual(f.task.collaboration.block, originalBlock)
+  assert.equal(input.status, 'accepted')
+  await f.rt.projectEffects.close()
 })

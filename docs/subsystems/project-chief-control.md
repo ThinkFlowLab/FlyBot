@@ -44,7 +44,7 @@ Explicit acceptance requirements are checked at closure, not used to prevent Chi
 from receiving incomplete work. Release claims without trusted proof cannot close.
 A candidate recommendation is not a signed forge Reviewer PASS or merge permission.
 Every decision records the initiating human, Chief executor, snapshot and applied
-or rejected status. A failed Chief run blocks completion rather than inventing success.
+or rejected status. A failed Chief run remains unsuccessful coordination; it neither revokes existing evidence nor adjudicates Task acceptance.
 Returns preserve Task identity and create a fresh Attempt when code must change.
 
 ## Scheduling
@@ -204,7 +204,7 @@ Native prior-host recovery reuses the existing supervisor proof helper and exact
 Autonomous progress within current authorization is Chief's first priority. The host
 supplies exact active logical Bot IDs, fresh Task/resource/repository facts and typed
 protocol feedback. It never infers Developer or creates a consultation from a malformed
-route/return. The complete response is protocol-checked before applying decisions.
+route/return. Root JSON is validated first; each Task is then protocol/scope/receipt-checked before its own effects. Valid independent Task decisions may commit while rejected Task items receive correction.
 Missing/invalid destinations, malformed JSON and requirement strings are correctable;
 permission, stale evidence and actual execution failures retain their original gates.
 
@@ -256,7 +256,7 @@ The same run gets a fresh invocation/snapshot; stale callbacks cannot mutate it.
 Inspection decisions isolate each domain/exit refusal into bounded decisionFailures
 and per-Task chiefActionIssue; independent Task decisions still execute. Partial rounds
 are not successful inspections. Applied intent receipts prevent duplicate mutation
-on recovery; protocol errors still use #2327 whole-response validation/correction.
+on recovery; protocol errors still use #2327 root JSON and per-Task validation/correction.
 
 `chief.state.health` separates enabled, pending, healthy, degraded and overdue. It
 reports reminder acceptance/start/completion/success, last applied non-deferral decision,
@@ -291,3 +291,30 @@ Attempt/candidate and contact/role changes supersede old assistance. See
 ## Shared exit verification (#2375)
 
 The existing inspection exit verifier is also used by explicit claim retirement for native/SDK Chief runs. Only exact invocation evidence can discharge responsibility; the generic unmanaged-process predicate is unchanged. Recovery facts are not business routing instructions.
+
+## Run failure and current facts (#2393)
+
+Run.lastResult distinguishes executor responses from host dispatch diagnostics using
+hashes and source/invocation metadata. failureDetail records stage/code/recovery kind
+and precise missing criteria fields. Neither raw failed text nor V8 parser errors
+become Task blocks. Existing business blocks and candidate/tests/Review/merge facts
+survive execution failure; only the exact current owned Chief claim may be fenced.
+Old generations cannot overwrite new claims or attach current Task failure markers.
+
+Per-Task correction states allowedTaskIds, rejected fields, snapshot changes and
+appliedTaskIds. Out-of-scope decisions are explicitly rejected, never silently
+dropped; valid scoped siblings remain applied and cannot be replayed/replaced.
+Stale generation/requirements/candidate/input batch gets fresh facts in the same
+Chief Session; old receipts are never rebased or marked handled. Revoked/foreign
+and changed-content inputs remain distinct refusals. Global role proposals wait
+when any Task protocol item is invalid. Existing correction/inspection budgets
+limit resources and select no business route or human escalation.
+
+Chief may explicitly choose reconcile-exit, invoking #2375 on the snapshot's exact
+claim through current authority and durable retirement gates. Its own live run is
+not exit proof. Other legal decisions remain available; evidence-supported
+Tester/Reviewer recovery uses existing resumeVerification. Historical rejection
+text is audit data, not a current routing constraint. No JSON boolean repair,
+fixed DAG, generic recovery scheduler or new state store is added.
+
+A failed correction dispatch is transport-incomplete, not a pending model turn. Machine-readable recovery kinds distinguish changed sources, input protocol and missing acceptance evidence; candidate references remain full40-character Git SHAs.

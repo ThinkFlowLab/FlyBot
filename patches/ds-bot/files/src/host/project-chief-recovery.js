@@ -23,6 +23,8 @@ export function nativeChiefBoundary(state, run) {
 
 export function classifyChiefRecovery(error) {
   if (error.recovery) return structuredClone(error.recovery)
+  const receipt = error.receiptFeedback?.kind ?? error.inputIssue?.kind
+  if (receipt) return { version: 'chief-recovery/v1', kind: ['stale-snapshot', 'stale-or-foreign-batch'].includes(receipt) ? 'stale-snapshot' : ['foreign-input', 'source-revoked'].includes(receipt) ? 'authority-unavailable' : receipt === 'content-changed' ? 'source-changed' : 'input-protocol', retryable: false, conditions: ['fresh scoped snapshot; retain original input state and receipt history'], actions: ['Chief reassesses current facts; never rebase an old receipt'] }
   const message = String(error.message)
   const kind = /stale|generation|snapshot.*changed/i.test(message) ? 'stale-snapshot' : /worker.*exit|confirmed.*exit|unreachable/i.test(message) ? 'worker-exit-unknown' : /interrupted delivery|candidate.*missing|matching passing tests/i.test(message) ? 'unsupported-route' : ['bot/forbidden', 'bot/delegation', 'bot/execution-revoked'].includes(error.code) ? 'authority-unavailable' : ['bot/resource', 'bot/busy'].includes(error.code) ? 'resource-unavailable' : 'execution-failed'
   return { version: 'chief-recovery/v1', kind, retryable: ['worker-exit-unknown', 'resource-unavailable'].includes(kind), conditions: kind === 'worker-exit-unknown' ? ['matching exit proof; absence of a host controller is insufficient'] : kind === 'stale-snapshot' ? ['fresh scoped snapshot'] : ['inspect current scoped evidence'], actions: kind === 'unsupported-route' ? ['select an evidence-supported role or rework explicitly'] : [] }

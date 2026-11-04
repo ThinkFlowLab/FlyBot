@@ -2196,3 +2196,21 @@ test('capacity queue preserves explicit continuation and rejects changed replay 
   assert.equal(f.rt.state.projectAttempts[row.attemptId].seedSha, saved.seedSha)
   assert.equal(f.previous.status, 'cancelled')
 })
+
+test('protected Chief exit retirement excludes only its exact current coordination lease', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false }), c = f.task.collaboration
+  const old = { id: 'prior-exited-chief', projectId: 'p1', kind: 'chief-control', status: 'interrupted', invocation: 1, exitProof: { kind: 'native-chief-prior-host-exited', confirmed: true, runId: 'prior-exited-chief', invocation: 1 } }
+  const current = { id: 'current-inspection', projectId: 'p1', kind: 'chief-control', status: 'running', invocation: 2 }
+  Object.assign(f.rt.state.projectExecutions, { [old.id]: old, [current.id]: current })
+  const actor = { memberId: 'owner-1', chiefJobId: current.id }, lease = { id: 'inspection-lease', projectId: 'p1', attemptId: current.id, chiefRunId: current.id, chiefInvocation: 2, role: 'chief', status: 'running' }
+  f.rt.state.projectResourceLeases[lease.id] = lease
+  f.rt.projectChiefControl.requireJobActor = candidate => { assert.equal(candidate, actor, 'Only the current protected job supplies the exclusion') }
+  c.claim = { id: 'old-responsibility', projectId: 'p1', taskId: f.task.id, attemptId: f.attempt.id, botId: 'p1:chief', chiefRunId: old.id, generation: c.generation, status: 'active' }
+  const payload = { projectId: 'p1', attemptId: f.attempt.id, claimId: c.claim.id, generation: c.generation, reason: 'Retire the exited old claim while this read-only inspection coordinates' }
+  lease.chiefInvocation = 1
+  await assert.rejects(f.rt.projectDelivery.reconcileExit(payload, actor), /lease-not-released/)
+  lease.chiefInvocation = 2
+  await f.rt.projectDelivery.reconcileExit(payload, actor)
+  assert.equal(c.claim.status, 'interrupted')
+  assert.equal(lease.status, 'running', 'The current Chief execution was not falsely released')
+})

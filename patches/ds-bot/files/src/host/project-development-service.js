@@ -42,6 +42,8 @@ export const developmentQuery = body => record(body) && body.version === DEVELOP
 
 export function taskView(state, task, { activity = {}, roleCatalog, isIntentCommitted = () => false } = {}) {
   const c = task.collaboration
+  const decisionIssue = task.chiefDecisionIssue?.generation === (c?.generation ?? 0) ? task.chiefDecisionIssue : null
+  const actionIssue = task.chiefActionIssue?.generation === (c?.generation ?? 0) ? task.chiefActionIssue : null
   const candidate = ownEntry(state.projectAttempts ?? {}, task.deliveryAttemptId)
   const attempt = sameTask(candidate, task) ? candidate : null
   const queue = Object.values(state.projectQueue ?? {}).filter(row => sameTask(row, task) && ['waiting', 'starting', 'blocked'].includes(row.status)).sort((a, b) => (b.enqueuedAt ?? 0) - (a.enqueuedAt ?? 0)).at(0)
@@ -66,8 +68,8 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
   else if (nativeWorker?.status === 'stopping' || nativeWorker?.status === 'stop-unconfirmed') { phase = nativeWorker.status === 'stopping' ? 'stopping' : 'blocked'; waitingFor = 'worker-exit'; reason = c?.block?.reason ?? null }
   else if (receiptCorrection?.status === 'pending') { phase = 'awaiting-input'; waitingFor = 'role-correction'; reason = 'Original role is correcting input receipts; business proposal is preserved' }
-  else if (task.chiefDecisionIssue?.status === 'pending') { phase = 'awaiting-chief'; waitingFor = 'chief-correction'; reason = task.chiefDecisionIssue.feedback.message }
-  else if (task.chiefDecisionIssue?.status === 'exhausted') { phase = 'blocked'; waitingFor = 'chief-recovery'; reason = 'Chief judgement incomplete; correction budget exhausted' }
+  else if (decisionIssue?.status === 'pending') { phase = 'awaiting-chief'; waitingFor = 'chief-correction'; reason = decisionIssue.feedback.message }
+  else if (decisionIssue?.status === 'exhausted') { phase = 'blocked'; waitingFor = 'chief-recovery'; reason = 'Chief judgement incomplete; correction budget exhausted' }
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
   else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = task.projectTask.admission.failure ? 'blocked' : 'awaiting-chief'; waitingFor = task.projectTask.admission.failure ? 'chief-recovery' : 'admission'; reason = task.projectTask.admission.failure?.reason ?? null }
   else if (c?.status === 'waiting-children') { phase = 'blocked'; waitingFor = 'children'; reason = c.block?.reason ?? null }
@@ -102,6 +104,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? nativeWorker?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
     lastMeaningfulProgress: progress.lastMeaningfulProgressAt === null ? null : { at: progress.lastMeaningfulProgressAt, evidence: progress.progressEvidence },
+    chiefIssue: actionIssue ? { runId: actionIssue.runId, kind: actionIssue.kind ?? null, stage: actionIssue.stage ?? null, code: actionIssue.code ?? null, generation: actionIssue.generation ?? null, recoveryKind: actionIssue.recoveryKind ?? null } : null,
     evidence: { tests: tests ? { sha: tests.sha, sha256: tests.sha256, passed: tests.passed === true, current: Boolean(sha && tests.sha === sha) } : null,
       review: review ? { sha: review.sha, verdict: review.verdict, current: Boolean(sha && review.sha === sha) } : null },
     inputs: Object.values(state.projectTaskInputs ?? {}).filter(row => sameTask(row, task) && row.version === 'project-task-input/v1' && row.kind !== 'handoff' && row.status === 'accepted').slice(0, 20).map(row => ({ id: row.id, sha256: row.sha256, createdAt: row.createdAt, deliveries: row.deliveries.length, readConfirmed: row.deliveries.some(d => Boolean(d.readAt)) })),
