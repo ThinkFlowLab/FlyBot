@@ -1,10 +1,11 @@
+import { harnessProfile, sdkAuthenticationFailure, authenticationError } from './project-harness-auth.js'
 import { createRoleGithub } from './project-role-github.js'
 import { roleGithubRuntime } from './project-role-github-runtime.mjs'
 // Harness worker lifecycle plugs into the existing Workflow. It never accepts a Task.
 import { randomUUID } from 'node:crypto'
 import { createHash } from 'node:crypto'
 import { mkdir, appendFile, readFile, copyFile, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, resolve, relative, dirname } from 'node:path'
+import { join, resolve, relative, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import { verifyRolePolicy, roleExecutionPrompt } from './project-role-policy.js'
 import { sdkContinuationArchive } from './project-session-continuation.js'
@@ -46,11 +47,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
   rt.projectRoleGithub = github
   async function profile(projectId, resourceId, harness, { forSetup = false } = {}) {
     const resource = rt.projectResources.setting(projectId, resourceId)
-    const principalId = rt.readProject(projectId).ownerUserId
-    const configured = ownEntry(ownEntry(resource.profiles ?? {}, principalId) ?? {}, harness)
-    const generated = isAbsolute(resource.profileRoot ?? '') ? { home: join(resource.profileRoot, sha(`${projectId}\n${principalId}`).slice(0, 24), harness), configDir: join(resource.profileRoot, sha(`${projectId}\n${principalId}`).slice(0, 24), harness, 'config') } : null
-    const selected = configured ?? (harness === 'flybot' ? null : generated)
-    if (!selected || !isAbsolute(selected.home ?? '') || !isAbsolute(selected.configDir ?? '')) throw refuse('Resource Harness needs an explicitly authorized principal/profile and model')
+    const { selected, principalId, profile } = harnessProfile(resource, rt.readProject(projectId), resourceId, harness)
     const env = { PATH: `${resource.nodePath || resource.type === 'local' ? dirname(resource.nodePath ?? process.execPath) + ':' : ''}/usr/local/bin:/usr/bin:/bin`, LANG: 'C.UTF-8', HOME: selected.home,
       ...(harness === 'flybot' ? { DSH_HOME: selected.configDir } : harness === 'codex' ? { CODEX_HOME: selected.configDir } : { CLAUDE_CONFIG_DIR: selected.configDir, API_TIMEOUT_MS: '30000', CLAUDE_CODE_MAX_RETRIES: '1', CLAUDE_AGENT_SDK_CLIENT_APP: 'flybot' }) }
     if (resource.type === 'local' && !forSetup) {
@@ -70,7 +67,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
       if (!/^(?:OPENAI_API_KEY|CODEX_API_KEY|ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|ANTHROPIC_AUTH_TOKEN)$/.test(name) || typeof reference !== 'string' || !process.env[reference]) throw refuse('Explicit Harness credential reference is unavailable')
       env[name] = process.env[reference]
     }
-    return { resource, principalId, selected, env }
+    return { resource, principalId, selected, profile, env }
   }
   function redact(value, env) {
     let text = JSON.stringify(value)
@@ -152,7 +149,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
     const conversation = chief ? ownEntry(rt.state.projectAgents ?? {}, chief.agentId) : null
     const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, chiefInvocation: chief?.runId ? rt.state.projectExecutions?.[chief.runId]?.invocation ?? null : null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
-      harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
+      harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId, profile: selected.profile,
       cwd: workspace.path, scratchDirectory, dependencyPreparationId: session.environmentPreparation?.id ?? null, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
     if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v3', contextIdentityKey: backendContextKey({ ...identity, definition: definitionKey }), definitionKey, ...(previous ? { ...(previous.restoration?.mode === 'reconstructed' ? {} : { backendSessionId: previous.sessionId }), ...(previous.restoration ? { restoration: previous.restoration } : {}), continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
     else if (chief) Object.assign(row, { logicalSessionId: chief.agentId, bindingKey, ...(chief.resumeSessionId ? { backendSessionId: chief.resumeSessionId, continuedFrom: chief.previousWorkerId } : {}) })
@@ -219,7 +216,9 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
         const currentLease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
         if (active.get(id) !== control || row.status === 'released' || currentLease?.generation !== row.generation || currentLease.status === 'released') return
         if (line.length > 1024 * 1024) throw refuse('SDK event exceeds maximum size')
-        const event = github.redact(redact(JSON.parse(line), control.env))
+        let event = github.redact(redact(JSON.parse(line), control.env))
+        const authentication = event.type === 'failure' && sdkAuthenticationFailure({ code: event.authenticationFailure?.code }, row.harness)
+        if (authentication) event = { type: 'failure', ...(event.turnId ? { turnId: event.turnId } : {}), authenticationFailure: authentication, reason: authenticationError(authentication).message }
         if (event.type === 'github-auth-request') {
           if (!control.githubScope || control.correctionTurnId || !/^[a-f0-9-]{36}$/.test(event.id ?? '')) throw refuse('Unexpected role credential request')
           row.githubAccess.requests = (row.githubAccess.requests ?? 0) + 1
@@ -321,11 +320,21 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
         if (event.type === 'configuration-checked' && event.harness === 'codex' && event.capability?.kind === 'codex-cli-config/v1' && event.capability.version === VERSIONS.codex && event.capability.modelInvoked === false) row.configurationCheck = { kind: event.capability.kind, version: event.capability.version, profile: event.capability.profile === 'chief-read-only' ? 'chief-read-only' : 'flybot-role', at: Date.now(), modelInvoked: false }
         if (event.type === 'failure') {
           row.status = 'failed'
+          const auth = sdkAuthenticationFailure({ code: event.authenticationFailure?.code }, row.harness)
+          if (auth) {
+            row.authenticationFailure = auth
+            let currentProfile
+            try { currentProfile = harnessProfile(rt.projectResources.setting(row.projectId, row.resourceId), rt.readProject(row.projectId), row.resourceId, row.harness).profile } catch { /* Retain the worker failure without overwriting a removed/revoked profile's health. */ }
+            if (currentProfile?.id === row.profile.id) {
+              rt.state.projectHarnessHealth ??= {}
+              setEntry(rt.state.projectHarnessHealth, `${row.projectId}:${row.resourceId}:${row.harness}`, { status: 'authRequired', reason: `${row.harness} authentication requires configuration on the selected resource profile (${auth.code})`, authenticationFailure: auth, profile: row.profile, principalId: row.principalId, resourceId: row.resourceId, harness: row.harness, at: Date.now() })
+            }
+          }
           if (event.contextFailure?.code === 'bot/context-resume' && event.contextFailure.kind === 'backend-session-mismatch') row.contextFailure = { code: 'bot/context-resume', kind: 'backend-session-mismatch', contextPreserved: true }
           if (event.capabilityFailure?.code === 'bot/harness-capability' && event.capabilityFailure.stage === 'configuration' && event.capabilityFailure.modelInvoked === false && ['missing-cli', 'unsupported-cli-version', 'unsupported-platform', 'cli-unavailable', 'cli-configuration', 'legacy-sandbox-conflict', 'permission-profile-mismatch'].includes(event.capabilityFailure.kind)) {
             row.capabilityFailure = event.capabilityFailure
             rt.state.projectHarnessHealth ??= {}
-            setEntry(rt.state.projectHarnessHealth, `${row.projectId}:${row.resourceId}:${row.harness}`, { status: 'environmentError', reason: event.reason, capabilityFailure: event.capabilityFailure, resourceId: row.resourceId, harness: row.harness, at: Date.now() })
+            setEntry(rt.state.projectHarnessHealth, `${row.projectId}:${row.resourceId}:${row.harness}`, { status: 'environmentError', profile: row.profile, reason: event.reason, capabilityFailure: event.capabilityFailure, resourceId: row.resourceId, harness: row.harness, at: Date.now() })
           }
           await report(row, false, event.reason)
         }
@@ -340,7 +349,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
     catch (error) {
       row.failure = { reason: error.message, at: Date.now() }
       rt.state.projectHarnessHealth ??= {}
-      setEntry(rt.state.projectHarnessHealth, `${row.projectId}:${row.resourceId}:${row.harness}`, { status: 'environmentError', reason: error.message, sdkVersion: control.observedSdkVersion ?? null, expectedSdkVersion: VERSIONS[row.harness], principalId: row.principalId, at: Date.now(), resourceId: row.resourceId, harness: row.harness })
+      setEntry(rt.state.projectHarnessHealth, `${row.projectId}:${row.resourceId}:${row.harness}`, { status: 'environmentError', profile: row.profile, reason: error.message, sdkVersion: control.observedSdkVersion ?? null, expectedSdkVersion: VERSIONS[row.harness], principalId: row.principalId, at: Date.now(), resourceId: row.resourceId, harness: row.harness })
       await release(id); throw error
     }
     finally { clearTimeout(handshakeTimer) }

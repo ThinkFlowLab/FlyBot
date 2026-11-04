@@ -529,3 +529,10 @@ original Draft with its verified author/committer and a Reviewer submits an actu
 exact-SHA App Review. No role selects credentials or executes merge; absent App mode
 retains original host sealing/publication. Frozen older policy remains historical;
 new Attempts capture the updated conventions and delivery template.
+
+
+## Resource SDK authentication — #2398
+
+#2398 Chief inspection receives safe actual worker profile/authentication failure facts.
+The host does not select another role/resource or automatically escalate; Chief judges
+next actions within existing grants. Model login failure is not a Review verdict.

@@ -1,3 +1,4 @@
+import { harnessProfile } from '../src/host/project-harness-auth.js'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -386,7 +387,7 @@ write({type:'completed',sessionId:'contract-'+process.pid,text,usage:{input_toke
   rt.config.projectResources = { execution: { type: 'local', root: directory, runtimeDir, capacity: 3, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex', 'claude-agent'],
     profiles: { 'owner-1': { codex: { home: join(directory, 'codex-home'), configDir: join(directory, 'codex-config'), model: 'contract-model' }, 'claude-agent': { home: join(directory, 'claude-home'), configDir: join(directory, 'claude-config'), model: 'contract-model' } } } } }
   rt.state.projectResourceHealth = { execution: { status: 'ready', at: Date.now() } }
-  rt.state.projectHarnessHealth = { 'p1:execution:codex': { status: 'ready' }, 'p1:execution:claude-agent': { status: 'ready' } }
+  rt.state.projectHarnessHealth = { 'p1:execution:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['execution'], rt.readProject('p1'), 'execution', 'codex').profile }, 'p1:execution:claude-agent': { status: 'ready', profile: harnessProfile(rt.config.projectResources['execution'], rt.readProject('p1'), 'execution', 'claude-agent').profile } }
   for (const role of ['developer', 'tester', 'reviewer']) await rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role, execution: { harness: role === 'developer' ? 'codex' : 'claude-agent', resourceIds: ['execution'] } }, alice)
   const started = await fixture.start('full-sdk-contract')
   assert.equal(started.attempt.status, 'running', started.attempt.failure?.message)
@@ -498,7 +499,7 @@ write({type:'sdk-event',event:{type:'thread.started',thread_id:m.settings.sessio
 });`)
   rt.config.projectResources = { one: { type: 'local', root: directory, runtimeDir, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'sdk-home'), configDir: join(directory, 'sdk-config'), model: 'contract-model' } } } } }
   rt.state.projectResourceHealth = { one: { status: 'ready', at: Date.now() } }
-  rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready' } }
+  rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['one'], rt.readProject('p1'), 'one', 'codex').profile } }
   for (const role of ['developer', 'tester', 'reviewer']) await rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role, execution: { harness: 'codex', resourceIds: ['one'] } }, alice)
   const started = await fixture.start('dynamic-pool')
   assert.ok(started.attempt, `One free resource must admit only the receiving role, instead of reserving the full DAG: ${JSON.stringify(started.queue)}`)
@@ -553,7 +554,7 @@ else text='OUTPUT handoff: '+JSON.stringify({action:'handoff',to:'p1:reviewer',r
 write({type:'sdk-event',event:{type:'thread.started',thread_id:m.settings.sessionId??('chief-contract-'+process.pid)}});write({type:'completed',sessionId:m.settings.sessionId??('chief-contract-'+process.pid),text,usage:{input_tokens:1}});
 });`)
   rt.config.projectResources = { one: { type: 'local', root: directory, runtimeDir, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'chief-sdk-home'), configDir: join(directory, 'chief-sdk-config'), model: 'contract-model' } } } } }
-  rt.state.projectResourceHealth = { one: { status: 'ready', at: Date.now() } }; rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready' } }
+  rt.state.projectResourceHealth = { one: { status: 'ready', at: Date.now() } }; rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['one'], rt.readProject('p1'), 'one', 'codex').profile } }
   for (const role of ['chief', 'developer', 'tester', 'reviewer']) await rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role, execution: { harness: 'codex', resourceIds: ['one'] } }, alice)
   rt.state.projectAgents ??= {}
   rt.state.projectAgents['public-p1'] = { id: 'public-p1', projectId: 'p1', visibility: 'public', memberId: null, botId: 'a', sessionId: 'a', carrierGeneration: 1 }
@@ -819,7 +820,7 @@ test('failed context admission preserves an existing unsealed developer workspac
 test('context failure releases an actual unbound reservation before registering any SDK Session',async t=>{
   const f=await setup(t,undefined,{pool:true});f.rt.projectPools.connect({validate:()=>({ok:true})})
   f.rt.config.projectResources={one:{type:'local',root:f.directory,capacity:1,allowedProjectOwnerIds:['owner-1'],harnesses:['codex'],profiles:{'owner-1':{codex:{home:join(f.directory,'sdk-home'),configDir:join(f.directory,'sdk-config'),model:'fixture/model'}}}}}
-  f.rt.state.projectResourceHealth={one:{status:'ready',at:Date.now()}};f.rt.state.projectHarnessHealth={'p1:one:codex':{status:'ready'}}
+  f.rt.state.projectResourceHealth={one:{status:'ready',at:Date.now()}};f.rt.state.projectHarnessHealth={'p1:one:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['one'], f.rt.readProject('p1'), 'one', 'codex').profile }}
   await f.rt.projectEndpoint('project-agent-definition',{projectId:'p1',role:'developer',execution:{harness:'codex',resourceIds:['one']}},alice)
   await f.start('unbound-context-failure')
   const a=f.attempt(),task=f.rt.state.tasks[f.task.id],dev=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r=>r.role==='developer')
@@ -891,7 +892,7 @@ test('workspace allocation failure releases an actual reservation before any ext
   f.rt.projectScheduler.wake = () => {}
   f.rt.config.projectResources = { one: { type: 'local', root: f.directory, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(f.directory, 'sdk-home'), configDir: join(f.directory, 'sdk-config'), model: 'fixture/model' } } } } }
   f.rt.state.projectResourceHealth = { one: { status: 'ready', at: Date.now() } }
-  f.rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready' } }
+  f.rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['one'], f.rt.readProject('p1'), 'one', 'codex').profile } }
   await f.rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'developer', execution: { harness: 'codex', resourceIds: ['one'] } }, alice)
   await f.start('allocation-failure')
   const a = f.attempt(), task = f.rt.state.tasks[f.task.id]
@@ -1044,7 +1045,7 @@ test('bound-resource preparation executes before SDK registration and failure re
   f.rt.projectScheduler.wake = () => {}
   f.rt.config.projectResources = { one: { type: 'local', root: f.directory, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(f.directory, 'sdk-home'), configDir: join(f.directory, 'sdk-config'), model: 'fixture/model' } } } } }
   f.rt.state.projectResourceHealth = { one: { status: 'ready', at: Date.now() } }
-  f.rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready' } }
+  f.rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['one'], f.rt.readProject('p1'), 'one', 'codex').profile } }
   await f.rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'developer', execution: { harness: 'codex', resourceIds: ['one'] } }, alice)
   const settings = f.rt.config.projectRepositories['example/demo']
   settings.workspacePrepareCommand = [process.execPath, '-e', "if(!require('fs').existsSync('code.mjs'))process.exit(31)"]
@@ -1196,7 +1197,7 @@ test('SDK Task rework preserves an unsealed same-base draft and old cleanup cann
   const f=await setup(t,undefined,{pool:true})
   f.rt.projectScheduler.wake=()=>{};f.rt.projectPools.connect({validate:()=>({ok:true})})
   f.rt.config.projectResources={one:{type:'local',root:f.directory,capacity:1,allowedProjectOwnerIds:['owner-1'],harnesses:['codex'],profiles:{'owner-1':{codex:{home:join(f.directory,'sdk-home'),configDir:join(f.directory,'sdk-config'),model:'fixture/model'}}}}}
-  f.rt.state.projectResourceHealth={one:{status:'ready',at:Date.now()}};f.rt.state.projectHarnessHealth={'p1:one:codex':{status:'ready'}}
+  f.rt.state.projectResourceHealth={one:{status:'ready',at:Date.now()}};f.rt.state.projectHarnessHealth={'p1:one:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['one'], f.rt.readProject('p1'), 'one', 'codex').profile }}
   await f.rt.projectEndpoint('project-agent-definition',{projectId:'p1',role:'developer',execution:{harness:'codex',resourceIds:['one']}},alice)
   await f.start('retained-draft')
   const previous=f.attempt(),task=f.rt.state.tasks[f.task.id],dev=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r=>r.role==='developer')
@@ -1222,8 +1223,9 @@ test('a returned SDK draft reuses its Task workspace after exact supervisor exit
   const f = await setup(t, undefined, { pool: true })
   f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
   f.rt.config.projectResources = { one: { type: 'local', root: f.directory, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'] } }
+  f.rt.config.projectResources.one.profileRoot = join(f.directory, 'proof-profile')
   f.rt.state.projectResourceHealth = { one: { status: 'ready' } }
-  f.rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready' } }
+  f.rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['one'], f.rt.readProject('p1'), 'one', 'codex').profile } }
   await f.rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'developer', execution: { harness: 'codex', resourceIds: ['one'] } }, alice)
   await f.start('supervised-draft')
   const previous = f.attempt(), task = f.rt.state.tasks[f.task.id]
@@ -1400,7 +1402,8 @@ test('an approved operator object reaches a resource clone through the existing 
   git(f.repository,['update-ref',ref,sha]);git(f.repository,['reset','--hard',base])
   const remote=join(f.directory,'emulated-resource');mkdirSync(remote)
   f.rt.config.projectResources={remote:{type:'docker',root:remote,container:'fixture',user:'1000:1000',capacity:1,allowedProjectOwnerIds:['owner-1'],harnesses:['codex']}}
-  f.rt.state.projectResourceHealth={remote:{status:'ready'}};f.rt.state.projectHarnessHealth={'p1:remote:codex':{status:'ready'}}
+  f.rt.config.projectResources.remote.profileRoot = join(f.directory, 'proof-profile')
+  f.rt.state.projectResourceHealth={remote:{status:'ready'}};f.rt.state.projectHarnessHealth={'p1:remote:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['remote'], f.rt.readProject('p1'), 'remote', 'codex').profile }}
   // Local transport emulation exercises real Git/bundle hashes, not Docker isolation.
   f.rt.projectResources.command=async(_p,_r,{argv,cwd})=>({stdout:execFileSync(argv[0],argv.slice(1),{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']})})
   f.rt.projectResources.uploadFile=async(_p,_r,source,target)=>copyFileSync(source,target)
@@ -1806,7 +1809,7 @@ async function baselineResourceFixture(t, kind = 'local') {
   f.rt.projectScheduler.wake = () => Promise.resolve(); f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
   const resourceRoot = join(f.directory, 'resource'); mkdirSync(resourceRoot)
   f.rt.config.projectResources = { baseline: { type: kind, root: resourceRoot, ...(kind === 'docker' ? { container: 'isolated-fixture', user: '1000:1000' } : {}), capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(f.directory, 'sdk-home'), configDir: join(f.directory, 'sdk-config'), model: 'fixture/model' } } } } }
-  f.rt.state.projectResourceHealth = { baseline: { status: 'ready' } }; f.rt.state.projectHarnessHealth = { 'p1:baseline:codex': { status: 'ready' } }
+  f.rt.state.projectResourceHealth = { baseline: { status: 'ready' } }; f.rt.state.projectHarnessHealth = { 'p1:baseline:codex': { status: 'ready', profile: harnessProfile(f.rt.config.projectResources['baseline'], f.rt.readProject('p1'), 'baseline', 'codex').profile } }
   if (kind === 'docker') {
     // Real Git and bundle verification, emulated transport; actual Docker acceptance is separate.
     f.rt.projectResources.command = async (_p, _r, { argv, cwd }) => ({ stdout: execFileSync(argv[0], argv.slice(1), { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) })

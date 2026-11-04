@@ -137,3 +137,10 @@ Chief invocation history accepts the combined configured maximum: one initial in
 #2365 keeps the existing public transport and regenerates OpenAPI for role App
 status/identity metadata and candidate-phase publication recovery. No public
 credential issuance API or deployment change; see [role contract](../role-github-apps.md).
+
+
+## Resource SDK authentication — #2398
+
+#2398 extends original HealthCheck/Terminal/ExecutionMetadata schemas with profile
+binding and sanitized SDK auth facts. Existing permissions and routes remain; only the
+explicit terminal administrator receives target paths. OpenAPI is regenerated.

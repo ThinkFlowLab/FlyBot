@@ -1,3 +1,4 @@
+import { harnessProfile } from '../src/host/project-harness-auth.js'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
@@ -194,7 +195,7 @@ if(m.type==='input'){if(!m.prompt.includes('Verified pnpm decision'))process.exi
     if(data.memoryUpdates?.length)memoryWrites+=data.memoryUpdates.length
     return {reads:data.contextRequests?.length?readContextArchive(snapshot,data.contextRequests):[],writes:[]}
   }}
-  rt.config.projectResources.r.harnesses=['codex'];rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex':{status:'ready'}};delete rt.state.projectResourceLeases.l
+  rt.config.projectResources.r.harnesses=['codex'];rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['r'], rt.readProject('p'), 'r', 'codex').profile }};delete rt.state.projectResourceLeases.l
   const agent={id:'public-p',projectId:'p',lastRequest:{}}
   const id=await harness.chiefTurn({agent,delegation:{id:'d',definitionRevision:1},definition:{execution:{harness:'codex',resourceIds:['r'],model:'test-model'}},context,text:'Read the saved decision',onResult:finish})
   const result=await done
@@ -210,7 +211,7 @@ if(m.type==='input'){if(!m.prompt.includes('Verified pnpm decision'))process.exi
 
 test('conversation carriers for non-Chief roles cannot gain development shell or write capabilities', async t => {
   const {rt,harness}=await fixture(t)
-  rt.config.projectResources.r.harnesses=['codex'];rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex':{status:'ready'}};delete rt.state.projectResourceLeases.l
+  rt.config.projectResources.r.harnesses=['codex'];rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['r'], rt.readProject('p'), 'r', 'codex').profile }};delete rt.state.projectResourceLeases.l
   rt.projectAgents={isDelegationActive:()=>true}
   for(const role of ['developer','reviewer']) {
     const agent={id:'room-'+role,projectId:'p',role,roomId:'room',lastRequest:{}}
@@ -415,7 +416,7 @@ test('changed caller prompt resumes the Task-role SDK thread when its role defin
   session.id = 'returned-role-session'
   session.attemptId = 'second-attempt'
   rt.state.projectResourceHealth = { r: { status: 'ready' } }
-  rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready' } }
+  rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['r'], rt.readProject('p'), 'r', 'codex').profile } }
   session.resourceLease = await rt.projectResources.reserve({ projectId: 'p', attemptId: session.attemptId, role: 'developer', sessionKey: session.id, harness: 'codex', resourceIds: ['r'] })
   const next = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Tester returned the Task with new feedback and changed candidate facts' })
   assert.equal(rt.state.projectHarnessWorkers[next].continuedFrom, first)
@@ -450,7 +451,7 @@ test('every SDK delivery role resumes the original thread across an admitted cwd
     rt.state.projectAttempts.a2 = { id: 'a2', projectId: 'p', taskId: 't', status: 'running', roleSessions: { [role]: nextSession }, workspaces: { [role]: workspace } }
     rt.state.projectWorkspaces = { [workspace.id]: workspace }
     rt.state.tasks.t.deliveryAttemptId = 'a2'
-    rt.state.projectResourceHealth = { r: { status: 'ready' } }; rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready' } }
+    rt.state.projectResourceHealth = { r: { status: 'ready' } }; rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['r'], rt.readProject('p'), 'r', 'codex').profile } }
     nextSession.resourceLease = await rt.projectResources.reserve({ projectId: 'p', attemptId: 'a2', role, sessionKey: nextSession.id, harness: 'codex', resourceIds: ['r'] })
     rt.projectDelivery.sessionFor = () => nextSession
     rt.projectDelivery.ownsWorkspace = (_projectId, selected) => selected === path ? workspace : null
@@ -654,7 +655,7 @@ test('an actual SDK protocol subprocess must exit before its Chief input wait fr
 
 test('Chief reservation save failure must release its unstarted resource',async t=>{
 const {rt,harness}=await fixture(t);
-rt.projectAgents={isDelegationActive:()=>true}; rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex':{status:'ready'}};delete rt.state.projectResourceLeases.l;
+rt.projectAgents={isDelegationActive:()=>true}; rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['r'], rt.readProject('p'), 'r', 'codex').profile }};delete rt.state.projectResourceLeases.l;
 rt.state.projectExecutions={inspection:{invocation:1}};let saves=0;rt.save=async()=>{if(++saves===2)throw new Error('correlation save failed')};
 await assert.rejects(harness.chiefTurn({agent:{id:'public-p',projectId:'p',lastRequest:{}},delegation:{id:'d',chiefJob:{runId:'inspection',invocation:1}},definition:{execution:{harness:'codex',resourceIds:['r']}},context:{text:'Inspect'},text:'Inspect',onResult:async()=>{}}),/correlation save failed/);
 assert.equal(rt.projectResources.occupied('r'),0);
@@ -744,4 +745,27 @@ test('role App worker capability is checked before admission and auth frames nev
   assert.ok(!log.includes('github-auth')); assert.ok(!log.includes(token)); assert.ok(!JSON.stringify(rt.state).includes(token))
   await harness.release(id)
   assert.equal(row.githubAccess.renewing, false)
+})
+
+test('refresh-token reuse reaches the original worker/profile health without becoming a code verdict or leaking provider text', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const file = join(rt.config.projectResources.r.runtimeDir, 'src/host/project-harness-worker.mjs')
+  let source = await readFile(file, 'utf8')
+  source = source.replace("write({type:'completed',sessionId:'bound-thread',text:'OUTPUT implementation: actual contract worker output',usage:{input_tokens:1}});", "write({type:'failure',authenticationFailure:{code:'refresh_token_reused'},reason:'fixture-private-auth-response'});")
+  await writeFile(file, source)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Review the current candidate' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Frozen requirement', outputs: [{ name: 'implementation' }] })
+  const failed = await result, row = rt.state.projectHarnessWorkers[id], health = rt.projectResources.harnessHealth('p','r','codex')
+  assert.equal(failed.ok, false); assert.match(failed.text, /refresh_token_reused/)
+  assert.equal(health.status, 'authRequired'); assert.equal(health.profile.id, row.profile.id)
+  assert.equal(row.authenticationFailure.code, 'refresh_token_reused')
+  assert.ok(!(await readFile(row.eventLog,'utf8')).includes('fixture-private-auth-response'))
+  assert.ok(!JSON.stringify(rt.state).includes('fixture-private-auth-response'))
+  assert.equal(rt.state.projectAttempts, undefined, 'Authentication does not manufacture a candidate/test/Review verdict')
+  const before = row.profile.id
+  rt.config.projectResources.r.profiles.owner.codex.configDir += '-changed'
+  const current = rt.projectResources.harnessHealth('p','r','codex')
+  assert.equal(current.status, 'unconfigured'); assert.notEqual(current.profile.id, before)
+  await harness.release(id)
 })

@@ -1,7 +1,8 @@
+import { sdkAuthenticationFailure, authenticationError } from './project-harness-auth.js'
 import { fileURLToPath } from 'node:url'
 import { validateCodexConfiguration } from './project-codex-config.js'
 // One real SDK turn. The host owns Workflow completion and acceptance, never this driver.
-export async function runHarnessTurn(request, { emit, permission, signal, validateCodex = validateCodexConfiguration, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
+async function executeHarnessTurn(request, { emit, permission, signal, validateCodex = validateCodexConfiguration, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
   const toolsDisabled = request.noTools || request.protocolCorrection === true
   let text = '', completed = false, sessionId = request.sessionId ?? null, usage = null
   if (request.harness === 'codex') {
@@ -33,6 +34,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
     const { events } = await thread.runStreamed(request.prompt, { signal })
     for await (const event of events) {
       if (event.type === 'thread.started' && (request.sessionId && event.thread_id !== request.sessionId || request.forbiddenSessionId && event.thread_id === request.forbiddenSessionId)) throw Object.assign(new Error('Codex resumed a different Task-role thread'), { code: 'bot/context-resume' })
+      if (['turn.failed', 'error'].includes(event.type)) { const auth = sdkAuthenticationFailure(event, request.harness); if (auth) throw authenticationError(auth) }
       await emit({ type: 'sdk-event', harness: request.harness, event })
       if (event.type === 'thread.started') sessionId = event.thread_id
       if (event.type === 'item.completed' && event.item?.type === 'agent_message') text = event.item.text
@@ -60,6 +62,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
     try {
       for await (const event of stream) {
         if (event.session_id && (request.sessionId && event.session_id !== request.sessionId || request.forbiddenSessionId && event.session_id === request.forbiddenSessionId)) throw Object.assign(new Error('Claude returned an incompatible Task-role Session'), { code: 'bot/context-resume' })
+        if (event.type === 'result' && event.is_error) { const auth = sdkAuthenticationFailure({ message: event.result, code: event.error }, request.harness); if (auth) throw authenticationError(auth) }
         await emit({ type: 'sdk-event', harness: request.harness, event })
         if (event.session_id) sessionId = event.session_id
         if (event.type === 'result') {
@@ -71,4 +74,9 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
   } else throw new Error('Unknown SDK Harness')
   if (!completed || !sessionId || signal?.aborted) throw new Error('SDK stream ended without a completed turn and bound Session')
   return { text, sessionId, usage }
+}
+
+export async function runHarnessTurn(request, ports) {
+  try { return await executeHarnessTurn(request, ports) }
+  catch (error) { const auth = sdkAuthenticationFailure({ code: error?.authenticationFailure?.code }, request.harness) ?? sdkAuthenticationFailure(error, request.harness); if (auth) throw authenticationError(auth); throw error }
 }

@@ -1,7 +1,9 @@
+import { harnessProfile, sdkAuthenticationFailure } from './project-harness-auth.js'
 // Owner setup: bounded connectivity probes and private target-resource PTYs.
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
-import { join, resolve } from 'node:path'
+import { join, resolve, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { ownEntry, setEntry } from './store.js'
 import { createPluginModel } from './plugin-model.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/forbidden' })
@@ -25,7 +27,7 @@ export function createProjectRuntimeSetup(rt) {
     if (!model) return { status: 'unconfigured', reason: 'Set an explicit SDK model on this role/profile' }
     const id = `probe-${randomUUID()}`, cwd = join(resource.root, 'connection-probes', id)
     const lease = await rt.projectResources.reserve({ projectId: project.id, attemptId: id, sessionKey: id, role: 'probe', harness: body.harness, resourceIds: [body.resourceId], purpose: 'probe' })
-    let child, exited = false, stopped = false, completion = false, authError = false, observedSdkVersion = null, readyObserved = false, startupFailed = false
+    let child, exited = false, stopped = false, completion = false, authError = false, authenticationFailure = null, observedSdkVersion = null, readyObserved = false, startupFailed = false
     try {
       await rt.projectResources.command(project.id, body.resourceId, { cwd: resource.root, argv: ['mkdir', '-p', cwd] })
       await rt.projectResources.command(project.id, body.resourceId, { cwd, argv: ['git', 'init', '-q'] })
@@ -46,7 +48,7 @@ export function createProjectRuntimeSetup(rt) {
           if (event.type === 'ready') { readyObserved = true; const version = event.sdk?.[body.harness]; observedSdkVersion = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$/.test(version ?? '') ? version : null; handshake() }
           if (event.type === 'stopped') stopped = event.released === true
           if (event.type === 'completed') { completion = true; finish() }
-          if (event.type === 'failure') finish()
+          if (event.type === 'failure') { authenticationFailure = sdkAuthenticationFailure({ code: event.authenticationFailure?.code }, body.harness); if (authenticationFailure) authError = true; finish() }
           if (/401|403|api.key|authentication|unauthorized|login required/i.test(line)) authError = true
         } catch { /* Malformed probe output is not successful authentication. */ }
       })
@@ -59,21 +61,24 @@ export function createProjectRuntimeSetup(rt) {
         ...(selected.selected.baseUrl ? { baseUrl: selected.selected.baseUrl } : {}) }, prompt: 'Reply ready. Do not use tools.' }) + '\n')
       await Promise.race([finished, closed, delay(10_000)])
       if (!exited) { child.stdin.end(JSON.stringify({ type: 'stop' }) + '\n'); await Promise.race([closed, delay(6000)]) }
-      return { status: completion && exited && stopped ? 'ready' : authError ? 'authRequired' : 'environmentError', reason: completion && exited && stopped ? 'Minimal SDK inference completed; this is not task execution' : authError ? 'SDK authentication is required or was rejected' : 'SDK/runtime probe did not complete within its bound', model, sdkVersion: observedSdkVersion }
+      return { profile: selected.profile, ...(authenticationFailure ? { authenticationFailure } : {}), status: completion && exited && stopped ? 'ready' : authError ? 'authRequired' : 'environmentError', reason: completion && exited && stopped ? 'Minimal SDK inference completed; this is not task execution' : authError ? `SDK authentication requires configuration on the selected resource profile${authenticationFailure ? ' (' + authenticationFailure.code + ')' : ''}` : 'SDK/runtime probe did not complete within its bound', model, sdkVersion: observedSdkVersion }
     } finally {
       await rt.projectResources.release(lease.id, lease.generation, ...(child ? [{ handle: id, exited: exited && (stopped || startupFailed) }] : []))
       if (exited && (stopped || startupFailed) || !child) await rt.projectResources.command(project.id, body.resourceId, { cwd: resource.root, argv: ['rm', '-rf', '--', cwd] }).catch(() => {}) // Owned probe directory only; failed cleanup is not auth success.
     }
   }
-  async function check(body, actor) {
+  async function check(body, actor, { fresh = false } = {}) {
     const { project, resource } = await authorized(body, actor)
     const key = `${project.id}:${body.resourceId}:${body.harness}`
-    if (checks.has(key)) return checks.get(key)
-    const previous = ownEntry(rt.state.projectHarnessHealth ?? {}, key)
-    if (previous && Date.now() - previous.at < 3000 && previous.status !== 'checking') return structuredClone(previous)
+    let profile = null
+    try { if (body.harness !== 'flybot') profile = harnessProfile(resource, project, body.resourceId, body.harness).profile } catch { /* The existing SDK configuration error result below owns incomplete profiles. */ }
+    const checkKey = key + ':' + (profile?.id ?? 'native-or-unconfigured')
+    if (checks.has(checkKey)) return checks.get(checkKey)
+    const previous = rt.projectResources.harnessHealth(project.id, body.resourceId, body.harness)
+    if (!fresh && previous && Date.now() - previous.at < 3000 && previous.status !== 'checking') return structuredClone(previous)
     const promise = (async () => {
       rt.state.projectHarnessHealth ??= {}
-      setEntry(rt.state.projectHarnessHealth, key, { status: 'checking', at: Date.now(), principalId: project.ownerUserId })
+      setEntry(rt.state.projectHarnessHealth, key, { status: 'checking', profile, at: Date.now(), principalId: project.ownerUserId })
       await rt.save()
       let result
       const environment = await rt.projectResources.probe(project.id, body.resourceId)
@@ -89,10 +94,14 @@ export function createProjectRuntimeSetup(rt) {
         try { result = await probeSDK(body, project, resource) }
         catch (failure) { result = { status: failure.code === 'bot/resource' ? 'unreachable' : failure.code === 'bot/harness' ? 'unconfigured' : 'environmentError', reason: failure.code === 'bot/resource' ? 'Resource capacity or environment is unavailable' : 'Explicit SDK profile, model or runtime configuration is incomplete' } }
       }
-      const row = { ...result, at: Date.now(), principalId: project.ownerUserId, sdkVersion: result.sdkVersion ?? null, expectedSdkVersion: rt.projectHarness.versions[body.harness] ?? null, resourceId: body.resourceId, harness: body.harness }
+      await authorized(body, actor)
+      let currentProfile = null
+      try { if (body.harness !== 'flybot') currentProfile = harnessProfile(rt.projectResources.setting(project.id, body.resourceId), rt.readProject(project.id), body.resourceId, body.harness).profile } catch { /* A changed/removed profile cannot inherit the old probe outcome. */ }
+      if (profile?.id !== currentProfile?.id) return { status: 'unconfigured', reason: 'SDK profile changed during the check; inspect the current resource profile', profile: currentProfile, resourceId: body.resourceId, harness: body.harness, at: Date.now() }
+      const row = { ...result, profile, at: Date.now(), principalId: project.ownerUserId, sdkVersion: result.sdkVersion ?? null, expectedSdkVersion: rt.projectHarness.versions[body.harness] ?? null, resourceId: body.resourceId, harness: body.harness }
       setEntry(rt.state.projectHarnessHealth, key, row); await rt.save(); rt.projectScheduler?.wake(); return structuredClone(row)
-    })().finally(() => checks.delete(key))
-    checks.set(key, promise); return promise
+    })().finally(() => checks.delete(checkKey))
+    checks.set(checkKey, promise); return promise
   }
   async function close(terminal, reason) {
     if (terminal.closed) return
@@ -102,7 +111,7 @@ export function createProjectRuntimeSetup(rt) {
     terminal.closed = true; terminal.output = []
     Object.assign(ownEntry(audits(), terminal.id), { closedAt: Date.now(), reason, released: terminal.released === true })
     await rt.save()
-    if (reason === 'owner-close') void check(terminal.target, terminal.actor).catch(() => {}) // Current grants are rechecked; a failed recheck does not reopen the terminal.
+    if (reason === 'owner-close') void check(terminal.target, terminal.actor, { fresh: true }).catch(() => {}) // Current grants are rechecked; a failed recheck does not reopen the terminal.
   }
   async function open(body, actor) {
     const { project, resource } = await authorized(body, actor, true)
@@ -111,8 +120,20 @@ export function createProjectRuntimeSetup(rt) {
     const selected = await rt.projectHarness.profile(project.id, body.resourceId, body.harness, { forSetup: true })
     const runtime = resource.runtimeDir ?? resolve(import.meta.dirname, '../..')
     await rt.projectResources.command(project.id, body.resourceId, { cwd: resource.root, argv: ['mkdir', '-p', selected.selected.home, selected.selected.configDir] })
+    let codexLoginAvailable = false
+    if (body.harness === 'codex') {
+      try {
+        const module = pathToFileURL(join(runtime, 'src/host/project-codex-config.js')).href
+        const result = await rt.projectResources.command(project.id, body.resourceId, { cwd: resource.root, argv: ['node', '--input-type=module', '-e', `import {codexExecutable} from ${JSON.stringify(module)}; process.stdout.write(JSON.stringify(codexExecutable()))`] })
+        const executable = JSON.parse(result.stdout).executable
+        if (!executable || !executable.startsWith('/')) throw Error('Invalid resource CLI path')
+        selected.env.PATH = dirname(executable) + ':' + selected.env.PATH
+        codexLoginAvailable = true
+      } catch { /* A missing SDK must not block its own setup terminal; never substitute an ambient CLI. */ }
+    }
+
     const process = rt.projectResources.startProcess(project.id, body.resourceId, { cwd: resource.root, argv: ['python3', '-u', join(runtime, 'src/host/project-terminal-worker.py')] })
-    const terminal = { id: `terminal-${randomUUID()}`, actor: { ...actor }, target: { projectId: project.id, resourceId: body.resourceId, harness: body.harness, role: body.role }, process,
+    const terminal = { id: `terminal-${randomUUID()}`, profile: selected.profile, actor: { ...actor }, target: { projectId: project.id, resourceId: body.resourceId, harness: body.harness, role: body.role }, process,
       output: [], seq: 0, createdAt: Date.now(), lastSeen: Date.now(), expiresAt: Date.now() + 10 * 60_000, released: false }
     terminal.exited = new Promise(resolve => process.once('close', () => { terminal.processExited = true; resolve() }))
     process.stdin.on('error', () => { terminal.processInputEnded = true })
@@ -129,17 +150,19 @@ export function createProjectRuntimeSetup(rt) {
       } catch { /* PTY protocol failures do not become screen/log output. */ }
     })
     terminals.set(terminal.id, terminal)
-    setEntry(audits(), terminal.id, { id: terminal.id, projectId: project.id, resourceId: body.resourceId, harness: body.harness, principalId: selected.principalId, initiatedBy: actor.memberId, createdAt: terminal.createdAt })
+    setEntry(audits(), terminal.id, { id: terminal.id, projectId: project.id, resourceId: body.resourceId, harness: body.harness, principalId: selected.principalId, profile: selected.profile, initiatedBy: actor.memberId, createdAt: terminal.createdAt })
     process.stdin.write(JSON.stringify({ cwd: selected.selected.home, env: { ...selected.env, TERM: 'xterm-256color', FLYBOT_PROFILE_DIR: selected.selected.configDir, FLYBOT_SETUP_HARNESS: body.harness } }) + '\n')
     await rt.save()
-    return { terminalId: terminal.id, expiresAt: terminal.expiresAt, resourceId: body.resourceId, harness: body.harness,
-      instructions: body.harness === 'flybot' ? 'Configure the explicitly registered native DSH profile using its provider setup commands. Close to recheck.' : `Configure this private profile. To save an API key with hidden input: node ${JSON.stringify(join(runtime, 'src/host/project-profile-auth.mjs'))}. Codex may also use its supported login/device flow in this same profile. Claude Agent SDK uses API/cloud credentials.` }
+    return { terminalId: terminal.id, expiresAt: terminal.expiresAt, resourceId: body.resourceId, harness: body.harness, profile: { ...selected.profile, home: selected.selected.home, configDir: selected.selected.configDir }, ...(body.harness === 'codex' ? { codexLoginAvailable } : {}),
+      instructions: body.harness === 'flybot' ? 'Configure the explicitly registered native DSH profile using its provider setup commands. Close to recheck.' : `Configure this private profile. To save an API key with hidden input: node ${JSON.stringify(join(runtime, 'src/host/project-profile-auth.mjs'))}. ${body.harness === 'codex' ? codexLoginAvailable ? 'The SDK-resolved Codex CLI is on PATH; use codex login --device-auth here.' : 'The pinned Codex CLI is unavailable; provision the selected runtime before Codex login.' : ''} Codex login/device flow must run in this terminal's CODEX_HOME; this is the same profile used by the SDK worker. A cached login is not proof that token refresh succeeds. Do not copy old auth caches into new Attempts. Claude Agent SDK uses API/cloud credentials.` }
   }
   async function access(body, actor, heartbeat = true) {
     const terminal = terminals.get(body.terminalId)
     if (!terminal || terminal.actor.memberId !== actor.memberId || terminal.actor.sessionId !== actor.sessionId) throw refuse('This terminal belongs to another authenticated Session')
     try {
       await authorized(terminal.target, actor, true)
+      const resource = rt.projectResources.setting(terminal.target.projectId, terminal.target.resourceId)
+      if (harnessProfile(resource, rt.readProject(terminal.target.projectId), terminal.target.resourceId, terminal.target.harness).profile.id !== terminal.profile.id) { await close(terminal, 'profile-changed'); throw refuse('Resource profile changed; reopen its configuration terminal') }
       const session = ownEntry(rt.state.authSessions ?? {}, actor.sessionId)
       if (!session || session.revokedAt || Date.now() > terminal.expiresAt || rt.platformIdentityEnabled && !await (rt.validateHumanActor ? rt.validateHumanActor(actor) : rt.validatePlatformActor(actor))) throw refuse('Configuration terminal expired or access was revoked')
     } catch (error) { await close(terminal, 'authorization-ended'); throw error }

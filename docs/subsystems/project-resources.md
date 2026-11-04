@@ -172,3 +172,11 @@ reservation/batch save failures cannot leak a startup capability before return.
 Per-execution helpers/private FIFO metadata remain isolated from global auth and
 ordinary host tests; current resource/lease authority gates every grant. App keys
 stay on the host. [Configuration and expiry boundaries](../role-github-apps.md).
+
+
+## Resource SDK authentication — #2398
+
+#2398 binds SDK readiness to the current profile identity. Legacy observations without
+binding and changed profile/container/principal targets require the original runtime
+check; probe leases stay eligible to repair readiness. list/select share this projection.
+Model authRequired is distinct from environment health and does not prove worker exit.

@@ -155,3 +155,10 @@ Attempt SDK publication/Effect references. Whitelists omit credentials and priva
 helper paths. Original PR metadata distinguishes Dev creator and host merger identities;
 context pages retain full scoped evidence/recovery history. OpenAPI documents the
 optional candidate adoption phase of the original publication-retry command.
+
+
+## Resource SDK authentication — #2398
+
+#2398 execution metadata includes safe profile identity and known authenticationFailure
+codes. No profile paths or provider error payload enter shared Task views. Actual setup
+paths are returned only through the existing human resource-administrator terminal.

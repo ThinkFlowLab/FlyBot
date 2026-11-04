@@ -14,6 +14,9 @@ owned_paths:
   - core/test/project-task-sessions.test.js
   - core/src/host/project-git-sandbox.js
   - core/test/project-git-sandbox.test.js
+  - core/src/host/project-harness-auth.js
+  - core/test/project-harness-auth.test.js
+  - core/test/project-harness-auth-sdk.test.js
   - core/src/host/project-harness.js
   - core/src/host/project-codex-config.js
   - core/test/project-codex-config.test.js
@@ -477,3 +480,12 @@ withholding saved Owner keys only for active App roles. Each grant rechecks curr
 worker/claim/resource/connection; stop disables renewal and cleanup retains honest
 expiry/unknown-exit facts. Actual SDK fixture acceptance is separate from live App
 writes. [Contract](../role-github-apps.md).
+
+
+## Resource SDK authentication — #2398
+
+#2398 shares the original profile selector across setup, probes and workers. Stable
+safe profile IDs omit secrets/paths and preserve generated directories and Task-role
+binding keys. Typed SDK authentication errors become authRequired for that profile;
+raw provider error text is excluded from evidence. No credential copying, OAuth
+manager, automatic role choice or change to SDK sandbox policy.

@@ -396,3 +396,17 @@ const publicationRetry = commands.get('attempt.publication-retry')
 publicationRetry.request.properties.phase = lit('candidate')
 publicationRetry.preconditions = [...projectActive, 'current-attempt-requirements-authority-and-confirmed-worker-exit', 'candidate-phase-requires-role-app-mode-original-dev-session-and-retained-clean-commit', 'omitted-phase-requires-matching-host-tests-review-and-existing-pr-binding']
 publicationRetry.notes = 'phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.'
+
+// SDK model authentication is observed on the selected resource profile, separate from Task outcomes.
+schemas.HarnessProfile = obj({ id: hash, source: choice('configured', 'generated'), resourceId: id, principalId: id, harness }, ['id', 'source', 'resourceId', 'principalId', 'harness'])
+schemas.SdkAuthenticationFailure = obj({ harness, code: choice('refresh_token_reused', 'refresh_token_expired', 'refresh_token_invalidated', 'invalid_refresh_token', 'invalid_grant', 'invalid_api_key', 'authentication_required', 'authentication_error'), reauthenticationRequired: lit(true) }, ['harness', 'code', 'reauthenticationRequired'])
+schemas.HealthCheck.properties.profile = nullable(ref('HarnessProfile'))
+schemas.HealthCheck.properties.authenticationFailure = ref('SdkAuthenticationFailure')
+schemas.ExecutionMetadata.properties.profile = nullable(ref('HarnessProfile'))
+schemas.ExecutionMetadata.properties.authenticationFailure = nullable(ref('SdkAuthenticationFailure'))
+schemas.Resource.properties.harnessStatus.items.properties.profile = ref('HarnessProfile')
+schemas.Resource.properties.harnessStatus.items.properties.authenticationFailure = ref('SdkAuthenticationFailure')
+schemas.Terminal.properties.profile = obj({ ...schemas.HarnessProfile.properties, home: str(), configDir: str() }, [...schemas.HarnessProfile.required, 'home', 'configDir'], { description: 'Only returned by terminal-open to the explicit resource administrator; actual target paths for login, never credential contents.' })
+schemas.Terminal.properties.codexLoginAvailable = bool
+native.get('project-runtime-check').notes += ' Health is bound to the actual selected profile. Legacy/changed profile readiness must be checked again. authRequired preserves a safe SDK error code; it is not a code-test/Review failure or a Task routing decision.'
+native.get('project-terminal-open').notes += ' Returns the actual HOME/configDir only to this authorized administrator. Codex CLI resolution uses the resource SDK installation; re-login happens in that terminal CODEX_HOME. No host auth cache is copied.'

@@ -3969,6 +3969,12 @@
                       "type": "null"
                     }
                   ]
+                },
+                "profile": {
+                  "$ref": "#/components/schemas/HarnessProfile"
+                },
+                "authenticationFailure": {
+                  "$ref": "#/components/schemas/SdkAuthenticationFailure"
                 }
               },
               "additionalProperties": true,
@@ -4035,6 +4041,19 @@
                 "type": "null"
               }
             ]
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HarnessProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authenticationFailure": {
+            "$ref": "#/components/schemas/SdkAuthenticationFailure"
           }
         },
         "additionalProperties": true,
@@ -4093,6 +4112,62 @@
           },
           "reason": {
             "type": "string"
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "configured",
+                  "generated"
+                ]
+              },
+              "resourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "principalId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "harness": {
+                "type": "string",
+                "enum": [
+                  "flybot",
+                  "codex",
+                  "claude-agent"
+                ]
+              },
+              "home": {
+                "type": "string"
+              },
+              "configDir": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "source",
+              "resourceId",
+              "principalId",
+              "harness",
+              "home",
+              "configDir"
+            ],
+            "description": "Only returned by terminal-open to the explicit resource administrator; actual target paths for login, never credential contents."
+          },
+          "codexLoginAvailable": {
+            "type": "boolean"
           }
         },
         "additionalProperties": true
@@ -5297,6 +5372,26 @@
                 "type": "null"
               }
             ]
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HarnessProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authenticationFailure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SdkAuthenticationFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true
@@ -5849,6 +5944,86 @@
           "sha",
           "number",
           "at"
+        ]
+      },
+      "HarnessProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "generated"
+            ]
+          },
+          "resourceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "principalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "harness": {
+            "type": "string",
+            "enum": [
+              "flybot",
+              "codex",
+              "claude-agent"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source",
+          "resourceId",
+          "principalId",
+          "harness"
+        ]
+      },
+      "SdkAuthenticationFailure": {
+        "type": "object",
+        "properties": {
+          "harness": {
+            "type": "string",
+            "enum": [
+              "flybot",
+              "codex",
+              "claude-agent"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "refresh_token_reused",
+              "refresh_token_expired",
+              "refresh_token_invalidated",
+              "invalid_refresh_token",
+              "invalid_grant",
+              "invalid_api_key",
+              "authentication_required",
+              "authentication_error"
+            ]
+          },
+          "reauthenticationRequired": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "harness",
+          "code",
+          "reauthenticationRequired"
         ]
       },
       "DevelopmentQueryInboxListPayload": {
@@ -32247,7 +32422,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4"
+        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
       }
     },
     {
@@ -35232,7 +35407,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4"
+        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
       }
     },
     {
@@ -35337,7 +35512,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4"
+        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
       }
     },
     {
@@ -35714,7 +35889,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "94f597a01f1f02c8c87c07822570ac5e3da874b5e6cd30cc5282ca2f79743570"
+        "sha256": "6b6a5459d82307821fdcdb7ab25ab5ffa7ab0ee1177768a8d5d5094592c35da7"
       }
     },
     {
@@ -41034,7 +41209,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-resources.js",
-        "sha256": "24582ddb88111dc46cec134b5bb4489c8c530448b827ffba998d97e6f3b5401e"
+        "sha256": "9a267001af697abdcdd9d3dd3e06e97d9e3042b77e6e31cb781ca57a4ada5920"
       }
     },
     {
@@ -41128,10 +41303,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": true,
-      "notes": "Can invoke paid minimal inference. ready means connectivity only, not task execution.",
+      "notes": "Can invoke paid minimal inference. ready means connectivity only, not task execution. Health is bound to the actual selected profile. Legacy/changed profile readiness must be checked again. authRequired preserves a safe SDK error code; it is not a code-test/Review failure or a Task routing decision.",
       "implementation": {
         "path": "core/src/host/project-runtime-setup.js",
-        "sha256": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0"
+        "sha256": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c"
       }
     },
     {
@@ -41230,10 +41405,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": false,
-      "notes": "FBA tokens have no live human Session and cannot use this endpoint, including watch mode.",
+      "notes": "FBA tokens have no live human Session and cannot use this endpoint, including watch mode. Returns the actual HOME/configDir only to this authorized administrator. Codex CLI resolution uses the resource SDK installation; re-login happens in that terminal CODEX_HOME. No host auth cache is copied.",
       "implementation": {
         "path": "core/src/host/project-runtime-setup.js",
-        "sha256": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0"
+        "sha256": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c"
       }
     },
     {
@@ -41315,7 +41490,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-runtime-setup.js",
-        "sha256": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0"
+        "sha256": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c"
       }
     },
     {
@@ -41397,7 +41572,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-runtime-setup.js",
-        "sha256": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0"
+        "sha256": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c"
       }
     },
     {
@@ -41479,7 +41654,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-runtime-setup.js",
-        "sha256": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0"
+        "sha256": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c"
       }
     },
     {
@@ -41561,7 +41736,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-runtime-setup.js",
-        "sha256": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0"
+        "sha256": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c"
       }
     },
     {
@@ -46129,7 +46304,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4"
+        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -46232,7 +46407,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4"
+        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -46308,7 +46483,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4"
+        "sha256": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -46677,7 +46852,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "94f597a01f1f02c8c87c07822570ac5e3da874b5e6cd30cc5282ca2f79743570"
+        "sha256": "6b6a5459d82307821fdcdb7ab25ab5ffa7ab0ee1177768a8d5d5094592c35da7"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -47173,7 +47348,7 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "813d011b3a98cfce090ab8f5593219110e4f22e3e9b6b4b9c9083b1fa1cc0fd4",
+      "core/src/host/project-chief-control.js": "8a8c1af429f3f001989af241fe96106580a883d294483c0a18509f2820e1c9b6",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
       "core/src/host/project-chief-protocol.js": "d56d4970a8a86f620005ad93ab70fecbd557d2f4980679c5c228237768fcd8d4",
       "core/src/host/project-chief-recovery.js": "b4efeef007222a87249a808bc49deb84e0e6014c700bb661629a9eb8426327f7",
@@ -47205,8 +47380,9 @@
       "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
       "core/src/host/project-github-role-artifacts.js": "a4c04ad7e7d7cac2f1f82a42535f6255e97a5985b4492641e1af64ce26266d1c",
       "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
-      "core/src/host/project-harness-turn.js": "fdfcccc090134dcdd7fb6ad8ab15d93e2e7ebec7d0a48af27b35f434993aa134",
-      "core/src/host/project-harness.js": "94f597a01f1f02c8c87c07822570ac5e3da874b5e6cd30cc5282ca2f79743570",
+      "core/src/host/project-harness-auth.js": "2684b6687433e128197a0cc67b671bbd02c3c71e39428af7393d0c0ca1658ac7",
+      "core/src/host/project-harness-turn.js": "3e24454593f8c12284fbe96a7c1b3ecb31d7774815fc0d4c2f5d332457d46400",
+      "core/src/host/project-harness.js": "6b6a5459d82307821fdcdb7ab25ab5ffa7ab0ee1177768a8d5d5094592c35da7",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
@@ -47222,7 +47398,7 @@
       "core/src/host/project-releases.js": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885",
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
-      "core/src/host/project-resources.js": "24582ddb88111dc46cec134b5bb4489c8c530448b827ffba998d97e6f3b5401e",
+      "core/src/host/project-resources.js": "9a267001af697abdcdd9d3dd3e06e97d9e3042b77e6e31cb781ca57a4ada5920",
       "core/src/host/project-reviewed-merge.js": "f34db330ee71cf9459bf88c26ce38aba57b46974225566a62253309dcc3dca2a",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",
@@ -47230,12 +47406,12 @@
       "core/src/host/project-role-governance.js": "fe9ca70113666b0223f55b9225890609c5a1e7ddcb9b6105a3dc0edc3b2ef005",
       "core/src/host/project-role-policy.js": "ba90bf8dcba9f4a2d659f62948b6437d739ee40e2d839cd213181731c4dab8a5",
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
-      "core/src/host/project-runtime-setup.js": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0",
+      "core/src/host/project-runtime-setup.js": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c",
       "core/src/host/project-scheduled-tasks.js": "78c0e29bb830710dd9109d6a5fd1a67214fff01c55a79a38a3df7e5c3a194324",
       "core/src/host/project-scheduler.js": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
-      "core/src/host/project-service-views.js": "693056fc2e92c0afde24798a2aa7bfe6707f0efae8ea3eedf6445be5d827a1c0",
+      "core/src/host/project-service-views.js": "742afc90668878e353b5353013f4865763ff496cb1c8d42b8fe1ffb76743d728",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",
