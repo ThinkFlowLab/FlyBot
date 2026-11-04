@@ -1,1 +1,0 @@
-The timeline panel's "Who waits on whom" table no longer prints `0 ms` under **Total wait** for a handoff nobody has answered yet: an edge with no answer has no median, slowest or total wait, and all three now read `–` instead of a zero beside `Not yet 1`.

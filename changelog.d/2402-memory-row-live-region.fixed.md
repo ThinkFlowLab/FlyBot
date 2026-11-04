@@ -1,1 +1,0 @@
-A memory row's refused read is now announced, not just drawn: the sentence moves out of the `Manage` button — whose `aria-label` replaced the text inside it — into a `role="status"` note under the row, while the button label, the wording and the empty/count states stay as they were ([#2402](https://github.com/ThinkFlowLab/FlyBot/issues/2402)).

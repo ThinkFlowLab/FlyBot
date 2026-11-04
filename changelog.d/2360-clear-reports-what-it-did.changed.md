@@ -1,1 +1,0 @@
-Settings → Feedback's **Clear** now says what it actually did: the same sentence when the log is gone, one that names the leftover `logs/diagnostics.jsonl.1` when the rotated copy could not be removed, and one that does not claim a cleared log when the file is a link or a shared name ([#2360](https://github.com/ThinkFlowLab/FlyBot/issues/2360)).
