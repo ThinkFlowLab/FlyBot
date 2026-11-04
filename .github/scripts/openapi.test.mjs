@@ -88,6 +88,15 @@ test('third-party guide links and examples remain usable and its inventory is cu
 
 test('Chief response contract accepts combined protocol-correction and inspection-recovery budgets', () => {
   const spec = readSpec(), operation = operationFor(spec, 'project-development', { kind: 'query', name: 'chief.state' })
-  const value = { health: { enabled: true, status: 'healthy', lastSuccessAt: 9, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true }, template: {}, schedule: null, runs: [{ id: 'chief-bounded-history', projectId: 'project', status: 'done', invocationHistory: Array.from({ length: 9 }, (_, index) => ({ number: index + 1, snapshotSha256: 'a'.repeat(64), responseSha256: 'b'.repeat(64), at: index + 1 })) }] }
+  const value = { compensation: [], health: { enabled: true, status: 'healthy', lastSuccessAt: 9, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true }, template: {}, schedule: null, runs: [{ id: 'chief-bounded-history', projectId: 'project', status: 'done', invocationHistory: Array.from({ length: 9 }, (_, index) => ({ number: index + 1, snapshotSha256: 'a'.repeat(64), responseSha256: 'b'.repeat(64), at: index + 1 })) }] }
   validate(operation.resultSchema, value, spec)
+})
+
+
+test('Chief assistance API exposes explicit operations scope and bounded compensation metadata', () => {
+  const spec = readSpec(), query = operationFor(spec, 'project-development', { kind: 'query', name: 'chief.state' })
+  const value = { compensation: [{ id: 'hourly', enabled: true, status: 'active', when: { kind: 'every', seconds: 3600 }, nextCheckAt: 9000, deliveries: [] }], health: { enabled: true, status: 'healthy', lastSuccessAt: 8, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true, operationsContact: { memberId: 'operator', agentId: 'ops-agent' }, autonomy: { maxRecoveryActions: 2, maxRecoveryMs: 60000, guidance: 'Shared guidance' } }, template: {}, schedule: null, runs: [] }
+  validate(query.resultSchema, value, spec)
+  assert.throws(() => validate(query.resultSchema, { ...value, policy: { enabled: true, autonomy: { maxRecoveryActions: 21 } } }, spec), /maximum/)
+  assert.throws(() => validate(query.resultSchema, { ...value, compensation: [{ ...value.compensation[0], nextCheckAt: 'guessed' }] }, spec), /integer/)
 })
