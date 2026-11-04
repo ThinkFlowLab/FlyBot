@@ -1,6 +1,8 @@
 // Bounded, repository-scoped GitHub reads. Never hand credentials or arbitrary URLs to models.
 import { ownEntry } from './store.js'
 import { resolveGithubIdentity } from './project-github.js'
+import { projectGithubSettings } from './project-github-connections.js'
+import { invalidateGithubApp, githubCredentialBinding, githubIdentityMetadata } from './project-github-app.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/forbidden' })
 const bounded = value => typeof value === 'string' ? value.slice(0, 1200) : null
 export function createProjectGithubRead(rt, { identity = resolveGithubIdentity, request = fetch } = {}) {
@@ -26,17 +28,25 @@ export function createProjectGithubRead(rt, { identity = resolveGithubIdentity, 
     // Explicit automation identity is appropriate for shared Project reads. Personal reads
     // require an explicit personal selection; there is no ambient-token fallback.
     const scope = body.scope === 'personal' ? 'personal' : 'project'
-    const settings = scope === 'personal' ? ownEntry(ownEntry(rt.config.personalGithub ?? {}, actor.memberId) ?? {}, project.id) : ownEntry(rt.config.projectRepositories ?? {}, project.repository)?.github
-    if (!settings?.login) throw refuse('Selected scoped GitHub read identity is not configured')
-    const selected = await identity(settings)
-    if (selected.login.toLowerCase() !== settings.login.toLowerCase()) throw refuse('Scoped GitHub read identity mismatch')
+    const settings = scope === 'personal' ? ownEntry(ownEntry(rt.config.personalGithub ?? {}, actor.memberId) ?? {}, project.id) : projectGithubSettings(rt, project)
+    if (scope === 'personal' && settings?.credential === 'github-app') throw refuse('Personal reads require independent user credentials')
+    if (!settings?.login && settings?.credential !== 'github-app') throw refuse('Selected scoped GitHub read identity is not configured')
+    const permissions = operation === 'issues' || operation === 'thread-events' && body.threadKind === 'issue' ? { issues: 'read' } : operation === 'checks' || operation === 'thread-events' ? operation === 'checks' ? { pull_requests: 'read', checks: 'read' } : { pull_requests: 'read', issues: 'read', checks: 'read' } : { pull_requests: 'read' }
+    const binding = githubCredentialBinding(settings, project.repository)
+    const selected = await identity(settings, { request, repository: project.repository, permissions })
+    if (settings.login && selected.login.toLowerCase() !== settings.login.toLowerCase()) throw refuse('Scoped GitHub read identity mismatch')
     const validate = async () => {
       if ((rt.platformIdentityEnabled || backgroundActors.has(actor)) && !await validActor(actor, project)) throw refuse('Human platform session was revoked')
       if (rt.requireProjectAccess(actor, project.id).repository !== project.repository) throw refuse('Project repository changed during the read')
+      if (scope === 'project' && githubCredentialBinding(projectGithubSettings(rt, rt.requireProjectAccess(actor, project.id)), project.repository) !== binding) throw refuse('GitHub connection changed during read')
     }
     await validate()
     const get = async suffix => {
-      const response = await request(`https://api.github.com/repos/${project.repository}${suffix}`, { redirect: 'error', signal: AbortSignal.timeout(20_000), headers: { authorization: `Bearer ${selected.token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' } })
+      await validate()
+      const current = settings.credential === 'github-app' ? await identity(settings, { request, repository: project.repository, permissions }) : selected
+      await validate()
+      const response = await request(`https://api.github.com/repos/${project.repository}${suffix}`, { redirect: 'error', signal: AbortSignal.timeout(20_000), headers: { authorization: `Bearer ${current.token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' } })
+      if ([401, 403].includes(response.status)) invalidateGithubApp(settings, project.repository, request)
       if (!response.ok) throw new Error(`Scoped GitHub read failed (${response.status})`)
       const text = await response.text()
       if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new Error('Scoped GitHub response exceeds its byte budget')
@@ -82,7 +92,7 @@ export function createProjectGithubRead(rt, { identity = resolveGithubIdentity, 
         data.checks = (checks.check_runs ?? []).slice(0, 20).map(row => ({ name: row.name, status: row.status, conclusion: row.conclusion, url: row.html_url }))
       }
     }
-    return { repository: project.repository, operation, scope, executorLogin: selected.login, at: Date.now(), limit: 20, pagination: 'bounded-first-page', data }
+    return { repository: project.repository, operation, scope, executorLogin: selected.login, identity: githubIdentityMetadata(selected), at: Date.now(), limit: 20, pagination: 'bounded-first-page', data }
   }
   read.background = async (body, actor) => {
     if (body.scope === 'personal') throw refuse('Background Source reads require Project automation credentials')

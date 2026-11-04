@@ -60,7 +60,7 @@ are described from current code, including explicit legacy log/feature limits.
 ## Verification
 
 backend.test covers actual profile composition/pin/private modes and HTTP client
-behavior. backend-docs.test checks all24queries/26commands against actual source,
+behavior. backend-docs.test checks all29queries/34commands against actual source,
 JSON, shell syntax and local links. dsh-pin retains its original npx pin assertions
 on relocated original README guides; generated production profiles separately
 prove the pinned DSH versions.
@@ -109,3 +109,7 @@ personal/group privacy and trusted role execution remain separate. No new public
 credential endpoint, role-result ingress, runtime middleware, timer or deployment
 is introduced. An external descriptor remains unverified metadata, not a callback
 transport. Source API changes require deliberate catalog and guide review.
+
+## GitHub App credential adaptation — #2311
+
+#2311 extends the source-matched specification to29queries/34commands/186dispatches, including human-only selection and sanitized App identity/audit metadata. Deployment remains unchanged; see [GitHub setup](../github-automation.md).

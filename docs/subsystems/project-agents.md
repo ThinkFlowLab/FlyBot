@@ -495,3 +495,7 @@ Versioned service aliases `roles`, `role.proposals` and `role.decide` reuse the 
 ## Bounded legacy history (#2292)
 
 project-agent-history defaults to the latest50 messages (limit1–100), retaining messages/busy/agent/live keys. Offset/cursor pages use a scope-bound prefix hash; appends preserve the snapshot, edits invalidate it. Message arrays fit30kB, oversized records are previews with sourceRef; messageIndex/textOffset/textLimit retrieve exact JSON source in4000-character pages. Agent metadata and live previews are bounded; all original transcripts remain stored. Cursors grant no access and private histories always resolve from the current actor.
+
+## GitHub App credential adaptation — #2311
+
+Personal GitHub comments explicitly reject installation credentials; project automation status reports sanitized provider metadata. Human connection selection cannot be delegated to Bots. See [GitHub providers](project-github-automation.md).

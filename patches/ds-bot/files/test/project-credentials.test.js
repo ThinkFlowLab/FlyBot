@@ -65,3 +65,11 @@ test('malformed credential output is refused without reflecting it or sending a 
   }), error => /unavailable/.test(error.message) && !error.message.includes('private-value'))
   assert.equal(called, false)
 })
+
+test('project App credentials cannot be selected for personal comments', async () => {
+  let calls = 0
+  const rt = { state: {}, config: { personalGithub: { alice: { p: { credential: 'github-app', appId: 7, installationId: 12, login: 'app[bot]' } } } }, requireProjectAccess: () => ({ id: 'p', repository: 'org/repo' }) }
+  const service = createProjectCredentials(rt, { identity: async () => { calls++; return { token: 'never', login: 'app[bot]' } } })
+  await assert.rejects(service.endpoint('project-github-comment', { projectId: 'p', issueNumber: 1, text: 'As user' }, { memberId: 'alice' }), /independent user/)
+  assert.equal(calls, 0)
+})

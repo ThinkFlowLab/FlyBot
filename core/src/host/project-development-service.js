@@ -14,6 +14,7 @@ const stableId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.
 const sameTask = (row, task) => Boolean(row && row.projectId === task.projectId && row.taskId === task.id)
 const roles = new Set(['chief', 'developer', 'tester', 'reviewer'])
 const operations = Object.freeze({
+  'github.connection': 'project-github-connection', 'github.connection.configure': 'project-github-connection-configure',
   'inbox.list': 'project-agent-inbox-list', 'inbox.get': 'project-agent-inbox-get', 'inbox.connection': 'project-agent-inbox-connection',
   'inbox.claim': 'project-agent-inbox-claim', 'inbox.renew': 'project-agent-inbox-renew', 'inbox.complete': 'project-agent-inbox-complete', 'inbox.fail': 'project-agent-inbox-fail', 'inbox.connection.configure': 'project-agent-inbox-connection-configure',
   'consultation.reply': 'project-consultation-reply', 'consultation.ask': 'project-consultation-ask', 'consultation.get': 'project-consultation-get', 'consultation.list': 'project-consultation-list',
@@ -34,7 +35,7 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['inbox.list', 'inbox.get', 'inbox.connection', 'release.status', 'compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['github.connection', 'inbox.list', 'inbox.get', 'inbox.connection', 'release.status', 'compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
@@ -102,7 +103,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
 
 export function createDevelopmentService(rt) {
   const receipts = rt.projectEffects ? createCommandReceipts(rt) : null
-  const management = new Set(['release.request', 'release.reconcile', 'role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
+  const management = new Set(['github.connection.configure', 'release.request', 'release.reconcile', 'role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
   const readCommand = new Set(['inbox.claim', 'inbox.renew', 'inbox.complete', 'inbox.fail', 'inbox.connection.configure', 'agent.mode', 'consultation.ask', 'consultation.reply'])
   const actionFor = name => ['task.propose', 'proposal.publish', 'comment.publish'].includes(name) ? 'create' : management.has(name) ? 'configure' : readCommand.has(name) ? 'read' : name === 'task.accept' || name === 'task.reject' ? 'accept' : 'task-write'
 
@@ -175,6 +176,7 @@ export function createDevelopmentService(rt) {
     return { run: await rt.projectChiefControl.request(body.projectId, 'inspection', { requestId: body.requestId, requestedBy: actor.memberId, ...(task ? { blockedTaskId: task.id } : {}) }) }
   }
   async function invoke(endpoint, body, actor) {
+    if (endpoint === 'project-github-connection' || endpoint === 'project-github-connection-configure') return rt.projectGithubConnections.endpoint(endpoint.endsWith('-configure') ? 'configure' : 'status', body, actor)
     if (endpoint.startsWith('project-agent-inbox-')) return rt.projectAgentInbox.endpoint(endpoint.slice('project-agent-inbox-'.length).replace('connection-configure', 'connection.configure'), body, actor)
     if (endpoint === 'task-create') {
       let botId = body.botId

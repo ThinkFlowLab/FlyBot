@@ -3,11 +3,13 @@ import { createHash } from 'node:crypto'
 import { ownEntry } from './store.js'
 import { repositorySettings } from './project-repository-policy.js'
 import { githubReleaseProvider } from './project-release-github.js'
+import { projectGithubSettings } from './project-github-connections.js'
+import { githubCredentialBinding } from './project-github-app.js'
 import { EffectCancelled } from './project-effects.js'
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const fail = message => Object.assign(new Error(message), { code: 'bot/release' })
 const reference = actor => Object.fromEntries(['memberId', 'sessionId', 'agentId', 'watchGrantId', 'watchGeneration', 'personalAgentCredentialId', 'personalAgentCredentialGeneration'].filter(key => actor[key] !== undefined).map(key => [key, actor[key]]))
-const view = row => row ? { id: row.id, status: row.status, repository: row.spec.repository, tag: row.spec.tag, sha: row.spec.sha, mode: row.spec.mode, authorizedBy: row.actor.memberId, createdAt: row.createdAt, observedAt: row.observedAt ?? null, proof: row.proof ? structuredClone(row.proof) : null, effect: structuredClone(row.effect), result: row.result ?? null } : null
+const view = row => row ? { id: row.id, status: row.status, repository: row.spec.repository, tag: row.spec.tag, sha: row.spec.sha, mode: row.spec.mode, authorizedBy: row.actor.memberId, authorizedAgentId: row.actor.agentId ?? null, taskId: row.taskId ?? null, attemptId: row.attemptId ?? null, createdAt: row.createdAt, observedAt: row.observedAt ?? null, proof: row.proof ? structuredClone(row.proof) : null, effect: structuredClone(row.effect), result: row.result ?? null } : null
 export function createProjectReleases(rt, { projectOf, providerFactory = settings => githubReleaseProvider(settings.github) }) {
   let tail = Promise.resolve()
   const serial = fn => { const result = tail.then(fn, fn); tail = result.catch(() => {}); return result }
@@ -19,9 +21,9 @@ export function createProjectReleases(rt, { projectOf, providerFactory = setting
   function settingsOf(attempt) {
     const project = projectOf(attempt.projectId, attempt), settings = repositorySettings(rt, project)
     if (settings.release?.enabled !== true || settings.release.provider !== 'github') throw fail('Release provider is not explicitly configured')
-    return settings
+    return { ...settings, github: projectGithubSettings(rt, project), githubRepository: project.repository }
   }
-  const policyHash = settings => hash({ release: settings.release, github: settings.github })
+  const policyHash = settings => hash({ release: settings.release, github: settings.github?.credential === 'github-app' ? githubCredentialBinding(settings.github, settings.githubRepository) : settings.github })
   async function authority(attempt, task, row) {
     if (rt.readOnly?.() !== undefined) throw new EffectCancelled('Release host is read-only')
     await rt.projectDelegations?.background(row.actor.memberId, row.actor.sessionId)
@@ -91,7 +93,7 @@ export function createProjectReleases(rt, { projectOf, providerFactory = setting
       if (prior.requestId !== body.requestId || prior.requestHash !== requestHash || prior.actor.memberId !== actor.memberId) throw fail('Release request already exists; reconcile it instead of replacing authorization')
       return { release: view(prior), already: true }
     }
-    const row = { id: `release-${attempt.id}`, requestId: body.requestId, requestHash, spec, actor: reference(actor), policySha256: policyHash(settings), requirementsRevision: task.projectTask?.requirements.revision ?? null, status: 'authorized', createdAt: Date.now() }
+    const row = { id: `release-${attempt.id}`, taskId: task.id, attemptId: attempt.id, requestId: body.requestId, requestHash, spec, actor: reference(actor), policySha256: policyHash(settings), requirementsRevision: task.projectTask?.requirements.revision ?? null, status: 'authorized', createdAt: Date.now() }
     attempt.release = row
     let token
     try {

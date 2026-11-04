@@ -89,3 +89,7 @@ No live configuration migration is part of S5. Operator profile/resource/credent
 changes use an idle, binding-aware deployment checkpoint. Do not change profiles
 under active workers and expect cleanup to bypass their recorded protections;
 preserve evidence and use supported exit reconciliation.
+
+## GitHub App credential adaptation — #2311
+
+Automation metadata now identifies gh-cli/App provider configuration without reading keys or probing GitHub; no credential source is inherited by role SDKs. See [GitHub providers](project-github-automation.md).

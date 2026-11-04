@@ -5,7 +5,7 @@
 [OpenAPI 3.1 JSON](openapi/flybot.openapi.json) 给出全部公开分派请求/响应 Schema、逐操作权限、
 状态影响和前置条件；第三方个人代理的凭据签发、登录和自主协作见[接入指南](third-party-bot-integration.md)。
 
-本页对应当前分支实际路由：**28个v1查询、33个v1命令**，以及对象管理使用的原生接口。
+本页对应当前分支实际路由：**29个v1查询、34个v1命令**，以及对象管理使用的原生接口。
 咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
 ## 传输、身份与统一返回
@@ -105,6 +105,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 
 | 查询名 | payload | result / 权限与分页 |
 | --- | --- | --- |
+| github.connection | repository? | 已选项目自动化连接、revision、配置状态和已授权选项；不返回凭据或私钥路径 |
 | inbox.list | agentId?、limit?:1..100、after? | 本人消息元数据/通知/处理状态；私人，不进入公开SSE |
 | inbox.get | messageId、agentId?、offset?、limit?:1..4000、expectedSha256? | 本人咨询正文源页；UTF-16偏移，含message元数据 |
 | inbox.connection | agentId? | 本人通知连接非敏感状态 |
@@ -144,6 +145,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 
 | 命令名 | payload主要必填字段（其余可选字段见对应子系统） | 结果与权限 |
 | --- | --- | --- |
+| github.connection.configure | connectionId:string/null、expectedRevision；repository? | 人类Owner/Maintainer选择已预置连接；只读认证后持久化，null显式禁用且不回退 |
 | inbox.claim | messageId；agentId?、expectedVersion? | 本人有效参与；领取消息租约，不取得Task主动权，安全代理可用 |
 | inbox.renew | messageId、claimId、generation | 原身份当前有效租约续期；安全代理可用 |
 | inbox.complete | messageId、claimId、generation；text/publish或acknowledge | 同身份/代次/源版本；安全建议等待人类审批，watch授权后显式发布原Task输入 |
@@ -244,3 +246,5 @@ project-agent-history保留messages字段，默认最近50条，limit为1..100�
 | release.status | query；attemptId | 项目读；返回状态、目标、已观察证据，不调用模型或外部发布 |
 
 原生对应project-release-request / project-release-reconcile / project-release-status。需显式配置仓库release.provider=github、release.enabled=true及已有选定GitHub凭据；创建请求不等于发布成功，发布成功也不等于Task关闭。Chief仍需当前外部证明及原验收门禁。详见[契约、配置与例子](subsystems/project-releases.md)。测试不会创建真实Release。
+
+GitHub App 的操作权限、Token生命周期、故障恢复及审计见 [GitHub自动化](github-automation.md)。连接选择与Task执行权限独立，代理不得替自己更换凭据。

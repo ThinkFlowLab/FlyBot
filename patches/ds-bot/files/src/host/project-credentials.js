@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { EffectDeferred, EffectCancelled } from './project-effects.js'
 import { ownEntry, setEntry } from './store.js'
 import { resolveGithubIdentity } from './project-github.js'
+import { createGithubConnections, projectGithubStatus } from './project-github-connections.js'
 const refused = message => Object.assign(new Error(message), { code: 'bot/forbidden' })
 
 export function createProjectCredentials(rt, { identity = resolveGithubIdentity, request = fetch } = {}) {
@@ -30,6 +31,7 @@ export function createProjectCredentials(rt, { identity = resolveGithubIdentity,
     try { project = rt.requireProjectAccess(actor, effect.projectId, 'create') }
     catch { throw new EffectCancelled('Comment Project authority was revoked') }
     const settings = personal(actor, effect.projectId)
+    if (settings?.credential === 'github-app') throw new EffectCancelled('Personal operations require independent user credentials')
     if (project.repository !== effect.payload.repository || settings?.login?.toLowerCase() !== effect.payload.login.toLowerCase()) throw new EffectCancelled('Comment repository or personal identity changed')
     context.assertCurrent()
     return { actor, project, settings }
@@ -76,8 +78,9 @@ export function createProjectCredentials(rt, { identity = resolveGithubIdentity,
       const settings = personal(actor, projectId)
       if (endpoint === 'project-credential-status') return {
         personal: { configured: Boolean(settings?.credential && settings.configDir && settings.login), login: settings?.login ?? null },
-        automation: { configured: Boolean(ownEntry(rt.config.projectRepositories ?? {}, project.repository)?.github?.credential && ownEntry(rt.config.projectRepositories ?? {}, project.repository)?.github?.configDir) },
+        automation: projectGithubStatus(rt, project),
       }
+      if (settings?.credential === 'github-app') throw refused('Personal operations require independent user credentials')
       if (body.scope !== undefined && body.scope !== 'personal') throw refused('This endpoint only uses your own personal GitHub identity')
       if (!settings?.login) throw refused('Personal GitHub credential is not configured for this human and Project')
       if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(project.repository ?? '')) throw refused('Project repository is unavailable')
@@ -121,4 +124,4 @@ export function createProjectCredentials(rt, { identity = resolveGithubIdentity,
     },
   }
 }
-export function install(rt) { rt.projectCredentials = createProjectCredentials(rt) }
+export function install(rt) { rt.projectCredentials = createProjectCredentials(rt); rt.projectGithubConnections = createGithubConnections(rt) }

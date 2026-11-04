@@ -54,6 +54,7 @@ const permissionRules = {
   accept: { humanRoles: ['owner', 'maintainer'], condition: 'legacy-only; new Task completion requires host-authenticated Chief' },
   'run-control': { humanRoles: ['owner', 'maintainer'], condition: 'current-manager-and-active-project' },
   'task-write': { humanRoles: ['owner', 'maintainer', 'member'], condition: 'current-manager-or-task-requester; current-Task-contract-still-applies' },
+  'human-manager': { humanRoles: ['owner', 'maintainer'], condition: 'current-signed-in-human-manager; no-agent-or-watch-credential' },
   'human-self': { humanRoles: ['owner', 'maintainer', 'member'], condition: 'human-only-and-own-personal-agent-or-session' },
   'human-owner': { humanRoles: ['owner'], condition: 'Owner-personally; primary-owner-required-by-legacy-lifecycle' },
   'human-conversation': { humanRoles: ['owner', 'maintainer', 'member'], condition: 'human-only; own-private-or-explicitly-approved-public-conversation' },
@@ -75,7 +76,7 @@ function access(entry, endpoint, kind, name) {
   let safe = false, watch = false
   if (endpoint === 'project-development') {
     safe = kind === 'query' || ['consultation.ask', 'consultation.reply', 'inbox.claim', 'inbox.renew', 'inbox.complete', 'inbox.fail'].includes(name)
-    watch = kind === 'query' || !['agent.mode', 'proposal.publish'].includes(name)
+    watch = kind === 'query' || !['agent.mode', 'proposal.publish', 'inbox.connection.configure', 'github.connection.configure'].includes(name)
     if (entry.permission === 'configure') safe = false // downstream gate, even for a query
   } else {
     safe = inv.fbaReads.includes(endpoint) || ['auth-whoami', 'auth-revoke', 'personal-agent-propose-task', 'project-close-request', 'project-consultation-ask', 'project-consultation-reply', 'project-chief-question', 'project-agents'].includes(endpoint)

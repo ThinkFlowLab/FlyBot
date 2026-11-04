@@ -108,3 +108,5 @@ JSON/SQLite回退保留新代码格式守卫、ID和已完成Effects，**不是�
 - 上下文接近预算：用限定来源分页/摘要/长期记忆引用；同Task打回恢复原角色Session，不用“重新开一个”绕过限制。
 
 [测试分层](testing-layers.md)区分单元、真实DSH/本机HTTP持久化、真实SDK与完整模型开发闭环。确定性测试供应商只出现在测试里，启动工具不创建mock模型或样例仓库。
+
+项目自动化可选择 gh-cli 或 App installation，个人操作保留独立用户授权；配置步骤、最小权限和恢复方法见 [GitHub自动化](github-automation.md)。

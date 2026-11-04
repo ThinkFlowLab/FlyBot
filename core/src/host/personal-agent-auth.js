@@ -76,7 +76,7 @@ export function install(rt) {
           const projectId = body.projectId ?? ownEntry(state.tasks, body.id ?? body.taskId)?.projectId ?? ownEntry(state.projectAttempts ?? {}, body.attemptId)?.projectId ?? ownEntry(state.projectQueue ?? {}, body.queueId)?.projectId ?? body.id
           const { grant } = scope(actor, projectId)
           const nativeWrite = ['task-create', 'task-update', 'task-cancel', 'task-answer-input'].includes(endpoint) || endpoint.startsWith('project-') && WORKBENCH_ENDPOINTS.has(endpoint) && !reserved.has(endpoint) && endpoint !== 'project-development' && endpoint !== 'project-agents'
-          const developmentWrite = endpoint === 'project-development' && body.kind === 'command' && !['agent.mode', 'proposal.publish', 'inbox.connection.configure'].includes(body.name)
+          const developmentWrite = endpoint === 'project-development' && body.kind === 'command' && !['agent.mode', 'proposal.publish', 'inbox.connection.configure', 'github.connection.configure'].includes(body.name)
           if (!grant || !nativeWrite && !developmentWrite) throw refusal('This agent operation requires authorized watch mode')
         }
       } catch (error) { return { ok: false, code: error.code ?? 'bot/forbidden', message: error.message } }

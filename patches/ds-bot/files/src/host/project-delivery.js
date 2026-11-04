@@ -15,6 +15,8 @@ import { createResourceWorkspaces, fileDigest } from './project-resource-workspa
 import { ROLE_POLICY_FILES, assembleRolePolicy, verifyRolePolicy, deliveryReviewReport, checkDevelopmentEvidence } from './project-role-policy.js'
 import { buildProjectContext, contextHash } from './project-role-context.js'
 import { githubPublisher } from './project-github.js'
+import { projectGithubSettings } from './project-github-connections.js'
+import { githubCredentialBinding } from './project-github-app.js'
 import { taskSessionId, confirmedWorkerExit, pinTaskRoleDefinition, discardUnpreparedTaskDefinitions } from './project-task-sessions.js'
 import { readMergeHeads } from './project-merge-heads.js'
 import { childResultSources, createChildInputAdmission } from './project-child-inputs.js'
@@ -68,11 +70,13 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
   const taskOf = id => ownEntry(state.tasks, String(id ?? ''))
   const projectOf = (id, attempt) => { const project = rt.projects.repository.get(id, { includeDeleted: true }); return attempt ? attemptProject(rt, project, attempt) : project }
   const settingsOf = project => repositorySettings(rt, project)
-  const publisherOf = project => publisher ?? githubPublisher(settingsOf(project).github)
+  const publisherOf = (project, authorize) => { settingsOf(project); return publisher ?? githubPublisher(projectGithubSettings(rt, project), { authorize }) }
   const releases = createProjectReleases(rt, { projectOf, ...(releaseProvider ? { providerFactory: () => releaseProvider } : {}) })
   async function validatePublication(effect, context) {
       const attempt = ownEntry(attempts(), effect.payload.attemptId), task = taskOf(effect.taskId)
+      if (attempt?.publicationCredential && attempt.publicationCredential !== githubCredentialBinding(projectGithubSettings(rt, projectOf(attempt.projectId, attempt)), attempt.requirement.repository ?? projectOf(attempt.projectId, attempt).repository)) throw new EffectCancelled('Publication GitHub connection changed; reconcile with the original identity')
       if (!attempt || attempt.projectId !== effect.projectId || task?.deliveryAttemptId !== attempt.id || attempt.candidateSha !== effect.payload.candidateSha || ['accepted', 'cancelled'].includes(task.status) || attempt.cancelRequested) throw new EffectCancelled('Publication candidate was stopped, superseded or ended')
+      settingsOf(projectOf(attempt.projectId, attempt))
       try {
         await rt.projectDelegations?.background(effect.payload.initiatedBy, task.collaboration?.sourceSessionId)
         rt.requireProjectAccess({ memberId: effect.payload.initiatedBy }, effect.projectId, 'task-write', task)
@@ -99,7 +103,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
         if (!context.inline) await validatePublication(effect, context)
         context.assertCurrent()
         const attempt = ownEntry(attempts(), effect.payload.attemptId)
-        await publishNow(attempt)
+        await publishNow(attempt, async () => { await validatePublication(effect, context) })
         return structuredClone(attempt.pr)
       }
       return context.inline ? publish() : serialAttempt(effect.payload.attemptId, publish)
@@ -141,6 +145,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
   async function publicationOf(previous, project) {
     if (!previous) return undefined
     if (previous.publicationEffectId && !previous.pr) throw reject('Previous publication is unresolved; reconcile its existing effect before creating rework')
+    if (previous.publicationCredential && previous.publicationCredential !== githubCredentialBinding(projectGithubSettings(rt, project), project.repository)) throw reject('Previous publication GitHub connection changed; reconcile before rework')
     const binding = previous.pr ? { number: previous.pr.number, repository: previous.pr.repository, branch: previous.publicationBinding?.branch ?? previous.branch, previousSha: previous.candidateSha } : structuredClone(previous.publicationBinding)
     if (binding && (binding.repository !== project.repository || !Number.isSafeInteger(binding.number) || binding.number < 1 || typeof binding.branch !== 'string' || !binding.branch || !/^[a-f0-9]{40}$/.test(binding.previousSha) || previous.pr && previous.pr.sha !== previous.candidateSha)) throw reject('Existing delivery PR binding is inconsistent; reconcile before rework')
     if (binding) {
@@ -569,6 +574,11 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     await publishVerified(attempt)
   }
   async function publishVerified(attempt) {
+    if (!publisher) {
+      const project = projectOf(attempt.projectId, attempt), binding = githubCredentialBinding(projectGithubSettings(rt, project), project.repository)
+      if (attempt.publicationCredential && attempt.publicationCredential !== binding) throw reject('Publication GitHub connection changed; reconcile before retry')
+      if (!attempt.publicationCredential) { attempt.publicationCredential = binding; await rt.save() }
+    }
     if (!rt.projectEffects) return publishNow(attempt)
     const task = taskOf(attempt.taskId)
     const spec = { kind: 'github.publish', key: `${attempt.id}:${attempt.candidateSha}`, projectId: attempt.projectId, taskId: attempt.taskId,
@@ -577,8 +587,15 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     attempt.publicationEffectId = token.id
     return rt.projectEffects.perform(spec)
   }
-  async function publishNow(attempt) {
-    const pr = await publisherOf(projectOf(attempt.projectId, attempt)).publish(attempt, projectOf(attempt.projectId, attempt))
+  async function publishNow(attempt, authorize) {
+    const project = projectOf(attempt.projectId, attempt)
+    const check = async () => {
+      if (authorize) await authorize()
+      settingsOf(projectOf(attempt.projectId, attempt))
+      if (attempt.cancelRequested || taskOf(attempt.taskId)?.deliveryAttemptId !== attempt.id) throw reject('Publication Task changed')
+      if (attempt.publicationCredential && attempt.publicationCredential !== githubCredentialBinding(projectGithubSettings(rt, projectOf(attempt.projectId, attempt)), project.repository)) throw reject('Publication GitHub connection changed')
+    }
+    const pr = await publisherOf(project, check).publish(attempt, projectOf(attempt.projectId, attempt))
     if (pr.sha !== attempt.candidateSha || attempt.publicationBinding && (pr.number !== attempt.publicationBinding.number || pr.repository !== attempt.publicationBinding.repository)) throw reject('Published PR does not match candidate or existing binding')
     if (attempt.cancelRequested) throw reject('Delivery was stopped')
     attempt.pr = pr

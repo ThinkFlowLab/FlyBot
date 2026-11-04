@@ -306,3 +306,14 @@ test('attempt lists reference large frozen definitions instead of copying their 
   assert.equal(result.attempts[0].roleSessions.developer.definitionRevision, 1)
   assert.equal(state.projectAttempts.a.roleSessions.developer.definition.instructions, text)
 })
+
+test('GitHub connection operations use the v1 facade with current manager authority', async () => {
+  const { rt, service, actor } = fixture(), calls = []
+  rt.projectGithubConnections = { endpoint: async (...args) => { rt.requireProjectAccess(args[2], args[1].projectId, args[0] === 'configure' ? 'configure' : 'read'); calls.push(args); return { connection: { configured: false } } } }
+  const envelope = { version: DEVELOPMENT_PROTOCOL, projectId: 'p', kind: 'command', name: 'github.connection.configure', requestId: 'select-one', payload: { connectionId: 'app', expectedRevision: 0 } }
+  await service.endpoint('project-development', envelope, actor)
+  assert.equal(calls[0][0], 'configure'); assert.equal(calls[0][2], actor)
+  await assert.rejects(service.endpoint('project-development', envelope, { memberId: 'bob' }), /denied/)
+  const result = await service.endpoint('project-development', { ...envelope, kind: 'query', name: 'github.connection' }, { memberId: 'bob' })
+  assert.equal(result.result.connection.configured, false); assert.equal(calls.length, 2)
+})

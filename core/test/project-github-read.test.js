@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { appFixture } from './fixtures/github-app.mjs'
 import { createProjectGithubRead } from '../src/host/project-github-read.js'
 function setup() {
   const calls = []
@@ -102,4 +103,16 @@ test('a mutable Project cannot retarget its captured repository while credential
   const read=createProjectGithubRead(rt,{identity:async()=>{project.repository='victim/private';return{login:'automation',token:'secret'}},request:async()=>{calls++;return Response.json([])}})
   await assert.rejects(read({projectId:'p'},{memberId:'owner'}),/repository changed/)
   assert.equal(calls,0)
+})
+
+test('App project reads use minimal scoped installation tokens and never impersonate a personal user', async t => {
+  let calls = 0
+  const f = appFixture(t, (_url, _options, permissions) => { calls++; assert.deepEqual(permissions, { issues: 'read' }); return Response.json([{ number: 1, title: 'App issue', state: 'open' }]) })
+  const rt = { state: {}, config: { projectRepositories: { 'org/repo': { github: f.settings } }, personalGithub: { alice: { p: f.settings } } }, requireProjectAccess: () => ({ id: 'p', repository: 'org/repo' }) }
+  const read = createProjectGithubRead(rt, { request: f.request })
+  const result = await read({ projectId: 'p', operation: 'issues' }, { memberId: 'alice' })
+  assert.equal(result.executorLogin, 'contract-app[bot]'); assert.equal(result.identity.installationId, 12); assert.equal(calls, 1)
+  assert(!JSON.stringify(result).includes('ghs_')); assert(!JSON.stringify(result).includes('.pem'))
+  await assert.rejects(read({ projectId: 'p', scope: 'personal' }, { memberId: 'alice' }), /independent user/)
+  f.suspend(); await assert.rejects(read({ projectId: 'p' }, { memberId: 'alice' }), /installation/); assert.equal(calls, 1)
 })

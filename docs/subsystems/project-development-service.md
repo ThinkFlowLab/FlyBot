@@ -228,3 +228,7 @@ Query compatibility returns the same Project's committed original-work baseline,
 The [root README](../../README.md), [API reference](../development-service-api.md) and [operations guide](../backend-operations.md) replace old1811 snapshot instructions with the real persistent source launcher and actual24queries/26commands. The reference distinguishes canonical Chief completion from legacy acceptance, current vs frozen execution and private consultation from initiative transfer. Native log reads remain explicitly described as full sealed logs, not fictitious paging. CLI/HTTP reuse the existing facade.
 
 #2292 adds release.request and release.reconcile manager commands and the release.status query. Commands use existing receipts and idempotent reconciliation; status is a bounded projection. Publication authorization, external observation and Chief closure remain distinct. See [releases](project-releases.md).
+
+## GitHub App credential adaptation — #2311
+
+v1 github.connection queries and human-only github.connection.configure commands compose the original broker/Effects/receipts. No new gateway endpoint or role-executor port is exposed. See [GitHub providers](project-github-automation.md).

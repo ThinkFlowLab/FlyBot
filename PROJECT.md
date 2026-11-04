@@ -15,7 +15,7 @@ consultation store, committed Effects and scoped leases. Signed, explicitly
 verified Webhook notifications and native wakeups both lead to the same inbox
 service; private messages stay outside public SSE. [Contract](docs/agent-inbox.md).
 Actual isolated DSH/HTTP and a separate receiver pass with deterministic inference;
-live vendor acceptance and deployment remain separate. #2311 is the next credential-provider change.
+live vendor acceptance and deployment remain separate. #2311 adds App installation credentials alongside gh-cli, human-only connection selection, and original broker/Effects identity fencing. [Credential contract](docs/github-automation.md); live App acceptance needs authorized test resources.
 
 #2300 publishes the source-matched public [OpenAPI contract](docs/openapi/flybot.openapi.json)
 and [third-party Bot guide](docs/third-party-bot-integration.md). Human-issued FBA scope,
