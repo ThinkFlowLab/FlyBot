@@ -350,6 +350,167 @@ test('a state journal that has not opened says it starts with the first save (#2
   assert.equal(held.facts.stateJournal, 'paused (this window is read-only)')
 })
 
+// #2383: the report is what a user hands over, and it never said that this host's own log file
+// could not be written. The reason was already computed for stderr (`fileFailed`, `refusedLeaf`)
+// and never reached `facts()`/`reportMarkdown()`, so a support bundle showed the recent errors
+// without the one sentence that explains why their file is missing or short. The line follows the
+// journal's shape (#2134): a host with the log off adds none, a host with it on says whether it is
+// recording or why it is not, and it never carries the home folder.
+test('the report says the diagnostics log could not be written (#2383)', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root writes a leaf without its write bit')
+    return
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const logPath = join(home, 'logs', 'diagnostics.jsonl')
+  writeFileSync(logPath, 'OLD LINE\n')
+  chmodSync(logPath, 0o444)
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const rt = host(home)
+  rt.warn('ds-bot: a line the log refuses')
+  await rt.dispose()
+  const report = await rt.diagnostics.report({})
+  quiet.mock.restore()
+
+  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES)', 'the report carries the reason, not only stderr')
+  assert.match(report.markdown, /^diagnostics log: not written \(EACCES\)$/m)
+  assert.equal(stderr.filter(line => /not written/.test(line)).length, 1, 'stderr keeps its one line')
+  assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
+  assert.equal(readFileSync(logPath, 'utf8'), 'OLD LINE\n', 'the leaf keeps its bytes')
+})
+
+// The other reason the log is not written is the leaf guard (#2089): a link at the path is not
+// this host's to write. The report names the refusal in the same words stderr uses, and the file
+// behind the link keeps its bytes (the refusal itself is unchanged).
+test('the report says the diagnostics log is not a plain file of its own (#2383)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const target = join(elsewhere, 'diagnostics.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  symlinkSync(target, join(home, 'logs', 'diagnostics.jsonl'))
+
+  const rt = host(home)
+  rt.warn('ds-bot: first entry')
+  await rt.dispose()
+  const report = await rt.diagnostics.report({})
+
+  assert.equal(report.facts.diagnosticsLog, 'not written (not a plain file of its own)')
+  assert.match(report.markdown, /^diagnostics log: not written \(not a plain file of its own\)$/m)
+  assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the link keeps its bytes')
+  assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
+})
+
+// The refusal on stderr is a latch for the host's lifetime (#2089): one line per host, however many
+// entries the guard drops. The report line answers a different question — what the leaf is now — so
+// the two must not share one flag. A host whose link was replaced by a file of its own writes the
+// next entry into that leaf, and the report has to say `recording`; the stderr latch keeps its one
+// line and is not refreshed by the landing entry.
+test('the report says recording again once the leaf is readable again (#2383)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const target = join(elsewhere, 'diagnostics.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  const logPath = join(home, 'logs', 'diagnostics.jsonl')
+  symlinkSync(target, logPath)
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const rt = host(home)
+  rt.warn('ds-bot: a line the link refuses')
+  // The refusal is written inside the background chain, so wait for it rather than for a pause: the
+  // link has to be gone only after the entry was actually refused, not only after it was queued.
+  const refused = () => stderr.some(line => /is not a plain file of its own/.test(line))
+  for (let waited = 0; !refused() && waited < 5000; waited += 20) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(refused(), true, 'the guard refused the entry while the leaf was a link')
+  rmSync(logPath)
+  rt.warn('ds-bot: a line that lands')
+  await rt.dispose()
+  const report = await rt.diagnostics.report({})
+  quiet.mock.restore()
+
+  assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the link keeps its bytes')
+  const written = readFileSync(logPath, 'utf8').trim().split('\n')
+  assert.equal(written.length, 1, 'the entry landed in the leaf of its own')
+  assert.match(written[0], /a line that lands/)
+  assert.equal(report.facts.diagnosticsLog, 'recording', 'the report describes the leaf as it is now')
+  assert.match(report.markdown, /^diagnostics log: recording$/m)
+  const refusals = stderr.filter(line => /is not a plain file of its own/.test(line))
+  assert.equal(refusals.length, 1, 'the stderr latch keeps its one line per host')
+})
+
+// The two reasons are read as the leaf stands when the report is built, and the leaf can change
+// between attempts (#2383): a host whose link was refused and whose leaf is then a plain 0444 file
+// meets EACCES on the next append, so the report has to name EACCES rather than the earlier refusal.
+// The stderr latches keep their own lines: one guard line and one failure line for the host.
+test('the report names the reason the last append met (#2383)', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root writes a leaf without its write bit')
+    return
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const target = join(elsewhere, 'diagnostics.jsonl')
+  const before = 'PRE-EXISTING LINE\n'
+  writeFileSync(target, before)
+  const logPath = join(home, 'logs', 'diagnostics.jsonl')
+  symlinkSync(target, logPath)
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const rt = host(home)
+  rt.warn('ds-bot: a line the link refuses')
+  const refused = () => stderr.some(line => /is not a plain file of its own/.test(line))
+  for (let waited = 0; !refused() && waited < 5000; waited += 20) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(refused(), true, 'the guard refused the entry while the leaf was a link')
+  rmSync(logPath)
+  writeFileSync(logPath, 'OLD LINE\n')
+  chmodSync(logPath, 0o444)
+  rt.warn('ds-bot: a line the plain leaf refuses')
+  await rt.dispose()
+  const report = await rt.diagnostics.report({})
+  quiet.mock.restore()
+
+  assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the link keeps its bytes')
+  assert.equal(readFileSync(logPath, 'utf8'), 'OLD LINE\n', 'the leaf keeps its bytes')
+  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES)', 'the reason is the one the last attempt met')
+  assert.match(report.markdown, /^diagnostics log: not written \(EACCES\)$/m)
+  assert.equal(stderr.filter(line => /is not a plain file of its own/.test(line)).length, 1, 'the stderr latch keeps its one guard line')
+  assert.equal(stderr.filter(line => /not written: EACCES/.test(line)).length, 1, 'the failure keeps its one line')
+})
+
+// The two ordinary states, in the shape #2134 gave the journal: off adds no line at all, on says
+// the log is recording — the answer a bundle needs to tell "no errors were logged" from "the log
+// could not take them".
+test('the report says nothing about the log while it is off, and recording while it is on (#2383)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const off = await host(home, { config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.equal(off.facts.diagnosticsLog, undefined, 'a host without the log says nothing about it')
+  assert.doesNotMatch(off.markdown, /diagnostics log:/)
+
+  const rt = host(home)
+  rt.warn('ds-bot: a line that lands')
+  await rt.dispose()
+  const live = await rt.diagnostics.report({})
+  assert.equal(live.facts.diagnosticsLog, 'recording')
+  assert.match(live.markdown, /^diagnostics log: recording$/m)
+})
+
 // The Read-only row answered one constant for every window that may not write, but the store
 // answers three ways (#2153): `stuck` (the team file cannot be read) is not a live lock at all,
 // and a report that calls a newer or unreadable team file "another dsh holds the team" sends the

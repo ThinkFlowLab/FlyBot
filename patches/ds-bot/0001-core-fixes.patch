@@ -4996,7 +4996,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      row('DSH', facts.dshVersion),
      row('Surface', client.surface),
      row('OS', facts.os),
-@@ -78,11 +78,14 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
+@@ -78,11 +78,17 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
      row('Read-only', facts.readOnly),
    ].filter(Boolean)
    const recent = entries.slice(-REPORT_ENTRIES)
@@ -5004,7 +5004,10 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 +  // The journal is only mentioned while the host runs one: an off journal is not a fact about
 +  // this host, and a stopped one is exactly what a report about a bug it was meant to catch misses.
 +  const journal = facts.stateJournal === undefined ? [] : ['', `state journal: ${facts.stateJournal}`]
-+  const out = [...lines, ...journal, '']
++  // The log's own line, in the journal's shape (#2134): a host whose log is off says nothing, and
++  // every other bundle gets the one fact the recent errors cannot show — whether they were written.
++  const log = facts.diagnosticsLog === undefined ? [] : ['', `diagnostics log: ${facts.diagnosticsLog}`]
++  const out = [...lines, ...journal, ...log, '']
    out.push(recent.length === 0 ? 'No host errors recorded.' : `Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
    if (recent.length > 0) out.push('```', ...recent.map(entryLine), '```')
    const stacks = recent.filter(entry => entry.stack).slice(-3)
@@ -5025,15 +5028,32 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
    return undefined
  }
  
-@@ -134,9 +134,20 @@ export function install(rt) {
+@@ -117,7 +117,10 @@ export function install(rt) {
+   const toFile = config.diagnosticsFile !== false
+   let fresh = []
+   let writing = Promise.resolve()
++  // `fileFailed` keeps stderr to one line per host; `fileFailure` is the reason the report shows,
++  // and a later append that lands clears it again so the line describes this host's log now.
+   let fileFailed = false
++  let fileFailure
+ 
+   const clean = text => cleanText(text, { redact: rt.redactSecrets })
+ 
+@@ -134,20 +134,53 @@ export function install(rt) {
      : Promise.resolve([])
    let cleared = 0
  
 +  // The log is one leaf file under the home, so a link there is not a place to write (#2089). The
 +  // check sits inside the chain, before the append and before the size rename, so a linked leaf is
 +  // left alone entirely; one line on stderr per host says so, without the home folder in it.
++  // `refusedLeaf` is that latch and never clears. The report answers a different question — what the
++  // last append attempt met — so `leafRefusedNow` is cleared when an attempt starts and a refusal
++  // sets it again; an append that fails for another reason leaves it clear, and `fileFailure` says
++  // which reason that was.
 +  let refusedLeaf = false
++  let leafRefusedNow = false
 +  const refuseLeaf = () => {
++    leafRefusedNow = true
 +    if (refusedLeaf) return
 +    refusedLeaf = true
 +    console.error('[ds-bot] diagnostics log is not a plain file of its own; nothing was written there')
@@ -5042,11 +5062,19 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
    const append = (entry) => {
      if (!toFile) return
      writing = writing.then(async () => {
++      leafRefusedNow = false
 +      if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
        await mkdir(dirname(logPath), { recursive: true })
        const size = await stat(logPath).then(info => info.size, () => 0)
        if (size > LOG_MAX_BYTES) await rename(logPath, `${logPath}.1`)
-@@ -148,6 +148,19 @@ export function install(rt) {
+       await appendFile(logPath, `${JSON.stringify(entry)}\n`, 'utf8')
++      fileFailure = undefined
+     }).catch((error) => {
++      fileFailure = error?.code ?? clean(error?.message ?? String(error))
+       if (fileFailed) return
+       fileFailed = true
+-      console.error('[ds-bot] diagnostics log not written:', error?.code ?? clean(error?.message ?? String(error)))
++      console.error('[ds-bot] diagnostics log not written:', fileFailure)
      })
    }
  
@@ -5086,7 +5114,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      return {
        botVersion: ownVersion(),
        dshVersion: dshVersion(),
-@@ -199,12 +199,24 @@ export function install(rt) {
+@@ -199,12 +199,33 @@ export function install(rt) {
        node: process.version,
        team: `${count(bots.length, 'Bot', 'Bots')}, ${rt.state.mainBotIds.length} Main, ${count(groups, 'group chat', 'group chats')}`,
        models: models.length > 0 ? models.join(', ') : undefined,
@@ -5104,6 +5132,15 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 +        : journal.recording ? (readOnly ? 'paused (this window is read-only)'
 +          : journal.opened === false ? 'not started (opens with the first save)' : 'recording')
 +          : `stopped (${clean(journal.because)})`,
++      // Where those errors are kept is the other half of that sentence, in the same shape: a host
++      // with the log off says nothing (#2134), a host whose appends land says so, and a refused
++      // leaf or a failed append names its own reason — the words stderr already used, never the
++      // folder, and never a claim about a file behind a link this host did not write (#2089). Both
++      // reasons are read as they stand now, not as the stderr latches left them (#2383).
++      diagnosticsLog: !toFile ? undefined
++        : leafRefusedNow ? 'not written (not a plain file of its own)'
++          : fileFailure ? `not written (${fileFailure})`
++            : 'recording',
      }
    }
  
