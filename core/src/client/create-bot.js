@@ -7,6 +7,7 @@ import { useEscape } from './overlay-hooks.js'
 import { createPayload, freshBotName, startModel } from './bot-draft.js'
 import { ModelMenu } from './model-menu.js'
 import { hostText, t } from './i18n.js'
+import { lockedWindow } from './schedules.js'
 import { nameProblem } from '../shared/mentions.js'
 
 const pick = list => list[Math.floor(Math.random() * list.length)]
@@ -31,12 +32,15 @@ export function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated
   useEscape(onBack)
   // Inside Settings the form opens below other sections, so it scrolls itself into view.
   useEffect(() => { if (inline) frame.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }, [])
+  // A read-only window already holds the host's own sentence: the form may stay as a preview,
+  // but nothing in it may reach the host (#2307).
+  const locked = lockedWindow(roster)
   const fallbackName = freshBotName(roster, t('New Bot'))
   const finalName = name.trim() || fallbackName
   const clash = roster.bots.some(bot => bot.name.toLowerCase() === finalName.toLowerCase())
   const problem = nameProblem(finalName)
   const create = async () => {
-    if (busy || clash || problem) return
+    if (locked || busy || clash || problem) return
     setError('')
     setBusy(true)
     try {
@@ -90,7 +94,9 @@ export function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated
     h('div', { className: 'bt-create-foot' },
       // The dialog's header already has Back and Close (#230); only the inline form needs its own.
       inline ? h('button', { type: 'button', className: 'bt-soft', onClick: onBack }, canGoBack ? t('Back') : t('Cancel')) : null,
-      h('button', { type: 'button', className: 'bt-send bt-create-go', disabled: busy || clash || Boolean(problem), onClick: () => void create() }, busy ? t('Creating…') : t('Create'))))
+      locked
+        ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+        : h('button', { type: 'button', className: 'bt-send bt-create-go', disabled: busy || clash || Boolean(problem), onClick: () => void create() }, busy ? t('Creating…') : t('Create'))))
   if (inline) return h('div', { ref: frame, className: 'bt-create-inline', role: 'group', 'aria-label': t('Create Bot') }, card)
   return h('div', { className: 'bt-create', role: 'dialog', 'aria-label': t('Create Bot') },
     h('div', { className: 'bt-create-head' },

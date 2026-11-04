@@ -1,0 +1,1 @@
+In a read-only window the New-Bot form now draws the host's own read-only sentence where **Create** was, instead of a form whose only answer from the host was `bot/read-only`; a writable window is unchanged ([#2307](https://github.com/ThinkFlowLab/FlyBot/issues/2307)).

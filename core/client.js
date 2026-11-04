@@ -15729,12 +15729,13 @@ function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inlin
   (0, import_react33.useEffect)(() => {
     if (inline) frame.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, []);
+  const locked = lockedWindow(roster);
   const fallbackName = freshBotName(roster, t("New Bot"));
   const finalName = name.trim() || fallbackName;
   const clash = roster.bots.some((bot) => bot.name.toLowerCase() === finalName.toLowerCase());
   const problem = nameProblem(finalName);
   const create = async () => {
-    if (busy || clash || problem) return;
+    if (locked || busy || clash || problem) return;
     setError("");
     setBusy(true);
     try {
@@ -15834,7 +15835,7 @@ function CreateBot({ roster, actions, start, onBack, canGoBack, onCreated, inlin
       { className: "bt-create-foot" },
       // The dialog's header already has Back and Close (#230); only the inline form needs its own.
       inline ? (0, import_react33.createElement)("button", { type: "button", className: "bt-soft", onClick: onBack }, canGoBack ? t("Back") : t("Cancel")) : null,
-      (0, import_react33.createElement)("button", { type: "button", className: "bt-send bt-create-go", disabled: busy || clash || Boolean(problem), onClick: () => void create() }, busy ? t("Creating…") : t("Create"))
+      locked ? (0, import_react33.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react33.createElement)("button", { type: "button", className: "bt-send bt-create-go", disabled: busy || clash || Boolean(problem), onClick: () => void create() }, busy ? t("Creating…") : t("Create"))
     )
   );
   if (inline) return (0, import_react33.createElement)("div", { ref: frame, className: "bt-create-inline", role: "group", "aria-label": t("Create Bot") }, card);
