@@ -691,3 +691,13 @@ Role context labels exact host test SHA/hash/command and native log source separ
 Existing candidate/tests/Review/merge evidence survives a Chief execution fault. Closure refusals identify actual criteria/evidence fields. Explicit Chief reconcile-exit reuses the same #2375 verifier/retirement and excludes only its authenticated current inspection; it does not retire its own live claim or select a downstream role. Existing sealed-candidate resumeVerification remains authoritative.
 
 The authenticated Chief exclusion matches Project, role, run and invocation on both worker and lease. It never discharges an old invocation, another Chief or the current coordinator itself.
+
+## Durable merge-to-Chief handoff — #2413
+
+A provider-confirmed merge saves its evidence and stages `chief.merge-handoff` in the existing Effects store. `github.merge` completes once that intent is durable; notification failure cannot turn a completed merge into a failed business result. The handoff uses the original merge Effect, Attempt, candidate and merge commit as its stable identity. It has the existing configurable Effect retry budget, independent of the completed merge wait budget.
+
+The normal scheduler reconciliation discovers up to32 missing handoffs per pass, including historical saved merge evidence after a crash. It requires the trusted provider observation and matching original merge Effect/PR/candidate, not text saying MERGED or a PR URL. A historical exhausted merge Effect remains audit history; its trusted merge observation can restore the factual merged projection and stage notification without another provider call. Uncommitted handoffs cannot execute.
+
+Queued/running/correcting/interrupted Chief work is reconciled first. A persisted matching merge request is reused even if its response was lost. Otherwise the host requests one scoped inspection; it supplies facts, not an acceptance or a selected next role. The resident Chief retains its normal Session and current evidence/authority gates. A changed merge observation invalidates an old Chief snapshot through the existing correction path. Applied decisions are not replayed.
+
+`merge.chiefHandoff` in Task/Attempt metadata distinguishes notification pending/running/delivered/failed/cancelled, the Effect and linked Run, current waiting Run, last request time and Chief failure. Delivered means a durable request, not a successful Chief execution or a completed Task. Genuine pending inputs, rework, exit uncertainty and missing criteria remain. Old correction markers clear only after a valid Chief decision; their Run audit remains. Superseded/cancelled Tasks or candidates cannot receive a closing handoff.

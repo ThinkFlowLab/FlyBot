@@ -660,3 +660,34 @@ test('corrupt input during correction dispatch is a source failure, not a model 
   assert.equal(input.status, 'accepted')
   await f.rt.projectEffects.close()
 })
+
+test('a merge arriving during Chief execution corrects the original judgement before accepting it', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  const originalGeneration = f.task.collaboration.generation
+  f.rt.state.projectAttempts.a.evidence.merge = { sha: f.rt.state.projectAttempts.a.candidateSha, mergeCommitSha: 'b'.repeat(40), scope: 'provider-confirmed-merge-observation' }
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0)
+  assert.equal(run.status, 'correction-pending')
+  assert.equal(f.task.collaboration.generation, originalGeneration)
+  assert.ok(run.correction.feedback.at(-1).taskFeedback[0].recovery.changedFields.includes('merge evidence'))
+  await f.control.pump()
+  assert.equal(f.request.projectFacts.tasks[0].evidence.merge.mergeCommitSha, 'b'.repeat(40))
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 1)
+  assert.equal(run.status, 'done')
+  assert.equal(f.task.chiefDecisionIssue, undefined)
+  assert.equal(run.correction.status, 'resolved', 'Original correction history remains on its Run')
+})
+
+test('merge-specific Chief correction cannot migrate to a replacement candidate', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  run.source = { mergeEffectId: 'original-merge', attemptId: 'a', candidateSha: f.rt.state.projectAttempts.a.candidateSha }
+  f.rt.state.projectAttempts.a.evidence.merge = { effectId: 'original-merge', sha: run.source.candidateSha, mergeCommitSha: 'b'.repeat(40) }
+  f.rt.state.projectAttempts.a.candidateSha = 'replacement-candidate'
+  await f.request.onResult(f.result())
+  assert.equal(run.status, 'correction-pending')
+  await f.control.pump()
+  if (run.status === 'running') await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0, 'A notification for the old candidate cannot authorize acceptance of its replacement')
+  assert.equal(run.status, 'failed')
+})

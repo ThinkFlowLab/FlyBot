@@ -1,5 +1,7 @@
 # FlyBot — Roadmap
 
+#2413: recover saved merge-to-Chief handoff with idempotent requests and bounded backfill; expose delivery separately from Chief outcome and Task acceptance.
+
 
 #2378: enable explicit Actions reads/download hosts and retrievable exact-SHA test artifacts; real installed-App/private-repository acceptance remains separate.
 
@@ -65,46 +67,25 @@ Leaving/retiring revokes only that agent's grants and preserves private history.
 External descriptors remain unverified; authentication/transport and actual provider
 acceptance are #2183/#2185, compatibility #2186. This is source work, not live rollout.
 
-## Backend convergence — 2026-11-02
+## Backend delivery and current acceptance
 
-Implement the 2026-11-02 convergence issues sequentially: Project boundaries, independent personal agents/authorization, execution and collaboration, context, Task/subtask lifecycle, SQLite/state, unified API/events, compatibility, then #2189 real deployment/README. Each issue has a separate main-repository branch/PR; no automatic merge or production rollout. #2171 includes repository relations, Owner closure and Chief-proposed/Owner-or-Maintainer-approved role governance. Execution integration for custom/retired roles remains in #2184; ancestor changes must propagate through the PR stack before final compatibility acceptance.
+Current service deployment/API instructions are in the root README, #2189 and the
+public OpenAPI contract (#2300). Task/Session/role/state/API foundations remain in
+PROJECT.md and canonical subsystem contracts. Original #2184 current-rights
+stop/reconcile and real-provider native acceptance remain separately accountable;
+no historical fixture result completes actual provider acceptance.
 
-Original #2184 follow-up adds native Task-role restoration metadata, cancellation/quiescence
-proofs and canonical-pool cwd retention. Custom-role verification now has direct artifact/SDK contract regressions; finish current-rights
-in-flight stop/reconcile and real-provider native acceptance before propagating the
-execution ancestor through collaboration/context/Task/state/API branches.
+Backend repairs run directly in the Owner's foreground session. Preserve healthy
+original frontend Task40/PR48 and its UI/functions/history; backend work does not
+complete #40/#41 shared-service, weak-network, screenshot or native UI acceptance.
+Recovery preserves same Task/PR/candidate ancestry, exact exit proof, quotas and
+current authority. Real-provider, mixed-resource, Release, migration and UI evidence
+remain separate; no new deployment, expanded privilege or automatic mission change.
 
-## Active fork roadmap — 2026-10-31
-
-The earlier delivery snapshot at1811e3b8f consolidated S1–S6. Current persistent
-source deployment and API use follow the root README and #2189. #2300 adds the
-machine-readable public OpenAPI contract and third-party onboarding guide, guarded
-by source inventory/schema and representative isolated HTTP conformance tests.
-Vendor-specific adapters and live external-provider acceptance remain separate.
-Backend delivery does not complete original frontend #41 acceptance
-or merge staged PRs.
-
-Earlier service chronology are [preserved in the dated history](docs/history/2026-11-04-earlier-delivery-roadmap.md).
-Current authorization, Task/Session/role constraints and original capability compatibility
-remain in PROJECT.md and canonical subsystem contracts. Historical test evidence does
-not complete outstanding real-provider, mixed-resource, release or frontend acceptance;
-no new deployment, privilege expansion or automatic mission change is authorized.
-
-Current execution order (Owner update, 2026-11-01): keep the existing frontend
-#40 Task/PR48 autonomous while implementing backend #49–#55 directly in the
-foreground session, in separate issue worktrees and with staged verified rollout.
-Do not use FlyBot to assign backend repairs. R6 recovery covers serialized wake
-bursts, immediate persisted handoff/Chief events, original-requester queue recovery
-and receiving-workspace preparation before inference and host testing. Remaining
-live integration, frontend restoration and R8 acceptance retain their existing
-issues; no passing unit suite alone completes them.
-
-
-Earlier M0–M7 and service checkpoints are [preserved in the dated history](docs/history/2026-11-04-earlier-delivery-roadmap.md).
-Current authorization, Task/Session/role constraints and original capability compatibility
-remain in PROJECT.md and canonical subsystem contracts. Historical test evidence does
-not complete outstanding real-provider, mixed-resource, release or frontend acceptance;
-no new deployment, privilege expansion or automatic mission change is authorized.
+Earlier convergence/service implementation chronology is
+[archived verbatim](docs/history/2026-11-05-merge-handoff-memory-checkpoints.md),
+including links to its original detailed histories. This archive changes no current
+permission or outstanding acceptance requirement.
 
 ## Historical upstream roadmap
 

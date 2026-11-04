@@ -1,5 +1,7 @@
 # FlyBot — Project State
 
+#2413: provider-confirmed merge and durable Chief handoff use separate existing Effects. Recovery never repeats merge to notify, never accepts a Task; current Chief facts and exact candidate/authority remain required.
+
 
 #2378 reuses role Apps for bounded PR/CI reads and hash-verified host logs in Reviewer scratch; absence or incomplete pages are not verification success.
 
