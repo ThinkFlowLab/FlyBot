@@ -119,3 +119,15 @@ JSON/SQLite回退保留新代码格式守卫、ID和已完成Effects，**不是�
 
 
 #2336：资源 reservation 记录 Task/claim/代次归属。已证明未启动的失效预留由原对账回收；registered/starting/spawned 是不同阶段，starting 或退出未知继续占用。reclamation 和 releaseProof 保留回收依据；不要通过清 bindings、删工作树或强清 lease 恢复容量。
+
+### Codex configuration readiness (#2337)
+
+The pinned SDK and CLI must both be 0.166.0 on the selected resource. FlyBot checks
+the SDK-resolved executable, not global PATH, before inference. Named role profiles
+use `:tmpdir` and their own scratch directory. A `bot/harness-capability` failure
+requires inspecting the selected profile's explicit legacy sandbox settings or
+installing the pinned CLI with optional platform dependencies; do not disable the
+sandbox, expand network access, or replace credentials to hide a configuration
+error. Fix the resource profile through authorized operations, then retry the
+original Task. Readiness is not a login/model/test PASS; health keeps configuration
+failures distinct. Offline regression instructions are in the Harness contract.

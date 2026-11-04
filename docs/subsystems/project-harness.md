@@ -13,6 +13,8 @@ owned_paths:
   - core/src/host/project-git-sandbox.js
   - core/test/project-git-sandbox.test.js
   - core/src/host/project-harness.js
+  - core/src/host/project-codex-config.js
+  - core/test/project-codex-config.test.js
   - core/src/host/project-harness-turn.js
   - core/src/host/project-harness-worker.mjs
   - core/src/host/project-harness-deny-tool.mjs
@@ -389,3 +391,34 @@ intent fences the exact lease/generation/worker. Registered-only failures roll b
 through resource.reclaim; possibly spawned work retains occupancy until real exit.
 The shared exit predicate accepts only the exact matching no-start proof, not missing
 PID/workerId. This does not clear prior Task-role bindings or enable a fresh Session.
+
+## Actual Codex configuration readiness (#2337)
+
+Command roles grant `:tmpdir` and the resource-bound absolute scratch path. The
+unsupported `:tmp` spelling is forbidden. Before creating/resuming a paid thread,
+the worker resolves the CLI from the installed SDK dependency graph and passes
+that same executable through the SDK public `codexPathOverride`. Its native helper
+PATH is retained; a different global CLI cannot stand in for this check.
+
+Supported CLI/SDK is 0.166.0. Offline `--version`, `app-server
+--print-startup-config` and `config/read` validate the exact SDK config and raw
+TOML entry points, in the selected cwd/profile/environment. Explicit loaded legacy
+`sandbox_mode`/`sandbox_workspace_write` layers conflict with named role profiles:
+fail with `bot/harness-capability`, never silently edit user config or relax policy.
+Chief retains its explicit read-only SDK sandbox and denied tools. The probe creates
+no thread/turn and logs no config, stderr or authentication values. There is no
+cached readiness promise that can survive a configuration change.
+
+Resource worker failure evidence and Harness health distinguish configuration
+capability failure from code tests; no success, paid inference or exit proof follows
+from configuration readiness. Unknown CLI versions fail before model work. Checks
+are bounded, and subprocess exit precedes returning a result.
+
+`FLYBOT_TEST_CODEX_EXECUTABLE=/absolute/resource/sdk/vendor/bin/codex node --test
+core/test/project-codex-config.test.js` runs an opt-in offline actual-CLI fixture
+with disposable HOME/CODEX_HOME/TMPDIR, valid/invalid profiles, legacy conflicts,
+scratch writes and candidate write protection. Basic tests need no vendor install.
+0.166 can silently accept unknown filesystem alias keys, so parser success alone
+is insufficient: inspect resolved semantics and run isolated filesystem probes.
+See [official permissions](https://learn.chatgpt.com/docs/permissions) and
+[configuration read API](https://learn.chatgpt.com/docs/app-server).

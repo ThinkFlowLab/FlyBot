@@ -13,6 +13,13 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — Parsing success is not effective permission proof (Seen 1×)
+
+CLI 0.166 accepts unknown filesystem alias keys. Use supported `:tmpdir`, inspect
+loaded legacy overrides, and test actual scratch/candidate behavior with the same
+SDK-resolved executable; mock argument equality cannot establish sandbox readiness.
+
+
 ### 2026-11-04 — Missing workerId does not define admission cleanup (Seen 1×)
 
 Binding can fail before execute returns; register reservation ownership and cleanup

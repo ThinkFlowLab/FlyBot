@@ -34020,7 +34020,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "0fee68a81e90d88054b9e56fc5c2031d2bdbb5520e827d18412e1900d14dc4a1"
+        "sha256": "acf48a6d21ec863e939f96b57bd99e880b6bcba4bed7a6bdfeaeaee6cd34e963"
       }
     },
     {
@@ -44968,7 +44968,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "0fee68a81e90d88054b9e56fc5c2031d2bdbb5520e827d18412e1900d14dc4a1"
+        "sha256": "acf48a6d21ec863e939f96b57bd99e880b6bcba4bed7a6bdfeaeaee6cd34e963"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -45468,6 +45468,7 @@
       "core/src/host/project-chief-protocol.js": "a09d85e04171b22625d3eed131dd6a5227dc1a946ad39d8a59f017bb75f71936",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
+      "core/src/host/project-codex-config.js": "4ddf4e4e3e2b324b862ad4f6a6c2a90ac3f3003843b8e446f873b146872c4598",
       "core/src/host/project-command-receipts.js": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52",
       "core/src/host/project-compatibility.js": "4ab65df4a237fb55ea2c68396bd180bb0a9ed4c42dc63444ce4ef0869c8988bc",
       "core/src/host/project-consultations.js": "c7a1e9afa0ad3982e23c141926f017cfff13556607b5c39b2f10296b9fb835a0",
@@ -45490,8 +45491,8 @@
       "core/src/host/project-github-connections.js": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d",
       "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
       "core/src/host/project-github.js": "bf6d3891a6fa9c0516cd330d3322a750fc6db8813752f7801d4d9760fca84061",
-      "core/src/host/project-harness-turn.js": "a8ab111b8d5473a27413968e4ea5c2631ea472c992414e9387da245463f7b21a",
-      "core/src/host/project-harness.js": "0fee68a81e90d88054b9e56fc5c2031d2bdbb5520e827d18412e1900d14dc4a1",
+      "core/src/host/project-harness-turn.js": "61ac162619bb5856f9786c8f7b80bdd2ff92e875828897cf49d70903cd2453df",
+      "core/src/host/project-harness.js": "acf48a6d21ec863e939f96b57bd99e880b6bcba4bed7a6bdfeaeaee6cd34e963",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "dd52c6ddc7b0f2614ecaa3c3cccbea7a39ea914f24e1602946b93a290eff622e",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
