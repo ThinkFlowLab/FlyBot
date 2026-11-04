@@ -20097,7 +20097,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       "div",
       { key: "id", className: "bt-drawer-id", "data-move": side },
       bot ? (0, import_react44.createElement)(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== void 0), main: isMainBot, badge: false, gaze: true, pokeable: true }) : (0, import_react44.createElement)(RoomAvatar, { room: room2, roster, size: 64 }),
-      bot?.remote ? (0, import_react44.createElement)("div", { className: "bt-drawer-name" }, current) : room2?.origin === "face-to-face" ? (0, import_react44.createElement)("div", { className: "bt-drawer-name bt-drawer-name-face", title: current }, current) : editing ? (0, import_react44.createElement)("input", {
+      bot?.remote ? (0, import_react44.createElement)("div", { className: "bt-drawer-name" }, current) : bot && lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-drawer-name", title: current }, current) : room2?.origin === "face-to-face" ? (0, import_react44.createElement)("div", { className: "bt-drawer-name bt-drawer-name-face", title: current }, current) : editing ? (0, import_react44.createElement)("input", {
         className: "bt-drawer-name-input",
         autoFocus: true,
         value: draftName,
@@ -20124,25 +20124,32 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       (0, import_react44.createElement)("span", { ref: glide.thumb, className: "bt-thumb", "aria-hidden": true }),
       tabs.map((key) => (0, import_react44.createElement)("button", { key, type: "button", role: "tab", className: "bt-tab", "aria-selected": tab === key, onClick: () => setTab(key) }, t(TAB_LABELS[key])))
     ),
+    // #2385/P-542: the refused-write line is a sibling above the scrolling body here too — the body
+    // is `overflow-y:auto` (`styles.js:389`), so the first child's sentence lands where the person
+    // scrolled past, not where the press happened.
+    errorLine,
     (0, import_react44.createElement)(
       "div",
       { key: `body:${tab}`, className: "bt-drawer-body", "data-move": move },
-      errorLine,
       room2 && tab === "details" ? (0, import_react44.createElement)(GroupOverview, { room: room2, roster, actions, usage, useWork, openSettings: () => setView("settings") }) : null,
       bot && bot.remote && tab === "details" ? [
         bot.remote.handle ? (0, import_react44.createElement)("div", { key: "handle", className: "bt-muted" }, bot.remote.handle) : null,
         (0, import_react44.createElement)(FlyBotDetails, { key: "social", bot, roster, actions })
       ] : null,
       bot && !bot.remote && tab === "details" ? [
-        (0, import_react44.createElement)(
+        // P-542/P-487: the overview's own model, permission and folder entries are writes too, and a
+        // locked window refuses every one of them. Say so once at the top and draw the read half only;
+        // the name above is already text, and the settings gear still opens the page that explains it.
+        lockedWindow(roster) ? (0, import_react44.createElement)("div", { key: "read-only", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+        lockedWindow(roster) ? null : (0, import_react44.createElement)(
           "div",
           { key: "model", className: "bt-drawer-model" },
           (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Model")),
           (0, import_react44.createElement)(ModelMenu, { bot, roster, actions, run, wide: true }),
           modelOf(bot, roster) ? null : (0, import_react44.createElement)("div", { className: "bt-note" }, t("Pick a model and {name} can start.", { name: bot.name }))
         ),
-        (0, import_react44.createElement)(PermissionRow, { key: "permission", bot, roster, actions, run }),
-        (0, import_react44.createElement)(
+        lockedWindow(roster) ? null : (0, import_react44.createElement)(PermissionRow, { key: "permission", bot, roster, actions, run }),
+        lockedWindow(roster) ? null : (0, import_react44.createElement)(
           "div",
           { key: "folder", className: "bt-drawer-model" },
           (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Working folder")),
