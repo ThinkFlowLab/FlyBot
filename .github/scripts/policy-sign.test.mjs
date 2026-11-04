@@ -254,3 +254,47 @@ test('#2060: a list answer is still paged and flattened', async t => {
   assert.equal(stub.calls.filter(call => call.path.endsWith('/files')).length, 2, 'a full page asks for the next one')
   assert.equal(pull.body, 'Fixes #1')
 })
+
+// #2314 Part 2 (P-507): a refusal never said which comment would sign the tip, although `judge()`
+// already has the comments and the three signability criteria. It now returns `signable` — at most
+// three `{ id, login }`, in comment order — and `main()` prints one line per candidate.
+const signable = (id, tip = HEAD) => ({ id, body: `ok at ${tip}`, user: { login: 'Birfy', type: 'User' } })
+
+test('#2314: the missing-signature refusal lists the comments that can sign this tip', () => {
+  const comments = [
+    { id: 41, body: `ok at ${HEAD}`, user: { login: 'HugoXK', type: 'User' } }, // the pull request's own author
+    { id: 42, body: `ok at ${HEAD}`, user: { login: 'Birfy', type: 'User' } },
+    { id: 43, body: `ok at ${OTHER_TIP}`, user: { login: 'Birfy', type: 'User' } }, // an older tip
+    { id: 44, body: `ok at ${HEAD}`, user: { login: 'helper[bot]', type: 'Bot' } }, // a bot account
+    { id: 45, body: 'ok to change the gate', user: { login: 'Dev3', type: 'User' } }, // names no tip
+    signable(46), signable(47), signable(48),
+  ]
+  const verdict = judge({ files: [GATE_FILE], body: 'Fixes #1', ...PR, head: HEAD, comments, policy })
+  assert.equal(verdict.ok, false)
+  assert.deepEqual(verdict.signable, [
+    { id: 42, login: 'Birfy' },
+    { id: 46, login: 'Birfy' },
+    { id: 47, login: 'Birfy' },
+  ], 'at most three, in comment order, and only the comments that can sign this tip')
+})
+
+test('#2314: a signature for another tip lists the comments that can sign this tip', () => {
+  const comments = [
+    { id: 42, body: `ok at ${OTHER_TIP}`, user: { login: 'Birfy', type: 'User' } },
+    signable(77),
+  ]
+  const verdict = judge({ files: [GATE_FILE], body: 'Fixes #1\n\nPolicy-sign: 42', ...PR, head: HEAD, comments, policy })
+  assert.equal(verdict.ok, false)
+  assert.match(verdict.reason, /does not name this tip/)
+  assert.deepEqual(verdict.signable, [{ id: 77, login: 'Birfy' }])
+})
+
+test('#2314: main prints one line per signable comment', async () => {
+  const run = await runMain({
+    '/pulls/2060/files': [{ filename: GATE_FILE }],
+    '/issues/2060/comments': [signable(42)],
+    '/pulls/2060': pullAnswer('Fixes #1\n\nTightens the gate.'),
+  })
+  assert.equal(run.code, 1)
+  assert.match(run.out, /policy-sign: comment 42 by Birfy signs this tip — add `Policy-sign: 42` to the body/)
+})

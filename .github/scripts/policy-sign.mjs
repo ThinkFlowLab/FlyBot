@@ -49,14 +49,42 @@ export function parseSignature(body = '') {
   return url === null ? value : url[1]
 }
 
+// A comment signs a tip when it names it. Twelve characters are enough: the comment quotes a sha a
+// person pasted, and the comparison is a prefix of the tip, the way the gate reads a verdict.
+function namesTip(comment, tip) {
+  const tokens = String(comment?.body ?? '').toLowerCase().match(/[0-9a-f]{12,40}/g) ?? []
+  return tokens.some(value => tip.startsWith(value))
+}
+
+// The three signability criteria, in one place: the refusal refuses with them, and lists the comments
+// that would satisfy them (#2314). A gate change needs another person, not the author and not a bot,
+// and the comment has to name the tip it signs.
+function canSign(comment, { author, tip }) {
+  if (tip === '') return false
+  const login = String(comment?.user?.login ?? '')
+  if (login !== '' && login === String(author)) return false
+  if (comment?.user?.type !== 'User') return false
+  return namesTip(comment, tip)
+}
+
+// At most three: a refusal is a remedy, not a list of every comment on the pull request.
+export function signable(comments = [], { author = '', tip = '', limit = 3 } = {}) {
+  return comments
+    .filter(comment => canSign(comment, { author, tip }))
+    .slice(0, limit)
+    .map(comment => ({ id: comment.id, login: String(comment.user?.login ?? '') }))
+}
+
 export function judge({ files = [], body = '', author = '', comments = [], head = '', policy = loadPolicy() }) {
   const touched = gateFiles(files, policy)
   if (touched.length === 0) return { ok: true, reason: 'no gate file changed, so no signature is needed' }
 
   const named = touched.length === 1 ? touched[0] : `${touched.length} gate files (${touched.join(', ')})`
+  const tip = String(head ?? '').trim().toLowerCase()
+  const candidates = signable(comments, { author, tip })
   const token = parseSignature(body)
   if (token === undefined) {
-    return { ok: false, reason: `a gate file changed (${named}), and the body carries no \`Policy-sign:\` line naming a comment` }
+    return { ok: false, reason: `a gate file changed (${named}), and the body carries no \`Policy-sign:\` line naming a comment`, signable: candidates }
   }
   const comment = comments.find(entry => String(entry?.id ?? '') === String(token))
   if (comment === undefined) {
@@ -71,13 +99,11 @@ export function judge({ files = [], body = '', author = '', comments = [], head 
   }
   // The comment has to name the tip it signs. A comment reviewed one change set; without this, the
   // author can sign a harmless tip and then push the change the signature was supposed to cover.
-  const tip = String(head ?? '').trim().toLowerCase()
   if (tip === '') {
     return { ok: false, reason: `\`Policy-sign:\` names comment ${token}, but this run carries no head sha to bind it to — the check fails closed` }
   }
-  const tokens = String(comment.body ?? '').toLowerCase().match(/[0-9a-f]{12,40}/g) ?? []
-  if (!tokens.some(value => tip.startsWith(value))) {
-    return { ok: false, reason: `\`Policy-sign:\` names comment ${token}, which does not name this tip ${String(head).trim()} — a signature binds the tip it was written for, so a new tip needs a new signature` }
+  if (!namesTip(comment, tip)) {
+    return { ok: false, reason: `\`Policy-sign:\` names comment ${token}, which does not name this tip ${String(head).trim()} — a signature binds the tip it was written for, so a new tip needs a new signature`, signable: candidates }
   }
   return { ok: true, reason: `signed by ${login} in comment ${token}`, signer: login }
 }
@@ -149,6 +175,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     return 0
   }
   process.stdout.write(`policy-sign refused (#${number}): ${verdict.reason}\n`)
+  for (const candidate of verdict.signable ?? []) {
+    process.stdout.write(`policy-sign: comment ${candidate.id} by ${candidate.login} signs this tip — add \`Policy-sign: ${candidate.id}\` to the body\n`)
+  }
   process.stdout.write(`::error::${verdict.reason}\n`)
   return 1
 }

@@ -2,6 +2,9 @@
 // that would quietly turn it back into a report.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { BODY_PATH, REQUIRED_CONTEXTS, RULESET_NAME, bodyFor, main, problems, render, summarize } from './gate-ruleset.mjs'
 
 const REPO = 'Birfy/FlyBot'
@@ -192,4 +195,98 @@ test('#812: the printed report names one problem per line, and nothing when it i
   assert.match(bad, /main is unprotected/)
   const good = render({ ok: true, mode: 'check', problems: [], summary: summarize(goodRow()) })
   assert.match(good, /OK — main requires the checks and nobody can bypass them/)
+})
+
+// #2314: the ruleset is identified by what it governs, not by its display name. On a11983c5 the only
+// active ruleset is `main merge queue` (id 25173372): it requires the Node 24 context, `tests-ok` and
+// `merge-gate`, and it carries the `merge_queue` rule. These are the two responses the issue quotes.
+const LIVE_ID = 25173372
+const liveRules = () => [
+  { type: 'deletion' },
+  { type: 'non_fast_forward' },
+  {
+    type: 'required_status_checks',
+    parameters: {
+      strict_required_status_checks_policy: false,
+      required_status_checks: [
+        { context: 'ubuntu-latest · Node 24 · DSH 0.2.0-rc.2' },
+        { context: 'tests-ok' },
+        { context: 'merge-gate' },
+      ],
+    },
+  },
+  {
+    type: 'pull_request',
+    parameters: {
+      required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false,
+      require_last_push_approval: false, required_review_thread_resolution: false,
+    },
+  },
+  { type: 'merge_queue', parameters: { merge_method: 'SQUASH', max_entries_to_merge: 1 } },
+]
+const liveRow = (name = 'main merge queue') => ({
+  id: LIVE_ID, name, target: 'branch', enforcement: 'active',
+  bypass_actors: [], current_user_can_bypass: 'never',
+  conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } },
+  rules: liveRules(),
+})
+
+test('#2314: --check finds the gate by the ref it governs, not by its display name', () => {
+  const { state, gh, get } = fakeRepo({ rulesets: [liveRow()] })
+  const r = main({ mode: 'check', repo: REPO, gh, get })
+  assert.equal(state.writes.length, 0, 'check is still read-only')
+  assert.equal(r.id, LIVE_ID, 'the ruleset the check reads is the live one, named by its id')
+  const why = r.problems.join('\n')
+  assert.doesNotMatch(why, /unprotected/, 'main is gated under another name, not unprotected')
+  assert.match(why, /merge-gate/, 'a context the live gate requires and the file lacks is drift')
+  assert.match(why, /Node 24|ubuntu-latest/, 'the live Node 24 context is drift too')
+  assert.match(why, /enqueue-guard|policy-sign/, 'a context the file wants and the live gate lacks is drift as well')
+  assert.equal(r.ok, false, 'drift in either direction is not OK')
+})
+
+test('#2314: --apply updates the ruleset that governs main even under another name', (t) => {
+  // The body that converges the live ruleset: same rules, only the display name still differs.
+  const body = liveRow('main merge gate')
+  delete body.id
+  delete body.current_user_can_bypass
+  const dir = mkdtempSync(join(tmpdir(), 'gate-ruleset-body-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const bodyPath = join(dir, 'body.json')
+  writeFileSync(bodyPath, JSON.stringify(body))
+  const { state, gh, get } = fakeRepo({ rulesets: [liveRow()] })
+  const r = main({ mode: 'apply', repo: REPO, gh, get, bodyPath })
+  assert.equal(r.action, 'update', 'a differently named ruleset on refs/heads/main is the one to update')
+  assert.equal(r.id, LIVE_ID)
+  assert.equal(state.writes.filter((w) => w.method === 'POST').length, 0, 'no second ruleset is created')
+  const put = state.writes.find((w) => w.method === 'PUT')
+  assert.ok(put, 'the live ruleset is updated in place')
+  assert.match(put.path, new RegExp(`/rulesets/${LIVE_ID}$`))
+})
+
+test('#2314: --apply refuses a body that would drop a live-required context or the merge queue', () => {
+  // The repository's own body file: no `merge-gate`, no Node 24 context, and no `merge_queue` rule.
+  const { state, gh, get } = fakeRepo({ rulesets: [liveRow()] })
+  let ghCalls = 0
+  const counting = (args, input) => { ghCalls += 1; return gh(args, input) }
+  const r = main({ mode: 'apply', repo: REPO, gh: counting, get })
+  assert.equal(r.ok, false, 'a downgrade is not a convergence')
+  const why = r.problems.join('\n')
+  assert.match(why, /merge-gate/, 'the live verdict gate it would drop is named')
+  assert.match(why, /Node 24|ubuntu-latest/, 'and the live Node 24 context')
+  assert.match(why, /merge_queue/, 'and the merge-queue rule it would remove')
+  assert.equal(ghCalls, 0, 'the refusal is decided before the first write request, not after one')
+  assert.equal(state.writes.length, 0, 'nothing is written when the body is a downgrade')
+})
+
+test('#2314: --rollback deletes the ruleset that governs main, whatever it is called', () => {
+  // Only the live `main merge queue` exists: a name-based lookup finds nothing, so the old code
+  // reported "nothing to roll back" and left the gate in place.
+  const { state, gh, get } = fakeRepo({ rulesets: [liveRow()] })
+  const r = main({ mode: 'rollback', repo: REPO, gh, get })
+  assert.equal(r.action, 'delete', 'a differently named ruleset that governs main is the one to roll back')
+  assert.equal(r.id, LIVE_ID)
+  const deletes = state.writes.filter((w) => w.method === 'DELETE')
+  assert.equal(deletes.length, 1)
+  assert.match(deletes[0].path, new RegExp(`/rulesets/${LIVE_ID}$`))
+  assert.equal(r.ok, true, r.problems.join('; '))
 })
