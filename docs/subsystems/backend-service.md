@@ -152,3 +152,7 @@ under configure authority. It requires an exact current claim/generation and
 verified physical exit; it does not cancel an Attempt or confer integration/PR
 acceptance. OpenAPI and operations describe re-reading the workspace snapshot
 before binding a source. Chief recovery facts retain specific blocker references.
+
+## Explicit successor continuation (#2377)
+
+The API inventory describes attempt.continuation-state and the optional task.run continuation object, preserving configure authority, current snapshots, explicit baseline choice and cancelled-predecessor semantics.

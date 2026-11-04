@@ -162,3 +162,7 @@ optional candidate adoption phase of the original publication-retry command.
 #2398 execution metadata includes safe profile identity and known authenticationFailure
 codes. No profile paths or provider error payload enter shared Task views. Actual setup
 paths are returned only through the existing human resource-administrator terminal.
+
+## Explicit successor continuation (#2377)
+
+Attempt metadata includes safe continuation mode, predecessor, workspace id, source baseline and admission references. Full evidence remains retrievable under current scope; input text/PR numbers cannot manufacture continuation admission.

@@ -677,3 +677,7 @@ an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps
 ## Exit reconciliation (#2375)
 
 `attempt.reconcile-exit` requires current configure authority, attemptId, claimId, generation and reason. It rechecks exact worker/Session/allocation exit, preparation and Chief occupancy, pending results/correction and unknown publication effects before committing pool retirement. It preserves drafts/candidates and does not cancel or revive the Attempt. Fetch a fresh `attempt.integration-state` before `attempt.integration-bind`; inputs are not candidate/PR evidence.
+
+## Explicit successor continuation (#2377)
+
+`attempt.continuation-state` returns an exited current Attempt snapshot. Explicit `task.run.continuation` chooses continue or latest using previousAttemptId/generation/expectedWorkspace. Continue revalidates and retains original seed, base and durable integration admissions; latest retains draft lineage and requires ordinary integrate admission when the new checkout conflicts. Cancelled Attempts remain cancelled; successors get fresh test/Review evidence. Missing draft choice fails before creating a successor. An original pool Effect commits the intent before filesystem work.
