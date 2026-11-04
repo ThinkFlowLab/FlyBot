@@ -5,9 +5,9 @@
 // credential-like strings and the home folder before it is kept and again before it is
 // shown, because the report is meant for a public issue.
 import { constants, readFileSync } from 'node:fs'
-import { access, appendFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { access, appendFile, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { arch, homedir, platform, release } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format } from 'node:util'
 import { fileKind } from './real-dir.js'
@@ -84,6 +84,9 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
   // The team file, right after the table that counts the team (#2394): a report about a team has to
   // say what that team is saved in, in the shape the two file lines below already have.
   const stateFile = facts.stateFile === undefined ? [] : ['', `state file: ${facts.stateFile}`]
+  // The backups beside that file, in the same block: what a person reading a report about a team
+  // that cannot be read needs next is whether an earlier copy is still on disk and readable.
+  const stateBackups = facts.stateBackups === undefined ? [] : [`state backups: ${facts.stateBackups}`]
   // The journal is only mentioned while the host runs one: an off journal is not a fact about
   // this host, and a stopped one is exactly what a report about a bug it was meant to catch misses.
   // Its file follows in the same shape (#2388): the sentence says whether the host records, and
@@ -93,7 +96,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
   // The log's own line, in the journal's shape (#2134): a host whose log is off says nothing, and
   // every other bundle gets the one fact the recent errors cannot show — whether they were written.
   const log = facts.diagnosticsLog === undefined ? [] : ['', `diagnostics log: ${facts.diagnosticsLog}`]
-  const out = [...lines, ...stateFile, ...journal, ...log, '']
+  const out = [...lines, ...stateFile, ...stateBackups, ...journal, ...log, '']
   out.push(recent.length === 0 ? 'No host errors recorded.' : `Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
   if (recent.length > 0) out.push('```', ...recent.map(entryLine), '```')
   const stacks = recent.filter(entry => entry.stack).slice(-3)
@@ -288,6 +291,63 @@ export function install(rt) {
     }
   }
 
+  // What the store leaves beside the team file, named without opening it: one `state.json.v1`
+  // taken before a version-1 migration, and the `state.json.broken-<stamp>` copies of a file that
+  // could not be read. A report about a team that cannot be read has to say whether those are
+  // there and whether this host can describe them, so the line lists name, size and age — `lstat`
+  // for each name and one `readdir` for the broken ones, never an open: a backup holds the same
+  // members, messages and saved keys as the team file itself.
+  const BACKUPS_SHOWN = 3
+  const sizeText = bytes => bytes < 1024 ? `${bytes} B`
+    : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB`
+      : `${Math.round(bytes / (1024 * 1024))} MB`
+  const ageText = mtimeMs => {
+    const ms = Date.now() - mtimeMs
+    if (ms < 60_000) return 'just now'
+    if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min ago`
+    if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)} h ago`
+    return `${Math.round(ms / 86_400_000)} d ago`
+  }
+  // One name this host may describe, always from the metadata `lstat` gave: size and age. A name
+  // `lstat` itself cannot answer for is named with the code it failed with, never guessed at; a
+  // folder or a link is a name like any other here, drawn from its own metadata and never opened.
+  const backupFact = (name, info) => `${name} (${sizeText(info.size)}, ${ageText(info.mtimeMs)})`
+  const backupProblem = (name, error) => `${name} (unreadable: ${typeof error?.code === 'string' ? error.code : 'cannot be read'})`
+  const stateBackups = async () => {
+    if (statePath === undefined) return undefined
+    const named = []
+    const v1 = basename(`${statePath}.v1`)
+    try {
+      named.push(backupFact(v1, await lstat(`${statePath}.v1`)))
+    } catch (error) {
+      if (error?.code !== 'ENOENT') named.push(backupProblem(v1, error))
+    }
+    // The store names its unreadable-team copies with this one fixed prefix (#199 and #143), so a
+    // listing filtered by it names only files the store itself wrote; the rest of the folder is
+    // never guessed at.
+    const prefix = `${basename(statePath)}.broken-`
+    const broken = []
+    try {
+      for (const name of (await readdir(home)).filter(name => name.startsWith(prefix))) {
+        try {
+          broken.push({ name, info: await lstat(join(home, name)) })
+        } catch (error) {
+          broken.push({ name, error })
+        }
+      }
+    } catch {
+      // a home this host cannot list adds no broken copies and no sentence of its own
+    }
+    // Newest first: the copy a person restoring a team wants is the last one taken, and the rest
+    // are only counted — a home that failed to read the team repeatedly has one per attempt.
+    broken.sort((a, b) => (b.info?.mtimeMs ?? 0) - (a.info?.mtimeMs ?? 0))
+    for (const item of broken.slice(0, BACKUPS_SHOWN)) {
+      named.push(item.info === undefined ? backupProblem(item.name, item.error) : backupFact(item.name, item.info))
+    }
+    if (broken.length > BACKUPS_SHOWN) named.push(`and ${broken.length - BACKUPS_SHOWN} more`)
+    return named.length === 0 ? 'none' : named.join(', ')
+  }
+
   const facts = async () => {
     const bots = Object.values(rt.state.bots)
     const models = [...new Set(bots.map(bot => bot.model ?? bot.appliedModel).filter(Boolean))]
@@ -306,6 +366,9 @@ export function install(rt) {
       // open it. `none yet` is a computer that has not saved this team — naming it creates nothing.
       // A link is described by the store's own shape (#2404), not by the journal leaf's sentence.
       stateFile: await fileFact(statePath, { missing: 'none yet (this computer has not saved the team)', notPlain: stateNotPlain }),
+      // The backups beside it, in the same reading: a report about a team that cannot be read says
+      // whether an earlier copy is still there, and never opens one.
+      stateBackups: await stateBackups(),
       models: models.length > 0 ? models.join(', ') : undefined,
       // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
