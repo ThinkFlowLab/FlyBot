@@ -253,3 +253,9 @@ GitHub App 的操作权限、Token生命周期、故障恢复及审计见 [GitHu
 
 
 #2330：`chief.configure.payload.inspection.lifecycle` 支持 queueTimeoutMs/runTimeoutMs/recoveryDelayMs/overdueMs（1–86400000 毫秒）和 maxRecoveries（0–4）；默认分别为 600000/900000/5000/3600000 和 2。`chief.state.result.health` 返回启用、逾期/退化状态及各阶段时间；`runs` 中 correction-pending/incomplete/partial/interrupted 具有不同含义。定时 delivery 通过持久 runId 对账，acknowledgement、巡检成功、裁决应用、实际项目推进相互独立。
+
+Chief 配置补充 `operationsContact:{memberId,agentId}|null`（仅本人配置，当前 Owner/Maintainer
+拥有的有效参与代理）与 `autonomy:{maxRecoveryActions,maxRecoveryMs,guidance}`。
+`chief.state.compensation` 提供附加原 Chief schedules 的 nextCheckAt 等元数据。
+新 incoming consultation 的 assistance/assistanceScope 绑定当前任务状态；旧代次回复拒绝。
+完整约束、原始信封及运维边界见 [协助闭环](chief-assistance.md) 和 OpenAPI schemas。

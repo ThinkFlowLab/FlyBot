@@ -1,6 +1,10 @@
 ---
 subsystem: project-chief-control
 owned_paths:
+  - core/src/host/project-chief-assistance.js
+  - core/test/project-chief-assistance.test.js
+  - dev/demo/chief-assistance.mjs
+  - docs/chief-assistance.md
   - core/src/host/project-chief-recovery.js
   - core/test/project-chief-recovery.test.js
   - core/src/host/project-chief-lifecycle.js
@@ -274,3 +278,12 @@ See [recovery API and operator guide](../chief-recovery.md).
 
 #2331 supplies current merge waiting/blocking/actual-commit facts to Chief and
 wakes the original inspection after observed merge. Chief completion stays separate.
+
+#2342 adds human-selected current operations contacts, bounded public assistance
+requests and advisory autonomy budgets. Chief alone selects consultation or a
+same-message retry-notification judgement. Original inbox/Effect claims and original
+logical schedules remain authoritative; no host privileges or alternate controller.
+Inspection projects recipient/delivery/claim/reply and recovery-budget metadata;
+other Chief schedules expose actual native nextDueAt. Generation, requirements,
+Attempt/candidate and contact/role changes supersede old assistance. See
+[operator and API guide](../chief-assistance.md).

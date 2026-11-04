@@ -505,3 +505,19 @@ test('an uncommitted stop intent cannot send a stop or consume the mechanical st
   assert.equal(stopped, 0); assert.equal(run.recovery.stopAttempts, 0)
   await f.rt.projectEffects.close()
 })
+
+test('Chief consultation decisions carry bounded assistance to the selected operations mailbox', async () => {
+  const f = await controlFixture()
+  f.rt.state.projectChiefPolicies.p.operationsContact = { memberId: 'operator', agentId: 'ops' }
+  f.rt.personalAgents = { agentOf: () => ({ ownerId: 'operator', status: 'active' }), participationFor: () => ({ ownerId: 'operator', status: 'active' }) }
+  f.rt.projectCan = () => true
+  let addressed
+  f.rt.projectAgents.contactUser = (task, question) => { addressed = question; return { kind: 'personal-agent', memberId: 'operator', agentId: 'ops' } }
+  const assistance = Object.fromEntries(['cause', 'evidence', 'attempted', 'requestedOperation', 'requiredPermission', 'verification', 'resumeCondition'].map(key => [key, key + ' current scoped facts']))
+  await f.request.onResult(f.result({ action: 'needs-human', recipient: 'operations', assistance, reason: 'Need an approved operator fact' }))
+  assert.equal(addressed.recipient, 'operations'); assert.equal(addressed.assistance.version, 'chief-assistance/v1')
+  assert.equal(f.task.chiefQuestion.assistanceScope.generation, f.task.collaboration.generation)
+  assert.equal(f.task.chiefQuestion.recipient.agentId, 'ops')
+  assert.match(f.request.prompt, /watch does not grant SSH/)
+  assert.equal(f.request.projectFacts.autonomy.maxRecoveryActions, 4)
+})

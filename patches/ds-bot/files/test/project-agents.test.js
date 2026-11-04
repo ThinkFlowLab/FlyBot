@@ -972,3 +972,27 @@ test('failed Chief execution-boundary commit cannot strand a busy delegation bef
   assert.equal(failed, true); assert.equal(rt.projectAgents.chiefBusy('p1'), false)
   assert.equal(run.exitProof.kind, 'chief-never-dispatched')
 })
+
+test('Chief operations recipient is explicitly selected instead of borrowing requester identity or private context', async t => {
+  const { rt } = await setup(t)
+  const owner = await get(rt, alice); await get(rt, bob)
+  rt.projectScheduledTasks.save = async () => ({ id: 'configured-schedule' })
+  const configure = { projectId: 'p1', enabled: true, operationsContact: { memberId: alice.memberId, agentId: owner.mine.personalAgentId }, autonomy: { maxRecoveryActions: 2, maxRecoveryMs: 5000 } }
+  await rt.projectEndpoint('project-chief-configure', configure, alice)
+  await assert.rejects(rt.projectEndpoint('project-chief-configure', configure, { ...alice, agentId: owner.mine.personalAgentId }), /signed-in human/)
+  const missing = { ...configure, operationsContact: { memberId: bob.memberId, agentId: (await get(rt, bob)).mine.personalAgentId } }
+  await assert.rejects(rt.projectEndpoint('project-chief-configure', missing, alice), /Owner\/Maintainer/)
+  rt.projectChiefControl.requireJobActor = () => {}
+  const task = { id: 'ops-task', projectId: 'p1', title: 'Project environment', criteria: 'readiness', requesterId: bob.memberId, collaboration: { initiatedBy: bob.memberId, generation: 7 }, status: 'open' }
+  rt.state.tasks[task.id] = task
+  const question = { id: 'ops-question', reason: 'Current shared environment evidence', recipient: 'operations', assistance: { cause: 'Missing runner' } }
+  const recipient = rt.projectAgents.contactUser(task, question, { ...alice, chiefJobId: 'job' })
+  assert.equal(recipient.memberId, alice.memberId); assert.equal(recipient.agentId, owner.mine.personalAgentId)
+  task.chiefQuestion = { decisionId: question.id, recipient }
+  const view = await rt.projectEndpoint('project-consultation-get', { projectId: 'p1', consultationId: recipient.consultationId }, alice)
+  assert.equal(view.consultation.assistance.cause, 'Missing runner')
+  assert.equal(view.consultation.assistanceScope.generation, 7)
+  await assert.rejects(rt.projectEndpoint('project-consultation-get', { projectId: 'p1', consultationId: recipient.consultationId }, bob), /Unknown/)
+  task.collaboration.generation++
+  await assert.rejects(rt.projectEndpoint('project-consultation-reply', { projectId: 'p1', consultationId: recipient.consultationId, requestId: 'old', text: 'Delayed advice', publish: true }, alice), /no longer current/)
+})

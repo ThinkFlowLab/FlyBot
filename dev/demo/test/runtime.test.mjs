@@ -116,3 +116,18 @@ test('actual unmanaged DSH restart recovers native Chief and later original sche
   assert.ok(report.recoveryMs > 0); assert.ok(report.recoveryMs < 90000)
   assert.deepEqual(readdirSync(directory), [])
 })
+
+
+test('actual DSH Chief assistance uses native/external inboxes and recovers signed delivery across restart', { timeout: 150_000 }, t => {
+  const directory = mkdtempSync(join(tmpdir(), 'flybot-assistance-runtime-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const result = spawnSync(process.execPath, [resolve(import.meta.dirname, '../run.mjs'), '--chief-assistance'], { encoding: 'utf8', timeout: 140_000, env: { ...process.env, TMPDIR: directory, M0_REPORT: '' } })
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.equal(report.runtime, 'actual DSH'); assert.equal(report.model, 'deterministic fixture')
+  assert.ok(report.checks.includes('receiver offline failure and actual host restart recover the same inbox message'))
+  assert.ok(report.checks.includes('native agent uses the same inbox contract'))
+  assert.ok(report.checks.includes('duplicate signed notification adds no duplicate Task input'))
+  assert.equal(report.tasks, 2)
+  assert.deepEqual(readdirSync(directory), [])
+})

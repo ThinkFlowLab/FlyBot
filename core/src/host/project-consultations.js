@@ -1,3 +1,4 @@
+import { operationsContact, assistanceScope, consultationCurrent } from './project-chief-assistance.js'
 // Consultation records reuse per-participation transcripts; no Task initiative transfer.
 import { createHash } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
@@ -33,7 +34,7 @@ export function createProjectConsultations(rt, { ensure, chiefQuestion, serial }
     const replies = (ownEntry(transcripts(), parent.id) ?? []).filter(row => row.conversationHandoffId === receipt.id)
     return { version: 'project-consultation/v1', transportVersion: receipt.version, id: receipt.id, projectId: receipt.projectId,
       agentId: parent.personalAgentId ?? null, requestId: receipt.requestId, initiatedBy: receipt.initiatedBy, returnTo: receipt.returnTo,
-      target: { botId: receipt.to, role: receipt.direction === 'incoming' ? 'personal-agent' : 'chief' }, direction: receipt.direction ?? 'outgoing', linkedTaskId: receipt.linkedTaskId ?? null, requiresHuman: Boolean(receipt.requiresHuman), question: receipt.text, state: receipt.status, initiativeTransferred: false,
+      target: { botId: receipt.to, role: receipt.direction === 'incoming' ? 'personal-agent' : 'chief' }, direction: receipt.direction ?? 'outgoing', linkedTaskId: receipt.linkedTaskId ?? null, requiresHuman: Boolean(receipt.requiresHuman), question: receipt.text, assistance: receipt.assistance ?? null, assistanceScope: receipt.assistanceScope ?? null, state: receipt.status, initiativeTransferred: false,
       replies: includeReplies ? replies.slice(offset, offset + limit).map(({ id, text, at, speaker, state, inputId, approvedBy }) => ({ id, text, at, speaker, ...(state ? { state } : {}), ...(inputId ? { inputId } : {}), ...(approvedBy ? { approvedBy } : {}) })) : [],
       replyCount: replies.length, nextReplyOffset: includeReplies && offset + limit < replies.length ? offset + limit : null, createdAt: receipt.at, finishedAt: receipt.finishedAt ?? null }
   }
@@ -55,15 +56,17 @@ export function createProjectConsultations(rt, { ensure, chiefQuestion, serial }
   }
   function contactUser(task, question, actor) {
     rt.projectChiefControl.requireJobActor(actor, task.projectId)
-    const memberId = task.collaboration?.initiatedBy ?? task.requesterId ?? rt.readProject(task.projectId).ownerUserId
-    const participation = rt.personalAgents.defaultParticipation(task.projectId, memberId)
+    const contact = question.recipient === 'operations' ? operationsContact(rt, task.projectId, state.projectChiefPolicies?.[task.projectId]?.operationsContact) : null
+    if (question.recipient === 'operations' && !contact) throw refuse('No operations contact is configured; Chief must choose a lawful recipient')
+    const memberId = contact?.memberId ?? task.collaboration?.initiatedBy ?? task.requesterId ?? rt.readProject(task.projectId).ownerUserId
+    const participation = contact ? rt.personalAgents.participationFor(contact.agentId, task.projectId) : rt.personalAgents.defaultParticipation(task.projectId, memberId)
     const identity = participation && rt.personalAgents.agentOf(participation.agentId)
     if (!participation || participation.status !== 'active' || identity?.status !== 'active' || identity.ownerId !== memberId || !rt.projectCan({ memberId }, task.projectId)) return { kind: 'human', memberId, reason: 'No active authorized personal agent' }
     const carrier = ownEntry(agents(), participation.carrierId) ?? { id: participation.carrierId, projectId: task.projectId, memberId, personalAgentId: identity.id, participationId: participation.id, visibility: 'private', kind: 'consultation-mailbox' }
     rt.personalAgents.requireParticipation(carrier)
     setEntry(agents(), carrier.id, carrier)
     const id = `consultation-${hash([task.projectId, task.id, question.id, identity.id])}`
-    if (!messages(carrier.id).some(row => row.id === id)) messages(carrier.id).push({ id, kind: 'consultation', version: 'conversation-handoff/v1', direction: 'incoming', projectId: task.projectId, linkedTaskId: task.id, chiefDecisionId: question.id, requestedBy: { role: 'chief', runId: actor.chiefJobId }, initiatedBy: memberId, from: `${task.projectId}:chief`, to: carrier.id, returnTo: carrier.id, text: question.reason, requestId: question.id, status: 'accepted', requiresHuman: Boolean(question.requiresHuman), at: Date.now() })
+    if (!messages(carrier.id).some(row => row.id === id)) messages(carrier.id).push({ id, kind: 'consultation', version: 'conversation-handoff/v1', direction: 'incoming', projectId: task.projectId, linkedTaskId: task.id, chiefDecisionId: question.id, assistanceScope: assistanceScope(state, task, question.recipient), ...(question.assistance ? { assistance: structuredClone(question.assistance) } : {}), requestedBy: { role: 'chief', runId: actor.chiefJobId }, initiatedBy: memberId, from: `${task.projectId}:chief`, to: carrier.id, returnTo: carrier.id, text: question.reason, requestId: question.id, status: 'accepted', requiresHuman: Boolean(question.requiresHuman), at: Date.now() })
     const receipt = messages(carrier.id).find(row => row.id === id)
     const token = rt.projectAgentInbox?.stage(carrier, receipt) ?? rt.projectEffects?.stage({ kind: 'consultation.notify', key: id, projectId: task.projectId, taskId: task.id, payload: { consultationId: id, agentId: identity.id, carrierId: carrier.id, memberId } })
     return { kind: 'personal-agent', memberId, agentId: identity.id, participationId: participation.id, consultationId: id, ...(token ? { effectId: token.id } : {}) }
@@ -77,13 +80,14 @@ export function createProjectConsultations(rt, { ensure, chiefQuestion, serial }
     view(carrier, receipt)
     if (receipt.direction !== 'incoming') throw refuse('Only the delegated Chief executor may answer an outgoing consultation')
     const task = ownEntry(state.tasks, receipt.linkedTaskId)
-    if (!task || task.projectId !== carrier.projectId || task.chiefQuestion?.decisionId !== receipt.chiefDecisionId) throw refuse('This Chief question is no longer current')
+    if (!consultationCurrent(state, receipt, task)) throw refuse('This Chief question is no longer current')
     if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 4000) throw refuse('Reply needs a stable requestId and bounded text')
     let answer = messages(carrier.id).find(row => row.conversationHandoffId === receipt.id && row.requestId === body.requestId)
     if (answer && answer.text !== body.text) throw refuse('Reply requestId was reused with another answer')
     if (!answer) { answer = { id: `consultation-reply-${hash([receipt.id, body.requestId])}`, kind: 'agent', speaker: 'Personal agent', text: body.text, conversationHandoffId: receipt.id, requestId: body.requestId, at: Date.now(), state: 'private-suggestion' }; messages(carrier.id).push(answer) }
     const proxy = actor.personalAgentCredentialId || actor.consultationProxyAgentId
     const delegated = proxy ? await rt.projectDelegations.actorFor(carrier.id) : null
+    if (!consultationCurrent(state, receipt, task)) throw refuse('This Chief question is no longer current')
     const canPublish = (!proxy || Boolean(delegated)) && (!receipt.requiresHuman || !proxy) && rt.projectCan(actor, task.projectId, 'task-write', task)
     if (body.publish !== true || !canPublish) { await rt.save(); return { consultation: view(carrier, receipt), replyId: answer.id, published: false, requiresUserApproval: true } }
     // Existing Task inbox performs durable admission and Chief wake-up. A reply

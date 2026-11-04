@@ -513,3 +513,10 @@ handle never falls back to cancelling the resident native Chief. Stops are bound
 #2331 Reviewer instructions permit exact-SHA approval to request the configured
 host merge flow. This grants no direct role GitHub permission, forge signature or
 Task/release acceptance authority. [Contract](../project-merge.md).
+
+#2342 keeps public Chief autonomous-progress guidance separate from personal
+private memory. Explicit operations consultation selects a current manager's
+owned participation and shares only the current Project assistance record. Native
+and external agents reply through the same inbox; current-state fences apply to
+legacy reply as well. Watch does not grant host-operation authority. See
+[assistance](../chief-assistance.md).

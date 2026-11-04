@@ -21,7 +21,7 @@ export function createProjectScheduledTasks(rt) {
   function handler(target) { const value = handlers.get(target?.kind); if (!value) throw refuse('Logical scheduled target is unavailable'); return value }
   async function reconcile(row) {
     if (row.status === 'deleted') return
-    const before = JSON.stringify([row.scheduleId, row.sessionId, row.knownSessions, row.status, row.enabled, row.config, row.revision, row.intent])
+    const before = JSON.stringify([row.scheduleId, row.sessionId, row.knownSessions, row.status, row.enabled, row.config, row.revision, row.intent, row.nextDueAt])
     const actor = { memberId: row.createdBy }
     rt.requireProjectAccess(actor, row.projectId, 'configure')
     const target = await handler(row.target).resolve(row.target, actor)
@@ -38,6 +38,7 @@ export function createProjectScheduledTasks(rt) {
       const native = catalog.find(item => item.id === row.scheduleId), held = rt.state.pausedSchedules?.[row.scheduleId]
       if (!native && !held) throw refuse('Original scheduled task is missing; reconcile or delete its logical binding')
       const actual = native ?? held.record
+      row.nextDueAt = native?.status === 'active' && Number.isFinite(Date.parse(actual.scheduledAt)) ? Date.parse(actual.scheduledAt) : null
       if (actual.prompt !== row.config.prompt || actual.title !== row.config.title) { row.config.prompt = actual.prompt; row.config.title = actual.title; ++row.revision }
       if (actual.kind === 'every') row.config.when = { kind: 'every', seconds: actual.everySeconds }
       if (actual.kind === 'daily') row.config.when = { kind: 'daily', time: actual.time.slice(0, 5), timeZone: actual.timeZone }
@@ -47,7 +48,7 @@ export function createProjectScheduledTasks(rt) {
       else row.enabled = native.status === 'active'
     }
     row.sessionId = sessionId; row.knownSessions = [...new Set([...(row.knownSessions ?? []), sessionId])]; row.status = row.enabled ? 'active' : 'paused'; delete row.intent
-    if (before !== JSON.stringify([row.scheduleId, row.sessionId, row.knownSessions, row.status, row.enabled, row.config, row.revision, row.intent])) await rt.save()
+    if (before !== JSON.stringify([row.scheduleId, row.sessionId, row.knownSessions, row.status, row.enabled, row.config, row.revision, row.intent, row.nextDueAt])) await rt.save()
   }
   async function save(body, actor) {
     const projectId = String(body.projectId ?? '')

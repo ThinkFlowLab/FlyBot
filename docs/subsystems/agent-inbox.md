@@ -86,3 +86,11 @@ restart. The inference driver is explicitly deterministic; it is not live
 grok-bot/dots vendor certification, paid-model acceptance or a production rollout.
 
 Written-by: Codex
+
+#2342 fences new incoming consultations by Task/requirements/Attempt/candidate and
+operations contact/role. Chief can remind the same current message through the
+original Effect after delivery finishes/fails; active claims/native execution and
+pending notifications are retained. No reminder repeats the operational repair.
+The disposable DSH probe uses the original restricted gateway and an independent
+signed receiver, including503, restart and duplicate notification. See
+[assistance](../chief-assistance.md).

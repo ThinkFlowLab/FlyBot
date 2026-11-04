@@ -90,3 +90,6 @@ signature=sha256=HMAC-SHA256(key, "challenge." + challenge)，证明掌握同一
 这不等于 grok-bot/dots 厂商客户端已完成适配或实连认证。
 
 Written-by: Codex
+
+运维接收人、Chief 结构化协助请求、旧回复失效条件、同消息提醒及小时补偿配置，见
+[Chief 自主推进与运维协助](chief-assistance.md)。不要假定发起人的默认代理就是运维代理。

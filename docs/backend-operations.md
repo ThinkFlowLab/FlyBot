@@ -174,3 +174,6 @@ physical IDs: resumed is the original SDK thread; reconstructed uses an audited
 archive and preserves logical identity. Identity/profile/exit failures require their
 actual recovery condition, not force release. See [operator details and offline
 SDK validation](task-session-recovery.md). No live deployment follows source merge.
+
+Chief 运维接收、签名通知接入、safe/watch 权限与可配置小时补偿，见
+[协助闭环](chief-assistance.md)。按实际运行的插件路径核对升级版本；代码合入不代表实例已升级。
