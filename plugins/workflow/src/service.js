@@ -283,11 +283,17 @@ export function createWorkflowService({
     // advance(); without this the step could sit unanswered forever (#1530).
     if (run?.live !== true) return
     const running = new Set(orderedIds(item, run.nodeStatus, 'running'))
+    // A Stop that could not release its Bots freezes the run on purpose (#1476),
+    // and the deadline of the node it was on is the only retry that run gets
+    // (#2453). Saving the graph re-syncs every live run, so that one state has to
+    // keep its deadline: without it the run holds its lane slot with nothing left
+    // to free it until the owner presses Stop again (P-560).
+    const stopRetry = run.status === 'running' && run.paused === true && run.releasePending === true
     for (const [key, entry] of [...timers]) {
       if (entry.runId !== run.id) continue
-      if (run.status !== 'running' || run.paused === true || !running.has(entry.nodeId)) clearTimerAt(key)
+      if (run.status !== 'running' || (run.paused === true && !stopRetry) || !running.has(entry.nodeId)) clearTimerAt(key)
     }
-    if (run.status !== 'running' || run.paused === true) return
+    if (run.status !== 'running' || (run.paused === true && !stopRetry)) return
     for (const nodeId of running) armDeadline(item, run, nodeId)
   }
 
