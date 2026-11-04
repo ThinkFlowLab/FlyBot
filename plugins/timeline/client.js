@@ -420,12 +420,14 @@ window.__ModuleLoader__.load({
       return { size: width, width, height, nodes: [...place.values()], edges }
     }
     // "Who waits on whom": the edges that carried requests, the longest total wait first.
+    // `totalMs` stays undefined until an answer exists (the host sends no total for an edge nobody
+    // answered), so the table can print "–" beside the Median and Slowest it already leaves empty.
     function waitRows(win) {
       const name = new Map(win.lanes.map(lane => [lane.id, nameOf(lane)]))
       return win.edges.filter(edge => edge.requests > 0 && name.has(edge.from) && name.has(edge.to)).map(edge => ({
         waiter: name.get(edge.from), on: name.get(edge.to), requests: edge.requests, answered: edge.answered, waiting: edge.unanswered,
-        medianMs: edge.medianMs, maxMs: edge.maxMs, totalMs: edge.totalWaitMs ?? 0,
-      })).sort((p, q) => (q.totalMs - p.totalMs) || (q.waiting - p.waiting) || (q.requests - p.requests))
+        medianMs: edge.medianMs, maxMs: edge.maxMs, totalMs: edge.totalWaitMs,
+      })).sort((p, q) => ((q.totalMs ?? 0) - (p.totalMs ?? 0)) || (q.waiting - p.waiting) || (q.requests - p.requests))
     }
 
     // ------------------------------------------------------------------ utilization rows
@@ -580,7 +582,7 @@ window.__ModuleLoader__.load({
           h('thead', null, h('tr', null, ...['Waits', 'on', 'Requests', 'Answered', 'Not yet', 'Median', 'Slowest', 'Total wait'].map(head => h('th', { key: head }, head)))),
           h('tbody', null, ...rows.map((row, i) => h('tr', { key: `r-${i}` },
             h('td', null, row.waiter), h('td', null, row.on), h('td', null, String(row.requests)), h('td', null, String(row.answered)), h('td', null, String(row.waiting)),
-            h('td', null, row.medianMs === undefined ? '–' : fmtDur(row.medianMs)), h('td', null, row.maxMs === undefined ? '–' : fmtDur(row.maxMs)), h('td', null, fmtDur(row.totalMs)))))),
+            h('td', null, row.medianMs === undefined ? '–' : fmtDur(row.medianMs)), h('td', null, row.maxMs === undefined ? '–' : fmtDur(row.maxMs)), h('td', null, row.totalMs === undefined ? '–' : fmtDur(row.totalMs)))))),
       )
     }
 

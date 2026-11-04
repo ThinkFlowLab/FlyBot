@@ -210,6 +210,21 @@ test('communication map: nodes, curved edges with labels, and the wait table', (
   assert.ok(rows.every((row, i) => i === 0 || rows[i - 1].totalMs >= row.totalMs))
 })
 
+test('communication map: a handoff nobody answered yet has no total wait to print, not "0 ms"', () => {
+  // One request, never answered. The row's Median and Slowest already read "–"; the total wait of an
+  // answered exchange does not exist yet, so it must read "–" too rather than a measured zero.
+  const asked = buildWindow([
+    { r: 'boot', t: at(0) },
+    { r: 'm', t: at(1000), id: 'xq', f: { k: 'b', id: 'a' }, to: { k: 'b', id: 'b' }, ro: 'request', hop: 0, n: 10 },
+  ], { now: at(5000), bots })
+  const [row] = client.waitRows(asked)
+  assert.equal(row.waiting, 1)
+  assert.equal(row.answered, 0)
+  assert.equal(row.totalMs, undefined, 'nothing was answered, so there is no total wait to print')
+  const map = mount(client.CommMap, { win: asked })
+  assert.deepEqual(findAll(map.tree, node => node.type === 'td').map(textOf), ['Chief', 'Writer', '1', '0', '1', '–', '–', '–'])
+})
+
 test('utilization rows add up and carry the running flag', () => {
   const rows = client.utilizationRows(win())
   assert.deepEqual(rows.map(row => row.name), ['Chief', 'Writer'])
