@@ -308,11 +308,17 @@ export function install(rt) {
         await writeFile(logPath, '', 'utf8')
         result.leaf = 'truncated'
       } catch (error) {
-        result.leaf = error?.code === 'ENOENT' ? 'absent' : 'kept'
-        // The answer alone is not enough: it reaches the window, and the host log said nothing about
-        // a leaf left full. `append` names this same class of failure on one line, so clear does too;
-        // the line carries the code and never the folder, and the throw stays so the chain ends here.
-        console.error('[ds-bot] diagnostics log not truncated:', error?.code ?? clean(error?.message ?? String(error)))
+        // `ENOENT` is not a refusal: there was no leaf on disk to empty, so there was nothing to
+        // truncate — the same answer the `!toFile` host above gives, and it says so on no line at
+        // all. Every other code is a leaf we wanted to empty and could not: the window hears
+        // `kept`, and the host log names the code on exactly one line (#2364), never the folder.
+        // The throw stays so the chain ends here either way.
+        if (error?.code === 'ENOENT') {
+          result.leaf = 'absent'
+        } else {
+          result.leaf = 'kept'
+          console.error('[ds-bot] diagnostics log not truncated:', error?.code ?? clean(error?.message ?? String(error)))
+        }
         throw error
       }
       // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
