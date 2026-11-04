@@ -125,8 +125,8 @@ function SharedRoomApprovals({ room, roster }) {
   if ((room.viewerRole !== 'invited-owner' && !face) || !items.length) return null
   // A decision is a write, so a read-only window cannot make one: the host would answer
   // `bot/read-only` (or `bot/blocked-shared` in a room with several members) after the click.
-  // The card keeps its headline, count and rows; the two buttons give way to one line carrying the
-  // host's own sentence, the same shape the drawer's Settings view uses (#2381).
+  // The card keeps its headline, count and rows; its two buttons are gone, and the overview's one
+  // read-only sentence above explains why (#2381, P-544).
   const locked = lockedWindow(roster)
   const decide = async (item, decision) => {
     setBusy(item.id)
@@ -150,9 +150,6 @@ function SharedRoomApprovals({ room, roster }) {
       locked
         ? null
         : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))),
-    locked
-      ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
-      : null,
     error ? h('div', { className: 'bt-error', role: 'alert' }, error) : null)
 }
 
@@ -184,14 +181,19 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
     if (mine) void actions.updateRoom(room.id, { removeParticipants: [{ kind: 'bot', id: mine.handle || mine.id, remote: Boolean(mine.handle) }] })
   }
   const face = room.origin === 'face-to-face'
+  const locked = lockedWindow(roster)
   return [
+    // P-544: the group overview's writes are gone in a locked window, so it says why once, above
+    // the reads it still draws. The approval card used to carry its own copy (#2381); one page,
+    // one sentence.
+    locked ? h('div', { key: 'read-only', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
     h(FlyBotRoomOverview, { key: 'plugin-overview', room, roster, actions }),
     invited && room.sharedFrom && !face
       ? h('div', { key: 'from', className: 'bt-shared-from' },
         h('div', { className: 'bt-section-title' }, title),
         h('div', { className: 'bt-set-hint' }, t('Your Bot was invited to this room by {name}', { name: room.sharedFrom.inviterName })),
         room.sharedFrom.invitedAt ? h('div', { className: 'bt-set-hint' }, t('Invited {when}', { when: new Date(room.sharedFrom.invitedAt).toLocaleString() })) : null,
-        h('button', { type: 'button', className: 'bt-more', onClick: leaveMine }, t('Remove my Bot')))
+        locked ? null : h('button', { type: 'button', className: 'bt-more', onClick: leaveMine }, t('Remove my Bot')))
       : face
         ? null
         : room.notice
@@ -338,13 +340,15 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         : h(RoomAvatar, { room, roster, size: 64 }),
       bot?.remote
         ? h('div', { className: 'bt-drawer-name' }, current)
-        // P-542/P-487: a locked window refuses a rename like any other write, so the name stays as
-        // plain text instead of a control that can only be turned down. Bot overview only: a group's
-        // overview still holds its member entries, so it is left exactly as it was (P-544).
+        // P-542/P-487/P-544: a locked window refuses a rename like any other write, so the name
+        // stays as plain text instead of a control that can only be turned down — for a group as
+        // well as for a Bot.
         : bot && lockedWindow(roster)
           ? h('div', { className: 'bt-drawer-name', title: current }, current)
         : room?.origin === 'face-to-face'
           ? h('div', { className: 'bt-drawer-name bt-drawer-name-face', title: current }, current)
+        : room && lockedWindow(roster)
+          ? h('div', { className: 'bt-drawer-name', title: current }, current)
         : editing
           ? h('input', {
               className: 'bt-drawer-name-input', autoFocus: true, value: draftName, 'aria-label': bot ? t('Bot name') : t('Group name'),

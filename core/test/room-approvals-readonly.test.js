@@ -5,7 +5,9 @@
 // `try/finally` with no `catch`, so the card said nothing at all.
 // The drawer's own Settings view already asks `lockedWindow(roster)` and prints the host's
 // sentence (`details-drawer.js:270`); this card never did. It now does, and a refused decision
-// writes one `role="alert"` line instead of vanishing.
+// writes one `role="alert"` line instead of vanishing. P-544 later moved the one read-only
+// sentence to the top of the group overview, so this file asserts the page still carries it once
+// while the card keeps its rows and drops its decisions.
 // React is replaced by the same tiny renderer `approvals-readonly.test.js` uses (no jsdom here);
 // the host call is replaced too, so "the click was refused and the card said why" is measurable.
 import assert from 'node:assert/strict'
@@ -154,10 +156,10 @@ test('#2381: a read-only window draws neither Approve nor Reject on the room app
   assert.match(shown, /Which file\?/)
 })
 
-test('#2381: the read-only room card carries the host sentence in one status line', () => {
+test('#2381/P-544: a read-only group overview carries the host sentence in one status line', () => {
   const drawn = render(drawer(locked))
   const lines = hints(drawn)
-  assert.equal(lines.length, 1, 'one read-only line on the card')
+  assert.equal(lines.length, 1, 'one read-only line on the page')
   assert.equal(lines[0].props.role, 'status', 'the line is announced')
   assert.equal(text(lines[0].props?.children), LOCK, "the line is the host's own sentence")
   // A writable window draws no line and keeps both decisions: the zero above is the lock, not a
