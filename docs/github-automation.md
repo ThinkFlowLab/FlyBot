@@ -139,3 +139,9 @@ App/repository resources. Existing operator credentials and live services are un
 
 References: [JWT authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app),
 [installation Tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+
+## Reviewed host merge (#2331)
+
+The same selected gh-cli/App publisher now supports configured merge, with no
+ambient/Owner fallback or role credential injection. Draft ready, checks, queue and
+observed merge remain separate. See [policy, permissions and recovery](project-merge.md).

@@ -1,3 +1,4 @@
+import { reconcileGithubMerge } from './project-github-merge.js'
 // Explicit operator-selected GitHub automation. Its credential never enters a Bot's environment.
 import { execFile } from 'node:child_process'
 import { isAbsolute } from 'node:path'
@@ -44,6 +45,23 @@ export function githubPublisher(settings = {}, { run = exec, request = fetch, au
     if ([401, 403].includes(response.status)) invalidateGithubApp(settings, repository, request)
     if (!response.ok) throw new Error(`GitHub operation failed (${response.status})`)
     return response.json()
+  }
+  async function graphql(repository, expectedIdentity, query, variables, write) {
+    await check(repository)
+    const selected = await resolveGithubIdentity(settings, { run, request, repository, permissions: { contents: write ? 'write' : 'read', pull_requests: write ? 'write' : 'read', checks: 'read' } })
+    if (JSON.stringify(githubIdentityMetadata(selected)) !== JSON.stringify(expectedIdentity)) throw new Error('Merge automation identity changed; reconcile with the original publisher')
+    await check(repository)
+    let response
+    try { response = await request('https://api.github.com/graphql', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30000), headers: { authorization: `Bearer ${selected.token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json' }, body: JSON.stringify({ query, variables }) }) }
+    catch { throw Object.assign(new Error('GitHub merge operation outcome is unknown; query before retry'), { code: 'merge/unknown' }) }
+    if ([401, 403].includes(response.status)) invalidateGithubApp(settings, repository, request)
+    const text = await response.text()
+    if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new Error('Merge provider response exceeds its read budget')
+    let data
+    try { data = JSON.parse(text) } catch { throw new Error('Merge provider returned invalid metadata') }
+    if (!response.ok || data.errors?.length) throw Object.assign(new Error('GitHub merge provider refused the scoped operation; inspect repository checks and permissions'), { code: write ? 'merge/unknown' : 'merge/read-refused' })
+    await check(repository)
+    return data.data
   }
   async function upstreamOf(repository, data, token) {
     if (data.base?.repo?.full_name !== repository || typeof data.base?.ref !== 'string' || !data.base.ref) throw new Error('Existing PR upstream is unavailable')
@@ -94,18 +112,19 @@ export function githubPublisher(settings = {}, { run = exec, request = fetch, au
       } catch { invalidateGithubApp(settings, repository, request); throw new Error('Project branch could not be pushed') }
       const pr = binding ? await api(repository, `/pulls/${binding.number}`, token) : existing[0] ?? await api(repository, '/pulls', token, { title: attempt.requirement.title.slice(0, 120), head: attempt.branch,
         base: project.defaultBranch ?? 'main', draft: true,
-        body: `Project delivery artifact.\n\nTask: ${attempt.taskId}\nAttempt: ${attempt.id}\nCommit: ${attempt.candidateSha}\nTests: passed at this commit\nReview: approved at this commit\n\n${attempt.requirement.criteria ?? ''}\n\nGenerated for human acceptance; no automatic merge.\n\n<!-- flybot-publication:${attempt.publicationEffectId ?? attempt.id ?? attempt.branch} -->` })
+        body: `Project delivery artifact.\n\nTask: ${attempt.taskId}\nAttempt: ${attempt.id}\nCommit: ${attempt.candidateSha}\nTests: passed at this commit\nReview: approved at this commit\n\n${attempt.requirement.criteria ?? ''}\n\nThe host applies only its explicit Project/repository/branch merge policy. Chief separately judges Task completion; this artifact does not claim merge or acceptance.\n\n<!-- flybot-publication:${attempt.publicationEffectId ?? attempt.id ?? attempt.branch} -->` })
       if (binding && (pr.number !== binding.number || pr.state !== 'open' || pr.head?.ref !== publicationBranch || pr.head?.repo?.full_name !== repository)) throw new Error('Existing delivery PR changed during publication')
       if (binding) { const upstream = await upstreamOf(repository, pr, token); if (upstream.baseSha !== binding.upstreamSha || upstream.baseRef !== binding.upstreamRef) throw new Error('Existing PR upstream changed during publication') }
       if (pr.head?.sha !== attempt.candidateSha) throw new Error('PR head does not match the tested candidate')
       verifyCreator(pr)
-      return { number: pr.number, url: pr.html_url, sha: pr.head.sha, repository, executorLogin: identity.login, credentialScope: 'project-automation', identity: githubIdentityMetadata(identity), initiatedBy: attempt.initiatedBy ?? null, taskId: attempt.taskId, attemptId: attempt.id ?? null, creatorLogin: pr.user?.login ?? null, operation: 'pull-request-publish', executionRole: 'project-delivery-host', candidateSha: attempt.candidateSha }
+      return { number: pr.number, url: pr.html_url, sha: pr.head.sha, repository, branch: publicationBranch, publicationMarker: binding?.publicationMarker ?? `<!-- flybot-publication:${attempt.publicationEffectId ?? attempt.id ?? attempt.branch} -->`, executorLogin: identity.login, credentialScope: 'project-automation', identity: githubIdentityMetadata(identity), initiatedBy: attempt.initiatedBy ?? null, taskId: attempt.taskId, attemptId: attempt.id ?? null, creatorLogin: pr.user?.login ?? null, operation: 'pull-request-publish', executionRole: 'project-delivery-host', candidateSha: attempt.candidateSha }
     },
+    merge(intent, policy, beforeWrite) { return reconcileGithubMerge(intent, policy, { graphql: (query, variables, write) => graphql(intent.repository, intent.identity, query, variables, write), beforeWrite }) },
     async read(pr, { includeBase = false } = {}) {
       const identity = await resolveGithubIdentity(settings, { run, request, repository: pr.repository, permissions: { contents: 'read', pull_requests: 'read' } })
       const token = identity.token
       const data = await api(pr.repository, `/pulls/${pr.number}`, token)
-      return { sha: data.head?.sha, state: data.state, url: data.html_url, ...(includeBase ? await upstreamOf(pr.repository, data, token) : {}) }
+      return { sha: data.head?.sha, state: data.state, url: data.html_url, merged: data.merged === true, mergeCommitSha: data.merged === true ? data.merge_commit_sha : null, baseRef: data.base?.ref ?? null, ...(includeBase ? await upstreamOf(pr.repository, data, token) : {}) }
     },
   }
 }

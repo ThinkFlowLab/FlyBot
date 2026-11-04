@@ -999,3 +999,7 @@ See [input contract](project-inputs.md#invalid-receipt-correction-2338).
 #2347 preserves cancelled/unknown Chief invocation barriers until exact exit proof,
 with typed recovery health and paged Attempt resumption history. The disposable
 unmanaged DSH restart demo exercises the existing scheduler, not another timer.
+
+#2331 registers reviewed host merge in original Effects and exposes bounded
+Task/Attempt observations and source pages. Selected identity, current rights and
+immutable Review/test/candidate gates are rechecked before external operations.

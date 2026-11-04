@@ -155,3 +155,8 @@ metadata-only adapter does not launch code or imply a merge/verification result.
 ## Compatibility cutover (#2186)
 
 The original Store also commits identity-only compat.cutover intents. Runtime handoff failure regressions compare exact pre-existing intent IDs, preserving this unrelated baseline while proving the failed Task offer/dispatch leaves no new effect. They locate success by the actual Task/Handoff ID rather than map insertion order.
+
+#2331 permits a host adapter to raise bounded EffectDeferred.retryAfterMs
+(100–86400000) without a separate timer. EffectExhausted marks an explicit
+technical budget failed and manager-retryable; cancelled scope remains distinct.
+The github.merge adapter commits write intents and reconciles unknown outcomes.

@@ -271,3 +271,6 @@ configured command invocation; Chief must not interpret it as assertion executio
 exit, bounded durable stop attempts and safe sealed-candidate verification recovery.
 Unknown SDK/container execution stays isolated, including after policy revocation.
 See [recovery API and operator guide](../chief-recovery.md).
+
+#2331 supplies current merge waiting/blocking/actual-commit facts to Chief and
+wakes the original inspection after observed merge. Chief completion stays separate.

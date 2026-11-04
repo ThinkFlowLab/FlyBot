@@ -29,6 +29,15 @@ exact human/Project credential and verify its login, with no automation/ambient 
 2. Read [docs/code-standards.md](docs/code-standards.md) (Verifier honesty, fences, merge gate).
 3. Keep the **Hard rules** below; never patch DSH or commit secrets.
 
+## Owner-authorized Project merge contract — 2026-11-04
+
+For runtime Project roles (#2331), exact-candidate Reviewer approve enters the
+host merge flow only under explicit operator Project/repository/base/check policy.
+Roles do not execute merge commands or receive credentials. This is separate from
+signed forge Review PASS and Chief Task acceptance; actual branch gates still apply.
+Contributor PRs to FlyBot retain the pipeline rules and current Owner-authorized
+target-branch scope below. See [decision](decisions/2026-11-04-reviewed-host-merge.md).
+
 ## Pipeline contract
 
 One issue → one branch → one PR → CI `tests-ok` → auto-merge (squash).

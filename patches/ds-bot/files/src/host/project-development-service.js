@@ -88,6 +88,8 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (['preparing', 'running'].includes(attempt?.status)) { phase = attempt.status === 'preparing' ? 'starting' : 'running' }
   const sha = attempt?.candidateSha ?? null
   const pendingEffects = Object.values(state.projectEffects ?? {}).filter(row => row.version === EFFECT_PROTOCOL && !['consultation.notify', 'agent.inbox.state'].includes(row.kind) && sameTask(row, task) && ['pending', 'running', 'failed'].includes(row.status))
+  const merge = attempt?.merge
+  if (merge && !['merged', 'cancelled'].includes(merge.status) && !['accepted', 'cancelled'].includes(task.status)) { phase = 'publishing'; waitingFor = merge.status === 'blocked' ? 'github-merge-blocked' : 'github-merge'; reason = merge.reason }
   const publication = pendingEffects.find(row => row.kind === 'github.publish' && row.payload.attemptId === attempt?.id && row.payload.candidateSha === sha)
   if (publication && ['blocked', 'failed'].includes(phase) && ['pending', 'running'].includes(publication.status)) {
     phase = 'publishing'; waitingFor = publication.waitingFor ?? 'external'; reason = publication.error ?? 'Reconciling the existing candidate publication'
@@ -95,7 +97,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   const tests = attempt?.evidence?.tests, review = attempt?.evidence?.review
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
   return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, title: typeof task.title === 'string' ? task.title.slice(0, 1000) : '', source: taskProvenance(task), publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
-    botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 1, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
+    merge: merge ? { status: merge.status, reason: merge.reason, candidateSha: merge.candidateSha, mergeCommitSha: merge.mergeCommitSha ?? null, nextCheckAt: merge.nextCheckAt ?? null } : null, botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 1, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
     contract: taskContractView(task),
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? nativeWorker?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
@@ -164,7 +166,7 @@ export function createDevelopmentService(rt) {
       attemptsPage: { total: rows.length, limit, before: end > limit ? page[0].id : null } }
   }
   function context(body) {
-    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions'].includes(body.section)) throw failure('Unknown Attempt context section')
+    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions', 'merge'].includes(body.section)) throw failure('Unknown Attempt context section')
     const attempt = ownEntry(rt.state.projectAttempts ?? {}, body.attemptId)
     const text = JSON.stringify(attempt[body.section] ?? null), offset = body.offset ?? 0, limit = body.limit ?? 8000
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length || !Number.isSafeInteger(limit) || limit < 1 || limit > 16000) throw failure('Invalid context page')

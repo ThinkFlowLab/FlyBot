@@ -462,3 +462,6 @@ See [receipt contract](project-inputs.md#invalid-receipt-correction-2338).
 #2347 distinguishes in-process native-Chief host birth from independent SDK,
 container and native-role tool lifecycles; host exit cannot release the latter.
 Verification continuation still uses the original Task-role restoration gates.
+
+#2331 checks actual released SDK/native Reviewer identity, pinned policy and
+completed claim before host merge; role tools never receive merge credentials.

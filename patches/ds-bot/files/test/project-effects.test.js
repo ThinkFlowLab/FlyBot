@@ -190,3 +190,16 @@ test('intent commit proof survives receipt revisions but cannot authorize a repl
   f.rt.state.projectEffects[next.id].version='project-effect/v999'
   assert.equal(f.effects.intentCommitted(next),false)
 })
+
+test('host adapter deferral uses a bounded retry hint and explicit exhausted budgets remain manager-retryable', async () => {
+  const { EffectExhausted } = await import('../src/host/project-effects.js')
+  let phase = 'wait'
+  const f = fixture({}, { run() { if (phase === 'wait') throw new EffectDeferred('provider pending', { retryAfterMs: 5000 }); throw new EffectExhausted('configured wait budget exhausted') } })
+  const token = f.effects.stage(f.spec); await f.effects.persist(token); await f.effects.drain()
+  assert.equal(f.rt.state.projectEffects[token.id].dueAt, 5100)
+  f.tick(4999); await f.effects.drain(); assert.equal(f.rt.state.projectEffects[token.id].executions, 1)
+  f.tick(1); phase = 'exhausted'; await f.effects.drain(); assert.equal(f.rt.state.projectEffects[token.id].status, 'failed')
+  await f.effects.retry({ effectId: token.id, projectId: 'p', requestId: 'bounded-retry' }, { memberId: 'owner' })
+  assert.equal(f.rt.state.projectEffects[token.id].status, 'pending')
+  for (const retryAfterMs of [0, 99, Infinity, 86400001]) assert.throws(() => new EffectDeferred('pending', { retryAfterMs }))
+})

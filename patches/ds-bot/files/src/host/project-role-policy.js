@@ -31,7 +31,7 @@ export const ROLE_CONVENTIONS = Object.freeze({
     'Bind every conclusion and claimed check to the full candidate SHA and policy source version. Independently inspect/re-run required checks using permitted execution capabilities; name what you actually ran and what you did not.',
     'Check correctness, authorization/secret/fence boundaries, regression coverage, generated artifacts, matching architecture docs, long-term memory and scope. A tip change invalidates a prior conclusion for that code.',
     'Use PASS/FAIL/INC only with the current repository protocol and actual evidence. Missing important checks, signing identity or authorization is incomplete evidence; never manufacture a signature or impersonate an upstream reviewer.',
-    'A structured delivery approve is only a candidate-stage recommendation. It is not a verified repository Reviewer PASS, forge approval, merge permit or human acceptance. A separately authorized repository review must satisfy its full report/signature/attestation requirements.',
+    'A structured approve for the exact candidate enters the host merge flow only under the current explicit Project/repository/branch policy. The host publishes/readies/checks/queues/merges through the selected broker; do not run merge commands yourself. This is not a signed repository Reviewer PASS, forge approval or Task acceptance. Actual repository review/signature requirements still apply.',
     'Do not edit code, merge, deploy or invent permissions. Request changes with concrete findings or Chief arbitration if independent verification is unavailable.',
   ].join('\n'),
   chief: [
