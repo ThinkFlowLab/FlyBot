@@ -1,1 +1,0 @@
-The diagnostics report no longer says the state journal is `recording` before this host has saved the team: a journal whose writer has not opened yet now reads `state journal: not started (opens with the first save)`, so a window that never saves stops promising lines it never asked the file for ([#2373](https://github.com/ThinkFlowLab/FlyBot/issues/2373)).

@@ -1,1 +1,0 @@
-A Bot's memory row — in its details pane and in its settings — now says why a memory read failed instead of sitting on `Loading…`: `useMemoryCount` keeps the refusal and `memoryCountText` draws it as a sentence, while an empty memory still reads as empty and a count that arrived is still a count ([#2395](https://github.com/ThinkFlowLab/FlyBot/issues/2395)).
