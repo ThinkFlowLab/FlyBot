@@ -31,6 +31,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
     const thread = sessionId ? client.resumeThread(sessionId, options) : client.startThread(options)
     const { events } = await thread.runStreamed(request.prompt, { signal })
     for await (const event of events) {
+      if (event.type === 'thread.started' && (request.sessionId && event.thread_id !== request.sessionId || request.forbiddenSessionId && event.thread_id === request.forbiddenSessionId)) throw Object.assign(new Error('Codex resumed a different Task-role thread'), { code: 'bot/context-resume' })
       await emit({ type: 'sdk-event', harness: request.harness, event })
       if (event.type === 'thread.started') sessionId = event.thread_id
       if (event.type === 'item.completed' && event.item?.type === 'agent_message') text = event.item.text
@@ -57,6 +58,7 @@ export async function runHarnessTurn(request, { emit, permission, signal, valida
     } })
     try {
       for await (const event of stream) {
+        if (event.session_id && (request.sessionId && event.session_id !== request.sessionId || request.forbiddenSessionId && event.session_id === request.forbiddenSessionId)) throw Object.assign(new Error('Claude returned an incompatible Task-role Session'), { code: 'bot/context-resume' })
         await emit({ type: 'sdk-event', harness: request.harness, event })
         if (event.session_id) sessionId = event.session_id
         if (event.type === 'result') {

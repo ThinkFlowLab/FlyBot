@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { createProjectScheduler } from '../src/host/project-scheduler.js'
 import { createProjectEffects } from '../src/host/project-effects.js'
 import { install as installProjectInputs } from '../src/host/project-inputs.js'
@@ -423,6 +424,52 @@ test('changed caller prompt resumes the Task-role SDK thread when its role defin
   await harness.dispatch({ botId: next, taskId: 't', brief: 'Continue previous work', outputs: [{ name: 'implementation' }] })
   await returned
   assert.match(await readFile(rt.state.projectHarnessWorkers[next].eventLog, 'utf8'), /"resumeSessionId":"bound-thread"/)
+})
+
+test('every SDK delivery role resumes the original thread across an admitted cwd change and releases its reservation', async t => {
+  for (const role of ['developer', 'tester', 'reviewer']) await t.test(role, async t => {
+    const { rt, harness, cwd } = await fixture(t)
+    const original = rt.projectDelivery.sessionFor(), oldWorkspace = rt.projectDelivery.ownsWorkspace('p', cwd)
+    original.role = role; original.definition.role = role; oldWorkspace.role = role
+    execFileSync('git', ['init', '-q', cwd]); oldWorkspace.repository = cwd
+    rt.state.projectResourceLeases.l.role = role; rt.state.projectResourceLeases.l.principalId = 'owner'
+    rt.state.tasks.t.id = 't'; rt.state.tasks.t.deliveryAttemptId = 'a'
+    rt.state.projectAttempts = { a: { id: 'a', projectId: 'p', taskId: 't', status: 'running', roleSessions: { [role]: original }, workspaces: { [role]: oldWorkspace } } }
+    const first = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Original Task and role convention' })
+    const complete = new Promise(resolve => harness.onResult(resolve))
+    await harness.dispatch({ botId: first, taskId: 't', brief: 'First execution', outputs: [{ name: 'implementation' }] })
+    await complete; await harness.release(first)
+    const path = join(rt.home, `new-${role}`)
+    await mkdir(path)
+    execFileSync('git', ['init', '-q', path])
+    execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: path })
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' }).trim()
+    const nextSession = { ...structuredClone(original), id: `new-${role}`, attemptId: 'a2', status: 'prepared' }
+    delete nextSession.backendSessionId; delete nextSession.botId
+    const workspace = { id: 'new-workspace', projectId: 'p', attemptId: 'a2', role, path, repository: path, resourceId: 'r', status: 'allocated', materialization: { expectedCheckout: sha, actualCheckout: sha } }
+    rt.state.projectAttempts.a2 = { id: 'a2', projectId: 'p', taskId: 't', status: 'running', roleSessions: { [role]: nextSession }, workspaces: { [role]: workspace } }
+    rt.state.projectWorkspaces = { [workspace.id]: workspace }
+    rt.state.tasks.t.deliveryAttemptId = 'a2'
+    rt.state.projectResourceHealth = { r: { status: 'ready' } }; rt.state.projectHarnessHealth = { 'p:r:codex': { status: 'ready' } }
+    nextSession.resourceLease = await rt.projectResources.reserve({ projectId: 'p', attemptId: 'a2', role, sessionKey: nextSession.id, harness: 'codex', resourceIds: ['r'] })
+    rt.projectDelivery.sessionFor = () => nextSession
+    rt.projectDelivery.ownsWorkspace = (_projectId, selected) => selected === path ? workspace : null
+    rt.projectDelivery.bindSession = async (_workspace, bot) => rt.projectResources.markStarted(nextSession.resourceLease.id, nextSession.resourceLease.generation, { kind: 'sdk', handle: bot.id })
+    const next = await harness.spawn({ executionProjectId: 'p', executionWorkDir: path, prompt: 'Continue the same Task after return' })
+    const row = rt.state.projectHarnessWorkers[next]
+    assert.equal(row.continuedFrom, first); assert.equal(row.backendSessionId, 'bound-thread')
+    assert.equal(row.restoration.mode, 'resumed'); assert.equal(row.restoration.observedCheckout, sha)
+    const done = new Promise(resolve => harness.onResult(resolve))
+    await harness.dispatch({ botId: next, taskId: 't', brief: 'Continue original context', outputs: [{ name: 'implementation' }] })
+    await done
+    const evidence = await readFile(row.eventLog, 'utf8')
+    assert.match(evidence, /"resumeSessionId":"bound-thread"/)
+    const logical = rt.state.projectTaskSessions[row.logicalSessionId]
+    assert.equal(logical.bindings.length, 2); assert.equal(logical.bindings[1].restoration.mode, 'resumed')
+    assert.equal(logical.bindings[0].sessionId, logical.bindings[1].sessionId)
+    await harness.release(next)
+    assert.equal(rt.projectResources.occupied('r'), 0)
+  })
 })
 
 test('a no-op state save cannot authorize SDK input, and the unstarted process remains releasable', async t => {

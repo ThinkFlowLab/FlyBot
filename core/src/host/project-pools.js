@@ -409,7 +409,8 @@ export function createProjectPools(rt) {
         await serial(async () => {
           const c = task.collaboration
           if (c.claim?.id !== token.id) return
-          failedClaim = c.claim; failedClaim.status = 'failed'; failedClaim.failure = reason; ++c.generation
+          failedClaim = c.claim; failedClaim.status = 'failed'; failedClaim.failure = reason;
+          if (error.code === 'bot/context-resume') failedClaim.contextFailure = { code: error.code, kind: ['incompatible-execution-binding', 'continuation-source-unavailable'].includes(error.details?.kind) ? error.details.kind : 'context-resume-refused', contextPreserved: true, attemptId: failedClaim.attemptId, claimId: failedClaim.id, generation: failedClaim.generation }; ++c.generation
           c.status = 'blocked'; c.block = { reason, at: Date.now() }; await rt.save()
         })
         if (!failedClaim) continue

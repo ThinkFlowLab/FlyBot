@@ -194,3 +194,5 @@ returned a workerId. Bound native/SDK carriers use their existing release lifecy
 unstarted reservations use exact claim-scoped rollback. A failed/unknown exit remains
 false and retains occupancy. Claim failure is auditable and may return to Chief after
 confirmed cleanup; neither empty workerId nor Task failure alone proves exit.
+
+#2346 keeps typed context-resume admission facts on the original claim/handoff. Proven unstarted binding failure uses the existing abort path; unknown exit is held. Chief receives facts without an implicit destination. See [Task-role recovery](../task-session-recovery.md).

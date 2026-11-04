@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
-import {taskSession,taskSessionId,backendBindingKey,resumableBinding,confirmedWorkerExit,pinTaskRoleDefinition,discardUnpreparedTaskDefinitions,roleDefinitionKey} from '../src/host/project-task-sessions.js'
+import {taskSession,taskSessionId,backendBindingKey,backendContextKey,resumableBinding,confirmedWorkerExit,pinTaskRoleDefinition,discardUnpreparedTaskDefinitions,roleDefinitionKey} from '../src/host/project-task-sessions.js'
 
 test('Task-role identity persists across Attempts and separates projects, tasks and roles', () => {
   const state={tasks:{t:{projectId:'p'},t2:{projectId:'p'}}}
@@ -23,6 +23,68 @@ test('SDK binding fingerprints distinguish cwd, principal, resource, profile, mo
   for(const field of ['harness','resourceId','principalId','cwd','model','definition']) assert.notEqual(backendBindingKey({...input,[field]:'changed'}),key)
   for(const field of ['home','configDir','baseUrl']) assert.notEqual(backendBindingKey({...input,profile:{...input.profile,[field]:'changed'}}),key)
   assert.equal(resumableBinding({}, {bindings:[]},key),null)
+})
+
+function cwdFixture(harness = 'codex') {
+  const definition = { role: 'tester', instructions: 'Preserve original testing convention' }
+  const definitionKey = roleDefinitionKey({ role: 'tester', definition })
+  const binding = { harness, resourceId: 'r', principalId: 'owner', cwd: '/new', model: 'model', profile: { home: '/profile', configDir: '/config' }, definition: definitionKey }
+  const oldKey = backendBindingKey({ ...binding, cwd: '/old' })
+  const previous = { version: 'task-role-binding/v2', definitionKey, key: oldKey, workerId: 'old', sessionId: 'original-thread' }
+  const record = { id: 'logical', projectId: 'p', taskId: 't', role: 'tester', bindings: [previous] }
+  const session = { id: 'new-role', projectId: 'p', taskId: 't', attemptId: 'a2', role: 'tester', definition, generation: 3, poolClaimId: 'claim-new', resourceLease: { id: 'new-lease', generation: 1 } }
+  const workspace = { id: 'new-workspace', projectId: 'p', attemptId: 'a2', role: 'tester', resourceId: 'r', status: 'allocated', path: '/new', materialization: { expectedCheckout: 'a'.repeat(40), actualCheckout: 'a'.repeat(40) } }
+  const state = { tasks: { t: { id: 't', projectId: 'p', deliveryAttemptId: 'a2', collaboration: { generation: 3, claim: { id: 'claim-new', status: 'active', generation: 3, attemptId: 'a2' } } } }, projectAttempts: { a1: { projectId: 'p', taskId: 't', roleSessions: { tester: { id: 'old-role', projectId: 'p', taskId: 't', role: 'tester', definition } } }, a2: { id: 'a2', projectId: 'p', taskId: 't', status: 'running', roleSessions: { tester: session }, workspaces: { tester: workspace } } }, projectWorkspaces: { 'new-workspace': workspace }, projectHarnessWorkers: { old: { id: 'old', projectId: 'p', taskId: 't', attemptId: 'a1', role: 'tester', logicalSessionId: 'logical', sessionKey: 'old-role', harness, sdkVersion: harness === 'codex' ? '0.166.0' : '0.3.316', resourceId: 'r', principalId: 'owner', cwd: '/old', definitionKey, bindingKey: oldKey, leaseId: 'old-lease', generation: 1, status: 'released', backendSessionId: 'original-thread', releaseProof: { kind: 'sdk-stop-ack-and-process-exit', workerId: 'old', generation: 1 } } }, projectResourceLeases: { 'old-lease': { projectId: 'p', attemptId: 'a1', role: 'tester', principalId: 'owner', worker: { kind: 'sdk', handle: 'old' }, releaseProof: { kind: 'sdk-stop-ack-and-process-exit', workerId: 'old', generation: 1 }, resourceId: 'r', generation: 1, status: 'released' }, 'new-lease': { id: 'new-lease', sessionKey: 'new-role', projectId: 'p', attemptId: 'a2', role: 'tester', resourceId: 'r', principalId: 'owner', generation: 1, status: 'reserved', reservationOwner: { claimId: 'claim-new', generation: 3, sessionId: 'new-role' } } } }
+  return { state, record, binding, session, workspace, definitionKey }
+}
+test('cwd-only migration retains logical identity and exact old thread while preserving physical fingerprints', () => {
+  for (const harness of ['codex', 'claude-agent']) {
+    const f = cwdFixture(harness), key = backendBindingKey(f.binding)
+    const restored = resumableBinding(f.state, f.record, key, f)
+    assert.equal(restored.sessionId, 'original-thread')
+    assert.equal(restored.restoration.mode, harness === 'codex' ? 'resumed' : 'reconstructed')
+    assert.equal(restored.restoration.fromCwd, '/old'); assert.equal(restored.restoration.cwd, '/new')
+    assert.notEqual(restored.key, key)
+    assert.equal(restored.restoration.contextIdentityKey, backendContextKey(f.binding))
+    assert.equal(f.record.bindings.length, 1)
+  }
+})
+test('cwd migration cannot cross identity, profile, authorization, workspace, claim or exit boundaries', () => {
+  const mutations = [
+    f => { f.binding.principalId = 'other' }, f => { f.binding.resourceId = 'other' }, f => { f.binding.profile.configDir = '/other' }, f => { f.binding.model = 'other' },
+    f => { f.state.projectHarnessWorkers.old.sdkVersion = 'unknown' }, f => { f.state.projectHarnessWorkers.old.status = 'running' }, f => { f.state.projectResourceLeases['old-lease'].status = 'reserved' }, f => { f.state.projectResourceLeases['old-lease'].attemptId = 'foreign' }, f => { f.state.projectResourceLeases['old-lease'].worker.handle = 'foreign' }, f => { f.state.projectResourceLeases['old-lease'].releaseProof.workerId = 'foreign' },
+    f => { f.state.tasks.t.deliveryAttemptId = 'old' }, f => { f.state.tasks.t.collaboration.generation++ }, f => { f.state.tasks.t.collaboration.claim.workerId = 'already-running' },
+    f => { f.state.projectResourceLeases['new-lease'].reservationOwner.generation++ }, f => { f.state.projectResourceLeases['new-lease'].principalId = 'other' },
+    f => { f.state.projectWorkspaces['new-workspace'].materialization.actualCheckout = 'b'.repeat(40) }, f => { f.state.projectWorkspaces['new-workspace'].projectId = 'foreign' },
+    f => { f.session.definition = { role: 'tester', instructions: 'Changed convention' } }, f => { delete f.state.projectAttempts.a1.roleSessions.tester },
+  ]
+  for (const mutate of mutations) { const f = cwdFixture(); mutate(f); assert.throws(() => resumableBinding(f.state, f.record, backendBindingKey(f.binding), f), { code: 'bot/context-resume' }) }
+})
+
+test('missing bindings recover the latest trustworthy worker through the same cwd migration gates', () => {
+  for (const harness of ['codex', 'claude-agent']) {
+    const f = cwdFixture(harness)
+    f.state.projectHarnessWorkers.old.bindingVersion = 'task-role-binding/v2'
+    f.record.bindings = []
+    const restored = resumableBinding(f.state, f.record, backendBindingKey(f.binding), f)
+    assert.equal(restored.recoveredFromWorker, true)
+    assert.equal(restored.sessionId, 'original-thread')
+    assert.equal(restored.restoration.mode, harness === 'codex' ? 'resumed' : 'reconstructed')
+    f.state.projectHarnessWorkers.old.status = 'unreachable'
+    assert.throws(() => resumableBinding(f.state, f.record, backendBindingKey(f.binding), f), /unconfirmed/)
+  }
+})
+test('cleared bindings skip only proven unstarted admissions and never forget prior real context', () => {
+  const f = cwdFixture()
+  f.state.projectHarnessWorkers.old.bindingVersion = 'task-role-binding/v2'
+  f.state.projectHarnessWorkers.old.createdAt = 1
+  const proof = { kind: 'sdk-worker-not-started', workerId: 'cold', generation: 1, at: 5 }
+  f.state.projectHarnessWorkers.cold = { ...structuredClone(f.state.projectHarnessWorkers.old), id: 'cold', backendSessionId: null, leaseId: 'cold-lease', executionStartedAt: null, spawnPhase: 'aborted', releaseProof: proof, createdAt: 2 }
+  f.state.projectResourceLeases['cold-lease'] = { projectId: 'p', attemptId: 'a1', role: 'tester', resourceId: 'r', generation: 1, status: 'released', worker: { handle: 'cold' }, releaseProof: proof }
+  f.record.bindings = []
+  assert.equal(resumableBinding(f.state, f.record, backendBindingKey(f.binding), f).sessionId, 'original-thread')
+  f.state.projectHarnessWorkers.cold.releaseProof = { kind: 'unknown', workerId: 'cold', generation: 1 }
+  assert.throws(() => resumableBinding(f.state, f.record, backendBindingKey(f.binding), f), /unconfirmed/)
 })
 
 test('resumption requires same-scope backend identity and confirmed worker and lease exit', () => {

@@ -13,6 +13,13 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — Missing bindings do not mean missing context (Seen 1×)
+
+Recover the latest trustworthy worker through the same cwd/identity/exit gates.
+Skip only proven never-started records; preserve latest unknown execution. Distinguish
+an actual resumed thread from a host reconstruction with retained history and receipts.
+
+
 ### 2026-11-04 — An offline dependency miss is not an assertion failure (Seen 1×)
 
 Prepare and observe each executor separately, then verify the exact cleaned candidate.

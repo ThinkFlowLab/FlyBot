@@ -144,3 +144,5 @@ Operation names scope requestId, so different operations may reuse a key. When a
 TestVerification.stage distinguishes preparation, runner-startup and tests. The
 optional field is present in Attempt summaries, Chief facts and source context;
 legacy records may omit it. testsStarted describes configured-command invocation.
+
+#2346 types TaskView.execution as ExecutionMetadata with optional contextRestoration/contextFailure. TaskRoleRestoration distinguishes source/current physical IDs, resumed/reconstructed mode, actual checkout and archive hash. Existing attempt.context preserves history; no reset or arbitrary-file API is added.

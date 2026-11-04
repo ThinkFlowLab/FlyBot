@@ -8,6 +8,8 @@ owned_paths:
   - core/src/host/project-native-sessions.js
   - core/test/project-native-sessions.test.js
   - core/test/project-native-exit.test.js
+  - core/src/host/project-session-continuation.js
+  - core/test/project-session-continuation.test.js
   - core/src/host/project-task-sessions.js
   - core/test/project-task-sessions.test.js
   - core/src/host/project-git-sandbox.js
@@ -424,3 +426,29 @@ See [official permissions](https://learn.chatgpt.com/docs/permissions) and
 [configuration read API](https://learn.chatgpt.com/docs/app-server).
 
 #2334 consumes the exact workspace preparation receipt before worker admission. A declared warmed cache is copied to unique scratch; SDK command environment observations are bounded advisory facts, never independent test PASS. Configuration readiness (#2337) and dependency readiness remain separate. See [delivery environment contract](project-delivery.md#dependency-readiness-and-verification-outcomes-2334).
+
+## Audited cwd restoration (#2346)
+
+Logical Task-role identity remains stable; v3 physical binding still includes cwd,
+resource, principal, profile, model and definition. A cwd-only change requires the
+latest trusted context and confirmed old exit, current claim/generation, registered
+new workspace and actual pinned checkout. Recompute the old full fingerprint using
+only the old cwd; identity/profile changes cannot masquerade as directory migration.
+Normal bindings and latest-worker recovery use the same gates. Missing bindings do
+not erase context. Only exit-proven, never-started admissions can be skipped; unknown
+latest work cannot be bypassed to select older history or open a fresh Session.
+
+Pinned Codex0.166 resumes the exact original thread with the new workingDirectory.
+Claude and native cwd changes use explicitly reconstructed physical Sessions with
+hash-bound host archives of prior context/conclusions, tool/message facts, handoffs,
+handled-input state and operation receipts. Old bindings/Sessions remain. Native
+reconstruction verifies the new DSH header cwd and retains original parts as history;
+it does not pretend the old physical Session moved. Read sources in bounded pages,
+use current policy/claim, never replay historical receipts or unknown writes. Archives
+remain private artifacts/scoped runtime files, not permanent Chief memory.
+
+Persist mode/source/current physical identity, checkout and archive hash through
+existing admission/activation fences. Context mismatch is structured feedback for
+Chief; original context and unknown-exit capacity stay protected. Proven pre-start
+failure reuses #2336 rollback. No automatic human escalation or business routing.
+See [recovery details and validation boundaries](../task-session-recovery.md).
