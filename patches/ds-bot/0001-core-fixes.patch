@@ -534,7 +534,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
  
  export const FeedbackIcon = () => h('svg', { width: 15, height: 15, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
    h('path', { d: 'M4 4.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-3.5 3v-3H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z' }), h('path', { d: 'M10 7v2.6M10 11.4h.01' }))
-@@ -37,11 +37,12 @@ function entrySummary(entry) {
+@@ -37,11 +37,23 @@ function entrySummary(entry) {
    return entry.text
  }
  
@@ -542,6 +542,17 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 +const SOURCES = { turn: 'Model call', host: 'FlyBot', api: 'FlyBot', browser: 'This window' }
  
 -export function FeedbackPage({ actions, run, Section, Row }) {
++// #2360: the host reports what a Clear did, so the sentence can match it. A leaf it left alone is
++// not a cleared log, and a rotated copy it could not remove is named instead of being passed over;
++// an answer that carries no result (an older host) keeps the sentence this page always used.
++// `kept` covers both a leaf the guard refused (a link, a shared name) and a plain leaf the host
++// could not truncate (a write-protected file, a read-only mount), so the sentence names neither.
++function clearNote(result) {
++  if (result?.leaf === 'kept') return t('The error log was not cleared: the host could not truncate it.')
++  if (result?.rotated === 'kept') return t('Cleared the error log, but its rotated copy (logs/diagnostics.jsonl.1) could not be removed.')
++  return t('Cleared the error log.')
++}
++
 +export function FeedbackPage({ roster, actions, run, Section, Row }) {
    const [what, setWhat] = useState('')
    const [report, setReport] = useState(null)
@@ -549,9 +560,15 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
    const [preview, setPreview] = useState(false)
    const [note, setNote] = useState('')
    // Each action reads the report again, so it holds errors from the last few seconds.
-@@ -84,10 +84,15 @@ export function FeedbackPage({ actions, run, Section, Row }) {
+@@ -82,12 +82,20 @@ export function FeedbackPage({ actions, run, Section, Row }) {
+     download('ds-bot-diagnostics.log', text || 'No entries.\n')
+     setNote(t('Downloaded the log. Keys, tokens, and your home folder are hidden in it.'))
    }))
-   const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t('Cleared the error log.'))))
+-  const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t('Cleared the error log.'))))
++  const clearLog = () => run(actions.diagnosticsClear().then((result) => {
++    clearClientErrors()
++    return load().then(() => setNote(clearNote(result)))
++  }))
  
 +  // Clear truncates the shared error log on the host, so a window that only reads draws no Clear:
 +  // the log it would erase is the file this page exists to hand over (#2302). Download stays.
@@ -1423,7 +1440,12 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -738,7 +738,7 @@ const ZH = {
+@@ -735,10 +735,12 @@ const ZH = {
+   'Opened a new GitHub issue. Copy the diagnostics below into it.': '已打开新的 GitHub issue。请把下面的诊断信息复制进去。',
+   'Downloaded the log. Keys, tokens, and your home folder are hidden in it.': '已下载日志。里面的密钥、令牌和用户目录都已隐藏。',
+   'Cleared the error log.': '已清空错误日志。',
++  'Cleared the error log, but its rotated copy (logs/diagnostics.jsonl.1) could not be removed.': '已清空错误日志，但轮转出去的副本（logs/diagnostics.jsonl.1）没能删除。',
++  'The error log was not cleared: the host could not truncate it.': '错误日志没有清空：宿主没能把它截断。',
    'Recent errors': '最近的错误',
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
@@ -5100,31 +5122,53 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      const list = await entries()
      return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
    }
-@@ -241,7 +241,23 @@ export function install(rt) {
+@@ -240,9 +240,44 @@ export function install(rt) {
+   async function clear() {
      cleared = Date.now()
      fresh = []
-     if (!toFile) return
+-    if (!toFile) return
 -    writing = writing.then(() => writeFile(logPath, '', 'utf8')).catch(() => {})
++    // What the window's sentence is chosen from (#2360): the leaf is only `truncated` once the
++    // truncate ran and the rotated copy only `removed` once its name is gone, so a page cannot say
++    // "cleared" about a file it left alone.
++    const result = { leaf: 'absent', rotated: 'none' }
++    if (!toFile) return result
 +    // Clearing truncates the leaf, so it is the same question as the append: a link is not ours to
 +    // truncate, and the old file behind it stays exactly as it was.
 +    writing = writing.then(async () => {
-+      if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
++      const kind = await fileKind(logPath)
++      if (kind === 'other') { refuseLeaf(); result.leaf = 'kept'; return }
 +      // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
 +      // on disk after the user asked for the error log to be cleared. That one name belongs to this
 +      // log, so it goes in the same chain and behind the same guard. The removal keeps a try of its
 +      // own: a copy that cannot be removed (a directory under that name, a folder without its write
 +      // bit) must not reject the chain before the truncate runs, or the window says "cleared" while
 +      // the leaf still holds every line. The line names the leftover, never the folder.
++      const rotatedKind = await fileKind(`${logPath}.1`)
++      if (rotatedKind !== 'absent') result.rotated = 'kept'
 +      try {
 +        await rm(`${logPath}.1`, { force: true })
++        if (rotatedKind !== 'absent') result.rotated = 'removed'
 +      } catch (error) {
 +        console.error('[ds-bot] diagnostics log rotated copy not removed:', error?.code ?? clean(error?.message ?? String(error)))
 +      }
-+      await writeFile(logPath, '', 'utf8')
++      // The truncate runs exactly as it did before #2360, a leaf that is not there yet included (the
++      // write lands a new empty file, as this line always did): only the answer is new. A folder
++      // that is not there makes the write fail the way it always did, and nothing is on disk to
++      // report as kept, so that answer stays `absent` rather than sending the page a refusal.
++      try {
++        await writeFile(logPath, '', 'utf8')
++        result.leaf = 'truncated'
++      } catch (error) {
++        result.leaf = error?.code === 'ENOENT' ? 'absent' : 'kept'
++        throw error
++      }
 +    }).catch(() => {})
      await writing
++    return result
    }
  
+   Object.assign(rt, { warn, noteFailure: note, diagnostics: { report, logText, clear, entries } })
 diff --git a/src/host/images.js b/src/host/images.js
 --- a/src/host/images.js
 +++ b/src/host/images.js

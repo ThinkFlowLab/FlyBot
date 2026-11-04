@@ -279,6 +279,20 @@ A row in the `error` state offers **Copy error** beside **Try again** (#2027): i
 
 `src/client/feedback.js` reads the window lock once per render (`lockedWindow`, `schedules.js`, the same function the other locked screens call) and draws no **Clear** while the window only reads: Clear calls `diagnosticsClear`, which truncates the shared `<home>/logs/diagnostics.jsonl` on the host — the evidence a bug report is supposed to carry — and a reading host refuses it with `bot/read-only`. **Download**, **Show**, **Copy** and **Report on GitHub** stay; a writable window keeps Clear exactly as before, including its `disabled` state. Settings mounts the page with the roster (`settings.js`, `shown === 'feedback'`), the way the neighbouring pages already do. Tests: `core/test/feedback-readonly-clear.test.js`.
 
+### Clear says what it did (#2360)
+
+`src/client/feedback.js` used to say `Cleared the error log.` whatever the host answered, because
+`diagnostics-clear` answered a constant. The host's `clear()` now resolves
+`{ leaf: 'truncated' | 'kept' | 'absent', rotated: 'removed' | 'kept' | 'none' }`, the endpoint passes
+that result through, and `clearNote` picks the sentence from it: the unchanged one when the leaf was
+truncated and no rotated copy is left, one that names `logs/diagnostics.jsonl.1` when the copy could
+not be removed, and one that does not claim a cleared log when the leaf was left alone — the guard
+refused a link or a shared name, or the host could not truncate a plain file (a write-protected file,
+a read-only mount). The sentence names no reason, because the answer carries none. A leaf this host
+has no file for (`absent`) keeps the unchanged sentence, because nothing was on disk to clear. An answer that carries no result (an older host) keeps the old sentence,
+so the page still works against one. Both new sentences are keys in `i18n.js`; `core/test/i18n.test.js` fails
+when one is missing. Tests: `core/test/feedback-clear-sentence.test.js`.
+
 ### Discarded promise `.catch` (#213)
 
 A discarded `.catch(() => {})` in the client sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).
