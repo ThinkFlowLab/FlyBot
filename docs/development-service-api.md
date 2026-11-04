@@ -124,7 +124,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | sources | 原source查询过滤/分页 | 当前项目绑定的Issue/PR来源订阅与游标；读 |
 | execution.boundary | taskId? | 当前权限/仓库/资源/Harness边界及readiness；不运行测试/不授予权限 |
 | attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
-| attempt.integration-state | attemptId | 当前候选/受信集成绑定和证据；读 |
+| attempt.integration-state | attemptId | 当前候选/受信集成绑定、availableInputs、materialization和工作区快照；读 |
 | attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
 | release.status | attemptId | 当前Release请求/目标/外部证据；项目读，不发布 |
 | chief.state | {} | 当前Chief策略、原定时任务、待裁定/活跃控制工作；读 |
@@ -161,7 +161,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | task.reject | attemptId、reason等原返工参数 | 管；原证据/停止/新Attempt路径，新Task不改变Chief裁定权 |
 | attempt.stop | attemptId | 管；请求原worker停止，未证实退出继续持有租约 |
 | attempt.cleanup | attemptId | 管；只在受支持的终止/退出状态清理，不删除Task历史 |
-| attempt.integration-bind | attemptId、generation、inputs:[{ref,sha}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
+| attempt.integration-bind | attemptId、generation、inputs:[{ref,sha,purpose?}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
 | attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
 | release.request | attemptId、tag、sha、mode?:observe/publish、name?、notes? | 管；默认只观察，publish是显式发布授权 |
 | release.reconcile | attemptId | 管；仅核对已有外部结果，不重复发布 |
@@ -248,3 +248,5 @@ project-agent-history保留messages字段，默认最近50条，limit为1..100�
 原生对应project-release-request / project-release-reconcile / project-release-status。需显式配置仓库release.provider=github、release.enabled=true及已有选定GitHub凭据；创建请求不等于发布成功，发布成功也不等于Task关闭。Chief仍需当前外部证明及原验收门禁。详见[契约、配置与例子](subsystems/project-releases.md)。测试不会创建真实Release。
 
 GitHub App 的操作权限、Token生命周期、故障恢复及审计见 [GitHub自动化](github-automation.md)。连接选择与Task执行权限独立，代理不得替自己更换凭据。
+
+#2325：purpose 默认为 integrate，封存时要求实际集成；inspect 只让获准提交在执行资源中可见，不要求合并，也不代表测试通过。availableInputs 最多列20个已由操作员提供的 refs/remotes/operator/* 引用。提交不在目录中时先由获准操作员提供，不自动获取任意远端。
