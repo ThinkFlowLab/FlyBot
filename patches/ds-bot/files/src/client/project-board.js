@@ -5,6 +5,7 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 import { call } from './api.js'
 import { dateLocale, hostText, t } from './i18n.js'
 import { roleText } from './role-labels.js'
+import { lockedWindow } from './schedules.js'
 
 export const PROJECT_BOARD_CSS = `
 /* #1750: the board was a short dialog in the page flow — no stylesheet defines 'bt-overlay', so the
@@ -842,7 +843,7 @@ export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisi
 // unbind a member (`project-bind`), the assistant's per-owner controls
 // (`project-assistant-owner`) and the assistant's memory (`project-memory-write`) — and adds no
 // fourth. Fields the host has no write path for are not drawn, so every control here can save.
-export function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
+export function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved, locked = false, readOnly = '' } = {}) {
   const save = request ?? call
   const [kind, setKind] = useState('bot')
   const [memberId, setMemberId] = useState('')
@@ -859,6 +860,17 @@ export function ProjectSettingsPanel({ project, assistantMine, call: request, on
   const [assistantOff, setAssistantOff] = useState(assistantMine === undefined ? project?.assistant?.off === true : assistantMine?.off === true)
   const [status, setStatus] = useState('')
   const id = text(project?.id)
+  // #2306: a read-only window draws no settings write. `project-bind`, `project-assistant-owner`
+  // and `project-memory-write` are all outside `channel.js`'s `READS`, so the host answers each with
+  // its read-only refusal; the panel opens with that sentence instead of four controls that can
+  // only be refused, and keeps the way back to the board it sits on (#2199, #2458's shape).
+  if (locked) {
+    return h('div', { className: 'bt-project-panel', 'data-panel': 'project-settings' },
+      h('h3', null, t('Project settings')),
+      h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(readOnly)),
+      h('div', { className: 'bt-project-row-actions' },
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
+  }
   const run = async (endpoint, payload, done) => {
     try {
       const result = await save(endpoint, payload)
@@ -1008,9 +1020,14 @@ const boardPollPaused = () => (typeof document !== 'undefined' && document.visib
 
 // The pane entry point (#1710): `#project=<id>` opens one Project's board, `#project` the first.
 // Reading is a POST through the same host channel every other view uses.
-export function ProjectBoardOverlay({ actions, call: request } = {}) {
+export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) {
   // `call` is a seam for the tests only; in the app it is the channel every other view uses.
   const read = request ?? call
+  // #2306: the board was registered with the roster injection and never read it, so a window that
+  // holds the team read-only still drew the settings panel's four writes. One read of the same
+  // predicate every other read-only surface uses (`lockedWindow`), handed down to that panel.
+  const roster = typeof useRoster === 'function' ? useRoster(value => value) : undefined
+  const locked = lockedWindow(roster)
   const [state, setState] = useState(null)
   const [panel, setPanel] = useState(null)
   const [dossier, setDossier] = useState(null)
@@ -1124,7 +1141,7 @@ export function ProjectBoardOverlay({ actions, call: request } = {}) {
             onClose: () => setPanel(null),
             onOpenBot: (id) => { close(); actions?.openSession?.(id) },
           })
-          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, onClose: () => setPanel(null) })
+          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) })
           : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, done: state.done, canManage: state.canManage, tasks: state.tasks,

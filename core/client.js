@@ -12066,7 +12066,7 @@ function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, me
     (0, import_react21.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
   );
 }
-function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
+function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved, locked = false, readOnly = "" } = {}) {
   const save = request ?? call;
   const [kind, setKind] = (0, import_react21.useState)("bot");
   const [memberId, setMemberId] = (0, import_react21.useState)("");
@@ -12077,6 +12077,19 @@ function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, 
   const [assistantOff, setAssistantOff] = (0, import_react21.useState)(assistantMine === void 0 ? project?.assistant?.off === true : assistantMine?.off === true);
   const [status, setStatus] = (0, import_react21.useState)("");
   const id = text(project?.id);
+  if (locked) {
+    return (0, import_react21.createElement)(
+      "div",
+      { className: "bt-project-panel", "data-panel": "project-settings" },
+      (0, import_react21.createElement)("h3", null, t("Project settings")),
+      (0, import_react21.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(readOnly)),
+      (0, import_react21.createElement)(
+        "div",
+        { className: "bt-project-row-actions" },
+        (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
+      )
+    );
+  }
   const run = async (endpoint, payload, done) => {
     try {
       const result = await save(endpoint, payload);
@@ -12242,8 +12255,10 @@ async function readProjectBoard(read, wanted, knownTeam) {
 }
 var PROJECT_BOARD_POLL_MS = 5e3;
 var boardPollPaused = () => typeof document !== "undefined" && document.visibilityState === "hidden" || typeof window !== "undefined" && !window.location.hash.startsWith("#project");
-function ProjectBoardOverlay({ actions, call: request } = {}) {
+function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) {
   const read = request ?? call;
+  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
+  const locked = lockedWindow(roster);
   const [state, setState] = (0, import_react21.useState)(null);
   const [panel, setPanel] = (0, import_react21.useState)(null);
   const [dossier, setDossier] = (0, import_react21.useState)(null);
@@ -12354,7 +12369,7 @@ function ProjectBoardOverlay({ actions, call: request } = {}) {
             close();
             actions?.openSession?.(id);
           }
-        }) : panel === "settings" ? (0, import_react21.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react21.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react21.createElement)(ProjectBoardPane, {
+        }) : panel === "settings" ? (0, import_react21.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react21.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react21.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
           done: state.done,
