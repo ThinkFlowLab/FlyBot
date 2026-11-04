@@ -798,7 +798,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 @@ -1,11 +1,13 @@
  import assert from 'node:assert/strict'
 -import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
++import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
  import fsp from 'node:fs/promises'
  import { syncBuiltinESMExports } from 'node:module'
 -import { homedir, tmpdir } from 'node:os'
@@ -1175,7 +1175,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
    const short = issueUrl(base, { what: 'Writer failed\nin the group', diagnostics: '| DS Bot | 0.1.0 |' })
    assert.equal(short.inline, true)
    const params = new URL(short.url).searchParams
-@@ -253,3 +253,78 @@ test('a browser error is noted once, repeats are counted, and clear empties the
+@@ -253,3 +253,157 @@ test('a browser error is noted once, repeats are counted, and clear empties the
    clearClientErrors()
    assert.equal(clientErrors().length, 0)
  })
@@ -1253,4 +1253,83 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  await rt.diagnostics.clear()
 +  assert.equal(readFileSync(logPath, 'utf8'), '', 'the leaf is truncated as before')
 +  assert.equal(existsSync(rotated), false, 'the rotated log is gone as well')
++})
++
++// #2352 moved the rotated copy's removal into the clear chain, but outside a try of its own: `rm` on a
++// name that is not a plain file of ours (a directory under the same name, a folder that refuses the
++// removal) rejects the whole chain before the truncate runs, and the empty `catch` keeps it quiet — so
++// the window answered "Cleared the error log." while every byte of the leaf stayed on disk.
++test('#2358: clear truncates the leaf even when the rotated copy cannot be removed', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const logPath = join(home, 'logs', 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  writeFileSync(logPath, 'OLD LINE\n'.repeat(4))
++  mkdirSync(rotated) // `rm` without `recursive` refuses a directory, so the removal throws EISDIR
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const rt = host(home)
++  rt.warn('ds-bot: written before the clear')
++  await rt.dispose()
++  assert.match(readFileSync(logPath, 'utf8'), /written before the clear/)
++
++  await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'the leaf is truncated although the rotated copy stays')
++  assert.equal(lstatSync(rotated).isDirectory(), true, 'the name that could not be removed is still there')
++  assert.deepEqual(await rt.diagnostics.entries(), [], 'the window reads no entries after a clear')
++  const noted = stderr.filter(line => /rotated copy/.test(line))
++  assert.equal(noted.length, 1, 'one line says the rotated copy was not removed')
++  assert.equal(noted[0].includes(home), false, 'the line does not print the home folder')
++
++  // The control: with the obstructing name gone the same clear removes both, as the previous test asks.
++  rmSync(rotated, { recursive: true })
++  writeFileSync(rotated, 'ROTATED\n')
++  writeFileSync(logPath, 'OLD LINE\n')
++  await rt.diagnostics.clear()
++  assert.equal(readFileSync(logPath, 'utf8'), '')
++  assert.equal(existsSync(rotated), false)
++})
++
++// The same defect through the folder instead of the name: a `logs/` without its write bit refuses the
++// removal (EACCES) while the leaf itself is still an ordinary file the host may truncate, so before the
++// fix the truncate never ran at all. Root ignores the folder's mode, so the case is skipped there.
++test('#2358: clear truncates the leaf when the folder refuses the removal', async (t) => {
++  if (process.getuid?.() === 0) {
++    t.skip('root removes from a folder without its write bit')
++    return
++  }
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  const logs = join(home, 'logs')
++  t.after(() => {
++    try { chmodSync(logs, 0o755) } catch { /* the folder may already be gone */ }
++    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
++  })
++  mkdirSync(logs, { recursive: true })
++  const logPath = join(logs, 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const rt = host(home)
++  rt.warn('ds-bot: written before the clear')
++  await rt.dispose()
++  writeFileSync(rotated, 'ROTATED\n'.repeat(8))
++  chmodSync(logs, 0o555)
++
++  await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'the leaf is truncated although the folder refused the removal')
++  assert.equal(readFileSync(rotated, 'utf8'), 'ROTATED\n'.repeat(8), 'the copy that could not be removed keeps its bytes')
++  const noted = stderr.filter(line => /rotated copy/.test(line))
++  assert.equal(noted.length, 1, 'one line says the rotated copy was not removed')
++  assert.equal(noted[0].includes(home), false, 'the line does not print the home folder')
++
++  chmodSync(logs, 0o755)
++  await rt.diagnostics.clear()
++  assert.equal(existsSync(rotated), false, 'once the folder allows it, the same clear removes the copy')
 +})
