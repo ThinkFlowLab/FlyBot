@@ -2328,7 +2328,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      case 'every': return everyText(task.everySeconds)
      case 'daily': return `${t('Every day at {time}', { time: clock(task.time) })}${zone}`
      case 'weekly': {
-@@ -70,11 +70,51 @@ export function timingText(task) {
+@@ -70,11 +70,56 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -2358,12 +2358,17 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +// stored with the task, so turning a connector on today changes what a task written weeks ago will
 +// use. A room task (no `botId`) has no single Bot's switch, and a Bot the roster no longer carries
 +// says nothing rather than guessing. `connectedConnectors` drops a sender and a webhook-only
-+// channel, which have neither tools nor a way in; `isOn` keeps only what this Bot may use.
++// channel, which have neither tools nor a way in; `isOn` keeps only what this Bot may use. Only a
++// `ready` connection gives the run tools (#2354): the host unmounts a failed connection before it
++// writes `error`, and a `connecting` one has none yet — `connectedConnectors` still names both so
++// the Connectors page can draw the switch that reconnects them.
 +export function reachText(task, roster) {
 +  if (!task?.botId) return ''
 +  const bot = roster?.byId?.[task.botId] ?? (roster?.bots ?? []).find(entry => entry.id === task.botId)
 +  if (bot === undefined) return ''
-+  const names = connectedConnectors(roster).filter(connector => isOn(bot, connector.id)).map(connector => connector.name)
++  const names = connectedConnectors(roster)
++    .filter(connector => connector.state === 'ready' && isOn(bot, connector.id))
++    .map(connector => connector.name)
 +  return names.length === 0 ? t('Runs with no connectors') : t('Runs with {names}', { names: names.join(', ') })
 +}
 +

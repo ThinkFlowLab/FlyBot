@@ -5573,7 +5573,7 @@ function reachText(task, roster) {
   if (!task?.botId) return "";
   const bot = roster?.byId?.[task.botId] ?? (roster?.bots ?? []).find((entry) => entry.id === task.botId);
   if (bot === void 0) return "";
-  const names = connectedConnectors(roster).filter((connector) => isOn(bot, connector.id)).map((connector) => connector.name);
+  const names = connectedConnectors(roster).filter((connector) => connector.state === "ready" && isOn(bot, connector.id)).map((connector) => connector.name);
   return names.length === 0 ? t("Runs with no connectors") : t("Runs with {names}", { names: names.join(", ") });
 }
 var lockedWindow = (roster) => typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
