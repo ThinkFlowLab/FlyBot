@@ -71,6 +71,43 @@ export function assemble(fragments) {
 
 const UNRELEASED = /^## \[Unreleased\][ \t]*$/m
 
+// The headings are reference links: Markdown needs a "[x]: url" definition or it renders "## [x]" as
+// literal brackets, and [Unreleased] compares from whatever tag its definition names.
+const HOME = 'https://github.com/ThinkFlowLab/FlyBot'
+const VERSION_HEADING = /^## \[([^\]]+)\](?:[ \t]+-[^\n]*)?[ \t]*$/gm
+const DEFINITION = /^\[([^\]]+)\]:[ \t]*(\S+)[ \t]*$/gm
+const baseOf = url => /^(.*?)\/(?:compare|releases)\//.exec(url ?? '')?.[1] ?? HOME
+const escapeName = name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Every heading needs a definition, and [Unreleased] must compare from the newest release heading;
+// each message names the heading it is about.
+export function linkProblems(changelog) {
+  const problems = []
+  const headings = [...changelog.matchAll(VERSION_HEADING)].map(match => match[1])
+  const definitions = new Map([...changelog.matchAll(DEFINITION)].map(match => [match[1], match[2]]))
+  for (const name of headings) if (!definitions.has(name)) problems.push(`"## [${name}]" has no "[${name}]:" link definition`)
+  const newest = headings.find(name => name !== 'Unreleased')
+  const unreleased = definitions.get('Unreleased')
+  if (unreleased && newest && !new RegExp(`/compare/v${escapeName(newest)}\\.\\.\\.HEAD$`).test(unreleased)) {
+    problems.push(`"[Unreleased]:" compares from ${unreleased}, not from the newest release (v${newest})`)
+  }
+  return problems
+}
+
+// The definition block Markdown needs, in the order the file already uses: [Unreleased], the version
+// being released, then the older ones. They are stripped and re-appended so the block stays together.
+function withLinks(text, version, previous) {
+  const definitions = [...text.matchAll(DEFINITION)].map(match => [match[1], match[2]])
+  const base = baseOf(definitions.find(([name]) => name === 'Unreleased')?.[1] ?? definitions.find(([name]) => name === previous)?.[1])
+  const rest = definitions.filter(([name]) => name !== 'Unreleased' && name !== version)
+  const block = [
+    `[Unreleased]: ${base}/compare/v${version}...HEAD`,
+    `[${version}]: ${previous ? `${base}/compare/v${previous}...v${version}` : `${base}/releases/tag/v${version}`}`,
+    ...rest.map(([name, url]) => `[${name}]: ${url}`),
+  ]
+  return `${text.replace(DEFINITION, '').replace(/\s+$/, '')}\n\n${block.join('\n')}\n`
+}
+
 // New CHANGELOG.md text: [Unreleased] emptied, a "## [version] - date" section below it that holds the old
 // [Unreleased] entries first and then the fragments, merged per kind.
 export function release(changelog, fragments, version, date) {
@@ -90,7 +127,8 @@ export function release(changelog, fragments, version, date) {
   }
   if (!kinds.size && !lead) throw new Error('nothing to release: [Unreleased] is empty and changelog.d/ has no fragments')
   const section = `## [${version}] - ${date}\n\n${lead ? `${lead}\n\n` : ''}${renderKinds(kinds)}\n\n`
-  return `${changelog.slice(0, afterHeading)}\n${section}${changelog.slice(end)}`
+  const previous = [...changelog.matchAll(VERSION_HEADING)].map(match => match[1]).find(name => name !== 'Unreleased')
+  return withLinks(`${changelog.slice(0, afterHeading)}\n${section}${changelog.slice(end)}`, version, previous)
 }
 
 function main(argv) {
@@ -102,7 +140,10 @@ function main(argv) {
   try {
     if (command === 'check') {
       const fragments = readFragments(dir)
-      if (!UNRELEASED.test(readFileSync(file, 'utf8'))) fail('CHANGELOG.md has no "## [Unreleased]" section')
+      const text = readFileSync(file, 'utf8')
+      if (!UNRELEASED.test(text)) fail('CHANGELOG.md has no "## [Unreleased]" section')
+      const problems = linkProblems(text)
+      if (problems.length) fail(problems.join('\n'))
       console.log(`changelog: ${fragments.length} fragment(s) in changelog.d/ are well formed`)
     } else if (command === 'preview') {
       console.log(assemble(readFragments(dir)))
