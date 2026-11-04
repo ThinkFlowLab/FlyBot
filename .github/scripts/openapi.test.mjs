@@ -97,6 +97,6 @@ test('Chief assistance API exposes explicit operations scope and bounded compens
   const spec = readSpec(), query = operationFor(spec, 'project-development', { kind: 'query', name: 'chief.state' })
   const value = { compensation: [{ id: 'hourly', enabled: true, status: 'active', when: { kind: 'every', seconds: 3600 }, nextCheckAt: 9000, deliveries: [] }], health: { enabled: true, status: 'healthy', lastSuccessAt: 8, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true, operationsContact: { memberId: 'operator', agentId: 'ops-agent' }, autonomy: { maxRecoveryActions: 2, maxRecoveryMs: 60000, guidance: 'Shared guidance' } }, template: {}, schedule: null, runs: [] }
   validate(query.resultSchema, value, spec)
-  assert.throws(() => validate(query.resultSchema, { ...value, policy: { enabled: true, autonomy: { maxRecoveryActions: 21 } } }, spec), /maximum/)
-  assert.throws(() => validate(query.resultSchema, { ...value, compensation: [{ ...value.compensation[0], nextCheckAt: 'guessed' }] }, spec), /integer/)
+  assert.throws(() => validate(query.resultSchema, { ...value, policy: { enabled: true, autonomy: { maxRecoveryActions: 21 } } }, spec), /maxRecoveryActions: number out of bounds/)
+  assert.throws(() => validate(query.resultSchema, { ...value, compensation: [{ ...value.compensation[0], nextCheckAt: 'guessed' }] }, spec), /nextCheckAt:/)
 })
