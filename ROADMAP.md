@@ -7,7 +7,8 @@ Implement and merge #2325 → #2327 → #2328 → #2330 sequentially into
 workspace materialization and explicit source admission; Chief owns recovery
 choices, the host preserves authority, evidence and execution-exit gates.
 #2327 implements same-Session correction with structured feedback and a configured
-budget; no implicit role routing or human escalation. Remaining: #2328 and #2330.
+budget; no implicit role routing or human escalation. #2328 adds exit-proven input waits and shared new/resume admission.
+Remaining: #2330 scheduled inspection restart recovery.
 
 ## Agent connection authorization — 2026-11-03
 

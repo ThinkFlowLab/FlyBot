@@ -372,3 +372,6 @@ Current operator disabling of a Resource or removal of its Harness support also 
 Native input budgeting fences the actual `claim.workerId` against the temporary carrier; `claim.botId` identifies the logical role and is not a physical worker. This distinction is covered by both the scoped input regression and actual DSH native return probe.
 
 #2292 current execution authority additionally validates an Attempt repository association and its operator capability. Removing/replacing the association or withdrawing provisioning cannot keep authorizing an old worker through a changed Project default. Unknown stop/exit still retains capacity.
+
+
+#2328 extends the actual SDK protocol subprocess test: result completion alone retains project/resource capacity; only stop acknowledgement plus process exit releases the input wait. The fixture bridge is deterministic and does not perform vendor inference.

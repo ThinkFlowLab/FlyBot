@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createProjectScheduler } from '../src/host/project-scheduler.js'
 import { createProjectEffects } from '../src/host/project-effects.js'
 import { install as installProjectInputs } from '../src/host/project-inputs.js'
 import { createProjectResources } from '../src/host/project-resources.js'
@@ -525,4 +526,30 @@ if(m.type==='start')write({type:'completed',sessionId:'input-actor-thread',text:
   rt.projectDelegations = { async background() { senderAllowed = false } }
   await assert.rejects(harness.input({ workerId: id, generation: rt.state.projectHarnessWorkers[id].generation, text: 'Late unauthorized input' }, { memberId: 'sender' }), /Sending member was removed/)
   assert.equal(rt.state.projectHarnessWorkers[id].status, 'waiting-input')
+})
+
+
+test('an actual SDK protocol subprocess must exit before its Chief input wait frees project capacity', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  rt.state.bots = {}; rt.state.projectAttempts = { a: { id: 'a', taskId: 't', projectId: 'p', status: 'running' } }
+  rt.state.projectExecutions = { run: { id: 'run', attemptId: 'a', taskId: 't', projectId: 'p', status: 'running' } }
+  rt.state.tasks.t.deliveryAttemptId = 'a'
+  const scheduler = createProjectScheduler(rt)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Test execution exit and waiting capacity' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Capacity checkpoint', outputs: [{ name: 'implementation' }] })
+  assert.equal((await result).ok, true)
+  rt.state.tasks.t.chiefQuestion = { decisionId: 'chief-input', reason: 'Chief requests a scoped project input' }
+  rt.state.tasks.t.collaboration = { status: 'blocked', claim: { workerId: id, role: 'developer', status: 'completed' }, history: [] }
+  await scheduler.captureWait(rt.state.tasks.t)
+  assert.equal(scheduler.slots('p'), 1); assert.equal(rt.projectResources.occupied('r'), 1)
+  assert.equal(scheduler.capacity('p').exitUnknown, 1)
+  await harness.release(id)
+  // The minimal Harness fixture omits role on its pre-existing lease; real reservations carry it.
+  rt.state.projectResourceLeases.l.role = 'developer'
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+  assert.equal(scheduler.slots('p'), 0); assert.equal(rt.projectResources.occupied('r'), 0)
+  assert.equal(scheduler.capacity('p').waitingInput, 1)
+  assert.equal(rt.state.projectAttempts.a.status, 'running'); assert.equal(rt.state.projectExecutions.run.status, 'running')
+  assert.equal(rt.state.projectHarnessWorkers[id].backendSessionId, 'bound-thread')
 })

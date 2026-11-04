@@ -215,3 +215,6 @@ escalation. Chief can later independently choose consultation, repair or another
 route through the original inspection interface. A valid decision clears only its Task's
 current issue marker, retaining failed invocation/audit history. Separate per-Task
 execution failure isolation and scheduled restart recovery remain #2330.
+
+
+#2328 captures an explicit Chief input-wait checkpoint after needs-human. The host releases project execution capacity only with current exit evidence; input receipt does not resume work until Chief routes and the original scheduler re-admits it.

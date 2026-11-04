@@ -3,6 +3,7 @@ subsystem: project-workbench
 owned_paths:
   - core/src/host/project-task-repository.js
   - core/test/project-task-repository.test.js
+  - core/src/host/project-execution-capacity.js
   - core/src/host/project-scheduler.js
   - core/src/host/project-repository-policy.js
   - core/src/host/workbench-gateway.js
@@ -489,3 +490,26 @@ The source backend launcher reuses this original gateway/UI and account/resource
 #2292 repository scope: scheduler preflight/queued retries use the persisted Task repositoryBinding, not mutable Project defaults. Bindings identify the current Project association; removal/replacement blocks further execution. Legacy queues pin a choice before dispatch. Only repository-free decision Tasks bypass Git/test provisioning; code/release Tasks still require an associated operator-provisioned repository.
 
 #2292 exposes scoped release request/reconciliation/status on the original gateway. Release commands require manager authority; status remains a Project read, and only status is admitted on a read-only host. No new service listener or UI is introduced.
+
+## Confirmed idle waits and continuation admission — #2328
+
+Chief explicitly requests input; the scheduler persists Attempt.capacityWait and
+excludes that Attempt and its pool Run together only when every SDK/native worker
+has trusted matching exit proof, resource leases are released and no ephemeral Bot
+or unidentified claim remains. A legacy active Workflow retains its slot. Merely
+blocked, an empty resource count, a timeout or a missing PID never proves idleness.
+Run/Attempt status, Task identity, candidates, workspace and Session history remain.
+
+Chief routing and child continuation preserve the wait checkpoint before clearing
+its source. A successor inherits that checkpoint. Role-pool acceptance defers to a
+`kind=resume` entry in the original projectQueue before spending a claim generation.
+New and resumed work share FIFO project quota and resource/authority checks; there
+is no new executor or queue. Admission runs outside the pool lock; a save in progress
+cannot authorize dispatch. Uncommitted save, revoked principal, retired role, changed
+handoff and stale generation cannot start continuation. Replaying inputs/claims is
+idempotent. Continuation cancellation belongs to Task/Chief lifecycle; blocked queue
+retry preserves the initiating principal and exact Attempt.
+
+`project-resources.capacity` reports activeSlots, waitingInput, waitingResume and
+exitUnknown using the actual admission predicates. occupied measures resource leases;
+activeSlots measures project execution. They have independent configured limits.

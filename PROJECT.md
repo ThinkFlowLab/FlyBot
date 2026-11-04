@@ -14,7 +14,9 @@ Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 preserves drafts and admits explicit inspect/integrate inputs through existing
 Effects. Chief selects only approved repository sources. #2327 adds bounded, durable Chief protocol correction in the resident Session;
 exhaustion retains incomplete judgement without automatic escalation. Follow-ups:
-#2328 idle input-wait slots, #2330 inspection recovery. See
+#2328 adds confirmed-idle wait suspension and FIFO continuation re-admission
+through the original queue; exit-unknown capacity remains held. Remaining: #2330
+inspection recovery. See
 [delivery contract](docs/subsystems/project-delivery.md). Live Task mutation and
 deployment remain separate from source/test delivery.
 

@@ -619,3 +619,17 @@ test('ambiguous developer capabilities require an explicit initial role rather t
   await f.pool.admit({ id: 'attempt', taskId: 'task' }, { memberId: 'owner' }, { targetRole: 'builder' })
   assert.equal(f.task.collaboration.botId, 'p:builder')
 })
+
+test('resumed pool claims cannot bypass project admission or spend a claim generation while queued', async () => {
+  const f = setup(); await f.admit()
+  let admitted = false, checks = 0
+  f.rt.projectScheduler = { async admitPool(task, definition) { ++checks; assert.equal(task.id, 'task'); assert.equal(definition.role, 'developer'); return admitted } }
+  const generation = f.task.collaboration.generation
+  assert.equal(await f.claim(), null)
+  assert.equal(f.task.collaboration.generation, generation)
+  assert.equal(f.task.collaboration.history[0].status, 'pending')
+  admitted = true
+  const claim = await f.claim()
+  assert.equal(claim.status, 'active'); assert.equal(checks, 2)
+  await assert.rejects(f.pool.decide('task', { ...claim, generation: generation - 1 }, { action: 'complete', reason: 'late callback' }), /stale/)
+})

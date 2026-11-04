@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
 import { taskRepository } from './project-task-repository.js'
 import { initialRoleTarget } from './project-role-admission.js'
+import { attemptIdle, capacitySuspended } from './project-execution-capacity.js'
 import { preflightRepository } from './project-repository-policy.js'
 const ACTIVE = new Set(['queued', 'running', 'working', 'paused', 'legacy'])
 const error = message => Object.assign(new Error(message), { code: 'bot/invalid' })
@@ -17,6 +18,7 @@ export function releasedParentWait(state, attemptId) {
 export function createProjectScheduler(rt, { preflight = preflightRepository } = {}) {
   const { state } = rt
   const entries = () => (state.projectQueue ??= {})
+  const savingAdmissions = new Set()
   let recovered = false
   let tail = Promise.resolve()
   let waking = null, wakeAgain = false
@@ -28,11 +30,49 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     for (const bot of Object.values(state.bots)) if (bot.projectId === projectId && bot.ephemeral && bot.attemptId) keys.add(bot.attemptId)
     for (const lease of Object.values(state.projectResourceLeases ?? {})) if (lease.projectId === projectId && lease.role !== 'chief' && lease.status !== 'released' && lease.attemptId) keys.add(lease.attemptId)
     for (const key of [...keys]) {
-      if (releasedParentWait(state, key)) keys.delete(key)
+      if (releasedParentWait(state, key) || capacitySuspended(state, state.projectAttempts?.[key] ?? {})) keys.delete(key)
     }
     return keys.size
   }
   const quota = project => project.quota?.maxConcurrent ?? 2
+  async function captureWait(task, source) {
+    const attempt = state.projectAttempts?.[task.deliveryAttemptId]
+    const wait = source ?? (task.chiefQuestion ? { kind: 'chief-input', id: task.chiefQuestion.decisionId } : task.collaboration?.status === 'waiting-children' ? { kind: 'children', id: task.projectTask?.wait?.id ?? task.collaboration.currentHandoffId } : null)
+    if (!attempt || !wait || attempt.taskId !== task.id) return
+    if (attempt.capacityWait?.source.id === wait.id && attempt.capacityWait.status !== 'admitted') return
+    const previous = attempt.capacityWait
+    attempt.capacityWait = { version: 'project-capacity-wait/v1', source: structuredClone(wait), status: 'suspended', attemptId: attempt.id, at: Date.now() }
+    try { await rt.save() } catch (error) { if (previous === undefined) delete attempt.capacityWait; else attempt.capacityWait = previous; throw error }
+  }
+  function capacity(projectId) {
+    const result = { activeSlots: slots(projectId), waitingInput: 0, waitingResume: 0, exitUnknown: 0 }
+    for (const attempt of Object.values(state.projectAttempts ?? {})) {
+      const task = state.tasks?.[attempt.taskId]
+      if (attempt.projectId !== projectId || task?.deliveryAttemptId !== attempt.id || !attempt.capacityWait || ['accepted', 'cancelled'].includes(task.status)) continue
+      if (attempt.capacityWait.status === 'admitted') continue
+      if (!attemptIdle(state, attempt.id)) ++result.exitUnknown
+      else if (task.chiefQuestion || task.collaboration?.status === 'waiting-children') ++result.waitingInput
+      else ++result.waitingResume
+    }
+    return result
+  }
+  async function admitPool(task, definition) {
+    if (definition.role === 'chief') return true
+    const attempt = state.projectAttempts?.[task.deliveryAttemptId], wait = attempt?.capacityWait
+    if (!wait) return true
+    if (wait.status === 'admitted') return !savingAdmissions.has(attempt.id)
+    if (task.chiefQuestion || task.collaboration?.status !== 'queued' || !attemptIdle(state, attempt.id)) return false
+    const c = task.collaboration
+    let entry = Object.values(entries()).find(row => row.kind === 'resume' && row.attemptId === attempt.id && row.handoffId === c.currentHandoffId && row.generation === c.generation)
+    if (!entry) {
+      entry = { id: `queue-${randomUUID()}`, kind: 'resume', projectId: task.projectId, taskId: task.id, attemptId: attempt.id, handoffId: c.currentHandoffId, generation: c.generation, targetBotId: definition.id, initialTarget: { role: definition.role }, memberId: c.initiatedBy ?? attempt.initiatedBy, status: 'waiting', enqueuedAt: Date.now(), updatedAt: Date.now() }
+      setEntry(entries(), entry.id, entry)
+      try { await rt.save() } catch (error) { delete entries()[entry.id]; throw error }
+    }
+    // Queue admission runs outside the pool lock: drain can itself admit a new pool Task.
+    void wake()
+    return false
+  }
   function revalidate(projectId) {
     let changed = false
     for (const entry of Object.values(entries())) {
@@ -81,7 +121,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     if (Object.values(state.projectAttempts ?? {}).some(attempt => attempt.taskId === task.id && ['preparing', 'running', 'waiting-acceptance'].includes(attempt.status))) throw error('Task already has an active Attempt')
     const initialTarget = initialRoleTarget(rt, task, body)
     const resourceReason = resourceBlock(project.id, initialTarget)
-    if (slots(project.id) < quota(project) && !resourceReason) return rt.projectDelivery.endpoint('project-task-run', { ...body, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}) }, actor)
+    if (slots(project.id) < quota(project) && !resourceReason && !Object.values(entries()).some(row => row.projectId === project.id && row.status === 'waiting')) return rt.projectDelivery.endpoint('project-task-run', { ...body, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}) }, actor)
     const entry = { id: `queue-${randomUUID()}`, projectId: project.id, taskId: task.id, requestId: body.requestId, requestKey,
       memberId: actor.memberId, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
     setEntry(entries(), entry.id, entry)
@@ -91,12 +131,33 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
   async function drain() {
     if (rt.readOnly?.() || !rt.sharedProjectMode?.() || !rt.flybotIsRead?.('workflow/state')) return
     let changed = false
+    for (const task of Object.values(state.tasks)) if (task.chiefQuestion || task.collaboration?.status === 'waiting-children') await captureWait(task)
     for (const project of rt.listProjects()) if (revalidate(project.id)) changed = true
     const pending = Object.values(entries()).filter(entry => entry.status === 'waiting').sort((a, b) => a.enqueuedAt - b.enqueuedAt || a.id.localeCompare(b.id))
     for (const entry of pending) {
       const project = rt.readProject(entry.projectId)
       if (!project || project.status !== 'active') { entry.status = 'blocked'; entry.reason = 'Project is archived or unavailable'; changed = true; continue }
       if (slots(project.id) >= quota(project)) continue
+      if (entry.kind === 'resume') {
+        const task = state.tasks[entry.taskId], attempt = state.projectAttempts?.[entry.attemptId], c = task?.collaboration
+        if (!attempt || task.deliveryAttemptId !== attempt.id || c?.generation !== entry.generation || c.currentHandoffId !== entry.handoffId || c.botId !== entry.targetBotId || c.status !== 'queued' || task.chiefQuestion) { entry.status = 'cancelled'; entry.reason = 'Continuation changed'; changed = true; continue }
+        if (!attemptIdle(state, attempt.id)) { entry.reason = 'Execution exit unconfirmed'; changed = true; continue }
+        try {
+          await rt.projectDelegations?.background(entry.memberId)
+          rt.requireProjectAccess({ memberId: entry.memberId }, project.id, 'task-write', task)
+          rt.projectTaskLifecycle?.requireExecutable(task)
+          const catalog = rt.projectAgents?.deliveryDefinitions(project.id)
+          if (catalog && !catalog.roles.some(row => row.id === entry.targetBotId && row.status !== 'retired')) throw error('Continuation role was retired')
+          const blocked = resourceBlock(project.id, entry.initialTarget)
+          if (blocked) { entry.reason = blocked; changed = true; continue }
+          const previous = structuredClone(attempt.capacityWait)
+          savingAdmissions.add(attempt.id)
+          attempt.capacityWait.status = 'admitted'; attempt.capacityWait.queueId = entry.id; attempt.capacityWait.admittedAt = Date.now()
+          entry.status = 'started'; entry.updatedAt = Date.now(); delete entry.reason
+          try { await rt.save() } catch (failure) { attempt.capacityWait = previous; entry.status = 'waiting'; throw failure } finally { savingAdmissions.delete(attempt.id) }
+        } catch (failure) { entry.status = 'blocked'; entry.reason = String(failure.message).slice(0, 300) }
+        changed = true; continue
+      }
       let execution
       try { execution = taskRepository(rt, project, state.tasks[entry.taskId], { repositoryBinding: entry.repositoryBinding }); await preflight(rt, execution.project) }
       catch (failure) { entry.status = 'blocked'; entry.reason = failure.message; entry.updatedAt = Date.now(); changed = true; continue }
@@ -126,6 +187,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     if (!entry) throw error('Unknown queued request')
     const task = ownEntry(state.tasks, entry.taskId)
     rt.requireProjectAccess(actor, entry.projectId, 'task-write', task)
+    if (entry.kind === 'resume') throw error('Cancel or change the Task through Chief; a continuation cannot become a new request')
     if (!['waiting', 'blocked'].includes(entry.status)) throw error('Queued request has already started or ended')
     entry.status = 'cancelled'; entry.updatedAt = Date.now(); entry.reason = 'Cancelled by an authorized member'
     await rt.save()
@@ -137,6 +199,12 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     const task = ownEntry(state.tasks, entry.taskId)
     rt.requireProjectAccess(actor, entry.projectId, 'run-control')
     if (!task || task.projectId !== entry.projectId || ['accepted', 'cancelled'].includes(task.status)) throw error('Task has ended or is unavailable')
+    if (entry.kind === 'resume') {
+      if (entry.status !== 'blocked') throw error('Only a blocked continuation can be retried')
+      await rt.projectDelegations?.background(entry.memberId)
+      if (!rt.projectCan({ memberId: entry.memberId }, entry.projectId, 'task-write', task)) throw error('Original requester no longer has Project authority')
+      entry.status = 'waiting'; delete entry.reason; await rt.save(); return { queue: structuredClone(entry) }
+    }
     if (entry.status !== 'blocked') throw error('Only a blocked queue request can be retried')
     // Recovery must not replace the initiating human with the operator's authority.
     const requester = { memberId: entry.memberId }
@@ -191,7 +259,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
   }
   return { request: (body, actor) => serial(() => request(body, actor)), cancel: (body, actor) => serial(() => cancel(body, actor)),
     retry: (body, actor) => serial(() => retry(body, actor)).then(result => { void wake(); return result }),
-    slots, revalidate, recover, drain: () => serial(drain), wake }
+    captureWait, capacity, admitPool, slots, revalidate, recover, drain: () => serial(drain), wake }
 }
 export function install(rt) {
   rt.projectScheduler = createProjectScheduler(rt)

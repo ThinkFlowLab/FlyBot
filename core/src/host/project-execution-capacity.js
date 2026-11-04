@@ -9,9 +9,11 @@ export function attemptIdle(state, attemptId) {
   const sdk = Object.values(state.projectHarnessWorkers ?? {}).filter(row => row.attemptId === attemptId && row.role !== 'chief')
   const native = Object.values(state.projectNativeWorkers ?? {}).filter(row => row.attemptId === attemptId && row.role !== 'chief')
   if (Object.values(state.bots ?? {}).some(row => row.ephemeral && row.attemptId === attemptId && row.role !== 'chief')) return false
-  if (sdk.some(row => !confirmedWorkerExit(state, row) || !leases.some(lease => lease.id === row.leaseId && lease.status === 'released' && lease.generation === row.generation && lease.worker?.handle === row.id))) return false
+  if (sdk.some(row => !confirmedWorkerExit(state, row) || !leases.some(lease => lease.id === row.leaseId && lease.status === 'released' && lease.generation === row.generation && lease.projectId === row.projectId && lease.resourceId === row.resourceId && lease.role === row.role && lease.worker?.handle === row.id))) return false
   if (native.some(row => !nativeExitConfirmed(state, row))) return false
   if (leases.some(row => row.status !== 'released' || row.worker && !['sdk', 'native'].includes(row.worker.kind) || row.worker?.kind === 'sdk' && !sdk.some(worker => worker.id === row.worker.handle) || row.worker?.kind === 'native' && !native.some(worker => worker.id === row.worker.botId) || !row.worker && row.releaseProof?.kind !== 'unbound-reservation-release')) return false
+  const sessions = [...Object.values(attempt.roleSessions ?? {}), ...(attempt.roleSessionHistory ?? [])]
+  if (sessions.some(row => row.role !== 'chief' && row.botId && !sdk.some(worker => worker.id === row.botId) && !native.some(worker => worker.id === row.botId))) return false
   const claim = task.collaboration?.claim
   if (claim?.workerId && claim.role !== 'chief' && !claim.chiefRunId && !sdk.some(row => row.id === claim.workerId) && !native.some(row => row.id === claim.workerId)) return false
   if (claim?.status === 'active' && !claim.workerId && !claim.chiefRunId) return false

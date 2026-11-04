@@ -184,3 +184,6 @@ Canonical claims retain the admitted requirement revision. Decision admission re
 ## Initial routing (#2292)
 
 `initialRoleTarget` pins role/id/capability, catalog revision and Task requirements revision before first dispatch. An explicit active non-Chief `targetRole` wins; otherwise prefer the active developer-capability role named developer, or the sole developer-capability role. Ambiguous/missing candidates refuse rather than choose by array order. Admission revalidates the binding after asynchronous authority/evidence checks. This selection is not a new Session or a DAG edge; subsequent handoffs retain existing Bot autonomy.
+
+
+#2328 preserves wait checkpoints before handoff/child resume. Claim acceptance waits for original projectQueue resume admission outside the pool lock, rechecks authority/generation and does not spend a claim generation while queued. No extra workflow or default next role is added.
