@@ -1,8 +1,8 @@
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MarkdownText, MarkdownDelegateProvider } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
-import { currentPart, linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
+import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { botByName, rosterBot } from './sources.js'
@@ -24,35 +24,43 @@ import { turnReasoning } from './turn-reasoning.js'
 
 const mdLabels = () => ({ code: { copyLabel: t('Copy'), copiedLabel: t('Copied') }, footnotes: t('Footnotes') })
 
-// #2201: a link a person picks inside a bubble belongs to FlyBot's own panel. Left alone the host opens
-// it in its right sidebar — a browser tab this panel's fixed layer covers, so the content area looks
-// blank — and nothing in FlyBot ever sees the click. The link therefore opens a tab in the panel's own
-// browser view (the one the globe button opens) carrying the URL; without the Desktop bridge there is
-// no panel at all, and the page opens in the window itself. An element builder, not a component: the
-// provider sits directly above the text so the bubble keeps one Markdown node, as before.
-function bubbleMarkdown({ actions, subject, openFile, fileImages, ...markdown }) {
-  const openExternalLink = (href) => {
+// #2201: a link a person picks inside a bubble belongs to FlyBot's own panel. Left to the host it
+// opens in the host's right sidebar — a browser tab this panel's fixed layer covers, so the content
+// area looks blank — and FlyBot never sees the click. A capture handler on the bubble's container
+// takes the anchor before the host's delegate does: an http(s) link opens a tab in the panel's own
+// browser view (the one the globe button opens), and without the Desktop bridge the page opens in
+// the window itself. Everything else — no anchor, a middle or modified click, a mention, a file
+// link — falls through to the handler that already owns it, the host's included.
+function bubbleLinkClick({ actions, subject }) {
+  return (event) => {
+    if (!event || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false
+    const anchor = event.target?.closest?.('a[href]')
+    if (!anchor) return false
+    const href = anchor.getAttribute?.('href')
+    // A mention is an https link to the fake origin the plugin rewrites names into; the click
+    // handler that owns mentions opens the Bot's part for it, so it must not be taken for a page.
+    if (typeof href !== 'string' || href.startsWith(MENTION_ORIGIN) || !/^https?:/i.test(href)) return false
+    event.preventDefault()
+    event.stopPropagation()
     const tabId = typeof actions?.browserNewTab === 'function' ? actions.browserNewTab(subject) : null
     if (tabId !== undefined && tabId !== null && typeof actions.browserNavigate === 'function') {
       void actions.browserNavigate(tabId, href)
-      return
+      return true
     }
-    // No tab for this link — a room id, a Bot outside the roster, no bridge, or no navigation —
-    // so the page opens in the window itself. Exactly one window here: opening in both places
-    // would show two tabs (#2201 review).
-    if (typeof window !== 'undefined' && typeof window.open === 'function') window.open(href, '_blank', 'noopener')
+    // No tab for this link — a Bot outside the roster, no bridge, or no navigation — so the page
+    // opens in the window itself. Exactly one window here: opening in both places would show two
+    // tabs (#2201 review).
+    if (typeof window !== 'undefined' && typeof window.open === 'function') window.open(href, '_blank', 'noopener,noreferrer')
+    return true
   }
-  // The nearest provider *replaces* the enclosing Markdown scope (primitives: "Nested providers
-  // replace the enclosing capabilities"), so the host's file opener and image resolver have to
-  // ride with this one: a local `[x](path#L12)` link keeps its chip and a local image keeps
-  // previewing, as they did before the bubble got a delegate of its own.
-  return h(MarkdownDelegateProvider, { openExternalLink, openFile, fileImages }, h(MarkdownText, markdown))
 }
 
 // `lead` (a sender avatar in group chats) sits beside the last bubble, in the same
 // row, so it lines up with the bubble whether or not reactions hang below it.
-export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions, openFile, fileImages }) {
+export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
+  const openLink = bubbleLinkClick({ actions, subject: selfId ?? sessionId })
   const onClick = (event) => {
+    if (openLink(event)) return
     const target = mentionTarget(event)
     if (target === null) return
     event.preventDefault()
@@ -82,7 +90,7 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
         h('div', { className: 'bt-msg-line' },
           lead && last ? lead : null,
           h('div', { className: 'bt-bubble' },
-            bubbleMarkdown({ text: linkMentions(text, roster.bots, selfId), actions, subject: selfId ?? sessionId, openFile, fileImages, streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
+            h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
           live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions })),
         picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
           key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
@@ -236,7 +244,7 @@ export function friendLead(bot, texts) {
   return h('span', { className: 'bt-lead', title: bot.name, 'data-flybot': 'friend-lead' }, h(BotMark, { bot, size: 22 }))
 }
 
-export function AssistantCell({ node, groupPart, sessionId, openFile, fileImages, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
+export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, useTurnData, useRoster, useUi, useTurnSteps, useTurnContext, actions }) {
   const roster = useRoster(value => value)
   const data = node.data
   const steps = useTurnSteps(String(data.turn))
@@ -259,8 +267,8 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileImages
   if (texts.length === 0 && !reasoning && relays.length === 0) return null
   const selfId = roster.byId[sessionId]?.id ?? sessionId
   const bubbles = texts.length ? (person
-    ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, openFile, fileImages })
-    : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts), openFile, fileImages })) : null
+    ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
+    : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts) })) : null
   return h(Fragment, null,
     relays.map(relay => {
       const source = relay.source
@@ -294,13 +302,13 @@ function HeldReply({ held, roster, sessionId, actions, closing, children }) {
 // A friend's line that Bot Social attests the friend typed themselves, or another person's own
 // line in a face-to-face room: the person's name and a person mark, not the Bot's (the host marks
 // the turn, remote-chat.js / turns.js, or posts it as a person line, hooks.js postHuman).
-function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi, openFile, fileImages }) {
+function PersonMessage({ name, texts, roster, selfId, actions, sessionId, msgKey, useUi }) {
   // #2123: the same rule as a Bot's line — text a person can read or no row (the name and mark go too).
   if (!(texts ?? []).some(text => String(text ?? '').trim() !== '')) return null
   const lead = h('span', { className: 'bt-lead', title: name }, h(PersonMark, { name }))
   return h('div', { className: 'bt-group-msg bt-person-msg', 'data-person': name },
     h('span', { className: 'bt-group-name' }, name),
-    h(Bubbles, { texts, roster, selfId, actions, sessionId, msgKey, useUi, lead, openFile, fileImages }))
+    h(Bubbles, { texts, roster, selfId, actions, sessionId, msgKey, useUi, lead }))
 }
 
 function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
@@ -359,7 +367,7 @@ export function heldLineState(room, { seq, botId, text } = {}, now = Date.now())
 }
 
 // One Bot message inside a group chat: avatar, name (with its group role), bubble.
-function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq, openFile, fileImages }) {
+function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq }) {
   // #2123: the Bot posted no words (a turn that only called tools, a reply carried by a card): there is
   // no line to draw, and drawing one leaves the avatar and an empty bubble under the trace row.
   if (String(text ?? '').trim() === '') return null
@@ -377,7 +385,7 @@ function GroupMessage({ bot, text, room, roster, actions, msgKey, useUi, seq, op
   const name = h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, faceBotLabel(room, roster, bot) ?? bot.name,
     room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null)
   return h('div', { className: 'bt-group-msg' }, name,
-    h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead, openFile, fileImages }))
+    h(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead }))
 }
 
 // A friend's remote Bot speaking in this chat, laid out like any chat partner: its own
@@ -427,7 +435,7 @@ function faceSeatLook(room, handle) {
 
 const cleanCarrier = value => (typeof value === 'string' && value.trim() && !/[@()]/.test(value) ? value.trim() : '')
 
-export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi, openFile, fileImages }) {
+export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey, useUi }) {
   const room = roster.roomsById?.[sessionId]
   const face = room?.origin === 'face-to-face'
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId)
@@ -444,7 +452,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       // One short header: the person, and the Bot that carried the line only when it is known (#275).
       h('span', { className: 'bt-group-name', title: handle }, person,
         carrier ? h('span', { className: 'bt-remote-handle' }, t('via {name}', { name: carrier })) : null),
-      String(words ?? '').trim() === '' ? null : h(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })), openFile, fileImages }),
+      String(words ?? '').trim() === '' ? null : h(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })) }),
       files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
   }
   const mark = h(BotMark, { bot, size: 22 })
@@ -457,7 +465,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       ? h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) }, title: handle }, name)
       : h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
         h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
-    String(words ?? '').trim() === '' ? null : h(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead, openFile, fileImages }),
+    String(words ?? '').trim() === '' ? null : h(Bubbles, { texts: [words], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
     files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 }
 
@@ -539,7 +547,7 @@ const scrollParent = (node) => {
 // The earlier parts of a Bot's own chat, above its current part as one conversation.
 // Pages load from the host as the user scrolls up; a thin line marks where each
 // part begins, the last one where the current part begins.
-function EarlierParts({ sessionId, roster, actions, useUi, openFile, fileImages }) {
+function EarlierParts({ sessionId, roster, actions, useUi }) {
   const [view, setView] = useState({ items: [], cursor: undefined, loading: true, failed: false, startedAt: null })
   const top = useRef(null)
   const busy = useRef(false)
@@ -610,11 +618,11 @@ function EarlierParts({ sessionId, roster, actions, useUi, openFile, fileImages 
       const key = rows.length - index
       switch (row.kind) {
         case 'divider': return h(PartLine, { key, time: row.time })
-        case 'user': return h('div', { key, className: 'bt-urow' }, h('div', { className: 'bt-ububble' },
-          row.text ? bubbleMarkdown({ text: row.text, actions, subject: selfId ?? sessionId, openFile, fileImages, labels: mdLabels(), variant: 'compact' }) : null,
+        case 'user': return h('div', { key, className: 'bt-urow', onClickCapture: bubbleLinkClick({ actions, subject: selfId ?? sessionId }) }, h('div', { className: 'bt-ububble' },
+          row.text ? h(MarkdownText, { text: row.text, labels: mdLabels(), variant: 'compact' }) : null,
           row.images ? h('span', { className: 'bt-uimages' }, row.images === 1 ? t('1 image') : t('{count} images', { count: row.images })) : null))
         case 'answer': return h(AnsweredCell, { key, node: { data: row } })
-        case 'bot': return h(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi, openFile, fileImages })
+        case 'bot': return h(Bubbles, { key, texts: row.texts, msgKeys: row.msgKeys, roster, selfId, actions, sessionId, useUi })
         case 'event': {
           if (row.role === 'report') return h(GroupEvent, { key, prefix: t('Replies from'), room: roster.roomsById[row.roomId], name: t('a group chat'), roster, actions })
           const other = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t('a Bot'), color: 'gray' }
@@ -627,7 +635,7 @@ function EarlierParts({ sessionId, roster, actions, useUi, openFile, fileImages 
     h(PartLine, { time: view.startedAt }))
 }
 
-export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions, openFile, fileImages }) {
+export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions }) {
   const roster = useRoster(value => value)
   const data = node.data
   const source = data.source !== null && typeof data.source === 'object' ? data.source : {}
@@ -671,12 +679,12 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     // A line that arrived while a round was running is that round's bubble already (#455).
     if (source.shown === true) return null
     if (source.remote?.handle) {
-      const message = h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi, openFile, fileImages })
+      const message = h(RemoteMessage, { source, text: remoteMessageText(stripHeader(contentText(data.content))), roster, actions, sessionId, msgKey: `${sessionId}:${data.turn}:remote`, useUi })
       return source.remote.firstContact === true ? h(Fragment, null, h(FirstContact, { source, roster, sessionId }), message) : message
     }
     if (source.kind === 'bot') {
       // A part opens with its handoff package, so the earlier parts go right above it.
-      if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions, useUi, openFile, fileImages })
+      if (source.handoff === true) return roster.roomsById[sessionId] ? null : h(EarlierParts, { sessionId, roster, actions, useUi })
       // Group turns belong to the group chat; the member's own chat stays one-to-one. A
       // kickoff line was a setup prompt, never a message the parent Bot sent (#698).
       if (source.role === 'room' || source.role === 'kickoff') return null
@@ -693,7 +701,7 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
         if (source.notice === true || source.senderSessionId === 'face-notice') return null
         const room = roster.roomsById[sessionId]
         const poster = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t('a Bot'), color: 'gray' }
-        return h(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi, openFile, fileImages })
+        return h(GroupMessage, { bot: poster, text: stripHeader(contentText(data.content)), room, roster, actions, msgKey: `${sessionId}:${data.turn}:post`, useUi })
       }
       if (source.role === 'report') {
         return h(GroupEvent, { prefix: t('Replies from'), room: roster.roomsById[source.roomId], name: t('a group chat'), roster, actions })
@@ -957,7 +965,7 @@ function useLiveNote(actions, sessionId, id, entry) {
   }, [sessionId, id, key])
 }
 
-export function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi, openFile, fileImages }) {
+export function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi }) {
   const [live, setLive] = useState({ replies: [] })
   useEffect(() => {
     if (done) return undefined
@@ -993,13 +1001,13 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
         // Another person's own line: their name and person mark beside a received bubble,
         // never the sent-bubble style of my own lines (#180, #229).
         if (reply.other) {
-          return h(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, openFile, fileImages })
+          return h(PersonMessage, { key: `user-${index}`, name: who, texts: [remoteMessageText(reply.text)], roster, selfId: sessionId, actions, sessionId, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi })
         }
         // My own line in a face room has my person mark too, as everyone else's (#457).
-        return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who },
+        return h('div', { key: `user-${index}`, className: 'bt-urow', 'data-author': reply.authorId, 'data-author-name': who, onClickCapture: bubbleLinkClick({ actions, subject: sessionId }) },
           who ? h('span', { className: 'bt-uauthor' }, who) : null,
           h('div', { className: 'bt-ububble' },
-          bubbleMarkdown({ text: remoteMessageText(reply.text), actions, subject: reply.botId ?? sessionId, openFile, fileImages, labels: mdLabels(), variant: 'compact' })),
+          h(MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: 'compact' })),
           room?.origin === 'face-to-face' ? h('span', { className: 'bt-lead', title: who || undefined }, h(PersonMark, { name: who || undefined })) : null)
       }
       if (reply.kind === 'failed') {
@@ -1037,8 +1045,6 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
       const remote = reply.remote || (reply.handle && !roster.byId[reply.botId])
       if (remote) {
         return h(RemoteMessage, {
-          openFile,
-          fileImages,
           key: `${reply.botId || reply.handle}-${index}`,
           source: { remote: { handle: reply.handle || reply.botId }, senderName: reply.name || reply.who, senderSessionId: reply.botId },
           text: remoteMessageText(reply.text),
@@ -1049,7 +1055,7 @@ export function GroupReplies({ sessionId, callId, done, content, roster, actions
           useUi,
         })
       }
-      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, seq: reply.seq, openFile, fileImages })
+      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, seq: reply.seq })
     }))
 }
 
@@ -1086,7 +1092,7 @@ function useShownCards(actions, sessionId, callIds) {
   }, [sessionId, key])
 }
 
-function renderCall(call, { sessionId, roster, actions, useUi, findBot, openFile, fileImages }) {
+function renderCall(call, { sessionId, roster, actions, useUi, findBot }) {
   const tool = toolName(call)
   const done = call.kind === 'tool-result'
   const { text: arg, value: argValue } = toolArgs(call)
@@ -1112,7 +1118,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, findBot, openFile
       return done && target ? h(EventLine, { prefix: t('Updated'), bots: [target], onOpen: bot => actions.openSession(bot.id) }) : null
     }
     case 'group_relay':
-      return h(GroupReplies, { sessionId, callId: call.callId, done, content: call.content, roster, actions, useUi, openFile, fileImages })
+      return h(GroupReplies, { sessionId, callId: call.callId, done, content: call.content, roster, actions, useUi })
     case 'create_group':
     case 'update_group':
     case 'delete_group':
@@ -1162,7 +1168,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, findBot, openFile
   }
 }
 
-export function ToolCell({ node, sessionId, useRoster, useUi, actions, openFile, fileImages }) {
+export function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
   const roster = useRoster(value => value)
   const root = node.data.root
   const turn = node.location?.turn?.turn ?? root.turn
@@ -1177,6 +1183,6 @@ export function ToolCell({ node, sessionId, useRoster, useUi, actions, openFile,
   useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note)
   useShownCards(actions, sessionId, drawn.filter(call => CARDS.has(toolName(call)) && call.callId).map(call => call.callId))
   if (drawn.length === 0) return null
-  const env = { sessionId, roster, actions, useUi, findBot, openFile, fileImages }
+  const env = { sessionId, roster, actions, useUi, findBot }
   return h(Fragment, null, drawn.map((call, index) => h(Fragment, { key: call.callId ?? index }, renderCall(call, env))))
 }
