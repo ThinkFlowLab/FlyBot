@@ -185,6 +185,9 @@ test('#986: a terminal failure reaches the view as retry:false, and its card dra
   assert.equal(byTurn[4].status, 'failed')
   assert.equal('retry' in byTurn[4], false, 'a retryable failure is not marked terminal')
   assert.equal(byTurn[4].error, 'HTTP 500')
+  // P-538: the sentence the hold was made with is on the view too, so the waiting card can say why
+  // the reply waits instead of offering a hover title on the dock alone.
+  assert.equal(byTurn[4].reason, 'held by test', 'the view carries the reason the hold was made')
 
   // Draw the very objects the view returned, on the turns they answer.
   const roster = rosterOf(view)

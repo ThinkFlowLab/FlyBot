@@ -46,6 +46,7 @@ import { hostText, t } from './i18n.js'
 import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-claims.js'
 import { isApprovalWaiting, WAITING_STATUSES } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
+import { reasonLine } from './reason-line.js'
 import { lockedWindow } from './schedules.js'
 import { relativeShort } from './text.js'
 import { isMainOf } from './sources.js'
@@ -335,11 +336,14 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
         // #2409: one rule for all three surfaces — a number of ms, an ISO string, or nothing drawable.
         const at = typeof approval.createdAt === 'number' ? approval.createdAt : Date.parse(approval.createdAt)
         const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null
-        return h('div', { key: approval.id, className: 'bt-flybot-approval', title: approval.reason ?? undefined },
+        // P-538: the host's reason is a sentence a person decides by, so it is drawn, not only titled.
+        const reason = reasonLine(approval.reason)
+        return h('div', { key: approval.id, className: 'bt-flybot-approval' },
           h('div', { className: 'bt-flybot-approval-head' }, failed ? t('Not sent') : t('Waiting for approval'), waiting ? age : null),
           h('div', { className: 'bt-flybot-approval-origin' },
             t('{from} → {to}', { from: approval.senderName ?? t('A Bot'), to: recipientName(approval, roster) }),
             approval.request.hop > 0 ? ` · ${t('delegated')}` : ''),
+          reason ? h('div', { className: 'bt-flybot-approval-reason', title: reason.title }, reason.text) : null,
           failed && approval.error ? h('div', { className: 'bt-flybot-approval-error' }, approval.error) : null,
           h('div', { className: 'bt-flybot-approval-text' }, approval.request.text),
           approval.request.attachments?.length
@@ -386,6 +390,7 @@ export const FLYBOT_CSS = `
 .bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
 .bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
 .bt-flybot-approval-origin { font-size: 12px; opacity: .7; margin-bottom: 4px; }
+.bt-flybot-approval-reason { font-size: 12px; line-height: 1.4; margin: 0 0 6px; overflow-wrap: anywhere; }
 .bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
 .bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 .bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }

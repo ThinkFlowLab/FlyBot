@@ -2191,7 +2191,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,1039 +1624,3126 @@ function usageOf(list, ids) {
+@@ -1624,1039 +1624,3137 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -3132,6 +3132,35 @@ diff --git a/client.js b/client.js
 -.bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
 -.bt-send:disabled{opacity:.35;cursor:default}
 -.bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
++// src/client/reason-line.js
++var REASON_POINTS = 200;
++var reasonLine = (reason) => {
++  if (typeof reason !== "string" || reason.trim() === "") return null;
++  const full2 = reason.toWellFormed();
++  return { text: fits(full2, REASON_POINTS) ? full2 : [...full2].slice(0, REASON_POINTS).join("") + "…", title: full2 };
++};
+ 
+-.bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+-.bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
+-.bt-dialog .bt-head{height:62px}
+-.bt-dialog-log{flex:1;overflow-y:auto;padding:8px 16px 20px;width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;box-sizing:border-box}
+-.bt-dialog-foot{display:flex;justify-content:center;padding:10px 10px 16px}
+-.bt-exchange{animation:bt-sheet-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} both,bt-veil-in .24s ease-out both}
+-.bt-exchange[data-leaving]{animation:bt-sheet-out .22s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
+-@keyframes bt-sheet-in{from{transform:translateY(24px)}}
+-@keyframes bt-sheet-out{to{opacity:0;transform:translateY(16px);filter:blur(4px)}}
+-.bt-exchange .bt-dialog{position:relative}
+-.bt-exchange .bt-dialog-log{max-width:none;margin:0;padding:39px max(16px,calc((100% - 960px)/2)) 76px;scrollbar-width:thin}
+-.bt-exchange .bt-tools{display:none}
+-.bt-exchange .bt-dialog-foot{position:absolute;left:0;right:0;bottom:0;height:76px;box-sizing:border-box;align-items:flex-end;padding:0 0 28px;background:var(--bt-main);z-index:3;animation:bt-foot-in .3s cubic-bezier(.22,1,.36,1) .3s both}
+-.bt-exchange .bt-dialog-foot::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:40px;background:linear-gradient(to top,var(--bt-main),transparent);pointer-events:none}
+-.bt-exchange[data-leaving] .bt-dialog-foot{animation:bt-foot-out .22s cubic-bezier(.4,0,1,1) forwards}
+-@keyframes bt-foot-in{from{opacity:0;transform:translateY(6px)}}
+-@keyframes bt-foot-out{to{opacity:0;transform:translateY(6px)}}
+-@media (prefers-reduced-motion:reduce){.bt-exchange,.bt-exchange .bt-dialog-foot{animation-duration:.01s}}
+-.bt-soft{height:36px;border-radius:999px;border:0;background:var(--bt-hover);color:var(--bt-ink);padding:0 16px;font-size:14px;cursor:pointer}
+-.bt-soft:hover{background:var(--bt-active)}
+-.bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
 +// src/shared/face-title.js
 +var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 +function isGenericFaceTitle(name) {
@@ -3196,98 +3225,6 @@ diff --git a/client.js b/client.js
 +  if (people2.length) bits.push(people2.join(", "));
 +  bits.push(join.length === 6 ? join : when3);
 +  return bits.join(" · ");
-+}
- 
--.bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
--.bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
--.bt-dialog .bt-head{height:62px}
--.bt-dialog-log{flex:1;overflow-y:auto;padding:8px 16px 20px;width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;box-sizing:border-box}
--.bt-dialog-foot{display:flex;justify-content:center;padding:10px 10px 16px}
--.bt-exchange{animation:bt-sheet-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} both,bt-veil-in .24s ease-out both}
--.bt-exchange[data-leaving]{animation:bt-sheet-out .22s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
--@keyframes bt-sheet-in{from{transform:translateY(24px)}}
--@keyframes bt-sheet-out{to{opacity:0;transform:translateY(16px);filter:blur(4px)}}
--.bt-exchange .bt-dialog{position:relative}
--.bt-exchange .bt-dialog-log{max-width:none;margin:0;padding:39px max(16px,calc((100% - 960px)/2)) 76px;scrollbar-width:thin}
--.bt-exchange .bt-tools{display:none}
--.bt-exchange .bt-dialog-foot{position:absolute;left:0;right:0;bottom:0;height:76px;box-sizing:border-box;align-items:flex-end;padding:0 0 28px;background:var(--bt-main);z-index:3;animation:bt-foot-in .3s cubic-bezier(.22,1,.36,1) .3s both}
--.bt-exchange .bt-dialog-foot::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:40px;background:linear-gradient(to top,var(--bt-main),transparent);pointer-events:none}
--.bt-exchange[data-leaving] .bt-dialog-foot{animation:bt-foot-out .22s cubic-bezier(.4,0,1,1) forwards}
--@keyframes bt-foot-in{from{opacity:0;transform:translateY(6px)}}
--@keyframes bt-foot-out{to{opacity:0;transform:translateY(6px)}}
--@media (prefers-reduced-motion:reduce){.bt-exchange,.bt-exchange .bt-dialog-foot{animation-duration:.01s}}
--.bt-soft{height:36px;border-radius:999px;border:0;background:var(--bt-hover);color:var(--bt-ink);padding:0 16px;font-size:14px;cursor:pointer}
--.bt-soft:hover{background:var(--bt-active)}
--.bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
-+// src/client/brand.js
-+var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
-+var FLYBOT_WING_LOW = "M150 318 C 104 300, 62 306, 54 322 C 48 338, 84 352, 150 352 Z";
-+var FLYBOT_BODY = "M196 132 H316 A80 80 0 0 1 396 212 V300 A80 80 0 0 1 316 380 H250 L188 432 V374 A80 80 0 0 1 116 300 V212 A80 80 0 0 1 196 132 Z";
-+function flybotMarkSvg({ wing = "#8FB2FF", brand = "#3B5BFD", face = "#FFFFFF" } = {}) {
-+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32"><g fill="${wing}"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><g fill="${wing}" transform="translate(512 0) scale(-1 1)"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><path d="${FLYBOT_BODY}" fill="${brand}"/><rect x="196" y="222" width="34" height="58" rx="17" fill="${face}"/><rect x="282" y="222" width="34" height="58" rx="17" fill="${face}"/><circle cx="256" cy="100" r="22" fill="${brand}"/><rect x="248" y="104" width="16" height="34" fill="${brand}"/></svg>`;
-+}
-+function brandTitle(title) {
-+  const text2 = String(title ?? "");
-+  if (text2 === "DeepSeek Harness" || text2 === "DS Bot") return "FlyBot";
-+  if (text2.endsWith(" — DeepSeek Harness")) return `${text2.slice(0, -" — DeepSeek Harness".length)} — FlyBot`;
-+  if (/\bDS Bot\b/.test(text2)) return text2.replace(/\bDS Bot\b/g, "FlyBot");
-+  return text2;
-+}
-+function sessionTabLabel(roster, sessionId) {
-+  if (!roster || !sessionId) return "";
-+  const bot = roster.byId?.[sessionId];
-+  const room2 = roster.roomsById?.[sessionId];
-+  if (bot?.remote) {
-+    return friendBotTitle(bot);
-+  }
-+  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
-+  if (room2?.origin === "face-to-face") return faceRowTitle(roomTitle(room2));
-+  if (room2) return roomTitle(room2);
-+  return bot?.name || "";
-+}
-+function installTabTitle(sessions, roster, doc = globalThis.document) {
-+  if (!doc || !sessions || !roster) return () => {
-+  };
-+  const sync = () => {
-+    const row = Object.values(sessions.getSnapshot().byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
-+    const label = sessionTabLabel(roster.getSnapshot(), row?.id);
-+    if (!label) return;
-+    const next = brandTitle(`${label} — FlyBot`);
-+    if (doc.title !== next) doc.title = next;
-+  };
-+  sync();
-+  const offSessions = sessions.subscribe(sync);
-+  const offRoster = roster.subscribe(sync);
-+  return () => {
-+    offSessions?.();
-+    offRoster?.();
-+  };
-+}
-+function installBrandChrome() {
-+  if (typeof document === "undefined") return () => {
-+  };
-+  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
-+  let link = document.getElementById("flybot-favicon");
-+  if (!link) {
-+    link = document.createElement("link");
-+    link.id = "flybot-favicon";
-+    link.rel = "icon";
-+    link.type = "image/svg+xml";
-+    document.head.appendChild(link);
-+  }
-+  link.href = href;
-+  const retitle = () => {
-+    const next = brandTitle(document.title);
-+    if (next !== document.title) document.title = next;
-+  };
-+  retitle();
-+  const observer = typeof MutationObserver === "function" ? new MutationObserver(retitle) : null;
-+  const node = document.querySelector("title") ?? document.head;
-+  observer?.observe(node, { childList: true, characterData: true, subtree: true });
-+  return () => {
-+    observer?.disconnect();
-+    link.remove();
-+  };
 +}
  
 -.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
@@ -3450,7 +3387,77 @@ diff --git a/client.js b/client.js
 -.bt-connector-form-row{display:flex;align-items:center;gap:6px}
 -.bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
 -.bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
--
++// src/client/brand.js
++var FLYBOT_WING = "M150 238 C 96 200, 40 196, 22 214 C 8 230, 40 262, 150 300 Z";
++var FLYBOT_WING_LOW = "M150 318 C 104 300, 62 306, 54 322 C 48 338, 84 352, 150 352 Z";
++var FLYBOT_BODY = "M196 132 H316 A80 80 0 0 1 396 212 V300 A80 80 0 0 1 316 380 H250 L188 432 V374 A80 80 0 0 1 116 300 V212 A80 80 0 0 1 196 132 Z";
++function flybotMarkSvg({ wing = "#8FB2FF", brand = "#3B5BFD", face = "#FFFFFF" } = {}) {
++  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32"><g fill="${wing}"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><g fill="${wing}" transform="translate(512 0) scale(-1 1)"><path d="${FLYBOT_WING}"/><path d="${FLYBOT_WING_LOW}"/></g><path d="${FLYBOT_BODY}" fill="${brand}"/><rect x="196" y="222" width="34" height="58" rx="17" fill="${face}"/><rect x="282" y="222" width="34" height="58" rx="17" fill="${face}"/><circle cx="256" cy="100" r="22" fill="${brand}"/><rect x="248" y="104" width="16" height="34" fill="${brand}"/></svg>`;
++}
++function brandTitle(title) {
++  const text2 = String(title ?? "");
++  if (text2 === "DeepSeek Harness" || text2 === "DS Bot") return "FlyBot";
++  if (text2.endsWith(" — DeepSeek Harness")) return `${text2.slice(0, -" — DeepSeek Harness".length)} — FlyBot`;
++  if (/\bDS Bot\b/.test(text2)) return text2.replace(/\bDS Bot\b/g, "FlyBot");
++  return text2;
++}
++function sessionTabLabel(roster, sessionId) {
++  if (!roster || !sessionId) return "";
++  const bot = roster.byId?.[sessionId];
++  const room2 = roster.roomsById?.[sessionId];
++  if (bot?.remote) {
++    return friendBotTitle(bot);
++  }
++  if (room2 && room2.origin === "face-to-face" && (room2.face?.status === "closed" || room2.face?.status === "left") && isAutoFaceTitle(room2.name)) return "Face-to-face · closed";
++  if (room2?.origin === "face-to-face") return faceRowTitle(roomTitle(room2));
++  if (room2) return roomTitle(room2);
++  return bot?.name || "";
++}
++function installTabTitle(sessions, roster, doc = globalThis.document) {
++  if (!doc || !sessions || !roster) return () => {
++  };
++  const sync = () => {
++    const row = Object.values(sessions.getSnapshot().byId ?? {}).find((session) => (session?.retainedBy?.mainView ?? 0) > 0);
++    const label = sessionTabLabel(roster.getSnapshot(), row?.id);
++    if (!label) return;
++    const next = brandTitle(`${label} — FlyBot`);
++    if (doc.title !== next) doc.title = next;
++  };
++  sync();
++  const offSessions = sessions.subscribe(sync);
++  const offRoster = roster.subscribe(sync);
++  return () => {
++    offSessions?.();
++    offRoster?.();
++  };
++}
++function installBrandChrome() {
++  if (typeof document === "undefined") return () => {
++  };
++  const href = `data:image/svg+xml,${encodeURIComponent(flybotMarkSvg())}`;
++  let link = document.getElementById("flybot-favicon");
++  if (!link) {
++    link = document.createElement("link");
++    link.id = "flybot-favicon";
++    link.rel = "icon";
++    link.type = "image/svg+xml";
++    document.head.appendChild(link);
++  }
++  link.href = href;
++  const retitle = () => {
++    const next = brandTitle(document.title);
++    if (next !== document.title) document.title = next;
++  };
++  retitle();
++  const observer = typeof MutationObserver === "function" ? new MutationObserver(retitle) : null;
++  const node = document.querySelector("title") ?? document.head;
++  observer?.observe(node, { childList: true, characterData: true, subtree: true });
++  return () => {
++    observer?.disconnect();
++    link.remove();
++  };
++}
+ 
 -/* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
 -   shell offers them and CSS-module name suffixes elsewhere. */
 -[class*="_logoRow"],[class*="_newSession"],nav[class*="_panelList"]{display:none!important}
@@ -5061,9 +5068,10 @@ diff --git a/client.js b/client.js
 +        const waiting = isApprovalWaiting(approval.status);
 +        const at = typeof approval.createdAt === "number" ? approval.createdAt : Date.parse(approval.createdAt);
 +        const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
++        const reason = reasonLine(approval.reason);
 +        return (0, import_react6.createElement)(
 +          "div",
-+          { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
++          { key: approval.id, className: "bt-flybot-approval" },
 +          (0, import_react6.createElement)("div", { className: "bt-flybot-approval-head" }, failed ? t("Not sent") : t("Waiting for approval"), waiting ? age : null),
 +          (0, import_react6.createElement)(
 +            "div",
@@ -5071,6 +5079,7 @@ diff --git a/client.js b/client.js
 +            t("{from} → {to}", { from: approval.senderName ?? t("A Bot"), to: recipientName(approval, roster) }),
 +            approval.request.hop > 0 ? ` · ${t("delegated")}` : ""
 +          ),
++          reason ? (0, import_react6.createElement)("div", { className: "bt-flybot-approval-reason", title: reason.title }, reason.text) : null,
 +          failed && approval.error ? (0, import_react6.createElement)("div", { className: "bt-flybot-approval-error" }, approval.error) : null,
 +          (0, import_react6.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
 +          approval.request.attachments?.length ? (0, import_react6.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react6.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react6.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
@@ -5116,6 +5125,7 @@ diff --git a/client.js b/client.js
 +.bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
 +.bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
 +.bt-flybot-approval-origin { font-size: 12px; opacity: .7; margin-bottom: 4px; }
++.bt-flybot-approval-reason { font-size: 12px; line-height: 1.4; margin: 0 0 6px; overflow-wrap: anywhere; }
 +.bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
 +.bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 +.bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -6326,7 +6336,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-typing-in{from{opacity:0;transform:scale(.9)}}
  @keyframes bt-typing-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92);filter:blur(3px)}}
  @keyframes bt-typing-label{from{opacity:0;filter:blur(5px);transform:translateY(3px)}}
-@@ -2676,2104 +2676,4375 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -2676,2104 +2676,4377 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-bt-enter="new"]{animation:none}
  [data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
  }
@@ -7404,11 +7414,13 @@ diff --git a/client.js b/client.js
 -  return names;
 +  const at = typeof held.createdAt === "number" ? held.createdAt : Date.parse(held.createdAt);
 +  const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
++  const reason = reasonLine(held.reason);
 +  const plain = (0, import_react10.createElement)(
 +    "div",
 +    { className: "bt-held-card", role: "region", "aria-label": t("Waiting for your approval") },
 +    (0, import_react10.createElement)("div", { className: "bt-held-head" }, t("Waiting for your approval"), age),
 +    (0, import_react10.createElement)("div", { className: "bt-flybot-approval-origin" }, t("{from} → {to}", { from: held.from ?? t("A Bot"), to: held.toName })),
++    reason ? (0, import_react10.createElement)("div", { className: "bt-flybot-approval-reason", title: reason.title }, reason.text) : null,
 +    locked ? readOnlyLine() : (0, import_react10.createElement)(
 +      "div",
 +      { className: "bt-flybot-approval-actions" },
