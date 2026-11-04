@@ -338,6 +338,11 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         : h(RoomAvatar, { room, roster, size: 64 }),
       bot?.remote
         ? h('div', { className: 'bt-drawer-name' }, current)
+        // P-542/P-487: a locked window refuses a rename like any other write, so the name stays as
+        // plain text instead of a control that can only be turned down. Bot overview only: a group's
+        // overview still holds its member entries, so it is left exactly as it was (P-544).
+        : bot && lockedWindow(roster)
+          ? h('div', { className: 'bt-drawer-name', title: current }, current)
         : room?.origin === 'face-to-face'
           ? h('div', { className: 'bt-drawer-name bt-drawer-name-face', title: current }, current)
         : editing
@@ -352,20 +357,27 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
     bot?.remote ? null : h('div', { key: 'tabs', ref: glide.box, className: 'bt-tabs', role: 'tablist', 'data-move': side },
       h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
       tabs.map(key => h('button', { key, type: 'button', role: 'tab', className: 'bt-tab', 'aria-selected': tab === key, onClick: () => setTab(key) }, t(TAB_LABELS[key])))),
+    // #2385/P-542: the refused-write line is a sibling above the scrolling body here too — the body
+    // is `overflow-y:auto` (`styles.js:389`), so the first child's sentence lands where the person
+    // scrolled past, not where the press happened.
+    errorLine,
     h('div', { key: `body:${tab}`, className: 'bt-drawer-body', 'data-move': move },
-      errorLine,
       room && tab === 'details' ? h(GroupOverview, { room, roster, actions, usage, useWork, openSettings: () => setView('settings') }) : null,
       bot && bot.remote && tab === 'details' ? [
         bot.remote.handle ? h('div', { key: 'handle', className: 'bt-muted' }, bot.remote.handle) : null,
         h(FlyBotDetails, { key: 'social', bot, roster, actions }),
       ] : null,
       bot && !bot.remote && tab === 'details' ? [
-        h('div', { key: 'model', className: 'bt-drawer-model' },
+        // P-542/P-487: the overview's own model, permission and folder entries are writes too, and a
+        // locked window refuses every one of them. Say so once at the top and draw the read half only;
+        // the name above is already text, and the settings gear still opens the page that explains it.
+        lockedWindow(roster) ? h('div', { key: 'read-only', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+        lockedWindow(roster) ? null : h('div', { key: 'model', className: 'bt-drawer-model' },
           h('div', { className: 'bt-section-title' }, t('Model')),
           h(ModelMenu, { bot, roster, actions, run, wide: true }),
           modelOf(bot, roster) ? null : h('div', { className: 'bt-note' }, t('Pick a model and {name} can start.', { name: bot.name }))),
-        h(PermissionRow, { key: 'permission', bot, roster, actions, run }),
-        h('div', { key: 'folder', className: 'bt-drawer-model' },
+        lockedWindow(roster) ? null : h(PermissionRow, { key: 'permission', bot, roster, actions, run }),
+        lockedWindow(roster) ? null : h('div', { key: 'folder', className: 'bt-drawer-model' },
           h('div', { className: 'bt-section-title' }, t('Working folder')),
           h(FolderMenu, { value: bot.workDir, actions, run, wide: true, onPick: workDir => run(actions.updateBot(bot.id, { workDir })) })),
         bot.instructions
