@@ -27,7 +27,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
-import { codePoints, splitRef, unquote } from './text.js'
+import { clip, codePoints, splitRef, unquote } from './text.js'
 import { codePointStart, cut } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
@@ -1267,7 +1267,6 @@ export function install(rt) {
     return cursors
   }
   const saveCursors = () => (writeFolder(root) ? writeText(cursorsPath, JSON.stringify(cursors)) : Promise.resolve())
-  const clip = (text, max) => (text.length > max ? `${cut(text, max).text} …(cut)` : text)
   // A long message often ends with what the user wants of it, so both ends stay.
   const ends = (text, max) => {
     if (text.length <= max) return text
