@@ -1175,7 +1175,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
    const short = issueUrl(base, { what: 'Writer failed\nin the group', diagnostics: '| DS Bot | 0.1.0 |' })
    assert.equal(short.inline, true)
    const params = new URL(short.url).searchParams
-@@ -253,3 +253,258 @@ test('a browser error is noted once, repeats are counted, and clear empties the
+@@ -253,3 +253,401 @@ test('a browser error is noted once, repeats are counted, and clear empties the
    clearClientErrors()
    assert.equal(clientErrors().length, 0)
  })
@@ -1433,4 +1433,147 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +
 +  assert.deepEqual(await rt.diagnostics.clear(), { leaf: 'absent', rotated: 'none' }, 'nothing was there and nothing was written')
 +  assert.equal(existsSync(join(home, 'logs')), false, 'the truncate did not create the folder it never created before')
++})
++
++// #2364: the leaf guard asks the file's kind, not its mode, so a plain `0444` leaf passes it and
++// the write fails with EACCES. #2360 gave the window an answer for that (`leaf: 'kept'`), but the
++// host log said nothing at all about a leaf left full, while `append` names the same class of
++// failure on one stderr line. Clear now names it too, on one line that carries the code and never
++// the folder. Root ignores the mode.
++test('#2364: a clear that cannot truncate the leaf says so', async (t) => {
++  if (process.getuid?.() === 0) {
++    t.skip('root truncates a leaf without its write bit')
++    return
++  }
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const logPath = join(home, 'logs', 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  const old = 'OLD LINE\n'.repeat(4)
++  writeFileSync(logPath, old)
++  writeFileSync(rotated, 'ROTATED\n'.repeat(8))
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const rt = host(home)
++  chmodSync(logPath, 0o444)
++
++  const result = await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.deepEqual(result, { leaf: 'kept', rotated: 'kept' }, 'the answer names the leaf it kept and the copy it did not remove')
++  assert.equal(readFileSync(logPath, 'utf8'), old, 'the leaf keeps every line it had')
++  assert.equal(readFileSync(rotated, 'utf8'), 'ROTATED\n'.repeat(8), 'the rotated copy is left where it was')
++  const noted = stderr.filter(line => /not truncated/.test(line))
++  assert.equal(noted.length, 1, 'one line says the leaf was not truncated')
++  assert.match(noted[0], /\[ds-bot\] diagnostics log not truncated: [A-Z]+$/)
++  assert.equal(noted[0].includes(home), false, 'the line does not print the home folder')
++
++  // The control: a writable leaf truncates with no line at all.
++  chmodSync(logPath, 0o644)
++  const control = []
++  const quietControl = t.mock.method(console, 'error', (...args) => control.push(args.join(' ')))
++  writeFileSync(logPath, old)
++  writeFileSync(rotated, 'ROTATED\n')
++  await rt.diagnostics.clear()
++  quietControl.mock.restore()
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'a writable leaf is truncated')
++  assert.equal(existsSync(rotated), false, 'and its rotated copy is removed')
++  assert.deepEqual(control, [], 'a clear that works says nothing')
++})
++
++// #2364 (P-528): the removal ran first, so the same `0444` leaf lost its rotated copy to a Clear
++// that could not empty anything — the lines that had rolled over were the only copy left of them,
++// and neither the answer nor the page mentioned it. The truncate now runs first: a leaf that stays
++// full leaves `.1` byte for byte where it was, answers `rotated: 'none'`, and the one line it prints
++// is the truncate failure. The rotated-copy line belongs to a leaf that was emptied. Root ignores
++// the mode.
++test('#2364: a clear that cannot truncate the leaf keeps the rotated copy', async (t) => {
++  if (process.getuid?.() === 0) {
++    t.skip('root truncates a leaf without its write bit')
++    return
++  }
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const logPath = join(home, 'logs', 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  const old = 'OLD LINE\n'.repeat(4)
++  const rolled = 'ROTATED\n'.repeat(8)
++  writeFileSync(logPath, old)
++  writeFileSync(rotated, rolled)
++  chmodSync(logPath, 0o444)
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const rt = host(home)
++  const result = await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.deepEqual(result, { leaf: 'kept', rotated: 'kept' }, 'a leaf that could not be emptied removed nothing')
++  assert.equal(readFileSync(logPath, 'utf8'), old, 'the leaf keeps every line it had')
++  assert.equal(readFileSync(rotated, 'utf8'), rolled, 'the rotated copy keeps every byte it had')
++  assert.equal(existsSync(rotated), true, 'the name is still there to download')
++  assert.equal(stderr.filter(line => /rotated copy/.test(line)).length, 0, 'nothing was removed, so no line claims a failed removal')
++  const noted = stderr.filter(line => /not truncated/.test(line))
++  assert.equal(noted.length, 1, 'one line says the leaf was not truncated')
++  assert.match(noted[0], /\[ds-bot\] diagnostics log not truncated: [A-Z]+$/)
++
++  // The control: once the leaf can be written, the same clear empties it and removes the copy.
++  chmodSync(logPath, 0o644)
++  writeFileSync(logPath, old)
++  const control = []
++  const quietControl = t.mock.method(console, 'error', (...args) => control.push(args.join(' ')))
++  assert.deepEqual(await rt.diagnostics.clear(), { leaf: 'truncated', rotated: 'removed' })
++  quietControl.mock.restore()
++  assert.equal(readFileSync(logPath, 'utf8'), '', 'the writable leaf is truncated')
++  assert.equal(existsSync(rotated), false, 'and its rotated copy is removed')
++  assert.deepEqual(control, [], 'a clear that works says nothing')
++})
++
++// #2364 (P-530): a Clear that could not empty the leaf still wiped what the window reads. `entries()`
++// is the old lines through `cleared` plus the live ones in `fresh`, and clear() advanced both the
++// moment it was called, so a refused Clear answered "not cleared" on one line and "0 recent errors" /
++// "No entries." next to it while every byte was still on disk and in the Download. Only a leaf that
++// really was emptied, or nothing on disk at all, moves the readable surface now. Root ignores the
++// mode.
++test('#2364: a clear that cannot truncate leaves the readable surface alone', async (t) => {
++  if (process.getuid?.() === 0) {
++    t.skip('root truncates a leaf without its write bit')
++    return
++  }
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  mkdirSync(join(home, 'logs'), { recursive: true })
++  const logPath = join(home, 'logs', 'diagnostics.jsonl')
++  const rotated = `${logPath}.1`
++  // One line from an earlier run (read through `cleared`) and one from this one (in `fresh`).
++  writeFileSync(logPath, `${JSON.stringify({ time: Date.now() - 60_000, level: 'error', source: 'host', text: 'an earlier run line' })}\n`)
++  writeFileSync(rotated, 'ROTATED\n')
++  const rt = host(home)
++  rt.warn('ds-bot: written before the clear')
++  await rt.dispose()
++  chmodSync(logPath, 0o444)
++
++  const stderr = []
++  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
++  const result = await rt.diagnostics.clear()
++  quiet.mock.restore()
++
++  assert.deepEqual(result, { leaf: 'kept', rotated: 'kept' }, 'the answer names the leaf it kept')
++  const kept = await rt.diagnostics.entries()
++  assert.equal(kept.length, 2, 'both the earlier line and the live one are still listed')
++  assert.equal(kept.some(entry => entry.text === 'an earlier run line'), true, 'the line from an earlier run is still there')
++  assert.equal(kept.some(entry => /written before the clear/.test(entry.text)), true, 'the live line is still there')
++  const download = await rt.diagnostics.logText()
++  assert.match(download, /an earlier run line/, 'the Download still carries the earlier line')
++  assert.match(download, /written before the clear/, 'the Download still carries the live line')
++  assert.equal(download.includes('No entries.'), false, 'the Download is not the empty page either')
++
++  // The control: a Clear that empties the leaf empties the readable surface too.
++  chmodSync(logPath, 0o644)
++  assert.deepEqual(await rt.diagnostics.clear(), { leaf: 'truncated', rotated: 'removed' })
++  assert.deepEqual(await rt.diagnostics.entries(), [], 'a real clear lists nothing afterwards')
++  assert.equal(await rt.diagnostics.logText(), '', 'a real clear leaves nothing to download')
 +})

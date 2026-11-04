@@ -5124,7 +5124,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      const list = await entries()
      const client = sanitizeClient(body.client)
      const clientEntries = sanitizeClientEntries(body.clientErrors)
-@@ -232,7 +232,7 @@ export function install(rt) {
+@@ -232,17 +232,72 @@ export function install(rt) {
    }
  
    async function logText() {
@@ -5133,49 +5133,71 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      const list = await entries()
      return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
    }
-@@ -240,9 +240,44 @@ export function install(rt) {
+ 
    async function clear() {
-     cleared = Date.now()
-     fresh = []
+-    cleared = Date.now()
+-    fresh = []
 -    if (!toFile) return
 -    writing = writing.then(() => writeFile(logPath, '', 'utf8')).catch(() => {})
 +    // What the window's sentence is chosen from (#2360): the leaf is only `truncated` once the
 +    // truncate ran and the rotated copy only `removed` once its name is gone, so a page cannot say
 +    // "cleared" about a file it left alone.
 +    const result = { leaf: 'absent', rotated: 'none' }
-+    if (!toFile) return result
++    if (!toFile) { cleared = Date.now(); fresh = []; return result }
++    const stamp = Date.now()
 +    // Clearing truncates the leaf, so it is the same question as the append: a link is not ours to
 +    // truncate, and the old file behind it stays exactly as it was.
 +    writing = writing.then(async () => {
 +      const kind = await fileKind(logPath)
 +      if (kind === 'other') { refuseLeaf(); result.leaf = 'kept'; return }
-+      // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
-+      // on disk after the user asked for the error log to be cleared. That one name belongs to this
-+      // log, so it goes in the same chain and behind the same guard. The removal keeps a try of its
-+      // own: a copy that cannot be removed (a directory under that name, a folder without its write
-+      // bit) must not reject the chain before the truncate runs, or the window says "cleared" while
-+      // the leaf still holds every line. The line names the leftover, never the folder.
++      // `rotated` says what this call did to `<logPath>.1`, so the probe runs before the truncate:
++      // when the leaf cannot be emptied nothing is removed, and a copy that is there answers `kept`
++      // rather than claiming there was none (#2364).
 +      const rotatedKind = await fileKind(`${logPath}.1`)
 +      if (rotatedKind !== 'absent') result.rotated = 'kept'
-+      try {
-+        await rm(`${logPath}.1`, { force: true })
-+        if (rotatedKind !== 'absent') result.rotated = 'removed'
-+      } catch (error) {
-+        console.error('[ds-bot] diagnostics log rotated copy not removed:', error?.code ?? clean(error?.message ?? String(error)))
-+      }
-+      // The truncate runs exactly as it did before #2360, a leaf that is not there yet included (the
-+      // write lands a new empty file, as this line always did): only the answer is new. A folder
-+      // that is not there makes the write fail the way it always did, and nothing is on disk to
-+      // report as kept, so that answer stays `absent` rather than sending the page a refusal.
++      // The truncate runs first, exactly as it did before #2360, a leaf that is not there yet
++      // included (the write lands a new empty file, as this line always did): only the answer is new.
++      // A folder that is not there makes the write fail the way it always did, and nothing is on disk
++      // to report as kept, so that answer stays `absent` rather than sending the page a refusal.
 +      try {
 +        await writeFile(logPath, '', 'utf8')
 +        result.leaf = 'truncated'
 +      } catch (error) {
 +        result.leaf = error?.code === 'ENOENT' ? 'absent' : 'kept'
++        // The answer alone is not enough: it reaches the window, and the host log said nothing about
++        // a leaf left full. `append` names this same class of failure on one line, so clear does too;
++        // the line carries the code and never the folder, and the throw stays so the chain ends here.
++        console.error('[ds-bot] diagnostics log not truncated:', error?.code ?? clean(error?.message ?? String(error)))
 +        throw error
++      }
++      // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
++      // on disk after the user asked for the error log to be cleared. That one name belongs to this
++      // log, so it goes in the same chain and behind the same guard — and behind the truncate: a leaf
++      // that cannot be emptied leaves the copy where it is, because the lines it holds are the only
++      // copy of those lines that is left. The removal keeps a try of its own: a copy that cannot be
++      // removed (a directory under that name, a folder without its write bit) must not reject the
++      // chain, or the window says "cleared" while both names still hold every line. The line names
++      // the leftover, never the folder.
++      if (rotatedKind === 'absent') return
++      try {
++        await rm(`${logPath}.1`, { force: true })
++        result.rotated = 'removed'
++      } catch (error) {
++        console.error('[ds-bot] diagnostics log rotated copy not removed:', error?.code ?? clean(error?.message ?? String(error)))
 +      }
 +    }).catch(() => {})
      await writing
++    // #2364 (P-530): a Clear that did not empty the leaf has no readable surface to clear either.
++    // `entries()` reads the old lines through `cleared` and the live ones out of `fresh`, so moving
++    // either one on a refusal wiped the list and the Download while every byte was still on disk —
++    // the page read "not cleared" next to "0 recent errors". Only a leaf that really was truncated
++    // moves them, plus the `!toFile` host above, which keeps no log file to begin with; every other
++    // answer, an `ENOENT` write included, leaves both exactly as they were. A line noted while the
++    // chain was running keeps its place, because it is newer than the request.
++    if (result.leaf === 'truncated') {
++      cleared = stamp
++      fresh = fresh.filter(entry => entry.time > stamp)
++    }
 +    return result
    }
  
