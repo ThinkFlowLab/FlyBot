@@ -142,6 +142,40 @@ test('partEnd prefers a blank line, then a line break, and cuts hard only withou
   assert.equal(partEnd('short', 0, 10), 5)
 })
 
+// P-519: a part boundary is a code-point one. A cut that lands between the halves of a surrogate
+// pair reaches the model, and the UTF-8 encoder, as U+FFFD in both parts, and the `from` the tool
+// prints lands in the middle of the character as well.
+test('a part cut lands on a character, so an emoji is never split across two reads', () => {
+  const text = 'x'.repeat(11_999) + '\u{1F600}' + 'y'.repeat(10_000)
+  assert.equal(text.length, 22_001)
+  // The hard fallback steps back off the pair instead of ending between its halves.
+  assert.equal(partEnd(text, 0, 12_000), 11_999)
+  // An ASCII page keeps its exact boundary.
+  const ascii = 'x'.repeat(22_001)
+  assert.equal(partEnd(ascii, 0, 12_000), 12_000)
+  for (const format of ['markdown', 'text']) {
+    const url = 'https://example.com/'
+    const first = pageText({ url, text, format }, { size: 12_000 })
+    const rest = pageText({ url, text, format }, { from: 12_000, size: 12_000 })
+    assert.equal(first.isWellFormed(), true, `${format}: the first part is a valid string`)
+    assert.equal(rest.isWellFormed(), true, `${format}: the rest is a valid string`)
+    assert.doesNotMatch(first, /\uFFFD/, format)
+    assert.doesNotMatch(rest, /\uFFFD/, format)
+    // Part one ends before the emoji, and its own continuation point is that same boundary.
+    assert.ok(first.endsWith('\n' + 'x'.repeat(11_999)), format)
+    assert.match(first, /characters 0–11999 of 22001; call read_browser with from: 11999 for more/)
+    // A `from` inside the pair is moved back to the character's first half, so the whole emoji opens
+    // the second part and nothing is lost between the two reads.
+    assert.ok(rest.endsWith('\n\u{1F600}' + 'y'.repeat(10_000)), format)
+    const asciiFirst = pageText({ url, text: ascii, format }, { size: 12_000 })
+    const asciiRest = pageText({ url, text: ascii, format }, { from: 12_000, size: 12_000 })
+    assert.equal(asciiFirst.isWellFormed(), true)
+    assert.equal(asciiRest.isWellFormed(), true)
+    assert.match(asciiFirst, /characters 0–12000 of 22001; call read_browser with from: 12000 for more/)
+    assert.match(asciiRest, /characters 12000–22001 of 22001\):/)
+  }
+})
+
 // #1916: the open-page snapshot is what a Bot reads back from outside the team, and both bounds
 // are code-unit ones: 2000 for an address and 300 for a title must not land inside an emoji.
 test('the open-page snapshot never cuts a title or an address in half (#1916)', () => {
