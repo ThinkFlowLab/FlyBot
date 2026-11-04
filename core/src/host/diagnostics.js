@@ -5,7 +5,7 @@
 // credential-like strings and the home folder before it is kept and again before it is
 // shown, because the report is meant for a public issue.
 import { readFileSync } from 'node:fs'
-import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { arch, homedir, platform, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -289,6 +289,10 @@ export function install(rt) {
     // truncate, and the old file behind it stays exactly as it was.
     writing = writing.then(async () => {
       if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
+      // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
+      // on disk after the user asked for the error log to be cleared. That one name belongs to this
+      // log, so it goes in the same chain and behind the same guard.
+      await rm(`${logPath}.1`, { force: true })
       await writeFile(logPath, '', 'utf8')
     }).catch(() => {})
     await writing
