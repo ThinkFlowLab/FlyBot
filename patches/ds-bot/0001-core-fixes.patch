@@ -1987,7 +1987,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 --- a/src/client/memory-panel.js
 +++ b/src/client/memory-panel.js
-@@ -5,38 +5,66 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState
+@@ -5,44 +5,75 @@ import { createElement as h, Fragment, useCallback, useEffect, useRef, useState
  import { useEscape } from './overlay-hooks.js'
  import { ArrowUpIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DotsIcon, MemoryIcon, TrashIcon } from './icons.js'
  import { dateLocale, hostText, t } from './i18n.js'
@@ -2054,7 +2054,10 @@ diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
 +  return count === 1 ? t('1 entry') : t('{count} entries', { count })
  }
  
- // The details pane's row: how much the Bot keeps, and the way into the dialog.
+-// The details pane's row: how much the Bot keeps, and the way into the dialog.
++// The details pane's row: how much the Bot keeps, and the way into the dialog. A refused read is
++// drawn a second time below the button: the button's `aria-label` replaces the text inside it when
++// the accessible name is computed, so the sentence in the row alone was never announced (#2402).
  export function MemoryRow({ bot, actions }) {
 -  const count = useMemoryCount(bot.id, actions)
 -  const label = count === null ? t('Loading…') : count === 0 ? t('Nothing saved yet') : count === 1 ? t('1 entry') : t('{count} entries', { count })
@@ -2063,6 +2066,14 @@ diff --git a/src/client/memory-panel.js b/src/client/memory-panel.js
    return h('div', null,
      h('div', { className: 'bt-section-title' }, t('Memory')),
      h('button', { type: 'button', className: 'bt-mem-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },
+       h(MemoryIcon),
+       h('span', { className: 'bt-mem-row-copy' }, label),
+-      h('span', { className: 'bt-mem-row-go' }, t('Manage'), h(ChevronRightIcon))))
++      h('span', { className: 'bt-mem-row-go' }, t('Manage'), h(ChevronRightIcon))),
++    failure === null ? null : h('div', { className: 'bt-note', role: 'status' }, label))
+ }
+ 
+ function ago(at, now) {
 @@ -66,8 +66,10 @@ function Skeleton({ label }) {
  
  function Summary({ bot, view, regenerate }) {

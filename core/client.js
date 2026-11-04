@@ -14196,7 +14196,8 @@ function MemoryRow({ bot, actions }) {
       (0, import_react28.createElement)(MemoryIcon),
       (0, import_react28.createElement)("span", { className: "bt-mem-row-copy" }, label),
       (0, import_react28.createElement)("span", { className: "bt-mem-row-go" }, t("Manage"), (0, import_react28.createElement)(ChevronRightIcon))
-    )
+    ),
+    failure === null ? null : (0, import_react28.createElement)("div", { className: "bt-note", role: "status" }, label)
   );
 }
 function ago(at, now) {

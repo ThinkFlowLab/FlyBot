@@ -138,3 +138,66 @@ test('#2395: a client without memoryView asks nothing and throws nothing', async
   assert.ok(copy, 'the row still draws')
   assert.equal(textOf(copy), 'Loading…', 'no read was started, so there is nothing to report')
 })
+
+// --- #2402: the reason sentence is drawn in a place a screen reader announces ------------------
+// `MemoryRow` puts the sentence inside the `Manage {name}'s memory` button, whose `aria-label`
+// replaces every descendant text when the accessible name is computed; the row drew no
+// `role=status` node, so a refused read was silence rather than a sentence. The failure is now
+// repeated below the button in its own `role=status` note (the same shape the dialog's own refusals
+// use), while the button's label and the three quiet states stay exactly as they were.
+const roles = (node) => all(node).filter(item => item.props?.role === 'status' || item.props?.role === 'alert')
+const insideButton = (node, target) => {
+  let found = false
+  const walk = (value) => {
+    if (found || !value || typeof value !== 'object') return
+    if (Array.isArray(value)) { value.forEach(walk); return }
+    if (value === target) { found = true; return }
+    walk(value.props?.children)
+  }
+  walk(node)
+  return found
+}
+const buttons = (node) => all(node).filter(item => item.type === 'button')
+
+test('#2402: a refused read draws one status note outside the Manage button', async () => {
+  const failure = 'The host did not answer.'
+  const sentence = `The memory could not be read: ${hostText(failure)}`
+  const { tree, label } = await rowOf('bot-a11y-refused', async () => { throw new Error(failure) })
+  assert.equal(label, sentence, 'the visible line still carries the reason')
+  const announced = roles(tree)
+  assert.equal(announced.length, 1, 'exactly one live-region node, not zero and not a duplicate')
+  assert.equal(announced[0].props.role, 'status', 'a status, not an alert: the row is not urgent')
+  assert.equal(textOf(announced[0]), sentence, 'the announced text is the whole sentence')
+  const manage = buttons(tree).find(item => item.props['aria-label'])
+  assert.equal(insideButton(manage, announced[0]), false, 'the note is not masked by the button aria-label')
+  assert.equal(manage.props['aria-label'], "Manage Scout's memory", 'the button label is untouched')
+  assert.equal(insideButton(manage, byClass(tree, 'bt-mem-row-copy')), true, 'the visible line stays where it was')
+})
+
+test('#2402: a long reason is announced in full, not clipped by the row', async () => {
+  const prefix = 'The host refused the read because '
+  const long = prefix + 'x'.repeat(120 - prefix.length)
+  assert.equal(long.length, 120, 'the reason this case checks is 120 characters')
+  const { tree } = await rowOf('bot-a11y-long', async () => { throw new Error(long) })
+  const announced = roles(tree)
+  assert.equal(announced.length, 1)
+  assert.match(textOf(announced[0]), new RegExp(`${long}$`), 'the whole 120 characters are in the node text')
+})
+
+test('#2402: the quiet states draw no live region', async () => {
+  for (const [botId, view, expected] of [
+    ['bot-a11y-counted', async () => ({ entries: [{ text: 'a' }, { text: 'b' }, { text: 'c' }] }), '3 entries'],
+    ['bot-a11y-empty', async () => ({ entries: [] }), 'Nothing saved yet'],
+  ]) {
+    const { tree, label } = await rowOf(botId, view)
+    assert.equal(label, expected)
+    assert.equal(roles(tree).length, 0, `${expected} has nothing to announce`)
+  }
+  reset()
+  const props = { bot: { id: 'bot-a11y-noaction', name: 'Scout' }, actions: { openMemory() {} } }
+  render(props)
+  await flush()
+  const tree = render(props)
+  assert.equal(textOf(byClass(tree, 'bt-mem-row-copy')), 'Loading…')
+  assert.equal(roles(tree).length, 0, 'a read that never started announces nothing')
+})

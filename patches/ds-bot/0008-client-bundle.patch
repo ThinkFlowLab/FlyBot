@@ -13835,6 +13835,35 @@ diff --git a/client.js b/client.js
 -    }
 -    const rect = button.current.getBoundingClientRect();
 -    setOpen({ left: rect.left, bottom: window.innerHeight - rect.top + 8 });
+-  };
+-  const attach = () => {
+-    setOpen(null);
+-    button.current?.closest("[data-composer-card]")?.querySelector("input[type=file]")?.click();
+-  };
+-  const schedule = () => {
+-    setOpen(null);
+-    actions.openSettings("schedules", target);
+-  };
+-  const reference = () => {
+-    setOpen(null);
+-    actions.referenceChat(sessionId, inputActions?.captureInsertion?.());
+-  };
+-  const canReference = typeof inputActions?.captureInsertion === "function" && actions.canReferenceChat();
+-  return (0, import_react10.createElement)(
+-    import_react10.Fragment,
+-    null,
+-    (0, import_react10.createElement)("button", {
+-      ref: button,
+-      type: "button",
+-      className: "bt-plus",
+-      "aria-label": t("Add"),
+-      title: t("Add"),
+-      "aria-haspopup": "menu",
+-      "aria-expanded": Boolean(open),
+-      onMouseDown: keepComposerFocus,
+-      onClick: toggle
+-    }, (0, import_react10.createElement)(PlusIcon)),
+-    shown ? (0, import_react_dom5.createPortal)((0, import_react10.createElement)(
 +  }, [active]);
 +  return host;
 +}
@@ -13865,7 +13894,20 @@ diff --git a/client.js b/client.js
 +    },
 +    (0, import_react20.createElement)(BotMark, { bot, size: 28, state: "thinking", live: true }),
 +    (0, import_react20.createElement)(
-+      "div",
+       "div",
+-      {
+-        ref: menu,
+-        className: "bt-menu bt-menu-up bt-plus-menu",
+-        role: "menu",
+-        "aria-label": t("Add"),
+-        style: { left: shown.left, bottom: shown.bottom },
+-        "data-leaving": leaving || void 0
+-      },
+-      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: attach }, (0, import_react10.createElement)(PaperclipIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Add files"))),
+-      canReference ? (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onMouseDown: keepComposerFocus, onClick: reference }, (0, import_react10.createElement)(ChatsIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Reference a chat"))) : null,
+-      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: schedule }, (0, import_react10.createElement)(ClockIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))
+-    ), document.body) : null
+-  );
 +      { className: "bt-astack" },
 +      (0, import_react20.createElement)(
 +        "div",
@@ -13884,7 +13926,7 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  ), host);
-+}
+ }
 +var BUSY_ACK_CSS = `
 +.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 +.bt-busy-ack .bt-astack{align-items:flex-start}
@@ -13895,7 +13937,28 @@ diff --git a/client.js b/client.js
 +@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 +@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
 +`;
-+
+ 
+-// src/client/at-menu.js
+-var BOTS_SOURCE = "ds-bot";
+-var CHATS_SOURCE = "ds-bot-chats";
+-var ROOM_ALL = ["all", "everyone", "所有人", "全体"];
+-var OTHER_CHATS_MAX = 8;
+-var conversationOf = (roster, sessionId) => {
+-  if (!roster.ready) return null;
+-  const room2 = roster.roomsById[sessionId];
+-  if (room2) return { room: room2 };
+-  const self = roster.byId[sessionId];
+-  return self ? { self } : null;
+-};
+-function mentionRows(roster, sessionId, query = "") {
+-  const here = conversationOf(roster, sessionId);
+-  if (here === null) return null;
+-  const bots = here.room ? here.room.members.map((id) => roster.byId[id]).filter(Boolean) : roster.bots.filter((bot) => bot.id !== here.self.id);
+-  const needle = query.trim().toLowerCase();
+-  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
+-  const everyone = t("Everyone");
+-  if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
+-    rows.push({ room: here.room, text: `@${everyone} ` });
 +// src/client/project-board.js
 +var import_react21 = require("react");
 +var PROJECT_BOARD_CSS = `
@@ -14031,7 +14094,47 @@ diff --git a/client.js b/client.js
 +  if (stated !== null && typeof stated === "object") {
 +    const id = text(stated.id);
 +    if (id !== "" && (stated.kind === "group" || stated.kind === "bot")) return { kind: stated.kind, id };
-+  }
+   }
+-  return rows;
+-}
+-function chatRows(roster, list, sessionId) {
+-  const here = conversationOf(roster, sessionId);
+-  if (here === null) return [];
+-  const byId = list?.byId ?? {};
+-  const bots = roster.bots.filter((bot) => bot.id !== here.self?.id).map((bot) => {
+-    const id = currentPart(bot);
+-    return { sessionId: id, label: t("Chat with {name}", { name: bot.name }), bot, updatedAt: byId[id]?.updatedAt };
+-  });
+-  const team = /* @__PURE__ */ new Set([
+-    ...roster.bots.flatMap((bot) => [bot.id, currentPart(bot), ...bot.parts ?? []]),
+-    ...roster.rooms.flatMap((room2) => [room2.id, ...room2.parts ?? []])
+-  ]);
+-  const others = (list?.ids ?? []).map((id) => byId[id]).filter((row) => row !== void 0 && row.id !== sessionId && !team.has(row.id) && row.origin !== "subagent" && row.blank !== true).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, OTHER_CHATS_MAX).map((row) => ({ sessionId: row.id, label: row.displayTitle || row.title || row.id, updatedAt: row.updatedAt }));
+-  return [...bots, ...others];
+-}
+-function sessionMention(sessionId, label) {
+-  let binary = "";
+-  for (const byte of new TextEncoder().encode(JSON.stringify(sessionId))) binary += String.fromCharCode(byte);
+-  const payload = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+-  return `@[${label.replace(/[\\\]]/g, (mark) => `\\${mark}`)}](dsh-session:${payload})`;
+-}
+-function atSources({ roster, sessions, launched, iconFor }) {
+-  const bots = {
+-    trigger: "@",
+-    name: BOTS_SOURCE,
+-    order: -20,
+-    showGroupTitle: false,
+-    async candidates(session, { query }) {
+-      return (mentionRows(roster.getSnapshot(), session.sessionId, query) ?? []).map((row) => ({
+-        name: row.bot ? row.bot.name : t("Everyone"),
+-        ...row.bot?.role ? { description: row.bot.role } : {},
+-        ...row.room ? { description: t("{count} members", { count: row.room.members.length }) } : {},
+-        icon: iconFor(row),
+-        section: t("Bots"),
+-        value: row.text
+-      }));
+-    },
+-    onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
 +  if (task === void 0) return null;
 +  if (row.source === "group") {
 +    const id = text(task.origin?.roomId);
@@ -14056,9 +14159,25 @@ diff --git a/client.js b/client.js
 +    sha256: text(file.sha256),
 +    shortHash: text(file.sha256).slice(0, 12)
    };
--  const attach = () => {
--    setOpen(null);
--    button.current?.closest("[data-composer-card]")?.querySelector("input[type=file]")?.click();
+-  const chats = {
+-    trigger: "@",
+-    name: CHATS_SOURCE,
+-    order: -10,
+-    showGroupTitle: false,
+-    async candidates(session) {
+-      if (!launched(session.sessionId)) return [];
+-      return chatRows(roster.getSnapshot(), sessions.list.getSnapshot(), session.sessionId).map((row) => ({
+-        name: row.bot ? row.bot.name : row.label,
+-        ...row.updatedAt ? { description: relativeShort(row.updatedAt) } : {},
+-        icon: row.bot ? iconFor(row) : "session",
+-        section: row.bot ? t("Bots") : t("Conversations"),
+-        value: JSON.stringify({ sessionId: row.sessionId, label: row.label })
+-      }));
+-    },
+-    onPick({ candidate }) {
+-      const { sessionId, label } = JSON.parse(candidate.value);
+-      const mention = sessionMention(sessionId, label);
+-      return { insert: { source: CHATS_SOURCE, ref: mention, label, appearance: "session", clipboardText: mention } };
 +};
 +var meetingOf = (meeting, status) => {
 +  if (meeting === null || typeof meeting !== "object") return null;
@@ -14082,10 +14201,7 @@ diff --git a/client.js b/client.js
 +    // #1861: the host's participants with who each position speaks for, so the row can say a
 +    // Project Chief or an agent held it for someone rather than for themselves.
 +    participants: Array.isArray(meeting.participants) ? meeting.participants.map((participant) => ({ name: text(participant?.name), speaksFor: text(participant?.speaksFor) || null })).filter((participant) => participant.name !== "") : []
-   };
--  const schedule = () => {
--    setOpen(null);
--    actions.openSettings("schedules", target);
++  };
 +};
 +var listOf = (value) => Array.isArray(value) ? value.map((item) => decisionOf(item)).filter((item) => item !== null) : [];
 +function projectBoardRecord({ decisions, meetings } = {}) {
@@ -14107,7 +14223,8 @@ diff --git a/client.js b/client.js
 +      hidden: hiddenOf(decisionsTotal, files.length),
 +      empty: files.length === 0,
 +      emptyText: text(decisions?.reason) || (dir === null ? "This Project names no working folder." : `No decision file in ${dir}/decisions.`)
-+    },
+     },
+-    codec: { clipboardText: (ref) => ref, serialize: (ref) => Promise.resolve(ref) }
 +    meetings: {
 +      decided,
 +      pending,
@@ -14120,10 +14237,18 @@ diff --git a/client.js b/client.js
 +      emptyText: text(meetings?.reason) || "No meeting of this Project is recorded."
 +    }
    };
--  const reference = () => {
--    setOpen(null);
--    actions.referenceChat(sessionId, inputActions?.captureInsertion?.());
-+}
+-  return [bots, chats];
+ }
+-
+-// src/client/speech.js
+-var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
+-var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
+-async function speechCatalog(speech) {
+-  const result = await speech.catalog();
+-  if (!result?.ok) throw new Error(result?.error?.message ?? "Speech catalog failed");
+-  const catalog = result.value;
+-  const provider = catalog.providers.find((item) => item.id === catalog.selection.providerId);
+-  return { catalog, usable: USABLE.has(provider?.preparation?.phase) };
 +function projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
 +  const isRow = (row) => row !== null && typeof row === "object" && text(row.id) !== "";
 +  const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
@@ -14156,36 +14281,7 @@ diff --git a/client.js b/client.js
 +      speaksFor: text(row.speaksFor) || null,
 +      board: boardOfRow(row, task)
 +    };
-   };
--  const canReference = typeof inputActions?.captureInsertion === "function" && actions.canReferenceChat();
--  return (0, import_react10.createElement)(
--    import_react10.Fragment,
--    null,
--    (0, import_react10.createElement)("button", {
--      ref: button,
--      type: "button",
--      className: "bt-plus",
--      "aria-label": t("Add"),
--      title: t("Add"),
--      "aria-haspopup": "menu",
--      "aria-expanded": Boolean(open),
--      onMouseDown: keepComposerFocus,
--      onClick: toggle
--    }, (0, import_react10.createElement)(PlusIcon)),
--    shown ? (0, import_react_dom5.createPortal)((0, import_react10.createElement)(
--      "div",
--      {
--        ref: menu,
--        className: "bt-menu bt-menu-up bt-plus-menu",
--        role: "menu",
--        "aria-label": t("Add"),
--        style: { left: shown.left, bottom: shown.bottom },
--        "data-leaving": leaving || void 0
--      },
--      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: attach }, (0, import_react10.createElement)(PaperclipIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Add files"))),
--      canReference ? (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onMouseDown: keepComposerFocus, onClick: reference }, (0, import_react10.createElement)(ChatsIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Reference a chat"))) : null,
--      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: schedule }, (0, import_react10.createElement)(ClockIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))
--    ), document.body) : null
++  };
 +  const groups = PROJECT_SOURCES.map((source) => ({
 +    source,
 +    label: SOURCE_LABELS[source],
@@ -14256,32 +14352,8 @@ diff --git a/client.js b/client.js
 +    row.speaksFor === null ? null : (0, import_react21.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
 +    row.priority === null ? null : (0, import_react21.createElement)("span", { className: "bt-project-priority" }, row.priority),
 +    row.runId === null ? null : (0, import_react21.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
-   );
- }
--
--// src/client/at-menu.js
--var BOTS_SOURCE = "ds-bot";
--var CHATS_SOURCE = "ds-bot-chats";
--var ROOM_ALL = ["all", "everyone", "所有人", "全体"];
--var OTHER_CHATS_MAX = 8;
--var conversationOf = (roster, sessionId) => {
--  if (!roster.ready) return null;
--  const room2 = roster.roomsById[sessionId];
--  if (room2) return { room: room2 };
--  const self = roster.byId[sessionId];
--  return self ? { self } : null;
--};
--function mentionRows(roster, sessionId, query = "") {
--  const here = conversationOf(roster, sessionId);
--  if (here === null) return null;
--  const bots = here.room ? here.room.members.map((id) => roster.byId[id]).filter(Boolean) : roster.bots.filter((bot) => bot.id !== here.self.id);
--  const needle = query.trim().toLowerCase();
--  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
--  const everyone = t("Everyone");
--  if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
--    rows.push({ room: here.room, text: `@${everyone} ` });
--  }
--  return rows;
++  );
++}
 +function ProjectBoardRows({ view, onOpen }) {
 +  if (view.empty) return (0, import_react21.createElement)("div", { className: "bt-project-empty" }, t(view.emptyText));
 +  return view.groups.map((group) => (0, import_react21.createElement)(
@@ -14291,13 +14363,27 @@ diff --git a/client.js b/client.js
 +    group.rows.map((row) => projectRowNode(row, onOpen))
 +  ));
  }
--function chatRows(roster, list, sessionId) {
--  const here = conversationOf(roster, sessionId);
--  if (here === null) return [];
--  const byId = list?.byId ?? {};
--  const bots = roster.bots.filter((bot) => bot.id !== here.self?.id).map((bot) => {
--    const id = currentPart(bot);
--    return { sessionId: id, label: t("Chat with {name}", { name: bot.name }), bot, updatedAt: byId[id]?.updatedAt };
+-function waveBytes(samples, rate = 16e3) {
+-  const bytes = new Uint8Array(44 + samples.length * 2);
+-  const view = new DataView(bytes.buffer);
+-  const ascii = (at, text) => {
+-    for (let index = 0; index < text.length; index += 1) bytes[at + index] = text.charCodeAt(index);
+-  };
+-  ascii(0, "RIFF");
+-  view.setUint32(4, 36 + samples.length * 2, true);
+-  ascii(8, "WAVEfmt ");
+-  view.setUint32(16, 16, true);
+-  view.setUint16(20, 1, true);
+-  view.setUint16(22, 1, true);
+-  view.setUint32(24, rate, true);
+-  view.setUint32(28, rate * 2, true);
+-  view.setUint16(32, 2, true);
+-  view.setUint16(34, 16, true);
+-  ascii(36, "data");
+-  view.setUint32(40, samples.length * 2, true);
+-  samples.forEach((sample, index) => {
+-    const value = Math.max(-1, Math.min(1, sample));
+-    view.setInt16(44 + index * 2, value < 0 ? Math.round(value * 32768) : Math.round(value * 32767), true);
 +function ProjectDoneGroup({ view, onOpen }) {
 +  if (view.done.rows.length === 0) return null;
 +  return (0, import_react21.createElement)(
@@ -14353,12 +14439,7 @@ diff --git a/client.js b/client.js
 +      board: boardOfRow({ source: text(row.source) }, task)
 +    };
    });
--  const team = /* @__PURE__ */ new Set([
--    ...roster.bots.flatMap((bot) => [bot.id, currentPart(bot), ...bot.parts ?? []]),
--    ...roster.rooms.flatMap((room2) => [room2.id, ...room2.parts ?? []])
--  ]);
--  const others = (list?.ids ?? []).map((id) => byId[id]).filter((row) => row !== void 0 && row.id !== sessionId && !team.has(row.id) && row.origin !== "subagent" && row.blank !== true).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, OTHER_CHATS_MAX).map((row) => ({ sessionId: row.id, label: row.displayTitle || row.title || row.id, updatedAt: row.updatedAt }));
--  return [...bots, ...others];
+-  return bytes;
 +  return {
 +    available: source?.ok === true,
 +    reason: text(source?.reason) || null,
@@ -14368,11 +14449,10 @@ diff --git a/client.js b/client.js
 +    emptyText: "No metrics read yet."
 +  };
  }
--function sessionMention(sessionId, label) {
--  let binary = "";
--  for (const byte of new TextEncoder().encode(JSON.stringify(sessionId))) binary += String.fromCharCode(byte);
--  const payload = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
--  return `@[${label.replace(/[\\\]]/g, (mark) => `\\${mark}`)}](dsh-session:${payload})`;
+-function base64Of(bytes) {
+-  let text = "";
+-  for (let index = 0; index < bytes.length; index += 32768) text += String.fromCharCode(...bytes.subarray(index, index + 32768));
+-  return btoa(text);
 +function ProjectMetrics({ view }) {
 +  return (0, import_react21.createElement)(
 +    "section",
@@ -14390,7 +14470,26 @@ diff --git a/client.js b/client.js
 +      ))
 +    )
 +  );
-+}
+ }
+-var captureError = (kind, cause) => Object.assign(new Error(kind), { kind, cause });
+-async function openCapture() {
+-  const devices = navigator.mediaDevices;
+-  if (!devices?.getUserMedia || typeof MediaRecorder === "undefined") throw captureError("unavailable");
+-  let stream;
+-  try {
+-    stream = await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+-  } catch (error) {
+-    throw captureError(error?.name === "NotAllowedError" ? "blocked" : "failed", error);
+-  }
+-  const audio = new AudioContext();
+-  const analyser = audio.createAnalyser();
+-  analyser.fftSize = 512;
+-  audio.createMediaStreamSource(stream).connect(analyser);
+-  const frame = new Float32Array(analyser.fftSize);
+-  const recorder = new MediaRecorder(stream);
+-  const chunks = [];
+-  recorder.ondataavailable = (event) => {
+-    if (event.data.size > 0) chunks.push(event.data);
 +function ProjectRunningTable({ view, onOpen }) {
 +  if (view.running.length === 0) return (0, import_react21.createElement)("section", { className: "bt-project-running", "data-running": "0" }, (0, import_react21.createElement)("h4", null, t("Running tasks")), (0, import_react21.createElement)("div", { className: "bt-project-empty" }, t("Nothing is running.")));
 +  return (0, import_react21.createElement)(
@@ -14429,24 +14528,7 @@ diff --git a/client.js b/client.js
 +      );
 +    })
 +  );
- }
--function atSources({ roster, sessions, launched, iconFor }) {
--  const bots = {
--    trigger: "@",
--    name: BOTS_SOURCE,
--    order: -20,
--    showGroupTitle: false,
--    async candidates(session, { query }) {
--      return (mentionRows(roster.getSnapshot(), session.sessionId, query) ?? []).map((row) => ({
--        name: row.bot ? row.bot.name : t("Everyone"),
--        ...row.bot?.role ? { description: row.bot.role } : {},
--        ...row.room ? { description: t("{count} members", { count: row.room.members.length }) } : {},
--        icon: iconFor(row),
--        section: t("Bots"),
--        value: row.text
--      }));
--    },
--    onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
++}
 +function ProjectQueueGroups({ view, onOpen }) {
 +  return view.queues.map((entry) => (0, import_react21.createElement)(
 +    "section",
@@ -14493,25 +14575,15 @@ diff --git a/client.js b/client.js
 +    const settle = (answer) => setOpen((current) => current !== null && current.path === path ? { path, answer } : current);
 +    call4("project-decision", { id: projectId, path }).then(settle, (error) => settle({ ok: false, reason: String(error?.message ?? error) }));
    };
--  const chats = {
--    trigger: "@",
--    name: CHATS_SOURCE,
--    order: -10,
--    showGroupTitle: false,
--    async candidates(session) {
--      if (!launched(session.sessionId)) return [];
--      return chatRows(roster.getSnapshot(), sessions.list.getSnapshot(), session.sessionId).map((row) => ({
--        name: row.bot ? row.bot.name : row.label,
--        ...row.updatedAt ? { description: relativeShort(row.updatedAt) } : {},
--        icon: row.bot ? iconFor(row) : "session",
--        section: row.bot ? t("Bots") : t("Conversations"),
--        value: JSON.stringify({ sessionId: row.sessionId, label: row.label })
--      }));
--    },
--    onPick({ candidate }) {
--      const { sessionId, label } = JSON.parse(candidate.value);
--      const mention = sessionMention(sessionId, label);
--      return { insert: { source: CHATS_SOURCE, ref: mention, label, appearance: "session", clipboardText: mention } };
+-  recorder.start();
+-  let closed = false;
+-  const close = () => {
+-    if (closed) return;
+-    closed = true;
+-    if (recorder.state !== "inactive") recorder.stop();
+-    stream.getTracks().forEach((track) => track.stop());
+-    void audio.close().catch(() => {
+-    });
 +  const decisionBody = (file) => {
 +    if (open === null || open.path !== file.path) return null;
 +    const answer = open.answer;
@@ -14574,8 +14646,7 @@ diff --git a/client.js b/client.js
 +      "data-decisions": String(decisions.count),
 +      ...decisions.total === null ? {} : { "data-decisions-total": String(decisions.total) },
 +      "data-meetings": String(meetings.count)
-     },
--    codec: { clipboardText: (ref) => ref, serialize: (ref) => Promise.resolve(ref) }
++    },
 +    (0, import_react21.createElement)("h4", null, t("Decisions")),
 +    decisions.empty ? (0, import_react21.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(decisions.emptyText)) : decisionRows,
 +    moreLine(decisions.hidden, "decisions-more"),
@@ -14595,12 +14666,18 @@ diff --git a/client.js b/client.js
 +  const addOwner = (id) => {
 +    const clean = text(id);
 +    if (clean !== "" && !owner.includes(clean)) owner.push(clean);
-+  };
+   };
 +  addOwner(project?.ownerUserId);
 +  for (const id of idList(project?.ownerUserIds)) addOwner(id);
 +  const maintainers = idList(stored.maintainers).filter((id) => !owner.includes(id));
 +  const members = idList(stored.members).filter((id) => !owner.includes(id) && !maintainers.includes(id));
-+  return {
+   return {
+-    level() {
+-      if (closed) return 0;
+-      analyser.getFloatTimeDomainData(frame);
+-      let sum = 0;
+-      for (const sample of frame) sum += sample * sample;
+-      return Math.min(1, Math.sqrt(sum / frame.length) * 4);
 +    chief: botIdOf(project?.chief),
 +    agent: botIdOf(project?.assistant),
 +    roles: { owner, maintainers, members },
@@ -14609,19 +14686,8 @@ diff --git a/client.js b/client.js
 +    // `project-read` record answers no rank, and the panel never re-derives the host's policy.
 +    role: text(project?.role),
 +    choices: idList(project?.choices)
-   };
--  return [bots, chats];
- }
--
--// src/client/speech.js
--var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
--var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
--async function speechCatalog(speech) {
--  const result = await speech.catalog();
--  if (!result?.ok) throw new Error(result?.error?.message ?? "Speech catalog failed");
--  const catalog = result.value;
--  const provider = catalog.providers.find((item) => item.id === catalog.selection.providerId);
--  return { catalog, usable: USABLE.has(provider?.preparation?.phase) };
++  };
++}
 +var teamRow = (role, label, botId, onOpenBot, onOpenDossier) => (0, import_react21.createElement)(
 +  "div",
 +  {
@@ -14657,12 +14723,17 @@ diff --git a/client.js b/client.js
 +    onClick: (event) => {
 +      event?.stopPropagation();
 +      onOpenDossier?.({ role, label, botId });
-+    },
+     },
+-    cancel: close,
+-    async finish(maxSeconds) {
+-      if (closed || recorder.state === "inactive") {
+-        close();
+-        return null;
 +    onKeyDown: (event) => {
 +      if (event.key === "Enter" || event.key === " ") {
 +        event?.stopPropagation();
 +        onOpenDossier?.({ role, label, botId });
-+      }
+       }
 +    }
 +  }, t("Dossier"))
 +);
@@ -14705,30 +14776,7 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  );
- }
--function waveBytes(samples, rate = 16e3) {
--  const bytes = new Uint8Array(44 + samples.length * 2);
--  const view = new DataView(bytes.buffer);
--  const ascii = (at, text) => {
--    for (let index = 0; index < text.length; index += 1) bytes[at + index] = text.charCodeAt(index);
--  };
--  ascii(0, "RIFF");
--  view.setUint32(4, 36 + samples.length * 2, true);
--  ascii(8, "WAVEfmt ");
--  view.setUint32(16, 16, true);
--  view.setUint16(20, 1, true);
--  view.setUint16(22, 1, true);
--  view.setUint32(24, rate, true);
--  view.setUint32(28, rate * 2, true);
--  view.setUint16(32, 2, true);
--  view.setUint16(34, 16, true);
--  ascii(36, "data");
--  view.setUint32(40, samples.length * 2, true);
--  samples.forEach((sample, index) => {
--    const value = Math.max(-1, Math.min(1, sample));
--    view.setInt16(44 + index * 2, value < 0 ? Math.round(value * 32768) : Math.round(value * 32767), true);
--  });
--  return bytes;
++}
 +function dossierRowOf(team, botId) {
 +  const id = text(botId);
 +  if (id === "") return null;
@@ -14778,11 +14826,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
 +    )
 +  );
- }
--function base64Of(bytes) {
--  let text = "";
--  for (let index = 0; index < bytes.length; index += 32768) text += String.fromCharCode(...bytes.subarray(index, index + 32768));
--  return btoa(text);
++}
 +function projectAgentFor(bot, selfId) {
 +  if (bot === null || typeof bot !== "object" || bot.remote !== void 0) return null;
 +  const projectId = text(bot.projectId);
@@ -14798,16 +14842,33 @@ diff --git a/client.js b/client.js
 +  const open = async () => {
 +    let target = agentId;
 +    if (target === "") {
-+      try {
+       try {
+-        await new Promise((resolve) => {
+-          recorder.onstop = resolve;
+-          recorder.stop();
+-        });
+-        stream.getTracks().forEach((track) => track.stop());
+-        const blob = new Blob(chunks, { type: recorder.mimeType });
+-        if (blob.size === 0) return null;
+-        const decoded = await audio.decodeAudioData(await blob.arrayBuffer());
+-        const length = Math.max(1, Math.floor(Math.min(decoded.duration, maxSeconds) * 16e3));
+-        const offline = new OfflineAudioContext(1, length, 16e3);
+-        const source = offline.createBufferSource();
+-        source.buffer = decoded;
+-        source.connect(offline.destination);
+-        source.start();
+-        return waveBytes((await offline.startRendering()).getChannelData(0));
+-      } finally {
+-        close();
 +        const record = await (read ?? call)("project-read", { id });
 +        target = botIdOf(record?.project?.assistant);
 +      } catch {
 +        target = "";
-+      }
+       }
 +      if (target !== "") setAgentId(target);
-+    }
+     }
 +    if (target !== "") onOpen?.(target);
-+  };
+   };
 +  if (id === "") return null;
 +  return (0, import_react21.createElement)("button", {
 +    type: "button",
@@ -14852,25 +14913,11 @@ diff --git a/client.js b/client.js
 +    (0, import_react21.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
 +  );
  }
--var captureError = (kind, cause) => Object.assign(new Error(kind), { kind, cause });
--async function openCapture() {
--  const devices = navigator.mediaDevices;
--  if (!devices?.getUserMedia || typeof MediaRecorder === "undefined") throw captureError("unavailable");
--  let stream;
--  try {
--    stream = await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
--  } catch (error) {
--    throw captureError(error?.name === "NotAllowedError" ? "blocked" : "failed", error);
--  }
--  const audio = new AudioContext();
--  const analyser = audio.createAnalyser();
--  analyser.fftSize = 512;
--  audio.createMediaStreamSource(stream).connect(analyser);
--  const frame = new Float32Array(analyser.fftSize);
--  const recorder = new MediaRecorder(stream);
--  const chunks = [];
--  recorder.ondataavailable = (event) => {
--    if (event.data.size > 0) chunks.push(event.data);
+-async function transcribeWave(speech, catalog, wave, signal) {
+-  if (wave.byteLength > catalog.maxAudioBytes) throw captureError("too-long");
+-  const result = await speech.transcribe({ audioBase64: base64Of(wave), ...catalog.selection }, signal);
+-  if (!result?.ok) throw Object.assign(new Error(result?.error?.message ?? "Transcription failed"), { kind: "service" });
+-  return String(result.value?.text ?? "").trim();
 +function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
 +  const save = request ?? call;
 +  const [kind, setKind] = (0, import_react21.useState)("bot");
@@ -14892,16 +14939,7 @@ diff --git a/client.js b/client.js
 +      setStatus(hostText(error?.message ?? String(error)));
 +      return null;
 +    }
-   };
--  recorder.start();
--  let closed = false;
--  const close = () => {
--    if (closed) return;
--    closed = true;
--    if (recorder.state !== "inactive") recorder.stop();
--    stream.getTracks().forEach((track) => track.stop());
--    void audio.close().catch(() => {
--    });
++  };
 +  return (0, import_react21.createElement)(
 +    "div",
 +    { className: "bt-project-panel", "data-panel": "project-settings" },
@@ -14973,7 +15011,7 @@ diff --git a/client.js b/client.js
 +  const add = (id) => {
 +    const clean = text(id);
 +    if (clean !== "" && !owners.includes(clean)) owners.push(clean);
-   };
++  };
 +  add(project?.ownerUserId);
 +  for (const id of Array.isArray(project?.ownerUserIds) ? project.ownerUserIds : []) add(id);
 +  const boardMembers = [];
@@ -15016,7 +15054,19 @@ diff --git a/client.js b/client.js
 +      (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
 +    )
 +  );
-+}
+ }
+-function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
+-  let spokeAt = 0;
+-  let quietSince = 0;
+-  return (level, now) => {
+-    if (level >= loud) {
+-      spokeAt ||= now;
+-      quietSince = 0;
+-      return "speech";
+-    }
+-    if (!spokeAt) return "waiting";
+-    if (level < quiet) quietSince ||= now;
+-    return quietSince && now - quietSince >= quietMs ? "done" : "speech";
 +async function readProjectBoard(read, wanted, knownTeam) {
 +  const listing = await read("projects");
 +  const projects = Array.isArray(listing?.projects) ? listing.projects : [];
@@ -15039,20 +15089,7 @@ diff --git a/client.js b/client.js
 +  const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
 +  const base = record?.project ?? project;
 +  const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] };
-   return {
--    level() {
--      if (closed) return 0;
--      analyser.getFloatTimeDomainData(frame);
--      let sum = 0;
--      for (const sample of frame) sum += sample * sample;
--      return Math.min(1, Math.sqrt(sum / frame.length) * 4);
--    },
--    cancel: close,
--    async finish(maxSeconds) {
--      if (closed || recorder.state === "inactive") {
--        close();
--        return null;
--      }
++  return {
 +    project: withRole,
 +    assistantMine: record?.assistantMine ?? null,
 +    rows: board?.tasks ?? [],
@@ -15065,8 +15102,25 @@ diff --git a/client.js b/client.js
 +    metrics: board?.metrics ?? null,
 +    team: dossier.answer !== null && typeof dossier.answer === "object" ? dossier.answer : { rows: [] },
 +    teamFresh: dossier.fresh
-+  };
-+}
+   };
+ }
+-
+-// src/client/overlay-hooks.js
+-var import_react11 = require("react");
+-var escapeLayers = [];
+-var onEscapeKey = (event) => {
+-  if (event.key === "Escape") escapeLayers.at(-1)?.current();
+-};
+-function useEscape(onClose) {
+-  const ref = (0, import_react11.useRef)(onClose);
+-  ref.current = onClose;
+-  (0, import_react11.useEffect)(() => {
+-    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
+-    escapeLayers.push(ref);
+-    return () => {
+-      escapeLayers.splice(escapeLayers.indexOf(ref), 1);
+-      if (escapeLayers.length === 0) window.removeEventListener("keydown", onEscapeKey);
+-    };
 +var PROJECT_BOARD_POLL_MS = 5e3;
 +var boardPollPaused = () => typeof document !== "undefined" && document.visibilityState === "hidden" || typeof window !== "undefined" && !window.location.hash.startsWith("#project");
 +function ProjectBoardOverlay({ actions, call: request } = {}) {
@@ -15081,7 +15135,13 @@ diff --git a/client.js b/client.js
 +    if (typeof window !== "undefined") window.location.hash = "";
 +    setPanel(null);
 +    setState(null);
-+  }, []);
+   }, []);
+-}
+-function usePaneLeft() {
+-  const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
+-  (0, import_react11.useLayoutEffect)(() => {
+-    const column = document.querySelector('[class*="_footArea"]')?.parentElement;
+-    if (column) setPaneLeft(Math.round(column.getBoundingClientRect().right));
 +  (0, import_react21.useEffect)(() => {
 +    if (typeof window === "undefined") return void 0;
 +    const onKey = (event) => {
@@ -15098,7 +15158,43 @@ diff --git a/client.js b/client.js
 +    window.addEventListener("hashchange", sync);
 +    sync();
 +    return () => window.removeEventListener("hashchange", sync);
-+  }, []);
+   }, []);
+-  return paneLeft;
+-}
+-
+-// src/client/palette.js
+-var import_react12 = require("react");
+-var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
+-var PALETTE_EXIT_MS = 160;
+-function CommandPalette({ start, token, roster, actions, useSessions }) {
+-  const [query, setQuery] = (0, import_react12.useState)(start ?? "");
+-  const [cursor, setCursor] = (0, import_react12.useState)(0);
+-  const [leaving, setLeaving] = (0, import_react12.useState)(false);
+-  const wanted = query.trim().toLowerCase();
+-  const close = () => {
+-    if (leaving) return;
+-    setLeaving(true);
+-    setTimeout(() => actions.closePalette(token), PALETTE_EXIT_MS);
+-  };
+-  useEscape(close);
+-  const ids = [...roster.bots.map(currentPart), ...roster.rooms.map((item) => item.id)];
+-  const found = useSessions((list) => {
+-    if (wanted.length < 2) return "[]";
+-    const hits = [];
+-    for (const id of ids) {
+-      const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+-      if (!Array.isArray(outline)) continue;
+-      const hidden = roster.exchangeTurns[id] ?? [];
+-      for (let index2 = outline.length - 1; index2 >= 0 && hits.length < 30; index2 -= 1) {
+-        const entry = outline[index2];
+-        if (hidden.includes(entry.turn)) continue;
+-        for (const raw of [entry.response, entry.prompt]) {
+-          const text = stripHeader(raw ?? "").replace(/\s+/g, " ").trim();
+-          const at = text.toLowerCase().indexOf(wanted);
+-          if (at < 0) continue;
+-          const from = Math.max(0, at - 24);
+-          hits.push([id, entry.turn, (from > 0 ? "…" : "") + text.slice(from, at + wanted.length + 60)]);
+-          break;
 +  (0, import_react21.useEffect)(() => {
 +    if (typeof window === "undefined") return void 0;
 +    if (!hash.startsWith("#project")) {
@@ -15112,30 +15208,13 @@ diff --git a/client.js b/client.js
 +    const loadBoard = () => readProjectBoard(read, wanted, team.current);
 +    const refresh = async (first) => {
 +      const gen = teamGen.current;
-       try {
--        await new Promise((resolve) => {
--          recorder.onstop = resolve;
--          recorder.stop();
--        });
--        stream.getTracks().forEach((track) => track.stop());
--        const blob = new Blob(chunks, { type: recorder.mimeType });
--        if (blob.size === 0) return null;
--        const decoded = await audio.decodeAudioData(await blob.arrayBuffer());
--        const length = Math.max(1, Math.floor(Math.min(decoded.duration, maxSeconds) * 16e3));
--        const offline = new OfflineAudioContext(1, length, 16e3);
--        const source = offline.createBufferSource();
--        source.buffer = decoded;
--        source.connect(offline.destination);
--        source.start();
--        return waveBytes((await offline.startRendering()).getChannelData(0));
--      } finally {
--        close();
++      try {
 +        const next = await loadBoard();
 +        if (!gone) {
 +          const newer = teamGen.current !== gen;
 +          if (next.teamFresh !== false && !newer) team.current = next.team;
 +          setState(newer && team.current !== void 0 ? { ...next, team: team.current } : next);
-+        }
+         }
 +      } catch {
 +        if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] });
        }
@@ -15163,7 +15242,8 @@ diff --git a/client.js b/client.js
 +      setState((previous) => previous === null ? previous : { ...previous, team: answer });
 +    } catch {
      }
-   };
+-    return JSON.stringify(hits);
++  };
 +  if (state === null) return null;
 +  return (0, import_react21.createElement)(
 +    "div",
@@ -15234,12 +15314,7 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  );
- }
--async function transcribeWave(speech, catalog, wave, signal) {
--  if (wave.byteLength > catalog.maxAudioBytes) throw captureError("too-long");
--  const result = await speech.transcribe({ audioBase64: base64Of(wave), ...catalog.selection }, signal);
--  if (!result?.ok) throw Object.assign(new Error(result?.error?.message ?? "Transcription failed"), { kind: "service" });
--  return String(result.value?.text ?? "").trim();
++}
 +
 +// src/client/header.js
 +var import_react22 = require("react");
@@ -15258,20 +15333,7 @@ diff --git a/client.js b/client.js
 +    return () => clearTimeout(timer);
 +  }, [seen]);
 +  return shown;
- }
--function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
--  let spokeAt = 0;
--  let quietSince = 0;
--  return (level, now) => {
--    if (level >= loud) {
--      spokeAt ||= now;
--      quietSince = 0;
--      return "speech";
--    }
--    if (!spokeAt) return "waiting";
--    if (level < quiet) quietSince ||= now;
--    return quietSince && now - quietSince >= quietMs ? "done" : "speech";
--  };
++}
 +function MemoryNotice({ shown }) {
 +  const inner = (0, import_react22.useRef)(null);
 +  const [width, setWidth] = (0, import_react22.useState)(0);
@@ -15284,27 +15346,26 @@ diff --git a/client.js b/client.js
 +    { className: "bt-pill-mem", "aria-hidden": true, style: { "--bt-mem-w": `${width}px` } },
 +    (0, import_react22.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react22.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react22.createElement)(MemoryIcon)), label)
 +  );
- }
--
--// src/client/overlay-hooks.js
--var import_react11 = require("react");
--var escapeLayers = [];
--var onEscapeKey = (event) => {
--  if (event.key === "Escape") escapeLayers.at(-1)?.current();
--};
--function useEscape(onClose) {
--  const ref = (0, import_react11.useRef)(onClose);
--  ref.current = onClose;
--  (0, import_react11.useEffect)(() => {
--    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
--    escapeLayers.push(ref);
++}
 +function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useBusyAcks, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
 +  const roster = useRoster((value) => value);
 +  const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
 +  const firstTurns = useSessions((list) => {
 +    const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline;
 +    return Array.isArray(outline) ? outline.slice(0, 8).map((entry) => entry.turn).join(",") : "";
-+  });
+   });
+-  const matchesName = (...fields) => wanted === "" || fields.some((field) => (field ?? "").toLowerCase().includes(wanted));
+-  const sections = [];
+-  const people = [
+-    ...roster.bots.filter((bot) => matchesName(bot.name, bot.role)).map((bot) => ({
+-      key: bot.id,
+-      avatar: (0, import_react12.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }),
+-      title: bot.name,
+-      subtitle: [bot.role, isMainOf(roster, bot.id) ? t("Main Bot") : ""].filter(Boolean).join(" · "),
+-      badge: bot.hidden ? t("Hidden") : void 0,
+-      run: async () => {
+-        if (bot.hidden) await actions.setFlags(bot.id, { hidden: false });
+-        actions.openSession(bot.id);
 +  const hiddenTurns = roster.exchangeTurns?.[sessionId];
 +  const visit = useUi((state) => state.visits?.[sessionId]);
 +  const opening = useTurnClock((state) => {
@@ -15373,11 +15434,41 @@ diff --git a/client.js b/client.js
 +        observer.disconnect();
 +        watched = scroller;
 +        if (scroller) observer.observe(scroller, { childList: true, subtree: true });
-+      }
+       }
+-    })),
+-    ...roster.rooms.filter((room2) => matchesName(room2.name)).map((room2) => ({
+-      key: room2.id,
+-      avatar: (0, import_react12.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
+-      title: room2.name,
+-      subtitle: t("{count} members", { count: room2.members.length }),
+-      badge: room2.hidden ? t("Hidden") : void 0,
+-      run: async () => {
+-        if (room2.hidden) await actions.setFlags(room2.id, { hidden: false });
+-        actions.openSession(room2.id);
 +      if (!scroller) {
 +        setView(null);
 +        return;
-+      }
+       }
+-    }))
+-  ];
+-  if (people.length) sections.push([t("Bots"), people]);
+-  const agents = (roster.agents ?? []).filter(() => matchesName("DSH Agent")).map((agent) => ({
+-    key: agent.id,
+-    avatar: (0, import_react12.createElement)("span", { className: "bt-palette-agent" }, (0, import_react12.createElement)(import_dsh_client_ui_primitives3.FishLogo, { size: 18 })),
+-    title: "DSH Agent",
+-    subtitle: t("Plain dsh session"),
+-    run: () => actions.openAgent(agent.id)
+-  }));
+-  if (agents.length) sections.push(["DSH Agent", agents]);
+-  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
+-    const bot = roster.byId[id];
+-    const room2 = roster.roomsById[id];
+-    return {
+-      key: `${id}:${turn}`,
+-      title: bot?.name ?? room2?.name ?? t("Bot"),
+-      subtitle: snippet,
+-      avatar: bot ? (0, import_react12.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react12.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
+-      run: () => actions.openSession(id)
 +      const box = scroller.getBoundingClientRect();
 +      const headerBottom = document.querySelector('header[class*="_header"]')?.getBoundingClientRect().bottom ?? box.top + 50;
 +      const sep = scroller.querySelector(".bt-new-sep");
@@ -15402,29 +15493,45 @@ diff --git a/client.js b/client.js
 +    document.addEventListener("scroll", schedule, true);
 +    window.addEventListener("resize", schedule);
 +    schedule();
-     return () => {
--      escapeLayers.splice(escapeLayers.indexOf(ref), 1);
--      if (escapeLayers.length === 0) window.removeEventListener("keydown", onEscapeKey);
++    return () => {
 +      cancelAnimationFrame(frame);
 +      observer.disconnect();
 +      document.removeEventListener("scroll", schedule, true);
 +      window.removeEventListener("resize", schedule);
      };
-   }, []);
++  }, []);
 +  return view;
- }
--function usePaneLeft() {
--  const [paneLeft, setPaneLeft] = (0, import_react11.useState)(280);
--  (0, import_react11.useLayoutEffect)(() => {
--    const column = document.querySelector('[class*="_footArea"]')?.parentElement;
--    if (column) setPaneLeft(Math.round(column.getBoundingClientRect().right));
--  }, []);
--  return paneLeft;
++}
 +function NewMessagePills({ sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }) {
 +  const replies = useSessions((list) => {
 +    const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline;
 +    return Array.isArray(outline) ? outline.reduce((count, entry) => count + (entry.response ? 1 : 0), 0) : 0;
-+  });
+   });
+-  if (messages.length) sections.push([t("Messages"), messages]);
+-  const commands = [
+-    { key: "cmd:new", icon: (0, import_react12.createElement)(PlusIcon), title: t("New chat"), run: () => actions.openNewChat("new") },
+-    { key: "cmd:bot", icon: (0, import_react12.createElement)(PlusIcon), title: t("Create Bot"), run: () => actions.openNewChat("create") },
+-    { key: "cmd:group", icon: (0, import_react12.createElement)(PeopleIcon), title: t("Create group chat"), run: () => actions.openNewChat("group") },
+-    { key: "cmd:settings", icon: (0, import_react12.createElement)(GearIcon), title: t("Bot settings"), run: () => actions.openSettings("general") }
+-  ].filter((command) => matchesName(command.title));
+-  if (commands.length) sections.push([t("Commands"), commands]);
+-  const rows = sections.flatMap(([, items]) => items);
+-  const active = Math.min(cursor, Math.max(rows.length - 1, 0));
+-  const shown = rows.map((row) => row.key).join("\n");
+-  const glide = useGlide(`${active}
+-${shown}`, { axis: "y", ...QUICK_EDGES });
+-  const listRef = glide.box;
+-  useFlip(listRef, shown, "[data-flip]");
+-  (0, import_react12.useEffect)(() => {
+-    listRef.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+-  }, [active, query]);
+-  const choose = (row) => {
+-    if (!row || leaving) return;
+-    void Promise.resolve(row.run()).catch((error) => actions.reportError(error, "menu"));
+-    close();
+-  };
+-  let index = -1;
+-  return (0, import_react12.createElement)(
 +  const visit = useUi((state) => state.visits?.[sessionId]);
 +  const unread = useTurnClock((state) => {
 +    if (typeof visit?.seen !== "number") return 0;
@@ -15460,178 +15567,7 @@ diff --git a/client.js b/client.js
 +  if (!view || !showDown && !showUp) return null;
 +  const label = (count) => count === 1 ? t("1 new message") : count > 0 ? t("{count} new messages", { count }) : t("New messages");
 +  const pill = (direction, count, style, onJump, onDismiss) => (0, import_react22.createElement)(
-+    "div",
-+    { className: "bt-news", "data-direction": direction, style },
-+    (0, import_react22.createElement)(
-+      "button",
-+      { type: "button", className: "bt-news-jump", onClick: onJump },
-+      (0, import_react22.createElement)("span", { className: "bt-news-ico" }, (0, import_react22.createElement)(direction === "up" ? ArrowUpIcon : ArrowDownIcon)),
-+      label(count)
-+    ),
-+    (0, import_react22.createElement)("button", {
-+      type: "button",
-+      className: "bt-news-x",
-+      "aria-label": t("Dismiss new messages"),
-+      onClick: (event) => {
-+        event.stopPropagation();
-+        onDismiss();
-+      }
-+    }, (0, import_react22.createElement)(CloseIcon))
-+  );
-+  const toLatest = () => {
-+    const scroller = document.querySelector("[data-conversation-scroll]");
-+    const back = scroller?.querySelector('[class*="_toBottomSlot"]>button');
-+    if (back) back.click();
-+    else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
-+  };
-+  const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
-+  return (0, import_react_dom6.createPortal)(
-+    (0, import_react22.createElement)(
-+      import_react22.Fragment,
-+      null,
-+      showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
-+      showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
-+    ),
-+    document.body
-+  );
- }
- 
--// src/client/palette.js
--var import_react12 = require("react");
--var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
--var PALETTE_EXIT_MS = 160;
--function CommandPalette({ start, token, roster, actions, useSessions }) {
--  const [query, setQuery] = (0, import_react12.useState)(start ?? "");
--  const [cursor, setCursor] = (0, import_react12.useState)(0);
--  const [leaving, setLeaving] = (0, import_react12.useState)(false);
--  const wanted = query.trim().toLowerCase();
--  const close = () => {
--    if (leaving) return;
--    setLeaving(true);
--    setTimeout(() => actions.closePalette(token), PALETTE_EXIT_MS);
--  };
--  useEscape(close);
--  const ids = [...roster.bots.map(currentPart), ...roster.rooms.map((item) => item.id)];
--  const found = useSessions((list) => {
--    if (wanted.length < 2) return "[]";
--    const hits = [];
--    for (const id of ids) {
--      const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
--      if (!Array.isArray(outline)) continue;
--      const hidden = roster.exchangeTurns[id] ?? [];
--      for (let index2 = outline.length - 1; index2 >= 0 && hits.length < 30; index2 -= 1) {
--        const entry = outline[index2];
--        if (hidden.includes(entry.turn)) continue;
--        for (const raw of [entry.response, entry.prompt]) {
--          const text = stripHeader(raw ?? "").replace(/\s+/g, " ").trim();
--          const at = text.toLowerCase().indexOf(wanted);
--          if (at < 0) continue;
--          const from = Math.max(0, at - 24);
--          hits.push([id, entry.turn, (from > 0 ? "…" : "") + text.slice(from, at + wanted.length + 60)]);
--          break;
--        }
-+// src/client/composer-label.js
-+var ATTRIBUTES = ["aria-label", "data-placeholder"];
-+function holdComposerLabel(doc, label) {
-+  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
-+  const shell = /* @__PURE__ */ new Map();
-+  const apply2 = () => {
-+    for (const el of doc.querySelectorAll("[data-composer-input]")) {
-+      for (const name of ATTRIBUTES) {
-+        const current = el.getAttribute(name);
-+        if (current === label) continue;
-+        if (!shell.has(el)) shell.set(el, {});
-+        shell.get(el)[name] = current;
-+        el.setAttribute(name, label);
-       }
-     }
--    return JSON.stringify(hits);
--  });
--  const matchesName = (...fields) => wanted === "" || fields.some((field) => (field ?? "").toLowerCase().includes(wanted));
--  const sections = [];
--  const people = [
--    ...roster.bots.filter((bot) => matchesName(bot.name, bot.role)).map((bot) => ({
--      key: bot.id,
--      avatar: (0, import_react12.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }),
--      title: bot.name,
--      subtitle: [bot.role, isMainOf(roster, bot.id) ? t("Main Bot") : ""].filter(Boolean).join(" · "),
--      badge: bot.hidden ? t("Hidden") : void 0,
--      run: async () => {
--        if (bot.hidden) await actions.setFlags(bot.id, { hidden: false });
--        actions.openSession(bot.id);
--      }
--    })),
--    ...roster.rooms.filter((room2) => matchesName(room2.name)).map((room2) => ({
--      key: room2.id,
--      avatar: (0, import_react12.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
--      title: room2.name,
--      subtitle: t("{count} members", { count: room2.members.length }),
--      badge: room2.hidden ? t("Hidden") : void 0,
--      run: async () => {
--        if (room2.hidden) await actions.setFlags(room2.id, { hidden: false });
--        actions.openSession(room2.id);
-+  };
-+  apply2();
-+  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
-+  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
-+  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
-+  return () => {
-+    watcher?.disconnect();
-+    for (const [el, values] of shell) {
-+      if (!el.isConnected) continue;
-+      for (const [name, value] of Object.entries(values)) {
-+        if (value == null) el.removeAttribute(name);
-+        else el.setAttribute(name, value);
-       }
--    }))
--  ];
--  if (people.length) sections.push([t("Bots"), people]);
--  const agents = (roster.agents ?? []).filter(() => matchesName("DSH Agent")).map((agent) => ({
--    key: agent.id,
--    avatar: (0, import_react12.createElement)("span", { className: "bt-palette-agent" }, (0, import_react12.createElement)(import_dsh_client_ui_primitives3.FishLogo, { size: 18 })),
--    title: "DSH Agent",
--    subtitle: t("Plain dsh session"),
--    run: () => actions.openAgent(agent.id)
--  }));
--  if (agents.length) sections.push(["DSH Agent", agents]);
--  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
--    const bot = roster.byId[id];
--    const room2 = roster.roomsById[id];
--    return {
--      key: `${id}:${turn}`,
--      title: bot?.name ?? room2?.name ?? t("Bot"),
--      subtitle: snippet,
--      avatar: bot ? (0, import_react12.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react12.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
--      run: () => actions.openSession(id)
--    };
--  });
--  if (messages.length) sections.push([t("Messages"), messages]);
--  const commands = [
--    { key: "cmd:new", icon: (0, import_react12.createElement)(PlusIcon), title: t("New chat"), run: () => actions.openNewChat("new") },
--    { key: "cmd:bot", icon: (0, import_react12.createElement)(PlusIcon), title: t("Create Bot"), run: () => actions.openNewChat("create") },
--    { key: "cmd:group", icon: (0, import_react12.createElement)(PeopleIcon), title: t("Create group chat"), run: () => actions.openNewChat("group") },
--    { key: "cmd:settings", icon: (0, import_react12.createElement)(GearIcon), title: t("Bot settings"), run: () => actions.openSettings("general") }
--  ].filter((command) => matchesName(command.title));
--  if (commands.length) sections.push([t("Commands"), commands]);
--  const rows = sections.flatMap(([, items]) => items);
--  const active = Math.min(cursor, Math.max(rows.length - 1, 0));
--  const shown = rows.map((row) => row.key).join("\n");
--  const glide = useGlide(`${active}
--${shown}`, { axis: "y", ...QUICK_EDGES });
--  const listRef = glide.box;
--  useFlip(listRef, shown, "[data-flip]");
--  (0, import_react12.useEffect)(() => {
--    listRef.current?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
--  }, [active, query]);
--  const choose = (row) => {
--    if (!row || leaving) return;
--    void Promise.resolve(row.run()).catch((error) => actions.reportError(error, "menu"));
--    close();
-+    }
-   };
--  let index = -1;
--  return (0, import_react12.createElement)(
--    "div",
+     "div",
 -    { className: "bt-palette-layer", "data-leaving": leaving || void 0 },
 -    (0, import_react12.createElement)("div", { className: "bt-backdrop", onMouseDown: close }),
 -    (0, import_react12.createElement)(
@@ -15716,7 +15652,39 @@ diff --git a/client.js b/client.js
 -        ))
 -      )
 -    )
--  );
++    { className: "bt-news", "data-direction": direction, style },
++    (0, import_react22.createElement)(
++      "button",
++      { type: "button", className: "bt-news-jump", onClick: onJump },
++      (0, import_react22.createElement)("span", { className: "bt-news-ico" }, (0, import_react22.createElement)(direction === "up" ? ArrowUpIcon : ArrowDownIcon)),
++      label(count)
++    ),
++    (0, import_react22.createElement)("button", {
++      type: "button",
++      className: "bt-news-x",
++      "aria-label": t("Dismiss new messages"),
++      onClick: (event) => {
++        event.stopPropagation();
++        onDismiss();
++      }
++    }, (0, import_react22.createElement)(CloseIcon))
++  );
++  const toLatest = () => {
++    const scroller = document.querySelector("[data-conversation-scroll]");
++    const back = scroller?.querySelector('[class*="_toBottomSlot"]>button');
++    if (back) back.click();
++    else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
++  };
++  const toDivider = () => document.querySelector("[data-conversation-scroll] .bt-new-sep")?.scrollIntoView({ block: "center", behavior: "smooth" });
++  return (0, import_react_dom6.createPortal)(
++    (0, import_react22.createElement)(
++      import_react22.Fragment,
++      null,
++      showUp ? pill("up", unread, { left: view.center, top: view.top }, toDivider, () => setAbove((state) => ({ ...state, dismissed: true }))) : null,
++      showDown ? pill("down", fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease((state) => ({ ...state, dismissed: true }))) : null
++    ),
++    document.body
+   );
  }
  
 -// src/client/model-menu.js
@@ -15747,7 +15715,37 @@ diff --git a/client.js b/client.js
 -  const served = servedOf(roster, ref);
 -  const [provider, ...rest] = ref.split("/");
 -  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
--}
++// src/client/composer-label.js
++var ATTRIBUTES = ["aria-label", "data-placeholder"];
++function holdComposerLabel(doc, label) {
++  doc.body.style.setProperty("--bt-placeholder", JSON.stringify(label));
++  const shell = /* @__PURE__ */ new Map();
++  const apply2 = () => {
++    for (const el of doc.querySelectorAll("[data-composer-input]")) {
++      for (const name of ATTRIBUTES) {
++        const current = el.getAttribute(name);
++        if (current === label) continue;
++        if (!shell.has(el)) shell.set(el, {});
++        shell.get(el)[name] = current;
++        el.setAttribute(name, label);
++      }
++    }
++  };
++  apply2();
++  const Observer = doc.defaultView?.MutationObserver ?? globalThis.MutationObserver;
++  const watcher = typeof Observer === "function" ? new Observer(apply2) : null;
++  watcher?.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRIBUTES });
++  return () => {
++    watcher?.disconnect();
++    for (const [el, values] of shell) {
++      if (!el.isConnected) continue;
++      for (const [name, value] of Object.entries(values)) {
++        if (value == null) el.removeAttribute(name);
++        else el.setAttribute(name, value);
++      }
++    }
++  };
+ }
 -var effortCache = /* @__PURE__ */ new Map();
 -function useEfforts(served, ref, actions) {
 -  const [fetched, setFetched] = (0, import_react13.useState)(void 0);
@@ -15761,6 +15759,7 @@ diff --git a/client.js b/client.js
 -      effortCache.set(ref, reasoning);
 -      if (live) setFetched(reasoning);
 -    }).catch(() => {
++
 +// src/client/header-effects.js
 +function installHeaderEffects({ sessions, roster, actions, doc = globalThis.document }) {
 +  if (!doc) return () => {
@@ -17952,7 +17951,7 @@ diff --git a/client.js b/client.js
        key: item.name,
        label: item.name,
        hint: attached.has(item.name) ? statusText(statuses[item.name]) : void 0,
-@@ -7372,48 +7372,82 @@ function BotCapabilitiesCard({ bot, roster, actions, run, Card: Card2, SwitchRow
+@@ -7372,49 +7372,84 @@ function BotCapabilitiesCard({ bot, roster, actions, run, Card: Card2, SwitchRow
    );
  }
  
@@ -17989,11 +17988,11 @@ diff --git a/client.js b/client.js
    counts.set(botId, count);
 -  for (const listener of countListeners) listener();
 +  notify();
- }
++}
 +function noteFailure(botId, reason) {
 +  failures.set(botId, reason);
 +  notify();
-+}
+ }
 +var countState = (botId) => ({ count: counts.get(botId) ?? null, failure: failures.get(botId) ?? null });
  function useMemoryCount(botId, actions) {
 -  const [count, setCount] = (0, import_react17.useState)(counts.get(botId) ?? null);
@@ -18049,12 +18048,15 @@ diff --git a/client.js b/client.js
 -      (0, import_react17.createElement)(MemoryIcon),
 -      (0, import_react17.createElement)("span", { className: "bt-mem-row-copy" }, label),
 -      (0, import_react17.createElement)("span", { className: "bt-mem-row-go" }, t("Manage"), (0, import_react17.createElement)(ChevronRightIcon))
+-    )
 +      (0, import_react28.createElement)(MemoryIcon),
 +      (0, import_react28.createElement)("span", { className: "bt-mem-row-copy" }, label),
 +      (0, import_react28.createElement)("span", { className: "bt-mem-row-go" }, t("Manage"), (0, import_react28.createElement)(ChevronRightIcon))
-     )
++    ),
++    failure === null ? null : (0, import_react28.createElement)("div", { className: "bt-note", role: "status" }, label)
    );
  }
+ function ago(at, now) {
 @@ -7428,45 +7428,50 @@ function ago(at, now) {
    return format.format(-Math.round(hours / 24), "day");
  }
