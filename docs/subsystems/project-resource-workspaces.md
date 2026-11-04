@@ -92,3 +92,7 @@ replay commands and explicit validation boundary.
 SDK Task-role aliases may retain their confirmed idle cwd across Attempts. A new immutable Workspace record names reusesWorkspaceId and original storageAttemptId, while the former record becomes retained. Cross-resource checkout still imports only sealed Git objects and reset/clean remains candidate-bound. Cleanup validates against the original storageAttemptId path and never removes a path another allocated alias uses. Configuration/root/repository changes do not reuse an old path or backend binding.
 
 An unsealed same-base Developer draft may also be retained after confirmed exit; it is explicitly marked retainedDraft and never reset to its seed. A changed sealed candidate, dirty read-only checkout, unexpected HEAD or incomplete allocation refuses reuse. Retained drafts remain unverified and subject to ordinary path/commit/test/Review gates.
+
+## Workspace baseline and explicit inputs — #2325
+
+#2325 adds ensureCommits over the existing hash-verified bundle transport. Reused resource clones receive exact missing base/seed/upstream commits before checkout; registered workspace ownership and release checks still precede reuse. Materialization metadata distinguishes base, seed, expected/actual checkout and retained draft. Only explicitly admitted operator inputs travel; host object presence alone is not an input grant. Existing candidate/sealing/transport byte bounds remain.

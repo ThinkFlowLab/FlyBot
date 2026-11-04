@@ -134,3 +134,7 @@ Operation names scope requestId, so different operations may reuse a key. When a
 #2292 Attempt summaries include bounded release status/target and a release.status source reference; they exclude release notes, credential references and actor authentication metadata. Release commands reuse original command receipts and Effects.
 
 #2292 Task projections carry bounded Chief admission failure references and expose blocked/chief-recovery rather than an indefinite apparently pending admission. Successful admission clears that active marker while preserving historical execution failure.
+
+## Workspace baseline and explicit inputs — #2325
+
+#2325 adds inspect/integrate purpose to scoped approved input metadata and sanitized workspace materialization facts (base/seed/expected/actual SHA). No private paths, key material or workspace contents are added to Attempt projections.

@@ -1697,3 +1697,105 @@ test('publication revalidates operator repository capability before any provider
   await assert.rejects(f.rt.projectEffects.perform({ kind: 'github.publish', key: 'repository-revoked-probe', projectId: 'p1', taskId: f.task.id, payload: { attemptId: attempt.id, candidateSha: attempt.candidateSha, initiatedBy: 'owner-1' } }), /not provisioned/)
   assert.equal(attempt.evidence.tests.passed, true); assert.equal(f.published.length, 1)
 })
+
+async function baselineResourceFixture(t, kind = 'local') {
+  const f = await setup(t, undefined, { pool: true })
+  f.rt.projectScheduler.wake = () => Promise.resolve(); f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  const resourceRoot = join(f.directory, 'resource'); mkdirSync(resourceRoot)
+  f.rt.config.projectResources = { baseline: { type: kind, root: resourceRoot, ...(kind === 'docker' ? { container: 'isolated-fixture', user: '1000:1000' } : {}), capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(f.directory, 'sdk-home'), configDir: join(f.directory, 'sdk-config'), model: 'fixture/model' } } } } }
+  f.rt.state.projectResourceHealth = { baseline: { status: 'ready' } }; f.rt.state.projectHarnessHealth = { 'p1:baseline:codex': { status: 'ready' } }
+  if (kind === 'docker') {
+    // Real Git and bundle verification, emulated transport; actual Docker acceptance is separate.
+    f.rt.projectResources.command = async (_p, _r, { argv, cwd }) => ({ stdout: execFileSync(argv[0], argv.slice(1), { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) })
+    f.rt.projectResources.uploadFile = async (_p, _r, source, target) => copyFileSync(source, target)
+  }
+  await f.rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'developer', execution: { harness: 'codex', resourceIds: ['baseline'] } }, alice)
+  await f.start('baseline-recovery')
+  const previous = f.attempt(), task = f.rt.state.tasks[f.task.id], definition = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
+  await f.rt.projectDelivery.preparePoolRole(task, { id: 'first-baseline', attemptId: previous.id, generation: 1 }, definition)
+  const workspace = previous.workspaces.developer, lease = previous.resourceLeases.developer
+  await f.rt.projectResources.release(lease.id, lease.generation); previous.status = 'interrupted'
+  writeFileSync(join(f.repository, 'host-repair.txt'), 'Updated trusted baseline\n'); git(f.repository, ['add', 'host-repair.txt']); git(f.repository, ['commit', '-m', 'Advance trusted base'])
+  const latest = git(f.repository, ['rev-parse', 'HEAD'])
+  const recover = async () => {
+    const id = await f.rt.projectDelivery.reworkPool({ task, claim: { id: 'baseline-rework', attemptId: previous.id, botId: 'p1:chief' }, reason: 'Use repaired baseline', force: true })
+    return { next: f.rt.state.projectAttempts[id], prepare: () => f.rt.projectDelivery.preparePoolRole(task, { id: 'next-baseline', attemptId: id, generation: 2 }, definition) }
+  }
+  return { ...f, previous, task, definition, workspace, latest, recover }
+}
+for (const kind of ['local', 'docker']) test(kind + ' recovery materializes the new baseline in the actual reused SDK checkout', async t => {
+  const f = await baselineResourceFixture(t, kind), { next, prepare } = await f.recover()
+  assert.equal(next.baseSha, f.latest)
+  await prepare()
+  assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), f.latest)
+  assert.equal(readFileSync(join(next.workspaces.developer.path, 'host-repair.txt'), 'utf8'), 'Updated trusted baseline\n')
+  assert.equal(next.workspaces.developer.path, f.workspace.path)
+  assert.equal(next.workspaces.developer.materialization.expectedCheckout, f.latest)
+  assert.equal(next.workspaces.developer.materialization.actualCheckout, f.latest)
+})
+test('a changed baseline cannot overwrite a retained unsealed SDK draft', async t => {
+  const f = await baselineResourceFixture(t)
+  writeFileSync(join(f.workspace.path, 'code.mjs'), 'export const preservedDraft = true;\n')
+  const { next, prepare } = await f.recover()
+  await assert.rejects(prepare(), error => error.code === 'bot/workspace-baseline' && error.details?.recovery === 'preserve-draft-and-admit-input')
+  assert.equal(readFileSync(join(f.workspace.path, 'code.mjs'), 'utf8'), 'export const preservedDraft = true;\n')
+  assert.equal(next.candidateSha, undefined)
+})
+
+test('an explicitly admitted updated baseline preserves a dirty SDK draft for real integration', async t => {
+  const f = await baselineResourceFixture(t)
+  writeFileSync(join(f.workspace.path, 'code.mjs'), 'export const preservedDraft = true;\n')
+  const ref = 'refs/remotes/operator/repaired-base'; git(f.repository, ['update-ref', ref, f.latest])
+  const { next, prepare } = await f.recover()
+  const state = await f.rt.projectEndpoint('project-development', { version: 'project-development/v1', kind: 'query', name: 'attempt.integration-state', projectId: 'p1', payload: { attemptId: next.id } }, alice)
+  assert(state.result.availableInputs.some(row => row.sha === f.latest && row.ref === ref))
+  await f.rt.projectEndpoint('project-development', { version: 'project-development/v1', kind: 'command', name: 'attempt.integration-bind', projectId: 'p1', requestId: 'retain-and-integrate-base', payload: { attemptId: next.id, generation: state.result.generation, expectedWorkspace: null, inputs: [{ ref, sha: f.latest }] } }, alice)
+  await prepare()
+  assert.equal(readFileSync(join(next.workspaces.developer.path, 'code.mjs'), 'utf8'), 'export const preservedDraft = true;\n')
+  assert.equal(next.workspaces.developer.materialization.retainedDraft, true)
+  assert.notEqual(next.workspaces.developer.materialization.actualCheckout, next.baseSha)
+  assert.equal(next.integrationInputs[0].sha, f.latest)
+})
+
+test('inspect-only approved PR input is available without becoming a required merge or candidate parent', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false })
+  const snapshot = (await integrationCall(f, 'query', 'attempt.integration-state', {})).result
+  await integrationCall(f, 'command', 'attempt.integration-bind', { inputs: [{ ref: f.ref, sha: f.source, purpose: 'inspect' }], generation: snapshot.generation, expectedWorkspace: snapshot.snapshot }, alice, 'inspect-pr-only')
+  writeFileSync(join(f.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
+  await f.rt.projectDelivery.completePoolRole({ task: f.task, claim: { attemptId: f.attempt.id }, role: 'developer', outputs: {} })
+  assert.equal(f.attempt.evidence.approvedIntegrations, undefined)
+  assert.notEqual(f.attempt.candidateSha, f.source)
+  assert.throws(() => git(f.repository, ['merge-base', '--is-ancestor', f.source, f.attempt.candidateSha]))
+})
+
+test('actual Chief route admits a pinned inspect input and Dev receives the PR object on the resource', async t => {
+  const f = await baselineResourceFixture(t, 'docker'), attempt = f.previous, task = f.task
+  attempt.status = 'running'
+  const head = git(f.repository, ['rev-parse', 'HEAD'])
+  writeFileSync(join(f.repository, 'pr-input.txt'), 'A PR commit outside the pinned base\n'); git(f.repository, ['add', 'pr-input.txt']); git(f.repository, ['commit', '-m', 'Independent PR input'])
+  const sha = git(f.repository, ['rev-parse', 'HEAD']), ref = 'refs/remotes/operator/pr-2'
+  git(f.repository, ['update-ref', ref, sha]); git(f.repository, ['reset', '--hard', head])
+  assert.throws(() => git(f.workspace.path, ['cat-file', '-e', sha]))
+  const carrier = { id: 'public-p1', projectId: 'p1', visibility: 'public', botId: 'a', sessionId: 'a', carrierGeneration: 1 }
+  f.rt.state.projectAgents ??= {}; f.rt.state.projectAgents['public-p1'] = carrier
+  f.rt.state.projectChiefPolicies = { p1: { enabled: true, authorityMemberId: alice.memberId, revision: 1, inspection: { thresholds: { maxHandoffsWithoutProgress: 3, longExecutionMs: 10000, missingHeartbeatMs: 5000, longWaitMs: 8000 }, prompt: 'Inspect' } } }
+  let chief
+  f.rt.projectAgents.startChiefJob = async args => { chief = args; return 'deterministic-chief' }
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }), rework: args => f.rt.projectDelivery.reworkPool(args) })
+  const run = await f.rt.projectChiefControl.request('p1', 'inspection', { requestId: 'recover-pr-input' })
+  await f.rt.projectChiefControl.pump()
+  const facts = chief.projectFacts.tasks.find(row => row.taskId === task.id)
+  assert(facts.repositoryRecovery.availableInputs.some(row => row.sha === sha))
+  await assert.rejects(f.rt.projectDelivery.admitChiefInputs(task.id, [{ ref, sha }], alice, facts), /Chief job authority/)
+  await assert.rejects(f.rt.projectDelivery.admitChiefInputs(task.id, [{ ref: 'refs/remotes/operator/foreign', sha }], chief.actor, facts), /outside the approved snapshot/)
+  await assert.rejects(f.rt.projectDelivery.admitChiefInputs(task.id, [{ ref, sha }], chief.actor, { ...facts, generation: facts.generation - 1 }), /generation changed/)
+  assert.equal(attempt.integrationInputs, undefined)
+  await chief.onResult({ ok: true, text: JSON.stringify({ summary: 'Inspect the requested PR', decisions: [{ taskId: task.id, action: 'route', targetBotId: 'p1:developer', reason: 'The PR object is approved; inspect it', repositoryInputs: [{ ref, sha, purpose: 'inspect' }] }] }), executionEvidence: { kind: 'native-chief', chiefRunId: run.id, carrierGeneration: carrier.carrierGeneration, botId: carrier.botId, sessionId: carrier.sessionId } })
+  assert.equal(run.status, 'done', run.failure)
+  assert.equal(attempt.integrationInputs[0].purpose, 'inspect')
+  assert.equal(task.collaboration.botId, 'p1:developer')
+  await f.rt.projectDelivery.preparePoolRole(task, { id: 'inspect-after-chief', attemptId: attempt.id, generation: task.collaboration.generation }, f.definition)
+  assert.equal(git(attempt.workspaces.developer.path, ['cat-file', '-t', sha]), 'commit')
+  assert.equal(git(attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), attempt.baseSha)
+  assert.equal(attempt.candidateSha, undefined)
+})

@@ -39,6 +39,16 @@ export function createResourceWorkspaces(rt, { hostGit, artifacts }) {
     workspace.transfers ??= []
     workspace.transfers.push({ sha256: artifact.sha256, commit: artifact.commit, resourceId: workspace.resourceId, projectId: workspace.projectId, attemptId: workspace.attemptId, at: Date.now() })
   }
+  async function ensureCommits(workspace, attempt, commits) {
+    for (const commit of [...new Set(commits.filter(Boolean))]) {
+      if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Workspace input needs an exact commit SHA')
+      await hostGit(workspace.repository, ['cat-file', '-e', `${commit}^{commit}`])
+      try { await git(workspace, ['cat-file', '-e', `${commit}^{commit}`]); continue }
+      catch { /* Import only the explicitly selected host object, never ambient refs/configuration. */ }
+      const artifact = await bundle(workspace.repository, commit, join(artifacts, attempt.id))
+      try { await putBundle(workspace, artifact) } finally { await rm(artifact.path, { force: true }) }
+    }
+  }
   async function allocate(workspace, attempt) {
     const resource = resourceOf(workspace)
     await rt.projectResources.command(workspace.projectId, workspace.resourceId, { cwd: resource.root, argv: ['mkdir', '-p', workspace.path] })
@@ -76,5 +86,5 @@ export function createResourceWorkspaces(rt, { hostGit, artifacts }) {
     if (!workspace.path.startsWith(resource.root + '/delivery/') || workspace.path !== join(resource.root, 'delivery', workspace.storageAttemptId ?? workspace.attemptId, workspace.role)) throw new Error('Unregistered remote cleanup target')
     await rt.projectResources.command(workspace.projectId, workspace.resourceId, { cwd: resource.root, argv: ['rm', '-rf', '--', workspace.path] })
   }
-  return { allocate, git, importCandidate, checkout, cleanup, bundle, putBundle }
+  return { allocate, ensureCommits, git, importCandidate, checkout, cleanup, bundle, putBundle }
 }

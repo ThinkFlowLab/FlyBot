@@ -113,3 +113,7 @@ transport. Source API changes require deliberate catalog and guide review.
 ## GitHub App credential adaptation — #2311
 
 #2311 extends the source-matched specification to29queries/34commands/186dispatches, including human-only selection and sanitized App identity/audit metadata. Deployment remains unchanged; see [GitHub setup](../github-automation.md).
+
+## Workspace baseline and explicit inputs — #2325
+
+#2325 extends the existing attempt.integration-state query with approved-source choices/materialization and attempt.integration-bind inputs with optional purpose=inspect|integrate. Counts remain29queries/34commands. Defaults retain required integration; inspect never proves a merge, test or acceptance. See [workspace contract](project-resource-workspaces.md).

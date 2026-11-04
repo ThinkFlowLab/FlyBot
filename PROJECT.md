@@ -8,6 +8,15 @@ architecture lives in [docs/architecture.md](docs/architecture.md) and
 Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 [docs/governance.md](docs/governance.md). Dated decisions: [decisions/](decisions/README.md).
 
+## Execution recovery — 2026-11-04
+
+#2325 aligns actual reused SDK/resource checkouts with pinned baseline/seed facts,
+preserves drafts and admits explicit inspect/integrate inputs through existing
+Effects. Chief selects only approved repository sources. Follow-ups: #2327 Chief
+correction, #2328 idle input-wait slots, #2330 inspection recovery. See
+[delivery contract](docs/subsystems/project-delivery.md). Live Task mutation and
+deployment remain separate from source/test delivery.
+
 ## Agent connection authorization — 2026-11-03
 
 #2308 unifies native/external personal-agent processing through the existing

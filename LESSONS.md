@@ -13,6 +13,13 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — A refreshed baseline field does not refresh a reused checkout
+
+Seen 1×. Rework recorded the repaired base but retained an older SDK cwd. Verify
+actual checkout and source-object availability after materialization, including
+resource clones; retain dirty drafts and require explicit integration. A commit
+present in the host object database need not be reachable from the bundled base.
+
 ### 2026-11-03 — A recorded agent answer does not resume the original Task
 
 Seen 1×. Chief may ask before a role collaboration exists. Publishing advice must
