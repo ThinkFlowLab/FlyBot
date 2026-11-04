@@ -227,7 +227,7 @@ test('managed delivery definitions and role/model snapshots cannot be edited or 
   const attempt = fixture.attempt()
   assert.equal(attempt.workflowDefinition.nodes[0].model, 'fixture/model')
   for (const operation of ['graph', 'set-model', 'concurrency', 'reset', 'delete']) await assert.rejects(fixture.rt.projectEndpoint('project-workflow', { projectId: 'p1', workflowId: attempt.workflowId, operation, nodes: [] }, alice), /immutable/)
-  assert.equal(attempt.workflowVersion, 'project-delivery/v7')
+  assert.equal(attempt.workflowVersion, 'project-delivery/v8')
 })
 
 
@@ -711,7 +711,7 @@ test('human retry of a published delivery preserves its PR and rejects inconsist
   const first = f.attempt(), sha = first.candidateSha
   await f.rt.projectEndpoint('project-task-reject', { attemptId: first.id, reason: 'Add a regression' }, alice)
   const retry = await f.start('human-retry')
-  assert.deepEqual(retry.attempt.publicationBinding, { number: first.pr.number, repository: first.pr.repository, branch: first.branch, previousSha: sha, upstreamSha: first.baseSha, upstreamRef: 'main' })
+  assert.deepEqual(retry.attempt.publicationBinding, { publicationMarker: `<!-- flybot-publication:${first.publicationEffectId} -->`, number: first.pr.number, repository: first.pr.repository, branch: first.branch, previousSha: sha, upstreamSha: first.baseSha, upstreamRef: 'main' })
   assert.equal(git(retry.attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), sha)
   f.rt.projectDelivery.runReported({ id: retry.attempt.runId, taskId: f.task.id, attemptId: retry.attempt.id, projectId: 'p1', status: 'failed' })
   f.attempt().publicationBinding.repository = 'other/repo'
@@ -1957,4 +1957,18 @@ test('unknown SDK or native allocation exit cannot be bypassed by choosing anoth
   f.rt.state.projectHarnessWorkers.unknown = { id: 'unknown', attemptId: attempt.id, status: 'unreachable' }
   await assert.rejects(f.rt.projectDelivery.resumeVerification({ task, target: { id: 'p1:tester', role: 'tester' }, decisionId: 'unknown', reason: 'Cannot bypass unknown exit' }), error => error.code === 'bot/chief-recovery' && error.recovery.kind === 'worker-exit-unknown')
   assert.equal(attempt.status, 'interrupted'); assert.equal(attempt.resumptions, undefined)
+})
+
+test('Reviewer approve automatically commits a host merge intent after the exact candidate publication', async t => {
+  const f = await setup(t)
+  f.rt.config.projectRepositories['example/demo'].mergePolicy = { enabled: true, branches: ['main'], method: 'squash', requiredChecks: [] }
+  await f.start('reviewed-merge-admission'); await complete(f)
+  const attempt = f.attempt(), effect = Object.values(f.rt.state.projectEffects).find(row => row.kind === 'github.merge')
+  assert.ok(effect, 'Approved publication must automatically enter the existing host merge Effect flow')
+  assert.equal(effect.payload.candidateSha, attempt.candidateSha)
+  assert.equal(effect.payload.intent.number, attempt.pr.number)
+  assert.equal(effect.payload.intent.repository, 'example/demo')
+  assert.equal(effect.payload.intent.candidateSha, attempt.evidence.review.sha)
+  assert.equal(attempt.status, 'waiting-acceptance'); assert.notEqual(f.rt.state.tasks[f.task.id].status, 'accepted')
+  assert.equal(attempt.evidence.review.report.repositoryVerdict, 'INC', 'Host merge authorization must not fabricate a signed forge Review PASS')
 })

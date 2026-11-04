@@ -9,6 +9,11 @@ owned_paths:
   - core/test/project-child-inputs.test.js
   - core/src/host/project-merge-heads.js
   - core/test/project-merge-heads.test.js
+  - core/src/host/project-reviewed-merge.js
+  - core/src/host/project-merge-policy.js
+  - core/src/host/project-github-merge.js
+  - core/test/project-reviewed-merge.test.js
+  - core/test/project-github-merge.test.js
   - core/src/host/project-delivery.js
   - core/src/host/project-delivery-template.js
   - core/src/host/project-github.js
@@ -73,7 +78,8 @@ GitHub automation is explicit. `gh-cli` obtains the existing operator-selected G
 credential in memory, using the provided config directory; it is never placed in Bot
 context, test environment, command-line arguments or state.json. Push uses a fixed
 HTTPS URL for the provisioned Project repository and an environment-only auth header.
-Publish creates/reuses a draft PR for the unique Attempt branch. It never merges.
+Publication creates/reuses a Draft PR for the unique Attempt branch. Configured
+reviewed host merge is a separate Effect, described in the current #2331 contract below.
 M4 adds the broader project-versus-personal credential/delegation contract. Missing
 GitHub credentials fail delivery after preserving code/test/Review evidence.
 
@@ -647,3 +653,9 @@ original evidence and post-failure reconciliation boundaries.
 or Reviewer only after current requirements, clean candidate, matching evidence
 and all prior exits are verified. Same Attempt/Task-role context and immutable
 resumptions are preserved. [Recovery contract](../chief-recovery.md).
+
+#2331 adds opt-in exact-candidate host merge after valid Reviewer approval. New
+contracts are v8/pools-v5; historical Attempts remain readable. Publication stays
+a Draft artifact stage; a separate durable merge Effect readies/checks/queues or
+merges within current operator scope. Chief still accepts the Task.
+[Merge policy and API](../project-merge.md).

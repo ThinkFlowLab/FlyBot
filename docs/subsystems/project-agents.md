@@ -509,3 +509,7 @@ Personal GitHub comments explicitly reject installation credentials; project aut
 #2347 persists Chief invocation/carrier/host boundaries before execution. Native
 restart reconciliation proves the old host birth ended; SDK admission without a
 handle never falls back to cancelling the resident native Chief. Stops are bounded.
+
+#2331 Reviewer instructions permit exact-SHA approval to request the configured
+host merge flow. This grants no direct role GitHub permission, forge signature or
+Task/release acceptance authority. [Contract](../project-merge.md).

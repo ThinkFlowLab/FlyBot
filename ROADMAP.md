@@ -184,3 +184,8 @@ same-Attempt Tester/Reviewer continuation. Real disposable unmanaged DSH restart
 reaches a later original scheduled inspection with deterministic inference; paid
 model/live-instance acceptance stays separate. Legacy missing namespace evidence
 requires exact operator corroboration, never a guessed worker release.
+
+#2331: authorized host merge follows Reviewer approval through original broker/
+Effects, with Draft ready, configured CI/review/queue and unknown-write recovery.
+Runtime merge is opt-in per repository/base; contributor delivery still follows
+Owner-authorized CI/merge scope and does not authorize a deployment.

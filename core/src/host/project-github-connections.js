@@ -1,3 +1,4 @@
+import { projectMergePolicyStatus } from './project-merge-policy.js'
 // Humans select pre-provisioned connections; models never supply keys or URLs.
 import { ownEntry, setEntry } from './store.js'
 import { githubCredentialBinding, githubIdentityMetadata } from './project-github-app.js'
@@ -21,7 +22,7 @@ export function githubConfigurationStatus(settings) {
   return { configured: Boolean(settings?.credential === 'github-app' ? settings.appId && settings.installationId && settings.privateKeyFile : settings?.credential === 'gh-cli' && settings.configDir), provider: settings?.credential ?? null, login: settings?.login ?? null, appId: settings?.credential === 'github-app' ? settings.appId ?? null : null, installationId: settings?.credential === 'github-app' ? settings.installationId ?? null : null, verification: 'configuration-only; broker verifies current authorization per operation', recovery: 'Ask an authorized human to verify the selected connection; operator repairs keys/installations' }
 }
 export function projectGithubStatus(rt, project) {
-  try { return githubConfigurationStatus(projectGithubSettings(rt, project)) }
+  try { return { ...githubConfigurationStatus(projectGithubSettings(rt, project)), mergePolicy: projectMergePolicyStatus(rt.config.projectRepositories?.[project.repository], project.defaultBranch ?? 'main') } }
   catch { return { ...githubConfigurationStatus(null), verification: 'unavailable; selected connection disabled or changed' } }
 }
 export function createGithubConnections(rt, { identity = resolveGithubIdentity } = {}) {
@@ -33,11 +34,11 @@ export function createGithubConnections(rt, { identity = resolveGithubIdentity }
     const project = rt.requireProjectAccess(actor, body.projectId, configure ? 'configure' : 'read')
     const repository = body.repository ?? project.repository
     if (repository !== project.repository && !Object.values(rt.state.projectRepositories ?? {}).some(row => row.projectId === project.id && row.repository === repository)) throw refused('Repository is not associated with this Project')
-    const scoped = { ...project, repository }, previous = ownEntry(project.githubConnections ?? {}, repository)
+    const scoped = { ...project, repository, defaultBranch: Object.values(rt.state.projectRepositories ?? {}).find(row => row.projectId === project.id && row.repository === repository)?.defaultBranch ?? project.defaultBranch }, previous = ownEntry(project.githubConnections ?? {}, repository)
     const view = () => {
       let status
       try { status = githubConfigurationStatus(projectGithubSettings(rt, scoped)) } catch { status = { ...githubConfigurationStatus(null), recovery: 'Selection disabled or changed; human must reselect a provisioned connection' } }
-      return { repository, connectionId: previous?.connectionId ?? null, revision: previous?.revision ?? 0, verifiedAt: previous?.verifiedAt ?? null, identity: previous?.identity ?? null, ...status, options: Object.entries(rt.config.projectGithubConnections ?? {}).filter(([, row]) => row.enabled !== false && row.projectIds?.includes(project.id) && row.repositories?.includes(repository)).slice(0, 100).map(([id, row]) => ({ id, provider: row.credential, appId: row.appId ?? null, installationId: row.installationId ?? null, login: row.login ?? null })) }
+      return { mergePolicy: projectMergePolicyStatus(rt.config.projectRepositories?.[repository], scoped.defaultBranch ?? 'main'), repository, connectionId: previous?.connectionId ?? null, revision: previous?.revision ?? 0, verifiedAt: previous?.verifiedAt ?? null, identity: previous?.identity ?? null, ...status, options: Object.entries(rt.config.projectGithubConnections ?? {}).filter(([, row]) => row.enabled !== false && row.projectIds?.includes(project.id) && row.repositories?.includes(repository)).slice(0, 100).map(([id, row]) => ({ id, provider: row.credential, appId: row.appId ?? null, installationId: row.installationId ?? null, login: row.login ?? null })) }
     }
     if (!configure) return { connection: view() }
     if (body.expectedRevision !== (previous?.revision ?? 0) || body.connectionId !== null && (typeof body.connectionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.connectionId))) throw Object.assign(Error('GitHub connection selection revision or ID is invalid'), { code: 'bot/conflict' })

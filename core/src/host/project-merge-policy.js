@@ -14,3 +14,8 @@ export function projectMergePolicy(settings, baseBranch) {
   if (!Number.isSafeInteger(result.pollIntervalMs) || result.pollIntervalMs < 5000 || result.pollIntervalMs > 3600000 || !Number.isSafeInteger(result.maxWaitMs) || result.maxWaitMs < result.pollIntervalMs || result.maxWaitMs > 604800000 || value.requireGithubReview !== undefined && typeof value.requireGithubReview !== 'boolean') throw new Error('Project merge timing/review policy is invalid')
   return result
 }
+
+export function projectMergePolicyStatus(settings, baseBranch) {
+  try { const policy = projectMergePolicy(settings, baseBranch); return { configured: settings?.mergePolicy?.enabled === true, enabled: Boolean(policy), status: policy ? 'enabled' : 'disabled', policy } }
+  catch { return { configured: true, enabled: false, status: 'invalid', policy: null, reason: 'Operator merge policy needs current repository/branch configuration' } }
+}

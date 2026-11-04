@@ -1663,6 +1663,16 @@
                 "type": "null"
               }
             ]
+          },
+          "merge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MergeState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -1851,20 +1861,8 @@
           "evidence": {
             "type": "object",
             "properties": {
-              "tests": {
-                "$ref": "#/components/schemas/TestVerification"
-              },
-              "execution": {
-                "type": "object",
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                }
-              },
-              "review": {
-                "$ref": "#/components/schemas/JsonValue"
-              },
-              "implementation": {
-                "$ref": "#/components/schemas/JsonValue"
+              "merge": {
+                "$ref": "#/components/schemas/MergeEvidence"
               }
             },
             "additionalProperties": true
@@ -1932,6 +1930,9 @@
               "recent",
               "source"
             ]
+          },
+          "merge": {
+            "$ref": "#/components/schemas/MergeState"
           }
         },
         "additionalProperties": true,
@@ -4423,6 +4424,14 @@
                 "type": "null"
               }
             ]
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "publicationMarker": {
+            "type": "string",
+            "maxLength": 300
           }
         },
         "additionalProperties": true,
@@ -5102,6 +5111,254 @@
           "at"
         ]
       },
+      "ProjectMergePolicy": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": "project-merge-policy/v1",
+            "type": "string"
+          },
+          "baseBranch": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "squash",
+              "merge",
+              "rebase"
+            ]
+          },
+          "requiredChecks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "appId": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ]
+            },
+            "maxItems": 50
+          },
+          "requireGithubReview": {
+            "type": "boolean"
+          },
+          "pollIntervalMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 3600000
+          },
+          "maxWaitMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 604800000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "baseBranch",
+          "method",
+          "requiredChecks",
+          "requireGithubReview",
+          "pollIntervalMs",
+          "maxWaitMs"
+        ]
+      },
+      "ProjectMergePolicyStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled",
+              "invalid"
+            ]
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectMergePolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "configured",
+          "enabled",
+          "status",
+          "policy"
+        ]
+      },
+      "MergeState": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": "project-reviewed-merge/v1",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "queued",
+              "blocked",
+              "unknown",
+              "merged",
+              "cancelled"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "effectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "candidateSha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "mergeCommitSha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseBranch": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "squash",
+              "merge",
+              "rebase"
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextCheckAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadlineAt": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "status",
+          "candidateSha"
+        ]
+      },
+      "MergeEvidence": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "mergeCommitSha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "maxLength": 200
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "baseBranch": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "policySha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "reviewSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "effectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "scope": {
+            "const": "provider-confirmed-merge-observation",
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/GithubAutomationIdentity"
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "sha",
+          "mergeCommitSha",
+          "repository",
+          "number",
+          "baseBranch"
+        ]
+      },
       "DevelopmentQueryInboxListPayload": {
         "type": "object",
         "properties": {
@@ -5706,6 +5963,9 @@
                   ]
                 },
                 "maxItems": 100
+              },
+              "mergePolicy": {
+                "$ref": "#/components/schemas/ProjectMergePolicyStatus"
               }
             },
             "additionalProperties": true,
@@ -8710,7 +8970,8 @@
               "integrationAdmissions",
               "testHistory",
               "preparationFailures",
-              "resumptions"
+              "resumptions",
+              "merge"
             ]
           },
           "offset": {
@@ -10940,6 +11201,9 @@
                   ]
                 },
                 "maxItems": 100
+              },
+              "mergePolicy": {
+                "$ref": "#/components/schemas/ProjectMergePolicyStatus"
               }
             },
             "additionalProperties": true,
@@ -22795,6 +23059,9 @@
               },
               "recovery": {
                 "type": "string"
+              },
+              "mergePolicy": {
+                "$ref": "#/components/schemas/ProjectMergePolicyStatus"
               }
             },
             "additionalProperties": true
@@ -29695,7 +29962,7 @@
       "notes": "Configuration metadata only; never returns private key path, JWT or installation token. No network probe.",
       "implementation": {
         "path": "core/src/host/project-github-connections.js",
-        "sha256": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d"
+        "sha256": "5c946368326c970c2d6b6758e5fbc7c6b8a067d9ec9df1e7ac0019eb3e979040"
       }
     },
     {
@@ -29861,7 +30128,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       }
     },
     {
@@ -29939,7 +30206,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       }
     },
     {
@@ -30017,7 +30284,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       }
     },
     {
@@ -30095,7 +30362,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       }
     },
     {
@@ -30651,7 +30918,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       }
     },
     {
@@ -30973,7 +31240,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       }
     },
     {
@@ -31055,7 +31322,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -31133,7 +31400,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -31294,7 +31561,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904"
+        "sha256": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110"
       }
     },
     {
@@ -31372,7 +31639,7 @@
       "notes": "Private command effects/results remain visible only to the matching independent principal.",
       "implementation": {
         "path": "core/src/host/project-effects.js",
-        "sha256": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549"
+        "sha256": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63"
       }
     },
     {
@@ -31888,7 +32155,7 @@
       "notes": "Selects an existing connection ID; never accepts keys, URLs or tokens. Bot/watch authority cannot select or replace credentials. May perform read-only authentication verification.",
       "implementation": {
         "path": "core/src/host/project-github-connections.js",
-        "sha256": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d"
+        "sha256": "5c946368326c970c2d6b6758e5fbc7c6b8a067d9ec9df1e7ac0019eb3e979040"
       }
     },
     {
@@ -33182,7 +33449,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -33290,7 +33557,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -33397,7 +33664,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -33491,7 +33758,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -33585,7 +33852,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -33694,7 +33961,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       }
     },
     {
@@ -34269,7 +34536,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904"
+        "sha256": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110"
       }
     },
     {
@@ -34369,7 +34636,7 @@
       "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904"
+        "sha256": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110"
       }
     },
     {
@@ -35239,7 +35506,7 @@
       "notes": "Does not authorize blind replay of an unknown release/PR outcome. Use its domain reconciliation first.",
       "implementation": {
         "path": "core/src/host/project-effects.js",
-        "sha256": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549"
+        "sha256": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63"
       }
     },
     {
@@ -44014,7 +44281,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -44111,7 +44378,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -44204,7 +44471,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -44296,7 +44563,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -44388,7 +44655,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -44767,7 +45034,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -44843,7 +45110,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8"
+        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -45151,7 +45418,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904"
+        "sha256": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -45249,7 +45516,7 @@
       "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904"
+        "sha256": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -45325,7 +45592,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904"
+        "sha256": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -45770,7 +46037,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa"
+        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
       },
       "aliasOf": "development.query.pools"
     },
@@ -46189,7 +46456,7 @@
       "core/src/host/project-agents.js": "c4d12c7e047667c11c902953cffd243177f36485f2b0ee3c02ef1ed76fa58b95",
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
-      "core/src/host/project-chief-control.js": "d3237afcdd34b8b5f2ed2807f0e2512c2a8f47e9719ecbb0be67e2b17197e904",
+      "core/src/host/project-chief-control.js": "1d68cf9ae5b9356e996ddced5719165d0eac733fa377ff94377cba44bbaa2110",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
       "core/src/host/project-chief-protocol.js": "a09d85e04171b22625d3eed131dd6a5227dc1a946ad39d8a59f017bb75f71936",
       "core/src/host/project-chief-recovery.js": "b4efeef007222a87249a808bc49deb84e0e6014c700bb661629a9eb8426327f7",
@@ -46203,11 +46470,11 @@
       "core/src/host/project-context-memory.js": "933893b3d6b7b2c7a79365991c1303fb03a665d9529f16ccf57429a753ad4cd0",
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
-      "core/src/host/project-delivery-template.js": "daa5cc8185abc1ec84421ae3fcd5574a50573cfd1a7c4cb10941158e29c79a13",
-      "core/src/host/project-delivery.js": "973fbc98dd4e00a2634f680b77f0eb83d4ae0cbc9fd9071c3c2e1d1e4042dbe8",
-      "core/src/host/project-development-service.js": "3b05f9d6afaebacc4260eaea2ca1cd9e63bdc0436d97bfe003d4196dea1c61aa",
+      "core/src/host/project-delivery-template.js": "4c4f204fdb1002f90593e1cb27ef183a7bdf0529bdc009b42a857be57c14ce91",
+      "core/src/host/project-delivery.js": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff",
+      "core/src/host/project-development-service.js": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
-      "core/src/host/project-effects.js": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549",
+      "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
       "core/src/host/project-execution-boundary.js": "9e7afe568024e19517a3d5430a0483a6ea5e2c910a53de056d83db3896d3eb16",
       "core/src/host/project-execution-capacity.js": "751b48e26f6ed1ad4c000337174b39ab4c113c494cbb7bd5a2a8369cbae10aa4",
@@ -46216,15 +46483,17 @@
       "core/src/host/project-execution-profile.js": "7106593979d6e21b9e1dab567c8628a7d0252976ed47d42dace337944725da59",
       "core/src/host/project-git-sandbox.js": "b579b01dcce0708275e9f735d08932481369803382b8f7d24af69639608d724f",
       "core/src/host/project-github-app.js": "d2cf077873271125c0ad78acde8c1cb039261a4a9229964a4117d1a72081c3ca",
-      "core/src/host/project-github-connections.js": "471e5e07d424fa6a7b22b173545c2232836ebcf45b76f8b9e2f1a1af376bfd2d",
+      "core/src/host/project-github-connections.js": "5c946368326c970c2d6b6758e5fbc7c6b8a067d9ec9df1e7ac0019eb3e979040",
+      "core/src/host/project-github-merge.js": "aa1c31931f46f8214db097e6b06efccb197da522c2e397ac67570040fc6d682b",
       "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
-      "core/src/host/project-github.js": "bf6d3891a6fa9c0516cd330d3322a750fc6db8813752f7801d4d9760fca84061",
+      "core/src/host/project-github.js": "fcb527b191d5b6a77b7c10bad3dad0d22f13e8e4addea4ccd9b2933be71bf601",
       "core/src/host/project-harness-turn.js": "77b137b906444858326049d62d66b2f3299f06048f2451aa9b2a61d4154e018e",
       "core/src/host/project-harness.js": "db8aa73099164cb395625d833b13fa443f238d5083eaeab63917847338c66685",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
+      "core/src/host/project-merge-policy.js": "78b5c4830e5466d102298d5ded6665f65f89537d908e1cf85b0438b868548552",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
       "core/src/host/project-native-sessions.js": "4b825e7e509d0a9a0279ee7a70d1de383378a1892b7822dc7d478bd46de21c00",
       "core/src/host/project-pools.js": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883",
@@ -46236,17 +46505,18 @@
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
       "core/src/host/project-resources.js": "24582ddb88111dc46cec134b5bb4489c8c530448b827ffba998d97e6f3b5401e",
+      "core/src/host/project-reviewed-merge.js": "123a866f242de3ec53e9ec3c4d6c5ab7deec1ccc28361363c73fc5d99539c458",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",
       "core/src/host/project-role-governance.js": "fe9ca70113666b0223f55b9225890609c5a1e7ddcb9b6105a3dc0edc3b2ef005",
-      "core/src/host/project-role-policy.js": "19f4b5275bf62d1f39c153e542ffd3eff0231168f5fc7da7e9c831789e41287e",
+      "core/src/host/project-role-policy.js": "c2650a9872cbc0d8fad695e27154d2a5010cc35b2bda4e5ea24471488fc0ea85",
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
       "core/src/host/project-runtime-setup.js": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0",
       "core/src/host/project-scheduled-tasks.js": "aa052f4eefde7ee4313375dac350c5aa8ea734da7b35baba4fe2a627fce2612a",
       "core/src/host/project-scheduler.js": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
-      "core/src/host/project-service-views.js": "d54e38759b9641e3d8eba486812ead5fea2e31097fe1ac17fb1703fd2734540e",
+      "core/src/host/project-service-views.js": "11edc8b334a87e0ecb9da076a2d667e13abb465c2321fa2fe3b5c75cb62be4ec",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",

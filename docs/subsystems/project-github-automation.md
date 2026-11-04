@@ -30,3 +30,10 @@ rotation/restart, malformed responses, native/FBA/human selection authority,
 durable runtime receipts and restart. Existing broker suites exercise both
 providers with deterministic GitHub responses and real local Git. See the
 [operator and identity contract](../github-automation.md); live App acceptance is separate.
+
+The same selected connection now exposes bounded merge-policy metadata and carries
+host `github.merge` reads/writes. Every request revalidates current credentials and
+original publisher identity; changing providers or installation scope stops the
+intent. Merge policy never grants a personal agent configuration rights. See
+[merge operations](../project-merge.md) and the opt-in disposable own-fork probe
+`dev/demo/github-merge.mjs` (actual transport, no independent model review claim).
