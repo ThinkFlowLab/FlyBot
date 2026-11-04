@@ -81,6 +81,9 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
     row('Read-only', facts.readOnly),
   ].filter(Boolean)
   const recent = entries.slice(-REPORT_ENTRIES)
+  // The team file, right after the table that counts the team (#2394): a report about a team has to
+  // say what that team is saved in, in the shape the two file lines below already have.
+  const stateFile = facts.stateFile === undefined ? [] : ['', `state file: ${facts.stateFile}`]
   // The journal is only mentioned while the host runs one: an off journal is not a fact about
   // this host, and a stopped one is exactly what a report about a bug it was meant to catch misses.
   // Its file follows in the same shape (#2388): the sentence says whether the host records, and
@@ -90,7 +93,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
   // The log's own line, in the journal's shape (#2134): a host whose log is off says nothing, and
   // every other bundle gets the one fact the recent errors cannot show — whether they were written.
   const log = facts.diagnosticsLog === undefined ? [] : ['', `diagnostics log: ${facts.diagnosticsLog}`]
-  const out = [...lines, ...journal, ...log, '']
+  const out = [...lines, ...stateFile, ...journal, ...log, '']
   out.push(recent.length === 0 ? 'No host errors recorded.' : `Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
   if (recent.length > 0) out.push('```', ...recent.map(entryLine), '```')
   const stacks = recent.filter(entry => entry.stack).slice(-3)
@@ -124,7 +127,7 @@ const dshVersion = () => {
 }
 
 export function install(rt) {
-  const { ctx, home, config } = rt
+  const { ctx, home, statePath, config } = rt
   const logPath = join(home, 'logs', 'diagnostics.jsonl')
   const toFile = config.diagnosticsFile !== false
   let fresh = []
@@ -237,20 +240,20 @@ export function install(rt) {
     }))
   }
 
-  // The journal's file, named without opening it (#2388). `lstat` answers what the name is: a
-  // missing file is the next save's to create, a plain file of this host's own has a size and a
-  // last write time worth reporting, and a link or a file with a second name is bytes that are
-  // not this host's to read — so the answer is a sentence in every case, never a throw, and no
-  // read permission is needed for a file that would otherwise have to be opened.
+  // A file named without opening it (#2388): `lstat` answers what the name is — a missing file is
+  // the writer's to create, a plain file of this host's own has a size and a last write time worth
+  // reporting, and a link, a second name or a check that cannot run is bytes this report may not
+  // quote. So the answer is a sentence in every case, never a throw, and no read permission is
+  // needed for a file that would otherwise have to be opened.
   const NOT_PLAIN = 'not a plain file (nothing is read or written)'
   // A path is cleaned with this host's own home, not the process's: a machine shows `~/.dsh/...`
   // and a test's temporary home shows `~/...`, so no report carries the folder a person lives in.
   const cleanPath = text => cleanText(text, { home, redact: rt.redactSecrets })
-  const journalFile = async (path) => {
+  const fileFact = async (path, { missing }) => {
     if (path === undefined) return undefined
     try {
       const kind = await fileKind(path)
-      if (kind === 'absent') return 'none yet'
+      if (kind === 'absent') return missing
       if (kind !== 'real') return NOT_PLAIN
       const info = await lstat(path)
       return `${cleanPath(path)} (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`
@@ -272,6 +275,10 @@ export function install(rt) {
       os: `${platform()} ${release()} ${arch()}`,
       node: process.version,
       team: `${count(bots.length, 'Bot', 'Bots')}, ${rt.state.mainBotIds.length} Main, ${count(groups, 'group chat', 'group chats')}`,
+      // The file that team is saved in, in the same shape as the two below (#2394): `lstat` only,
+      // because the team file holds members and messages and a report may describe it and never
+      // open it. `none yet` is a computer that has not saved this team — naming it creates nothing.
+      stateFile: await fileFact(statePath, { missing: 'none yet (this computer has not saved the team)' }),
       models: models.length > 0 ? models.join(', ') : undefined,
       // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
@@ -289,7 +296,7 @@ export function install(rt) {
       // The file that sentence is about, in the same shape (#2388): the path with the home as `~`
       // and its size and last write time, `none yet` before the first save creates it, or the one
       // sentence for a leaf this host would not read. A host without the journal says nothing.
-      journalFile: journal === undefined ? undefined : await journalFile(rt.journal.path),
+      journalFile: journal === undefined ? undefined : await fileFact(rt.journal.path, { missing: 'none yet' }),
       // Where those errors are kept is the other half of that sentence, in the same shape: a host
       // with the log off says nothing (#2134), a host whose appends land says so, and a refused
       // leaf or a failed append names its own reason — the words stderr already used, never the
