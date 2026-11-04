@@ -33904,7 +33904,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3"
+        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
       }
     },
     {
@@ -36999,7 +36999,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3"
+        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
       }
     },
     {
@@ -37104,7 +37104,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3"
+        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
       }
     },
     {
@@ -47896,7 +47896,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3"
+        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -47999,7 +47999,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3"
+        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -48075,7 +48075,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3"
+        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -48944,7 +48944,7 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "251c2db8174373bb7df3b9e054a2dcb4e9c752a7cf26f67f48dd9bddeb2a8bb3",
+      "core/src/host/project-chief-control.js": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
       "core/src/host/project-chief-protocol.js": "416d57a83ae6064f04d13e70ffba63d8732b4cee4598e37fdcbf63ece7181a79",
       "core/src/host/project-chief-recovery.js": "c80a9d791aab06d4b343e8740a25a471ddf93e0af52b59dd9b7e6fc835c0d824",

@@ -324,3 +324,5 @@ A failed correction dispatch is transport-incomplete, not a pending model turn. 
 A merge-to-Chief request is an idempotent scoped inspection, separate from Task acceptance. The delivery Effects adapter waits for existing Chief work rather than starting concurrent judgements for the same Project. A running judgement that predates merge evidence receives `stale-snapshot` correction with the changed merge field and a fresh snapshot in the same Run/Session. No old input receipt is rebased and no next role is selected by the host.
 
 A successful current Chief decision resolves its own waiting marker through the existing path; historical correction/failure records remain on the original Run. New merge facts do not erase all pending feedback, rework or criteria failures. Notification delivery, Chief execution outcome and Task acceptance remain separately observable.
+
+A merge-specific inspection remains bound to its source Task/Attempt/candidate and original merge evidence on every snapshot, including correction. Replacement or withdrawn evidence invalidates that Run instead of silently migrating its acceptance authority to a new candidate.

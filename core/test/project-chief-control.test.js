@@ -678,3 +678,16 @@ test('a merge arriving during Chief execution corrects the original judgement be
   assert.equal(f.task.chiefDecisionIssue, undefined)
   assert.equal(run.correction.status, 'resolved', 'Original correction history remains on its Run')
 })
+
+test('merge-specific Chief correction cannot migrate to a replacement candidate', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  run.source = { mergeEffectId: 'original-merge', attemptId: 'a', candidateSha: f.rt.state.projectAttempts.a.candidateSha }
+  f.rt.state.projectAttempts.a.evidence.merge = { effectId: 'original-merge', sha: run.source.candidateSha, mergeCommitSha: 'b'.repeat(40) }
+  f.rt.state.projectAttempts.a.candidateSha = 'replacement-candidate'
+  await f.request.onResult(f.result())
+  assert.equal(run.status, 'correction-pending')
+  await f.control.pump()
+  if (run.status === 'running') await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0, 'A notification for the old candidate cannot authorize acceptance of its replacement')
+  assert.equal(run.status, 'failed')
+})

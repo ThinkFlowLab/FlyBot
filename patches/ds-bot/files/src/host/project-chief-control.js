@@ -126,6 +126,10 @@ export function createProjectChiefControl(rt) {
   }
   const scheduledState = ({ row, delivery }) => scheduledInspectionState(rt.state, row, delivery)
   async function snapshot(run) {
+    if (run.source?.mergeEffectId) {
+      const source = run.source, attempt = rt.state.projectAttempts?.[source.attemptId], task = rt.state.tasks[run.taskId ?? attempt?.taskId]
+      if (!attempt || attempt.projectId !== run.projectId || task?.projectId !== run.projectId || task.id !== attempt.taskId || task.deliveryAttemptId !== attempt.id || attempt.candidateSha !== source.candidateSha || attempt.evidence?.merge?.effectId !== source.mergeEffectId || attempt.evidence.merge.sha !== source.candidateSha) throw refuse('Merge handoff snapshot source changed; inspect the current candidate handoff')
+    }
     const tasks = Object.values(rt.state.tasks).filter(task => task.projectId === run.projectId && (!terminal.has(task.status) || run.purpose === 'task-change' && run.taskId === task.id) && (run.taskId || run.source?.blockedTaskId ? task.id === (run.taskId ?? run.source.blockedTaskId) : true)).slice(0, 30)
     return Promise.all(tasks.map(async task => {
       const attempt = rt.state.projectAttempts?.[task.deliveryAttemptId]
