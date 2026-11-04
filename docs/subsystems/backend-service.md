@@ -129,3 +129,6 @@ transport. Source API changes require deliberate catalog and guide review.
 
 
 Chief invocation history accepts the combined configured maximum: one initial invocation, up to four protocol corrections and up to four inspection recoveries (nine records). Public schema validation covers that legal configuration; correction feedback itself retains its separate five-entry bound.
+
+
+#2336 types resource lease ownership/reclamation metadata in OpenAPI. The existing project-resources surface reports the actual reservation lifecycle; no general-purpose release/force-clear endpoint is introduced.

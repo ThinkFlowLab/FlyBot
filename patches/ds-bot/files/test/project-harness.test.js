@@ -28,7 +28,7 @@ lines.on('line',line=>{const m=JSON.parse(line);
 });`)
   const session = { id: 's', projectId: 'p', taskId: 't', attemptId: 'a', role: 'developer', definition: { role: 'developer', instructions: 'Stable developer convention', skills: [] }, execution: { harness: 'codex' }, context: { text: 'Frozen criteria and role memory' }, resourceLease: { id: 'l', resourceId: 'r', generation: 1 } }
   const workspace = { id: 'w', projectId: 'p', attemptId: 'a', role: 'developer', path: cwd }
-  const rt = { home: root, state: { tasks: { t: { id: 't', projectId: 'p' } }, projectResourceLeases: { l: { id: 'l', resourceId: 'r', projectId: 'p', attemptId: 'a', generation: 1, status: 'reserved' } } },
+  const rt = { home: root, state: { tasks: { t: { id: 't', projectId: 'p' } }, projectResourceLeases: { l: { id: 'l', resourceId: 'r', projectId: 'p', attemptId: 'a', role: 'developer', generation: 1, status: 'reserved' } } },
     config: { projectResources: { r: { type: 'local', root, capacity: 1, runtimeDir, harnesses: ['codex'], allowedProjectOwnerIds: ['owner'], profiles: { owner: { codex: { home: join(root, 'profile'), configDir: join(root, 'profile/codex'), model: 'test-model', envRefs: { OPENAI_API_KEY: 'FLYBOT_TEST_HARNESS_SECRET' } } } } } } },
     save: async () => {}, warn() {}, readProject: () => ({ id: 'p', ownerUserId: 'owner' }), requireProjectAccess(actor) { if (actor.memberId !== 'owner') throw new Error('Access denied') },
     projectDelivery: { ownsWorkspace: (projectId, path) => projectId === 'p' && path === cwd ? workspace : null, sessionFor: () => session,
@@ -562,3 +562,35 @@ await assert.rejects(harness.chiefTurn({agent:{id:'public-p',projectId:'p',lastR
 assert.equal(rt.projectResources.occupied('r'),0);
 assert.equal(Object.values(rt.state.projectResourceLeases)[0].chiefRunId,'inspection');
 });
+
+test('pre-worker SDK admission failure releases its reservation without deleting the Task context', async t => {
+  for (const kind of ['profile', 'model', 'binding']) {
+    const { rt, harness, cwd } = await fixture(t)
+    if (kind === 'profile') delete rt.config.projectResources.r.profiles
+    if (kind === 'model') delete rt.config.projectResources.r.profiles.owner.codex.model
+    if (kind === 'binding') {
+      const { taskSession } = await import('../src/host/project-task-sessions.js')
+      const session = rt.projectDelivery.sessionFor(), logical = taskSession(rt.state, session)
+      logical.bindings.push({ version: 'task-role-binding/v2', key: 'foreign', workerId: 'missing', sessionId: 'retained-thread' })
+    }
+    await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Admission must not leak' }))
+    assert.equal(rt.projectResources.occupied('r'), 0, kind)
+    if (kind === 'binding') assert.equal(Object.values(rt.state.projectTaskSessions)[0].bindings[0].sessionId, 'retained-thread')
+  }
+})
+
+
+test('registered SDK failure before spawn rolls back capacity with a verifiable no-start proof', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const session = rt.projectDelivery.sessionFor()
+  session.context.archive = { sources: [] }; session.context.archiveSha256 = 'a'.repeat(64)
+  rt.projectResources.uploadFile = async () => { throw new Error('Injected pre-spawn archive failure') }
+  await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Fail before external spawn' }), /pre-spawn archive/)
+  const row = Object.values(rt.state.projectHarnessWorkers)[0]
+  assert.equal(row.status, 'released'); assert.equal(row.spawnPhase, 'aborted')
+  assert.equal(row.releaseProof.kind, 'sdk-worker-not-started')
+  assert.equal(rt.projectResources.occupied('r'), 0)
+  const { confirmedWorkerExit } = await import('../src/host/project-task-sessions.js')
+  assert.equal(confirmedWorkerExit(rt.state, row), true)
+  assert.equal(rt.state.projectAttempts, undefined, 'No Task history is rewritten by resource cleanup')
+})

@@ -116,3 +116,6 @@ JSON/SQLite回退保留新代码格式守卫、ID和已完成Effects，**不是�
 
 
 #2330：`chief.state.health` 区分 enabled 与 pending/healthy/degraded/overdue，展示最近提醒、启动、完成、成功巡检和有效裁决应用时间。`chief.configure` 的 `inspection.lifecycle` 可配置队列/执行期限、恢复延迟/次数和逾期阈值。超时不等于退出；`waiting-exit` 必须等待可信 SDK/native 或原有 systemd 退出证据。未知执行继续隔离，不能通过删租约或重建会话强行恢复。
+
+
+#2336：资源 reservation 记录 Task/claim/代次归属。已证明未启动的失效预留由原对账回收；registered/starting/spawned 是不同阶段，starting 或退出未知继续占用。reclamation 和 releaseProof 保留回收依据；不要通过清 bindings、删工作树或强清 lease 恢复容量。

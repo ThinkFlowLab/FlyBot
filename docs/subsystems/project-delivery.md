@@ -572,3 +572,11 @@ Publication now selects either credential provider through the existing broker, 
 
 
 #2330 makes Chief dispatch preparation asynchronous so its own watchdog stays live. The explicit PR-input regression waits for the actual scoped snapshot before invoking its callback; workspace/commit and authority gates remain unchanged.
+
+
+#2336 stamps reservation ownership at receiving-role preparation and exposes a
+host-only abortPoolAdmission port for failures after allocation/context/archive or
+binding admission. It scopes cleanup to the original Task/Attempt/claim/generation,
+retains workspaces and Session history, and delegates only proven unstarted release
+to the existing resource service. Direct resource-preparation regressions now install the exact
+current claim expected from the pool, preserving its original capacity-hold assertion.

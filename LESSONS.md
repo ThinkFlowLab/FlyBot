@@ -13,6 +13,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — Missing workerId does not define admission cleanup (Seen 1×)
+
+Binding can fail before execute returns; register reservation ownership and cleanup
+across preparation/binding/spawn. Persist the spawn fence before external effects.
+Only proven pre-spawn failure permits rollback; retain unknown occupancy and original
+context, and serialize late startup against reclamation.
+
+
 ### 2026-11-04 — An enabled schedule is not a completed inspection (Seen 1×)
 
 A process-local waiter disappears on restart; correlate durable occurrence and Run

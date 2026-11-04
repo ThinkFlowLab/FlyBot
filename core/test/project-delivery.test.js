@@ -62,6 +62,16 @@ async function setup(t, testCommand = [process.execPath, '--test', 'code.test.mj
   return { rt, home, task, start, attempt, gate, repository, published, publisher, workflow, directory }
 }
 
+// Direct preparation probes emulate the pool's current claim before using a resource.
+function prepareRole(rt, task, claim, definition) {
+  if (definition.execution?.resourceIds?.length && task.collaboration?.claim?.id !== claim.id) {
+    const c = task.collaboration
+    c.generation = claim.generation; c.attemptId = claim.attemptId; c.botId = definition.id; c.status = 'claimed'
+    c.claim = { ...claim, taskId: task.id, projectId: task.projectId, botId: definition.id, role: definition.role, policyRole: definition.policyRole ?? definition.role, status: 'active', createdAt: Date.now() }
+  }
+  return rt.projectDelivery.preparePoolRole(task, claim, definition)
+}
+
 async function implement(fixture) {
   writeFileSync(join(fixture.attempt().workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
   await fixture.gate('developer')
@@ -621,10 +631,10 @@ test('a transferred unsealed implementation is a labelled draft reference, not a
   const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id]
   const defs = f.rt.projectAgents.deliveryDefinitions('p1').roles
   const dev = defs.find(row => row.role === 'developer'), tester = defs.find(row => row.role === 'tester')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'draft-dev', attemptId: attempt.id, generation: 1 }, dev)
+  await prepareRole(f.rt, task, { id: 'draft-dev', attemptId: attempt.id, generation: 1 }, dev)
   const path = attempt.workspaces.developer.path
   writeFileSync(join(path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'draft-test', attemptId: attempt.id, generation: 2 }, tester)
+  await prepareRole(f.rt, task, { id: 'draft-test', attemptId: attempt.id, generation: 2 }, tester)
   const facts = JSON.parse(attempt.roleSessions.tester.context.text.split('<untrusted-role-context>\n')[1].split('\n</untrusted-role-context>')[0]).projectFacts
   assert.equal(facts.candidateSha, null)
   assert.equal(facts.workingDraft.kind, 'unverified-workspace-reference')
@@ -638,10 +648,10 @@ test('restart preserves a tested pool checkpoint waiting for Chief only when eve
     const f = await setup(t, undefined, { pool: true }); f.rt.projectPools.connect({ validate: () => ({ ok: true }) }); await f.start('checkpoint-' + variant)
     const a = f.attempt(), task = f.rt.state.tasks[f.task.id]
     const roles = f.rt.projectAgents.deliveryDefinitions('p1').roles
-    await f.rt.projectDelivery.preparePoolRole(task, { id: 'dev', attemptId: a.id, generation: 1 }, roles.find(r => r.role === 'developer'))
+    await prepareRole(f.rt, task, { id: 'dev', attemptId: a.id, generation: 1 }, roles.find(r => r.role === 'developer'))
     writeFileSync(join(a.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
     await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: a.id }, role: 'developer', outputs: {} })
-    await f.rt.projectDelivery.preparePoolRole(task, { id: 'test', attemptId: a.id, generation: 2 }, roles.find(r => r.role === 'tester'))
+    await prepareRole(f.rt, task, { id: 'test', attemptId: a.id, generation: 2 }, roles.find(r => r.role === 'tester'))
     await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: a.id }, role: 'tester', outputs: {} })
     task.collaboration.status = 'blocked'
     task.collaboration.claim = { botId: 'p1:chief', status: variant === 'active-claim' ? 'active' : 'waiting-human', workerId: 'chief-worker', chiefRunId: 'chief-run' }
@@ -668,7 +678,7 @@ test('published pool rework retains its PR binding and seals a descendant of the
   await f.start('published-rework')
   const task = f.rt.state.tasks[f.task.id], first = f.attempt()
   const developer = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'first-dev', attemptId: first.id, generation: 1 }, developer)
+  await prepareRole(f.rt, task, { id: 'first-dev', attemptId: first.id, generation: 1 }, developer)
   writeFileSync(join(first.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
   await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: first.id }, role: 'developer', outputs: {} })
   const original = first.candidateSha
@@ -682,7 +692,7 @@ test('published pool rework retains its PR binding and seals a descendant of the
   const id = await f.rt.projectDelivery.reworkPool({ task, claim: { id: 'chief-return', attemptId: first.id, botId: 'p1:chief' }, reason: 'Maintain the existing PR after its base advanced' })
   const next = f.rt.state.projectAttempts[id]
   assert.deepEqual(next.publicationBinding, { number: 48, repository: 'example/demo', branch: first.branch, previousSha: original, upstreamSha: first.baseSha, upstreamRef: 'main' })
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'next-dev', attemptId: id, generation: 2 }, developer)
+  await prepareRole(f.rt, task, { id: 'next-dev', attemptId: id, generation: 2 }, developer)
   writeFileSync(join(next.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => Number(a)+Number(b); // intermediate\n')
   git(next.workspaces.developer.path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-am', 'Private intermediate work'])
   writeFileSync(join(next.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => Number(a)+Number(b);\n')
@@ -716,7 +726,7 @@ test('published rework pins the actual target and seals both published and resol
   f.rt.projectPools.connect({ validate: () => ({ ok: true }) }); await f.start('upstream-rework')
   const task = f.rt.state.tasks[f.task.id], first = f.attempt()
   const developer = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'dev-before', attemptId: first.id, generation: 1 }, developer)
+  await prepareRole(f.rt, task, { id: 'dev-before', attemptId: first.id, generation: 1 }, developer)
   writeFileSync(join(first.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
   await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: first.id }, role: 'developer', outputs: {} })
   const seed = first.candidateSha
@@ -737,7 +747,7 @@ test('published rework pins the actual target and seals both published and resol
   const id = await f.rt.projectDelivery.reworkPool({ task, claim: { id: 'upstream-return', attemptId: first.id, botId: 'p1:chief' }, reason: 'Integrate current backend without losing published history' })
   const next = f.rt.state.projectAttempts[id]
   assert.equal(next.publicationBinding.upstreamSha, upstream)
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'dev-after', attemptId: id, generation: 2 }, developer)
+  await prepareRole(f.rt, task, { id: 'dev-after', attemptId: id, generation: 2 }, developer)
   const path = next.workspaces.developer.path
   await assert.rejects(f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: id }, role: 'developer', outputs: {} }), /merge the pinned upstream/)
   assert.equal(git(path, ['rev-parse', 'HEAD']), seed)
@@ -755,7 +765,7 @@ test('published rework pins the actual target and seals both published and resol
   assert.equal(first.candidateSha, seed)
   assert.equal(next.evidence.upstreamIntegration.sha, upstream)
   const tester = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'tester')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'test-after', attemptId: id, generation: 3 }, tester)
+  await prepareRole(f.rt, task, { id: 'test-after', attemptId: id, generation: 3 }, tester)
   await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: id }, role: 'tester', outputs: {} })
   assert.equal(next.evidence.tests.passed, true)
   })
@@ -795,12 +805,12 @@ test('context admission checkpoints require host rejection and no external execu
 test('failed context admission preserves an existing unsealed developer workspace',async t=>{
   const f=await setup(t,undefined,{pool:true}); f.rt.projectPools.connect({validate:()=>({ok:true})}); await f.start('context-retry')
   const a=f.attempt(),task=f.rt.state.tasks[f.task.id],dev=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r=>r.role==='developer')
-  await f.rt.projectDelivery.preparePoolRole(task,{id:'first',attemptId:a.id,generation:1},dev)
+  await prepareRole(f.rt, task,{id:'first',attemptId:a.id,generation:1},dev)
   const path=a.workspaces.developer.path
   writeFileSync(join(path,'code.mjs'),'export const preserved = true;\n')
   a.seedSha=a.baseSha
   a.feedback='x'.repeat(49000) // Required current Task input cannot be summarized away.
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task,{id:'second',attemptId:a.id,generation:2},dev),/exceeds/)
+  await assert.rejects(prepareRole(f.rt, task,{id:'second',attemptId:a.id,generation:2},dev),/exceeds/)
   assert.equal(readFileSync(join(path,'code.mjs'),'utf8'),'export const preserved = true;\n')
   assert.equal(a.preparationFailures.at(-1).releasedBeforeExternalStart,false)
   assert.equal(a.roleSessions.developer.poolClaimId,'first')
@@ -814,7 +824,7 @@ test('context failure releases an actual unbound reservation before registering 
   await f.start('unbound-context-failure')
   const a=f.attempt(),task=f.rt.state.tasks[f.task.id],dev=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r=>r.role==='developer')
   dev.instructions='x'.repeat(49000) // Required persona cannot be summarized away.
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task,{id:'rejected',attemptId:a.id,generation:1},dev),/exceeds/)
+  await assert.rejects(prepareRole(f.rt, task,{id:'rejected',attemptId:a.id,generation:1},dev),/exceeds/)
   const lease=Object.values(f.rt.state.projectResourceLeases).find(x=>x.attemptId===a.id)
   assert.equal(lease.status,'released')
   assert.equal(lease.releaseProof.kind,'unbound-reservation-release')
@@ -831,7 +841,7 @@ test('a preparation-only successor retains its inherited sealed seed across anot
   await f.start('retain-seed')
   const first = f.attempt(), task = f.rt.state.tasks[f.task.id]
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, {id: 'original-dev', attemptId: first.id, generation: 1}, dev)
+  await prepareRole(f.rt, task, {id: 'original-dev', attemptId: first.id, generation: 1}, dev)
   writeFileSync(join(first.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
   await f.rt.projectDelivery.completePoolRole({task, claim: {attemptId: first.id}, role: 'developer', outputs: {implementation: 'Fixed'}})
   const seed = first.candidateSha
@@ -842,7 +852,7 @@ test('a preparation-only successor retains its inherited sealed seed across anot
   const finalId = await f.rt.projectDelivery.reworkPool({task, claim: {attemptId: nextId, id: 'preparation-retry', botId: 'chief'}, reason: 'Context preparation repaired', force: true})
   const final = f.rt.state.projectAttempts[finalId]
   assert.equal(final.seedSha, seed)
-  await f.rt.projectDelivery.preparePoolRole(task, {id: 'recovered-dev', attemptId: finalId, generation: 3}, dev)
+  await prepareRole(f.rt, task, {id: 'recovered-dev', attemptId: finalId, generation: 3}, dev)
   assert.match(readFileSync(join(final.workspaces.developer.path, 'code.mjs'), 'utf8'), /a\+b/)
   assert.equal(next.status, 'interrupted', 'Original failed preparation history remains')
 })
@@ -854,25 +864,25 @@ test('a rework receiver gets hash-verified bounded failed-test facts instead of 
   await f.start('failure-feedback')
   const a = f.attempt(), task = f.rt.state.tasks[f.task.id], roles = f.rt.projectAgents.deliveryDefinitions('p1').roles
   const dev = roles.find(row => row.role === 'developer'), tester = roles.find(row => row.role === 'tester')
-  await f.rt.projectDelivery.preparePoolRole(task, {id: 'dev', attemptId: a.id, generation: 1}, dev)
+  await prepareRole(f.rt, task, {id: 'dev', attemptId: a.id, generation: 1}, dev)
   writeFileSync(join(a.workspaces.developer.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
   await f.rt.projectDelivery.completePoolRole({task, claim: {attemptId: a.id}, role: 'developer', outputs: {}})
-  await f.rt.projectDelivery.preparePoolRole(task, {id: 'test', attemptId: a.id, generation: 2}, tester)
+  await prepareRole(f.rt, task, {id: 'test', attemptId: a.id, generation: 2}, tester)
   await assert.rejects(f.rt.projectDelivery.completePoolRole({task, claim: {attemptId: a.id}, role: 'tester', outputs: {tests: 'Run host tests'}}), /tests failed/)
   const id = await f.rt.projectDelivery.reworkPool({task, claim: {attemptId: a.id, id: 'failed-test-return', botId: 'chief'}, reason: 'Fix actual failure', force: true})
   const next = f.rt.state.projectAttempts[id]
-  await f.rt.projectDelivery.preparePoolRole(task, {id: 'repair', attemptId: id, generation: 3}, dev)
+  await prepareRole(f.rt, task, {id: 'repair', attemptId: id, generation: 3}, dev)
   const context = next.roleSessions.developer.context.text
   assert.ok(context.includes('popup layer regression'))
   assert.ok(context.includes(a.evidence.tests.sha256))
   assert.ok(context.length < 48000)
   const deepId = await f.rt.projectDelivery.reworkPool({task, claim: {attemptId: id, id: 'preparation-only-return', botId: 'chief'}, reason: 'Preserve failure across preparation retry', force: true})
-  await f.rt.projectDelivery.preparePoolRole(task, {id: 'deep-repair', attemptId: deepId, generation: 4}, dev)
+  await prepareRole(f.rt, task, {id: 'deep-repair', attemptId: deepId, generation: 4}, dev)
   assert.ok(f.rt.state.projectAttempts[deepId].roleSessions.developer.context.text.includes('popup layer regression'))
   writeFileSync(a.evidence.tests.log, 'tampered failure')
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, {id: 'stale-log', attemptId: deepId, generation: 5}, dev), /log changed/)
+  await assert.rejects(prepareRole(f.rt, task, {id: 'stale-log', attemptId: deepId, generation: 5}, dev), /log changed/)
   a.projectId = 'another-project'
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, {id: 'foreign-log', attemptId: deepId, generation: 6}, dev), /another Task or Project/)
+  await assert.rejects(prepareRole(f.rt, task, {id: 'foreign-log', attemptId: deepId, generation: 6}, dev), /another Task or Project/)
 })
 
 test('workspace allocation failure releases an actual reservation before any external execution', async t => {
@@ -888,7 +898,7 @@ test('workspace allocation failure releases an actual reservation before any ext
   // A real filesystem obstacle after reservation and before git worktree creation.
   writeFileSync(join(f.directory, 'delivery'), 'Not a directory')
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, { id: 'failed-allocation', attemptId: a.id, generation: 1 }, dev), /ENOTDIR|EEXIST/)
+  await assert.rejects(prepareRole(f.rt, task, { id: 'failed-allocation', attemptId: a.id, generation: 1 }, dev), /ENOTDIR|EEXIST/)
   const lease = Object.values(f.rt.state.projectResourceLeases).find(row => row.attemptId === a.id)
   assert.equal(lease.status, 'released')
   assert.equal(lease.releaseProof.kind, 'unbound-reservation-release')
@@ -907,7 +917,7 @@ test('every pool receiver is host-prepared in its own checkout before registerin
   const a = f.attempt(), task = f.rt.state.tasks[f.task.id]
   for (const [index, role] of ['developer', 'tester', 'reviewer'].entries()) {
     const definition = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === role)
-    const node = await f.rt.projectDelivery.preparePoolRole(task, { id: `prepare-${role}`, attemptId: a.id, generation: index + 1 }, definition)
+    const node = await prepareRole(f.rt, task, { id: `prepare-${role}`, attemptId: a.id, generation: index + 1 }, definition)
     assert.equal(readFileSync(join(node.executionWorkDir, 'node_modules/ready'), 'utf8'), node.executionWorkDir)
     assert.equal(a.workspacePreparations.at(-1).workspaceId, a.workspaces[role].id)
     assert.equal(a.roleSessions[role].status, 'prepared')
@@ -917,7 +927,7 @@ test('every pool receiver is host-prepared in its own checkout before registerin
   settings.workspacePrepareCommand = [process.execPath, '-e', 'process.exit(37)']
   const previous = structuredClone(a.roleSessions.reviewer)
   const reviewer = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'reviewer')
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, { id: 'prepare-failed', attemptId: a.id, generation: 9 }, reviewer), error => error.code === 37)
+  await assert.rejects(prepareRole(f.rt, task, { id: 'prepare-failed', attemptId: a.id, generation: 9 }, reviewer), error => error.code === 37)
   assert.deepEqual(a.roleSessions.reviewer, previous)
   assert.equal(a.workspacePreparations.length, 3)
   assert.equal(a.preparationFailures.at(-1).role, 'reviewer')
@@ -949,14 +959,14 @@ test('bound-resource preparation executes before SDK registration and failure re
   await f.start('resource-preparation')
   const a = f.attempt(), task = f.rt.state.tasks[f.task.id]
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'prepared-resource', attemptId: a.id, generation: 1 }, dev)
+  await prepareRole(f.rt, task, { id: 'prepared-resource', attemptId: a.id, generation: 1 }, dev)
   assert.equal(a.workspacePreparations.at(-1).resourceId, 'one')
   const original = structuredClone(a.roleSessions.developer)
   const first = a.resourceLeases.developer
   await f.rt.projectResources.release(first.id, first.generation)
   const preparationCommand = settings.workspacePrepareCommand
   settings.workspacePrepareCommand = [process.execPath, '-e', 'process.exit(37)']
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, { id: 'resource-command-failed', attemptId: a.id, generation: 2 }, dev), error => error.code === 37)
+  await assert.rejects(prepareRole(f.rt, task, { id: 'resource-command-failed', attemptId: a.id, generation: 2 }, dev), error => error.code === 37)
   assert.equal(f.rt.state.projectResourceLeases[a.resourceLeases.developer.id].status, 'released')
   assert.equal(a.preparationFailures.at(-1).releasedBeforeExternalStart, true)
   settings.workspacePrepareCommand = preparationCommand
@@ -967,7 +977,8 @@ test('bound-resource preparation executes before SDK registration and failure re
     await command(...args)
     throw new Error('Connection lost after external registration')
   }
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, { id: 'unknown-preparation', attemptId: a.id, generation: 2 }, dev), /Connection lost/)
+  const unknownClaim = { id: 'unknown-preparation', attemptId: a.id, generation: 2 }
+  await assert.rejects(prepareRole(f.rt, task, unknownClaim, dev), /Connection lost/)
   const held = f.rt.state.projectResourceLeases[a.resourceLeases.developer.id]
   assert.equal(held.status, 'running')
   assert.equal(held.worker.handle, 'unknown-worker')
@@ -982,7 +993,7 @@ test('unstarted bound delivery refreshes a verified descendant target without re
     const a=f.attempt(),task=f.rt.state.tasks[f.task.id],dev=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r=>r.role==='developer'),base=a.baseSha
     a.seedSha=base;a.publicationBinding={number:48,repository:'example/demo',branch:'original-delivery',previousSha:base,upstreamSha:base,upstreamRef:'main'}
     const originalInstructions=dev.instructions;dev.instructions='x'.repeat(49000)
-    await assert.rejects(f.rt.projectDelivery.preparePoolRole(task,{id:'before',attemptId:a.id,generation:1},dev),/exceeds/)
+    await assert.rejects(prepareRole(f.rt, task,{id:'before',attemptId:a.id,generation:1},dev),/exceeds/)
     dev.instructions=originalInstructions
     const path=a.workspaces.developer.path;writeFileSync(join(path,'code.mjs'),'export const preservedDraft = true;\n')
     writeFileSync(join(f.repository,'backend.mjs'),'export const backend = 2;\n');git(f.repository,['add','backend.mjs']);git(f.repository,['commit','-m','Advance trusted target'])
@@ -1005,7 +1016,7 @@ test('unstarted bound delivery refreshes a verified descendant target without re
     if(variant==='missing')f.publisher.read=async()=>({sha:base,state:'open',baseRef:'main',baseSha:'1'.repeat(40)})
     if(variant==='moved-head')f.publisher.read=async()=>({sha:target,state:'open',baseRef:'main',baseSha:target})
     if(variant==='moved-ref')f.publisher.read=async()=>({sha:base,state:'open',baseRef:'other',baseSha:target})
-    const prepare=()=>f.rt.projectDelivery.preparePoolRole(task,{id:'after',attemptId:a.id,generation:2},dev)
+    const prepare=()=>prepareRole(f.rt, task,{id:'after',attemptId:a.id,generation:2},dev)
     if(variant==='safe'){
       await prepare();assert.equal(a.publicationBinding.upstreamSha,target);assert.equal(a.publicationBindingHistory.length,1)
       assert.deepEqual(a.publicationBindingHistory[0].previous,old);assert.deepEqual(a.publicationBindingHistory[0].current,a.publicationBinding)
@@ -1097,7 +1108,7 @@ test('SDK Task rework preserves an unsealed same-base draft and old cleanup cann
   await f.rt.projectEndpoint('project-agent-definition',{projectId:'p1',role:'developer',execution:{harness:'codex',resourceIds:['one']}},alice)
   await f.start('retained-draft')
   const previous=f.attempt(),task=f.rt.state.tasks[f.task.id],dev=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r=>r.role==='developer')
-  await f.rt.projectDelivery.preparePoolRole(task,{id:'first',attemptId:previous.id,generation:1},dev)
+  await prepareRole(f.rt, task,{id:'first',attemptId:previous.id,generation:1},dev)
   const cwd=previous.workspaces.developer.path
   writeFileSync(join(cwd,'code.mjs'),'export const preservedDraft = true;\n')
   const lease=previous.resourceLeases.developer
@@ -1105,7 +1116,7 @@ test('SDK Task rework preserves an unsealed same-base draft and old cleanup cann
   previous.status='interrupted'
   const id=await f.rt.projectDelivery.reworkPool({task,claim:{id:'recover',attemptId:previous.id,botId:'p1:chief'},reason:'Resume confirmed idle draft',force:true})
   const next=f.rt.state.projectAttempts[id]
-  await f.rt.projectDelivery.preparePoolRole(task,{id:'second',attemptId:id,generation:2},dev)
+  await prepareRole(f.rt, task,{id:'second',attemptId:id,generation:2},dev)
   assert.equal(next.workspaces.developer.path,cwd)
   assert.equal(next.workspaces.developer.retainedDraft,true)
   assert.equal(readFileSync(join(cwd,'code.mjs'),'utf8'),'export const preservedDraft = true;\n')
@@ -1125,14 +1136,14 @@ test('a returned SDK draft reuses its Task workspace after exact supervisor exit
   await f.start('supervised-draft')
   const previous = f.attempt(), task = f.rt.state.tasks[f.task.id]
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'old', attemptId: previous.id, generation: 1 }, dev)
+  await prepareRole(f.rt, task, { id: 'old', attemptId: previous.id, generation: 1 }, dev)
   const workspace = previous.workspaces.developer, lease = f.rt.state.projectResourceLeases[previous.resourceLeases.developer.id]
   writeFileSync(join(workspace.path, 'code.mjs'), 'export const add = (a,b) => a+b; // retained draft\n')
   const proof = { kind: 'systemd-prior-invocation-exited', previousInvocationId: 'a'.repeat(32), at: Date.now() }
   Object.assign(lease, { status: 'released', worker: { kind: 'sdk', handle: 'old-worker' }, processScope: { kind: 'systemd-control-group', killMode: 'control-group', invocationId: proof.previousInvocationId }, releaseProof: proof })
   f.rt.state.projectHarnessWorkers = { 'old-worker': { id: 'old-worker', projectId: 'p1', taskId: task.id, attemptId: previous.id, role: 'developer', leaseId: lease.id, resourceId: 'one', generation: lease.generation, status: 'released', releaseProof: proof } }
   const id = await f.rt.projectDelivery.reworkPool({ task, claim: { id: 'return', attemptId: previous.id, botId: dev.id }, reason: 'Resume the retained draft after supervisor restart', force: true })
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'next', attemptId: id, generation: 2 }, dev)
+  await prepareRole(f.rt, task, { id: 'next', attemptId: id, generation: 2 }, dev)
   const current = f.rt.state.projectAttempts[id].workspaces.developer
   assert.equal(current.path, workspace.path)
   assert.equal(current.reusesWorkspaceId, workspace.id)
@@ -1164,7 +1175,7 @@ async function additionalIntegrationFixture(t, { conflict = false, merge = true 
   attempt.seedSha=seed
   attempt.publicationBinding={number:7,repository:'example/demo',branch:'published-ui',previousSha:seed,upstreamSha:base,upstreamRef:'main'}
   const developer=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row=>row.role==='developer')
-  await f.rt.projectDelivery.preparePoolRole(task,{id:'integration-claim',attemptId:attempt.id,generation:1},developer)
+  await prepareRole(f.rt, task,{id:'integration-claim',attemptId:attempt.id,generation:1},developer)
   const path=attempt.workspaces.developer.path
   if(merge){if(conflict)assert.throws(()=>git(path,['merge','--no-commit','--no-ff',source]));else git(path,['merge','--no-commit','--no-ff',source])}
   return {...f,base,source,ref,seed,path,task,attempt,developer}
@@ -1204,7 +1215,7 @@ test('manager explicitly pins integration input through service snapshot without
   assert.equal(replay.result.admission.id,approved.result.admission.id)
   assert.equal(f.attempt.integrationAdmissions.length,1)
   assert.equal(f.attempt.candidateSha,undefined)
-  const node=await f.rt.projectDelivery.preparePoolRole(f.task,{id:'resumed-integration',attemptId:f.attempt.id,generation:99},f.developer)
+  const node=await prepareRole(f.rt, f.task,{id:'resumed-integration',attemptId:f.attempt.id,generation:99},f.developer)
   assert.match(node.prompt,/do not git commit/)
   const text=f.attempt.roleSessions.developer.context.text
   assert.ok(text.includes(f.source))
@@ -1307,7 +1318,7 @@ test('an approved operator object reaches a resource clone through the existing 
   const query=await f.rt.projectEndpoint('project-development',{version:'project-development/v1',kind:'query',name:'attempt.integration-state',projectId:'p1',payload:{attemptId:attempt.id}},alice)
   await f.rt.projectEndpoint('project-development',{version:'project-development/v1',kind:'command',name:'attempt.integration-bind',projectId:'p1',requestId:'remote-source',payload:{attemptId:attempt.id,inputs:[{ref,sha}],generation:query.result.generation,expectedWorkspace:null}},alice)
   const developer=f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row=>row.role==='developer')
-  await f.rt.projectDelivery.preparePoolRole(task,{id:'remote-claim',attemptId:attempt.id,generation:9},developer)
+  await prepareRole(f.rt, task,{id:'remote-claim',attemptId:attempt.id,generation:9},developer)
   const workspace=attempt.workspaces.developer
   assert.equal(workspace.kind,'resource-clone')
   assert.equal(git(workspace.path,['cat-file','-t',sha]),'commit')
@@ -1551,7 +1562,7 @@ test('approved custom role capabilities preserve logical identities while sealin
   const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id]
   const prepare = async (policyRole, generation) => {
     const role = names[policyRole], definition = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === role)
-    await f.rt.projectDelivery.preparePoolRole(task, { id: `custom-${role}`, attemptId: attempt.id, generation }, definition)
+    await prepareRole(f.rt, task, { id: `custom-${role}`, attemptId: attempt.id, generation }, definition)
     return role
   }
   const dev = await prepare('developer', 1)
@@ -1560,7 +1571,7 @@ test('approved custom role capabilities preserve logical identities while sealin
   const backup = { ...structuredClone(f.rt.state.projectAgentDefinitions.p1.roles.find(row => row.role === 'implementer')), id: 'p1:backup', role: 'backup' }
   f.rt.state.projectAgentDefinitions.p1.roles.push(backup); ++f.rt.state.projectAgentDefinitions.p1.revision
   f.rt.config.projectRepositories['example/demo'].requiredRolePolicySources = { backup: ['MISSING.md'] }
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(task, { id: 'bad-backup', attemptId: attempt.id, generation: 2 }, f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'backup')), /Required role policy source is missing/)
+  await assert.rejects(prepareRole(f.rt, task, { id: 'bad-backup', attemptId: attempt.id, generation: 2 }, f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'backup')), /Required role policy source is missing/)
   assert.equal(attempt.roleAssignments.developer, 'implementer', 'Failed preparation cannot replace the actual artifact producer')
   assert.match(attempt.roleSessions[dev].policy.text, /Never invent passing tests/)
   writeFileSync(join(workspace.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
@@ -1593,12 +1604,12 @@ test('Task execution selects an associated repository and retains it after the P
   f.rt.state.projects.p1.repository = 'unprovisioned/changed-default'
   const attempt = f.rt.state.projectAttempts[started.attempt.id]
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r => r.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(f.task, { id: 'repo-dev', attemptId: attempt.id, generation: 1 }, dev)
+  await prepareRole(f.rt, f.task, { id: 'repo-dev', attemptId: attempt.id, generation: 1 }, dev)
   assert.equal(attempt.repositoryBinding.repository, 'example/second')
   assert.equal(attempt.workspaces.developer.repository, second)
   const association = Object.values(f.rt.state.projectRepositories).find(row => row.repository === 'example/second')
   delete f.rt.state.projectRepositories[association.id]
-  await assert.rejects(f.rt.projectDelivery.preparePoolRole(f.task, { id: 'revoked-repo', attemptId: attempt.id, generation: 2 }, dev), /not currently associated/)
+  await assert.rejects(prepareRole(f.rt, f.task, { id: 'revoked-repo', attemptId: attempt.id, generation: 2 }, dev), /not currently associated/)
   assert.equal(attempt.requirement.repository, 'example/second')
 })
 
@@ -1611,7 +1622,7 @@ test('a repository-free decision Task prepares a scoped workspace and records ve
   assert.equal(started.attempt.status, 'running')
   const attempt = f.rt.state.projectAttempts[started.attempt.id]
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(r => r.role === 'developer')
-  const spec = await f.rt.projectDelivery.preparePoolRole(f.task, { id: 'decision-dev', attemptId: attempt.id, generation: 1 }, dev)
+  const spec = await prepareRole(f.rt, f.task, { id: 'decision-dev', attemptId: attempt.id, generation: 1 }, dev)
   assert.equal(attempt.baseSha, undefined)
   assert.equal(attempt.workspaces.developer.kind, 'decision-directory')
   assert.match(spec.prompt, /no repository/i)
@@ -1659,7 +1670,7 @@ test('Release Task closes only after explicit durable authorization and current 
   await f.start('release-task')
   const a = f.attempt()
   const dev = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'release-dev', attemptId: a.id, generation: 1 }, dev)
+  await prepareRole(f.rt, task, { id: 'release-dev', attemptId: a.id, generation: 1 }, dev)
   await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: a.id }, role: 'developer', outputs: { releasePlan: 'Publish the explicitly authorized base commit' } })
   const envelope = { version: 'project-development/v1', kind: 'command', projectId: 'p1', name: 'release.request', requestId: 'publish-release', payload: { attemptId: a.id, tag: 'v1.0.0', sha: a.baseSha, mode: 'publish' } }
   await assert.rejects(f.rt.projectEndpoint('project-development', envelope, bob), /denied/i)
@@ -1712,14 +1723,15 @@ async function baselineResourceFixture(t, kind = 'local') {
   await f.rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role: 'developer', execution: { harness: 'codex', resourceIds: ['baseline'] } }, alice)
   await f.start('baseline-recovery')
   const previous = f.attempt(), task = f.rt.state.tasks[f.task.id], definition = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'first-baseline', attemptId: previous.id, generation: 1 }, definition)
+  await prepareRole(f.rt, task, { id: 'first-baseline', attemptId: previous.id, generation: 1 }, definition)
   const workspace = previous.workspaces.developer, lease = previous.resourceLeases.developer
   await f.rt.projectResources.release(lease.id, lease.generation); previous.status = 'interrupted'
+  task.collaboration.claim.status = 'failed'; task.collaboration.status = 'blocked'
   writeFileSync(join(f.repository, 'host-repair.txt'), 'Updated trusted baseline\n'); git(f.repository, ['add', 'host-repair.txt']); git(f.repository, ['commit', '-m', 'Advance trusted base'])
   const latest = git(f.repository, ['rev-parse', 'HEAD'])
   const recover = async () => {
     const id = await f.rt.projectDelivery.reworkPool({ task, claim: { id: 'baseline-rework', attemptId: previous.id, botId: 'p1:chief' }, reason: 'Use repaired baseline', force: true })
-    return { next: f.rt.state.projectAttempts[id], prepare: () => f.rt.projectDelivery.preparePoolRole(task, { id: 'next-baseline', attemptId: id, generation: 2 }, definition) }
+    return { next: f.rt.state.projectAttempts[id], prepare: () => prepareRole(f.rt, task, { id: 'next-baseline', attemptId: id, generation: 2 }, definition) }
   }
   return { ...f, previous, task, definition, workspace, latest, recover }
 }
@@ -1795,7 +1807,7 @@ test('actual Chief route admits a pinned inspect input and Dev receives the PR o
   assert.equal(run.status, 'done', run.failure)
   assert.equal(attempt.integrationInputs[0].purpose, 'inspect')
   assert.equal(task.collaboration.botId, 'p1:developer')
-  await f.rt.projectDelivery.preparePoolRole(task, { id: 'inspect-after-chief', attemptId: attempt.id, generation: task.collaboration.generation }, f.definition)
+  await prepareRole(f.rt, task, { id: 'inspect-after-chief', attemptId: attempt.id, generation: task.collaboration.generation }, f.definition)
   assert.equal(git(attempt.workspaces.developer.path, ['cat-file', '-t', sha]), 'commit')
   assert.equal(git(attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), attempt.baseSha)
   assert.equal(attempt.candidateSha, undefined)
@@ -1808,6 +1820,6 @@ test('a newly created unsealed successor after failure pins current host HEAD ev
   const id = await f.rt.projectDelivery.reworkPool({ task: f.task, claim: { id: 'failed-route', attemptId: f.previous.id, botId: 'p1:chief' }, reason: 'Host repair is complete; route back', force: false })
   const next = f.rt.state.projectAttempts[id]
   assert.notEqual(id, f.previous.id); assert.equal(next.baseSha, f.latest)
-  await f.rt.projectDelivery.preparePoolRole(f.task, { id: 'failed-route-prepare', attemptId: id, generation: 2 }, f.definition)
+  await prepareRole(f.rt, f.task, { id: 'failed-route-prepare', attemptId: id, generation: 2 }, f.definition)
   assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), f.latest)
 })

@@ -161,3 +161,73 @@ test('supervisor inspection cannot release a binding changed while the manager y
   await assert.rejects(releasing, /binding changed/)
   assert.equal(stored.status, 'running')
 })
+
+test('retired unbound reservations are reclaimed but live preparation and unknown spawn remain held', async () => {
+  for (const kind of ['returned', 'superseded', 'cancelled', 'active', 'scope', 'worker']) {
+    const { rt, resources } = fixture()
+    const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 'orphan', harness: 'flybot', resourceIds: ['local'] })
+    rt.state.projectAttempts = { a: { id: 'a', projectId: 'p1', taskId: 't', status: kind === 'returned' || kind === 'cancelled' ? kind : 'running', ...(kind === 'superseded' ? { supersededBy: 'b' } : {}) } }
+    rt.state.tasks = { t: { id: 't', projectId: 'p1', deliveryAttemptId: 'a' } }
+    if (kind === 'scope') rt.state.projectResourceLeases[lease.id].processScope = { kind: 'unmanaged-process', hostPid: process.pid }
+    if (kind === 'worker') rt.state.projectHarnessWorkers = { w: { id: 'w', leaseId: lease.id, generation: lease.generation, status: 'prepared' } }
+    await resources.reconcile()
+    assert.equal(resources.occupied('local'), ['returned', 'superseded', 'cancelled'].includes(kind) ? 0 : 1, kind)
+    if (['returned', 'superseded', 'cancelled'].includes(kind)) await assert.rejects(resources.markStarted(lease.id, lease.generation, { kind: 'sdk', handle: 'late' }), /released/)
+  }
+})
+
+test('claim replacement reclaims unbound preparation and failed reclamation save keeps capacity', async () => {
+  const { rt, resources } = fixture()
+  rt.state.projectAttempts = { a: { id: 'a', projectId: 'p1', taskId: 't', status: 'running' } }
+  rt.state.tasks = { t: { id: 't', projectId: 'p1', deliveryAttemptId: 'a', collaboration: { generation: 2, claim: { id: 'claim', generation: 2, status: 'active' } } } }
+  const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 'owned', harness: 'flybot', resourceIds: ['local'], reservationOwner: { taskId: 't', claimId: 'claim', generation: 2 } })
+  await resources.reconcile(); assert.equal(resources.occupied('local'), 1)
+  rt.state.tasks.t.collaboration.claim.status = 'failed'
+  const save = rt.save; rt.save = async () => { throw new Error('save failed') }
+  await assert.rejects(resources.reconcile(), /save failed/)
+  assert.equal(resources.occupied('local'), 1)
+  rt.save = save; await resources.reconcile(); assert.equal(resources.occupied('local'), 0)
+  assert.equal(rt.state.projectResourceLeases[lease.id].reclamation.owner.claimId, 'claim')
+})
+
+test('a registered or spawning SDK reservation is not inferred idle from a missing controller', async () => {
+  const { rt, resources } = fixture()
+  const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 'phase', harness: 'flybot', resourceIds: ['local'] })
+  rt.state.projectAttempts = { a: { id: 'a', projectId: 'p1', taskId: 't', status: 'returned' } }
+  rt.state.projectHarnessWorkers = { sdk: { id: 'sdk', projectId: 'p1', attemptId: 'a', role: 'developer', resourceId: 'local', leaseId: lease.id, generation: lease.generation, status: 'prepared', spawnPhase: 'starting' } }
+  const row = rt.state.projectResourceLeases[lease.id]; row.worker = { kind: 'sdk', handle: 'sdk' }; row.status = 'running'
+  await resources.reconcile(); assert.equal(resources.occupied('local'), 1)
+  rt.state.projectHarnessWorkers.sdk.spawnPhase = 'registered'
+  await resources.reconcile(); assert.equal(resources.occupied('local'), 0)
+  await assert.rejects(resources.fenceSpawn(lease.id, lease.generation, 'sdk'), /released|retired/)
+})
+
+test('asynchronous preparation remains owned until its actual completion, even after claim retirement', async () => {
+  const { rt, resources } = fixture()
+  rt.state.projectAttempts = { a: { id: 'a', projectId: 'p1', status: 'running' } }
+  const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 'preparing', harness: 'flybot', resourceIds: ['local'] })
+  const token = await resources.beginPreparation(lease.id, lease.generation)
+  rt.state.projectAttempts.a.status = 'returned'
+  await resources.reconcile(); assert.equal(resources.occupied('local'), 1)
+  assert.equal(await resources.abortReservation(lease.id, lease.generation, 'Attempt ended during preparation'), false)
+  await resources.endPreparation(token)
+  await resources.reconcile(); assert.equal(resources.occupied('local'), 0)
+  await assert.rejects(resources.beginPreparation(lease.id, lease.generation), /released/)
+})
+
+test('failed reservation/batch admission cannot return a capability or consume capacity', async () => {
+  const { rt, resources } = fixture()
+  rt.config.projectResources.local.capacity = 2
+  const request = { projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 'save-failed', harness: 'flybot', resourceIds: ['local'] }
+  let writes = 0
+  rt.save = async () => { if (++writes === 1) throw new Error('reservation persistence failed') }
+  await assert.rejects(resources.reserve(request), /persistence failed/)
+  assert.equal(resources.occupied('local'), 0)
+  const old = Object.values(rt.state.projectResourceLeases)[0]
+  await assert.rejects(resources.markStarted(old.id, old.generation, { kind: 'sdk', handle: 'late' }), /released/)
+  writes = 0; rt.save = async () => { if (++writes === 2) throw new Error('batch persistence failed') }
+  await assert.rejects(resources.reserveRoles('p1', 'batch', { roles: ['developer', 'tester'].map(role => ({ role, execution: { harness: 'flybot', resourceIds: ['local'] } })) }), /batch persistence failed/)
+  assert.equal(resources.occupied('local'), 0)
+  const next = await resources.reserve({ ...request, sessionKey: 'legitimate-tester', role: 'tester' })
+  assert.equal(next.status, 'reserved')
+})

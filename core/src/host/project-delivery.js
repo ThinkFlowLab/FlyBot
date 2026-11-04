@@ -900,6 +900,13 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
       rt.taskDeliveryState?.(attempt.taskId, attempt.id, 'failed', attempt.failure.message)
     }
   }
+  async function abortPoolAdmission(task, claim, reason) {
+    const attempt = ownEntry(attempts(), claim.attemptId)
+    if (!attempt || attempt.taskId !== task.id || attempt.projectId !== task.projectId) return false
+    const rows = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === attempt.id && row.reservationOwner?.claimId === claim.id && row.reservationOwner.generation === claim.generation)
+    for (const lease of rows) await rt.projectResources.abortReservation(lease.id, lease.generation, reason)
+    return rows.every(row => row.status === 'released')
+  }
   async function preparePoolRole(task, claim, definition) {
     const attempt = ownEntry(attempts(), claim.attemptId)
     if (!attempt || attempt.taskId !== task.id || attempt.protocol !== 'project-handoff/v1' || attempt.status !== 'running') throw reject('Pool Attempt is unavailable')
@@ -915,10 +922,12 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
       const policy = await repositoryRolePolicy(project.id, attempt.baseSha, role, policyRole, project)
       const sessionId = `role-session-${randomUUID()}`
       const execution = definition.execution
-      const lease = execution.resourceIds?.length ? await rt.projectResources.reserve({ projectId: project.id, attemptId: attempt.id, role, sessionKey: sessionId, ...execution }) : null
+      const lease = execution.resourceIds?.length ? await rt.projectResources.reserve({ projectId: project.id, attemptId: attempt.id, role, sessionKey: sessionId, reservationOwner: { taskId: task.id, claimId: claim.id, generation: claim.generation, sessionId }, ...execution }) : null
       if (lease) attempt.resourceLeases[role] = lease
       let context, workspace
+      const preparation = lease ? await rt.projectResources.beginPreparation(lease.id, lease.generation) : null
       try {
+        try {
         const freshWorkspace = !attempt.workspaces[role]
         await allocate(attempt, project, settings, [role], { [role]: policyRole })
         workspace = attempt.workspaces[role]
@@ -930,6 +939,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
         }
         if (project.repository) { await prepareWorkspace(attempt, workspace, settings); await prepareIntegrations(attempt, workspace) }
         context = await buildProjectContext(rt, { retrieval: true, policy, projectId: project.id, taskId: task.id, role, revision: pinned.revision, resourceId: lease?.resourceId, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { workspaceMaterialization: workspace.materialization ?? null, ...(pinned.change ? { roleDefinitionChange: pinned.change } : {}), integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && workspaceFor(attempt, 'developer') ? { kind: 'unverified-workspace-reference', resourceId: workspaceFor(attempt, 'developer').resourceId, path: workspaceFor(attempt, 'developer').resourceId === workspace.resourceId ? workspaceFor(attempt, 'developer').path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha, project) })
+        } finally { if (preparation) await rt.projectResources.endPreparation(preparation) }
       } catch (error) {
         const registered = lease && ownEntry(state.projectResourceLeases ?? {}, lease.id)
         const unbound = registered && registered.generation === lease.generation && !registered.worker && !registered.processScope && !Object.values(state.projectHarnessWorkers ?? {}).some(row => row.leaseId === lease.id) && !Object.values(attempt.roleSessions ?? {}).some(row => row.id === sessionId)
@@ -1112,7 +1122,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone', 'decision-directory'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {

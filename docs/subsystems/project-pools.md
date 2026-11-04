@@ -187,3 +187,10 @@ Canonical claims retain the admitted requirement revision. Decision admission re
 
 
 #2328 preserves wait checkpoints before handoff/child resume. Claim acceptance waits for original projectQueue resume admission outside the pool lock, rechecks authority/generation and does not spend a claim generation while queued. No extra workflow or default next role is added.
+
+
+#2336 invokes the adapter's host-only admission-abort port even when execute never
+returned a workerId. Bound native/SDK carriers use their existing release lifecycle;
+unstarted reservations use exact claim-scoped rollback. A failed/unknown exit remains
+false and retains occupancy. Claim failure is auditable and may return to Chief after
+confirmed cleanup; neither empty workerId nor Task failure alone proves exit.
