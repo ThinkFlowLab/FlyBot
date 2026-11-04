@@ -11,7 +11,7 @@ import { FolderMenu } from './folder-menu.js'
 import { BotSchedules } from './schedules.js'
 import { BotCapabilitiesCard } from './capability-settings.js'
 import { BotConnectorsCard } from './connector-bots.js'
-import { useMemoryCount } from './memory-panel.js'
+import { memoryCountText, useMemoryCount } from './memory-panel.js'
 import { SPRING_SHAPE, SPRING_TAP, spring, useGlide } from './motion.js'
 import { t } from './i18n.js'
 import { StandingApprovalsCard } from './standing-approvals.js'
@@ -184,8 +184,8 @@ function AvatarEditor({ bot, actions, run, onClose }) {
 }
 
 function MemoryCard({ bot, actions }) {
-  const count = useMemoryCount(bot.id, actions)
-  const label = count === null ? t('Loading…') : count === 0 ? t('Nothing saved yet') : count === 1 ? t('1 entry') : t('{count} entries', { count })
+  const { count, failure } = useMemoryCount(bot.id, actions)
+  const label = memoryCountText({ count, failure })
   return h(Card, { title: t('Memory') },
     h('button', { type: 'button', className: 'bt-set-row bt-bs-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },
       h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, label)),
