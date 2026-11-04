@@ -403,6 +403,7 @@ export function install(rt) {
   // beside the part-of-overall `parentId`), `handoff`, `evidence` and `lease`. Every one is
   // validated by name — a refusal names the field, never a silently dropped value.
   const TASK_CLASSES = ['work', 'rework', 'release', 'triage', 'meeting']
+  const BRIEF_MAX = 8000
   const HANDOFF_REASON_MAX = 300
   const EVIDENCE_MAX = 8
   const LEASE_TTL_SEC = 30 * 60
@@ -413,6 +414,15 @@ export function install(rt) {
   const boundedLine = (value, max, name) => {
     const text = String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
     if (codePoints(text) > max) throw invalid(`${name} is at most ${max} characters`)
+    return text
+  }
+  // #2468: the facts of a card live on the card, not on the run that happened to
+  // pick it up. Multi-line on purpose — a brief is a work order, not a label —
+  // so it is bounded by characters rather than flattened like the title.
+  const readBrief = (value) => {
+    if (value === undefined || value === null) return undefined
+    const text = String(value).replace(/\r\n/g, '\n').trim()
+    if (codePoints(text) > BRIEF_MAX) throw invalid(`brief is at most ${BRIEF_MAX} characters`)
     return text
   }
   const readTaskClass = (value) => {
@@ -478,12 +488,17 @@ export function install(rt) {
   // endpoints all reach it, so a refusal is the same refusal wherever the value came from. The
   // reads happen before any assignment, so a refused write leaves the card exactly as it was.
   function writeContract(task, body = {}) {
+    const brief = readBrief(body.brief)
     const taskClass = readTaskClass(body.taskClass)
     const reworkOf = readReworkOf(body.reworkOf)
     const handoff = readHandoff(body.handoff)
     const evidence = readEvidence(body.evidence)
     const clearingLease = body.lease === null
     const lease = readLease(body.lease)
+    if (brief !== undefined) {
+      if (brief === '') delete task.brief
+      else task.brief = brief
+    }
     if (taskClass !== undefined) task.taskClass = taskClass
     if (reworkOf !== undefined) task.reworkOf = reworkOf
     if (handoff !== undefined) task.handoff = handoff
@@ -491,7 +506,7 @@ export function install(rt) {
     if (evidence !== undefined) task.evidence = evidence
     if (clearingLease) delete task.lease
     if (lease !== undefined) task.lease = lease
-    return { taskClass, reworkOf, handoff, evidence, lease }
+    return { brief, taskClass, reworkOf, handoff, evidence, lease }
   }
   // The route on the card (#1775): `handoff.to` names the role that owns the next step, so it is
   // the card's pool. Recording the handoff starts the card in that pool; recording it on a card a
