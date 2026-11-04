@@ -248,13 +248,20 @@ export function install(rt) {
   const NOT_PLAIN = 'not a plain file (nothing is read or written)'
   // The team file is not a journal leaf (#2404): the store reads it through the link
   // (`readFile(statePath)` follows the last name) and its next save renames a temp name over this
-  // one (`rename(temp, statePath)`), so a link is read and replaced, not ignored. A directory or a
-  // check that cannot run keeps the leaf sentence above: no read of those lands either.
+  // one (`rename(temp, statePath)`), so a link to a plain file is read and replaced, not ignored. A
+  // directory or a check that cannot run keeps the leaf sentence above: no read of those lands
+  // either.
   const LINKED_STATE = 'not a plain file (described only; the store reads the team file through the link and the next save replaces the name)'
+  // A link names a target, and the store's answer depends on it: a link to a plain file is the
+  // shape above, while a link to a folder makes `readFile(statePath)` fail with EISDIR — the store
+  // lands in `stuck`, `writable()` stays false and no save ever renames over the name, so the leaf
+  // sentence is the true one. `stat` follows the link for its metadata only; the bytes behind it
+  // stay unread, which is all this report may do with them.
   const stateNotPlain = async path => {
     try {
       const info = await lstat(path)
-      return info.isSymbolicLink() || (info.isFile() && info.nlink > 1) ? LINKED_STATE : NOT_PLAIN
+      if (!info.isSymbolicLink()) return info.isFile() && info.nlink > 1 ? LINKED_STATE : NOT_PLAIN
+      return (await stat(path)).isFile() ? LINKED_STATE : NOT_PLAIN
     } catch {
       return NOT_PLAIN
     }

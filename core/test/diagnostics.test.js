@@ -757,6 +757,40 @@ test('a linked team file is described as read through the link, not as nothing b
   assert.equal(readFileSync(plain, 'utf8'), newer, 'the other name keeps its bytes')
 })
 
+// A link does not say what it points at, and the store's answer depends on the target (#2404 wrote
+// the link sentence for one shape of it). A linked plain file is read through the link and replaced
+// by the next save; a link to a folder is read by `readFile(statePath)` as a folder — EISDIR, the
+// store lands in `stuck`, `writable()` stays false and no save ever replaces the name. So the line
+// above a `Read-only` row that says the read failed denied that read and promised a save that cannot
+// happen. The target is asked with `stat` for its metadata only — the bytes behind the link stay
+// unread, which is all this report may do with them — and only a plain file earns the link sentence;
+// a folder or a link to nothing keeps the leaf sentence, which is true of both.
+test('a team file linking to a folder keeps the leaf sentence, not the read-through-link one', async (t) => {
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const folder = join(elsewhere, 'a-folder')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'kept.txt'), 'a file that stays\n')
+
+  const linked = await realHost(t, { prepare: statePath => symlinkSync(folder, statePath) })
+  const line = linked.report.markdown.match(/^state file: (.*)$/m)?.[1]
+  assert.ok(line !== undefined, 'the report still names the team file')
+  assert.match(line, /^not a plain file \(nothing is read or written\)$/,
+    'a link the store cannot read through is not described as read through')
+  assert.match(linked.report.markdown, /^\| Read-only \| The Bot team file .* could not be read \(EISDIR\)/m,
+    'the row below it says that read happened and failed')
+  assert.deepEqual(readdirSync(folder), ['kept.txt'], 'the folder behind the link keeps exactly what it had')
+
+  const linkHome = join(elsewhere, 'link-home')
+  mkdirSync(linkHome)
+  const dangling = host(linkHome, { config: { diagnosticsFile: false }, statePath: join(linkHome, 'state.json') })
+  symlinkSync(join(elsewhere, 'not-there.json'), join(linkHome, 'state.json'))
+  const danglingReport = await dangling.diagnostics.report({})
+  assert.match(danglingReport.markdown, /^state file: not a plain file \(nothing is read or written\)$/m,
+    'a link to no file is not described as read through either')
+  assert.equal(existsSync(join(elsewhere, 'not-there.json')), false, 'asking the link creates nothing')
+})
+
 // The line is read information, not a write: a window another dsh keeps read-only still names the
 // team file, the way it still counts the team it shows.
 test('a read-only window names the team file too (#2394)', async (t) => {
