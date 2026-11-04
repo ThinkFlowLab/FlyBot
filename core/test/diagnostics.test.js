@@ -954,3 +954,48 @@ test('#2364: a clear that cannot truncate leaves the readable surface alone', as
   assert.deepEqual(await rt.diagnostics.entries(), [], 'a real clear lists nothing afterwards')
   assert.equal(await rt.diagnostics.logText(), '', 'a real clear leaves nothing to download')
 })
+
+// A Clear on a home with no log folder used to print "not truncated" for a write that failed
+// with ENOENT (#2379). There is nothing on disk to empty, so that line was a false alarm: the
+// window answers "Cleared the error log." for `leaf: 'absent'`, and the stderr line reached
+// support bundles where it could not be told apart from a leaf that really was refused.
+test('a clear with no log on disk stays quiet', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  const rt = host(home)
+  t.after(async () => { await rt.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const result = await rt.diagnostics.clear()
+  quiet.mock.restore()
+
+  assert.deepEqual(result, { leaf: 'absent', rotated: 'none' }, 'nothing was there, so nothing was kept')
+  assert.deepEqual(stderr, [], 'a Clear with nothing to empty does not claim it could not truncate')
+  assert.equal(existsSync(join(home, 'logs')), false, 'the truncate did not create the folder')
+})
+
+// The other half of the same contract, and #2364 kept whole: a leaf that is there and
+// refuses the truncate still names the code on exactly one line, and never the folder (#2379).
+test('a clear that cannot truncate the leaf still says so on one line', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root truncates a leaf without its write bit')
+    return
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const logPath = join(home, 'logs', 'diagnostics.jsonl')
+  const old = 'OLD LINE\n'.repeat(4)
+  writeFileSync(logPath, old)
+  chmodSync(logPath, 0o444)
+  const rt = host(home)
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const result = await rt.diagnostics.clear()
+  quiet.mock.restore()
+
+  assert.deepEqual(result, { leaf: 'kept', rotated: 'none' }, 'the leaf says it was left alone')
+  assert.deepEqual(stderr, ['[ds-bot] diagnostics log not truncated: EACCES'], 'one line, the code and never the folder')
+  assert.equal(readFileSync(logPath, 'utf8'), old, 'the lines the answer did not claim to clear are still there')
+})
