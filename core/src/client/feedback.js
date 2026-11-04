@@ -6,6 +6,7 @@ import { clearClientErrors, clientErrors, clientFacts, failureLabel, issueUrl, W
 import { dateLocale, t } from './i18n.js'
 import { CloseIcon } from './icons.js'
 import { SPRING_SHAPE } from './motion.js'
+import { lockedWindow } from './schedules.js'
 
 export const FeedbackIcon = () => h('svg', { width: 15, height: 15, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
   h('path', { d: 'M4 4.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-3.5 3v-3H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z' }), h('path', { d: 'M10 7v2.6M10 11.4h.01' }))
@@ -39,7 +40,7 @@ function entrySummary(entry) {
 
 const SOURCES = { turn: 'Model call', host: 'FlyBot', api: 'FlyBot', browser: 'This window' }
 
-export function FeedbackPage({ actions, run, Section, Row }) {
+export function FeedbackPage({ roster, actions, run, Section, Row }) {
   const [what, setWhat] = useState('')
   const [report, setReport] = useState(null)
   const [allErrors, setAllErrors] = useState(false)
@@ -85,6 +86,9 @@ export function FeedbackPage({ actions, run, Section, Row }) {
   }))
   const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t('Cleared the error log.'))))
 
+  // Clear truncates the shared error log on the host, so a window that only reads draws no Clear:
+  // the log it would erase is the file this page exists to hand over (#2302). Download stays.
+  const locked = lockedWindow(roster)
   const browserErrors = report ? clientErrors().map(entry => ({ ...entry, source: 'browser' })) : []
   const entries = [...(report?.entries ?? []), ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time))
   const total = (report?.total ?? 0) + browserErrors.length
@@ -125,7 +129,7 @@ export function FeedbackPage({ actions, run, Section, Row }) {
         : null,
       h(Row, { label: t('Error log'), hint: t('Kept on this computer across restarts, up to about 1 MB.') },
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: downloadLog }, t('Download')),
-        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: clearLog, disabled: !report || total === 0 }, t('Clear')))),
+        locked ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: clearLog, disabled: !report || total === 0 }, t('Clear')))),
   ]
 }
 

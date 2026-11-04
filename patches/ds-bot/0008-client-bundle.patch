@@ -22284,7 +22284,7 @@ diff --git a/client.js b/client.js
 -  const [preview, setPreview] = (0, import_react26.useState)(false);
 -  const [note, setNote] = (0, import_react26.useState)("");
 +var SOURCES = { turn: "Model call", host: "FlyBot", api: "FlyBot", browser: "This window" };
-+function FeedbackPage({ actions, run, Section, Row: Row4 }) {
++function FeedbackPage({ roster, actions, run, Section, Row: Row4 }) {
 +  const [what, setWhat] = (0, import_react40.useState)("");
 +  const [report, setReport] = (0, import_react40.useState)(null);
 +  const [allErrors, setAllErrors] = (0, import_react40.useState)(false);
@@ -22309,7 +22309,7 @@ diff --git a/client.js b/client.js
    const openIssue = () => {
      const win = window.open("", "_blank");
      if (win !== null) win.opener = null;
-@@ -10307,69 +10307,79 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
+@@ -10307,69 +10307,80 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
        if (!inline && !copied) setPreview(true);
      }));
    };
@@ -22320,6 +22320,7 @@ diff --git a/client.js b/client.js
      setNote(t("Downloaded the log. Keys, tokens, and your home folder are hidden in it."));
    }));
    const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t("Cleared the error log."))));
++  const locked = lockedWindow(roster);
    const browserErrors = report ? clientErrors().map((entry) => ({ ...entry, source: "browser" })) : [];
    const entries2 = [...report?.entries ?? [], ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time));
    const total = (report?.total ?? 0) + browserErrors.length;
@@ -22416,7 +22417,7 @@ diff --git a/client.js b/client.js
 -        (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: downloadLog }, t("Download")),
 -        (0, import_react26.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: clearLog, disabled: !report || total === 0 }, t("Clear"))
 +        (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: downloadLog }, t("Download")),
-+        (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: clearLog, disabled: !report || total === 0 }, t("Clear"))
++        locked ? null : (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: clearLog, disabled: !report || total === 0 }, t("Clear"))
        )
      )
    ];
@@ -23040,7 +23041,7 @@ diff --git a/client.js b/client.js
 +          shown === "capabilities" ? (0, import_react42.createElement)(CapabilitiesPage, { roster, actions, run }) : null,
 +          shown === "schedules" ? (0, import_react42.createElement)(SchedulesPage, { roster, actions, start: id ?? void 0 }) : null,
 +          shown === "secrets" ? (0, import_react42.createElement)(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
-+          shown === "feedback" ? (0, import_react42.createElement)(FeedbackPage, { actions, run, Section: SetSection, Row: SetRow }) : null,
++          shown === "feedback" ? (0, import_react42.createElement)(FeedbackPage, { roster, actions, run, Section: SetSection, Row: SetRow }) : null,
 +          shown === "about" ? (0, import_react42.createElement)(AboutPage, { useUpdate, actions, run, Section: SetSection, Row: SetRow }) : null
          ),
 -        usageOpened ? (0, import_react28.createElement)(

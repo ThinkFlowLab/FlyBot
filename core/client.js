@@ -18703,7 +18703,7 @@ function entrySummary(entry) {
   return entry.text;
 }
 var SOURCES = { turn: "Model call", host: "FlyBot", api: "FlyBot", browser: "This window" };
-function FeedbackPage({ actions, run, Section, Row: Row4 }) {
+function FeedbackPage({ roster, actions, run, Section, Row: Row4 }) {
   const [what, setWhat] = (0, import_react40.useState)("");
   const [report, setReport] = (0, import_react40.useState)(null);
   const [allErrors, setAllErrors] = (0, import_react40.useState)(false);
@@ -18745,6 +18745,7 @@ function FeedbackPage({ actions, run, Section, Row: Row4 }) {
     setNote(t("Downloaded the log. Keys, tokens, and your home folder are hidden in it."));
   }));
   const clearLog = () => run(actions.diagnosticsClear().then(clearClientErrors).then(load).then(() => setNote(t("Cleared the error log."))));
+  const locked = lockedWindow(roster);
   const browserErrors = report ? clientErrors().map((entry) => ({ ...entry, source: "browser" })) : [];
   const entries2 = [...report?.entries ?? [], ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time));
   const total = (report?.total ?? 0) + browserErrors.length;
@@ -18812,7 +18813,7 @@ function FeedbackPage({ actions, run, Section, Row: Row4 }) {
         Row4,
         { label: t("Error log"), hint: t("Kept on this computer across restarts, up to about 1 MB.") },
         (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: downloadLog }, t("Download")),
-        (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: clearLog, disabled: !report || total === 0 }, t("Clear"))
+        locked ? null : (0, import_react40.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: clearLog, disabled: !report || total === 0 }, t("Clear"))
       )
     )
   ];
@@ -19312,7 +19313,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           shown === "capabilities" ? (0, import_react42.createElement)(CapabilitiesPage, { roster, actions, run }) : null,
           shown === "schedules" ? (0, import_react42.createElement)(SchedulesPage, { roster, actions, start: id ?? void 0 }) : null,
           shown === "secrets" ? (0, import_react42.createElement)(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
-          shown === "feedback" ? (0, import_react42.createElement)(FeedbackPage, { actions, run, Section: SetSection, Row: SetRow }) : null,
+          shown === "feedback" ? (0, import_react42.createElement)(FeedbackPage, { roster, actions, run, Section: SetSection, Row: SetRow }) : null,
           shown === "about" ? (0, import_react42.createElement)(AboutPage, { useUpdate, actions, run, Section: SetSection, Row: SetRow }) : null
         ),
         usageOpened ? (0, import_react42.createElement)(

@@ -231,7 +231,10 @@ export function install(rt) {
   // (`connector-app-status`). Each handler only reads; the write beside it (`project-create`,
   // `project-bind`, `task-create`, `folder-pick`, `connector-connect`, ...) stays out, so a missing
   // read here is an empty screen, never a change made through the reading window.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
+  // `diagnostics-clear` is not a read: it truncates `<home>/logs/diagnostics.jsonl`, the file a bug
+  // report is meant to carry, so a host that only reads refuses it instead of erasing the evidence
+  // (#2302). `diagnostics` and `diagnostics-log` stay, because they only read that file.
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
     'tasks', 'projects', 'project-read', 'project-board', 'project-team', 'project-of', 'project-decision', 'project-memory',
     'folders', 'folder-list', 'connector-app-status'])
 
