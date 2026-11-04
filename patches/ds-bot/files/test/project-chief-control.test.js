@@ -604,6 +604,8 @@ test('close refusal names the missing acceptance evidence rather than revoking a
 test('same protocol feedback permits different lawful Chief choices rather than a fixed recovery route', async () => {
   for (const action of ['continue', 'route']) {
     const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+    assert.match(f.request.prompt, /Choose an evidence-supported role after environment or execution repair/)
+    assert.ok(!f.request.prompt.includes('Use route to Developer after an environment preparation fix'))
     f.rt.projectPools.connect({ validate: () => ({ ok: true }), rework: async () => 'a' })
     await f.request.onResult(f.result({ action: 'route' }))
     assert.equal(run.status, 'correction-pending')
