@@ -502,7 +502,8 @@ export function resolveInputs(graph, nodeId, produced, task) {
   for (const input of node?.inputs ?? []) {
     let value = producedValue(graph, nodeId, input.name, produced)
     if (!value && roots && TASK_INPUTS.has(input.name)) {
-      if (input.name === 'title' || input.name === 'brief') value = task?.title ?? ''
+      if (input.name === 'brief') value = task?.brief || task?.title || ''
+      else if (input.name === 'title') value = task?.title ?? ''
       else value = `${task?.id ?? ''} ${task?.title ?? ''}`.trim()
     }
     if (value) bag[input.name] = value

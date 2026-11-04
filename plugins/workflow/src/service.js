@@ -959,7 +959,11 @@ export function createWorkflowService({
   // carries an acceptance gate or evidence, which is what lets a real pull request carry a verdict.
   // The answer is stored on the run and posted as one line — never read by anything that decides.
   function shadowOf(item, task, run) {
-    const handoff = storableHandoff(task?.handoff)
+    const stored = storableHandoff(task?.handoff)
+    // #2468: a lane move is not a caller's contract handoff. It is `{from, to, at, reason}`
+    // naming two lanes, so passing it to the shadow pass would record a rejection it never
+    // asked for and hide the derived verdict a card with acceptance/evidence still deserves.
+    const handoff = stored && (stored.card !== undefined || stored.fromRole !== undefined || stored.toRole !== undefined) ? stored : null
     const acceptance = plainObject(task?.acceptance)
     const evidence = Array.isArray(task?.evidence) ? task.evidence : null
     if (!handoff && !acceptance && !evidence) return null
@@ -1301,11 +1305,24 @@ export function createWorkflowService({
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
       const task = { id: cleanLine(body.taskId ?? body.id, 80), title: cleanLine(body.title, 300) }
+      if (!task.id || !task.title) return { ok: false, error: 'A task needs an id and a title' }
       // #1869: a 20–40 line brief is the normal case, so it keeps its line breaks
       // (cleanPrompt) rather than being flattened into one 300-character line.
-      const brief = cleanPrompt(body.brief, MAX_BRIEF)
+      const callBrief = cleanPrompt(body.brief, MAX_BRIEF)
+      // #2468: the card holds the facts; a lane is only an executor. A call that still
+      // passes `brief` keeps working, but once the card has a brief that stored brief
+      // wins, so a re-dispatch to another lane carries the same facts. A call that
+      // brings a brief for a card without one stores it on the card.
+      state.briefs ??= {}
+      const prior = state.briefs[task.id] ?? {}
+      const brief = callBrief || prior.brief || ''
+      const fromLane = prior.workflowId && prior.workflowId !== workflowId ? prior.workflowId : ''
+      state.briefs[task.id] = { ...(brief ? { brief } : {}), workflowId }
       if (brief) task.brief = brief
-      if (!task.id || !task.title) return { ok: false, error: 'A task needs an id and a title' }
+      if (fromLane) {
+        task.handoff = { from: workflow(fromLane)?.name ?? fromLane, to: item.name, at: now(), reason: 're-dispatched to another lane' }
+      }
+      write()
       // #1544: the Bot whose tool call started this run, when a Bot started it. The board, the canvas
       // and the API pass none, and the graph's author is the ceiling there.
       const callerBotId = cleanLine(body.callerBotId, 80)
@@ -1810,7 +1827,7 @@ export function createWorkflowService({
       }
       const title = cleanLine(task.title, 300)
       if (!title) return { ok: false, error: 'A task needs a title' }
-      const assigned = this.assign({ workflowId: decision.id, taskId, title })
+      const assigned = this.assign({ workflowId: decision.id, taskId, title, ...(typeof task.brief === 'string' && task.brief !== '' ? { brief: task.brief } : {}) })
       const finish = (value) => {
         if (value?.ok === false) return value
         rememberClaim(taskId, decision)
