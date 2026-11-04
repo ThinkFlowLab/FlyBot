@@ -40,7 +40,7 @@ async function launch(home, env) {
 
 test('production backend retains canonical Tasks/auth across restart, keeps consultation private and serves scoped SSE', { timeout: 90000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'flybot-backend-runtime-')), port = await freePort()
-  const inboxDriver = inboxModel()
+  const inboxDriver = inboxModel({ correctOnce: true })
   const model = mockModel([], { reply: inboxDriver.reply })
   model.listen(0, '127.0.0.1'); await once(model, 'listening')
   const env = { ...process.env, DEEPSEEK_API_KEY: 'isolated-test-provider', DEEPSEEK_BASE_URL: `http://127.0.0.1:${model.address().port}/v1` }
@@ -208,6 +208,8 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   }
   assert.ok(inboxDriver.observed.nativeClaims > 0 && inboxDriver.observed.nativeCompletions > 0)
   assert.ok(inboxDriver.observed.chiefResumptions >= 2)
+  assert.equal(inboxDriver.observed.invalidChiefResponses, 2)
+  assert.equal(inboxDriver.observed.chiefCorrections, 2)
   assert.ok(received.some(message => message.handled && message.verified && !message.authorization && !message.ownerCookie))
   const after = await callApi(nextTransport, 'project-development', { version: 'project-development/v1', kind: 'command', name: 'task.propose', projectId: project.id, requestId: 'one-original-intent', payload: { title: 'Project change', criteria: 'Result checked', impact: 'Keep project history' } }, token)
   assert.equal(after.replayed, true)

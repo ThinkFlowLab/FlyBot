@@ -2,8 +2,9 @@
 import { agentReply } from './agents.mjs'
 const nodes = value => value && typeof value === 'object' ? [value, ...Object.values(value).flatMap(nodes)] : []
 const strings = value => typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : []
-export function inboxModel() {
-  const tasks = new Map(), observed = { nativeClaims: 0, nativeCompletions: 0, chiefQuestions: 0, chiefResumptions: 0 }
+export function inboxModel({ correctOnce = false } = {}) {
+  const tasks = new Map(), observed = { nativeClaims: 0, nativeCompletions: 0, chiefQuestions: 0, chiefResumptions: 0, invalidChiefResponses: 0, chiefCorrections: 0 }
+  const malformed = new Set(), corrected = new Set()
   return {
     observed, register: (marker, taskId) => tasks.set(marker, taskId),
     reply(options) {
@@ -16,6 +17,8 @@ export function inboxModel() {
           const resume = text.includes('Approved fixture option') && batchId && ids.length
           if (resume) observed.chiefResumptions++; else observed.chiefQuestions++
           const decision = resume ? { taskId: match[1], action: 'admit', reason: 'The scoped agent input resolves this question', inputReceipts: { batchId, read: ids, handled: ids } } : { taskId: match[1], action: 'needs-human', reason: 'Select the approved fixture option through your own project agent', requiresHuman: false }
+          if (resume && correctOnce && !malformed.has(match[1])) { decision.requirements = { criteria: ['Invalid fixture array; Chief must correct this field'] }; malformed.add(match[1]); observed.invalidChiefResponses++ }
+          else if (resume && malformed.has(match[1]) && !corrected.has(match[1]) && text.includes('Host protocol feedback')) { corrected.add(match[1]); observed.chiefCorrections++ }
           return [{ type: 'text', text: JSON.stringify({ summary: 'Isolated inbox protocol acceptance', decisions: [decision] }) }]
         }
       }

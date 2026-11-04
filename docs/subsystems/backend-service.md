@@ -117,3 +117,6 @@ transport. Source API changes require deliberate catalog and guide review.
 ## Workspace baseline and explicit inputs — #2325
 
 #2325 extends the existing attempt.integration-state query with approved-source choices/materialization and attempt.integration-bind inputs with optional purpose=inspect|integrate. Counts remain29queries/34commands. Defaults retain required integration; inspect never proves a merge, test or acceptance. See [workspace contract](project-resource-workspaces.md).
+
+
+#2327 documents correctionBudget and typed Chief correction/run history in OpenAPI. The actual production-entry HTTP/runtime regression injects malformed admission in two flows, verifies feedback-driven correction and retains restart/auth/private-consultation coverage. Its model is deterministic; it is not a paid SDK acceptance run.

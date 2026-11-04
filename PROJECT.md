@@ -12,8 +12,9 @@ Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 
 #2325 aligns actual reused SDK/resource checkouts with pinned baseline/seed facts,
 preserves drafts and admits explicit inspect/integrate inputs through existing
-Effects. Chief selects only approved repository sources. Follow-ups: #2327 Chief
-correction, #2328 idle input-wait slots, #2330 inspection recovery. See
+Effects. Chief selects only approved repository sources. #2327 adds bounded, durable Chief protocol correction in the resident Session;
+exhaustion retains incomplete judgement without automatic escalation. Follow-ups:
+#2328 idle input-wait slots, #2330 inspection recovery. See
 [delivery contract](docs/subsystems/project-delivery.md). Live Task mutation and
 deployment remain separate from source/test delivery.
 

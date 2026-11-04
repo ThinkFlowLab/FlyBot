@@ -1020,6 +1020,114 @@
           "impact"
         ]
       },
+      "ChiefCorrection": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": "chief-correction/v1",
+            "type": "string"
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "resolved",
+              "exhausted",
+              "commit-failed"
+            ]
+          },
+          "feedback": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "const": "bot/chief-protocol",
+                  "type": "string"
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "expected": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "field",
+                      "expected"
+                    ]
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "at": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sideEffects": {
+                  "type": "string"
+                },
+                "appliedTaskIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Opaque server-issued ID; never infer authority from it."
+                  }
+                }
+              },
+              "additionalProperties": true,
+              "required": [
+                "code",
+                "fields",
+                "message",
+                "at"
+              ]
+            },
+            "maxItems": 5
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "version",
+          "round",
+          "limit",
+          "status",
+          "feedback"
+        ]
+      },
       "TaskRecord": {
         "type": "object",
         "properties": {
@@ -8269,6 +8377,53 @@
                 },
                 "source": {
                   "$ref": "#/components/schemas/JsonValue"
+                },
+                "correction": {
+                  "$ref": "#/components/schemas/ChiefCorrection"
+                },
+                "invocation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "correctionLimit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "invocationHistory": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "number": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "snapshotSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "responseSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "execution": {
+                        "$ref": "#/components/schemas/JsonValue"
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "number",
+                      "snapshotSha256",
+                      "responseSha256",
+                      "at"
+                    ]
+                  },
+                  "maxItems": 5
                 }
               },
               "additionalProperties": true,
@@ -13487,6 +13642,11 @@
           "inspection": {
             "type": "object",
             "properties": {
+              "correctionBudget": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4
+              },
               "enabled": {
                 "type": "boolean"
               },
@@ -13710,6 +13870,53 @@
                 },
                 "source": {
                   "$ref": "#/components/schemas/JsonValue"
+                },
+                "correction": {
+                  "$ref": "#/components/schemas/ChiefCorrection"
+                },
+                "invocation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "correctionLimit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "invocationHistory": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "number": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "snapshotSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "responseSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "execution": {
+                        "$ref": "#/components/schemas/JsonValue"
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "number",
+                      "snapshotSha256",
+                      "responseSha256",
+                      "at"
+                    ]
+                  },
+                  "maxItems": 5
                 }
               },
               "additionalProperties": true,
@@ -18949,6 +19156,53 @@
                     },
                     "source": {
                       "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "correction": {
+                      "$ref": "#/components/schemas/ChiefCorrection"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "correctionLimit": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4
+                    },
+                    "invocationHistory": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "snapshotSha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "responseSha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "execution": {
+                            "$ref": "#/components/schemas/JsonValue"
+                          },
+                          "at": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "additionalProperties": true,
+                        "required": [
+                          "number",
+                          "snapshotSha256",
+                          "responseSha256",
+                          "at"
+                        ]
+                      },
+                      "maxItems": 5
                     }
                   },
                   "additionalProperties": true,
@@ -26267,6 +26521,11 @@
           "inspection": {
             "type": "object",
             "properties": {
+              "correctionBudget": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4
+              },
               "enabled": {
                 "type": "boolean"
               },
@@ -26440,6 +26699,53 @@
                 },
                 "source": {
                   "$ref": "#/components/schemas/JsonValue"
+                },
+                "correction": {
+                  "$ref": "#/components/schemas/ChiefCorrection"
+                },
+                "invocation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "correctionLimit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "invocationHistory": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "number": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "snapshotSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "responseSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "execution": {
+                        "$ref": "#/components/schemas/JsonValue"
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "number",
+                      "snapshotSha256",
+                      "responseSha256",
+                      "at"
+                    ]
+                  },
+                  "maxItems": 5
                 }
               },
               "additionalProperties": true,
@@ -26616,6 +26922,53 @@
                 },
                 "source": {
                   "$ref": "#/components/schemas/JsonValue"
+                },
+                "correction": {
+                  "$ref": "#/components/schemas/ChiefCorrection"
+                },
+                "invocation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "correctionLimit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "invocationHistory": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "number": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "snapshotSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "responseSha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "execution": {
+                        "$ref": "#/components/schemas/JsonValue"
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": true,
+                    "required": [
+                      "number",
+                      "snapshotSha256",
+                      "responseSha256",
+                      "at"
+                    ]
+                  },
+                  "maxItems": 5
                 }
               },
               "additionalProperties": true,
@@ -28248,7 +28601,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       }
     },
     {
@@ -28326,7 +28679,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       }
     },
     {
@@ -28404,7 +28757,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       }
     },
     {
@@ -28482,7 +28835,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       }
     },
     {
@@ -29038,7 +29391,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       }
     },
     {
@@ -29360,7 +29713,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       }
     },
     {
@@ -29681,7 +30034,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb"
+        "sha256": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f"
       }
     },
     {
@@ -32656,7 +33009,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb"
+        "sha256": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f"
       }
     },
     {
@@ -32753,10 +33106,10 @@
         "unifiedCommandReceipt": true
       },
       "invokesModel": false,
-      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline.",
+      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb"
+        "sha256": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f"
       }
     },
     {
@@ -33028,7 +33381,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37181,7 +37534,7 @@
       "notes": "FBA may only use view=summary, which never borrows native private history. Use v1 roles and consultations for external agents.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37274,7 +37627,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37345,7 +37698,7 @@
       "notes": "Default latest50; byte-budgeted messages, oversized records use messageIndex source pages. Snapshot prefix survives append, edits invalidate cursor. Private defaults to the current human.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37418,7 +37771,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37494,7 +37847,7 @@
       "notes": "Human facts and role-authored inference have distinct authority. Updates retain history; memory is not permission.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37663,7 +38016,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37755,7 +38108,7 @@
       "notes": "External agents should prefer v1 consultation.ask. A consultation is not a Task handoff.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -37828,7 +38181,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -38362,7 +38715,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       }
     },
     {
@@ -42401,7 +42754,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -43538,7 +43891,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb"
+        "sha256": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -43633,10 +43986,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": false,
-      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline.",
+      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb"
+        "sha256": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -43712,7 +44065,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb"
+        "sha256": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -43978,7 +44331,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8"
+        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
       },
       "aliasOf": "development.command.proposal.publish"
     },
@@ -44157,7 +44510,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117"
+        "sha256": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178"
       },
       "aliasOf": "development.query.pools"
     },
@@ -44573,10 +44926,11 @@
       "core/src/host/project-agent-inbox.js": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9",
       "core/src/host/project-agent-skills.js": "6545f39aec7bbb8bd812558d37422fae1fa0e4fc7ab2fa02f1c50501d29c8445",
       "core/src/host/project-agent-webhook.js": "129d8ea133a5d85f3b3cb2627dee45fe8617552b422213b93539436dd7a1e5ce",
-      "core/src/host/project-agents.js": "058f367ea3b788061cec58faacb8d5e14c62eb2a82616814da0a08f3399869a8",
+      "core/src/host/project-agents.js": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada",
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
-      "core/src/host/project-chief-control.js": "6933abd447fb41c28c6460ba651223eeb0727777e5955b294f4fab81adf30bdb",
+      "core/src/host/project-chief-control.js": "ecfbd22b926bb52ea9929472a2e718be48fa9624aaf2ac0ec1fe833edad3d45f",
+      "core/src/host/project-chief-protocol.js": "a09d85e04171b22625d3eed131dd6a5227dc1a946ad39d8a59f017bb75f71936",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
       "core/src/host/project-command-receipts.js": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52",
@@ -44588,7 +44942,7 @@
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "daa5cc8185abc1ec84421ae3fcd5574a50573cfd1a7c4cb10941158e29c79a13",
       "core/src/host/project-delivery.js": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b",
-      "core/src/host/project-development-service.js": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117",
+      "core/src/host/project-development-service.js": "cb1e3b1cda8656f2add087f43be839776d9f6d2e93965d360bf3c8c2b1462178",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",

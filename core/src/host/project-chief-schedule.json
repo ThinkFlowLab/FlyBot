@@ -1,7 +1,16 @@
 {
   "title": "Chief project inspection",
   "prompt": "Inspect active Project tasks. Identify repeated returns or transfers without verified progress, long executions, missing heartbeats and long waits. Use actual candidate, test and review evidence. Intervene only with an explicit audited reason; preserve unknown worker capacity and never treat message churn as delivery.",
-  "when": { "kind": "every", "seconds": 1800 },
+  "when": {
+    "kind": "every",
+    "seconds": 1800
+  },
   "enabled": true,
-  "thresholds": { "maxHandoffsWithoutProgress": 4, "longExecutionMs": 2700000, "missingHeartbeatMs": 1200000, "longWaitMs": 3600000 }
+  "thresholds": {
+    "maxHandoffsWithoutProgress": 4,
+    "longExecutionMs": 2700000,
+    "missingHeartbeatMs": 1200000,
+    "longWaitMs": 3600000
+  },
+  "correctionBudget": 2
 }

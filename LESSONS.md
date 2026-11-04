@@ -13,6 +13,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — Protocol errors are feedback, not business decisions (Seen 1×)
+
+A missing routing field stalled an otherwise configured pool. Validate the whole
+response before side effects, commit bounded correction feedback, and let Chief
+choose the fix in its resident Session. Budget exhaustion is incomplete judgement;
+it grants no default destination, human escalation, evidence or exit proof.
+
+
 ### 2026-11-04 — A refreshed baseline field does not refresh a reused checkout
 
 Seen 1×. Rework recorded the repaired base but retained an older SDK cwd. Verify

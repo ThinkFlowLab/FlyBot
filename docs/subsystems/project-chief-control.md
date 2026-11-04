@@ -1,6 +1,7 @@
 ---
 subsystem: project-chief-control
 owned_paths:
+  - core/src/host/project-chief-protocol.js
   - core/src/host/project-chief-control.js
   - core/src/host/project-chief-schedule.json
   - core/src/host/project-scheduled-tasks.js
@@ -189,3 +190,28 @@ Native prior-host recovery reuses the existing supervisor proof helper and exact
 ## Workspace baseline and explicit inputs — #2325
 
 #2325 supplies bounded repositoryRecovery facts with operator ref/SHA choices, workspace snapshot/materialization and the latest preparation failure. A validated Chief may attach repositoryInputs to route/return; the trusted delivery port rechecks current authority, exact snapshot/ref/SHA and confirmed workspace exit, excluding only the current authenticated Chief job that never owns the Dev workspace. Arbitrary source selection and other active/unknown workers remain refused. Protocol correction and proactive prompting follow in #2327.
+
+## Bounded protocol correction — #2327
+
+Autonomous progress within current authorization is Chief's first priority. The host
+supplies exact active logical Bot IDs, fresh Task/resource/repository facts and typed
+protocol feedback. It never infers Developer or creates a consultation from a malformed
+route/return. The complete response is protocol-checked before applying decisions.
+Missing/invalid destinations, malformed JSON and requirement strings are correctable;
+permission, stale evidence and actual execution failures retain their original gates.
+
+`inspection.correctionBudget` defaults to 2 and accepts integers 0–4. A run pins its
+budget. A committed `chief.correction` intent permits a fresh invocation of the same
+resident Chief Session and control run only after prior execution exit/release. Each
+invocation rechecks policy, current role catalog and scoped snapshots. Feedback is
+bounded to five entries; private execution proof paths never enter correction prompts.
+Stale/duplicate callbacks cannot apply another decision. History retains hashes,
+invocations and exact applied-decision receipts; a failed durable save cannot authorize
+retry. No extra timer is introduced.
+
+Pending correction appears as `correction-pending` / Task `awaiting-chief`; exhaustion
+is an `incomplete` judgement with Task `blocked/chief-recovery`, not an automatic human
+escalation. Chief can later independently choose consultation, repair or another lawful
+route through the original inspection interface. A valid decision clears only its Task's
+current issue marker, retaining failed invocation/audit history. Separate per-Task
+execution failure isolation and scheduled restart recovery remain #2330.
