@@ -1673,6 +1673,84 @@
                 "type": "null"
               }
             ]
+          },
+          "chiefIssue": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Opaque server-issued ID; never infer authority from it."
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stage": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "code": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "generation": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "recoveryKind": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "runId",
+                  "kind",
+                  "stage",
+                  "code",
+                  "generation",
+                  "recoveryKind"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -10844,6 +10922,128 @@
                 },
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "lastResult": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "host-dispatch",
+                        "executor"
+                      ]
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "receivedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "ok",
+                    "invocation",
+                    "source",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "receivedAt"
+                  ]
+                },
+                "failureDetail": {
+                  "type": "object",
+                  "properties": {
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recoveryKind": {
+                      "type": "string"
+                    },
+                    "criteriaIssues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "historical": {
+                      "type": "boolean"
+                    },
+                    "resolvedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "invocation",
+                    "stage",
+                    "code",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "recoveryKind",
+                    "criteriaIssues",
+                    "at"
+                  ]
                 }
               },
               "additionalProperties": true,
@@ -16625,6 +16825,128 @@
                 },
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "lastResult": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "host-dispatch",
+                        "executor"
+                      ]
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "receivedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "ok",
+                    "invocation",
+                    "source",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "receivedAt"
+                  ]
+                },
+                "failureDetail": {
+                  "type": "object",
+                  "properties": {
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recoveryKind": {
+                      "type": "string"
+                    },
+                    "criteriaIssues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "historical": {
+                      "type": "boolean"
+                    },
+                    "resolvedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "invocation",
+                    "stage",
+                    "code",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "recoveryKind",
+                    "criteriaIssues",
+                    "at"
+                  ]
                 }
               },
               "additionalProperties": true,
@@ -21963,6 +22285,128 @@
                     },
                     "recoveryIssue": {
                       "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                    },
+                    "lastResult": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "invocation": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "host-dispatch",
+                            "executor"
+                          ]
+                        },
+                        "responseSha256": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "diagnosticSha256": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "receivedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "ok",
+                        "invocation",
+                        "source",
+                        "responseSha256",
+                        "diagnosticSha256",
+                        "receivedAt"
+                      ]
+                    },
+                    "failureDetail": {
+                      "type": "object",
+                      "properties": {
+                        "invocation": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "stage": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "responseSha256": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "diagnosticSha256": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "recoveryKind": {
+                          "type": "string"
+                        },
+                        "criteriaIssues": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "at": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "historical": {
+                          "type": "boolean"
+                        },
+                        "resolvedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "invocation",
+                        "stage",
+                        "code",
+                        "responseSha256",
+                        "diagnosticSha256",
+                        "recoveryKind",
+                        "criteriaIssues",
+                        "at"
+                      ]
                     }
                   },
                   "additionalProperties": true,
@@ -29652,6 +30096,128 @@
                 },
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "lastResult": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "host-dispatch",
+                        "executor"
+                      ]
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "receivedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "ok",
+                    "invocation",
+                    "source",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "receivedAt"
+                  ]
+                },
+                "failureDetail": {
+                  "type": "object",
+                  "properties": {
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recoveryKind": {
+                      "type": "string"
+                    },
+                    "criteriaIssues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "historical": {
+                      "type": "boolean"
+                    },
+                    "resolvedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "invocation",
+                    "stage",
+                    "code",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "recoveryKind",
+                    "criteriaIssues",
+                    "at"
+                  ]
                 }
               },
               "additionalProperties": true,
@@ -29917,6 +30483,128 @@
                 },
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "lastResult": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "host-dispatch",
+                        "executor"
+                      ]
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "receivedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "ok",
+                    "invocation",
+                    "source",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "receivedAt"
+                  ]
+                },
+                "failureDetail": {
+                  "type": "object",
+                  "properties": {
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "responseSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "diagnosticSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recoveryKind": {
+                      "type": "string"
+                    },
+                    "criteriaIssues": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "historical": {
+                      "type": "boolean"
+                    },
+                    "resolvedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "invocation",
+                    "stage",
+                    "code",
+                    "responseSha256",
+                    "diagnosticSha256",
+                    "recoveryKind",
+                    "criteriaIssues",
+                    "at"
+                  ]
                 }
               },
               "additionalProperties": true,
@@ -31557,7 +32245,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       }
     },
     {
@@ -31635,7 +32323,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       }
     },
     {
@@ -31713,7 +32401,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       }
     },
     {
@@ -31791,7 +32479,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       }
     },
     {
@@ -32347,7 +33035,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       }
     },
     {
@@ -32669,7 +33357,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       }
     },
     {
@@ -32751,7 +33439,7 @@
       "notes": "Read continuation facts even after cancellation. task.run selects a successor, never revives the cancelled Attempt.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -32833,7 +33521,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -32911,7 +33599,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -33072,7 +33760,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
+        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
       }
     },
     {
@@ -34960,7 +35648,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -35068,7 +35756,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -35175,7 +35863,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -35269,7 +35957,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -35373,7 +36061,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -35483,7 +36171,7 @@
       "notes": "Fetch attempt.integration-state again after retirement; attempt.stop remains cancellation.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -35592,7 +36280,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       }
     },
     {
@@ -36167,7 +36855,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
+        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
       }
     },
     {
@@ -36272,7 +36960,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
+        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
       }
     },
     {
@@ -45917,7 +46605,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -46014,7 +46702,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -46107,7 +46795,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -46199,7 +46887,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -46291,7 +46979,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -46680,7 +47368,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -46756,7 +47444,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2"
+        "sha256": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -47064,7 +47752,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
+        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -47167,7 +47855,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
+        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -47243,7 +47931,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e"
+        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -47688,7 +48376,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
       },
       "aliasOf": "development.query.pools"
     },
@@ -48112,10 +48800,10 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "9b4718882f2ec2f854f0dddf68f4bec5677b5e762bf9ba18f5141add2f6ff09e",
+      "core/src/host/project-chief-control.js": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
-      "core/src/host/project-chief-protocol.js": "d56d4970a8a86f620005ad93ab70fecbd557d2f4980679c5c228237768fcd8d4",
-      "core/src/host/project-chief-recovery.js": "b4efeef007222a87249a808bc49deb84e0e6014c700bb661629a9eb8426327f7",
+      "core/src/host/project-chief-protocol.js": "416d57a83ae6064f04d13e70ffba63d8732b4cee4598e37fdcbf63ece7181a79",
+      "core/src/host/project-chief-recovery.js": "14b844e7841554de888f762fa6a17ca69b291ede465a7d4e31dcadb3904ad01a",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
       "core/src/host/project-codex-config.js": "6f7f72c41719aea1be8a35688618801e954efcc23537835a9d527f74492030c9",
@@ -48127,8 +48815,8 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
-      "core/src/host/project-delivery.js": "be378617d752f6b20e58c3094cda54c9834f5ae3a9a3a460bea4d44b79429fe2",
-      "core/src/host/project-development-service.js": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58",
+      "core/src/host/project-delivery.js": "830c13a866d9b668061743a112042f6bdc22c8a8c4508918fb3678132278a754",
+      "core/src/host/project-development-service.js": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",

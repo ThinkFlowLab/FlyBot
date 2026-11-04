@@ -3,6 +3,8 @@
 
 #2378 reuses role Apps for bounded PR/CI reads and hash-verified host logs in Reviewer scratch; absence or incomplete pages are not verification success.
 
+#2393 keeps Chief execution faults on their Run, preserves business evidence and returns per-Task/current-snapshot correction; Agent chooses recovery through existing capabilities.
+
 
 #2375 adds explicit exit-proven claim retirement through existing pools/Effects; preserve drafts, pending results and unknown writes. No cancellation or automatic routing.
 

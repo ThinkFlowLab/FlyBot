@@ -3,6 +3,8 @@
 
 #2378: enable explicit Actions reads/download hosts and retrievable exact-SHA test artifacts; real installed-App/private-repository acceptance remains separate.
 
+#2393: precise Run/receipt/snapshot feedback and no replay of applied Task decisions; no automatic role/human routing or new scheduler.
+
 
 #2375: retire proven exited responsibility before fresh integration admission; source/isolated tests remain separate from live recovery.
 

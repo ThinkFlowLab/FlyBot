@@ -416,3 +416,9 @@ native.get('project-terminal-open').notes += ' Returns the actual HOME/configDir
 commands.get('task.run').request.properties.continuation = obj({ mode: choice('continue', 'latest'), expectedBaseSha: sha, previousAttemptId: id, generation: int(), expectedWorkspace: json }, ['mode', 'previousAttemptId', 'generation', 'expectedWorkspace'])
 schemas.Continuation = obj({ version: lit('project-continuation/v1'), mode: choice('continue', 'latest'), previousAttemptId: id, sourceWorkspaceId: nullable(id), generation: int(), baseSha: nullable(sha), seedSha: nullable(sha), retainedDraft: bool, admissions: array(id), by: id, at: int() }, ['version', 'mode', 'previousAttemptId', 'sourceWorkspaceId', 'generation', 'retainedDraft'])
 schemas.Attempt.properties.continuation = ref('Continuation')
+
+// Chief coordination failure is separate from business acceptance.
+const chiefRunFeedback = queries.get('chief.state').response.properties.runs.items
+chiefRunFeedback.properties.lastResult = obj({ ok: bool, invocation: int(1), source: choice('host-dispatch', 'executor'), responseSha256: nullable(hash), diagnosticSha256: nullable(hash), receivedAt: int() }, ['ok', 'invocation', 'source', 'responseSha256', 'diagnosticSha256', 'receivedAt'])
+chiefRunFeedback.properties.failureDetail = obj({ invocation: int(1), stage: str(), code: str(), responseSha256: nullable(hash), diagnosticSha256: nullable(hash), recoveryKind: str(), criteriaIssues: array(str()), at: int(), historical: bool, resolvedAt: int() }, ['invocation', 'stage', 'code', 'responseSha256', 'diagnosticSha256', 'recoveryKind', 'criteriaIssues', 'at'])
+schemas.TaskView.properties.chiefIssue = nullable(obj({ runId: id, kind: nullable(str()), stage: nullable(str()), code: nullable(str()), generation: nullable(int()), recoveryKind: nullable(str()) }, ['runId', 'kind', 'stage', 'code', 'generation', 'recoveryKind']))

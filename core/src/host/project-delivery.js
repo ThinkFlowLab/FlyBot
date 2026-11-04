@@ -545,7 +545,8 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
         proof = { workerId: record.id, leaseId: record.leaseId, generation: record.generation, releaseProof: record.releaseProof }
       }
       if (Object.values(state.projectEffects ?? {}).some(row => row.taskId === task.id && row.payload?.attemptId === attempt.id && ['pending', 'running', 'failed'].includes(row.status) && ['github.candidate', 'github.publish', 'github.review', 'github.merge'].includes(row.kind))) throw reject('Reconcile pending external writes before retiring execution responsibility')
-      integrationReleased(attempt, undefined, claim)
+      if (actor.chiefJobId) rt.projectChiefControl.requireJobActor(actor, task.projectId)
+      integrationReleased(attempt, actor.chiefJobId ? { [chiefInputPermit]: actor.chiefJobId } : undefined, claim)
       rt.requireProjectAccess(actor, task.projectId, 'configure', task)
       if (task.deliveryAttemptId !== attempt.id || attempt.cancelRequested) throw reject('Execution retirement Attempt changed during validation')
       return proof
@@ -1330,7 +1331,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone', 'decision-directory'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { reconcileExit, releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {

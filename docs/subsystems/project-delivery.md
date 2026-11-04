@@ -685,3 +685,7 @@ an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps
 ## Readable verification artifacts (#2378)
 
 Role context labels exact host test SHA/hash/command and native log source separately from SDK-executed checks or GitHub CI. SDK receives its own hash-verified transfer through the existing resource scratch. Tests/Review still require the immutable host candidate/source and original evidence gates; input.publish text and artifact readability cannot grant acceptance.
+
+## Chief failure is not acceptance failure (#2393)
+
+Existing candidate/tests/Review/merge evidence survives a Chief execution fault. Closure refusals identify actual criteria/evidence fields. Explicit Chief reconcile-exit reuses the same #2375 verifier/retirement and excludes only its authenticated current inspection; it does not retire its own live claim or select a downstream role. Existing sealed-candidate resumeVerification remains authoritative.
