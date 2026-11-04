@@ -27,8 +27,8 @@ function patchSync(method, replace) {
   }
 }
 
-function runtime(t, saved) {
-  const home = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
+function runtime(t, saved, { home: at, config } = {}) {
+  const home = at ?? fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
   const statePath = join(home, 'state.json')
   if (saved !== undefined) fs.writeFileSync(statePath, typeof saved === 'string' ? saved : JSON.stringify(saved))
   const warnings = []
@@ -45,6 +45,7 @@ function runtime(t, saved) {
     ctx,
     home,
     statePath,
+    config,
     autoRoomName: () => 'Room',
     retitleRoom: async () => {},
     warn: (...args) => warnings.push(args),
@@ -245,6 +246,44 @@ test('a read-only host resolves awaited saves without writing', async (t) => {
   rt.state.prefs.marker = 'not saved'
   await rt.save()
   assert.equal(fs.readFileSync(statePath, 'utf8'), ownerState)
+})
+
+// Opening the state journal is itself a write: it creates `journal/` (0700) and repairs a
+// half-written last line by replacing the file with its complete prefix. A window another dsh
+// keeps read-only never gets to record, so opening it there leaves the folder behind and rewrites
+// the holder's own journal — a window that may not change the team changed the team's home.
+test('a read-only window neither creates nor rewrites the state journal', async (t) => {
+  // Someone else's home: this window may not write, so no `journal/` may appear at all.
+  const held = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
+  t.after(() => fs.rmSync(held, { recursive: true, force: true, maxRetries: 5 }))
+  fs.writeFileSync(join(held, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const reader = runtime(t, undefined, { home: held, config: { stateJournal: true } })
+  assert.equal(fs.existsSync(join(held, 'journal')), false, 'a window that may not write creates no journal folder')
+  await reader.rt.load()
+  assert.match(reader.rt.readOnly(), /another dsh/)
+  reader.rt.state.prefs.marker = 'not saved'
+  await reader.rt.save()
+  assert.equal(fs.existsSync(join(held, 'journal')), false, 'a refused save opens no journal')
+
+  // The holder's journal keeps its bytes, half-written last line included: repairing it is a
+  // write, and this window may not write.
+  const shared = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
+  t.after(() => fs.rmSync(shared, { recursive: true, force: true, maxRetries: 5 }))
+  const writer = runtime(t, undefined, { home: shared, config: { stateJournal: true } })
+  await writer.rt.load()
+  await writer.rt.save()
+  const path = join(shared, 'journal', 'state.jsonl')
+  fs.appendFileSync(path, '{"seq":2,"t":1,"op":se')
+  // Another process, so this one is a reader: a same-pid lock file would be a lock it can take.
+  fs.writeFileSync(join(shared, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
+  const before = fs.readFileSync(path)
+  const second = runtime(t, undefined, { home: shared, config: { stateJournal: true } })
+  await second.rt.load()
+  assert.match(second.rt.readOnly(), /another dsh/)
+  assert.deepEqual(fs.readFileSync(path), before, 'opening a journal this window may not write leaves its bytes alone')
+  second.rt.state.prefs.marker = 'not saved'
+  await second.rt.save()
+  assert.deepEqual(fs.readFileSync(path), before, 'a refused save leaves the journal bytes alone')
 })
 
 test('dispose waits for a pending save and prevents later writes', async (t) => {
