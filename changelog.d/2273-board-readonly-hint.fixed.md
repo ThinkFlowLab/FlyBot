@@ -1,1 +1,0 @@
-A read-only window's task board now says inside the board itself why Add task, Start, Complete and dragging are gone: one line above the columns carries the host's own read-only sentence, which the full-screen board had covered until now. A writable board draws nothing new. ([#2273](https://github.com/ThinkFlowLab/FlyBot/issues/2273))

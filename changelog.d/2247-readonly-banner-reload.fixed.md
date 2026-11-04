@@ -1,1 +1,0 @@
-A read-only FlyBot window's sidebar banner now offers **Reload** in both the wide and the rail shape: it re-reads the whole team instead of reloading the page, so the banner and every refused control clear as soon as the other window has let go, and an unsent composer line is not lost. ([#2247](https://github.com/ThinkFlowLab/FlyBot/issues/2247)).

@@ -1,1 +1,0 @@
-A read-only window no longer offers the Stage write controls that core refuses: Hand a task to a Workflow, Re-match, Pause/Resume/Stop, Edit and the drag palette, plus Reset, are gone from the Stage a workflow row opens, and the Stage prints the host's own read-only sentence instead (#2213).

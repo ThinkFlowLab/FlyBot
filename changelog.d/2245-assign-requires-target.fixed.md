@@ -1,1 +1,0 @@
-**Hand a task to a Workflow** keeps **Assign** disabled while no target is picked: with no Workflow defined the dialog no longer looks ready and no longer posts an empty `workflowId` that the host answers with "No such workflow".

@@ -1,1 +1,0 @@
-**Hand a task to a Workflow** now names the picked target on its confirm button — `Assign to <lane> · <Project>`, or the Bot when the card goes to one Bot — so two lanes that share a name are told apart at the click; the confirm body is unchanged. ([#2254](https://github.com/ThinkFlowLab/FlyBot/issues/2254))

@@ -1,1 +1,0 @@
-In a read-only window a Bot's Memory panel no longer draws the **Remove** button or the **Ask or update** form the host would refuse, and says why in the host's own sentence, while the entries and **Regenerate summary** keep working ([#2276](https://github.com/ThinkFlowLab/FlyBot/issues/2276)).

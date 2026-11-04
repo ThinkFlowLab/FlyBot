@@ -1,1 +1,0 @@
-Settings now takes keyboard focus when it opens: the dialog is the focused element, so Tab starts inside it and Escape reaches it even when the message box had focus. Closing returns focus to the still-connected control that opened it (#2251).
