@@ -350,6 +350,14 @@ and an empty or whitespace-only box disables Save — neither state calls the en
 so the two host sentences stay for the race where the host refuses an entry the panel allowed. Tests:
 `core/test/project-board-panels.test.js`.
 
+In a window that holds the team read-only the panel draws no write at all (#2306): `ProjectBoardOverlay`
+reads the roster it is injected with through `lockedWindow` (`schedules.js`) and hands the lock down, so
+the panel opens with the host's own sentence in one `role="status"` line and **Back to board** instead of
+**Bind**/**Unbind**, the digest box and its **Save**, and the memory box and **Save memory** — the four
+controls behind `project-bind`, `project-assistant-owner` and `project-memory-write`, which the host
+refuses there. The board around it, the **Members** panel and the record keep reading, and a writable
+window draws the panel exactly as before. Tests: `core/test/project-board-readonly.test.js`.
+
 The **Members** panel lists every owner and every member the board names, and since #1859 also the
 Project's own Chief as its own row (`data-member-role="chief"`), read from `chief` on the `project-read`
 record rather than a second call; a Project without a Chief draws no such row. It offers no write — the

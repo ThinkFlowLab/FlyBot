@@ -6336,7 +6336,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-typing-in{from{opacity:0;transform:scale(.9)}}
  @keyframes bt-typing-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92);filter:blur(3px)}}
  @keyframes bt-typing-label{from{opacity:0;filter:blur(5px);transform:translateY(3px)}}
-@@ -2676,4494 +2676,7999 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -2676,4494 +2676,8014 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-bt-enter="new"]{animation:none}
  [data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
  }
@@ -12383,23 +12383,6 @@ diff --git a/client.js b/client.js
        "div",
 -      { className: "bt-agent-sub", "data-open": open || void 0 },
 -      (0, import_react8.createElement)(
--        "div",
--        { className: "bt-agent-sub-in" },
--        (0, import_react8.createElement)(
--          "button",
--          { type: "button", className: "bt-agent-sub-row bt-agent-new", style: { "--i": 0 }, onClick: () => {
--            void actions.newAgentSession(agent.id).catch((error) => actions.reportError(error, "agent-session"));
--          } },
--          (0, import_react8.createElement)(PlusIcon),
--          (0, import_react8.createElement)("span", { className: "bt-agent-sub-title" }, t("New session"))
--        ),
--        sessions.map((session, index) => (0, import_react8.createElement)(AgentSessionRow, {
--          key: session.id,
--          session,
--          agent,
--          actions,
--          index: index + 1,
--          renaming: renaming === session.id
 +      { className: "bt-board-main" },
 +      error ? (0, import_react17.createElement)("p", { className: "bt-board-error", role: "alert" }, error) : null,
 +      lanes ? (0, import_react17.createElement)("p", { className: "bt-board-hint" }, t("Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.")) : null,
@@ -12416,7 +12399,23 @@ diff --git a/client.js b/client.js
 +      // so the lock's own sentence is drawn here too, from the host, not in a second wording.
 +      locked ? (0, import_react17.createElement)("p", { className: "bt-board-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
 +      (0, import_react17.createElement)(
-+        "div",
+         "div",
+-        { className: "bt-agent-sub-in" },
+-        (0, import_react8.createElement)(
+-          "button",
+-          { type: "button", className: "bt-agent-sub-row bt-agent-new", style: { "--i": 0 }, onClick: () => {
+-            void actions.newAgentSession(agent.id).catch((error) => actions.reportError(error, "agent-session"));
+-          } },
+-          (0, import_react8.createElement)(PlusIcon),
+-          (0, import_react8.createElement)("span", { className: "bt-agent-sub-title" }, t("New session"))
+-        ),
+-        sessions.map((session, index) => (0, import_react8.createElement)(AgentSessionRow, {
+-          key: session.id,
+-          session,
+-          agent,
+-          actions,
+-          index: index + 1,
+-          renaming: renaming === session.id
 +        { className: "bt-board-columns" },
 +        ["not-started", "in-progress", "done"].map((column) => (0, import_react17.createElement)(BoardColumn, {
 +          key: column,
@@ -12470,6 +12469,11 @@ diff --git a/client.js b/client.js
 +    (0, import_react17.createElement)("span", { className: "bt-board-mark" }, (0, import_react17.createElement)(BoardIcon)),
 +    wide ? (0, import_react17.createElement)("span", { className: "bt-board-label" }, label) : null
 +  );
++}
++function scopeName(roster, scope) {
++  if (scope?.kind === "group") return roster.roomsById?.[scope.roomId]?.name || t("Group");
++  if (scope?.kind === "bot") return roster.byId?.[scope.botId]?.name || "";
++  return "";
  }
 -function TeamSidebar(props) {
 -  const { wide, useRoster, useUi, useSessions, actions } = props;
@@ -12501,11 +12505,6 @@ diff --git a/client.js b/client.js
 -    if (event.target instanceof Element && event.target.closest("input,textarea,[contenteditable]")) return;
 -    event.preventDefault();
 -    actions.openPalette(event.key);
-+function scopeName(roster, scope) {
-+  if (scope?.kind === "group") return roster.roomsById?.[scope.roomId]?.name || t("Group");
-+  if (scope?.kind === "bot") return roster.byId?.[scope.botId]?.name || "";
-+  return "";
-+}
 +function KanbanDialog({ roster, actions, leaving = false }) {
 +  const locked = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
 +  const rail = boardRail(roster);
@@ -13004,11 +13003,6 @@ diff --git a/client.js b/client.js
 -  const hide = () => {
 -    clearTimeout(timer.current);
 -    setTip(false);
--  };
--  return (0, import_react8.createElement)(
--    "span",
--    { className: "bt-connect-wrap" },
--    (0, import_react8.createElement)(
 +
 +// src/client/sidebar.js
 +var import_react19 = require("react");
@@ -13050,7 +13044,11 @@ diff --git a/client.js b/client.js
 +  const onContextMenu = (event) => {
 +    event.preventDefault();
 +    actions.openMenu({ kind: "bot", id, x: event.clientX, y: event.clientY });
-+  };
+   };
+-  return (0, import_react8.createElement)(
+-    "span",
+-    { className: "bt-connect-wrap" },
+-    (0, import_react8.createElement)(
 +  const pinned = bot.pinned === true && !tile;
 +  const remote = Boolean(bot.remote);
 +  const shown = remote ? friendBotTitle(bot) : bot.name;
@@ -15587,17 +15585,7 @@ diff --git a/client.js b/client.js
 -    stream = await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
 -  } catch (error) {
 -    throw captureError(error?.name === "NotAllowedError" ? "blocked" : "failed", error);
--  }
--  const audio = new AudioContext();
--  const analyser = audio.createAnalyser();
--  analyser.fftSize = 512;
--  audio.createMediaStreamSource(stream).connect(analyser);
--  const frame = new Float32Array(analyser.fftSize);
--  const recorder = new MediaRecorder(stream);
--  const chunks = [];
--  recorder.ondataavailable = (event) => {
--    if (event.data.size > 0) chunks.push(event.data);
-+function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved } = {}) {
++function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved, locked = false, readOnly = "" } = {}) {
 +  const save = request ?? call;
 +  const [kind, setKind] = (0, import_react21.useState)("bot");
 +  const [memberId, setMemberId] = (0, import_react21.useState)("");
@@ -15608,6 +15596,28 @@ diff --git a/client.js b/client.js
 +  const [assistantOff, setAssistantOff] = (0, import_react21.useState)(assistantMine === void 0 ? project?.assistant?.off === true : assistantMine?.off === true);
 +  const [status, setStatus] = (0, import_react21.useState)("");
 +  const id = text(project?.id);
++  if (locked) {
++    return (0, import_react21.createElement)(
++      "div",
++      { className: "bt-project-panel", "data-panel": "project-settings" },
++      (0, import_react21.createElement)("h3", null, t("Project settings")),
++      (0, import_react21.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(readOnly)),
++      (0, import_react21.createElement)(
++        "div",
++        { className: "bt-project-row-actions" },
++        (0, import_react21.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
++      )
++    );
+   }
+-  const audio = new AudioContext();
+-  const analyser = audio.createAnalyser();
+-  analyser.fftSize = 512;
+-  audio.createMediaStreamSource(stream).connect(analyser);
+-  const frame = new Float32Array(analyser.fftSize);
+-  const recorder = new MediaRecorder(stream);
+-  const chunks = [];
+-  recorder.ondataavailable = (event) => {
+-    if (event.data.size > 0) chunks.push(event.data);
 +  const run = async (endpoint, payload, done) => {
 +    try {
 +      const result = await save(endpoint, payload);
@@ -15795,8 +15805,10 @@ diff --git a/client.js b/client.js
 +}
 +var PROJECT_BOARD_POLL_MS = 5e3;
 +var boardPollPaused = () => typeof document !== "undefined" && document.visibilityState === "hidden" || typeof window !== "undefined" && !window.location.hash.startsWith("#project");
-+function ProjectBoardOverlay({ actions, call: request } = {}) {
++function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) {
 +  const read = request ?? call;
++  const roster = typeof useRoster === "function" ? useRoster((value) => value) : void 0;
++  const locked = lockedWindow(roster);
 +  const [state, setState] = (0, import_react21.useState)(null);
 +  const [panel, setPanel] = (0, import_react21.useState)(null);
 +  const [dossier, setDossier] = (0, import_react21.useState)(null);
@@ -15924,7 +15936,7 @@ diff --git a/client.js b/client.js
 +            close();
 +            actions?.openSession?.(id);
 +          }
-+        }) : panel === "settings" ? (0, import_react21.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react21.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react21.createElement)(ProjectBoardPane, {
++        }) : panel === "settings" ? (0, import_react21.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react21.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react21.createElement)(ProjectBoardPane, {
 +          project: state.project,
 +          rows: state.rows,
 +          done: state.done,
