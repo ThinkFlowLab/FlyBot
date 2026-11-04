@@ -569,3 +569,6 @@ Publication now selects either credential provider through the existing broker, 
 
 
 #2328 carries an unadmitted capacityWait into a successor Attempt during controlled rework. The previous Attempt remains historical; the new claim must regain project capacity before execution. In-place continuation retains the same Attempt and workspace.
+
+
+#2330 makes Chief dispatch preparation asynchronous so its own watchdog stays live. The explicit PR-input regression waits for the actual scoped snapshot before invoking its callback; workspace/commit and authority gates remain unchanged.

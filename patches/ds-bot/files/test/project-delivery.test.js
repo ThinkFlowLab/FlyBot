@@ -1784,6 +1784,7 @@ test('actual Chief route admits a pinned inspect input and Dev receives the PR o
   f.rt.projectPools.connect({ validate: () => ({ ok: true }), rework: args => f.rt.projectDelivery.reworkPool(args) })
   const run = await f.rt.projectChiefControl.request('p1', 'inspection', { requestId: 'recover-pr-input' })
   await f.rt.projectChiefControl.pump()
+  for (let pass = 0; pass < 200 && !chief; ++pass) await new Promise(resolve => setTimeout(resolve, 5))
   const facts = chief.projectFacts.tasks.find(row => row.taskId === task.id)
   assert(facts.repositoryRecovery.availableInputs.some(row => row.sha === sha))
   await assert.rejects(f.rt.projectDelivery.admitChiefInputs(task.id, [{ ref, sha }], alice, facts), /Chief job authority/)

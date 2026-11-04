@@ -347,7 +347,7 @@ export function createProjectAgents(rt) {
     } catch (error) { if (delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id); throw error }
     return { agent: structuredClone(agent), queued: true }
   }
-  async function startChiefJob({ projectId, actor, runId, prompt, projectFacts, onResult }) { return serial(async () => {
+  async function startChiefJob({ projectId, actor, runId, invocation, prompt, projectFacts, onResult }) { return serial(async () => {
     await rt.projectChiefControl.validateActor(actor)
     const agent = await ensure(projectId, actor, 'public')
     if (delegations.has(agent.id) || rt.activityView?.()[agent.botId]) throw Object.assign(refuse('Chief is already answering'), { code: 'bot/busy' })
@@ -360,19 +360,19 @@ export function createProjectAgents(rt) {
     let nativeSystem
     const restorePrompt = () => {
       const bot = rt.botOf(agent.botId)
-      if (!nativeSystem || bot !== carrierBefore || bot.instructions !== nativeSystem) return
+      if (delegations.get(agent.id)?.chiefJob?.runId !== runId || delegations.get(agent.id)?.actor.chiefToken !== actor.chiefToken || !nativeSystem || bot !== carrierBefore || bot.instructions !== nativeSystem) return
       bot.instructions = priorPrompt.instructions
       if (priorPrompt.systemPrompt === undefined) delete bot.systemPrompt; else bot.systemPrompt = priorPrompt.systemPrompt
     }
-    const delegation = { id: randomUUID(), exchangeId: randomUUID(), actor: { ...actor }, definitionRevision: set.revision, started: false, revoked: false, chiefJob: { runId, prompt: fullPrompt }, onChiefResult: onResult }
+    const delegation = { id: randomUUID(), exchangeId: randomUUID(), actor: { ...actor }, definitionRevision: set.revision, started: false, revoked: false, chiefJob: { runId, invocation, prompt: fullPrompt }, onChiefResult: onResult }
     delegations.set(agent.id, delegation)
-    agent.lastRequest = { id: randomUUID(), initiatedBy: actor.memberId, executorBotId: agent.botId, exchangeId: delegation.exchangeId, phase: 'queued', context: snapshot, definitionRevision: set.revision, chiefRunId: runId, at: Date.now() }
+    agent.lastRequest = { id: randomUUID(), initiatedBy: actor.memberId, executorBotId: agent.botId, exchangeId: delegation.exchangeId, phase: 'queued', context: snapshot, definitionRevision: set.revision, chiefRunId: runId, chiefInvocation: invocation, at: Date.now() }
     await rt.save()
     const finish = async result => {
       try { if (delegations.get(agent.id)?.id !== delegation.id || delegation.revoked) throw refuse('Chief execution was revoked'); const outcome = await onResult({ ...result, executionEvidence: { ...result.executionEvidence, chiefRunId: runId, carrierGeneration: agent.carrierGeneration } }); agent.lastRequest.phase = outcome?.correction ? outcome.correction.status === 'pending' ? 'correcting' : 'incomplete' : result.ok ? 'completed' : 'failed' }
       finally { restorePrompt(); if (delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id); await rt.save(); rt.projectScheduler?.wake() }
     }
-    delegation.finishChiefJob = finish
+    delegation.finishChiefJob = finish; delegation.restoreChiefPrompt = restorePrompt
     try {
       if ((definition.execution?.harness ?? 'flybot') !== 'flybot') { delegation.started = true; delegation.sdkExecution = true; return await rt.projectHarness.chiefTurn({ agent, delegation, definition, context: snapshot, text: 'Inspect the pinned Project facts and return the bounded Chief judgement.', onResult: finish }) }
       const bot = rt.botOf(agent.botId)
@@ -384,7 +384,9 @@ export function createProjectAgents(rt) {
       if (definition.execution?.resourceIds?.length) {
         const lease = await rt.projectResources.reserve({ projectId, attemptId: `chief-turn-${delegation.id}`, sessionKey: delegation.id, role: 'chief', harness: 'flybot', resourceIds: definition.execution.resourceIds, maxConcurrent: 1 })
         if (rt.projectResources.setting(projectId, lease.resourceId).type !== 'local') throw refuse('Native Chief requires a local resource')
-        delegation.resourceLease = lease
+        lease.chiefRunId = runId; lease.chiefInvocation = invocation
+        Object.assign(state.projectResourceLeases[lease.id], { chiefRunId: runId, chiefInvocation: invocation })
+        delegation.resourceLease = lease; agent.lastRequest.resourceLease = lease
         await rt.projectResources.markStarted(lease.id, lease.generation, { kind: 'native-turn', handle: delegation.exchangeId, botId: agent.botId, sessionId: agent.sessionId })
       }
       await rt.projectChiefControl.validateActor(actor)
@@ -621,6 +623,36 @@ export function createProjectAgents(rt) {
     if (!actor) throw refuse('No persistent watch delegation is active')
     return serial(() => { if (expectedCarrierId && keyOf(projectId, memberId) !== expectedCarrierId) throw refuse('Personal-agent default changed before notification'); return send({ projectId, visibility: 'private', text }, actor) })
   }
+  const stoppingChiefJobs = new Map()
+  function stopChiefJob(projectId, runId) {
+    if (stoppingChiefJobs.has(runId)) return stoppingChiefJobs.get(runId)
+    const pending = (async () => {
+      const agent = agents()[`public-${projectId}`], delegation = agent && delegations.get(agent.id)
+      if (!agent || agent.lastRequest?.chiefRunId !== runId) return { confirmed: false, reason: 'Original Chief execution binding is unavailable' }
+      if (delegation && delegation.chiefJob?.runId !== runId) return { confirmed: false, reason: 'Another Chief exchange owns this Session' }
+      if (delegation) delegation.revoked = true
+      const request = agent.lastRequest
+      request.phase = 'stopping'; await rt.save()
+      let confirmed = false
+      if (request.workerId) confirmed = await rt.projectHarness.release(request.workerId)
+      else {
+        const active = await rt.resolveAgent?.(agent.sessionId)
+        if (!active || typeof active.whenIdle !== 'function') return { confirmed: false, reason: 'Native Chief exit cannot be confirmed' }
+        for (const message of [...(active.inbox?.nextStep ?? []), ...(active.inbox?.nextTurn ?? [])]) if (message.source?.exchangeId === request.exchangeId) active.inbox.remove?.(message.id)
+        active.cancel?.({ kind: 'hook', reason: 'Configured Chief inspection deadline' })
+        await active.whenIdle()
+        const lease = delegation?.resourceLease ?? request.resourceLease
+        if (lease) await rt.projectResources.release(lease.id, lease.generation, { handle: request.exchangeId, exited: true })
+        confirmed = true
+      }
+      if (!confirmed || agent.lastRequest !== request) return { confirmed: false }
+      delegation?.restoreChiefPrompt?.()
+      if (delegation && delegations.get(agent.id)?.id === delegation.id) delegations.delete(agent.id)
+      request.phase = 'interrupted'; request.exitProof = { confirmed: true, kind: request.workerId ? 'sdk-chief-confirmed-exit' : 'native-chief-quiescent', runId, invocation: request.chiefInvocation, requestId: request.id, carrierGeneration: agent.carrierGeneration, at: Date.now() }
+      await rt.save(); return structuredClone(request.exitProof)
+    })().finally(() => { stoppingChiefJobs.delete(runId) })
+    stoppingChiefJobs.set(runId, pending); return pending
+  }
   async function stopAgent(body, actor) {
     const agent = body.roomId ? Object.values(agents()).find(row => row.roomId === body.roomId && row.role === body.role) : await ensure(body.projectId, actor, body.visibility === 'public' ? 'public' : 'private')
     rt.requireProjectAccess(actor, body.projectId)
@@ -771,7 +803,7 @@ export function createProjectAgents(rt) {
   }
   const isDelegationActive = (id, delegationId) => { const entry = delegations.get(id); return entry?.id === delegationId && !entry.revoked }
   const ensureProject = (projectId, actor) => serial(async () => { await ensure(projectId, actor, 'public'); return ensure(projectId, actor) })
-  return { stream, liveFor, hasExchange: exchangeId => [...delegations.values()].some(row => row.exchangeId === exchangeId && !row.revoked), privateIdentity: keyOf, ensurePublic: (projectId, actor) => serial(() => ensure(projectId, actor, 'public')), contextExchange, chiefMemory, chiefBusy: projectId => delegations.has(`public-${projectId}`), startChiefJob, endpoint, consultation: consultations.endpoint, contactUser: consultations.contactUser, agentConsultations, agentInbox, inboxExecutionActive, chiefQuestion, askChief, suggestClosure, githubRead, action, wakeWatch, revokeWatchGrant, ensureProject, isDelegationActive, actorOf, context, memory, task, run, onEvent, revoke, revokeSession, removeProject, deliveryDefinitions, recordForBot, roles: roleGovernance, proposeRole, proposeRoleForJob, ROLES }
+  return { stream, liveFor, hasExchange: exchangeId => [...delegations.values()].some(row => row.exchangeId === exchangeId && !row.revoked), privateIdentity: keyOf, ensurePublic: (projectId, actor) => serial(() => ensure(projectId, actor, 'public')), contextExchange, chiefMemory, chiefBusy: projectId => delegations.has(`public-${projectId}`) || [...stoppingChiefJobs.keys()].some(id => state.projectExecutions?.[id]?.projectId === projectId), stopChiefJob, startChiefJob, endpoint, consultation: consultations.endpoint, contactUser: consultations.contactUser, agentConsultations, agentInbox, inboxExecutionActive, chiefQuestion, askChief, suggestClosure, githubRead, action, wakeWatch, revokeWatchGrant, ensureProject, isDelegationActive, actorOf, context, memory, task, run, onEvent, revoke, revokeSession, removeProject, deliveryDefinitions, recordForBot, roles: roleGovernance, proposeRole, proposeRoleForJob, ROLES }
 }
 
 export function install(rt) {

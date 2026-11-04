@@ -84,3 +84,10 @@ test('third-party guide links and examples remain usable and its inventory is cu
   for (const match of text.matchAll(/```json\n([\s\S]*?)\n```/g)) JSON.parse(match[1])
   for (const match of text.matchAll(/```bash\n([\s\S]*?)\n```/g)) execFileSync('bash', ['-n'], { input: match[1] })
 })
+
+
+test('Chief response contract accepts combined protocol-correction and inspection-recovery budgets', () => {
+  const spec = readSpec(), operation = operationFor(spec, 'project-development', { kind: 'query', name: 'chief.state' })
+  const value = { health: { enabled: true, status: 'healthy', lastSuccessAt: 9, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true }, template: {}, schedule: null, runs: [{ id: 'chief-bounded-history', projectId: 'project', status: 'done', invocationHistory: Array.from({ length: 9 }, (_, index) => ({ number: index + 1, snapshotSha256: 'a'.repeat(64), responseSha256: 'b'.repeat(64), at: index + 1 })) }] }
+  validate(operation.resultSchema, value, spec)
+})

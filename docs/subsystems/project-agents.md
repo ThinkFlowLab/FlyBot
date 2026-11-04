@@ -502,3 +502,6 @@ Personal GitHub comments explicitly reject installation credentials; project aut
 
 
 #2327 strengthens autonomous-progress instructions and supplies structured protocol correction through the same resident Chief Session. Completion records correcting/incomplete rather than claiming success for malformed output; consultation remains an explicit Chief decision. See [Chief control](project-chief-control.md).
+
+
+#2330 adds a trusted internal stopChiefJob lifecycle port. It fences the exact exchange, removes its queued input, waits for SDK release or native whenIdle, restores only its own prompt, and persists invocation-bound exit proof while retaining the resident Session. A late old callback cannot restore another invocation's prompt. Unknown exit retains busy isolation.

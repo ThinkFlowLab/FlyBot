@@ -12,5 +12,12 @@
     "missingHeartbeatMs": 1200000,
     "longWaitMs": 3600000
   },
-  "correctionBudget": 2
+  "correctionBudget": 2,
+  "lifecycle": {
+    "queueTimeoutMs": 600000,
+    "runTimeoutMs": 900000,
+    "recoveryDelayMs": 5000,
+    "maxRecoveries": 2,
+    "overdueMs": 3600000
+  }
 }

@@ -1,6 +1,8 @@
 ---
 subsystem: project-chief-control
 owned_paths:
+  - core/src/host/project-chief-lifecycle.js
+  - core/test/project-chief-lifecycle.test.js
   - core/src/host/project-chief-protocol.js
   - core/src/host/project-chief-control.js
   - core/src/host/project-chief-schedule.json
@@ -218,3 +220,40 @@ execution failure isolation and scheduled restart recovery remain #2330.
 
 
 #2328 captures an explicit Chief input-wait checkpoint after needs-human. The host releases project execution capacity only with current exit evidence; input receipt does not resume work until Chief routes and the original scheduler re-admits it.
+
+## Scheduled inspection lifecycle — #2330
+
+Logical deliveries persist their Chief runId and reconcile source occurrence/Run
+state on each existing scheduler wake. They no longer wait for a process-local
+Chief result Promise. An interrupted/failed/cancelled/partial Run settles its delivery
+explicitly; a recovered Run can resume the same occurrence, and a done Run is not
+replayed. One occurrence remains one Run even across schedule revisions. Redundant
+queued reminders coalesce to the latest scoped inspection; historical records remain.
+
+`inspection.lifecycle` configures queueTimeoutMs (600000), runTimeoutMs (900000),
+recoveryDelayMs (5000), maxRecoveries (2, range 0–4) and overdueMs (3600000).
+Durations accept integers 1–86400000. Dispatch preparation/model transport runs
+outside the pump lock, so it cannot prevent its own deadline checks. The original
+configured schedule and dispatcher supply all wakes; no new business timer exists.
+
+A deadline fences the old capability and records interrupted/failed, not worker exit.
+SDK recovery requires matching invocation, generation, released lease and trusted
+stop/process proof. Native recovery cancels the exact exchange and waits for actual
+agent idleness before persisting its bound exit receipt. Restart can also use existing
+systemd control-group proof; unmanaged/unknown prior execution stays isolated. A
+never-dispatched preparation can record registration-before-input absence only when
+its fenced preparation actually returns. Stop waits run outside the pump; an unknown
+exit is visible and never frees a Session by timeout alone. Current policy, schedule
+revision, authority, resident Session and committed recovery intent are rechecked.
+The same run gets a fresh invocation/snapshot; stale callbacks cannot mutate it.
+
+Inspection decisions isolate each domain/exit refusal into bounded decisionFailures
+and per-Task chiefActionIssue; independent Task decisions still execute. Partial rounds
+are not successful inspections. Applied intent receipts prevent duplicate mutation
+on recovery; protocol errors still use #2327 whole-response validation/correction.
+
+`chief.state.health` separates enabled, pending, healthy, degraded and overdue. It
+reports reminder acceptance/start/completion/success, last applied non-deferral decision,
+active age/deadline and recovery reason. None of these claims verified project progress;
+empty inspections can succeed without changing a Task. Persisted state remains the
+source of truth, not a misleading enabled flag or an in-memory waiter.

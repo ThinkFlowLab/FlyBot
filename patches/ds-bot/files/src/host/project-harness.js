@@ -100,7 +100,7 @@ export function createProjectHarness(rt) {
       Object.assign(selected.env, { TMPDIR: scratchDirectory, npm_config_cache: join(scratchDirectory, 'npm-cache'), npm_config_update_notifier: 'false', npm_config_offline: 'true' })
     }
     const conversation = chief ? ownEntry(rt.state.projectAgents ?? {}, chief.agentId) : null
-    const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
+    const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, chiefInvocation: chief?.runId ? rt.state.projectExecutions?.[chief.runId]?.invocation ?? null : null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
       cwd: workspace.path, scratchDirectory, status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
@@ -390,6 +390,11 @@ export function createProjectHarness(rt) {
       harness: definition.execution.harness, resourceIds: definition.execution.resourceIds, maxConcurrent: 1 })
     let workerId
     try {
+      if (delegation.chiefJob) {
+        lease.chiefRunId = delegation.chiefJob.runId; lease.chiefInvocation = delegation.chiefJob.invocation
+        Object.assign(rt.state.projectResourceLeases[lease.id], { chiefRunId: lease.chiefRunId, chiefInvocation: lease.chiefInvocation })
+        await rt.save()
+      }
       const selected = await profile(agent.projectId, lease.resourceId, definition.execution.harness)
       const cwd = join(selected.resource.root, 'chief-contexts', sha(agent.id).slice(0, 24))
       await rt.projectResources.command(agent.projectId, lease.resourceId, { argv: ['mkdir', '-p', cwd], cwd: selected.resource.root })

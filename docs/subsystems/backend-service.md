@@ -123,3 +123,9 @@ transport. Source API changes require deliberate catalog and guide review.
 
 
 #2328 documents CapacityState/CapacityWait and durable resume QueueEntry metadata in the existing OpenAPI. project-resources exposes the same capacity predicates used for admission; continuation cancellation remains a Chief/Task operation.
+
+
+#2330 adds typed inspection lifecycle configuration and health to OpenAPI and exercises the actual production launcher: queued original occurrence, deliberately hung native inference, configured deadline, actual cancel/idleness proof, physical backend restart, then same-Run recovery/completion. Only the reminder is seeded in the stopped disposable SQLite home; execution/exit/restart are real and inference is deterministic. No live project or paid SDK acceptance is claimed.
+
+
+Chief invocation history accepts the combined configured maximum: one initial invocation, up to four protocol corrections and up to four inspection recoveries (nine records). Public schema validation covers that legal configuration; correction feedback itself retains its separate five-entry bound.

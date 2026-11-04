@@ -929,3 +929,21 @@ test('legacy agent history is bounded, snapshot cursors survive append and rejec
   rows[0].text = 'edited'
   await assert.rejects(rt.projectEndpoint('project-agent-history', { projectId: 'p1', cursor: page.nextCursor }, alice), /changed|stale/)
 })
+
+test('native Chief deadline fencing waits for actual idleness and preserves the resident Session', async t => {
+  const { rt } = await setup(t)
+  const { public: chief } = await get(rt, alice)
+  rt.projectChiefControl.validateActor = async () => {}
+  rt.state.projectExecutions.deadline = { projectId: 'p1' }
+  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'deadline', invocation: 1, prompt: 'Bounded inspection', projectFacts: {}, onResult: async () => {} })
+  let idle, cancelled = false
+  rt.resolveAgent = async () => ({ inbox: {}, cancel() { cancelled = true }, whenIdle: () => new Promise(resolve => { idle = resolve }) })
+  const stopping = rt.projectAgents.stopChiefJob('p1', 'deadline')
+  for (let pass = 0; pass < 100 && !cancelled; pass++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(cancelled, true); assert.equal(rt.projectAgents.chiefBusy('p1'), true)
+  assert.equal(rt.state.projectAgents[chief.id].lastRequest.exitProof, undefined)
+  idle(); const proof = await stopping
+  assert.equal(proof.confirmed, true); assert.equal(proof.invocation, 1)
+  assert.equal(rt.projectAgents.chiefBusy('p1'), false)
+  assert.equal(rt.state.projectAgents[chief.id].sessionId, rt.botOf(chief.botId).sessionId)
+})

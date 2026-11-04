@@ -113,3 +113,6 @@ JSON/SQLite回退保留新代码格式守卫、ID和已完成Effects，**不是�
 
 
 #2328：`project-resources` 的 `capacity` 区分 `activeSlots`、`waitingInput`、`waitingResume`、`exitUnknown`。`occupied` 是资源租约占用；已确认退出的输入等待可释放项目槽位，退出未知仍占槽。输入到达后由 Chief 决定恢复，原队列按项目配额、资源和权限重新准入；不要通过新建重复 Task 绕过等待。
+
+
+#2330：`chief.state.health` 区分 enabled 与 pending/healthy/degraded/overdue，展示最近提醒、启动、完成、成功巡检和有效裁决应用时间。`chief.configure` 的 `inspection.lifecycle` 可配置队列/执行期限、恢复延迟/次数和逾期阈值。超时不等于退出；`waiting-exit` 必须等待可信 SDK/native 或原有 systemd 退出证据。未知执行继续隔离，不能通过删租约或重建会话强行恢复。

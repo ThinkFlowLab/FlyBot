@@ -40,7 +40,12 @@ export async function checkQueue({ api, call, saved, waitFor, releaseVerificatio
   const published = await service(member, 'query', 'task', { taskId: tasks[0].id })
   assert.equal(published.result.task.phase, 'awaiting-chief')
   const original = await member('project-task-detail', { taskId: tasks[0].id })
-  assert.deepEqual(original.view, published.result.task)
+  // Independent HTTP reads are not an atomic snapshot of background Effect retries.
+  const { effects: originalEffects, ...originalTask } = original.view
+  const { effects: publishedEffects, ...publishedTask } = published.result.task
+  assert.deepEqual(originalTask, publishedTask)
+  const identities = rows => rows.map(({ id, kind, projectId, taskId }) => ({ id, kind, projectId, taskId }))
+  assert.deepEqual(identities(originalEffects), identities(publishedEffects))
   const pending = (await service(member, 'command', 'task.run', { taskId: tasks[0].id }, 'queue-first')).result
   assert.equal(pending.waitingFor, 'chief')
   assert.equal(Object.values(saved().projectAttempts).length, 0)
