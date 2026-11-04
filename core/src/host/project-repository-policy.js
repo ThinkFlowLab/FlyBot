@@ -5,6 +5,7 @@ import { constants } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { ownEntry } from './store.js'
+import { dependencyEnvironment } from './project-execution-environment.js'
 import { executionProfile } from './project-execution-profile.js'
 const exec = promisify(execFile)
 const invalid = field => Object.assign(new Error(`Repository ${field} is missing, invalid or unavailable; ask the operator to check provisioning`), { code: 'bot/repository-config', field })
@@ -22,6 +23,7 @@ export function repositorySettings(rt, project) {
   if (settings.workspacePrepareCommand !== undefined && (!Array.isArray(settings.workspacePrepareCommand) || !settings.workspacePrepareCommand.length || !settings.workspacePrepareCommand.every(argument) || !settings.workspacePrepareCommand[0].trim())) throw invalid('workspacePrepareCommand')
   if (settings.testTimeoutMs !== undefined && (!Number.isSafeInteger(settings.testTimeoutMs) || settings.testTimeoutMs < 1)) throw invalid('testTimeoutMs')
   if (settings.testDependencies !== undefined && (!Array.isArray(settings.testDependencies) || settings.testDependencies.some(path => !relativePath(path)))) throw invalid('testDependencies')
+  dependencyEnvironment(settings)
   return settings
 }
 async function executable(command, cwd) {

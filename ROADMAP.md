@@ -6,7 +6,8 @@ Implement #2336 reservation cleanup first; then #2337 CLI configuration, #2334
 environment attribution, #2346 context migration, #2338 receipts, #2347 recovery
 routing, #2331 controlled merge and #2342 operational-agent collaboration. Separate
 PRs retain existing UI/control-plane, authority and exact exit/evidence contracts.
-#2336 is merged; #2337 adds offline actual-CLI readiness and scratch protection.
+#2336/#2337 are merged. #2334 adds executor dependency receipts and classified
+verification; actual Docker and paid inference remain distinct acceptance evidence.
 
 ## Recovery delivery — 2026-11-04
 

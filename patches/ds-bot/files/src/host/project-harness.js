@@ -6,6 +6,7 @@ import { isAbsolute, join, resolve, relative, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import { verifyRolePolicy, roleExecutionPrompt } from './project-role-policy.js'
 import { fileDigest } from './project-resource-workspaces.js'
+import { copyDependencyCacheScript, executionOutcome } from './project-execution-environment.js'
 import { gitWritableRoots } from './project-git-sandbox.js'
 import { ownEntry, setEntry } from './store.js'
 import { checkContextPrompt, resolveContextBudget } from './project-context-budget.js'
@@ -118,13 +119,23 @@ export function createProjectHarness(rt) {
     const scratchDirectory = chief ? null : join(selected.resource.root, `.flybot-scratch-${id}`)
     if (scratchDirectory) {
       await rt.projectResources.command(session.projectId, session.resourceLease.resourceId, { cwd: selected.resource.root, argv: ['node', '-e', 'require("node:fs").mkdirSync(process.argv[1], { mode: 0o700 })', scratchDirectory] })
+      const prepared = session.environmentPreparation
+      if (prepared?.cache) {
+        if (prepared.status !== 'ready' || prepared.principalId !== selected.principalId || prepared.workspaceId !== workspace.id || prepared.resourceId !== session.resourceLease.resourceId || prepared.attemptId !== session.attemptId || prepared.projectId !== session.projectId || !prepared.identitySha256) throw refuse('Dependency cache receipt has another execution scope')
+        try { await rt.projectResources.command(session.projectId, session.resourceLease.resourceId, { cwd: workspace.path, argv: ['node', '-e', copyDependencyCacheScript, prepared.cache, join(scratchDirectory, 'npm-cache')] }) }
+        catch (error) {
+          const outcome = executionOutcome(error, '', { stage: 'preparation', remote: selected.resource.type === 'docker' })
+          if (!outcome.exitConfirmed) await rt.projectResources.preparationUncertain(session.resourceLease)
+          throw error
+        }
+      }
       Object.assign(selected.env, { TMPDIR: scratchDirectory, npm_config_cache: join(scratchDirectory, 'npm-cache'), npm_config_update_notifier: 'false', npm_config_offline: 'true' })
     }
     const conversation = chief ? ownEntry(rt.state.projectAgents ?? {}, chief.agentId) : null
     const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, chiefInvocation: chief?.runId ? rt.state.projectExecutions?.[chief.runId]?.invocation ?? null : null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
-      cwd: workspace.path, scratchDirectory, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
+      cwd: workspace.path, scratchDirectory, dependencyPreparationId: session.environmentPreparation?.id ?? null, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
     if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v2', definitionKey, ...(previous ? { backendSessionId: previous.sessionId, continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
     else if (chief) Object.assign(row, { logicalSessionId: chief.agentId, bindingKey, ...(chief.resumeSessionId ? { backendSessionId: chief.resumeSessionId, continuedFrom: chief.previousWorkerId } : {}) })
     setEntry(workers(), id, row)
@@ -248,6 +259,13 @@ export function createProjectHarness(rt) {
             await report(row, true, event.text)
           }
           else { row.status = 'waiting-input'; row.pending = { kind: 'message', text: event.text.slice(0, 16000) }; if (!control.chief && session.poolClaimId) await taskInputWake(row.taskId) }
+        }
+        if (event.type === 'sdk-event' && event.event?.type === 'item.completed' && event.event.item?.type === 'command_execution' && Number.isInteger(event.event.item.exit_code) && event.event.item.exit_code !== 0) {
+          const item = event.event.item, outcome = executionOutcome({ code: item.exit_code }, item.aggregated_output ?? '')
+          if (outcome.status === 'environment-blocked') {
+            const observations = row.environmentObservations ??= []
+            if (observations.length < 8) observations.push({ source: 'sdk-command-event; not independent verification', eventId: item.id ?? null, status: outcome.status, reason: outcome.reason, outputSha256: sha(String(item.aggregated_output ?? '')), at: Date.now() })
+          }
         }
         if (event.type === 'configuration-checked' && event.harness === 'codex' && event.capability?.kind === 'codex-cli-config/v1' && event.capability.version === VERSIONS.codex && event.capability.modelInvoked === false) row.configurationCheck = { kind: event.capability.kind, version: event.capability.version, profile: event.capability.profile === 'chief-read-only' ? 'chief-read-only' : 'flybot-role', at: Date.now(), modelInvoked: false }
         if (event.type === 'failure') {

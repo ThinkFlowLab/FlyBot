@@ -164,3 +164,5 @@ capacity after claim retirement until their actual callback settles. A restarted
 active preparation remains unknown; only the existing exact local supervisor proof
 can reconcile it automatically (remote preparation is not inferred exited). Initial
 reservation/batch save failures cannot leak a startup capability before return.
+
+#2334 retains preparation.exitUnknown after remote command timeout/transport uncertainty. endPreparation cannot settle that fence and reclamation cannot infer exit from a dead docker client. Operator preparation network declarations reuse existing fixed-command authority; they grant no SDK network access. See the delivery environment contract.

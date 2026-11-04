@@ -257,3 +257,5 @@ reports reminder acceptance/start/completion/success, last applied non-deferral 
 active age/deadline and recovery reason. None of these claims verified project progress;
 empty inspections can succeed without changing a Task. Persisted state remains the
 source of truth, not a misleading enabled flag or an in-memory waiter.
+
+#2334 supplies structured test outcome, testsStarted, actual executor and preparation receipt references plus bounded SDK dependency observations. Chief chooses recovery; an environment blockage is neither an assertion failure nor automatic escalation.

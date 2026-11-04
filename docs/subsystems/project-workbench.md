@@ -513,3 +513,5 @@ retry preserves the initiating principal and exact Attempt.
 `project-resources.capacity` reports activeSlots, waitingInput, waitingResume and
 exitUnknown using the actual admission predicates. occupied measures resource leases;
 activeSlots measures project execution. They have independent configured limits.
+
+#2334 metadata preflight validates dependencyEnvironment shape without running commands. Receiving executor and independent host observations occur through existing preparation, not a cached metadata-ready flag. See [dependency outcomes](project-delivery.md#dependency-readiness-and-verification-outcomes-2334).

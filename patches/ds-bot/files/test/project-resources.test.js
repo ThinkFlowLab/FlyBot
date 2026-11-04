@@ -215,6 +215,21 @@ test('asynchronous preparation remains owned until its actual completion, even a
   await assert.rejects(resources.beginPreparation(lease.id, lease.generation), /released/)
 })
 
+test('a timed out remote preparation cannot manufacture settled execution or reclaim capacity', async () => {
+  const { rt, resources } = fixture()
+  rt.state.projectAttempts = { a: { id: 'a', projectId: 'p1', status: 'running' } }
+  const lease = await resources.reserve({ projectId: 'p1', attemptId: 'a', role: 'developer', sessionKey: 'uncertain-preparation', harness: 'flybot', resourceIds: ['local'] })
+  const token = await resources.beginPreparation(lease.id, lease.generation)
+  await resources.preparationUncertain(lease)
+  await assert.rejects(resources.endPreparation(token), /stale/)
+  rt.state.projectAttempts.a.status = 'returned'
+  assert.equal(await resources.abortReservation(lease.id, lease.generation, 'Timeout is not exit proof'), false)
+  await resources.reconcile()
+  assert.equal(resources.occupied('local'), 1)
+  assert.equal(rt.state.projectResourceLeases[lease.id].preparation.exitUnknown, true)
+  await assert.rejects(resources.preparationUncertain({ ...lease, generation: 2 }), /owner/)
+})
+
 test('failed reservation/batch admission cannot return a capability or consume capacity', async () => {
   const { rt, resources } = fixture()
   rt.config.projectResources.local.capacity = 2

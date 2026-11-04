@@ -946,6 +946,62 @@ test('independent host tests prepare dependencies after cleaning their exact can
   assert.equal((await import('node:fs')).existsSync(join(path, 'node_modules/stale')), false)
 })
 
+test('environment preparation failure records not-run tests and repaired dependencies rerun the same sealed candidate', async t => {
+  const f = await setup(t, [process.execPath, '-e', 'require("node:assert/strict").equal(require("./node_modules/local-fixture"),42)'], { pool: true })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  await f.start('environment-retry')
+  const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id]
+  const definitions = f.rt.projectAgents.deliveryDefinitions('p1').roles
+  await prepareRole(f.rt, task, { id: 'environment-dev', attemptId: attempt.id, generation: 1 }, definitions.find(row => row.role === 'developer'))
+  writeFileSync(join(attempt.workspaces.developer.path, 'code.mjs'), 'export const add=(a,b)=>a+b;\n')
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: 'developer', outputs: { implementation: 'Correct implementation' } })
+  await prepareRole(f.rt, task, { id: 'environment-test', attemptId: attempt.id, generation: 2 }, definitions.find(row => row.role === 'tester'))
+  const settings = f.rt.config.projectRepositories['example/demo'], sha = attempt.candidateSha
+  settings.dependencyEnvironment = { requiredPaths: ['node_modules/local-fixture/index.js'], tools: [{ argv: [process.execPath, '--version'], expectedOutput: process.version }], network: 'offline' }
+  settings.workspacePrepareCommand = [process.execPath, '-e', 'process.exit(37)']
+  const finish = () => f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: 'tester', outputs: { tests: 'Request exact host verification' } })
+  await assert.rejects(finish(), /environment is blocked/)
+  const failed = structuredClone(attempt.evidence.tests)
+  assert.equal(failed.passed, false); assert.equal(failed.status, 'environment-blocked'); assert.equal(failed.testsStarted, false)
+  assert.equal(failed.executor, 'independent-host-controller'); assert.equal(failed.sha, sha)
+  assert.equal(failed.preparation.status, 'environment-blocked')
+  const oldLog = readFileSync(failed.log, 'utf8')
+  settings.workspacePrepareCommand = [process.execPath, '-e', 'const fs=require("fs");fs.mkdirSync("node_modules/local-fixture",{recursive:true});fs.writeFileSync("node_modules/local-fixture/index.js","module.exports=42")']
+  await finish()
+  assert.equal(attempt.candidateSha, sha); assert.equal(attempt.evidence.tests.sha, sha)
+  assert.equal(attempt.evidence.tests.passed, true); assert.equal(attempt.evidence.tests.status, 'passed')
+  assert.equal(attempt.evidence.tests.testsStarted, true); assert.equal(attempt.evidence.tests.preparation.status, 'ready')
+  assert.deepEqual(attempt.testHistory[0], failed); assert.notEqual(attempt.evidence.tests.log, failed.log)
+  assert.equal(readFileSync(failed.log, 'utf8'), oldLog)
+  settings.testCommand = [process.execPath, '-e', 'require("node:assert/strict").equal(1,2)']
+  await assert.rejects(finish(), /Configured tests failed/)
+  assert.equal(attempt.evidence.tests.status, 'assertion-failed'); assert.equal(attempt.evidence.tests.testsStarted, true)
+  assert.equal(attempt.testHistory.at(-1).passed, true)
+})
+
+test('independent verification preserves dependency diagnostics without declaring assertion failure', async t => {
+  const f = await setup(t, [process.execPath, '-e', 'console.error("npm error ENOTCACHED only-if-cached");process.exit(1)'])
+  await f.start('offline-diagnostic')
+  await implement(f)
+  await assert.rejects(f.gate('tester'), /Configured tests failed|environment is blocked/)
+  const tests = f.attempt().evidence.tests
+  assert.equal(tests.passed, false)
+  assert.equal(tests.status, 'environment-blocked')
+  assert.equal(tests.testsStarted, true)
+  assert.match(readFileSync(tests.log, 'utf8'), /ENOTCACHED/)
+})
+
+test('independent test timeout remains incomplete verification with an immutable log', async t => {
+  const f = await setup(t, [process.execPath, '-e', 'setTimeout(()=>{},10000)'])
+  await f.start('test-timeout')
+  await implement(f)
+  f.rt.config.projectRepositories['example/demo'].testTimeoutMs = 20
+  await assert.rejects(f.gate('tester'), /timed out/)
+  const tests = f.attempt().evidence.tests
+  assert.equal(tests.passed, false); assert.equal(tests.status, 'execution-timeout'); assert.equal(tests.testsStarted, true)
+  assert.equal(tests.exitConfirmed, true)
+})
+
 test('bound-resource preparation executes before SDK registration and failure retains unknown occupancy', async t => {
   const f = await setup(t, undefined, { pool: true })
   f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
