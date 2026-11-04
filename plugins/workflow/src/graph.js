@@ -20,10 +20,10 @@ function stripControls(value) {
 
 // Cut on code points, never on UTF-16 units: a unit offset can split a surrogate
 // pair and leave a lone surrogate, which renders as a replacement character.
+const cut = (text, max) => (!Number.isFinite(max) || text.length <= max ? text : Array.from(text).slice(0, max).join(''))
+
 export function cleanLine(value, max = 300) {
-  const text = stripControls(value).replace(/\s+/g, ' ').trim()
-  if (!Number.isFinite(max) || text.length <= max) return text
-  return Array.from(text).slice(0, max).join('')
+  return cut(stripControls(value).replace(/\s+/g, ' ').trim(), max)
 }
 
 // A node prompt keeps line breaks. Other controls become spaces.
@@ -34,7 +34,7 @@ export function cleanPrompt(value, max = 4000) {
     if (code === 0x0a || code === 0x09) { out += ch; continue }
     out += code <= 0x1f || code === 0x7f ? ' ' : ch
   }
-  return out.replace(/[ \t]+\n/g, '\n').trim().slice(0, max)
+  return cut(out.replace(/[ \t]+\n/g, '\n').trim(), max)
 }
 
 export function cleanTools(value) {
@@ -78,7 +78,7 @@ export function readStepResult(text, node) {
     if (!match) { kept.push(line); continue }
     outputs[match[1].toLowerCase()] = cleanLine(match[2], 2000)
   }
-  const body = kept.join('\n').trim().slice(0, 2000)
+  const body = cut(kept.join('\n').trim(), 2000)
   const declared = node?.outputs ?? []
   if (declared.length === 1 && !outputs[declared[0].name] && body) outputs[declared[0].name] = body
   if (declared.length > 0) {
