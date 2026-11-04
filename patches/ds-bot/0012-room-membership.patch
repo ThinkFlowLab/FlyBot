@@ -288,7 +288,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
    ]
  }
  
-@@ -164,34 +164,60 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
+@@ -164,34 +164,62 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
    const bot = owner
    const running = useSessionStatus(map => map.get(part)?.running === true)
    const doing = useActivity(map => map[bot?.id ?? sessionId])
@@ -328,7 +328,9 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 -        bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
 +      errorLine,
 +      h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move },
-+        bot && lockedWindow(roster)
++        // #2387: the lock is the window's, not the Bot's — a read-only window draws the host's sentence
++        // in place of a group's form too, exactly as it already did for a Bot's.
++        lockedWindow(roster)
 +          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
 +          : bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
      ]

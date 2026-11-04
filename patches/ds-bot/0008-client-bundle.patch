@@ -23074,7 +23074,7 @@ diff --git a/client.js b/client.js
    const usage = useSessions((list) => usageOf(list, [part, ...bot?.parts ?? room2?.parts ?? []]));
    const run = (promise) => Promise.resolve(promise).then(() => {
      setError("");
-@@ -11467,41 +11467,67 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
+@@ -11467,41 +11467,69 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
      return false;
    });
    const share = () => {
@@ -23117,7 +23117,9 @@ diff --git a/client.js b/client.js
          { key: "set-body", className: "bt-drawer-body bt-set-body", "data-move": move },
 -        errorLine,
 -        bot ? (0, import_react31.createElement)(BotSettingsForm, { bot, roster, actions, run }) : (0, import_react31.createElement)(GroupSettingsForm, { room: room2, roster, actions, run, onDeleted: close })
-+        bot && lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : bot ? (0, import_react44.createElement)(BotSettingsForm, { bot, roster, actions, run }) : (0, import_react44.createElement)(GroupSettingsForm, { room: room2, roster, actions, run, onDeleted: close })
++        // #2387: the lock is the window's, not the Bot's — a read-only window draws the host's sentence
++        // in place of a group's form too, exactly as it already did for a Bot's.
++        lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : bot ? (0, import_react44.createElement)(BotSettingsForm, { bot, roster, actions, run }) : (0, import_react44.createElement)(GroupSettingsForm, { room: room2, roster, actions, run, onDeleted: close })
        )
      ];
    }
