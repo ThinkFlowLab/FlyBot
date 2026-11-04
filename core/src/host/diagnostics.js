@@ -4,8 +4,8 @@
 // a report written after a restart still has them. Every text is cleaned of saved keys,
 // credential-like strings and the home folder before it is kept and again before it is
 // shown, because the report is meant for a public issue.
-import { readFileSync } from 'node:fs'
-import { appendFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { constants, readFileSync } from 'node:fs'
+import { access, appendFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { arch, homedir, platform, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -261,7 +261,13 @@ export function install(rt) {
     try {
       const info = await lstat(path)
       if (!info.isSymbolicLink()) return info.isFile() && info.nlink > 1 ? LINKED_STATE : NOT_PLAIN
-      return (await stat(path)).isFile() ? LINKED_STATE : NOT_PLAIN
+      if (!(await stat(path)).isFile()) return NOT_PLAIN
+      // A target can be a plain file this host still cannot read: `readFile(statePath)` then fails
+      // EACCES, the store lands in `stuck`, `writable()` stays false and the save the sentence above
+      // promises never happens — the leaf sentence is the true one there too. `access` asks the
+      // permission without opening the file and without reading a byte of it.
+      await access(path, constants.R_OK)
+      return LINKED_STATE
     } catch {
       return NOT_PLAIN
     }
