@@ -1,0 +1,1 @@
+A face-to-face room now caps the names, roles, platform lines and join errors it takes from the other home on code points, so a member whose display name ends just past the cap shows a whole character instead of `�`, and a 60- or 80-character label counts what a person counts ([#2438](https://github.com/ThinkFlowLab/FlyBot/issues/2438)).
