@@ -4642,10 +4642,12 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
         if (custom) return (0, import_react6.createElement)("div", { key: approval.id }, (0, import_react6.createElement)(Safe, { entry: custom, props: { approval, decide: (decision) => decide(approval.id, decision), call: call2, readOnly: locked === true } }));
         const failed = approval.status === "failed";
         const waiting = isApprovalWaiting(approval.status);
+        const at = typeof approval.createdAt === "number" ? approval.createdAt : Date.parse(approval.createdAt);
+        const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
         return (0, import_react6.createElement)(
           "div",
           { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
-          (0, import_react6.createElement)("div", { className: "bt-flybot-approval-head" }, failed ? t("Not sent") : t("Waiting for approval")),
+          (0, import_react6.createElement)("div", { className: "bt-flybot-approval-head" }, failed ? t("Not sent") : t("Waiting for approval"), waiting ? age : null),
           (0, import_react6.createElement)(
             "div",
             { className: "bt-flybot-approval-origin" },
@@ -6870,10 +6872,12 @@ function HeldReplyActions({ held, actions, roster }) {
       error ? (0, import_react10.createElement)("span", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
     );
   }
+  const at = typeof held.createdAt === "number" ? held.createdAt : Date.parse(held.createdAt);
+  const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
   const plain = (0, import_react10.createElement)(
     "div",
     { className: "bt-held-card", role: "region", "aria-label": t("Waiting for your approval") },
-    (0, import_react10.createElement)("div", { className: "bt-held-head" }, t("Waiting for your approval")),
+    (0, import_react10.createElement)("div", { className: "bt-held-head" }, t("Waiting for your approval"), age),
     (0, import_react10.createElement)("div", { className: "bt-flybot-approval-origin" }, t("{from} → {to}", { from: held.from ?? t("A Bot"), to: held.toName })),
     locked ? readOnlyLine() : (0, import_react10.createElement)(
       "div",
@@ -19887,13 +19891,17 @@ function SharedRoomApprovals({ room: room2, roster }) {
     "div",
     { key: "approvals", className: "bt-shared-wait", "data-flybot": "room-pending-approvals" },
     (0, import_react44.createElement)("div", { className: "bt-section-title" }, t("Waiting for your approval"), (0, import_react44.createElement)("span", { className: "bt-chip" }, t("{count} to approve", { count: items.length }))),
-    items.map((item) => (0, import_react44.createElement)(
-      "div",
-      { key: item.id, className: "bt-set-row" },
-      (0, import_react44.createElement)("span", { className: "bt-set-copy" }, item.text || item.summary || item.to || t("Outbound reply")),
-      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
-      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
-    )),
+    items.map((item) => {
+      const at = typeof item.createdAt === "number" ? item.createdAt : Date.parse(item.createdAt);
+      const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
+      return (0, import_react44.createElement)(
+        "div",
+        { key: item.id, className: "bt-set-row" },
+        (0, import_react44.createElement)("span", { className: "bt-set-copy" }, item.text || item.summary || item.to || t("Outbound reply"), age),
+        locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
+        locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
+      );
+    }),
     error ? (0, import_react44.createElement)("div", { className: "bt-error", role: "alert" }, error) : null
   );
 }

@@ -1,6 +1,6 @@
 import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
 import { isMainOf } from './sources.js'
-import { copyNames, currentPart, transcriptOf, usageOf } from './text.js'
+import { copyNames, currentPart, relativeShort, transcriptOf, usageOf } from './text.js'
 import { PlusIcon, ShareIcon, CloseIcon, ChevronLeftIcon, GearIcon } from './icons.js'
 import { botState, BotMark, BotAvatar, RoomAvatar, lookBotForRemote } from './mark.js'
 import { GlobeIcon, Favicon } from './browser-pane.js'
@@ -142,14 +142,20 @@ function SharedRoomApprovals({ room, roster }) {
   }
   return h('div', { key: 'approvals', className: 'bt-shared-wait', 'data-flybot': 'room-pending-approvals' },
     h('div', { className: 'bt-section-title' }, t('Waiting for your approval'), h('span', { className: 'bt-chip' }, t('{count} to approve', { count: items.length }))),
-    items.map(item => h('div', { key: item.id, className: 'bt-set-row' },
-      h('span', { className: 'bt-set-copy' }, item.text || item.summary || item.to || t('Outbound reply')),
-      locked
-        ? null
-        : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'approve') }, t('Approve')),
-      locked
-        ? null
-        : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))),
+    items.map((item) => {
+      // #2409: the plugin's view carries the wait's `createdAt` as an ISO string or not at all
+      // (`plugins/social/src/social.js` approvalView); anything unparseable draws nothing.
+      const at = typeof item.createdAt === 'number' ? item.createdAt : Date.parse(item.createdAt)
+      const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null
+      return h('div', { key: item.id, className: 'bt-set-row' },
+        h('span', { className: 'bt-set-copy' }, item.text || item.summary || item.to || t('Outbound reply'), age),
+        locked
+          ? null
+          : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'approve') }, t('Approve')),
+        locked
+          ? null
+          : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))
+    }),
     error ? h('div', { className: 'bt-error', role: 'alert' }, error) : null)
 }
 

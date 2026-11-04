@@ -11,6 +11,7 @@ import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
 import { lockedWindow } from './schedules.js'
 import { hostText, t } from './i18n.js'
+import { relativeShort } from './text.js'
 
 const call = (endpoint, payload) => callHost(`flybot/${endpoint}`, payload)
 
@@ -61,8 +62,11 @@ export function HeldReplyActions({ held, actions, roster }) {
       failed && canRetry(held) ? (locked ? readOnlyLine() : h('button', { type: 'button', className: 'bt-held-retry', disabled: busy, onClick: () => decide('retry') }, t('Retry'))) : null,
       error ? h('span', { className: 'bt-flybot-approval-error', role: 'alert' }, error) : null)
   }
+  // #2409: same rule as the dock and the room card; an absent or unparseable stamp draws nothing.
+  const at = typeof held.createdAt === 'number' ? held.createdAt : Date.parse(held.createdAt)
+  const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null
   const plain = h('div', { className: 'bt-held-card', role: 'region', 'aria-label': t('Waiting for your approval') },
-    h('div', { className: 'bt-held-head' }, t('Waiting for your approval')),
+    h('div', { className: 'bt-held-head' }, t('Waiting for your approval'), age),
     h('div', { className: 'bt-flybot-approval-origin' }, t('{from} → {to}', { from: held.from ?? t('A Bot'), to: held.toName })),
     locked ? readOnlyLine() : h('div', { className: 'bt-flybot-approval-actions' },
       h('button', { type: 'button', disabled: busy, onClick: () => decide('reject') }, t('Reject')),
