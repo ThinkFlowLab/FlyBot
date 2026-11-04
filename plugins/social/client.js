@@ -3285,7 +3285,7 @@ window.__ModuleLoader__.load({
       peopleAccessBot = botId
       actions.openSettings('bots', botId)
     }
-    function ManageAccess({ bot, onGrants }) {
+    function ManageAccess({ bot, onGrants, readOnly = false }) {
       const [view, setView] = useState(null)
       const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
@@ -3342,6 +3342,9 @@ window.__ModuleLoader__.load({
         finally { setBusy('') }
       }
       const grants = view?.grants ?? []
+      // #2446: People with access is a read, so a read-only window keeps the list and its
+      // Auto-send state, and only the two writes (Revoke, the Auto-send switch) go.
+      const note = readOnly ? 'One row per Bot. Default: nobody, Chief included.' : ACCESS_NOTE
       // One Auto-send switch per person, however many of their Bots are rows (#995).
       const autoShown = new Set()
       // A room the grant rows already named must not come back under "This room only" (#955).
@@ -3364,7 +3367,7 @@ window.__ModuleLoader__.load({
       }
       return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
         h('div', { className: 'fs-name' }, 'People with access'),
-        h('div', { className: 'fs-hint fs-face-note' }, ACCESS_NOTE),
+        h('div', { className: 'fs-hint fs-face-note' }, note),
         grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
         grants.map((grant) => {
           const grantUsage = roomHint('use', grant.rooms)
@@ -3383,14 +3386,20 @@ window.__ModuleLoader__.load({
               identity ? h('span', { className: 'fs-sub' }, identity) : null,
               identity && grantUsage ? ' · ' : null,
               grantUsage ? h('span', { className: 'fs-hint', title: grantUsage.title }, grantUsage.text) : null) : null),
-          showAuto ? h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
-            h('input', {
-              type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
-              'aria-label': `Auto-send ${bot.name || 'this Bot'} → ${grant.person || grant.home}`,
-              onChange: e => { void toggleAutoSend(grant, e.target.checked) },
-            }),
-            'Auto-send') : null,
-          confirming
+          showAuto ? (readOnly
+            ? h('span', {
+              className: 'fs-hint fs-access-auto', 'data-flybot': 'access-auto-state',
+              title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.`,
+            }, grant.autoSend === true ? 'Auto-send on' : 'Auto-send off')
+            : h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
+              h('input', {
+                type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
+                'aria-label': `Auto-send ${bot.name || 'this Bot'} → ${grant.person || grant.home}`,
+                onChange: e => { void toggleAutoSend(grant, e.target.checked) },
+              }),
+              'Auto-send')) : null,
+          readOnly ? null
+            : confirming
             ? h('span', { className: 'fs-leave-ask fs-access-ask', 'data-flybot': 'revoke-grant-confirm' },
               h('span', { className: 'fs-hint' }, revokeAsk(grant)),
               h('button', {
@@ -3508,8 +3517,11 @@ window.__ModuleLoader__.load({
       // read-only window can only have them refused, so it reads the reason instead.
       const locked = readOnlyReason(roster)
       if (locked) {
+        // #2446: social/access is registered `{ read: true }`, so People with access stays readable
+        // here; only its writes (Revoke, Auto-send) and the two invite entries go.
         return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
-          h('div', { className: 'fs-hint', 'data-flybot': 'sharing-readonly', role: 'status' }, locked))
+          h('div', { className: 'fs-hint', 'data-flybot': 'sharing-readonly', role: 'status' }, locked),
+          h(ManageAccess, { bot, readOnly: true }))
       }
       return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
         h(InviteToBot, { bot, revocable: granted > 0 }),
