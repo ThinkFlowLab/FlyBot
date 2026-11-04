@@ -45,7 +45,19 @@ export function install(rt) {
   let queued = 0
   const { warn } = rt
   // Opt-in (#511): every saved change is also recorded for replay; off by default.
-  const journal = config.stateJournal === true ? openJournal({ path: join(home, 'journal', 'state.jsonl'), warn }) : undefined
+  // Opening the writer is itself a write — it creates `journal/` (0700) and repairs a half-written
+  // last line by replacing the file with its prefix — so it waits for the first save that got past
+  // `writable()`. A window another dsh keeps read-only never gets there, and used to leave the
+  // folder behind and rewrite the holder's journal (#2351).
+  const journalPath = join(home, 'journal', 'state.jsonl')
+  let journalWriter
+  const journal = config.stateJournal === true
+    ? {
+        path: journalPath,
+        record: (snapshot) => (journalWriter ??= openJournal({ path: journalPath, warn })).record(snapshot),
+        status: () => journalWriter?.status() ?? { recording: true },
+      }
+    : undefined
 
   const EMPTY = JSON.stringify(state)
   // The other dsh host that holds state.lock while this one only reads (see home-lock.js);

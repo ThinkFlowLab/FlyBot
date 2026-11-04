@@ -1,0 +1,1 @@
+A window that opens the host state read-only no longer creates or rewrites the state journal: opening the writer is itself a write, so it now happens on the first save that got past the write lock instead of at host start, while `rt.journal.status()` and the diagnostics line answer as before on a host that may write ([#2351](https://github.com/ThinkFlowLab/FlyBot/issues/2351)).
