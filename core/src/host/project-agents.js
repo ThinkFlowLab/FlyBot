@@ -1,3 +1,5 @@
+import { captureProcessScope, priorHostProcessExited } from './project-process-proof.js'
+import { nativeChiefBoundary, scopeDigest } from './project-chief-recovery.js'
 import { CHIEF_AUTONOMY } from './project-chief-protocol.js'
 import { agentHistoryPage } from './project-history-pages.js'
 import { createProjectAgentInbox } from './project-agent-inbox.js'
@@ -367,6 +369,10 @@ export function createProjectAgents(rt) {
     const delegation = { id: randomUUID(), exchangeId: randomUUID(), actor: { ...actor }, definitionRevision: set.revision, started: false, revoked: false, chiefJob: { runId, invocation, prompt: fullPrompt }, onChiefResult: onResult }
     delegations.set(agent.id, delegation)
     agent.lastRequest = { id: randomUUID(), initiatedBy: actor.memberId, executorBotId: agent.botId, exchangeId: delegation.exchangeId, phase: 'queued', context: snapshot, definitionRevision: set.revision, chiefRunId: runId, chiefInvocation: invocation, at: Date.now() }
+    const run = state.projectExecutions?.[runId]
+    if (!run || run.invocation !== invocation || run.status !== 'running') throw refuse('Chief invocation changed before execution admission')
+    run.executionBoundary = { version: 'chief-execution-boundary/v1', kind: (definition.execution?.harness ?? 'flybot') === 'flybot' ? 'native-in-process' : 'sdk-worker', runId, invocation, botId: agent.botId, sessionId: agent.sessionId, carrierGeneration: agent.carrierGeneration, exchangeId: delegation.exchangeId }
+    run.processScope ??= await captureProcessScope()
     await rt.save()
     const finish = async result => {
       try { if (delegations.get(agent.id)?.id !== delegation.id || delegation.revoked) throw refuse('Chief execution was revoked'); const outcome = await onResult({ ...result, executionEvidence: { ...result.executionEvidence, chiefRunId: runId, carrierGeneration: agent.carrierGeneration } }); agent.lastRequest.phase = outcome?.correction ? outcome.correction.status === 'pending' ? 'correcting' : 'incomplete' : result.ok ? 'completed' : 'failed' }
@@ -624,6 +630,25 @@ export function createProjectAgents(rt) {
     return serial(() => { if (expectedCarrierId && keyOf(projectId, memberId) !== expectedCarrierId) throw refuse('Personal-agent default changed before notification'); return send({ projectId, visibility: 'private', text }, actor) })
   }
   const stoppingChiefJobs = new Map()
+  async function reconcileChiefExit(run) {
+    if (!['interrupted', 'failed', 'cancelled'].includes(run.status)) return false
+    const selected = nativeChiefBoundary(state, run), scope = run.processScope, invocation = run.invocation
+    if (!selected || !await priorHostProcessExited(scope)) return false
+    const current = () => state.projectExecutions?.[run.id] === run && run.processScope === scope && run.invocation === invocation && ['interrupted', 'failed', 'cancelled'].includes(run.status)
+    if (!current()) return false
+    const proof = { confirmed: true, kind: 'native-chief-prior-host-exited', runId: run.id, invocation, carrierGeneration: selected.boundary.carrierGeneration, scopeSha256: scopeDigest(scope), at: Date.now() }
+    for (const lease of selected.leases) {
+      if (!current() || state.projectResourceLeases?.[lease.id] !== lease) return false
+      await rt.projectResources.release(lease.id, lease.generation, { handle: selected.boundary.exchangeId, exited: true, proof })
+      if (lease.status !== 'released') return false
+    }
+    if (!current()) return false
+    run.exitProof = proof
+    const carrier = agents()[`public-${run.projectId}`], request = carrier?.lastRequest
+    if (request?.chiefRunId === run.id && request.chiefInvocation === invocation && carrier.carrierGeneration === proof.carrierGeneration) { request.phase = 'interrupted'; request.exitProof = structuredClone(proof) }
+    await rt.save()
+    return true
+  }
   function stopChiefJob(projectId, runId) {
     if (stoppingChiefJobs.has(runId)) return stoppingChiefJobs.get(runId)
     const pending = (async () => {
@@ -803,7 +828,7 @@ export function createProjectAgents(rt) {
   }
   const isDelegationActive = (id, delegationId) => { const entry = delegations.get(id); return entry?.id === delegationId && !entry.revoked }
   const ensureProject = (projectId, actor) => serial(async () => { await ensure(projectId, actor, 'public'); return ensure(projectId, actor) })
-  return { stream, liveFor, hasExchange: exchangeId => [...delegations.values()].some(row => row.exchangeId === exchangeId && !row.revoked), privateIdentity: keyOf, ensurePublic: (projectId, actor) => serial(() => ensure(projectId, actor, 'public')), contextExchange, chiefMemory, chiefBusy: projectId => delegations.has(`public-${projectId}`) || [...stoppingChiefJobs.keys()].some(id => state.projectExecutions?.[id]?.projectId === projectId), stopChiefJob, startChiefJob, endpoint, consultation: consultations.endpoint, contactUser: consultations.contactUser, agentConsultations, agentInbox, inboxExecutionActive, chiefQuestion, askChief, suggestClosure, githubRead, action, wakeWatch, revokeWatchGrant, ensureProject, isDelegationActive, actorOf, context, memory, task, run, onEvent, revoke, revokeSession, removeProject, deliveryDefinitions, recordForBot, roles: roleGovernance, proposeRole, proposeRoleForJob, ROLES }
+  return { stream, liveFor, hasExchange: exchangeId => [...delegations.values()].some(row => row.exchangeId === exchangeId && !row.revoked), privateIdentity: keyOf, ensurePublic: (projectId, actor) => serial(() => ensure(projectId, actor, 'public')), contextExchange, chiefMemory, reconcileChiefExit, chiefBusy: projectId => delegations.has(`public-${projectId}`) || [...stoppingChiefJobs.keys()].some(id => state.projectExecutions?.[id]?.projectId === projectId), stopChiefJob, startChiefJob, endpoint, consultation: consultations.endpoint, contactUser: consultations.contactUser, agentConsultations, agentInbox, inboxExecutionActive, chiefQuestion, askChief, suggestClosure, githubRead, action, wakeWatch, revokeWatchGrant, ensureProject, isDelegationActive, actorOf, context, memory, task, run, onEvent, revoke, revokeSession, removeProject, deliveryDefinitions, recordForBot, roles: roleGovernance, proposeRole, proposeRoleForJob, ROLES }
 }
 
 export function install(rt) {

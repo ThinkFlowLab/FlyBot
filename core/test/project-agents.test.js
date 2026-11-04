@@ -568,7 +568,8 @@ test('dormant native end cannot consume an SDK Chief job before worker registrat
     assert.equal(rt.projectAgents.isDelegationActive(input.agent.id, input.delegation.id), true)
     return 'delayed-sdk-worker'
   }
-  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'chief-window', prompt: 'Inspect', projectFacts: {}, onResult: async () => { callbacks++ } })
+  rt.state.projectExecutions['chief-window'] = { id: 'chief-window', projectId: 'p1', invocation: 1, status: 'running' }
+  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, invocation: 1, runId: 'chief-window', prompt: 'Inspect', projectFacts: {}, onResult: async () => { callbacks++ } })
   await request.onResult({ ok: true, text: '{}' })
   assert.equal(callbacks, 1)
   assert.equal(rt.state.projectAgents[original.public.id].lastRequest.phase, 'completed')
@@ -807,7 +808,8 @@ test('resident native Chief receives fresh job facts in each turn instead of rel
   rt.deliver = async args => { sends.push({ ...args, system: rt.botOf(chief.botId).systemPrompt }); return originalDeliver(args) }
   for (const index of [1, 2]) {
     let completed = false
-    await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: `chief-${index}`, prompt: 'Judge only this current job', projectFacts: { tasks: [{ taskId: `task-${index}`, title: `FRESH_JOB_${index}` }] }, onResult: async () => { completed = true } })
+    rt.state.projectExecutions[`chief-${index}`] = { id: `chief-${index}`, projectId: 'p1', invocation: 1, status: 'running' }
+    await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, invocation: 1, runId: `chief-${index}`, prompt: 'Judge only this current job', projectFacts: { tasks: [{ taskId: `task-${index}`, title: `FRESH_JOB_${index}` }] }, onResult: async () => { completed = true } })
     const sent = sends.at(-1)
     assert.match(sent.text, new RegExp(`FRESH_JOB_${index}`))
     assert.match(sent.text, /Judge only this current job/)
@@ -934,7 +936,7 @@ test('native Chief deadline fencing waits for actual idleness and preserves the 
   const { rt } = await setup(t)
   const { public: chief } = await get(rt, alice)
   rt.projectChiefControl.validateActor = async () => {}
-  rt.state.projectExecutions.deadline = { projectId: 'p1' }
+  rt.state.projectExecutions.deadline = { id: 'deadline', projectId: 'p1', invocation: 1, status: 'running' }
   await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'deadline', invocation: 1, prompt: 'Bounded inspection', projectFacts: {}, onResult: async () => {} })
   let idle, cancelled = false
   rt.resolveAgent = async () => ({ inbox: {}, cancel() { cancelled = true }, whenIdle: () => new Promise(resolve => { idle = resolve }) })

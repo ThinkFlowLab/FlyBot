@@ -308,19 +308,20 @@ export function createProjectChiefControl(rt) {
     } finally { if (run.invocation !== job.invocation) return; run.lastInvocationFinishedAt = Date.now(); if (!correcting) run.finishedAt = Date.now(); if (active.get(run.id) === job) active.delete(run.id); if (!correcting) waiters.delete(run.id); await rt.save(); if (correcting) rt.projectScheduler?.wake() }
   }
   async function inspectionExited(run) {
+    await rt.projectAgents.reconcileChiefExit?.(run)
     const workers = Object.values(rt.state.projectHarnessWorkers ?? {}).filter(row => row.chiefRunId === run.id && (row.chiefInvocation === undefined ? row.id === run.workerId : row.chiefInvocation === run.invocation))
     const leases = Object.values(rt.state.projectResourceLeases ?? {}).filter(row => row.chiefRunId === run.id && row.chiefInvocation === run.invocation || workers.some(worker => worker.leaseId === row.id))
     if (leases.some(row => row.status !== 'released')) return false
     if (workers.length) return workers.every(row => confirmedWorkerExit(rt.state, row) && leases.some(lease => lease.id === row.leaseId && lease.projectId === row.projectId && lease.attemptId === row.attemptId && lease.role === row.role && lease.resourceId === row.resourceId && lease.generation === row.generation && lease.worker?.handle === row.id))
-    if (leases.length && leases.every(row => row.releaseProof && (!row.worker && row.releaseProof.kind === 'unbound-reservation-release' || row.worker?.kind === 'native-turn' && ['host-confirmed-worker-exit', 'systemd-prior-invocation-exited'].includes(row.releaseProof.kind)))) return true
+    if (leases.length && leases.every(row => row.releaseProof && (!row.worker && row.releaseProof.kind === 'unbound-reservation-release' || row.worker?.kind === 'native-turn' && ['host-confirmed-worker-exit', 'systemd-prior-invocation-exited', 'native-chief-prior-host-exited'].includes(row.releaseProof.kind)))) return true
     const agent = rt.state.projectAgents?.[`public-${run.projectId}`], proof = agent?.lastRequest?.exitProof
     if (proof?.confirmed && proof.runId === run.id && agent.lastRequest.chiefRunId === run.id && proof.carrierGeneration === agent.carrierGeneration && proof.invocation === run.invocation) return true
-    if (['native-chief-quiescent', 'sdk-chief-confirmed-exit', 'chief-never-dispatched'].includes(run.exitProof?.kind) && run.exitProof?.confirmed && run.exitProof.runId === run.id && run.exitProof.invocation === run.invocation) return true
+    if (['native-chief-quiescent', 'native-chief-prior-host-exited', 'sdk-chief-confirmed-exit', 'chief-never-dispatched'].includes(run.exitProof?.kind) && run.exitProof?.confirmed && run.exitProof.runId === run.id && run.exitProof.invocation === run.invocation) return true
     return Boolean(await priorScopeExited(run.processScope))
   }
   async function inspectionBarrier(current) {
     for (const run of Object.values(rt.state.projectExecutions ?? {})) {
-      if (run.id === current.id || run.projectId !== current.projectId || run.kind !== 'chief-control' || run.status !== 'interrupted' || !run.startedAt) continue
+      if (run.id === current.id || run.projectId !== current.projectId || run.kind !== 'chief-control' || run.status !== 'interrupted' && run.recovery?.exitConfirmed !== false || !run.startedAt) continue
       if (!await inspectionExited(run)) return true
     }
     return false
@@ -420,7 +421,7 @@ export function createProjectChiefControl(rt) {
         const task = rt.state.tasks[run.taskId], policy = policyOf(run.projectId)
         if (!policy?.enabled || task?.collaboration?.claim?.chiefRunId !== run.id || task.collaboration.claim.status !== 'interrupted') continue
         const worker = rt.state.projectHarnessWorkers?.[run.workerId]
-        if (worker?.status !== 'released' && !await priorScopeExited(run.processScope)) continue
+        if (!await inspectionExited(run)) continue
         try { await rt.projectPools.retryChief(task.id, { memberId: policy.authorityMemberId }); run.recovery = { status: 'requeued', at: Date.now() }; await rt.save() } catch (error) { run.recovery = { status: 'blocked', reason: error.message, at: Date.now() } }
       }
       for (const task of Object.values(rt.state.tasks)) if (task.collaboration?.status === 'arbitration' && !terminal.has(task.status) && policyOf(task.projectId)?.enabled) await request(task.projectId, 'arbitration', { handoffId: task.collaboration.currentHandoffId }, task.id)
@@ -431,7 +432,7 @@ export function createProjectChiefControl(rt) {
         if (!policy?.enabled || policy.revision !== run.policyRevision) { run.status = 'cancelled'; waiters.get(run.id)?.reject(refuse('Chief policy changed before execution')); waiters.delete(run.id); await rt.save(); continue }
         const actor = { memberId: policy.authorityMemberId, chiefJobId: run.id, chiefToken: randomUUID() }
         const job = { run, actor, token: actor.chiefToken, snapshot: [], invocation: (run.invocation ?? 0) + 1 }
-        run.invocation = job.invocation
+        run.invocation = job.invocation; run.executionBoundary = null; delete run.workerId; delete run.workerGeneration
         run.status = 'running'; run.waitingFor = 'preparing'; run.startedAt = Date.now(); active.set(run.id, job); await rt.save()
         void dispatchJob(job).catch(error => rt.warn?.('Chief dispatch result could not be saved: %s', error.message))
       }
