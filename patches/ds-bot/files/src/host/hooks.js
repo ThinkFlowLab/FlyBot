@@ -561,6 +561,8 @@ export function install(rt) {
     .map(a => ({
       id: a.id,
       by: a.by,
+      // #2409: the bubble draws how long the hold has waited, from the record's own stamp.
+      createdAt: a.createdAt,
       status: SENT.has(a.status) || isApprovalWaiting(a.status) || a.status === 'failed' ? a.status : 'rejected',
       sessionId: a.request.meta.replyIn.sessionId,
       turn: a.request.meta.replyIn.turn,

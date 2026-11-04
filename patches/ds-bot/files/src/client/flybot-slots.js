@@ -47,6 +47,7 @@ import { chatOpened, claimApprovals, claimedIds, onClaims } from './approval-cla
 import { isApprovalWaiting, WAITING_STATUSES } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
 import { lockedWindow } from './schedules.js'
+import { relativeShort } from './text.js'
 import { isMainOf } from './sources.js'
 
 import { createClientApi as createClientApiWith } from './flybot-registry.js'
@@ -331,8 +332,11 @@ export function FlyBotApprovals({ useRoster, actions } = {}) {
         if (custom) return h('div', { key: approval.id }, h(Safe, { entry: custom, props: { approval, decide: decision => decide(approval.id, decision), call, readOnly: locked === true } }))
         const failed = approval.status === 'failed'
         const waiting = isApprovalWaiting(approval.status)
+        // #2409: one rule for all three surfaces — a number of ms, an ISO string, or nothing drawable.
+        const at = typeof approval.createdAt === 'number' ? approval.createdAt : Date.parse(approval.createdAt)
+        const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null
         return h('div', { key: approval.id, className: 'bt-flybot-approval', title: approval.reason ?? undefined },
-          h('div', { className: 'bt-flybot-approval-head' }, failed ? t('Not sent') : t('Waiting for approval')),
+          h('div', { className: 'bt-flybot-approval-head' }, failed ? t('Not sent') : t('Waiting for approval'), waiting ? age : null),
           h('div', { className: 'bt-flybot-approval-origin' },
             t('{from} → {to}', { from: approval.senderName ?? t('A Bot'), to: recipientName(approval, roster) }),
             approval.request.hop > 0 ? ` · ${t('delegated')}` : ''),
