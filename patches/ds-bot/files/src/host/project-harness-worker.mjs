@@ -22,7 +22,7 @@ async function turn(message) {
     sessionId = result.sessionId
     write({ type: 'completed', ...result })
     if (settings.probe) void shutdown()
-  } catch { write({ type: 'failure', reason: 'SDK execution failed; inspect the redacted event evidence and resource environment' }) }
+  } catch (error) { write({ type: 'failure', reason: error.code === 'bot/harness-capability' ? error.message : 'SDK execution failed; inspect the redacted event evidence and resource environment', ...(error.code === 'bot/harness-capability' ? { capabilityFailure: { code: error.code, kind: error.capability, stage: 'configuration', modelInvoked: false } } : {}) }) }
   finally { busy = false }
 }
 input.on('line', line => {

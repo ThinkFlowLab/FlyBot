@@ -14,6 +14,8 @@ Owner authorizes sequential #2336/#2337/#2334/#2346/#2338/#2347/#2331/#2342
 implementation, one PR each, tests/memory/docs and validated merge to the delivery
 branch. #2336 establishes owned reservation rollback and a durable pre-spawn fence;
 unknown execution, workspace/context and current authority remain protected.
+#2337 validates the actual SDK-resolved CLI and role profile before inference;
+configuration readiness is separate from model/test/exit evidence.
 No live task/configuration/credential mutation or deployment is implied.
 
 ## Execution recovery — 2026-11-04

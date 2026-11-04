@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
+import { validateCodexConfiguration } from './project-codex-config.js'
 // One real SDK turn. The host owns Workflow completion and acceptance, never this driver.
-export async function runHarnessTurn(request, { emit, permission, signal, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
+export async function runHarnessTurn(request, { emit, permission, signal, validateCodex = validateCodexConfiguration, loadCodex = () => import('@openai/codex-sdk'), loadClaude = () => import('@anthropic-ai/claude-agent-sdk') }) {
   let text = '', completed = false, sessionId = request.sessionId ?? null, usage = null
   if (request.harness === 'codex') {
     const toolOutputTokens = request.toolOutputTokens ?? 2000
@@ -16,12 +17,15 @@ export async function runHarnessTurn(request, { emit, permission, signal, loadCo
     // proxy keeps an empty outbound allowlist while allowing local process IPC.
     const roots = !request.readOnly && !request.noTools ? request.writableRoots ?? [] : []
     const processPolicy = request.noTools ? {} : { default_permissions: 'flybot-role', features: { ...connectorPolicy, network_proxy: true },
-      permissions: { 'flybot-role': { extends: request.readOnly ? ':read-only' : ':workspace', filesystem: { ':tmp': 'write', ...(request.scratchDirectory ? { [request.scratchDirectory]: 'write' } : {}), ...Object.fromEntries(roots.map(path => [path, 'write'])) },
+      permissions: { 'flybot-role': { extends: request.readOnly ? ':read-only' : ':workspace', filesystem: { ':tmpdir': 'write', ...(request.scratchDirectory ? { [request.scratchDirectory]: 'write' } : {}), ...Object.fromEntries(roots.map(path => [path, 'write'])) },
         network: { enabled: true, mode: 'limited', domains: {}, unix_sockets: {}, allow_local_binding: false, allow_upstream_proxy: false, dangerously_allow_non_loopback_proxy: false, dangerously_allow_all_unix_sockets: false } } } }
     const inlineToml = value => value && typeof value === 'object' ? '{' + Object.entries(value).map(([key, child]) => `${JSON.stringify(key)}=${inlineToml(child)}`).join(',') + '}' : JSON.stringify(value)
     const rawPolicy = request.noTools ? [] : ['permissions.flybot-role=' + inlineToml(processPolicy.permissions['flybot-role'])]
     const configPolicy = request.noTools ? {} : { ...processPolicy, permissions: { 'flybot-role': { extends: processPolicy.permissions['flybot-role'].extends, network: processPolicy.permissions['flybot-role'].network } } }
-    const client = new Codex({ env: request.env, configOverrides: ['mcp_servers={}', 'plugins={}', 'apps={_default={enabled=false}}', ...rawPolicy], ...(request.baseUrl ? { baseUrl: request.baseUrl } : {}), config: { ...(request.config ?? {}), ...chiefConfig, ...configPolicy, tool_output_token_limit: toolOutputTokens } })
+    const clientOptions = { env: request.env, configOverrides: ['mcp_servers={}', 'plugins={}', 'apps={_default={enabled=false}}', ...rawPolicy], ...(request.baseUrl ? { baseUrl: request.baseUrl } : {}), config: { ...(request.config ?? {}), ...chiefConfig, ...configPolicy, tool_output_token_limit: toolOutputTokens } }
+    const validated = await validateCodex({ ...request, signal }, clientOptions)
+    if (validated.capability) await emit({ type: 'configuration-checked', harness: 'codex', capability: validated.capability })
+    const client = new Codex({ ...clientOptions, codexPathOverride: validated.codexPathOverride, env: validated.env })
     const options = { workingDirectory: request.cwd, model: request.model, approvalPolicy: 'never', additionalDirectories: roots, webSearchMode: 'disabled',
       ...(request.noTools ? { sandboxMode: 'read-only', networkAccessEnabled: false } : {}) }
     const thread = sessionId ? client.resumeThread(sessionId, options) : client.startThread(options)

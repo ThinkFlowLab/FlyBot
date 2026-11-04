@@ -249,7 +249,16 @@ export function createProjectHarness(rt) {
           }
           else { row.status = 'waiting-input'; row.pending = { kind: 'message', text: event.text.slice(0, 16000) }; if (!control.chief && session.poolClaimId) await taskInputWake(row.taskId) }
         }
-        if (event.type === 'failure') { row.status = 'failed'; await report(row, false, event.reason) }
+        if (event.type === 'configuration-checked' && event.harness === 'codex' && event.capability?.kind === 'codex-cli-config/v1' && event.capability.version === VERSIONS.codex && event.capability.modelInvoked === false) row.configurationCheck = { kind: event.capability.kind, version: event.capability.version, profile: event.capability.profile === 'chief-read-only' ? 'chief-read-only' : 'flybot-role', at: Date.now(), modelInvoked: false }
+        if (event.type === 'failure') {
+          row.status = 'failed'
+          if (event.capabilityFailure?.code === 'bot/harness-capability' && event.capabilityFailure.stage === 'configuration' && event.capabilityFailure.modelInvoked === false && ['missing-cli', 'unsupported-cli-version', 'unsupported-platform', 'cli-unavailable', 'cli-configuration', 'legacy-sandbox-conflict', 'permission-profile-mismatch'].includes(event.capabilityFailure.kind)) {
+            row.capabilityFailure = event.capabilityFailure
+            rt.state.projectHarnessHealth ??= {}
+            setEntry(rt.state.projectHarnessHealth, `${row.projectId}:${row.resourceId}:${row.harness}`, { status: 'environmentError', reason: event.reason, capabilityFailure: event.capabilityFailure, resourceId: row.resourceId, harness: row.harness, at: Date.now() })
+          }
+          await report(row, false, event.reason)
+        }
         await rt.save()
       }).catch(error => { if (row.status === 'released') return; row.status = 'failed'; failAsync(row, error.code === 'bot/harness' ? error.message : 'SDK event protocol failed') })
     })

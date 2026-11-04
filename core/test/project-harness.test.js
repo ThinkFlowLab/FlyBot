@@ -68,6 +68,23 @@ test('SDK workers reject unregistered Workspaces and missing explicit profiles',
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd }), /explicitly authorized/)
 })
 
+test('resource-side configuration failure remains environment evidence and releases only after worker exit', async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  const file = join(rt.config.projectResources.r.runtimeDir, 'src/host/project-harness-worker.mjs')
+  let source = await readFile(file, 'utf8')
+  source = source.replace("write({type:'completed',sessionId:'bound-thread',text:'OUTPUT implementation: actual contract worker output',usage:{input_tokens:1}});", "write({type:'failure',reason:'Codex configuration is not ready',capabilityFailure:{code:'bot/harness-capability',kind:'legacy-sandbox-conflict',stage:'configuration',modelInvoked:false}});")
+  await writeFile(file, source)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Do the assigned Task' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Frozen requirement', outputs: [{ name: 'implementation' }] })
+  assert.equal((await result).ok, false)
+  assert.equal(rt.state.projectHarnessWorkers[id].capabilityFailure.kind, 'legacy-sandbox-conflict')
+  assert.equal(rt.state.projectHarnessHealth['p:r:codex'].status, 'environmentError')
+  assert.equal(rt.projectResources.occupied('r'), 1)
+  await harness.release(id)
+  assert.equal(rt.projectResources.occupied('r'), 0)
+})
+
 test('Workflow result callback can await the same SDK worker release without blocking stop acknowledgement', async t => {
   const { rt, harness, cwd } = await fixture(t)
   const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Implement Task' })

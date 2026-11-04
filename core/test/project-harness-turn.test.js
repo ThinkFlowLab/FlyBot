@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { runHarnessTurn } from '../src/host/project-harness-turn.js'
+import { runHarnessTurn as actualRunHarnessTurn } from '../src/host/project-harness-turn.js'
+const runHarnessTurn = (request, ports) => actualRunHarnessTurn(request, { validateCodex: async (_request, options) => ({ codexPathOverride: '/test/sdk-cli', env: options.env }), ...ports })
 const request = { harness: 'codex', cwd: '/workspace/task', model: 'explicit-model', prompt: 'Implement only the frozen Task', env: { HOME: '/explicit/profile', CODEX_HOME: '/explicit/codex' } }
 function codex(events, inspect = () => {}) {
   return async () => ({ Codex: class {
@@ -89,7 +90,7 @@ test('Codex process IPC policy cannot be overridden into external access or writ
   assert.equal(policy.network.mode, 'limited'); assert.deepEqual(policy.network.domains, {})
   assert.equal(policy.network.allow_local_binding, false); assert.equal(policy.network.dangerously_allow_all_unix_sockets, false)
   assert.match(observed[0].configOverrides.at(-1), /permissions\.flybot-role=/)
-  assert.match(observed[0].configOverrides.at(-1), /":tmp"="write"/)
+  assert.match(observed[0].configOverrides.at(-1), /":tmpdir"="write"/)
   assert.equal(observed[1].sandboxMode, undefined, 'Legacy flags cannot override the named constrained profile')
 })
 
