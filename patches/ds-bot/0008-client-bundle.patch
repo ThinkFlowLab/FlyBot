@@ -24064,7 +24064,7 @@ diff --git a/client.js b/client.js
    const run = (promise) => Promise.resolve(promise).then(() => {
      setError("");
      return true;
-@@ -10779,104 +10779,254 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false
+@@ -10779,104 +10779,258 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false
    });
    const bot = page === "bots" && id ? roster.byId[id] : void 0;
    const room2 = page === "groups" && id ? roster.roomsById[id] : void 0;
@@ -24203,6 +24203,7 @@ diff --git a/client.js b/client.js
 +  ...(roster?.rooms ?? []).map((room2) => ({ kind: "group", id: room2.id, name: room2.name, projectId: room2.projectId ?? null }))
 +];
 +function ProjectsList({ projects, roster, call: call4, reload }) {
++  const locked = lockedWindow(roster);
 +  const members = projectMembers(roster);
 +  const bind = async (choice, project) => {
 +    const [kind, id] = String(choice ?? "").split(":");
@@ -24230,7 +24231,7 @@ diff --git a/client.js b/client.js
 +          "div",
 +          { className: "bt-project-row-controls" },
 +          (0, import_react42.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openProjectBoard(project.id) }, t("Open board")),
-+          (0, import_react42.createElement)(
++          locked ? null : (0, import_react42.createElement)(
 +            "select",
 +            {
 +              className: "bt-select",
@@ -24260,7 +24261,7 @@ diff --git a/client.js b/client.js
 +          label: member.name,
 +          hint: member.kind === "group" ? t("Group") : t("Bot")
 +        },
-+        (0, import_react42.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
++        locked ? null : (0, import_react42.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
 +          void unbind(member);
 +        } }, t("Unbind"))
 +      ))
@@ -24292,9 +24293,12 @@ diff --git a/client.js b/client.js
 +      setState({ projects: state.projects, error: error?.message ?? String(error) });
 +    }
 +  };
++  const locked = lockedWindow(roster);
 +  return [
 +    state.error === null ? null : (0, import_react42.createElement)("div", { key: "error", className: "bt-error", role: "alert" }, state.error),
-+    (0, import_react42.createElement)(
++    // The host refuses `project-create` and `project-bind` in a read-only window, so the page draws
++    // no control that would call them; the Project list and its facts stay readable.
++    locked ? null : (0, import_react42.createElement)(
 +      SetSection,
 +      { key: "new", title: t("New Project") },
 +      (0, import_react42.createElement)(

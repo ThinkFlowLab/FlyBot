@@ -17,7 +17,7 @@ import { KeyIcon, SecretsPage } from './secret-card.js'
 import { UsagePage } from './usage-page.js'
 import { ConnectorsPage } from './connectors.js'
 import { CapabilitiesPage } from './capability-settings.js'
-import { SchedulesPage } from './schedules.js'
+import { SchedulesPage, lockedWindow } from './schedules.js'
 import { FeedbackIcon, FeedbackPage } from './feedback.js'
 import { FolderMenu } from './folder-menu.js'
 import { AboutPage } from './about.js'
@@ -272,6 +272,7 @@ const projectMembers = (roster) => [
 ]
 
 export function ProjectsList({ projects, roster, call, reload }) {
+  const locked = lockedWindow(roster)
   const members = projectMembers(roster)
   // The binding is the member's own field (`bot.projectId`, `room.projectId`); the record is only
   // asked again so the row that shows it is read from the host, not guessed here.
@@ -296,7 +297,7 @@ export function ProjectsList({ projects, roster, call, reload }) {
         },
         h('div', { className: 'bt-project-row-controls' },
           h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openProjectBoard(project.id) }, t('Open board')),
-          h('select', {
+          locked ? null : h('select', {
             className: 'bt-select', 'aria-label': t('Bind to {name}', { name: project.name }), value: '',
             onChange: event => { void bind(event.target.value, project) },
           },
@@ -308,7 +309,7 @@ export function ProjectsList({ projects, roster, call, reload }) {
         key: `${member.kind}:${member.id}`, label: member.name,
         hint: member.kind === 'group' ? t('Group') : t('Bot'),
       },
-      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { void unbind(member) } }, t('Unbind'))))),
+      locked ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { void unbind(member) } }, t('Unbind'))))),
   ]
 }
 
@@ -339,9 +340,12 @@ export function ProjectsPage({ roster, actions, run, call }) {
       setState({ projects: state.projects, error: error?.message ?? String(error) })
     }
   }
+  const locked = lockedWindow(roster)
   return [
     state.error === null ? null : h('div', { key: 'error', className: 'bt-error', role: 'alert' }, state.error),
-    h(SetSection, { key: 'new', title: t('New Project') },
+    // The host refuses `project-create` and `project-bind` in a read-only window, so the page draws
+    // no control that would call them; the Project list and its facts stay readable.
+    locked ? null : h(SetSection, { key: 'new', title: t('New Project') },
       h(SetRow, { label: t('Name') },
         h('input', {
           className: 'bt-input', 'aria-label': t('Project name'), value: name, placeholder: t('e.g. Website'),
