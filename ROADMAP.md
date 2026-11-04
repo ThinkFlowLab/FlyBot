@@ -116,14 +116,7 @@ Broader Claude/mixed-resource/browser-auth/restart checks remain separate future
 
 ## Owner-authorized collaboration repairs — 2026-11-01
 
-[Tracking #33](https://github.com/zy95-12/FlyBot/issues/33): #34 repository preflight → #35 role contracts → #36 per-Bot pools/handoff → #37 ordinary Chief queries → #38 safe/watch delegation → #39 Chief arbitration/configurable schedules → #40 native UI/multi-Bot reuse → #41 actual shared-service acceptance. Component/UI inventory may proceed alongside its foundations; each implementation has its own PR and tested evidence. Public hosting is deferred. A 30-minute Chief inspection is a configurable scheduled-task default, never framework logic. R1 PR #42 passed full local verification; configured-service acceptance is pending. R2 implements complete role-policy delivery and evidence separation and is under verification. R3 dynamic pool/claim/handoff implementation is under verification, including non-DAG SDK contract-process rework. R4 conversation/query/status repair is under verification; R5 persistent safe/watch delegation is under verification; R6–R8 remain pending; R4 integrates conversation bridging and R6 completes Chief arbitration/configurable schedules. The owner requests backend repairs first, then real human-style assignment through FlyBot to exercise role handoffs and Chief fallback.
-
-R6 implementation checkpoint: Chief now adjudicates completion/uncertainty and may
-intervene through audited routes. Inspection reuses original configurable DSH
-schedules; there is no Chief cadence in framework timers. After exact-tip full
-verification and its own draft PR, upgrade the backed-up shared backend, assign
-#40 through actual FlyBot and collect real Codex/handoff/Chief/restart evidence in
-#41. Protocol fixtures alone do not satisfy those integration criteria.
+Original R1–R8 implementation checkpoints are preserved in the dated delivery history below. Current collaboration and frontend acceptance boundaries remain here.
 
 Earlier R6/R7 implementation, recovery and frontend checkpoint narratives are
 [archived verbatim](docs/history/2026-11-03-collaboration-checkpoints.md).
@@ -142,39 +135,11 @@ complete from these historical checkpoints or backend convergence alone.
 ### Resident Chief and Task-role context — 2026-11-01
 Implemented Task-role logical identity, binding-checked SDK resume across rework, retained cwd ownership/cleanup and current candidate inputs. Added original-store Chief topic-memory read/write/replace and same-thread scoped retrieval rounds, plus immutable context archives instead of re-sending unbounded history. Native DSH keeps its original parts/steward/compaction; SDK uses its own runtime compaction. Verification must include real resource-user/runtime continuation and Chief memory before claiming live delivery. Current native workflow carriers remain per execution; their logical Task identity and retrievable facts are retained, not falsely described as SDK backend threads.
 
-Task40 continues with synchronized native CSS/JS loading and a scoped composer
-exported from the original composer module, sharing dictation cleanup and captured
-chat sends. Focused regression evidence is separate from complete UI acceptance;
-rich tool/approval, personal running state and deployed browser acceptance remain open.
-
-Task40 native interaction continuation implements personal questions/one-shot approval,
-stop/continue, own-chat streaming, bounded tool output and original group member-work
-controls. SDK execution input reuses original approval/composer components. Proceed to
-exact-candidate host tests and independent Review; only operator evidence can satisfy
-actual deployed three-account/weak-network and visual acceptance.
-
-Task40 host-return repair preserves legacy listener registration while retaining the
-explicit shared native stream observer. Reproduced all four reported failures and
-added a fail-without-fix mode-boundary regression. Continue through host tests/Review
-and operator acceptance on the same Task/PR48.
-
-Task40 review-return continuation repairs live-part navigation and replaces plain human
-paragraphs with original person bubbles. Native file/image sends and scoped historical
-attachment reads are implemented through public DSH APIs with explicit shared-entry
-byte limits. Proceed through host verification/independent Review; operator deployed
-three-account, weak-network and screenshot evidence remains separately required.
-
-Task40 refresh repair retains scoped native roots and updates props instead of
-unmounting on each poll. Bounded mounted-workbench regressions cover focus, selection,
-drafts, sends and teardown for personal/public/private/room views. Continue through
-new candidate verification and Review without borrowing earlier candidate evidence.
-
-Task40/PR48 integrates preserved frontend 0e72dc60 with operator backend b920cae8,
-including S1 and verified workspace/Session exit proofs. Compact board status
-uses the same live-activity evidence as the full S1 view. Integrated focused tests
-pass; exact sealed candidate host verification and independent Review come next.
-Actual shared-service browser/weak-network/screenshot acceptance stays outstanding.
-
+Earlier Task40 frontend implementation checkpoints are
+[preserved verbatim](docs/history/2026-11-04-collaboration-delivery-checkpoints.md).
+They do not complete actual shared-service, three-account, weak-network, screenshot
+or original native UI compatibility acceptance. Preserve Task40/PR48 and healthy
+execution; current changes remain in the foreground backend session.
 
 Issue60 follow-up restores the completed-Chief deferral checkpoint discovered by
 real S4 frontend recovery. Keep all exit/lease guards and the current unsealed
@@ -203,3 +168,7 @@ current authority checks before execution and stop on revoked rights; unknown
 exit retains capacity. Real-provider parallel/restart/migration/UI and Release
 operational acceptance remain distinct pending evidence under #2292. Previously
 deferred multi-repository automation is not reactivated by this recovery work.
+
+Updated #2334 acceptance adds actual npm missing-vitest/127 classification and
+clean/prepare/same-candidate retest coverage; it remains a source/test follow-up,
+not live npm ci provisioning or production Vitest acceptance.

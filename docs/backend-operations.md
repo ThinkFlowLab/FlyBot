@@ -159,3 +159,9 @@ not just passed=false. The original Task/Chief controls decide retry or consulta
 fixing environment can rerun the same candidate while retaining old logs. Unknown
 remote exit holds capacity until trusted recovery evidence. Use attempt.context
 (testHistory/preparationFailures) and attempt.log(environmentRole) for bounded reads.
+
+Missing `vitest` after candidate clean is an environment blocker even when npm
+starts: inspect stage=runner-startup and reason=test-runner-unavailable. Exit127 is
+not a business assertion failure. Configure an authorized workspacePrepareCommand
+for every host-verifier checkout; a manual npm ci or Docker preparation is not a
+replacement for this hook, and configuration alone is not a same-candidate test PASS.

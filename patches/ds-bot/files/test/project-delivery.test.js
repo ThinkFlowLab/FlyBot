@@ -991,6 +991,42 @@ test('independent verification preserves dependency diagnostics without declarin
   assert.match(readFileSync(tests.log, 'utf8'), /ENOTCACHED/)
 })
 
+test('npm test missing vitest after clean is runner-startup blockage and preparation reruns real assertions on the same candidate', async t => {
+  const f = await setup(t, undefined, { pool: true })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  const settings = f.rt.config.projectRepositories['example/demo']
+  settings.allowedPaths.push('package.json')
+  const wrapper = 'const cp=require("node:child_process");const r=cp.spawnSync("npm",["--offline","test"],{stdio:"inherit",env:{...process.env,HOME:process.argv[1],npm_config_cache:process.argv[1]+"/npm-cache"}});process.exit(r.status??1)'
+  settings.testCommand = [process.execPath, '-e', wrapper, f.directory]
+  await f.start('missing-vitest')
+  const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id], roles = f.rt.projectAgents.deliveryDefinitions('p1').roles
+  await prepareRole(f.rt, task, { id: 'missing-runner-dev', attemptId: attempt.id, generation: 1 }, roles.find(row => row.role === 'developer'))
+  writeFileSync(join(attempt.workspaces.developer.path, 'code.mjs'), 'export const add=(a,b)=>a+b;\n')
+  writeFileSync(join(attempt.workspaces.developer.path, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }))
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: 'developer', outputs: { implementation: 'Implement addition' } })
+  await prepareRole(f.rt, task, { id: 'missing-runner-test', attemptId: attempt.id, generation: 2 }, roles.find(row => row.role === 'tester'))
+  const sha = attempt.candidateSha, path = attempt.workspaces.tester.path
+  mkdirSync(join(path, 'node_modules/.bin'), { recursive: true })
+  writeFileSync(join(path, 'node_modules/stale'), 'Must be cleaned')
+  const finish = () => f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: attempt.id }, role: 'tester', outputs: { tests: 'Request host verification' } })
+  await assert.rejects(finish(), /Configured tests failed|environment is blocked/)
+  const failed = structuredClone(attempt.evidence.tests)
+  assert.equal(failed.status, 'environment-blocked'); assert.equal(failed.stage, 'runner-startup')
+  assert.equal(failed.testsStarted, true); assert.equal(failed.preparation, null); assert.equal(failed.passed, false)
+  assert.match(readFileSync(failed.log, 'utf8'), /vitest: (?:command )?not found/)
+  assert.equal((await import('node:fs')).existsSync(join(path, 'node_modules/stale')), false)
+  // A transport runner fixture delegates to the real Node assertions; this is
+  // not an installed Vitest or a paid-model acceptance claim.
+  const runner = '#!/usr/bin/env node\nconst r=require("node:child_process").spawnSync(process.execPath,["--test","--test-reporter=tap","code.test.mjs"],{stdio:"inherit"});process.exit(r.status??1)\n'
+  settings.workspacePrepareCommand = [process.execPath, '-e', `const fs=require('fs');fs.mkdirSync('node_modules/.bin',{recursive:true});fs.writeFileSync('node_modules/.bin/vitest',${JSON.stringify(runner)},{mode:0o755})`]
+  await finish()
+  assert.equal(attempt.candidateSha, sha); assert.equal(attempt.evidence.tests.sha, sha)
+  assert.equal(attempt.evidence.tests.status, 'passed'); assert.equal(attempt.evidence.tests.stage, 'tests')
+  assert.equal(attempt.evidence.tests.preparation.status, 'ready')
+  assert.deepEqual(attempt.testHistory[0], failed)
+  assert.match(readFileSync(attempt.evidence.tests.log, 'utf8'), /# pass 1/)
+})
+
 test('independent test timeout remains incomplete verification with an immutable log', async t => {
   const f = await setup(t, [process.execPath, '-e', 'setTimeout(()=>{},10000)'])
   await f.start('test-timeout')

@@ -259,3 +259,6 @@ empty inspections can succeed without changing a Task. Persisted state remains t
 source of truth, not a misleading enabled flag or an in-memory waiter.
 
 #2334 supplies structured test outcome, testsStarted, actual executor and preparation receipt references plus bounded SDK dependency observations. Chief chooses recovery; an environment blockage is neither an assertion failure nor automatic escalation.
+
+Missing-runner facts additionally include stage=runner-startup. testsStarted is
+configured command invocation; Chief must not interpret it as assertion execution.

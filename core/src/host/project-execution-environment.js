@@ -23,6 +23,7 @@ export function executionOutcome(error, output = '', { stage = 'tests', remote =
   if (remote && (timedOut || typeof error.code !== 'number' || [125, 255].includes(error.code))) return { status: 'execution-unknown', reason: 'resource-command-exit-unconfirmed', exitConfirmed: false }
   if (timedOut) return { status: 'execution-timeout', reason: 'command-deadline', exitConfirmed: true }
   if (stage === 'preparation') return { status: 'environment-blocked', reason: 'preparation-command-failed', exitConfirmed: true }
+  if (error.code === 127 || error.code === 'ENOENT' || /(?:^|[\s/])[^\s:]+:\s*(?:command )?not found\b/i.test(output)) return { status: 'environment-blocked', reason: 'test-runner-unavailable', stage: 'runner-startup', exitConfirmed: true }
   if (['ENOENT', 'EACCES'].includes(error.code) || /\b(?:ENOTCACHED|only-if-cached|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND|EAI_AGAIN|ENOTFOUND|ENETUNREACH|ECONNREFUSED)\b|Cannot find (?:module|package)|command not found|network (?:is unreachable|access.*denied)|registry.*(?:denied|unavailable)/i.test(output)) return { status: 'environment-blocked', reason: 'dependency-tool-cache-or-network-unavailable', exitConfirmed: true }
   if (typeof error.code !== 'number') return { status: 'execution-unknown', reason: 'test-exit-unconfirmed', exitConfirmed: false }
   return { status: /AssertionError|ERR_ASSERTION|assertion failed/i.test(output) ? 'assertion-failed' : 'test-process-failed', reason: 'nonzero-test-exit', exitConfirmed: true }
