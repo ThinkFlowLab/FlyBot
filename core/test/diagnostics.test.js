@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import { homedir, hostname, tmpdir } from 'node:os'
@@ -612,9 +612,10 @@ test('the report says nothing about the log while it is off, and recording while
 // and a report that calls a newer or unreadable team file "another dsh holds the team" sends the
 // reader to close a host that is not running. These four build the real store and the real
 // diagnostics on one runtime, so the sentence is the one the host actually produces.
-async function realHost(t, { saved, locked = false } = {}) {
+async function realHost(t, { saved, locked = false, prepare } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-ro-'))
   const statePath = join(home, 'state.json')
+  prepare?.(statePath)
   if (saved === 'dir') mkdirSync(statePath)
   else if (saved !== undefined) writeFileSync(statePath, JSON.stringify(saved))
   // A lock file naming a live process is exactly what a second dsh leaves behind.
@@ -642,8 +643,100 @@ async function realHost(t, { saved, locked = false } = {}) {
     await Promise.all(disposers.splice(0).map(dispose => dispose()))
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   })
-  return { home, readOnly: rt.readOnly(), report: await rt.diagnostics.report({}) }
+  return { home, statePath, rt, readOnly: rt.readOnly(), report: await rt.diagnostics.report({}) }
 }
+
+// #2394: the report counts the team — Bots, Main Bots, group chats — and never says what that team
+// is saved in. `rt.statePath` was already on the runtime (store.js), and the file holds the members
+// and the messages themselves, so the line describes it with `lstat` alone: size and last write
+// time, `none yet` before this computer saves the team, or the one sentence for a leaf that is a
+// link, a second name or anything else this report may describe but never read.
+test('the report names the team file, its size and when it was last written (#2394)', async (t) => {
+  const { home, statePath, rt } = await realHost(t)
+  await rt.save()
+  const info = lstatSync(statePath)
+  const report = await rt.diagnostics.report({})
+
+  assert.equal(report.facts.stateFile, `~/state.json (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, /^state file: ~\/state\.json \(\d+ bytes, last written \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\)$/m)
+  assert.ok(report.markdown.indexOf('state file: ') > report.markdown.indexOf('| Team |'), 'the line follows the table that counts the team')
+  assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
+  assert.match(readFileSync(statePath, 'utf8'), /"version": 2/, 'the file it names is the one the save wrote')
+})
+
+// Naming the file must not create it: a computer that has not saved this team has no team file yet,
+// and the answer says that instead of quoting a size for a file the next save would make. The
+// store's first boot saves the migrated team, so the absent file here is one this computer does not
+// have — deleted since, or a save that never landed — and the report must describe that and nothing
+// else.
+test('a computer that has not saved the team says so, and naming the file creates nothing (#2394)', async (t) => {
+  const { home, statePath, rt } = await realHost(t)
+  rmSync(statePath)
+  const report = await rt.diagnostics.report({})
+  assert.equal(report.facts.stateFile, 'none yet (this computer has not saved the team)')
+  assert.match(report.markdown, /^state file: none yet \(this computer has not saved the team\)$/m)
+  assert.equal(existsSync(statePath), false, 'naming the file creates nothing')
+  assert.equal(readdirSync(home).some(name => name.startsWith('state.json.')), false, 'and writes no temp name beside it')
+})
+
+// The team file's bytes are the members and the messages. A directory, a link and a second name are
+// each a name this report may describe and must not read through — and the bytes behind the link and
+// the other name stay exactly as they were.
+test('a team file that is a directory, a link or a second name is named as not a plain file (#2394)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const kept = '{"version":2,"bots":{}}\n'
+  const quiet = { config: { diagnosticsFile: false } }
+
+  const asDir = join(home, 'dir-home')
+  mkdirSync(join(asDir, 'state.json'), { recursive: true })
+  const dirReport = await host(asDir, { ...quiet, statePath: join(asDir, 'state.json') }).diagnostics.report({})
+  assert.equal(dirReport.facts.stateFile, 'not a plain file (nothing is read or written)')
+  assert.match(dirReport.markdown, /^state file: not a plain file \(nothing is read or written\)$/m)
+
+  const target = join(elsewhere, 'someone-else.json')
+  writeFileSync(target, kept)
+  const linked = join(home, 'link-home')
+  mkdirSync(linked, { recursive: true })
+  symlinkSync(target, join(linked, 'state.json'))
+  const linkedReport = await host(linked, { ...quiet, statePath: join(linked, 'state.json') }).diagnostics.report({})
+  assert.equal(linkedReport.facts.stateFile, 'not a plain file (nothing is read or written)')
+  assert.match(linkedReport.markdown, /^state file: not a plain file \(nothing is read or written\)$/m)
+  assert.equal(readFileSync(target, 'utf8'), kept, 'the file behind the link keeps its bytes')
+
+  const plain = join(elsewhere, 'plain.json')
+  writeFileSync(plain, kept)
+  const shared = join(home, 'hard-home')
+  mkdirSync(shared, { recursive: true })
+  linkSync(plain, join(shared, 'state.json'))
+  const hardReport = await host(shared, { ...quiet, statePath: join(shared, 'state.json') }).diagnostics.report({})
+  assert.equal(lstatSync(plain).nlink, 2, 'this is a file with a second name')
+  assert.equal(hardReport.facts.stateFile, 'not a plain file (nothing is read or written)')
+  assert.match(hardReport.markdown, /^state file: not a plain file \(nothing is read or written\)$/m)
+  assert.equal(readFileSync(plain, 'utf8'), kept, 'the other name keeps its bytes')
+  assert.equal(hardReport.markdown.includes(home), false, 'the line never carries the home folder')
+})
+
+// The line is read information, not a write: a window another dsh keeps read-only still names the
+// team file, the way it still counts the team it shows.
+test('a read-only window names the team file too (#2394)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const statePath = join(home, 'state.json')
+  writeFileSync(statePath, '{"version":2}\n')
+  const info = lstatSync(statePath)
+  const report = await host(home, {
+    config: { diagnosticsFile: false },
+    statePath,
+    readOnly: () => 'Another dsh (pid 1 on host) holds the team',
+  }).diagnostics.report({})
+
+  assert.match(report.markdown, /^\| Read-only \| /m, 'this window says it may not write')
+  assert.equal(report.facts.stateFile, `~/state.json (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, /^state file: ~\/state\.json \(\d+ bytes, last written .+\)$/m)
+})
 
 test('the Read-only row says a newer team file needs an update, not that another dsh holds the team (#2167)', async (t) => {
   const { home, readOnly, report } = await realHost(t, { saved: { version: 99 } })
