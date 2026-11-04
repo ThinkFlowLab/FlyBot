@@ -290,7 +290,9 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         hasStrip ? null : h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close details'), onClick: close }, h(CloseIcon))),
       errorLine,
       h('div', { key: 'set-body', className: 'bt-drawer-body bt-set-body', 'data-move': move },
-        bot && lockedWindow(roster)
+        // #2387: the lock is the window's, not the Bot's — a read-only window draws the host's sentence
+        // in place of a group's form too, exactly as it already did for a Bot's.
+        lockedWindow(roster)
           ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
           : bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
     ]
