@@ -61,7 +61,9 @@ export function memoryCountText({ count, failure }) {
   return count === 1 ? t('1 entry') : t('{count} entries', { count })
 }
 
-// The details pane's row: how much the Bot keeps, and the way into the dialog.
+// The details pane's row: how much the Bot keeps, and the way into the dialog. A refused read is
+// drawn a second time below the button: the button's `aria-label` replaces the text inside it when
+// the accessible name is computed, so the sentence in the row alone was never announced (#2402).
 export function MemoryRow({ bot, actions }) {
   const { count, failure } = useMemoryCount(bot.id, actions)
   const label = memoryCountText({ count, failure })
@@ -70,7 +72,8 @@ export function MemoryRow({ bot, actions }) {
     h('button', { type: 'button', className: 'bt-mem-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },
       h(MemoryIcon),
       h('span', { className: 'bt-mem-row-copy' }, label),
-      h('span', { className: 'bt-mem-row-go' }, t('Manage'), h(ChevronRightIcon))))
+      h('span', { className: 'bt-mem-row-go' }, t('Manage'), h(ChevronRightIcon))),
+    failure === null ? null : h('div', { className: 'bt-note', role: 'status' }, label))
 }
 
 function ago(at, now) {
