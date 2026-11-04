@@ -60,9 +60,10 @@ export function attemptMetadataView(attempt) {
   if (attempt.pr) result.pr = pick(attempt.pr, ['number', 'sha', 'url', 'repository'])
   if (attempt.publicationBinding) result.publicationBinding = pick(attempt.publicationBinding, ['number', 'repository', 'branch', 'previousSha', 'upstreamSha', 'upstreamRef'])
   if (attempt.integrationInputs) result.integrationInputs = attempt.integrationInputs.slice(0, 20).map(row => pick(row, ['version', 'repository', 'ref', 'sha', 'purpose']))
+  if (attempt.evidence?.tests?.preparation) result.environment = pick(attempt.evidence.tests.preparation, ['id', 'status', 'executor', 'workspaceId', 'resourceId', 'identitySha256', 'sha256'])
   if (attempt.workspaces) result.workspaces = Object.fromEntries(Object.entries(attempt.workspaces).slice(0, 32).map(([role, row]) => [role, pick(row, ['id', 'status', 'role', 'resourceId', 'materialization'])]))
   if (attempt.agentDefinitions) result.agentDefinitions = { revision: attempt.agentDefinitions.revision, roles: (attempt.agentDefinitions.roles ?? []).slice(0, 32).map(row => ({ ...pick(row, ['id', 'role', 'policyRole', 'name', 'model']), skills: (row.skills ?? []).slice(0, 20).map(value => short(value, 300)), execution: pick(row.execution, ['harness', 'model', 'resourceIds']) })) }
-  function evidence(row) { return { ...pick(row, ['sha', 'sha256', 'passed', 'verdict', 'harness', 'sdkVersion', 'resourceId', 'sessionId', 'model', 'startedAt', 'completedAt']), ...(row.summary ? { summary: short(row.summary) } : {}) } }
+  function evidence(row) { return { ...pick(row, ['sha', 'sha256', 'passed', 'status', 'reason', 'executor', 'testsStarted', 'exitConfirmed', 'verdict', 'harness', 'sdkVersion', 'resourceId', 'sessionId', 'model', 'startedAt', 'completedAt']), ...(row.summary ? { summary: short(row.summary) } : {}) } }
   result.evidence = {}
   for (const [key, row] of Object.entries(attempt.evidence ?? {}).slice(0, 32)) {
     if (key === 'execution') result.evidence.execution = Object.fromEntries(Object.entries(row).slice(0, 32).map(([role, value]) => [role, evidence(value)]))
@@ -83,6 +84,7 @@ export function executionMetadataView(state, row) {
   const lease = row.leaseId && state.projectResourceLeases?.[row.leaseId]
   const exit = native ? nativeExitConfirmed(state, row) : confirmedWorkerExit(state, row)
   return { ...pick(row, ['id', 'role', 'resourceId', 'generation', 'sessionKey', 'logicalSessionId', 'createdAt', 'executionStartedAt', 'releasedAt']),
+    environmentObservations: row.environmentObservations ?? [], capabilityFailure: row.capabilityFailure ?? null,
     harness: native ? 'flybot' : row.harness ?? null, status: row.status, startupPhase: native ? null : row.spawnPhase ?? null,
     policyRole: session?.policyRole ?? row.policyRole ?? row.role ?? null,
     definitionRevision: session?.definitionRevision ?? null,

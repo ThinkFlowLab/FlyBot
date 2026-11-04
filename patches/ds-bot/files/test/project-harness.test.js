@@ -85,6 +85,40 @@ test('resource-side configuration failure remains environment evidence and relea
   assert.equal(rt.projectResources.occupied('r'), 0)
 })
 
+test('a declared warmed npm cache is copied into this worker scratch without sharing writable dependency state', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const session = rt.projectDelivery.sessionFor()
+  session.environmentPreparation = { id: 'environment-fixture', principalId: 'owner', status: 'ready', projectId: 'p', attemptId: 'a', workspaceId: 'w', resourceId: 'r', cache: '.prepared-npm-cache', identitySha256: 'a'.repeat(64) }
+  await mkdir(join(cwd, '.prepared-npm-cache'))
+  await writeFile(join(cwd, '.prepared-npm-cache', 'warm-entry'), 'sealed-cache')
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Use only prepared dependencies' })
+  const row = rt.state.projectHarnessWorkers[id]
+  assert.equal(row.dependencyPreparationId, 'environment-fixture')
+  assert.equal(await readFile(join(row.scratchDirectory, 'npm-cache/warm-entry'), 'utf8'), 'sealed-cache')
+  await writeFile(join(row.scratchDirectory, 'npm-cache/warm-entry'), 'worker-write')
+  assert.equal(await readFile(join(cwd, '.prepared-npm-cache/warm-entry'), 'utf8'), 'sealed-cache')
+  await harness.release(id)
+  assert.equal(rt.projectResources.occupied('r'), 0)
+})
+
+test('SDK command cache misses are advisory environment facts, never independent test results', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const file = join(rt.config.projectResources.r.runtimeDir, 'src/host/project-harness-worker.mjs')
+  const source = await readFile(file, 'utf8')
+  await writeFile(file, source.replace("write({type:'completed'", "write({type:'sdk-event',event:{type:'item.completed',item:{id:'cmd-1',type:'command_execution',exit_code:1,aggregated_output:'npm error ENOTCACHED only-if-cached'}}});write({type:'completed'"))
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Record actual dependency limitations' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Frozen requirement', outputs: [{ name: 'implementation' }] })
+  assert.equal((await result).ok, true)
+  const observations = rt.state.projectHarnessWorkers[id].environmentObservations
+  assert.equal(observations.length, 1)
+  assert.equal(observations[0].status, 'environment-blocked')
+  assert.match(observations[0].source, /not independent verification/)
+  assert.match(observations[0].outputSha256, /^[a-f0-9]{64}$/)
+  assert.equal(rt.state.projectAttempts?.a?.evidence?.tests, undefined)
+  await harness.release(id)
+})
+
 test('Workflow result callback can await the same SDK worker release without blocking stop acknowledgement', async t => {
   const { rt, harness, cwd } = await fixture(t)
   const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Implement Task' })

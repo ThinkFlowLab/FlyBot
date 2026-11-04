@@ -1,6 +1,8 @@
 ---
 subsystem: project-delivery
 owned_paths:
+  - core/src/host/project-execution-environment.js
+  - core/test/project-execution-environment.test.js
   - core/src/host/project-test-diagnostics.js
   - core/test/project-test-diagnostics.test.js
   - core/src/host/project-child-inputs.js
@@ -580,3 +582,48 @@ binding admission. It scopes cleanup to the original Task/Attempt/claim/generati
 retains workspaces and Session history, and delegates only proven unstarted release
 to the existing resource service. Direct resource-preparation regressions now install the exact
 current claim expected from the pool, preserving its original capacity-hold assertion.
+
+## Dependency readiness and verification outcomes (#2334)
+
+The optional operator `dependencyEnvironment` contract declares packageManager
+(metadata), relative lockFiles/requiredPaths, tools with fixed argv and optional exact
+expectedOutput, a relative warmed npmCachePath, network requirement (`offline` or
+`operator-preparation`) and timeoutMs (1–120000). Unknown fields/escaping paths are
+refused. The existing workspacePrepareCommand remains the only preparation hook;
+metadata preflight does not execute it. Required files, actual tool versions and
+lock hashes are observed in each receiving checkout, on its actual local/Docker
+executor. A hook cannot silently change the pinned locks. Independent host testing
+prepares again after exact candidate reset/clean; resource readiness is not host
+verifier readiness. A preparation receipt is never test or model success.
+
+`network: operator-preparation` requires the operator capability
+`dependencyPreparationNetwork: operator-preparation` on that resource (or repository
+for the independent host). This acknowledges the existing fixed operator command;
+it introduces no network, registry, credential or filesystem grant to an SDK. Offline
+SDK commands retain the constrained profile, offline npm and unique scratch. Declare
+and prewarm an ignored workspace-relative npmCachePath when needed: it is copied into
+this worker's own scratch, rejects symlinks/special entries, and never shares writable
+cache state with another worker. Receipt identity covers Project, executor/resource,
+configuration, lock hashes and observed tools. Missing caches block admission; no
+ambient shared cache, automatic download or Owner credential fallback is added.
+
+Private immutable preparation logs/JSON receipts bind workspace, role, executor,
+candidate and command hashes. Test evidence uses status/reason/testsStarted,
+exitConfirmed and preparation: passed, environment-blocked, assertion-failed,
+test-process-failed, execution-timeout or execution-unknown. ENOTCACHED and dependency
+or tool errors remain non-success and do not assert business code is defective.
+A preparation failure has testsStarted=false. SDK command observations are bounded
+advisory facts, distinct from independent host verification. Chief receives outcome,
+executor and receipt references and chooses the next action; there is no automatic
+Dev reroute or human escalation.
+
+Every verification run gets a distinct immutable log. A pool Attempt can retry an
+environment-blocked test against the same sealed candidate, preserving testHistory.
+Legacy workflow terminal recovery keeps its original controls; this is no permission
+to revive cancelled/superseded work. Docker command timeout/transport uncertainty
+retains the active preparation fence and occupied lease; killing the host docker
+client does not prove its container command exited.
+
+Existing hash-bound pages expose attempt.context testHistory/preparationFailures;
+attempt.log environmentRole selects the latest preparation for a registered role,
+mutually exclusive with execution role. No caller filesystem path is accepted.

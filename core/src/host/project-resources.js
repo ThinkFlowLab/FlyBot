@@ -116,10 +116,17 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
   }
   async function endPreparation(token) {
     const lease = requireLease(token.leaseId, token.generation)
-    if (preparing.get(lease.id) !== token.id || lease.preparation?.id !== token.id) throw failure('Preparation completion is stale')
+    if (lease.preparation?.exitUnknown || preparing.get(lease.id) !== token.id || lease.preparation?.id !== token.id) throw failure('Preparation completion is stale')
     lease.preparation.status = 'settled'; lease.preparation.finishedAt = Date.now()
     try { await rt.save() } catch (error) { lease.preparation.status = 'active'; throw error }
     preparing.delete(lease.id)
+  }
+  async function preparationUncertain(reference) {
+    requireBinding(reference.projectId, reference)
+    const lease = ownEntry(leases(), reference.id)
+    if (!lease || lease.generation !== reference.generation || preparing.get(lease.id) !== lease.preparation?.id || lease.preparation?.status !== 'active') throw failure('Preparation uncertainty has no active owner')
+    lease.preparation.exitUnknown = true; lease.preparation.unknownAt = Date.now()
+    await rt.save()
   }
   async function abortReservation(id, generation, reason) {
     const lease = requireLease(id, generation)
@@ -305,11 +312,11 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     return item.type === 'local' ? spawn(argv[0], argv.slice(1), { ...options, cwd })
       : spawn('docker', ['exec', '-i', '--user', item.user, '--workdir', cwd, item.container, 'env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', ...argv], options)
   }
-  async function command(projectId, resourceId, { argv, cwd, timeout = 30_000, input } = {}) {
+  async function command(projectId, resourceId, { argv, cwd, timeout = 30_000, input, dependencyOffline = false } = {}) {
     const item = setting(projectId, resourceId)
     if (!Array.isArray(argv) || !argv.length || argv.some(value => typeof value !== 'string' || value.includes('\0')) || !isAbsolute(cwd ?? '') || !contains(item.root, cwd)) throw failure('Invalid resource command or working directory')
     if (argv[0] === 'node') argv = [item.nodePath ?? (item.type === 'local' ? process.execPath : 'node'), ...argv.slice(1)]
-    const options = { timeout: Math.min(timeout, 120_000), maxBuffer: 2 * 1024 * 1024, env: safeEnv() }
+    const options = { timeout: Math.min(timeout, 120_000), maxBuffer: 2 * 1024 * 1024, env: { ...safeEnv(), ...(dependencyOffline ? { npm_config_offline: 'true' } : {}) } }
     // No shell interpolation. Target paths and credentials never become host shell code.
     if (input !== undefined) throw failure('Resource command input requires a streaming adapter')
     if (item.type === 'local') {
@@ -317,7 +324,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
       if (!contains(actualRoot, actualCwd)) throw failure('Resource working directory escapes its registered root')
       return exec(argv[0], argv.slice(1), { ...options, cwd: actualCwd })
     }
-    return exec('docker', ['exec', '--user', item.user, '--workdir', cwd, item.container, 'env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', 'LANG=C.UTF-8', ...argv], options)
+    return exec('docker', ['exec', '--user', item.user, '--workdir', cwd, item.container, 'env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', 'LANG=C.UTF-8', ...(dependencyOffline ? ['npm_config_offline=true'] : []), ...argv], options)
   }
   async function uploadFile(projectId, resourceId, source, target, maxBytes = 128 * 1024 * 1024) {
     const item = setting(projectId, resourceId)
@@ -346,7 +353,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     return structuredClone(row)
   }
   return { setting, requireBinding, uploadFile, downloadFile, list, checkPool, plan, command, startProcess, probe, occupied, reconcile, recover,
-    beginPreparation: (...args) => serial(() => beginPreparation(...args)), endPreparation: (...args) => serial(() => endPreparation(...args)), abortReservation: (...args) => serial(() => abortReservation(...args)), fenceSpawn: (...args) => serial(() => fenceSpawn(...args)), reserveRoles: (...args) => serial(() => reserveRoles(...args)),
+    preparationUncertain: reference => serial(() => preparationUncertain(reference)), beginPreparation: (...args) => serial(() => beginPreparation(...args)), endPreparation: (...args) => serial(() => endPreparation(...args)), abortReservation: (...args) => serial(() => abortReservation(...args)), fenceSpawn: (...args) => serial(() => fenceSpawn(...args)), reserveRoles: (...args) => serial(() => reserveRoles(...args)),
     reserve: request => serial(() => reserve(request)), markStarted: (...args) => serial(() => markStarted(...args)), release: (...args) => serial(() => release(...args)) }
 }
 export function install(rt) { rt.projectResources = createProjectResources(rt) }

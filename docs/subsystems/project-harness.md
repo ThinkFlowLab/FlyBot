@@ -422,3 +422,5 @@ scratch writes and candidate write protection. Basic tests need no vendor instal
 is insufficient: inspect resolved semantics and run isolated filesystem probes.
 See [official permissions](https://learn.chatgpt.com/docs/permissions) and
 [configuration read API](https://learn.chatgpt.com/docs/app-server).
+
+#2334 consumes the exact workspace preparation receipt before worker admission. A declared warmed cache is copied to unique scratch; SDK command environment observations are bounded advisory facts, never independent test PASS. Configuration readiness (#2337) and dependency readiness remain separate. See [delivery environment contract](project-delivery.md#dependency-readiness-and-verification-outcomes-2334).

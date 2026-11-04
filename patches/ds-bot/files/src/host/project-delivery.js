@@ -23,6 +23,7 @@ import { childResultSources, createChildInputAdmission } from './project-child-i
 import { reconcileExecutionAuthority } from './project-execution-authority.js'
 import { executionExitConfirmed } from './project-execution-exit.js'
 import { createProjectNativeSessions, nativeExitConfirmed } from './project-native-sessions.js'
+import { prepareDependencyEnvironment, executionOutcome } from './project-execution-environment.js'
 import { testFailureExcerpt } from './project-test-diagnostics.js'
 import { EffectCancelled, EffectDeferred } from './project-effects.js'
 
@@ -125,7 +126,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     if (source !== attempt && tests.sha !== attempt.seedSha) return null
     const text = await readFile(tests.log, 'utf8')
     if (hash(text) !== tests.sha256) throw reject('Failure diagnostic log changed')
-    return { sourceAttemptId: source.id, sha: tests.sha, logSha256: tests.sha256, excerpt: testFailureExcerpt(text, process.env), completeLogRetained: true, source: 'project-attempt-log; bounded host-verified diagnostic, not a passing result' }
+    return { status: tests.status ?? 'test-process-failed', reason: tests.reason ?? null, executor: tests.executor, testsStarted: tests.testsStarted ?? true, preparation: tests.preparation ? { id: tests.preparation.id, status: tests.preparation.status, sha256: tests.preparation.sha256, executor: tests.preparation.executor } : null, sourceAttemptId: source.id, sha: tests.sha, logSha256: tests.sha256, excerpt: testFailureExcerpt(text, process.env), completeLogRetained: true, source: 'project-attempt-log; bounded host-verified diagnostic, not a passing result' }
   }
   async function archiveForNative(context, attempt, role, suffix) {
     if (!context.archive) return
@@ -135,12 +136,28 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     await writeFile(context.archivePath, JSON.stringify(context.archive), { mode: 0o600 })
   }
   async function prepareWorkspace(attempt, workspace, settings) {
-    if (!settings.workspacePrepareCommand) return
-    const argv = settings.workspacePrepareCommand
-    // Fixed operator argv, never Task/model text; execution stays on the bound resource.
-    if (workspace.resourceLease) await rt.projectResources.command(workspace.projectId, workspace.resourceId, { cwd: workspace.path, argv, timeout: 30_000 })
-    else await exec(argv[0], argv.slice(1), { cwd: workspace.path, env: cleanEnv(), timeout: 30_000, maxBuffer: 1024 * 1024 })
-    ;(attempt.workspacePreparations ??= []).push({ role: workspace.role, workspaceId: workspace.id, commandSha256: hash(JSON.stringify(argv)), resourceId: workspace.resourceId, at: Date.now() })
+    if (!settings.workspacePrepareCommand && !settings.dependencyEnvironment) return null
+    const resource = workspace.resourceLease ? rt.projectResources.setting(workspace.projectId, workspace.resourceId) : null
+    const scope = { projectId: attempt.projectId, attemptId: attempt.id, workspaceId: workspace.id, role: workspace.role, resourceId: workspace.resourceId ?? null, principalId: workspace.resourceLease?.principalId ?? attempt.executionOwnerId ?? null, candidateSha: attempt.candidateSha ?? null, executor: resource?.type === 'docker' ? 'docker-resource' : resource ? 'local-resource' : 'independent-host-controller' }
+    const run = (argv, timeout) => resource ? rt.projectResources.command(workspace.projectId, workspace.resourceId, { cwd: workspace.path, argv, timeout, dependencyOffline: settings.dependencyEnvironment && settings.dependencyEnvironment.network !== 'operator-preparation' }) : exec(argv[0] === 'node' ? process.execPath : argv[0], argv.slice(1), { cwd: workspace.path, env: { ...cleanEnv(), ...(settings.dependencyEnvironment && settings.dependencyEnvironment.network !== 'operator-preparation' ? { npm_config_offline: 'true' } : {}) }, timeout, maxBuffer: 1024 * 1024 })
+    let receipt, failure
+    try { receipt = await prepareDependencyEnvironment({ settings, scope, run, preparationNetwork: resource?.dependencyPreparationNetwork ?? settings.dependencyPreparationNetwork ?? 'offline' }) }
+    catch (error) { failure = error; receipt = error.environmentReceipt; if (!receipt) throw error }
+    const { logs, ...metadata } = receipt
+    const directory = join(artifacts, attempt.id)
+    await mkdir(directory, { recursive: true, mode: 0o700 })
+    const id = `environment-${randomUUID()}`, log = join(directory, `${id}.log`)
+    await writeFile(log, logs, { mode: 0o600 })
+    receipt = { ...metadata, id, log, sha256: hash(logs) }
+    await writeFile(join(directory, `${id}.json`), JSON.stringify(receipt), { mode: 0o600 })
+    workspace.environmentPreparation = receipt
+    if (failure) {
+      failure.environmentReceipt = receipt
+      if (!receipt.exitConfirmed && state.projectResourceLeases?.[workspace.resourceLease?.id]?.preparation?.status === 'active') await rt.projectResources.preparationUncertain(workspace.resourceLease)
+      throw failure
+    }
+    ;(attempt.workspacePreparations ??= []).push({ role: workspace.role, workspaceId: workspace.id, commandSha256: hash(JSON.stringify(settings.workspacePrepareCommand ?? [])), resourceId: workspace.resourceId, environmentId: id, at: Date.now() })
+    return receipt
   }
   async function publicationOf(previous, project) {
     if (!previous) return undefined
@@ -587,20 +604,24 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     const path = workspace.path
     await workspaceGit(workspace, ['reset', '--hard', attempt.candidateSha])
     await workspaceGit(workspace, ['clean', '-ffdx'])
-    await prepareWorkspace(attempt, workspace, settings)
-    const [command, ...args] = settings.testCommand
-    let passed = false
-    let output = ''
+    const startedAt = Date.now()
+    let preparation = null, error = null, output = '', stage = 'preparation'
     try {
-      const result = await exec(command, args, { cwd: path, env: cleanEnv(), timeout: Math.min(settings.testTimeoutMs ?? 120_000, 1_800_000), maxBuffer: 1024 * 1024 })
-      passed = true
+      preparation = await prepareWorkspace(attempt, workspace, settings)
+      stage = 'tests'
+      const [command, ...args] = settings.testCommand
+      const result = await exec(command, args, { cwd: path, env: { ...cleanEnv(), ...(settings.dependencyEnvironment ? { npm_config_offline: 'true', ...(settings.dependencyEnvironment.npmCachePath ? { npm_config_cache: join(path, settings.dependencyEnvironment.npmCachePath) } : {}) } : {}) }, timeout: Math.min(settings.testTimeoutMs ?? 120_000, 1_800_000), maxBuffer: 1024 * 1024 })
       output = result.stdout + result.stderr
-    } catch (error) { output = String(error.stdout ?? '') + String(error.stderr ?? '') + '\nTest process failed or exceeded its limit' }
+    } catch (failure) { error = failure; preparation ??= failure.environmentReceipt ?? null; output = String(failure.stdout ?? '') + String(failure.stderr ?? '') }
+    const outcome = executionOutcome(error, output, { stage })
+    if (stage === 'preparation' && error) Object.assign(outcome, { status: preparation?.status ?? 'environment-blocked', reason: preparation?.reason ?? 'preparation-failed', exitConfirmed: preparation?.exitConfirmed ?? false })
     await mkdir(join(artifacts, attempt.id), { recursive: true, mode: 0o700 })
-    const log = join(artifacts, attempt.id, 'tests.log')
+    const log = join(artifacts, attempt.id, `tests-${randomUUID()}.log`)
+    if (error && !output) output = 'Verification did not complete; inspect the structured outcome and preparation receipt'
     await writeFile(log, output, { mode: 0o600 })
-    attempt.evidence.tests = { logicalRole: deliveryRole(attempt, 'tester'), roleSessionId: attempt.roleSessions?.[deliveryRole(attempt, 'tester')]?.id ?? null, executor: 'independent-host-controller', workspaceId: workspace.id, resourceId: workspace.resourceId, sha: attempt.candidateSha, passed, command: settings.testCommand, log, sha256: hash(output), at: Date.now() }
-    if (!passed) throw reject('Configured tests failed; see Attempt evidence')
+    if (attempt.evidence.tests) (attempt.testHistory ??= []).push(structuredClone(attempt.evidence.tests))
+    attempt.evidence.tests = { logicalRole: deliveryRole(attempt, 'tester'), roleSessionId: attempt.roleSessions?.[deliveryRole(attempt, 'tester')]?.id ?? null, executor: 'independent-host-controller', workspaceId: workspace.id, resourceId: workspace.resourceId, sha: attempt.candidateSha, passed: !error, status: outcome.status, reason: outcome.reason, exitConfirmed: outcome.exitConfirmed, testsStarted: stage === 'tests', preparation, command: settings.testCommand, log, sha256: hash(output), startedAt, at: Date.now() }
+    if (error) throw Object.assign(reject(outcome.status === 'environment-blocked' ? 'Test environment is blocked; verification is incomplete' : outcome.status === 'execution-timeout' ? 'Test execution timed out; verification is incomplete' : 'Configured tests failed; see Attempt evidence'), { outcome: outcome.status })
   }
   async function review(attempt, outputs) {
     await verifyCandidate(attempt)
@@ -824,11 +845,13 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
       const attempt = ownEntry(attempts(), body.attemptId)
       if (!attempt) throw reject('Unknown Attempt')
       rt.requireProjectAccess(actor, attempt.projectId)
-      const evidence = body.role ? attempt.evidence.execution?.[body.role] : attempt.evidence.tests
+      if (body.environmentRole && body.role) throw reject('Select one preparation or execution log source')
+      const source = () => body.environmentRole ? attempt.workspaces[body.environmentRole]?.environmentPreparation : body.role ? attempt.evidence.execution?.[body.role] : attempt.evidence.tests
+      const evidence = source()
       if (!evidence?.log) return { text: null, reason: 'No test log is available' }
       const page = await sealedLogPage(evidence, body)
       rt.requireProjectAccess(actor, attempt.projectId)
-      if (ownEntry(attempts(), body.attemptId) !== attempt || (body.role ? attempt.evidence.execution?.[body.role] : attempt.evidence.tests) !== evidence) throw reject('Log source changed during query')
+      if (ownEntry(attempts(), body.attemptId) !== attempt || source() !== evidence) throw reject('Log source changed during query')
       return page
     }
     if (endpoint === 'project-attempt-integration-state') {
@@ -938,19 +961,19 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
           else await workspaceGit(workspace, ['reset', '--hard', attempt.candidateSha])
         }
         if (project.repository) { await prepareWorkspace(attempt, workspace, settings); await prepareIntegrations(attempt, workspace) }
-        context = await buildProjectContext(rt, { retrieval: true, policy, projectId: project.id, taskId: task.id, role, revision: pinned.revision, resourceId: lease?.resourceId, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { workspaceMaterialization: workspace.materialization ?? null, ...(pinned.change ? { roleDefinitionChange: pinned.change } : {}), integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && workspaceFor(attempt, 'developer') ? { kind: 'unverified-workspace-reference', resourceId: workspaceFor(attempt, 'developer').resourceId, path: workspaceFor(attempt, 'developer').resourceId === workspace.resourceId ? workspaceFor(attempt, 'developer').path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha, project) })
-        } finally { if (preparation) await rt.projectResources.endPreparation(preparation) }
+        context = await buildProjectContext(rt, { retrieval: true, policy, projectId: project.id, taskId: task.id, role, revision: pinned.revision, resourceId: lease?.resourceId, definition, memory: definition.memory, knowledge: ownEntry(state.projectKnowledge ?? {}, project.id) ?? [], requirement: attempt.requirement, feedback: attempt.feedback, projectFacts: { environmentPreparation: workspace.environmentPreparation ? { id: workspace.environmentPreparation.id, status: workspace.environmentPreparation.status, executor: workspace.environmentPreparation.executor, identitySha256: workspace.environmentPreparation.identitySha256 ?? null, sha256: workspace.environmentPreparation.sha256 } : null, workspaceMaterialization: workspace.materialization ?? null, ...(pinned.change ? { roleDefinitionChange: pinned.change } : {}), integrationInputs: structuredClone(attempt.integrationInputs ?? []), testFailure: await failureContext(attempt), publicationBinding: attempt.publicationBinding ?? null, integrationInstruction: attempt.publicationBinding ? 'Merge the pinned upstreamSha into the published candidate using --no-commit, resolve and stage conflicts before handoff. Host sealing retains both trusted inputs; never fabricate parents or discard backend changes.' : null, workingDraft: !attempt.candidateSha && workspaceFor(attempt, 'developer') ? { kind: 'unverified-workspace-reference', resourceId: workspaceFor(attempt, 'developer').resourceId, path: workspaceFor(attempt, 'developer').resourceId === workspace.resourceId ? workspaceFor(attempt, 'developer').path : null, note: 'Unsealed source, not candidate or verification evidence. Cross-resource drafts require a sealed artifact before verification.' } : null, handoff: task.collaboration?.history.at(-1) ? { purpose: task.collaboration.history.at(-1).purpose, reason: task.collaboration.history.at(-1).reason } : null, candidateSha: attempt.candidateSha ?? null, tests: attempt.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, status: attempt.evidence.tests.status ?? null, reason: attempt.evidence.tests.reason ?? null, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null, review: attempt.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary } : null }, repository: await repositoryContext(project.id, attempt.baseSha, project) })
+        } finally { if (preparation && !state.projectResourceLeases?.[lease.id]?.preparation?.exitUnknown) await rt.projectResources.endPreparation(preparation) }
       } catch (error) {
         const registered = lease && ownEntry(state.projectResourceLeases ?? {}, lease.id)
         const unbound = registered && registered.generation === lease.generation && !registered.worker && !registered.processScope && !Object.values(state.projectHarnessWorkers ?? {}).some(row => row.leaseId === lease.id) && !Object.values(attempt.roleSessions ?? {}).some(row => row.id === sessionId)
         if (unbound) await rt.projectResources.release(lease.id, lease.generation)
-        ;(attempt.preparationFailures ??= []).push({ role, sessionId, leaseId: lease?.id ?? null, message: String(error.message), ...(error.code === 'bot/workspace-baseline' ? { code: error.code, details: structuredClone(error.details) } : {}), releasedBeforeExternalStart: Boolean(unbound && registered.status === 'released' && registered.releaseProof?.kind === 'unbound-reservation-release'), at: Date.now() })
+        ;(attempt.preparationFailures ??= []).push({ role, sessionId, leaseId: lease?.id ?? null, message: error.environmentReceipt ? 'Execution environment preparation failed; see the bound receipt' : String(error.message), ...(error.environmentReceipt ? { environment: structuredClone(error.environmentReceipt) } : {}), ...(error.code === 'bot/workspace-baseline' ? { code: error.code, details: structuredClone(error.details) } : {}), releasedBeforeExternalStart: Boolean(unbound && registered.status === 'released' && registered.releaseProof?.kind === 'unbound-reservation-release'), at: Date.now() })
         await rt.save()
         throw error
       }
       attempt.rolePolicies[role] = policy
       if ((execution.harness ?? 'flybot') === 'flybot') await archiveForNative(context, attempt, role, sessionId)
-      const session = { id: sessionId, logicalSessionId: taskSessionId(project.id, task.id, role), projectId: project.id, taskId: task.id, attemptId: attempt.id, role, policyRole, definitionRevision: pinned.revision, definitionRef: pinned.definitionRef, definitionKey: pinned.definitionKey, ...(pinned.change ? { definitionChange: pinned.change } : {}), execution: cloneExecution(execution), policy, context, generation: claim.generation, poolClaimId: claim.id, status: 'prepared', ...(lease ? { resourceLease: lease } : {}) }
+      const session = { id: sessionId, logicalSessionId: taskSessionId(project.id, task.id, role), projectId: project.id, taskId: task.id, attemptId: attempt.id, role, policyRole, definitionRevision: pinned.revision, definitionRef: pinned.definitionRef, definitionKey: pinned.definitionKey, ...(pinned.change ? { definitionChange: pinned.change } : {}), execution: cloneExecution(execution), environmentPreparation: workspace.environmentPreparation ?? null, policy, context, generation: claim.generation, poolClaimId: claim.id, status: 'prepared', ...(lease ? { resourceLease: lease } : {}) }
       if (attempt.roleSessions[role]) {
         (attempt.roleSessionHistory ??= []).push(structuredClone({ ...attempt.roleSessions[role], executionEvidence: attempt.evidence.execution?.[role] ?? null }))
         if (attempt.evidence.execution) delete attempt.evidence.execution[role]

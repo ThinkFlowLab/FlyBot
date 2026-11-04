@@ -13,6 +13,13 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — An offline dependency miss is not an assertion failure (Seen 1×)
+
+Prepare and observe each executor separately, then verify the exact cleaned candidate.
+Keep non-success classified and old evidence immutable. A killed docker client is
+not proof its preparation command exited; retain the original occupancy fence.
+
+
 ### 2026-11-04 — Parsing success is not effective permission proof (Seen 1×)
 
 CLI 0.166 accepts unknown filesystem alias keys. Use supported `:tmpdir`, inspect

@@ -16,6 +16,8 @@ branch. #2336 establishes owned reservation rollback and a durable pre-spawn fen
 unknown execution, workspace/context and current authority remain protected.
 #2337 validates the actual SDK-resolved CLI and role profile before inference;
 configuration readiness is separate from model/test/exit evidence.
+#2334 separates executor dependency readiness from host test outcomes and preserves
+same-candidate retry evidence; remote unknown exit retains preparation occupancy.
 No live task/configuration/credential mutation or deployment is implied.
 
 ## Execution recovery — 2026-11-04

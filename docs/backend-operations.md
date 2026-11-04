@@ -131,3 +131,31 @@ sandbox, expand network access, or replace credentials to hide a configuration
 error. Fix the resource profile through authorized operations, then retry the
 original Task. Readiness is not a login/model/test PASS; health keeps configuration
 failures distinct. Offline regression instructions are in the Harness contract.
+
+### Dependency preparation and test outcomes (#2334)
+
+Example operator repository configuration (not client/Task input):
+
+```yaml
+workspacePrepareCommand: [node, /approved/prepare-workspace.mjs]
+dependencyEnvironment:
+  packageManager: npm
+  lockFiles: [package-lock.json]
+  tools: [{argv: [node, --version]}]
+  requiredPaths: [node_modules]
+  npmCachePath: .prepared-npm-cache
+  network: offline
+  timeoutMs: 30000
+```
+
+The fixed hook must create ignored dependencies/cache in each checkout. No hook
+installs automatically. Prewarm offline data through authorized provisioning. If an
+existing preparation command requires network, declare operator-preparation and the
+same dependencyPreparationNetwork capability on its resource/repository; this grants
+no network or credentials to role SDKs. Host verifier preparation is separate from
+Docker preparation and runs after reset/clean. Missing tools/cache/locks block
+verification. Inspect status/reason/testsStarted/executor and preparation references,
+not just passed=false. The original Task/Chief controls decide retry or consultation;
+fixing environment can rerun the same candidate while retaining old logs. Unknown
+remote exit holds capacity until trusted recovery evidence. Use attempt.context
+(testHistory/preparationFailures) and attempt.log(environmentRole) for bounded reads.
