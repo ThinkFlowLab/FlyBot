@@ -686,3 +686,18 @@ test('receipt correction budget exhaustion preserves original context and leaves
   assert.equal(f.task.collaboration.claim.inputCorrection.round, 1, 'late output cannot revive exhausted execution')
   assert.equal(f.task.collaboration.history.length, 1)
 })
+
+test('native receipt correction guards business tools in the original Session without affecting unrelated personal Bots', async () => {
+  const { install } = await import('../src/host/project-pools.js')
+  let guard
+  const claim = { workerId: 'worker', inputCorrection: { status: 'pending' } }
+  const rt = { state: { tasks: { legacy: { id: 'legacy' }, t: { collaboration: { claim } } } }, ctx: { tools: { guard(fn) { guard = fn } } }, selfOf: id => id === 'original-session' ? 'worker' : id, botOf: id => ['worker', 'personal'].includes(id) ? { id } : null }
+  install(rt)
+  assert.match(guard({ name: 'exec_command', agent: { session: { id: 'original-session' } } }), /declaration patch/)
+  assert.equal(guard({ name: 'exec_command', agent: { id: 'personal' } }), undefined)
+  assert.equal(guard({ name: 'exec_command', agent: {} }), undefined)
+  claim.inputCorrection.status = 'exhausted'
+  assert.match(guard({ agent: { id: 'worker' } }), /declaration patch/)
+  claim.inputCorrection.status = 'resolved'
+  assert.equal(guard({ agent: { id: 'worker' } }), undefined)
+})

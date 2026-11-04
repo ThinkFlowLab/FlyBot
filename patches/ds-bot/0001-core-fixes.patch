@@ -9718,7 +9718,7 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -33,10 +33,26 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -33,10 +33,28 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
    const { ctx, stop, applyResult } = start()
    t.after(stop)
    assert.equal(applyResult, undefined)
@@ -9735,6 +9735,8 @@ diff --git a/test/install.test.js b/test/install.test.js
 +    'on session/event',
 +    // Reject stale Project delegations, then intercept managed schedule deliveries.
 +    'on agent/pre-step',
++    'tools guard',
++    // Narrow Task-role receipt corrections deny business tools in the original Session.
 +    'tools guard',
 +    'on agent/pre-step',
      'on llm/adapters-updated',
