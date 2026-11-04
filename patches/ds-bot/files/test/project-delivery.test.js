@@ -2035,11 +2035,12 @@ test('proven exited active claim retires durably before a fresh integration snap
   f.rt.state.projectHarnessWorkers = { 'retiring-worker': { id: 'retiring-worker', projectId: 'p1', taskId: f.task.id, attemptId: f.attempt.id, role: 'developer', sessionKey: 'retiring-session', resourceId: 'test', principalId: 'owner-1', leaseId: lease.id, generation: 7, status: 'released', releaseProof: proof } }
   c.claim = { id: 'retiring-claim', taskId: f.task.id, projectId: 'p1', attemptId: f.attempt.id, botId: 'p1:developer', workerId: 'retiring-worker', generation, status: 'active', exitConfirmed: false }
   await assert.rejects(integrationCall(f, 'query', 'attempt.integration-state', {}), /confirmed execution exit/)
+  assert.equal((await f.rt.projectDelivery.recoveryFacts(f.task)).executionCheckpoint.blockers[0].kind, 'claim-active')
   const payload = { generation, claimId: c.claim.id, reason: 'Execution exited without transferring its claim; preserve the draft' }
   await assert.rejects(integrationCall(f, 'command', 'attempt.reconcile-exit', payload, bob), /access denied/)
   const save = f.rt.save
   f.rt.save = async () => {}
-  await assert.rejects(integrationCall(f, 'command', 'attempt.reconcile-exit', payload), /commit was not confirmed/)
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-attempt-reconcile-exit', { projectId: 'p1', attemptId: f.attempt.id, ...payload }, alice), /commit was not confirmed/)
   assert.equal(c.claim.status, 'active'); assert.equal(c.generation, generation)
   f.rt.save = save
   const result = await integrationCall(f, 'command', 'attempt.reconcile-exit', payload, alice, 'retire-exact-claim')
