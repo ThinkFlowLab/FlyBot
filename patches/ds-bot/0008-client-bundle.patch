@@ -1138,15 +1138,20 @@ diff --git a/client.js b/client.js
        body: JSON.stringify({ endpoint, payload: payload ?? null }),
        signal
      });
-@@ -1087,7 +1087,7 @@ var call = async (endpoint, payload, signal) => {
+@@ -1086,10 +1086,10 @@ var call = async (endpoint, payload, signal) => {
+   const result = await response.json();
    if (!result.ok) {
      const code = result.error?.code ?? "bot/error";
-     const message = hostText(result.error?.message ?? "Request failed");
+-    const message = hostText(result.error?.message ?? "Request failed");
 -    const error = Object.assign(new Error(code === "bot/internal" ? `${message} ${t("Settings → Feedback has the details.")}` : message), { code });
++    const message = hostText(result.error?.message || "Request failed");
 +    const error = Object.assign(new Error(code === "bot/internal" ? `${message} ${t("Settings → Feedback has the details.")}` : message), { code, details: result.error?.details });
      if (!REFUSALS.has(code)) {
-       noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
+-      noteClientError(endpoint, Object.assign(new Error(result.error?.message ?? "Request failed"), { code }));
++      noteClientError(endpoint, Object.assign(new Error(result.error?.message || "Request failed"), { code }));
        markNoted(error);
+     }
+     throw error;
 @@ -1097,6 +1097,406 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
