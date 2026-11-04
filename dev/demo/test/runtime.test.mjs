@@ -104,3 +104,15 @@ test('actual DSH native return persists Task-role activation, release and contin
   assert.ok(report.notRun.includes('real model'))
   assert.deepEqual(readdirSync(directory), [], 'Disposable SQLite state, workers and worktrees must be removed')
 })
+
+test('actual unmanaged DSH restart recovers native Chief and later original scheduled inspection', { timeout: 150_000 }, t => {
+  const directory = mkdtempSync(join(tmpdir(), 'flybot-chief-restart-runtime-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const result = spawnSync(process.execPath, [resolve(import.meta.dirname, '../run.mjs'), '--chief-restart'], { encoding: 'utf8', timeout: 140_000, env: { ...process.env, TMPDIR: directory, M0_REPORT: '' } })
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.equal(report.runtime, 'actual DSH'); assert.equal(report.model, 'deterministic fixture')
+  assert.ok(report.checks.includes('later original scheduled occurrence completed without manual inspect'))
+  assert.ok(report.recoveryMs > 0); assert.ok(report.recoveryMs < 90000)
+  assert.deepEqual(readdirSync(directory), [])
+})

@@ -949,3 +949,26 @@ test('native Chief deadline fencing waits for actual idleness and preserves the 
   assert.equal(rt.projectAgents.chiefBusy('p1'), false)
   assert.equal(rt.state.projectAgents[chief.id].sessionId, rt.botOf(chief.botId).sessionId)
 })
+
+test('native exit deadline is bounded and cannot silently release its live execution', async t => {
+  const { rt } = await setup(t); await get(rt, alice)
+  rt.projectChiefControl.validateActor = async () => {}
+  rt.state.projectChiefPolicies = { p1: { inspection: { lifecycle: { stopTimeoutMs: 20 } } } }
+  rt.state.projectExecutions.bounded = { id: 'bounded', projectId: 'p1', invocation: 1, status: 'running' }
+  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'bounded', invocation: 1, prompt: 'Bounded exit', projectFacts: {}, onResult: async () => {} })
+  rt.resolveAgent = async () => ({ inbox: {}, cancel() {}, whenIdle: () => new Promise(() => {}) })
+  const proof = await rt.projectAgents.stopChiefJob('p1', 'bounded')
+  assert.equal(proof.confirmed, false); assert.match(proof.reason, /timed out/)
+  assert.equal(rt.projectAgents.chiefBusy('p1'), true, 'Revoked but live execution retains its Session boundary')
+})
+
+test('failed Chief execution-boundary commit cannot strand a busy delegation before dispatch', async t => {
+  const { rt } = await setup(t); await get(rt, alice)
+  rt.projectChiefControl.validateActor = async () => {}
+  const run = rt.state.projectExecutions.uncommitted = { id: 'uncommitted', projectId: 'p1', invocation: 1, status: 'running' }
+  const save = rt.save; let failed = false
+  rt.save = async () => { if (!failed && rt.projectAgents.chiefBusy('p1')) { failed = true; throw new Error('boundary snapshot failed') } return save() }
+  await assert.rejects(rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: run.id, invocation: 1, prompt: 'Do not dispatch before commit', projectFacts: {}, onResult: async () => {} }), /boundary snapshot failed/)
+  assert.equal(failed, true); assert.equal(rt.projectAgents.chiefBusy('p1'), false)
+  assert.equal(run.exitProof.kind, 'chief-never-dispatched')
+})

@@ -464,3 +464,44 @@ test('Chief receipt protocol correction precedes all role proposals and Task eff
   assert.equal(run.correction.status, 'resolved'); assert.equal(proposals, 0)
   await f.rt.projectEffects.close()
 })
+
+test('unsupported verification route is corrected by Chief before changing the Task generation', async () => {
+  const { chiefProtocolError } = await import('../src/host/project-chief-protocol.js')
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId], generation = f.task.collaboration.generation
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }), validateRecovery: async ({ target }) => {
+    if (target.role !== 'developer') throw Object.assign(chiefProtocolError('targetBotId', 'a sealed candidate for verification', 't'), { recovery: { kind: 'unsupported-route', actions: ['inspect candidate', 'choose explicit rework'] } })
+  }, rework: async () => 'a' })
+  await f.request.onResult(f.result({ action: 'route', targetBotId: 'p:reviewer', reason: 'Review candidate' }))
+  assert.equal(run.status, 'correction-pending'); assert.equal(f.task.collaboration.generation, generation)
+  assert.equal(run.correction.feedback[0].recovery.kind, 'unsupported-route'); assert.equal(f.task.chiefQuestion, undefined)
+  await f.control.pump(); await f.request.onResult(f.result({ action: 'return', targetBotId: 'p:developer', reason: 'Produce the missing candidate' }))
+  assert.equal(run.status, 'done', run.failure); assert.equal(f.task.collaboration.botId, 'p:developer')
+})
+
+test('unmanaged native exit adapter unblocks an interrupted inspection and old invocation callbacks remain fenced', async () => {
+  const f = await controlFixture(), old = f.request, run = f.rt.state.projectExecutions[old.runId]
+  run.purpose = 'inspection'; delete run.taskId
+  let reconciled = 0
+  f.rt.projectAgents.reconcileChiefExit = async current => {
+    if (current.invocation === 1) { ++reconciled; current.exitProof = { confirmed: true, kind: 'native-chief-prior-host-exited', runId: current.id, invocation: 1 }; return true }
+    return false
+  }
+  const restored = createProjectChiefControl(f.rt); f.rt.projectChiefControl = restored; restored.recover()
+  run.recovery = { status: 'waiting-exit', attempts: 0, notBefore: Date.now() - 1 }
+  await restored.pump(); await new Promise(resolve => setTimeout(resolve, 25))
+  assert.equal(run.status, 'running'); assert.equal(run.invocation, 2); assert.equal(reconciled, 1)
+  await old.onResult(f.result({ action: 'close', reason: 'Late old response' }))
+  assert.equal(f.accepted(), 0, 'old response cannot act through a reused Run record')
+})
+
+test('an uncommitted stop intent cannot send a stop or consume the mechanical stop budget', async () => {
+  const f = await controlFixture({ modern: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  run.purpose = 'inspection'; delete run.taskId
+  let stopped = 0; f.rt.projectAgents.stopChiefJob = async () => { ++stopped; return { confirmed: false } }
+  const restored = createProjectChiefControl(f.rt); f.rt.projectChiefControl = restored; restored.recover()
+  run.recovery = { status: 'waiting-exit', attempts: 0, notBefore: Date.now() - 1 }
+  f.rt.save = async () => {}
+  await assert.rejects(restored.pump(), /not confirmed/)
+  assert.equal(stopped, 0); assert.equal(run.recovery.stopAttempts, 0)
+  await f.rt.projectEffects.close()
+})

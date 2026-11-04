@@ -201,3 +201,7 @@ confirmed cleanup; neither empty workerId nor Task failure alone proves exit.
 receipt-only corrections through existing Effects, preserving the claim and
 frozen business intent. Exhaustion remains visible to Chief; no fixed escalation.
 See [receipt correction](project-inputs.md#invalid-receipt-correction-2338).
+
+#2347 preflights recovery routes before changing generation, returns unsupported
+routes to Chief, and reuses the existing delivery adapter for evidence-supported
+Tester/Reviewer continuation. No default next role or extra acceptance authority.

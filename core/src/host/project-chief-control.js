@@ -1,3 +1,4 @@
+import { classifyChiefRecovery, progressCheckpoint } from './project-chief-recovery.js'
 // Chief arbitration uses existing Tasks, Runs, Sessions and resource leases.
 import { randomUUID, createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -20,22 +21,13 @@ export function inspectionResources(state, task) {
   const historical = rows.filter(row => row.attemptId !== task.deliveryAttemptId && row.status === 'released' && proven.has(row.releaseProof))
   return { resources: rows.filter(row => !historical.includes(row)), ...(historical.length ? { releasedResourceHistory: { count: historical.length, allConfirmedReleased: true, sha256: digest(historical), source: 'projectResourceLeases and projectHarnessWorkers; original records retained' } } : {}) }
 }
-function verifiedProgress(evidence = []) {
-  return evidence.filter(row => row.kind === 'host-tests' && row.passed === true && typeof row.sha === 'string' && typeof row.sha256 === 'string')
-}
 export function progressFingerprint(attempt) {
   const tests = attempt?.evidence?.tests
   return digest(tests?.passed === true && tests.sha === attempt.candidateSha ? { testedCandidate: tests.sha } : null)
 }
 export function inspectionFacts(state, task, thresholds, now = Date.now()) {
   const c = task.collaboration, attempt = state.projectAttempts?.[task.deliveryAttemptId], fingerprint = progressFingerprint(attempt)
-  let checkpoint = 0, lastMeaningfulProgressAt = null, progressEvidence = []
-  const seen = new Set()
-  for (const [index, receipt] of (c?.history ?? []).entries()) {
-    const fresh = verifiedProgress(receipt.evidence).filter(row => !seen.has(row.sha))
-    for (const row of fresh) seen.add(row.sha)
-    if (fresh.length) { checkpoint = index + 1; lastMeaningfulProgressAt = receipt.createdAt; progressEvidence = fresh.map(row => ({ handoffId: receipt.id, sha: row.sha, testLogSha256: row.sha256 })) }
-  }
+  const { checkpoint, lastMeaningfulProgressAt, progressEvidence } = progressCheckpoint(c?.history)
   const handoffs = (c?.history.length ?? 0) - checkpoint
   const worker = c?.claim?.workerId ? state.projectHarnessWorkers?.[c.claim.workerId] : null
   const reasons = []
@@ -67,11 +59,12 @@ export function createProjectChiefControl(rt) {
   const stopping = new Map()
   let pumping = false, reconciling = null
   rt.projectEffects?.register('chief.inspection-recovery', { run: row => ({ runId: row.payload.runId }) }, { replace: true })
+  rt.projectEffects?.register('chief.inspection-stop', { run: row => ({ runId: row.payload.runId, stopAttempt: row.payload.stopAttempt }) }, { replace: true })
   rt.projectEffects?.register('chief.correction', { run: row => ({ runId: row.payload.runId, round: row.payload.round }) }, { replace: true })
   const policyOf = id => ownEntry(policies(), id)
   function requireJobActor(actor, projectId) {
     const job = active.get(actor?.chiefJobId), policy = policyOf(projectId)
-    if (rt.readOnly?.() || !job || job.token !== actor.chiefToken || job.run.projectId !== projectId || job.run.initiatedBy !== actor.memberId || job.run.status !== 'running' || !policy?.enabled || policy.revision !== job.run.policyRevision || policy.authorityMemberId !== actor.memberId) throw refuse('Chief job authority is missing, revoked or stale')
+    if (rt.readOnly?.() || !job || job.token !== actor.chiefToken || job.run.projectId !== projectId || job.run.initiatedBy !== actor.memberId || job.run.status !== 'running' || job.run.invocation !== job.invocation || !policy?.enabled || policy.revision !== job.run.policyRevision || policy.authorityMemberId !== actor.memberId) throw refuse('Chief job authority is missing, revoked or stale')
     return job
   }
   async function validateActor(actor) {
@@ -210,11 +203,11 @@ export function createProjectChiefControl(rt) {
   }
   async function completed(job, result) {
     const { run } = job
-    if (active.get(run.id) !== job || run.status !== 'running' || job.resultInProgress) return { ignored: true }
+    if (active.get(run.id) !== job || run.invocation !== job.invocation || run.status !== 'running' || job.resultInProgress) return { ignored: true }
     job.resultInProgress = true
     let correcting = false
     try {
-      if (!result.ok) throw refuse('Chief execution did not complete; inspect its resource evidence')
+      if (!result.ok) throw Object.assign(refuse('Chief execution did not complete; inspect its resource evidence'), { recovery: result.recoveryIssue ?? classifyChiefRecovery(new Error('Chief execution failed')) })
       await validateActor(job.actor)
       const execution = result.executionEvidence, carrier = rt.state.projectAgents?.[`public-${run.projectId}`]
       if (!execution || execution.chiefRunId !== run.id || execution.carrierGeneration !== carrier?.carrierGeneration) throw refuse('Chief carrier changed or execution evidence is missing')
@@ -237,6 +230,7 @@ export function createProjectChiefControl(rt) {
         if (run.appliedDecisions?.some(row => row.taskId === decision.taskId)) continue
         const saved = job.snapshot.find(row => row.taskId === decision.taskId)
         if (!saved) throw chiefProtocolError('taskId', 'an exact Task in this invocation snapshot', decision.taskId)
+        if (['route', 'return', 'request-tests'].includes(decision.action)) await rt.projectPools?.validateChiefRoute?.({ taskId: decision.taskId, targetBotId: decision.action === 'request-tests' ? `${run.projectId}:tester` : decision.targetBotId, expectedGeneration: saved.generation }, job.actor)
         try { rt.projectInputs?.validateChiefReceipt?.(decision.taskId, saved, run, decision.inputReceipts) }
         catch (error) {
           if (!error.receiptFeedback?.correctable) throw error
@@ -260,7 +254,7 @@ export function createProjectChiefControl(rt) {
         if (rt.state.tasks[decision.taskId]?.chiefActionIssue) delete rt.state.tasks[decision.taskId].chiefActionIssue
         if (rt.state.tasks[decision.taskId]?.chiefDecisionIssue) delete rt.state.tasks[decision.taskId].chiefDecisionIssue
         } catch (error) {
-          if (run.purpose !== 'inspection') throw error
+          if (run.purpose !== 'inspection' || error.code === 'bot/chief-protocol') throw error
           const failure = { taskId: decision.taskId, code: error.code ?? 'bot/chief', message: String(error.message).slice(0, 1000), at: Date.now() }; failures.push(failure)
           const task = rt.state.tasks[decision.taskId]; if (task?.projectId === run.projectId) task.chiefActionIssue = { runId: run.id, ...failure }
           await rt.save()
@@ -268,14 +262,14 @@ export function createProjectChiefControl(rt) {
       }
       await validateActor(job.actor)
       if (run.correction) run.correction.status = 'resolved'
-      delete run.failure
+      delete run.failure; delete run.recoveryIssue
       run.waitingFor = null; run.status = failures.length ? 'partial' : 'done'; run.decisionFailures = failures; if (failures.length) run.failure = `${failures.length} Task decisions were refused; independent decisions continued`; run.summary = parsed.summary.slice(0, 8000); run.decisionIds = results.map(row => row.id); run.executionEvidence = result.executionEvidence ?? null
       waiters.get(run.id)?.resolve()
     } catch (error) {
       if (active.get(run.id) !== job || run.status !== 'running') return { ignored: true }
       if (error.code === 'bot/chief-protocol') {
         const previous = run.correction, round = (previous?.round ?? 0) + 1, limit = run.correctionLimit ?? correctionBudget(policyOf(run.projectId))
-        const feedback = { ...(error.receiptFeedback ? { receiptFeedback: error.receiptFeedback } : {}), code: error.code, taskId: error.taskId, fields: error.fields, message: error.message.slice(0, 500), at: Date.now(), sideEffects: 'response protocol rejected before applying its decisions', appliedTaskIds: (run.appliedDecisions ?? []).map(row => row.taskId) }
+        const feedback = { ...(error.recovery ? { recovery: error.recovery } : {}), ...(error.receiptFeedback ? { receiptFeedback: error.receiptFeedback } : {}), code: error.code, taskId: error.taskId, fields: error.fields, message: error.message.slice(0, 500), at: Date.now(), sideEffects: 'response protocol rejected before applying its decisions', appliedTaskIds: (run.appliedDecisions ?? []).map(row => row.taskId) }
         run.correction = protocolCorrection(previous, { version: 'chief-correction/v1', limit, feedback, priorExecution: job.executionEvidence ?? null })
         run.status = round <= limit ? 'correction-pending' : 'incomplete'; run.failure = feedback.message
         if (rt.projectEffects) {
@@ -301,7 +295,11 @@ export function createProjectChiefControl(rt) {
         if (!correcting) waiters.get(run.id)?.reject(refuse('Chief judgement incomplete; correction budget exhausted'))
         return { correction: structuredClone(run.correction) }
       }
-      run.status = 'failed'; run.failure = String(error.message).slice(0, 1000)
+      run.status = 'failed'; run.failure = String(error.message).slice(0, 1000); run.recoveryIssue = error.recovery ?? classifyChiefRecovery(error)
+      if (run.purpose === 'inspection' && run.recoveryIssue.retryable) {
+        const config = inspectionLifecycle(policyOf(run.projectId)?.inspection)
+        run.status = 'interrupted'; run.waitingFor = 'recovery'; run.recovery = { ...run.recovery, status: 'waiting-exit', attempts: run.recovery?.attempts ?? 0, notBefore: Date.now() + config.recoveryDelayMs }
+      }
       for (const audit of Object.values(rt.state.projectChiefDecisions ?? {})) if (audit.runId === run.id && audit.status === 'requested') { audit.status = 'rejected'; audit.failure = run.failure; audit.finishedAt = Date.now() }
       if (run.taskId) { const task = ownEntry(rt.state.tasks, run.taskId); if (task?.projectTask && task.projectTask.admission.status !== 'accepted') task.projectTask.admission.failure = { chiefRunId: run.id, reason: run.failure, at: Date.now() }; if (task?.collaboration && !terminal.has(task.status)) { task.collaboration.status = 'blocked'; if (task.collaboration.claim?.chiefRunId === run.id) task.collaboration.claim.status = 'failed'; task.collaboration.block = { reason: run.failure, at: Date.now() } } }
       waiters.get(run.id)?.reject(error)
@@ -323,6 +321,7 @@ export function createProjectChiefControl(rt) {
     for (const run of Object.values(rt.state.projectExecutions ?? {})) {
       if (run.id === current.id || run.projectId !== current.projectId || run.kind !== 'chief-control' || run.status !== 'interrupted' && run.recovery?.exitConfirmed !== false || !run.startedAt) continue
       if (!await inspectionExited(run)) return true
+      if (run.recovery?.exitConfirmed === false) { run.recovery.exitConfirmed = true; if (run.status !== 'interrupted') run.recovery.status = 'isolated-exit-confirmed'; await rt.save() }
     }
     return false
   }
@@ -344,23 +343,33 @@ export function createProjectChiefControl(rt) {
             await rt.save()
           }
         }
-        if (run.status !== 'interrupted') continue
-        if (!policy?.enabled || policy.revision !== run.policyRevision || run.source?.scheduleId && (!rt.state.projectScheduledTasks?.[run.source.scheduleId]?.enabled || run.source.scheduleRevision !== undefined && rt.state.projectScheduledTasks[run.source.scheduleId].revision !== run.source.scheduleRevision)) { run.status = 'cancelled'; run.failure = 'Inspection recovery authority or schedule changed'; await rt.save(); continue }
+        if (run.status !== 'interrupted' && run.recovery?.exitConfirmed !== false) continue
+        if (run.status === 'interrupted' && (!policy?.enabled || policy.revision !== run.policyRevision || run.source?.scheduleId && (!rt.state.projectScheduledTasks?.[run.source.scheduleId]?.enabled || run.source.scheduleRevision !== undefined && rt.state.projectScheduledTasks[run.source.scheduleId].revision !== run.source.scheduleRevision))) { run.status = 'cancelled'; run.failure = 'Inspection recovery authority or schedule changed'; active.delete(run.id); await rt.save() }
         if (!run.recovery) { run.recovery = { status: 'waiting-exit', notBefore: now + config.recoveryDelayMs, attempts: 0 }; await rt.save() }
         const exited = await inspectionExited(run)
         run.recovery.exitConfirmed = exited
         if (!exited) {
-          run.recovery.status = 'waiting-exit'
-          if (!stopping.has(run.id) && now >= (run.recovery.nextStopAt ?? 0) && rt.projectAgents.stopChiefJob) {
+          run.recovery.status = (run.recovery.stopAttempts ?? 0) >= config.maxStopAttempts ? 'exit-unconfirmed' : 'waiting-exit'
+          run.recoveryIssue = { version: 'chief-recovery/v1', kind: 'worker-exit-unknown', retryable: true, conditions: ['matching execution exit proof'], actions: ['inspect registered worker and lease evidence'], stopBudgetExhausted: (run.recovery.stopAttempts ?? 0) >= config.maxStopAttempts }
+          if (!stopping.has(run.id) && (run.recovery.stopAttempts ?? 0) < config.maxStopAttempts && now >= (run.recovery.nextStopAt ?? 0) && rt.projectAgents.stopChiefJob) {
+            run.recovery.stopAttempts = (run.recovery.stopAttempts ?? 0) + 1
             run.recovery.nextStopAt = now + config.recoveryDelayMs
             const invocation = run.invocation
+            let stopIntent
+            try {
+              if (rt.projectEffects) {
+                stopIntent = rt.projectEffects.stage({ kind: 'chief.inspection-stop', key: `${run.id}:${invocation}:${run.recovery.stopAttempts}`, projectId: run.projectId, payload: { runId: run.id, invocation, stopAttempt: run.recovery.stopAttempts } })
+                await rt.projectEffects.persist(stopIntent)
+              } else await rt.save()
+            } catch (error) { if (!stopIntent || rt.projectEffects.discardUncommitted(stopIntent)) --run.recovery.stopAttempts; throw error }
             const pending = Promise.resolve().then(() => rt.projectAgents.stopChiefJob(run.projectId, run.id)).then(async proof => {
-              if (proof?.confirmed && run.invocation === invocation && run.status === 'interrupted') { run.exitProof = { ...proof, runId: run.id, invocation, at: Date.now() }; await rt.save(); rt.projectScheduler?.wake() }
+              if (proof?.confirmed && run.invocation === invocation && ['interrupted', 'cancelled', 'failed'].includes(run.status)) { run.exitProof = { ...proof, runId: run.id, invocation, at: Date.now() }; await rt.save(); rt.projectScheduler?.wake() }
             }).catch(error => { run.recovery.stopFailure = String(error.message).slice(0, 300) }).finally(() => stopping.delete(run.id))
             stopping.set(run.id, pending)
           }
           continue
         }
+        if (run.status !== 'interrupted') { run.recovery.status = 'isolated-exit-confirmed'; active.delete(run.id); await rt.save(); continue }
         if (active.has(run.id) || rt.projectAgents.chiefBusy(run.projectId)) continue
         if (run.recovery.supersededBy) { run.status = 'cancelled'; run.recovery.status = 'coalesced'; await rt.save(); continue }
         if ((run.recovery.attempts ?? 0) >= config.maxRecoveries) { run.status = 'failed'; run.recovery.status = 'exhausted'; await rt.save(); continue }
@@ -369,6 +378,8 @@ export function createProjectChiefControl(rt) {
           await rt.projectDelegations.background(policy.authorityMemberId)
           rt.requireProjectAccess({ memberId: policy.authorityMemberId }, run.projectId, 'configure')
           if (policyOf(run.projectId) !== policy || policy.revision !== run.policyRevision) throw refuse('Inspection policy changed during recovery')
+          if (run.recovery.stopAttempts) run.recovery.stopHistory = [...(run.recovery.stopHistory ?? []), { invocation: run.invocation, attempts: run.recovery.stopAttempts, lastStopAt: run.recovery.nextStopAt }].slice(-5)
+          run.recovery.stopAttempts = 0; delete run.recovery.nextStopAt
           run.recovery.attempts = (run.recovery.attempts ?? 0) + 1; run.recovery.status = 'requeued'; run.recovery.previousInvocation = run.invocation
           run.status = 'queued'; run.queuedAt = now; delete run.finishedAt
           if (rt.projectEffects) {
@@ -397,11 +408,11 @@ export function createProjectChiefControl(rt) {
           if (run.invocation === job.invocation) { run.workerId = workerId; if (run.status === 'running') run.waitingFor = 'execution'; run.workerGeneration = rt.state.projectHarnessWorkers?.[workerId]?.generation ?? null; await rt.save() }
         } catch (error) {
           if (active.get(run.id) !== job || run.status !== 'running') {
-            if (run.invocation === job.invocation && !Object.values(rt.state.projectHarnessWorkers ?? {}).some(row => row.chiefRunId === run.id) && rt.state.projectAgents?.[`public-${run.projectId}`]?.lastRequest?.chiefRunId !== run.id) { run.exitProof = { confirmed: true, kind: 'chief-never-dispatched', runId: run.id, invocation: job.invocation, at: Date.now() }; await rt.save() }
+            if (run.invocation === job.invocation && !Object.values(rt.state.projectHarnessWorkers ?? {}).some(row => row.chiefRunId === run.id && (row.chiefInvocation === undefined ? row.id === run.workerId : row.chiefInvocation === job.invocation)) && !(rt.state.projectAgents?.[`public-${run.projectId}`]?.lastRequest?.chiefRunId === run.id && rt.state.projectAgents[`public-${run.projectId}`].lastRequest.chiefInvocation === job.invocation)) { run.exitProof = { confirmed: true, kind: 'chief-never-dispatched', runId: run.id, invocation: job.invocation, at: Date.now() }; await rt.save() }
             return
           }
           if (error.code === 'bot/busy') { run.status = 'queued'; active.delete(run.id); await rt.save() }
-          else { run.dispatchFailure = String(error.message).slice(0, 1000); await completed(job, { ok: false, text: String(error.message) }) }
+          else { run.dispatchFailure = String(error.message).slice(0, 1000); run.recoveryIssue = classifyChiefRecovery(error); await completed(job, { ok: false, text: String(error.message), recoveryIssue: run.recoveryIssue }) }
         }
   }
   async function pump() {
@@ -420,7 +431,6 @@ export function createProjectChiefControl(rt) {
       for (const run of Object.values(rt.state.projectExecutions ?? {}).filter(row => row.kind === 'chief-control' && row.status === 'interrupted' && row.taskId && row.purpose !== 'inspection')) {
         const task = rt.state.tasks[run.taskId], policy = policyOf(run.projectId)
         if (!policy?.enabled || task?.collaboration?.claim?.chiefRunId !== run.id || task.collaboration.claim.status !== 'interrupted') continue
-        const worker = rt.state.projectHarnessWorkers?.[run.workerId]
         if (!await inspectionExited(run)) continue
         try { await rt.projectPools.retryChief(task.id, { memberId: policy.authorityMemberId }); run.recovery = { status: 'requeued', at: Date.now() }; await rt.save() } catch (error) { run.recovery = { status: 'blocked', reason: error.message, at: Date.now() } }
       }
@@ -440,7 +450,7 @@ export function createProjectChiefControl(rt) {
   }
   function recover() {
     let changed = false
-    for (const run of Object.values(rt.state.projectExecutions ?? {})) if (run.kind === 'chief-control' && run.status === 'running') { run.status = 'interrupted'; run.failure = 'Host restarted before Chief result was validated'; changed = true }
+    for (const run of Object.values(rt.state.projectExecutions ?? {})) if (run.kind === 'chief-control' && run.status === 'running') { run.status = 'interrupted'; run.waitingFor = 'recovery'; run.recoveryIssue = { version: 'chief-recovery/v1', kind: 'host-recovering', retryable: true, conditions: ['prior execution exit reconciliation'], actions: ['wait for the existing recovery pass'] }; run.failure = 'Host restarted before Chief result was validated'; changed = true }
     return changed
   }
   return { configure, view, request, scheduled, scheduledState, pump, recover, requireJobActor, validateActor, applyDecision, template: structuredClone(template) }

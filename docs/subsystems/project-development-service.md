@@ -238,3 +238,6 @@ v1 github.connection queries and human-only github.connection.configure commands
 
 
 #2336 execution metadata includes startupPhase, while raw resource views retain reservation owner, reclamation reason/effect and exact release proof. Confirmed no-start evidence uses the shared exit predicate; phase alone grants no execution or acceptance.
+
+#2347 exposes typed Chief recovery health and bounded Attempt resumption metadata,
+with full history through the existing hash-bound attempt.context source pages.

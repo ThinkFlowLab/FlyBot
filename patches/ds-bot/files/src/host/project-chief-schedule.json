@@ -18,6 +18,8 @@
     "runTimeoutMs": 900000,
     "recoveryDelayMs": 5000,
     "maxRecoveries": 2,
-    "overdueMs": 3600000
+    "overdueMs": 3600000,
+    "stopTimeoutMs": 10000,
+    "maxStopAttempts": 3
   }
 }

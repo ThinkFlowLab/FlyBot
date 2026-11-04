@@ -16,3 +16,17 @@ test('PID disappearance, changed host boot, remote resources or changed kill pol
   assert.equal(await priorScopeExited(original, { ...fixture(changed), readText: async path => path.endsWith('boot_id') ? 'different-boot' : fixture(changed).readText(path) }), false)
   assert.equal(await priorScopeExited({ kind: 'remote-resource' }, fixture(changed)), false)
 })
+
+test('birth-checked unmanaged host exit is distinct from independent worker/process-group exit', async () => {
+  const { priorHostProcessExited } = await import('../src/host/project-process-proof.js')
+  const scope = { kind: 'unmanaged-process', hostPid: 123, bootId: 'a'.repeat(8) + '-aaaa-aaaa-aaaa-' + 'a'.repeat(12), startTicks: '900', pidNamespace: 'pid:[123]' }
+  const readText = async path => path.endsWith('boot_id') ? scope.bootId : `${scope.hostPid} (node) ${['S', ...Array(18).fill('0'), '900'].join(' ')}`
+  const readNamespace = async () => scope.pidNamespace
+  assert.equal(await priorHostProcessExited(scope, { readText, readNamespace }), false)
+  assert.equal(await priorHostProcessExited(scope, { readNamespace, readText: async path => path.endsWith('boot_id') ? scope.bootId : readText(path).then(text => text.replace('900', '901')) }), true)
+  assert.equal(await priorHostProcessExited(scope, { readNamespace, readText: async path => { if (path.endsWith('boot_id')) return scope.bootId; throw Object.assign(new Error('gone'), { code: 'ENOENT' }) } }), true)
+  for (const code of ['EACCES', 'EPERM', 'EIO']) assert.equal(await priorHostProcessExited(scope, { readNamespace, readText: async () => { throw Object.assign(new Error('unknown'), { code }) } }), false)
+  assert.equal(await priorHostProcessExited(scope, { readNamespace, readText: async () => 'other-boot' }), false)
+  assert.equal(await priorHostProcessExited({ ...scope, startTicks: null }, { readText, readNamespace }), false)
+  assert.equal(await priorScopeExited(scope), false, 'Host death is never a generic resource exit proof')
+})

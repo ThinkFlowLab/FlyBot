@@ -1,3 +1,4 @@
+import { chiefRestartModel, checkChiefRestart } from './chief-restart.mjs'
 // M0: real pinned DSH, disposable data, deterministic model, actual shell execution.
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
@@ -45,6 +46,7 @@ async function waitFor(read, label, milliseconds = 90_000) {
 }
 
 async function main() {
+  const chiefRestart = process.argv.includes('--chief-restart'), chiefModel = chiefRestart ? chiefRestartModel() : null
   const nativePools = process.argv.includes('--native-pools')
   const sqlite = process.argv.includes('--sqlite')
   const nativeModel = nativePools ? nativePoolModel() : null
@@ -91,7 +93,7 @@ async function main() {
       '@deepseek-ai/dsh-base': '0.2.1-rc.2', '@deepseek-ai/dsh-web-app': '0.2.1-rc.2' },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'ds-bot', '@flybot/workflow'] } } }))
   const observations = []
-  const model = mockModel(observations, { reply: nativeModel ? input => nativeModel.reply(input) ?? deliveryReply(input) : (workbench ? input => deliveryReply(input) ?? agentReply(input) : delivery ? deliveryReply : agents ? agentReply : undefined) })
+  const model = mockModel(observations, { reply: chiefModel ? input => chiefModel.reply(input) : nativeModel ? input => nativeModel.reply(input) ?? deliveryReply(input) : (workbench ? input => deliveryReply(input) ?? agentReply(input) : delivery ? deliveryReply : agents ? agentReply : undefined) })
   model.listen(0, '127.0.0.1')
   await once(model, 'listening')
   const port = await freePort()
@@ -104,7 +106,7 @@ async function main() {
   // External connector credentials are not needed in this transport check.
   for (const name of Object.keys(env)) if (/TOKEN|SECRET|API_KEY/.test(name) && name !== 'DEEPSEEK_API_KEY') delete env[name]
   let patch = join(root, 'docker/web.patch.yml')
-  if (shared || delivery || agents) {
+  if (shared || delivery || agents || chiefRestart) {
     patch = join(directory, 'shared.patch.yml')
     const botConfig = { projectWorkbench: true,
       ...(nativePools ? { projectResources: { 'native-local': { type: 'local', root: directory, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['flybot'] } } } : {}),
@@ -115,7 +117,8 @@ async function main() {
       ...(sqlite ? { stateStorage: 'sqlite' } : {}), ...(delivery ? { projectDispatch: nativePools ? 'pools' : 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: queueGate?.command ?? (live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs']), allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
     writeFileSync(patch, readFileSync(join(root, 'docker/web.patch.yml'), 'utf8') + (live ? '\n- id: llm-deepseek\n  config: { thinking: disabled, reasoningEffort: off, maxTokens: 8192 }\n' : '') + `\n- id: bot\n  config: ${JSON.stringify(botConfig)}\n`, { mode: 0o600 })
   }
-  const child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch,
+  if (chiefRestart) delete env.INVOCATION_ID
+  let child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch,
     '--no-open', '--port', String(port)], { cwd: workspace, env, stdio: ['ignore', log, log], detached: true })
   closeSync(log)
   let childError
@@ -141,7 +144,7 @@ async function main() {
       return readFileSync(logPath, 'utf8').match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[^\s]+/)?.[0]
     }, 'DSH startup')
     const response = await fetch(login, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
-    const cookie = response.headers.getSetCookie().map(row => row.split(';')[0]).join('; ')
+    let cookie = response.headers.getSetCookie().map(row => row.split(';')[0]).join('; ')
     assert.ok(cookie, 'DSH login cookie')
     const call = async (endpoint, payload = {}, member) => {
       const response = await fetch(`http://127.0.0.1:${port}/api/bot`, { method: 'POST',
@@ -153,6 +156,25 @@ async function main() {
       const result = await call(...args)
       assert.equal(result.ok, true, `API ${args[0]}: ${result.error?.code ?? 'failed'}`)
       return result.value
+    }
+    if (chiefRestart) {
+      const restart = async () => {
+        const previous = child, offset = readFileSync(logPath, 'utf8').length
+        stop('SIGKILL'); await once(previous, 'exit')
+        const output = openSync(logPath, 'a', 0o600)
+        childError = null
+        child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch, '--no-open', '--port', String(port)], { cwd: workspace, env, stdio: ['ignore', output, output], detached: true })
+        closeSync(output)
+        child.on('error', error => { childError = error })
+        const login = await waitFor(() => {
+          if (childError || child.exitCode !== null) throw new Error('Restarted disposable DSH exited before startup')
+          return readFileSync(logPath, 'utf8').slice(offset).match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[^\s]+/)?.[0]
+        }, 'unmanaged DSH restart')
+        const response = await fetch(login, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
+        cookie = response.headers.getSetCookie().map(row => row.split(';')[0]).join('; ')
+      }
+      console.log(JSON.stringify(await checkChiefRestart({ api, saved, waitFor, restart, model: chiefModel })))
+      return
     }
     if (codex) {
       const report = await checkCodexDelivery({ api, saved, waitFor: (read, label) => waitFor(read, label, 600_000), settings: codex, artifacts: process.env.FLYBOT_DEMO_ARTIFACTS })
@@ -272,6 +294,7 @@ async function main() {
       await Promise.race([once(child, 'exit'), sleep(5000)])
       stop('SIGKILL')
     }
+    chiefModel?.finishHeld()
     model.closeAllConnections()
     await new Promise(done => model.close(done))
     if (!keep) rmSync(directory, { recursive: true, force: true })
