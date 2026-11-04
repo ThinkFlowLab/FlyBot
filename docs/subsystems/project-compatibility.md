@@ -101,3 +101,6 @@ The composed DSH runtime probes use deterministic inference, including native
 return and SQLite; they are not real-provider development or browser acceptance.
 No production migration, service restart, external-vendor product integration or
 control-plane/frontend changes are performed by this PR.
+
+
+#2330 runtime verification exposed an existing asynchronous fixture-directory cleanup race. Compatibility test cleanup uses the same bounded filesystem removal retries as other runtime fixtures; domain assertions, cutover receipts and permission gates remain intact.

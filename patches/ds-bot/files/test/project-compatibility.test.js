@@ -29,7 +29,7 @@ async function fixture(t, state = seed()) {
     hosts.push(close); await rt.load()
     return { rt, ctx, close, route }
   }
-  t.after(async () => { for (const close of hosts.reverse()) await close(); rmSync(home, { recursive: true, force: true }) })
+  t.after(async () => { for (const close of hosts.reverse()) await close(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
   return { home, path, start }
 }
 
