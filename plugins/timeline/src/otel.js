@@ -42,6 +42,10 @@ const partyAttrs = (prefix, party) => {
  * Records -> OTLP span objects. Only CLOSED spans are built: a turn needs its `te` and a tool
  * call its `ke`. An open turn is never exported as a finished one — the exporter carries it
  * with `pendingRecords` until its end arrives. Deliveries are instant spans.
+ *
+ * A record whose `t` is not a finite number is skipped: a segment can come from an older version
+ * or a hand edit, and `fold` in src/window.js keeps the same rule. Without it `nanos` would turn
+ * the missing time into `BigInt(NaN)` and one stale record would throw the whole export.
  */
 export function spansFrom(records, { names = {} } = {}) {
   const starts = new Map()
@@ -49,7 +53,7 @@ export function spansFrom(records, { names = {} } = {}) {
   const toolStarts = new Map()
   const toolEnds = new Map()
   for (const record of records) {
-    if (!record || typeof record !== 'object') continue
+    if (!record || typeof record !== 'object' || !Number.isFinite(record.t)) continue
     if (record.r === 'ts') starts.set(record.id, record)
     else if (record.r === 'te') ends.set(record.id, record)
     else if (record.r === 'ks') toolStarts.set(record.id, record)

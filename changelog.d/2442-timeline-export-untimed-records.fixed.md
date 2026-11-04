@@ -1,0 +1,1 @@
+The timeline's on-demand OpenTelemetry export now skips a trace record that carries no usable timestamp instead of throwing `RangeError: The number NaN cannot be converted to a BigInt`, so one stale or hand-edited record no longer costs the export of every complete turn beside it ([#2442](https://github.com/ThinkFlowLab/FlyBot/issues/2442)).
