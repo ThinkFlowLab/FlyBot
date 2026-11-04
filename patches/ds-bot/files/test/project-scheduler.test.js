@@ -346,3 +346,21 @@ test('a matching SDK exit proof releases an input wait while legacy active workf
   state.projectResourceLeases.l.generation = 2; attempt.workflowDefinition = { nodes: [] }; assert.equal(scheduler.slots('p1'), 1)
   state.projectExecutions[attempt.id].status = 'done'; assert.equal(scheduler.slots('p1'), 0)
 })
+
+
+test('queue creation must commit before a concurrent drain can admit continuation', async () => {
+  const { rt, state, scheduler } = fixture()
+  await scheduler.request({ taskId: 'one', requestId: 'one' }, { memberId: 'bob' })
+  const task = state.tasks.one; task.deliveryAttemptId = 'attempt-1'
+  task.chiefQuestion = { decisionId: 'chief' }; task.collaboration = { status: 'blocked', generation: 1, history: [], initiatedBy: 'bob', currentHandoffId: 'h', botId: 'p1:developer' }
+  await scheduler.captureWait(task); delete task.chiefQuestion; task.collaboration.status = 'queued'
+  let rejectSave, count = 0
+  rt.save = async () => { if (++count === 1) await new Promise((_, reject) => { rejectSave = reject }) }
+  const queued = scheduler.admitPool(task, { id: 'p1:developer', role: 'developer' })
+  const rejected = assert.rejects(queued, /initial save failed/)
+  await new Promise(resolve => setImmediate(resolve)); await scheduler.drain()
+  assert.equal(state.projectAttempts['attempt-1'].capacityWait.status, 'suspended')
+  rejectSave(new Error('initial save failed')); await rejected
+  assert.equal(Object.keys(state.projectQueue).length, 0)
+  assert.equal(state.projectAttempts['attempt-1'].capacityWait.status, 'suspended')
+})

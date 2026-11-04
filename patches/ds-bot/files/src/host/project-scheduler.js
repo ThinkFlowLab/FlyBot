@@ -18,7 +18,7 @@ export function releasedParentWait(state, attemptId) {
 export function createProjectScheduler(rt, { preflight = preflightRepository } = {}) {
   const { state } = rt
   const entries = () => (state.projectQueue ??= {})
-  const savingAdmissions = new Set()
+  const savingAdmissions = new Set(), savingQueueEntries = new Set()
   let recovered = false
   let tail = Promise.resolve()
   let waking = null, wakeAgain = false
@@ -66,8 +66,8 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     let entry = Object.values(entries()).find(row => row.kind === 'resume' && row.attemptId === attempt.id && row.handoffId === c.currentHandoffId && row.generation === c.generation)
     if (!entry) {
       entry = { id: `queue-${randomUUID()}`, kind: 'resume', projectId: task.projectId, taskId: task.id, attemptId: attempt.id, handoffId: c.currentHandoffId, generation: c.generation, targetBotId: definition.id, initialTarget: { role: definition.role }, memberId: c.initiatedBy ?? attempt.initiatedBy, status: 'waiting', enqueuedAt: Date.now(), updatedAt: Date.now() }
-      setEntry(entries(), entry.id, entry)
-      try { await rt.save() } catch (error) { delete entries()[entry.id]; throw error }
+      setEntry(entries(), entry.id, entry); savingQueueEntries.add(entry.id)
+      try { await rt.save() } catch (error) { delete entries()[entry.id]; throw error } finally { savingQueueEntries.delete(entry.id) }
     }
     // Queue admission runs outside the pool lock: drain can itself admit a new pool Task.
     void wake()
@@ -135,6 +135,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     for (const project of rt.listProjects()) if (revalidate(project.id)) changed = true
     const pending = Object.values(entries()).filter(entry => entry.status === 'waiting').sort((a, b) => a.enqueuedAt - b.enqueuedAt || a.id.localeCompare(b.id))
     for (const entry of pending) {
+      if (savingQueueEntries.has(entry.id)) continue
       const project = rt.readProject(entry.projectId)
       if (!project || project.status !== 'active') { entry.status = 'blocked'; entry.reason = 'Project is archived or unavailable'; changed = true; continue }
       if (slots(project.id) >= quota(project)) continue
