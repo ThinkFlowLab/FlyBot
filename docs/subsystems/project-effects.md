@@ -9,6 +9,12 @@ owned_paths:
 
 # Durable Project effects and external receipts
 
+#2308 reuses this engine for private inbox state and consultation notifications.
+Per-kind projectEffectRetry optionally configures maxFailures/baseDelayMs/maxDelayMs,
+validated before staging; absent configuration retains the original policy.
+Deferred authority/capacity waits remain distinct from exhausted delivery failures.
+Inbox/native/Webhook receipts never mean Task completion. [Protocol](agent-inbox.md).
+
 S4's real-store regression also proves GitHub event/input/notification/cursor state
 shares the existing rename acknowledgement. The source.record receipt carries
 thread/event identifiers; input.notify remains the only feedback wake path. All

@@ -18,6 +18,18 @@ function fixture(state = {}, handler) {
   return { effects, rt, spec, seen, disk: () => disk, tick: n => { clock += n }, failSave: value => { saveFailure = value }, holdSave: value => { hold = value } }
 }
 
+test('operator-configured retry budget applies to the original effect engine and rejects invalid timing before intent', async () => {
+  const f = fixture({}, { run: async () => { throw Error('receiver offline') } })
+  f.rt.config = { projectEffectRetry: { test: { maxFailures: 2, baseDelayMs: 100, maxDelayMs: 500 } } }
+  const token = f.effects.stage(f.spec); await f.effects.persist(token); await f.effects.drain()
+  assert.equal(f.rt.state.projectEffects[token.id].failures, 1)
+  assert.equal(f.rt.state.projectEffects[token.id].status, 'pending')
+  f.tick(200); await f.effects.drain()
+  assert.equal(f.rt.state.projectEffects[token.id].status, 'failed')
+  f.rt.config.projectEffectRetry.test.baseDelayMs = -1
+  assert.throws(() => f.effects.stage({ ...f.spec, key: 'invalid' }), /retry configuration/)
+})
+
 test('intent and business state commit together; uncommitted or failed saves cannot execute', async () => {
   const f = fixture({ tasks: { t: { status: 'queued' } } })
   const token = f.effects.stage(f.spec)

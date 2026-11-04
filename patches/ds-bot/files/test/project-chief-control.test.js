@@ -28,6 +28,14 @@ test('Chief inspection thresholds are configuration and identify long execution,
   task.collaboration.status = 'blocked'
   assert.match(inspectionFacts(state, task, thresholds, 20000).reasons.at(-1), /wait/)
 })
+test('Chief inspection sees exhausted/slow private agent delivery without exposing private message contents', () => {
+  const state = { personalAgentParticipations: { part: { carrierId: 'carrier' } }, projectAgentTranscripts: { carrier: [{ id: 'consult', text: 'Private advice must not appear', at: 1, notificationEffect: { id: 'effect' }, inbox: { phase: 'processing', updatedAt: 1 } }] }, projectEffects: { effect: { status: 'failed' } } }
+  const task = { id: 'task', chiefQuestion: { recipient: { participationId: 'part', consultationId: 'consult' } } }
+  const facts = inspectionFacts(state, task, { maxHandoffsWithoutProgress: 10, longExecutionMs: 10000, missingHeartbeatMs: 10000, longWaitMs: 1000 }, 2000)
+  assert.equal(facts.reasons.length, 2)
+  assert.ok(!JSON.stringify(facts).includes('Private advice'))
+})
+
 test('failed schedule configuration does not silently enable autonomous Chief authority', async () => {
   const rt = { state: { projectChiefPolicies: {} }, requireProjectAccess() {}, projectDelegations: { background: async () => true }, projectScheduledTasks: { save: async () => { throw new Error('Original Schedule service is unavailable') } }, save: async () => {} }
   const control = createProjectChiefControl(rt)

@@ -10,6 +10,13 @@ Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 
 ## Agent connection authorization — 2026-11-03
 
+#2308 unifies native/external personal-agent processing through the existing
+consultation store, committed Effects and scoped leases. Signed, explicitly
+verified Webhook notifications and native wakeups both lead to the same inbox
+service; private messages stay outside public SSE. [Contract](docs/agent-inbox.md).
+Actual isolated DSH/HTTP and a separate receiver pass with deterministic inference;
+live vendor acceptance and deployment remain separate. #2311 is the next credential-provider change.
+
 #2300 publishes the source-matched public [OpenAPI contract](docs/openapi/flybot.openapi.json)
 and [third-party Bot guide](docs/third-party-bot-integration.md). Human-issued FBA scope,
 safe/watch rights, same-principal receipts and host-only role execution remain distinct.

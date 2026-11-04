@@ -13,6 +13,13 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-03 — A recorded agent answer does not resume the original Task
+
+Seen 1×. Chief may ask before a role collaboration exists. Publishing advice must
+wake that Chief too; a subsequent real Chief decision must resolve the previous
+owner wait in the same durable Task transition. Preserve the wait on failed save.
+Notification delivery, message completion and Task completion remain distinct.
+
 ### 2026-11-03 — Budget tool results and exact execution input
 
 Seen 1× (large-history regression). A bounded initial context does not bound a

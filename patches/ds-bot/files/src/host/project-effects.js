@@ -17,12 +17,18 @@ export function createProjectEffects(rt, { now = Date.now } = {}) {
   const handlers = new Map(), durable = new Map(), staged = new Set(), originals = new Map(), inline = new Set(), running = new Map()
   let draining = null, again = false, closed = false, recovered = false
   const rows = () => (rt.state.projectEffects ??= {})
+  const retrySettings = kind => {
+    const retry = { maxFailures: 6, baseDelayMs: 1000, maxDelayMs: 60000, ...rt.config?.projectEffectRetry?.[kind] }
+    if (![retry.maxFailures, retry.baseDelayMs, retry.maxDelayMs].every(Number.isSafeInteger) || retry.maxFailures < 1 || retry.maxFailures > 100 || retry.baseDelayMs < 100 || retry.maxDelayMs < retry.baseDelayMs || retry.maxDelayMs > 86400000) throw fail('Invalid effect retry configuration')
+    return retry
+  }
   const current = token => {
     const row = ownEntry(rt.state.projectEffects ?? {}, token.id)
     return row?.generation === token.generation ? row : null
   }
   function stage({ kind, key, projectId, taskId = null, payload, replace = false }) {
     if (closed || rt.readOnly?.() !== undefined) throw fail('Effect store is not writable')
+    retrySettings(kind)
     if (!handlers.has(kind) || typeof key !== 'string' || !key || key.length > 300 || typeof projectId !== 'string' || !projectId) throw fail('Invalid effect intent')
     const id = `effect-${digest([projectId, kind, key])}`, previous = ownEntry(rows(), id)
     if (previous && previous.version !== EFFECT_PROTOCOL) throw fail('Effect protocol upgrade is required')
@@ -110,8 +116,9 @@ export function createProjectEffects(rt, { now = Date.now } = {}) {
         if (failure instanceof EffectCancelled) change(row, 'cancelled')
         else {
           if (!(failure instanceof EffectDeferred)) ++row.failures
-          row.dueAt = now() + (failure instanceof EffectDeferred ? 1000 : Math.min(60_000, 1000 * 2 ** Math.min(row.failures, 6)))
-          change(row, row.failures >= 6 ? 'failed' : 'pending')
+          const retry = retrySettings(row.kind)
+          row.dueAt = now() + (failure instanceof EffectDeferred ? retry.baseDelayMs : Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** Math.min(row.failures, 20)))
+          change(row, row.failures >= retry.maxFailures ? 'failed' : 'pending')
         }
       }
       await persist(token)

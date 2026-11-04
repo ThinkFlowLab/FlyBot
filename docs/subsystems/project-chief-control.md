@@ -10,6 +10,12 @@ owned_paths:
   - core/test/project-process-proof.test.js
 ---
 
+#2308 lets the existing configured inspection report exhausted personal-agent
+notification budgets and long inbox waits using recipient/status metadata only.
+Private questions/replies never enter inspection facts. Reuse the original
+schedule and Chief routing/human fallback; no new polling clock. [Inbox](agent-inbox.md).
+
+
 # Chief arbitration and original scheduled tasks
 
 Repair #39 reuses Task, Attempt, Run, resident Chief, temporary Harness execution

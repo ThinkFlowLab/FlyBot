@@ -984,7 +984,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -161,18 +161,103 @@ export function install(rt) {
+@@ -161,18 +161,104 @@ export function install(rt) {
        migrated = true
      }
      // Unnamed groups from before names followed their members may still list old names.
@@ -1043,6 +1043,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    if (rt.projectScheduledTasks?.recover()) migrated = true
 +    if (rt.projectChiefControl?.recover()) migrated = true
 +    if (rt.projectEffects?.recover()) migrated = true
++    if (rt.projectAgentInbox?.recover()) migrated = true
 +    if (rt.projectCompatibility?.recover()) migrated = true
 +    if (syncDesignatedChief()) migrated = true
      indexSessions()

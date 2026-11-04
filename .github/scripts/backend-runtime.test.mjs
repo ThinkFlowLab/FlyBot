@@ -1,6 +1,6 @@
 // Exercise the production launcher in an isolated persistent home. Inference is a test double.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, fork } from 'node:child_process'
 import { once } from 'node:events'
 import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,7 +9,7 @@ import { createServer } from 'node:net'
 import { test } from 'node:test'
 import { backendConfig, callApi, connection, prepareBackend, readJson, root } from '../../scripts/backend-lib.mjs'
 import { mockModel } from '../../dev/demo/mock.mjs'
-import { agentReply } from '../../dev/demo/agents.mjs'
+import { inboxModel } from '../../dev/demo/agent-inbox-model.mjs'
 import { readSpec, validateExchange, validate } from '../../scripts/api-contract-validation.mjs'
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -40,7 +40,8 @@ async function launch(home, env) {
 
 test('production backend retains canonical Tasks/auth across restart, keeps consultation private and serves scoped SSE', { timeout: 90000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'flybot-backend-runtime-')), port = await freePort()
-  const model = mockModel([], { reply: agentReply })
+  const inboxDriver = inboxModel()
+  const model = mockModel([], { reply: inboxDriver.reply })
   model.listen(0, '127.0.0.1'); await once(model, 'listening')
   const env = { ...process.env, DEEPSEEK_API_KEY: 'isolated-test-provider', DEEPSEEK_BASE_URL: `http://127.0.0.1:${model.address().port}/v1` }
   const profile = prepareBackend(home, backendConfig({ port }))
@@ -148,11 +149,66 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   while (!revoked.includes('access-revoked')) { const next = await reader.read(); if (next.done) break; revoked += new TextDecoder().decode(next.value) }
   assert.match(revoked, /access-revoked/)
   await reader.cancel()
+  // Prepare two real service Projects before enabling their Chief authority. The
+  // deterministic driver will ask the actual native/external personal agents.
+  const cases = []
+  const inboxOwnerId = (await api('auth-whoami')).memberId
+  const receiverKey = join(home, 'private/inbox-notification-key'), receiverClient = join(home, 'private/inbox-client.json')
+  writeFileSync(receiverKey, 'isolated-webhook-fixture-key-'.repeat(3), { mode: 0o600 })
+  for (const kind of ['native', 'external']) {
+    const marker = `INBOX_${kind.toUpperCase()}_PROTOCOL_ACCEPTANCE`
+    const { project: scoped } = await api('project-create', { name: marker })
+    let identity
+    if (kind === 'native') {
+      const agents = await api('project-agents', { projectId: scoped.id })
+      identity = { id: agents.mine.personalAgentId }
+    } else {
+      identity = (await api('personal-agent-create', { name: 'Independent inbox client', kind: 'external', provider: 'isolated-process-fixture', endpoint: 'https://receiver.example.invalid/descriptor-only' })).agent
+      await api('personal-agent-join', { agentId: identity.id, projectId: scoped.id })
+    }
+    await api('personal-agent-default', { agentId: identity.id, projectId: scoped.id })
+    await api('personal-agent-delegation-set', { agentId: identity.id, projectId: scoped.id, mode: 'watch' })
+    const issued = await api('personal-agent-token-create', { agentId: identity.id, projectIds: [scoped.id] })
+    const proposed = await dev('command', 'task.propose', scoped.id, { title: marker, criteria: 'The scoped reply is read by Chief', impact: 'Verify the same inbox processing contract', projectTaskKind: 'decision' }, `propose-${kind}-inbox`)
+    inboxDriver.register(marker, proposed.result.id)
+    cases.push({ kind, projectId: scoped.id, agentId: identity.id, token: issued.token, taskId: proposed.result.id })
+  }
+  const externalCase = cases.find(row => row.kind === 'external')
+  writeFileSync(receiverClient, JSON.stringify({ origin: transport.baseUrl, projectId: externalCase.projectId, agentId: externalCase.agentId, token: externalCase.token }), { mode: 0o600 })
+  const receiver = fork(join(root, 'core/test/fixtures/agent-webhook-receiver.mjs'), [receiverKey, receiverClient], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: { PATH: process.env.PATH } })
+  const receiverExited = once(receiver, 'exit')
+  t.after(async () => { receiver.kill(); await receiverExited })
+  const [receiverReady] = await once(receiver, 'message')
   await host.close(); host = null
   assert.equal(existsSync(join(home, 'bot/state.sqlite')), true)
+  prepareBackend(home, backendConfig({ port, bot: { projectAgentWebhooks: { receiver: { ownerId: inboxOwnerId, agentId: externalCase.agentId, projectId: externalCase.projectId, endpoint: `http://127.0.0.1:${receiverReady.port}/notify`, allowLoopback: true, signingKeyFile: receiverKey } } } }))
   host = await launch(home, env)
   assert.match(await run(['login', '--home', home], env), /existing private local session/)
   const nextTransport = await connection(home)
+  const apiNext = async (endpoint, payload = {}, who = token) => {
+    const value = await callApi(nextTransport, endpoint, payload, who)
+    validateExchange(spec, endpoint, payload, { ok: true, value }); return value
+  }
+  const devNext = (kind, name, projectId, payload, requestId, who = token) => apiNext('project-development', { version: 'project-development/v1', kind, name, projectId, payload, ...(requestId ? { requestId } : {}) }, who)
+  await devNext('command', 'inbox.connection.configure', externalCase.projectId, { agentId: externalCase.agentId, enabled: true, connectionId: 'receiver' }, 'enable-fixture-receiver')
+  const received = []
+  receiver.on('message', message => { if (message.event) received.push(message) })
+  for (const row of cases) {
+    await devNext('command', 'chief.configure', row.projectId, { enabled: true, inspection: { enabled: false } }, `enable-${row.kind}-chief`)
+    let completed = false
+    for (let pass = 0; pass < 100; pass++) {
+      const task = (await devNext('query', 'task', row.projectId, { taskId: row.taskId })).result.task
+      const inbox = (await devNext('query', 'inbox.list', row.projectId, {}, undefined, row.token)).result.items
+      const inputs = (await devNext('query', 'inputs', row.projectId, { taskId: row.taskId })).result.inputs
+      if (task.contract?.admission.status === 'accepted' && task.phase !== 'awaiting-owner' && inbox.some(message => message.phase === 'handled') && inputs.some(input => input.phase === 'handled')) { completed = true; break }
+      await pause(100)
+    }
+    assert.equal(completed, true, `${row.kind}: Chief advice must return through one inbox to the original Task`)
+    await devNext('command', 'chief.configure', row.projectId, { enabled: false }, `disable-${row.kind}-chief`)
+  }
+  assert.ok(inboxDriver.observed.nativeClaims > 0 && inboxDriver.observed.nativeCompletions > 0)
+  assert.ok(inboxDriver.observed.chiefResumptions >= 2)
+  assert.ok(received.some(message => message.handled && message.verified && !message.authorization && !message.ownerCookie))
   const after = await callApi(nextTransport, 'project-development', { version: 'project-development/v1', kind: 'command', name: 'task.propose', projectId: project.id, requestId: 'one-original-intent', payload: { title: 'Project change', criteria: 'Result checked', impact: 'Keep project history' } }, token)
   assert.equal(after.replayed, true)
   assert.equal(after.result.id, taskId)

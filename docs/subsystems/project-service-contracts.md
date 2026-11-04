@@ -10,6 +10,12 @@ owned_paths:
   - core/test/project-service-sse.test.js
 ---
 
+#2308 filters consultation.notify/agent.inbox.state Effects by their private
+human/independent-agent recipient, in addition to existing command-principal rules.
+Shared TaskView excludes these effects entirely; inbox commands retain normal
+same-principal request receipts. See [inbox contract](agent-inbox.md).
+
+
 # Commands, committed views and event transport
 
 The existing `project-development/v1` application boundary and `/api/bot` remain.

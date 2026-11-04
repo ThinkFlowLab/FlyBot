@@ -243,7 +243,7 @@ export function install(rt) {
       const task = rt.state.tasks[row.taskId]
       const wake = await rt.projectHarness?.taskInputWake?.(task.id)
       if (wake?.woken) return { inputId: row.payload.inputId, batchId: wake.batchId, status: 'safe-idle-turn' }
-      if (['blocked', 'arbitration', 'chief-working'].includes(task.collaboration?.status) || wake?.waitingFor === 'safe-turn-budget') {
+      if (task.chiefQuestion || ['blocked', 'arbitration', 'chief-working'].includes(task.collaboration?.status) || wake?.waitingFor === 'safe-turn-budget') {
         if (!rt.state.projectChiefPolicies?.[task.projectId]?.enabled) throw new EffectDeferred('Chief recovery is not configured', { waitingFor: 'configuration' })
         const run = await rt.projectChiefControl.request(task.projectId, 'inspection', { blockedTaskId: task.id, requestId: row.payload.inputId, reason: 'Task input awaits current responsibility' })
         return { inputId: row.payload.inputId, chiefRunId: run.id, status: 'chief-notified' }

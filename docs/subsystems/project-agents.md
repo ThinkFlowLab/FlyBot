@@ -20,6 +20,13 @@ owned_paths:
 
 # Public roles and private Project agents (fork M4)
 
+#2308 routes native/external consultation processing through the same
+[agent inbox](agent-inbox.md). Private persona v6 adds the scoped inbox tool while
+preserving logical identity, original Session and memory. Native wakeups carry a
+reference only; legacy replies share claim/result checks. Ordinary questions stay
+consultations, public roles/Task initiative are unchanged, and no private inbox
+content is added to public SSE or another user's context.
+
 Project has public Chief/Developer/Tester/Reviewer definitions and a separate private
 agent identity for each `(host memberId, projectId)`. Human Project roles still decide
 permissions; a Chief/Reviewer label grants no human authority. Current membership and

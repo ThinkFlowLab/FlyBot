@@ -242,6 +242,7 @@ export function createProjectTaskLifecycle(rt) {
     const previous = copy(task)
     let token, requirementInput
     try {
+      if (task.chiefQuestion && ['admit', 'revise', 'cancel', 'reopen', 'resolve-dependency'].includes(audit.action)) { audit.resolvedChiefQuestion = copy(task.chiefQuestion); delete task.chiefQuestion }
       if (audit.action === 'admit') {
         if (!task.projectTask) {
           if (task.collaboration?.claim?.status === 'active' || task.deliveryAttemptId && ['preparing', 'running', 'waiting-acceptance'].includes(rt.state.projectAttempts?.[task.deliveryAttemptId]?.status)) throw fail('Active legacy Task cannot change its admission contract')

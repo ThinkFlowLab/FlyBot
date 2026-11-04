@@ -5,6 +5,12 @@ owned_paths:
   - core/test/project-task-lifecycle.test.js
 ---
 
+#2308 resolves the previous owner question inside a real Chief admission/revision/
+cancellation/reopen/dependency decision, retaining its reference on the Chief audit.
+It is part of the existing durable Task transition and restores the owner wait on
+uncommitted save failure. Notification/agent reply never resolves it by itself.
+
+
 # Project Task lifecycle
 
 The original Task remains the business identity. Its additive `projectTask/v1`
