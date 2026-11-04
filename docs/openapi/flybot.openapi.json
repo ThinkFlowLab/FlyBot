@@ -1969,6 +1969,9 @@
             "required": [
               "id"
             ]
+          },
+          "continuation": {
+            "$ref": "#/components/schemas/Continuation"
           }
         },
         "additionalProperties": true,
@@ -6026,6 +6029,98 @@
           "reauthenticationRequired"
         ]
       },
+      "Continuation": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": "project-continuation/v1",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "latest"
+            ]
+          },
+          "previousAttemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "sourceWorkspaceId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baseSha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seedSha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retainedDraft": {
+            "type": "boolean"
+          },
+          "admissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Opaque server-issued ID; never infer authority from it."
+            }
+          },
+          "by": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "mode",
+          "previousAttemptId",
+          "sourceWorkspaceId",
+          "generation",
+          "retainedDraft"
+        ]
+      },
       "DevelopmentQueryInboxListPayload": {
         "type": "object",
         "properties": {
@@ -9640,6 +9735,7 @@
               "integrationAdmissions",
               "testHistory",
               "preparationFailures",
+              "continuation",
               "resumptions",
               "merge",
               "sdkPublication",
@@ -9759,6 +9855,214 @@
               },
               "result": {
                 "$ref": "#/components/schemas/DevelopmentQueryAttemptContextResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentQueryAttemptContinuationStatePayload": {
+        "type": "object",
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "attemptId"
+        ]
+      },
+      "DevelopmentQueryAttemptContinuationStateRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "query",
+                "type": "string"
+              },
+              "name": {
+                "const": "attempt.continuation-state",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentQueryAttemptContinuationStatePayload"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentQueryAttemptContinuationStateResult": {
+        "type": "object",
+        "properties": {
+          "attemptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "latestBaseSha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "baseSha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seedSha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retainedDraft": {
+            "type": "boolean"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "continue",
+                "latest"
+              ]
+            }
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "attemptId",
+          "generation",
+          "snapshot",
+          "latestBaseSha",
+          "baseSha",
+          "seedSha",
+          "retainedDraft",
+          "inputs",
+          "modes"
+        ]
+      },
+      "DevelopmentQueryAttemptContinuationStateSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentQueryAttemptContinuationStateResult"
               },
               "receipt": {
                 "$ref": "#/components/schemas/CommandReceipt"
@@ -13831,6 +14135,42 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "continuation": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "continue",
+                  "latest"
+                ]
+              },
+              "expectedBaseSha": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              "previousAttemptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedWorkspace": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "previousAttemptId",
+              "generation",
+              "expectedWorkspace"
             ]
           }
         },
@@ -27742,6 +28082,42 @@
               }
             ]
           },
+          "continuation": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "continue",
+                  "latest"
+                ]
+              },
+              "expectedBaseSha": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              "previousAttemptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedWorkspace": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "previousAttemptId",
+              "generation",
+              "expectedWorkspace"
+            ]
+          },
           "requestId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,100}$"
@@ -30538,6 +30914,9 @@
             "$ref": "#/components/schemas/DevelopmentQueryAttemptContextRequest"
           },
           {
+            "$ref": "#/components/schemas/DevelopmentQueryAttemptContinuationStateRequest"
+          },
+          {
             "$ref": "#/components/schemas/DevelopmentQueryAttemptIntegrationStateRequest"
           },
           {
@@ -31160,7 +31539,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       }
     },
     {
@@ -31238,7 +31617,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       }
     },
     {
@@ -31316,7 +31695,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       }
     },
     {
@@ -31394,7 +31773,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       }
     },
     {
@@ -31950,7 +32329,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       }
     },
     {
@@ -32272,7 +32651,89 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
+      }
+    },
+    {
+      "operationId": "development.query.attempt.continuation-state",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "query",
+        "name": "attempt.continuation-state",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryAttemptContinuationStateRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryAttemptContinuationStateResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryAttemptContinuationStateSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "configure",
+      "humanRoles": [
+        "owner",
+        "maintainer"
+      ],
+      "condition": "current-manager-and-active-project",
+      "personalAgent": {
+        "safe": false,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-attempt",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "confirmed-execution-exit",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "read-only",
+        "retry": "read-again-with-current-authorization-and-cursor",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "Read continuation facts even after cancellation. task.run selects a successor, never revives the cancelled Attempt.",
+      "implementation": {
+        "path": "core/src/host/project-delivery.js",
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -32354,7 +32815,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -32432,7 +32893,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -34371,7 +34832,7 @@
       "notes": "Never bypasses Chief. Capacity busy means queue, not permission to create another Task. Cross-repository auto-split remains deferred.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6"
+        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
       }
     },
     {
@@ -34481,7 +34942,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -34589,7 +35050,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -34696,7 +35157,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -34790,7 +35251,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -34894,7 +35355,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -35004,7 +35465,7 @@
       "notes": "Fetch attempt.integration-state again after retirement; attempt.stop remains cancellation.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -35113,7 +35574,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       }
     },
     {
@@ -35463,7 +35924,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6"
+        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
       }
     },
     {
@@ -35589,7 +36050,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6"
+        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
       }
     },
     {
@@ -45362,7 +45823,7 @@
       "notes": "Never bypasses Chief. Capacity busy means queue, not permission to create another Task. Cross-repository auto-split remains deferred.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6"
+        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
       },
       "aliasOf": "development.command.task.run"
     },
@@ -45438,7 +45899,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -45535,7 +45996,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -45628,7 +46089,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -45720,7 +46181,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -45812,7 +46273,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -46201,7 +46662,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -46277,7 +46738,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b"
+        "sha256": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -46375,7 +46836,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6"
+        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
       },
       "aliasOf": "development.command.queue.cancel"
     },
@@ -46488,7 +46949,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6"
+        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
       },
       "aliasOf": "development.command.queue.retry"
     },
@@ -47209,7 +47670,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c"
+        "sha256": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58"
       },
       "aliasOf": "development.query.pools"
     },
@@ -47450,6 +47911,7 @@
       "execution.boundary",
       "effects",
       "attempt.context",
+      "attempt.continuation-state",
       "attempt.integration-state",
       "attempt.log",
       "chief.state",
@@ -47521,6 +47983,7 @@
       "attempt.reconcile-exit": "project-attempt-reconcile-exit",
       "attempt.stop": "project-attempt-stop",
       "attempt.cleanup": "project-attempt-cleanup",
+      "attempt.continuation-state": "project-attempt-continuation-state",
       "attempt.integration-state": "project-attempt-integration-state",
       "attempt.integration-bind": "project-attempt-integration-bind",
       "release.request": "project-release-request",
@@ -47577,9 +48040,9 @@
       "project-close-confirm"
     ],
     "nativeEndpointCount": 104,
-    "versionedQueryCount": 29,
+    "versionedQueryCount": 30,
     "versionedCommandCount": 35,
-    "dispatchVariantCount": 187,
+    "dispatchVariantCount": 188,
     "sources": {
       "core/src/host/agents.js": "79908a1904312d18b8ddac4bde534210eb1bc5f8e92136bbf35a3591042e9692",
       "core/src/host/approvals.js": "0892ca1bad7c996854d91f56c57068e407b508ba8d42c34868a4eae221e30e2a",
@@ -47646,8 +48109,8 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
-      "core/src/host/project-delivery.js": "0526703c001a967da0226c917ecb6949024d1c3b038ddd12c4e6f2da727f295b",
-      "core/src/host/project-development-service.js": "dcbfe2d3e8e87d4124e24cb6755cc59748c2f1b9540c486aa78ecc20bff5422c",
+      "core/src/host/project-delivery.js": "e1b774b03bbbf4346ea760c0e489d827210df9e4c9a5e4d5301127a57cf2ddc9",
+      "core/src/host/project-development-service.js": "a9ca26c49a860b8a2837361e8c0d1b0a12a786a6303321b96970031558b46b58",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
@@ -47691,10 +48154,10 @@
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
       "core/src/host/project-runtime-setup.js": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c",
       "core/src/host/project-scheduled-tasks.js": "78c0e29bb830710dd9109d6a5fd1a67214fff01c55a79a38a3df7e5c3a194324",
-      "core/src/host/project-scheduler.js": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6",
+      "core/src/host/project-scheduler.js": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
-      "core/src/host/project-service-views.js": "742afc90668878e353b5353013f4865763ff496cb1c8d42b8fe1ffb76743d728",
+      "core/src/host/project-service-views.js": "c4923c2717779d22d6995aec64186ae17eb2ef6b914904a7daee0e1246dad43c",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",

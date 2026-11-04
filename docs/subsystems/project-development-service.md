@@ -255,3 +255,7 @@ exit/requirements/authorization. Public role/App status never returns credential
 ## Exit retirement command (#2375)
 
 `attempt.reconcile-exit` is a configure-authorized command over the existing delivery/pool services and command receipts. It returns the committed retirement and new generation. Stale claims, incomplete exit or unresolved external writes remain errors. It neither stops a worker nor chooses recovery routing.
+
+## Explicit successor continuation (#2377)
+
+`attempt.continuation-state` is a configure query. `task.run.continuation` additionally requires configure permission and exact draft/generation facts. The ordinary capacity queue carries the choice unchanged; stale queued snapshots refuse on admission. Metadata exposes safe predecessor/workspace references rather than private Session contents.

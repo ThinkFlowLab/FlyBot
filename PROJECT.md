@@ -3,6 +3,8 @@
 
 #2375 adds explicit exit-proven claim retirement through existing pools/Effects; preserve drafts, pending results and unknown writes. No cancellation or automatic routing.
 
+#2377 makes successor baseline choice explicit and durable; preserve cancelled history, Task-role context and draft lineage without inventing PR or test evidence.
+
 The single page that says what this project is, who decides what, and what automation must never
 do. Operational rules live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md);
 architecture lives in [docs/architecture.md](docs/architecture.md) and

@@ -124,6 +124,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | sources | 原source查询过滤/分页 | 当前项目绑定的Issue/PR来源订阅与游标；读 |
 | execution.boundary | taskId? | 当前权限/仓库/资源/Harness边界及readiness；不运行测试/不授予权限 |
 | attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
+| attempt.continuation-state | attemptId | 管；返回取消/中断后当前工作区快照、代次与可选 continue/latest，供 task.run 显式续作 |
 | attempt.integration-state | attemptId | 当前候选/受信集成绑定、availableInputs、materialization和工作区快照；读 |
 | attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
 | release.status | attemptId | 当前Release请求/目标/外部证据；项目读，不发布 |
@@ -275,3 +276,5 @@ sdkPublication/publicationRecoveries分页源。
 Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、不重写SHA、
 不替代测试/Review/Chief关闭。省略phase保留原有审核后发布恢复前置条件。
 完整操作顺序、示例和凭据边界见[角色App指南](role-github-apps.md)和OpenAPI。
+
+`task.run` 可带 `continuation:{mode:"continue"|"latest",previousAttemptId,generation,expectedWorkspace,expectedBaseSha?}`，需要当前管理权限；快照取 `attempt.continuation-state`。continue 沿用已核验旧 seed 与来源，latest 要求 expectedBaseSha 等于快照的 latestBaseSha，且不丢弃草稿，基线冲突仍须显式 integrate。取消的前序不会复活，新 Attempt 不继承测试/Review 通过。

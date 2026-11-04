@@ -23,7 +23,7 @@ const operations = Object.freeze({
   'task.propose': 'task-create', 'task.change.request': 'project-task-change-request', 'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
   'attempt.reconcile-exit': 'project-attempt-reconcile-exit', 'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
-  'attempt.integration-state': 'project-attempt-integration-state', 'attempt.integration-bind': 'project-attempt-integration-bind',
+  'attempt.continuation-state': 'project-attempt-continuation-state', 'attempt.integration-state': 'project-attempt-integration-state', 'attempt.integration-bind': 'project-attempt-integration-bind',
   'release.request': 'project-release-request', 'release.reconcile': 'project-release-reconcile', 'release.status': 'project-release-status',
   'attempt.publication-retry': 'project-attempt-publication-retry', 'attempt.log': 'project-attempt-log',
   'queue.cancel': 'project-queue-cancel', 'queue.retry': 'project-queue-retry',
@@ -35,7 +35,7 @@ const operations = Object.freeze({
   'execution.boundary': 'project-execution-boundary',
   'pools': 'project-task-pools', 'effect.retry': 'project-effect-retry', 'comment.publish': 'project-github-comment',
 })
-const queries = new Set(['github.connection', 'inbox.list', 'inbox.get', 'inbox.connection', 'release.status', 'compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
+const queries = new Set(['github.connection', 'inbox.list', 'inbox.get', 'inbox.connection', 'release.status', 'compatibility', 'roles', 'role.proposals', 'consultation.get', 'consultation.list', 'handoff.get', 'handoff.list', 'task.history', 'project.snapshot', 'events', 'command.receipt', 'command.result', 'tasks', 'task', 'task.detail', 'inputs', 'sources', 'execution.boundary', 'effects', 'attempt.context', 'attempt.continuation-state', 'attempt.integration-state', 'attempt.log', 'chief.state', 'pools'])
 const legacy = new Set(Object.values(operations))
 const readEndpoints = new Set([...queries].map(name => operations[name]).filter(Boolean))
 export const developmentQuery = body => record(body) && body.version === DEVELOPMENT_PROTOCOL && body.kind === 'query' && queries.has(body.name)
@@ -166,7 +166,7 @@ export function createDevelopmentService(rt) {
       attemptsPage: { total: rows.length, limit, before: end > limit ? page[0].id : null } }
   }
   function context(body) {
-    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions', 'merge', 'sdkPublication', 'publicationRecoveries'].includes(body.section)) throw failure('Unknown Attempt context section')
+    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'continuation', 'resumptions', 'merge', 'sdkPublication', 'publicationRecoveries'].includes(body.section)) throw failure('Unknown Attempt context section')
     const attempt = ownEntry(rt.state.projectAttempts ?? {}, body.attemptId)
     const text = JSON.stringify(attempt[body.section] ?? null), offset = body.offset ?? 0, limit = body.limit ?? 8000
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length || !Number.isSafeInteger(limit) || limit < 1 || limit > 16000) throw failure('Invalid context page')

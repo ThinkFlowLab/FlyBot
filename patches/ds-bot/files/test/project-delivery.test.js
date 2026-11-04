@@ -2105,3 +2105,94 @@ test('native exited claim and old Chief invocation use their existing exact exit
   assert.equal(c.claim.retirement.proof.chiefRunId, run.id)
   assert.equal(c.generation, generation + 1)
 })
+
+for (const kind of ['local', 'docker']) test(kind + ' cancelled successor explicitly continues the original seed and draft without a PR binding', async t => {
+  const f = await baselineResourceFixture(t, kind)
+  writeFileSync(join(f.workspace.path, 'code.mjs'), 'export const preservedDraft = true;\n')
+  const oldSeed = f.previous.seedSha ?? f.previous.baseSha
+  f.previous.status = 'running'
+  await f.rt.projectEndpoint('project-attempt-stop', { attemptId: f.previous.id }, alice)
+  assert.equal(f.previous.status, 'cancelled')
+  f.rt.state.projectWorkspaces = structuredClone(f.rt.state.projectWorkspaces)
+  const snapshot = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { projectId: 'p1', attemptId: f.previous.id }, alice)
+  const started = await f.rt.projectDelivery.endpoint('project-task-run', { taskId: f.task.id, requestId: 'continue-cancelled', continuation: { mode: 'continue', previousAttemptId: f.previous.id, generation: snapshot.generation, expectedWorkspace: snapshot.snapshot } }, alice)
+  const next = f.rt.state.projectAttempts[started.attempt.id]
+  assert.notEqual(next.id, f.previous.id); assert.equal(next.seedSha, oldSeed)
+  assert.equal(next.continuation.previousAttemptId, f.previous.id)
+  assert.equal(next.continuation.sourceWorkspaceId, f.workspace.id)
+  assert.equal(next.publicationBinding, undefined); assert.equal(next.evidence.tests, undefined)
+  await prepareRole(f.rt, f.task, { id: 'continued', attemptId: next.id, generation: 20 }, f.definition)
+  assert.equal(next.workspaces.developer.path, f.workspace.path)
+  assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), oldSeed)
+  assert.match(readFileSync(join(f.workspace.path, 'code.mjs'), 'utf8'), /preservedDraft/)
+  assert.equal(f.previous.status, 'cancelled')
+})
+
+test('draft continuation is an explicit durable choice and never inherits stale inputs or tests', async t => {
+  const f = await baselineResourceFixture(t)
+  writeFileSync(join(f.workspace.path, 'code.mjs'), 'export const preservedDraft = true;\n')
+  f.previous.status = 'running'
+  await f.rt.projectEndpoint('project-attempt-stop', { attemptId: f.previous.id }, alice)
+  const query = () => f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { projectId: 'p1', attemptId: f.previous.id }, alice)
+  const snapshot = await query(), before = Object.keys(f.rt.state.projectAttempts).length
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', { taskId: f.task.id, requestId: 'no-choice' }, alice), error => error.code === 'bot/workspace-baseline' && error.details?.kind === 'continuation-required')
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, before)
+  const continuation = { mode: 'continue', previousAttemptId: f.previous.id, generation: snapshot.generation, expectedWorkspace: snapshot.snapshot }
+  const body = { taskId: f.task.id, requestId: 'chosen-continuation', continuation }
+  writeFileSync(join(f.workspace.path, 'new-draft.txt'), 'Concurrent draft edit\n')
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', body, alice), /workspace or generation changed/)
+  continuation.expectedWorkspace = (await query()).snapshot
+  const save = f.rt.save; f.rt.save = async () => {}
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', body, alice), /commit was not confirmed/)
+  assert.equal(f.task.deliveryAttemptId, f.previous.id)
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, before)
+  f.rt.save = save
+  f.previous.integrationInputs = [{ version: 'project-integration-input/v1', repository: 'example/demo', ref: 'refs/remotes/operator/moved', sha: f.latest }]
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', body, alice), /git|source|reference|ref|command/i)
+  delete f.previous.integrationInputs
+  const result = await f.rt.projectDelivery.endpoint('project-task-run', body, alice)
+  assert.equal((await f.rt.projectDelivery.endpoint('project-task-run', body, alice)).already, true)
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', { ...body, continuation: { ...continuation, mode: 'latest' } }, alice), /content changed/)
+  const next = f.rt.state.projectAttempts[result.attempt.id]
+  assert.ok(f.rt.projectEffects.intentCommitted(next.continuation.effect))
+  assert.equal(next.evidence.tests, undefined)
+})
+
+test('latest-baseline successor preserves draft and reports the old workspace before explicit integration', async t => {
+  const f = await baselineResourceFixture(t)
+  writeFileSync(join(f.workspace.path, 'code.mjs'), 'export const preservedDraft = true;\n')
+  f.previous.status = 'running'
+  await f.rt.projectEndpoint('project-attempt-stop', { attemptId: f.previous.id }, alice)
+  const saved = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { projectId: 'p1', attemptId: f.previous.id }, alice)
+  const result = await f.rt.projectDelivery.endpoint('project-task-run', { taskId: f.task.id, requestId: 'choose-latest', continuation: { mode: 'latest', expectedBaseSha: saved.latestBaseSha, previousAttemptId: f.previous.id, generation: saved.generation, expectedWorkspace: saved.snapshot } }, alice)
+  const next = f.rt.state.projectAttempts[result.attempt.id]
+  assert.equal(next.baseSha, f.latest)
+  await assert.rejects(prepareRole(f.rt, f.task, { id: 'latest-admission', attemptId: next.id, generation: 20 }, f.definition), error => error.code === 'bot/workspace-baseline')
+  const recovery = await f.rt.projectDelivery.recoveryFacts(f.task)
+  assert.equal(recovery.continuation.sourceWorkspaceId, f.workspace.id)
+  assert.equal(recovery.baselineIssue.details.workspaceId, f.workspace.id)
+  assert.equal(Object.keys(next.workspaces).length, 0)
+  assert.match(readFileSync(join(f.workspace.path, 'code.mjs'), 'utf8'), /preservedDraft/)
+  assert.equal(next.integrationInputs, undefined)
+})
+
+test('capacity queue preserves explicit continuation and rejects changed replay intent', async t => {
+  const f = await baselineResourceFixture(t)
+  writeFileSync(join(f.workspace.path, 'code.mjs'), 'export const preservedDraft = true;\n')
+  f.previous.status = 'running'
+  await f.rt.projectEndpoint('project-attempt-stop', { attemptId: f.previous.id }, alice)
+  const saved = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { projectId: 'p1', attemptId: f.previous.id }, alice)
+  const continuation = { mode: 'continue', previousAttemptId: f.previous.id, generation: saved.generation, expectedWorkspace: saved.snapshot }
+  f.rt.state.projects.p1.quota = { maxConcurrent: 1 }
+  f.rt.state.projectAttempts.busy = { id: 'busy', projectId: 'p1', taskId: 'other', status: 'running' }
+  const body = { taskId: f.task.id, requestId: 'queued-continuation', continuation }
+  const result = await f.rt.projectScheduler.request(body, alice)
+  assert.deepEqual(result.queue.continuation, continuation)
+  await assert.rejects(f.rt.projectScheduler.request({ ...body, continuation: { ...continuation, mode: 'latest' } }, alice), /target cannot change/)
+  delete f.rt.state.projectAttempts.busy
+  await f.rt.projectScheduler.drain()
+  const row = f.rt.state.projectQueue[result.queue.id]
+  assert.equal(row.status, 'started', row.reason)
+  assert.equal(f.rt.state.projectAttempts[row.attemptId].seedSha, saved.seedSha)
+  assert.equal(f.previous.status, 'cancelled')
+})

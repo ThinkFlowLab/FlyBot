@@ -3,6 +3,8 @@
 
 #2375: retire proven exited responsibility before fresh integration admission; source/isolated tests remain separate from live recovery.
 
+#2377: continue the verified original seed or explicitly integrate a new baseline; no silent draft reset or cancelled Attempt revival.
+
 ## Resource authentication reliability — 2026-11-04
 
 #2398: existing profile binding, correct SDK auth feedback and same-profile setup;

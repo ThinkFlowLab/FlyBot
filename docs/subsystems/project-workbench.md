@@ -515,3 +515,9 @@ exitUnknown using the actual admission predicates. occupied measures resource le
 activeSlots measures project execution. They have independent configured limits.
 
 #2334 metadata preflight validates dependencyEnvironment shape without running commands. Receiving executor and independent host observations occur through existing preparation, not a cached metadata-ready flag. See [dependency outcomes](project-delivery.md#dependency-readiness-and-verification-outcomes-2334).
+
+## Explicit successor continuation (#2377)
+
+The original scheduler preserves explicit continuation intent through capacity queueing and revalidates it at actual dispatch. Changed intent on a request replay is rejected. It neither selects a baseline nor discards retained drafts.
+
+Cancelled/failed pool Attempts mark their canonical Run failed too; unknown physical leases/workers continue to count independently, while a confirmed-ended Run cannot leave a phantom queue slot.

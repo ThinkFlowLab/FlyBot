@@ -81,7 +81,7 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 
 | 需要 | 文档 |
 | --- | --- |
-| 对象、权限、全部29查询/35命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
+| 对象、权限、全部30查询/35命令、原生接口、幂等与SSE | [API参考](docs/development-service-api.md) |
 | Chief/角色/Task/Handoff、咨询、个人代理、安全与值守、状态与上下文 | [协作指南](docs/development-service-guide.md) |
 | 数据目录、账号平台、模型/SDK/仓库、停止重启、备份升级、排障 | [部署运维](docs/backend-operations.md) |
 | 个人Chief、多Bot、群聊、公共Bot、原版安装与桌面功能 | [原版FlyBot](README.native.zh.md) · [English](README.native.md) |

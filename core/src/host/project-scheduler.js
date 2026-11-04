@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 // Persisted Project admission queue. The existing Workflow service still dispatches Runs.
 import { createHash, randomUUID } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
@@ -104,18 +105,19 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       return { admission: structuredClone(task.projectTask.admission), waitingFor: 'chief' }
     }
     rt.projectTaskLifecycle?.requireExecutable(task)
+    if (body.continuation !== undefined) rt.requireProjectAccess(actor, project.id, 'configure', task)
     const execution = taskRepository(rt, project, task, body)
     await preflight(rt, execution.project)
     if (typeof body.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.requestId)) throw error('A run needs a stable requestId')
     const requestKey = createHash('sha256').update(`${project.id}\n${task.id}\n${body.requestId}`).digest('hex')
     const prior = Object.values(state.projectAttempts ?? {}).find(attempt => attempt.requestKey === requestKey)
     if (prior) {
-      if (body.repository !== undefined && body.repository !== prior.requirement?.repository || body.targetRole !== undefined && prior.initialTarget && body.targetRole !== prior.initialTarget.role) throw error('Execution request content changed on replay')
+      if (body.continuation !== undefined && !isDeepStrictEqual(body.continuation, prior.continuationRequest ? JSON.parse(prior.continuationRequest) : undefined) || body.repository !== undefined && body.repository !== prior.requirement?.repository || body.targetRole !== undefined && prior.initialTarget && body.targetRole !== prior.initialTarget.role) throw error('Execution request content changed on replay')
       return { attempt: structuredClone(prior), already: true }
     }
     const queued = Object.values(entries()).find(entry => entry.requestKey === requestKey || entry.taskId === task.id && entry.status === 'waiting')
     if (queued) {
-      if (body.repository !== undefined && queued.repositoryBinding && body.repository !== queued.repositoryBinding.repository || body.targetRole !== undefined && body.targetRole !== queued.initialTarget?.role) throw error('Queued request target cannot change on replay')
+      if (!isDeepStrictEqual(body.continuation, queued.continuation) || body.repository !== undefined && queued.repositoryBinding && body.repository !== queued.repositoryBinding.repository || body.targetRole !== undefined && body.targetRole !== queued.initialTarget?.role) throw error('Queued request target cannot change on replay')
       return { queue: structuredClone(queued), already: true }
     }
     if (['accepted', 'cancelled'].includes(task.status)) throw error('Task has ended')
@@ -124,7 +126,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     const resourceReason = resourceBlock(project.id, initialTarget)
     if (slots(project.id) < quota(project) && !resourceReason && !Object.values(entries()).some(row => row.projectId === project.id && row.status === 'waiting')) return rt.projectDelivery.endpoint('project-task-run', { ...body, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}) }, actor)
     const entry = { id: `queue-${randomUUID()}`, projectId: project.id, taskId: task.id, requestId: body.requestId, requestKey,
-      memberId: actor.memberId, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', order: queueOrder(), ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
+      memberId: actor.memberId, ...(body.continuation ? { continuation: structuredClone(body.continuation) } : {}), repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', order: queueOrder(), ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
     setEntry(entries(), entry.id, entry)
     await rt.save()
     return { queue: structuredClone(entry) }
@@ -176,7 +178,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
       entry.updatedAt = Date.now()
       await rt.save()
       try {
-        const result = await rt.projectDelivery.endpoint('project-task-run', { taskId: entry.taskId, requestId: entry.requestId, repositoryBinding: entry.repositoryBinding, initialTarget: entry.initialTarget }, { memberId: entry.memberId })
+        const result = await rt.projectDelivery.endpoint('project-task-run', { taskId: entry.taskId, requestId: entry.requestId, repositoryBinding: entry.repositoryBinding, initialTarget: entry.initialTarget, ...(entry.continuation ? { continuation: entry.continuation } : {}) }, { memberId: entry.memberId })
         entry.status = result.attempt?.status === 'failed' ? 'failed' : 'started'
         entry.attemptId = result.attempt?.id ?? null
         if (result.attempt?.failure) entry.reason = result.attempt.failure.message
