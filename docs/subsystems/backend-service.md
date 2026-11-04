@@ -144,3 +144,11 @@ credential issuance API or deployment change; see [role contract](../role-github
 #2398 extends original HealthCheck/Terminal/ExecutionMetadata schemas with profile
 binding and sanitized SDK auth facts. Existing permissions and routes remain; only the
 explicit terminal administrator receives target paths. OpenAPI is regenerated.
+
+## Proven-exit retirement (#2375)
+
+The v1 `attempt.reconcile-exit` command exposes existing pool/Effects retirement
+under configure authority. It requires an exact current claim/generation and
+verified physical exit; it does not cancel an Attempt or confer integration/PR
+acceptance. OpenAPI and operations describe re-reading the workspace snapshot
+before binding a source. Chief recovery facts retain specific blocker references.
