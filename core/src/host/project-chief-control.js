@@ -339,6 +339,11 @@ export function createProjectChiefControl(rt) {
       }
       run.status = 'failed'; run.failure = String(error.message).slice(0, 1000); run.recoveryIssue = error.recovery ?? classifyChiefRecovery(error)
       run.failureDetail = { invocation: job.invocation, stage, code: error.code ?? 'bot/chief', responseSha256, diagnosticSha256, recoveryKind: run.recoveryIssue.kind, criteriaIssues: error.criteriaIssues ?? [], at: Date.now() }
+      if (run.correction?.status === 'pending') {
+        run.correction.status = 'transport-incomplete'
+        const task = run.taskId && ownEntry(rt.state.tasks, run.taskId)
+        if (task?.chiefDecisionIssue?.runId === run.id && task.chiefDecisionIssue.generation === (task.collaboration?.generation ?? 0)) task.chiefDecisionIssue.status = 'transport-incomplete'
+      }
       if (run.purpose === 'inspection' && run.recoveryIssue.retryable) {
         const config = inspectionLifecycle(policyOf(run.projectId)?.inspection)
         run.status = 'interrupted'; run.waitingFor = 'recovery'; run.recovery = { ...run.recovery, status: 'waiting-exit', attempts: run.recovery?.attempts ?? 0, notBefore: Date.now() + config.recoveryDelayMs }

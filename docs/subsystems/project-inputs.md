@@ -173,3 +173,5 @@ correction mechanism. Each Chief Task receipt is checked before that Task effect
 A corrected response declares the current snapshot explicitly; no old batch is
 silently translated. Candidate-stage evidence already produced by an SDK stays
 immutable and is not re-recorded as a second execution during receipt correction.
+
+#2393 reports pre-dispatch input integrity failures as typed source-changed facts; corrupted text is never injected or acknowledged. A correction transport failure remains incomplete on its original Run rather than a phantom pending invocation.

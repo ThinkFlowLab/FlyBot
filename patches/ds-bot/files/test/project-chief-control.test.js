@@ -637,3 +637,24 @@ test('typed criteria and null decisions return protocol correction rather than a
     assert.ok(!/TypeError|SyntaxError/.test(run.failure))
   }
 })
+
+test('corrupt input during correction dispatch is a source failure, not a model response or phantom pending correction', async () => {
+  const f = await controlFixture({ withInputs: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  const originalBlock = { reason: 'Business evidence remains pending', decisionId: 'original-business' }
+  f.task.collaboration.block = structuredClone(originalBlock)
+  await f.request.onResult({ ...f.result(), text: '{invalid JSON' })
+  assert.equal(run.status, 'correction-pending')
+  const input = Object.values(f.rt.state.projectTaskInputs)[0]
+  input.text = 'Changed after the immutable source receipt'
+  await f.control.pump()
+  assert.equal(run.status, 'failed', run.failure)
+  assert.equal(run.recoveryIssue.kind, 'source-changed')
+  assert.equal(run.failureDetail.stage, 'dispatch')
+  assert.equal(run.failureDetail.responseSha256, null)
+  assert.equal(run.failureDetail.diagnosticSha256.length, 64)
+  assert.equal(run.correction.status, 'transport-incomplete')
+  assert.equal(f.task.chiefDecisionIssue.status, 'transport-incomplete')
+  assert.deepEqual(f.task.collaboration.block, originalBlock)
+  assert.equal(input.status, 'accepted')
+  await f.rt.projectEffects.close()
+})

@@ -33113,7 +33113,7 @@
       "notes": "Receipt states distinguish persisted, delivered, model-declared-read and handled; none imply Task completion.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256"
+        "sha256": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc"
       }
     },
     {
@@ -33760,7 +33760,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
+        "sha256": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901"
       }
     },
     {
@@ -36855,7 +36855,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
+        "sha256": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901"
       }
     },
     {
@@ -36960,7 +36960,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
+        "sha256": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901"
       }
     },
     {
@@ -37432,7 +37432,7 @@
       "notes": "Host derives source, recipient and claim. Persisted/delivered does not mean read or handled.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256"
+        "sha256": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc"
       }
     },
     {
@@ -47752,7 +47752,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
+        "sha256": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -47855,7 +47855,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
+        "sha256": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -47931,7 +47931,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279"
+        "sha256": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -48800,10 +48800,10 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "921fbdbbc34d825b52e89a50974056d7624dd10d78edee96a565b012b40f3279",
+      "core/src/host/project-chief-control.js": "3848565c11de47ff107b3e90e4e4be013d2cc98f3a4a9650cb389e32b1e5f901",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
       "core/src/host/project-chief-protocol.js": "416d57a83ae6064f04d13e70ffba63d8732b4cee4598e37fdcbf63ece7181a79",
-      "core/src/host/project-chief-recovery.js": "14b844e7841554de888f762fa6a17ca69b291ede465a7d4e31dcadb3904ad01a",
+      "core/src/host/project-chief-recovery.js": "c80a9d791aab06d4b343e8740a25a471ddf93e0af52b59dd9b7e6fc835c0d824",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
       "core/src/host/project-codex-config.js": "6f7f72c41719aea1be8a35688618801e954efcc23537835a9d527f74492030c9",
@@ -48836,7 +48836,7 @@
       "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
       "core/src/host/project-harness.js": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
-      "core/src/host/project-inputs.js": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256",
+      "core/src/host/project-inputs.js": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-merge-policy.js": "78b5c4830e5466d102298d5ded6665f65f89537d908e1cf85b0438b868548552",
