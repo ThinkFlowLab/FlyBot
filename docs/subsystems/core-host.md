@@ -1008,3 +1008,12 @@ Chief assistance now pins the human-selected operations recipient and current
 Task/requirements/candidate in the original consultation/inbox chain. Original
 logical schedule reconciliation retains native nextDueAt for compensation views;
 no business timer or privilege grant is added. See [Chief assistance](../chief-assistance.md).
+
+
+## Role App execution — 2026-11-04
+
+#2365 reuses original Effects, worker protocol and shellEnv for role GitHub Apps;
+no credential HTTP endpoint or second execution service. App-bound native roles withhold
+saved Owner secrets; other personal/group behavior is unchanged. Dedicated helpers,
+redacted tools/model inputs and safe execution projections implement the explicit
+[Owner boundary](../../decisions/2026-11-04-role-github-apps.md).

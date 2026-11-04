@@ -166,7 +166,7 @@ export function createDevelopmentService(rt) {
       attemptsPage: { total: rows.length, limit, before: end > limit ? page[0].id : null } }
   }
   function context(body) {
-    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions', 'merge'].includes(body.section)) throw failure('Unknown Attempt context section')
+    if (!['roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions', 'merge', 'sdkPublication', 'publicationRecoveries'].includes(body.section)) throw failure('Unknown Attempt context section')
     const attempt = ownEntry(rt.state.projectAttempts ?? {}, body.attemptId)
     const text = JSON.stringify(attempt[body.section] ?? null), offset = body.offset ?? 0, limit = body.limit ?? 8000
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length || !Number.isSafeInteger(limit) || limit < 1 || limit > 16000) throw failure('Invalid context page')

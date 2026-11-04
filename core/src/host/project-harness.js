@@ -1,3 +1,5 @@
+import { createRoleGithub } from './project-role-github.js'
+import { roleGithubRuntime } from './project-role-github-runtime.mjs'
 // Harness worker lifecycle plugs into the existing Workflow. It never accepts a Task.
 import { randomUUID } from 'node:crypto'
 import { createHash } from 'node:crypto'
@@ -36,9 +38,12 @@ export function handoffFrame(text, outputs) {
     return 'OUTPUT handoff: ' + JSON.stringify(value)
   } catch { return text }
 }
-export function createProjectHarness(rt) {
+export function createProjectHarness(rt, { roleGithub } = {}) {
   const workers = () => (rt.state.projectHarnessWorkers ??= {})
-  const active = new Map(), listeners = new Set()
+  const active = new Map(), listeners = new Set(), nativeGithub = new Map()
+  let nativeEnvReady = false
+  const github = roleGithub ?? createRoleGithub(rt)
+  rt.projectRoleGithub = github
   async function profile(projectId, resourceId, harness, { forSetup = false } = {}) {
     const resource = rt.projectResources.setting(projectId, resourceId)
     const principalId = rt.readProject(projectId).ownerUserId
@@ -152,6 +157,7 @@ export function createProjectHarness(rt) {
     if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v3', contextIdentityKey: backendContextKey({ ...identity, definition: definitionKey }), definitionKey, ...(previous ? { ...(previous.restoration?.mode === 'reconstructed' ? {} : { backendSessionId: previous.sessionId }), ...(previous.restoration ? { restoration: previous.restoration } : {}), continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
     else if (chief) Object.assign(row, { logicalSessionId: chief.agentId, bindingKey, ...(chief.resumeSessionId ? { backendSessionId: chief.resumeSessionId, continuedFrom: chief.previousWorkerId } : {}) })
     setEntry(workers(), id, row)
+    const githubScope = !chief ? await github.bind(session, row) : null
     if (chief) await rt.projectResources.markStarted(row.leaseId, row.generation, { kind: 'sdk', handle: id })
     else await rt.projectDelivery.bindSession(workspace, { id, sessionId: id, kind: 'sdk' })
     const directory = join(rt.home, 'project-artifacts', row.attemptId)
@@ -182,7 +188,7 @@ export function createProjectHarness(rt) {
     }
     await rt.projectResources.fenceSpawn(row.leaseId, row.generation, id)
     const process = rt.projectResources.startProcess(row.projectId, row.resourceId, { argv: ['node', workerPath], cwd: workspace.path })
-    const control = { process, chief, contextBudget, resumeSessionId: chief?.resumeSessionId ?? (previous?.restoration?.mode === 'reconstructed' ? undefined : previous?.sessionId), continuedPolicyHash: previous?.policySha256, archivePath, continuationPath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
+    const control = { process, chief, githubScope, contextBudget, resumeSessionId: chief?.resumeSessionId ?? (previous?.restoration?.mode === 'reconstructed' ? undefined : previous?.sessionId), continuedPolicyHash: previous?.policySha256, archivePath, continuationPath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
     row.spawnPhase = 'spawned'
     active.set(id, control)
     let readyResolve, readyReject
@@ -203,7 +209,8 @@ export function createProjectHarness(rt) {
           control.receiptCorrectionSupported = signal.receiptCorrection === 'input-correction/v1'
           control.readyObserved = true
           control.observedSdkVersion = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$/.test(signal.sdk?.[row.harness] ?? '') ? signal.sdk[row.harness] : null
-          if (signal.sdk?.[row.harness] !== VERSIONS[row.harness]) readyReject(refuse('SDK version on selected resource is missing or incompatible'))
+          if (control.githubScope && signal.roleGithub !== 'role-github/v1') readyReject(refuse('Resource runtime lacks role App credentials capability; upgrade its pinned FlyBot runtime'))
+          else if (signal.sdk?.[row.harness] !== VERSIONS[row.harness]) readyReject(refuse('SDK version on selected resource is missing or incompatible'))
           else { row.sdkVersion = signal.sdk[row.harness]; readyResolve() }
         }
         if (signal.type === 'stopped' && signal.released === true && active.get(id) === control && lease?.generation === row.generation) control.stoppedConfirmed = true
@@ -212,7 +219,15 @@ export function createProjectHarness(rt) {
         const currentLease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
         if (active.get(id) !== control || row.status === 'released' || currentLease?.generation !== row.generation || currentLease.status === 'released') return
         if (line.length > 1024 * 1024) throw refuse('SDK event exceeds maximum size')
-        const event = redact(JSON.parse(line), control.env)
+        const event = github.redact(redact(JSON.parse(line), control.env))
+        if (event.type === 'github-auth-request') {
+          if (!control.githubScope || control.correctionTurnId || !/^[a-f0-9-]{36}$/.test(event.id ?? '')) throw refuse('Unexpected role credential request')
+          row.githubAccess.requests = (row.githubAccess.requests ?? 0) + 1
+          if (row.githubAccess.requests > 1000) throw refuse('Role credential request budget exhausted')
+          try { const value = await github.issue(control.session, row, control.githubScope.sha256); if (control.closed || !['running', 'bound'].includes(row.status)) throw refuse('Role execution stopped before credential delivery'); control.process.stdin.write(JSON.stringify({ type: 'github-auth-response', id: event.id, value }) + '\n') }
+          catch { control.process.stdin.write(JSON.stringify({ type: 'github-auth-response', id: event.id, denied: true }) + '\n') }
+          return // Credentials and auth frames never enter event logs or model history.
+        }
         if (control.correctionTurnId && ['completed', 'sdk-event', 'failure', 'permission', 'configuration-checked'].includes(event.type) && event.turnId !== control.correctionTurnId) return
         row.lastEventAt = Date.now()
         row.eventCount++
@@ -221,7 +236,7 @@ export function createProjectHarness(rt) {
         await appendFile(row.eventLog, JSON.stringify(event) + '\n', { mode: 0o600 })
         row.lastEventHash = sha(JSON.stringify(event))
         if (event.type === 'stopped') control.stoppedConfirmed = event.released === true
-        if (event.type === 'ready') { control.ready = true; if (row.status === 'prepared') row.status = 'idle' }
+        if (event.type === 'ready') { if (control.githubScope && event.roleGithub !== 'role-github/v1') throw refuse('Resource runtime lacks role App credentials capability; upgrade its pinned FlyBot runtime'); control.ready = true; if (row.status === 'prepared') row.status = 'idle' }
         if (event.type === 'permission' && control.correctionTurnId) { control.process.stdin.write(JSON.stringify({ type: 'permission', id: event.id, allow: false }) + '\n'); return }
         if (event.type === 'permission') { row.status = 'waiting-input'; row.pending = { id: event.id, kind: 'permission', request: event.request } }
         if (event.type === 'sdk-event') {
@@ -431,9 +446,14 @@ export function createProjectHarness(rt) {
     if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
     control.outputs = (step.outputs ?? []).map(port => port.name)
     control.inputBatch = step.inputs?.taskInbox
-    const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${row.restoration ? '\nHost-confirmed cwd restoration (data, not new authority): ' + JSON.stringify(row.restoration) + '. Use only the current workspace; historical cwd is no longer execution authority.' : ''}${control.continuationPath ? '\nThis backend Session is reconstructed, not resumed. Before work, read the bounded needed entries from the exact prior Task-role continuation archive: ' + control.continuationPath + '; SHA256=' + row.continuationArchive.sha256 + '. Preserve prior conclusions, handled inputs and operation receipts. Do not repeat completed work or unknown external writes. Historical receipt batch IDs cannot acknowledge current inputs.' : ''}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
+    const prompt = `${control.githubScope ? 'Current role App scope (data): ' + JSON.stringify(control.githubScope) + '. Use only the supplied git/gh credential wrappers; never print credentials.\n' : ''}${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${row.restoration ? '\nHost-confirmed cwd restoration (data, not new authority): ' + JSON.stringify(row.restoration) + '. Use only the current workspace; historical cwd is no longer execution authority.' : ''}${control.continuationPath ? '\nThis backend Session is reconstructed, not resumed. Before work, read the bounded needed entries from the exact prior Task-role continuation archive: ' + control.continuationPath + '; SHA256=' + row.continuationArchive.sha256 + '. Preserve prior conclusions, handled inputs and operation receipts. Do not repeat completed work or unknown external writes. Historical receipt batch IDs cannot acknowledge current inputs.' : ''}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
     const workspace = rt.state.projectAttempts?.[row.attemptId]?.workspaces?.[row.role]
-    const writableRoots = (row.policyRole ?? row.role) === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
+    let writableRoots = (row.policyRole ?? row.role) === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true, appMode: Boolean(control.githubScope) }) : []
+    if (control.githubScope && (row.policyRole ?? row.role) === 'developer' && workspace?.kind === 'resource-clone') {
+      const metadata = (await rt.projectResources.command(row.projectId, row.resourceId, { cwd: row.cwd, argv: ['git', '-c', 'core.hooksPath=/dev/null', 'rev-parse', '--absolute-git-dir'] })).stdout.trim()
+      if (metadata !== join(row.cwd, '.git')) throw refuse('App Git metadata does not belong to the isolated resource clone')
+      writableRoots = [metadata]
+    }
     row.inputUsage = checkContextPrompt(prompt, control.contextBudget)
     row.status = 'running'; row.executionStartedAt = Date.now()
     try {
@@ -450,7 +470,7 @@ export function createProjectHarness(rt) {
       row.executionStartedAt = null; row.dispatchPreventedAt = Date.now()
       throw error
     }
-    control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, ...(row.restoration?.mode === 'reconstructed' ? { forbiddenSessionId: row.restoration.sourceSessionId } : {}), noTools: Boolean(control.chief), model: control.profile.model, env: control.env,
+    control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, ...(row.restoration?.mode === 'reconstructed' ? { forbiddenSessionId: row.restoration.sourceSessionId } : {}), noTools: Boolean(control.chief), model: control.profile.model, env: control.env, ...(control.githubScope ? { roleGithub: control.githubScope } : {}),
       ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || (row.policyRole ?? row.role) !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1, toolOutputTokens: control.contextBudget.limits.toolOutputTokens }, prompt }) + '\n')
     if (control.inputBatch?.inputs.length && control.session.poolClaimId) {
       const task = rt.state.tasks[row.taskId], claim = task?.collaboration?.claim
@@ -467,13 +487,13 @@ export function createProjectHarness(rt) {
     if (row.status === 'released') return true
     const control = active.get(id)
     if (!control) throw refuse('SDK worker exit cannot be confirmed after restart')
-    row.status = 'stopping'; clearTimeout(control.timer)
+    row.status = 'stopping'; if (row.githubAccess) { row.githubAccess.renewing = false; row.githubAccess.status = 'stopping' }; clearTimeout(control.timer)
     if (!control.closed) control.process.stdin.end(JSON.stringify({ type: 'stop' }) + '\n')
     let timer
     const stopped = await Promise.race([control.exit.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 6000) })])
     clearTimeout(timer)
     if (!stopped || !control.stoppedConfirmed && !control.spawnFailed) { row.status = 'unreachable'; await rt.save(); throw refuse('SDK worker has not confirmed exit; capacity retained') }
-    row.status = 'released'; row.releasedAt = Date.now(); row.releaseProof = { kind: control.spawnFailed ? 'sdk-worker-spawn-failed' : 'sdk-stop-ack-and-process-exit', workerId: id, generation: row.generation, at: row.releasedAt }; active.delete(id)
+    if (row.githubAccess) row.githubAccess.status = 'closed'; row.status = 'released'; row.releasedAt = Date.now(); row.releaseProof = { kind: control.spawnFailed ? 'sdk-worker-spawn-failed' : 'sdk-stop-ack-and-process-exit', workerId: id, generation: row.generation, at: row.releasedAt }; active.delete(id)
     await rt.projectResources.release(row.leaseId, row.generation, { handle: id, exited: true, proof: row.releaseProof })
     await rt.projectDelivery.releaseSession(id)
     if (row.scratchDirectory) {
@@ -544,7 +564,50 @@ export function createProjectHarness(rt) {
     }
     delete row.pending; row.status = 'running'; await rt.save(); return { sent: true }
   }
-  return { profile, spawn, dispatch, correctInput, checkNativeInput, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
+  async function bindNativeGithub(session, row) {
+    const previous = nativeGithub.get(row.id)
+    if (previous) { if (previous.session.id !== session.id) throw refuse('Native role App binding changed'); await github.issue(session, row, row.githubAccess.sha256); return }
+    const project = rt.readProject(session.projectId)
+    if (!rt.config.projectRepositories?.[project.repository]?.roleGithub?.enabled) return
+    if (!nativeEnvReady) throw refuse('Native role App mode needs the original shellEnv contribution before activation')
+    const metadata = await github.bind(session, row)
+    if (!metadata) return
+    const resource = rt.projectResources.setting(session.projectId, row.resourceId)
+    const scratchDirectory = join(resource.root, `.flybot-native-github-${row.id}`)
+    await mkdir(scratchDirectory, { mode: 0o700 })
+    const runtime = await roleGithubRuntime({ metadata, scratchDirectory, env: { PATH: process.env.PATH }, credential: () => github.issue(session, row, metadata.sha256) })
+    nativeGithub.set(row.id, { runtime, scratchDirectory, session })
+  }
+  async function closeNativeGithub(id) {
+    const row = rt.state.projectNativeWorkers?.[id]
+    if (row?.githubAccess) { row.githubAccess.renewing = false; row.githubAccess.status = 'closed' }
+    const current = nativeGithub.get(id)
+    if (!current) return
+    nativeGithub.delete(id); await current.runtime.close()
+    await import('node:fs/promises').then(fs => fs.rm(current.scratchDirectory, { recursive: true, force: true }))
+  }
+  const nativeGithubEnv = execution => {
+    const id = rt.whoseAgent?.(execution?.agent)?.bot?.id ?? rt.selfOf?.(execution?.agent?.session?.header?.id ?? execution?.agent?.id)
+    return nativeGithub.get(id)?.runtime.env ?? {}
+  }
+  return { enableNativeGithubEnv() { nativeEnvReady = true }, roleGithubActive: id => nativeGithub.has(id), bindNativeGithub, closeNativeGithub, nativeGithubEnv, redactGithub: github.redact, profile, spawn, dispatch, correctInput, checkNativeInput, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
     capabilities: harnessCapabilities, owns: id => Boolean(ownEntry(workers(), id)), hasController: id => active.has(id) && !active.get(id).closed, versions: VERSIONS }
 }
-export function install(rt) { rt.projectHarness = createProjectHarness(rt) }
+export function install(rt) {
+  rt.projectHarness = createProjectHarness(rt)
+  rt.ctx.inject?.(['shellEnv'], sub => {
+    const names = ['PATH', 'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GH_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
+    const unregister = sub.shellEnv.register({ name: 'flybot-role-github', variables: Object.fromEntries(names.map(name => [name, { description: 'Current admitted Project role GitHub environment; no private key or Token' }])), resolve: rt.projectHarness.nativeGithubEnv })
+    rt.projectHarness.enableNativeGithubEnv()
+    sub.effect(() => unregister, 'flybot: role GitHub shell environment')
+  })
+  rt.ctx.on('tools/execute', async (_execution, next) => rt.projectHarness.redactGithub(await next()))
+  const rewritten = new WeakSet()
+  rt.ctx.on('llm/stream', (options, next) => {
+    if (rewritten.has(options.messages)) return next()
+    const messages = rt.projectHarness.redactGithub(options.messages), system = rt.projectHarness.redactGithub(options.system)
+    if (messages === options.messages && system === options.system) return next()
+    const fresh = [...(messages ?? [])]; rewritten.add(fresh); rt.carryUsageTag?.(options.messages, fresh)
+    return rt.ctx.llm.stream({ ...options, messages: fresh, system })
+  })
+}

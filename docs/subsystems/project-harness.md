@@ -465,3 +465,15 @@ Verification continuation still uses the original Task-role restoration gates.
 
 #2331 checks actual released SDK/native Reviewer identity, pinned policy and
 completed claim before host merge; role tools never receive merge credentials.
+
+
+## Role App execution — 2026-11-04
+
+#2365 adds capability-negotiated role App metadata and bounded credential IPC to
+original workers. Private auth frames never enter SDK/event evidence. Local/Docker
+Codex permits only GitHub HTTPS domains and explicit owned Git/FIFO metadata paths;
+ordinary profiles stay unchanged. Native shellEnv uses the same issuer/wrappers,
+withholding saved Owner keys only for active App roles. Each grant rechecks current
+worker/claim/resource/connection; stop disables renewal and cleanup retains honest
+expiry/unknown-exit facts. Actual SDK fixture acceptance is separate from live App
+writes. [Contract](../role-github-apps.md).

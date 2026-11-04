@@ -1,7 +1,9 @@
 # Project GitHub automation
 
 FlyBot supports `gh-cli` and GitHub App installation credentials through the same
-host brokers, Effects, candidate checks and recovery records. Personal comments
+host brokers, Effects, candidate checks and recovery records. Opt-in
+[role App execution](role-github-apps.md) also lets SDK/native git/gh operate directly
+through dedicated short-lived helpers; the host observes artifacts without resealing. Personal comments
 and personal reads retain independent user credentials. Installing FlyBot enables
 neither external writes nor a GitHub App. No ambient/Owner credential fallback exists.
 
@@ -39,7 +41,8 @@ key rotation are operator/human actions; neither model nor FBA Token can perform
 The App slug is verified through the installation and recorded as `slug[bot]`;
 optional `login` pins that expected login. Multiple projects may share an App,
 but each connection must explicitly list each permitted project and repository.
-App IDs are identities, not secrets; keys/JWTs/installation Tokens remain private.
+App IDs are identities, not secrets; keys/JWTs remain host-private; role mode supplies installation Tokens only through
+the dedicated execution credential channel, never general configuration or prompts.
 
 Required repository permissions depend on the operation:
 

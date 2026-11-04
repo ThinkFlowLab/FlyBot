@@ -37,6 +37,9 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
   assert.deepEqual(ctx.calls, [
     'effect ds-bot: state lock',
     'effect ds-bot: Project effects',
+    // Role App output is redacted before tool persistence and outbound model input.
+    'on tools/execute',
+    'on llm/stream',
     // Native activation/epoch admission precedes every model step and stream observer.
     'on agent/pre-step',
 

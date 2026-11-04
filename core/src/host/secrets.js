@@ -535,6 +535,7 @@ export function install(rt) {
     const command = typeof execution.arguments?.command === 'string' ? execution.arguments.command : ''
     let used = false
     for (const secret of secrets.values()) {
+      if (rt.projectHarness?.roleGithubActive?.(bot.id)) { withheld.push(`${secret.name}:project-role-app`); continue }
       if (bot.remote !== undefined) {
         withheld.push(`${secret.name}:${WITHHELD_REASONS.REMOTE}`)
         continue

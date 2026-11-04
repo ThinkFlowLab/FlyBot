@@ -58,7 +58,9 @@ export function attemptMetadataView(attempt) {
   if (attempt.feedback) result.feedback = { ...pick(attempt.feedback, ['previousAttemptId', 'kind', 'candidateSha']), reason: short(attempt.feedback.reason) }
   if (attempt.release) result.release = { ...pick(attempt.release, ['id', 'status', 'observedAt']), ...pick(attempt.release.spec, ['repository', 'tag', 'sha', 'mode']), sourceRef: { query: 'release.status', attemptId: attempt.id } }
   if (attempt.merge) result.merge = pick(attempt.merge, ['version', 'status', 'reason', 'effectId', 'candidateSha', 'mergeCommitSha', 'baseBranch', 'method', 'createdAt', 'observedAt', 'nextCheckAt', 'deadlineAt'])
-  if (attempt.pr) result.pr = pick(attempt.pr, ['number', 'sha', 'url', 'repository'])
+  if (attempt.pr) result.pr = pick(attempt.pr, ['number', 'sha', 'url', 'repository', 'credentialScope', 'executionRole', 'operation', 'identity', 'mergeIdentity', 'roleScopeSha256', 'observedAt'])
+  if (attempt.sdkPublication) result.sdkPublication = pick(attempt.sdkPublication, ['version', 'effectId', 'roleScopeSha256', 'sha', 'number', 'at'])
+  if (attempt.sdkCandidateEffect) result.sdkCandidateEffect = pick(attempt.sdkCandidateEffect, ['id', 'kind'])
   if (attempt.publicationBinding) result.publicationBinding = pick(attempt.publicationBinding, ['number', 'repository', 'branch', 'previousSha', 'upstreamSha', 'upstreamRef'])
   if (attempt.resumptions) result.resumptions = { total: attempt.resumptions.length, recent: attempt.resumptions.slice(-5).map(row => pick(row, ['kind', 'decisionId', 'previousRunId', 'runId', 'previousStatus', 'candidateSha', 'targetBotId', 'at'])), source: { query: 'attempt.context', attemptId: attempt.id, section: 'resumptions' } }
   if (attempt.integrationInputs) result.integrationInputs = attempt.integrationInputs.slice(0, 20).map(row => pick(row, ['version', 'repository', 'ref', 'sha', 'purpose']))
@@ -71,7 +73,7 @@ export function attemptMetadataView(attempt) {
     if (key === 'execution') result.evidence.execution = Object.fromEntries(Object.entries(row).slice(0, 32).map(([role, value]) => [role, evidence(value)]))
     else result.evidence[key] = evidence(row)
   }
-  result.sourceRefs = Object.fromEntries(['evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'merge'].map(section => [section, { query: 'attempt.context', attemptId: attempt.id, section }]))
+  result.sourceRefs = Object.fromEntries(['evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'merge', 'sdkPublication', 'publicationRecoveries'].map(section => [section, { query: 'attempt.context', attemptId: attempt.id, section }]))
   result.projectionVersion = 'project-attempt-summary/v1'
   result.preview = true
   return result
@@ -86,6 +88,7 @@ export function executionMetadataView(state, row) {
   const lease = row.leaseId && state.projectResourceLeases?.[row.leaseId]
   const exit = native ? nativeExitConfirmed(state, row) : confirmedWorkerExit(state, row)
   return { ...pick(row, ['id', 'role', 'resourceId', 'generation', 'sessionKey', 'logicalSessionId', 'createdAt', 'executionStartedAt', 'releasedAt']),
+    githubAccess: row.githubAccess ? pick(row.githubAccess, ['version', 'role', 'policyRole', 'connectionId', 'revision', 'identity', 'sha256', 'status', 'expiresAt', 'lastIssuedAt', 'renewing']) : null,
     contextFailure: row.contextFailure ?? null, environmentObservations: row.environmentObservations ?? [], capabilityFailure: row.capabilityFailure ?? null,
     contextRestoration: row.restoration ? pick(row.restoration, ['version', 'mode', 'logicalSessionId', 'contextIdentityKey', 'sourceWorkerId', 'sourceSessionId', 'physicalSessionId', 'sourceAttemptId', 'attemptId', 'workspaceId', 'checkout', 'archiveSha256', 'observedCheckout', 'at']) : null,
     harness: native ? 'flybot' : row.harness ?? null, status: row.status, startupPhase: native ? null : row.spawnPhase ?? null,

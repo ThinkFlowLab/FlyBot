@@ -1,12 +1,12 @@
 // One versioned path through the existing Workflow plugin; no second execution engine.
-export const DELIVERY_VERSION = 'project-delivery/v8'
+export const DELIVERY_VERSION = 'project-delivery/v9'
 export const DELIVERY_ROLES = ['developer', 'tester', 'reviewer']
 export function deliveryGraph(model = '') {
   return {
     maxConcurrent: 1,
     nodes: [
       { id: 'developer', name: 'Developer', role: 'Developer', model, tools: [],
-        prompt: 'Implement the task in your assigned worktree. Read the acceptance criteria, edit code and tests. Do not publish, change credentials or edit outside this worktree. The host seals the candidate commit. Finish with OUTPUT implementation: a concise change summary.',
+        prompt: 'Implement the task in your assigned worktree. Read the acceptance criteria, edit code and tests. Do not change credentials or edit outside this worktree. Follow the explicit role App publication contract when supplied; otherwise do not publish and let the host seal the candidate commit. Finish with OUTPUT implementation: a concise change summary.',
         outputs: [{ name: 'implementation', required: true }] },
       { id: 'tester', name: 'Tester', role: 'Tester', model, tools: [],
         prompt: 'Inspect the implementation in your assigned worktree. Do not edit files. The host independently runs the configured tests against the sealed commit. Finish with OUTPUT tests: your analysis of relevant test coverage.',

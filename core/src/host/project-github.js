@@ -119,7 +119,7 @@ export function githubPublisher(settings = {}, { run = exec, request = fetch, au
       verifyCreator(pr)
       return { number: pr.number, url: pr.html_url, sha: pr.head.sha, repository, branch: publicationBranch, publicationMarker: binding?.publicationMarker ?? `<!-- flybot-publication:${attempt.publicationEffectId ?? attempt.id ?? attempt.branch} -->`, executorLogin: identity.login, credentialScope: 'project-automation', identity: githubIdentityMetadata(identity), initiatedBy: attempt.initiatedBy ?? null, taskId: attempt.taskId, attemptId: attempt.id ?? null, creatorLogin: pr.user?.login ?? null, operation: 'pull-request-publish', executionRole: 'project-delivery-host', candidateSha: attempt.candidateSha }
     },
-    merge(intent, policy, beforeWrite) { return reconcileGithubMerge(intent, policy, { graphql: (query, variables, write) => graphql(intent.repository, intent.identity, query, variables, write), beforeWrite }) },
+    merge(intent, policy, beforeWrite) { return reconcileGithubMerge(intent, policy, { graphql: (query, variables, write) => graphql(intent.repository, intent.mergeIdentity ?? intent.identity, query, variables, write), beforeWrite }) },
     async read(pr, { includeBase = false } = {}) {
       const identity = await resolveGithubIdentity(settings, { run, request, repository: pr.repository, permissions: { contents: 'read', pull_requests: 'read' } })
       const token = identity.token

@@ -659,3 +659,17 @@ contracts are v8/pools-v5; historical Attempts remain readable. Publication stay
 a Draft artifact stage; a separate durable merge Effect readies/checks/queues or
 merges within current operator scope. Chief still accepts the Task.
 [Merge policy and API](../project-merge.md).
+
+
+## Role App execution — 2026-11-04
+
+#2365 advances new templates to v9/pools-v6. In explicit role App mode, Dev commits,
+pushes and creates/updates the original Draft PR before host verification. The original
+`github.candidate` Effect adopts only actual clean current-role Git/GitHub evidence,
+retains the SDK SHA, and preserves old Attempt evidence. Authorized
+`attempt.publication-retry` with `phase:candidate` reconciles retained execution facts;
+failed Effects use original explicit retry. Tests remain independently executed.
+Reviewer needs a real exact-SHA, Session-marked Review by a different App; optional
+Tester checks never replace host tests. Host merge uses separately selected App identity
+and existing policy. Legacy publication remains unchanged; disabling App mode during
+an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps.md).

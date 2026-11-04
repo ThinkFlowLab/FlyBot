@@ -1,3 +1,4 @@
+import { roleGithubStatus } from './project-role-github.js'
 import { projectMergePolicyStatus } from './project-merge-policy.js'
 // Humans select pre-provisioned connections; models never supply keys or URLs.
 import { ownEntry, setEntry } from './store.js'
@@ -9,7 +10,7 @@ function provisioned(rt, project, id) {
   if (!value || value.enabled === false || !value.projectIds?.includes(project.id) || !value.repositories?.includes(project.repository)) throw refused('GitHub connection is not provisioned for this Project repository')
   return value
 }
-export function projectGithubSettings(rt, project) {
+function selectedGithubSettings(rt, project) {
   const selection = ownEntry(project.githubConnections ?? {}, project.repository)
   if (!selection) return ownEntry(rt.config.projectRepositories ?? {}, project.repository)?.github
   if (!selection.connectionId) throw refused('Project GitHub connection is explicitly disabled')
@@ -18,11 +19,16 @@ export function projectGithubSettings(rt, project) {
   if (githubCredentialBinding(settings, project.repository) !== selection.binding) throw refused('GitHub connection identity changed; human verification is required')
   return { ...settings, connectionId: selection.connectionId, connectionRevision: selection.revision }
 }
+export function projectGithubSettings(rt, project) {
+  const settings = selectedGithubSettings(rt, project)
+  if (rt.config.projectRepositories?.[project.repository]?.roleGithub?.enabled && settings?.credential !== 'github-app') throw refused('Role App mode requires explicit App automation; personal fallback is disabled')
+  return settings
+}
 export function githubConfigurationStatus(settings) {
   return { configured: Boolean(settings?.credential === 'github-app' ? settings.appId && settings.installationId && settings.privateKeyFile : settings?.credential === 'gh-cli' && settings.configDir), provider: settings?.credential ?? null, login: settings?.login ?? null, appId: settings?.credential === 'github-app' ? settings.appId ?? null : null, installationId: settings?.credential === 'github-app' ? settings.installationId ?? null : null, verification: 'configuration-only; broker verifies current authorization per operation', recovery: 'Ask an authorized human to verify the selected connection; operator repairs keys/installations' }
 }
 export function projectGithubStatus(rt, project) {
-  try { return { ...githubConfigurationStatus(projectGithubSettings(rt, project)), mergePolicy: projectMergePolicyStatus(rt.config.projectRepositories?.[project.repository], project.defaultBranch ?? 'main') } }
+  try { return { ...githubConfigurationStatus(projectGithubSettings(rt, project)), roleGithub: roleGithubStatus(rt, project), mergePolicy: projectMergePolicyStatus(rt.config.projectRepositories?.[project.repository], project.defaultBranch ?? 'main') } }
   catch { return { ...githubConfigurationStatus(null), verification: 'unavailable; selected connection disabled or changed' } }
 }
 export function createGithubConnections(rt, { identity = resolveGithubIdentity } = {}) {
@@ -38,7 +44,7 @@ export function createGithubConnections(rt, { identity = resolveGithubIdentity }
     const view = () => {
       let status
       try { status = githubConfigurationStatus(projectGithubSettings(rt, scoped)) } catch { status = { ...githubConfigurationStatus(null), recovery: 'Selection disabled or changed; human must reselect a provisioned connection' } }
-      return { mergePolicy: projectMergePolicyStatus(rt.config.projectRepositories?.[repository], scoped.defaultBranch ?? 'main'), repository, connectionId: previous?.connectionId ?? null, revision: previous?.revision ?? 0, verifiedAt: previous?.verifiedAt ?? null, identity: previous?.identity ?? null, ...status, options: Object.entries(rt.config.projectGithubConnections ?? {}).filter(([, row]) => row.enabled !== false && row.projectIds?.includes(project.id) && row.repositories?.includes(repository)).slice(0, 100).map(([id, row]) => ({ id, provider: row.credential, appId: row.appId ?? null, installationId: row.installationId ?? null, login: row.login ?? null })) }
+      return { roleGithub: roleGithubStatus(rt, scoped), mergePolicy: projectMergePolicyStatus(rt.config.projectRepositories?.[repository], scoped.defaultBranch ?? 'main'), repository, connectionId: previous?.connectionId ?? null, revision: previous?.revision ?? 0, verifiedAt: previous?.verifiedAt ?? null, identity: previous?.identity ?? null, ...status, options: Object.entries(rt.config.projectGithubConnections ?? {}).filter(([, row]) => row.enabled !== false && row.projectIds?.includes(project.id) && row.repositories?.includes(repository)).slice(0, 100).map(([id, row]) => ({ id, provider: row.credential, appId: row.appId ?? null, installationId: row.installationId ?? null, login: row.login ?? null })) }
     }
     if (!configure) return { connection: view() }
     if (body.expectedRevision !== (previous?.revision ?? 0) || body.connectionId !== null && (typeof body.connectionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(body.connectionId))) throw Object.assign(Error('GitHub connection selection revision or ID is invalid'), { code: 'bot/conflict' })
