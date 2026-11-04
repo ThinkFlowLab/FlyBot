@@ -1,3 +1,5 @@
+import { inboxModel } from './agent-inbox-model.mjs'
+import { checkChiefAssistance } from './chief-assistance.mjs'
 import { chiefRestartModel, checkChiefRestart } from './chief-restart.mjs'
 // M0: real pinned DSH, disposable data, deterministic model, actual shell execution.
 import assert from 'node:assert/strict'
@@ -46,6 +48,7 @@ async function waitFor(read, label, milliseconds = 90_000) {
 }
 
 async function main() {
+  const assistance = process.argv.includes('--chief-assistance'), assistanceModel = assistance ? inboxModel({ operations: true }) : null
   const chiefRestart = process.argv.includes('--chief-restart'), chiefModel = chiefRestart ? chiefRestartModel() : null
   const nativePools = process.argv.includes('--native-pools')
   const sqlite = process.argv.includes('--sqlite')
@@ -93,7 +96,7 @@ async function main() {
       '@deepseek-ai/dsh-base': '0.2.1-rc.2', '@deepseek-ai/dsh-web-app': '0.2.1-rc.2' },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'ds-bot', '@flybot/workflow'] } } }))
   const observations = []
-  const model = mockModel(observations, { reply: chiefModel ? input => chiefModel.reply(input) : nativeModel ? input => nativeModel.reply(input) ?? deliveryReply(input) : (workbench ? input => deliveryReply(input) ?? agentReply(input) : delivery ? deliveryReply : agents ? agentReply : undefined) })
+  const model = mockModel(observations, { reply: assistanceModel ? input => assistanceModel.reply(input) : chiefModel ? input => chiefModel.reply(input) : nativeModel ? input => nativeModel.reply(input) ?? deliveryReply(input) : (workbench ? input => deliveryReply(input) ?? agentReply(input) : delivery ? deliveryReply : agents ? agentReply : undefined) })
   model.listen(0, '127.0.0.1')
   await once(model, 'listening')
   const port = await freePort()
@@ -106,7 +109,8 @@ async function main() {
   // External connector credentials are not needed in this transport check.
   for (const name of Object.keys(env)) if (/TOKEN|SECRET|API_KEY/.test(name) && name !== 'DEEPSEEK_API_KEY') delete env[name]
   let patch = join(root, 'docker/web.patch.yml')
-  if (shared || delivery || agents || chiefRestart) {
+  let configureDemo
+  if (shared || delivery || agents || chiefRestart || assistance) {
     patch = join(directory, 'shared.patch.yml')
     const botConfig = { projectWorkbench: true,
       ...(nativePools ? { projectResources: { 'native-local': { type: 'local', root: directory, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['flybot'] } } } : {}),
@@ -115,7 +119,8 @@ async function main() {
         allowedProjectOwnerIds: ['owner-1'], adminMemberIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'sdk-home'), configDir: join(directory, 'sdk-config'), model: 'fixture-sdk-probe', baseUrl: 'http://127.0.0.1:1' } } } } } } : {}), ...(workbench ? { projectDemoMode: realModel ? 'real-provider' : 'deterministic-fixture' } : {}),
       ...(shared ? { controlPlane: { origin: shared.origin, ownerSubject: shared.ownerSubject } } : {}),
       ...(sqlite ? { stateStorage: 'sqlite' } : {}), ...(delivery ? { projectDispatch: nativePools ? 'pools' : 'workflow', projectRepositories: { [githubRepository ?? 'example/delivery-fixture']: { ...(githubRepository ? { github: { credential: 'gh-cli', configDir: githubConfigDir, ...(codex ? { login: codex.login } : {}) } } : {}), path: workspace, testCommand: queueGate?.command ?? (live || codex ? [process.execPath, golden] : [process.execPath, '--test', 'code.test.mjs']), allowedPaths: ['code.mjs', 'code.test.mjs'] }, ...(live ? { 'example/intentional-failure': { path: workspace, testCommand: [process.execPath, golden, '--force-failure'], allowedPaths: ['code.mjs', 'code.test.mjs'] } } : {}) } } : {}) }
-    writeFileSync(patch, readFileSync(join(root, 'docker/web.patch.yml'), 'utf8') + (live ? '\n- id: llm-deepseek\n  config: { thinking: disabled, reasoningEffort: off, maxTokens: 8192 }\n' : '') + `\n- id: bot\n  config: ${JSON.stringify(botConfig)}\n`, { mode: 0o600 })
+    configureDemo = delta => { Object.assign(botConfig, delta); writeFileSync(patch, readFileSync(join(root, 'docker/web.patch.yml'), 'utf8') + (live ? '\n- id: llm-deepseek\n  config: { thinking: disabled, reasoningEffort: off, maxTokens: 8192 }\n' : '') + `\n- id: bot\n  config: ${JSON.stringify(botConfig)}\n`, { mode: 0o600 }) }
+    configureDemo({})
   }
   if (chiefRestart) delete env.INVOCATION_ID
   let child = spawn(process.execPath, [cli, '--profile', 'web', '--patch', patch,
@@ -157,7 +162,7 @@ async function main() {
       assert.equal(result.ok, true, `API ${args[0]}: ${result.error?.code ?? 'failed'}`)
       return result.value
     }
-    if (chiefRestart) {
+    if (chiefRestart || assistance) {
       const restart = async () => {
         const previous = child, offset = readFileSync(logPath, 'utf8').length
         stop('SIGKILL'); await once(previous, 'exit')
@@ -173,7 +178,7 @@ async function main() {
         const response = await fetch(login, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
         cookie = response.headers.getSetCookie().map(row => row.split(';')[0]).join('; ')
       }
-      console.log(JSON.stringify(await checkChiefRestart({ api, saved, waitFor, restart, model: chiefModel })))
+      console.log(JSON.stringify(assistance ? await checkChiefAssistance({ api, call, saved, waitFor, restart, configure: configureDemo, directory, cookie: () => cookie, origin: `http://127.0.0.1:${port}`, model: assistanceModel }) : await checkChiefRestart({ api, saved, waitFor, restart, model: chiefModel })))
       return
     }
     if (codex) {

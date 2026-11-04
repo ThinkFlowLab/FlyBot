@@ -1003,3 +1003,8 @@ unmanaged DSH restart demo exercises the existing scheduler, not another timer.
 #2331 registers reviewed host merge in original Effects and exposes bounded
 Task/Attempt observations and source pages. Selected identity, current rights and
 immutable Review/test/candidate gates are rechecked before external operations.
+
+Chief assistance now pins the human-selected operations recipient and current
+Task/requirements/candidate in the original consultation/inbox chain. Original
+logical schedule reconciliation retains native nextDueAt for compensation views;
+no business timer or privilege grant is added. See [Chief assistance](../chief-assistance.md).

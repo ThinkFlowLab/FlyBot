@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { createHmac, timingSafeEqual, createHash } from 'node:crypto'
 const key = readFileSync(process.argv[2], 'utf8'), seen = new Set()
 const client = process.argv[3] ? JSON.parse(readFileSync(process.argv[3], 'utf8')) : null
+let failFirst = client?.failFirst === true
 const server = createServer(async (req, res) => {
   let body = ''; for await (const chunk of req) body += chunk
   const timestamp = req.headers['x-flybot-timestamp'], signature = req.headers['x-flybot-signature'] ?? ''
@@ -13,6 +14,7 @@ const server = createServer(async (req, res) => {
   const event = JSON.parse(body)
   if (req.url === '/redirect') { res.writeHead(302, { location: '/notify' }); res.end(); return }
   if (req.url === '/bad-proof') { res.end(JSON.stringify({ challenge: event.challenge })); return }
+  if (!event.challenge && failFirst) { failFirst = false; process.send({ injectedFailure: true }); res.writeHead(503); res.end(); return }
   if (!event.challenge && !seen.has(event.eventId)) {
     try {
       if (client) {

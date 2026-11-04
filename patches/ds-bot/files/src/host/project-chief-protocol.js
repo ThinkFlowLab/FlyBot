@@ -1,6 +1,7 @@
+import { assistanceRequest } from './project-chief-assistance.js'
 // Protocol feedback is data for Chief judgement, never a workflow or permission grant.
 export const CHIEF_AUTONOMY = 'Within the explicitly authorized Project goals, your first priority is autonomous progress supported by verifiable results. Diagnose errors using current host facts and approved recovery tools; correct malformed decisions or choose another lawful path. Do not repeat the same return/route without new facts. Consult the appropriate personal project agent only when needed information, authority or a human-only decision is missing. The host never selects that escalation for you. Never invent evidence or bypass exit, permission or acceptance gates.'
-const actions = new Set(['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen', 'resolve-dependency'])
+const actions = new Set(['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen', 'resolve-dependency', 'retry-notification'])
 export function chiefProtocolError(field, expected, taskId = null) {
   return Object.assign(new Error(`Chief protocol: ${field} needs ${expected}`), { code: 'bot/chief-protocol', fields: [{ field, expected }], taskId: typeof taskId === 'string' ? taskId.slice(0, 100) : null })
 }
@@ -20,6 +21,8 @@ export function parseChiefResponse(text, roles) {
     if (['route', 'return'].includes(decision.action)) {
       if (typeof decision.targetBotId !== 'string' || !decision.targetBotId.trim() || !roles.some(row => row.id === decision.targetBotId && row.role !== 'chief')) throw chiefProtocolError('targetBotId', 'one exact active logical Bot ID from logicalBots, excluding Chief', taskId)
     }
+    if (decision.action === 'needs-human') assistanceRequest(decision)
+    else if (decision.recipient !== undefined || decision.assistance !== undefined) throw chiefProtocolError('assistance', 'consultation fields only on needs-human', taskId)
     if (decision.requirements !== undefined) {
       if (!decision.requirements || typeof decision.requirements !== 'object' || Array.isArray(decision.requirements)) throw chiefProtocolError('requirements', 'an object of bounded text requirements', taskId)
       for (const key of ['title', 'criteria', 'impact', 'scope']) if (decision.requirements[key] !== undefined && (typeof decision.requirements[key] !== 'string' || !decision.requirements[key].trim() || decision.requirements[key].length > 16000)) throw chiefProtocolError(`requirements.${key}`, 'bounded nonempty text, not an evidence array', taskId)

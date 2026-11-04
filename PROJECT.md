@@ -273,3 +273,9 @@ under current authority/context gates. No live rollout or unknown-exit override.
 #2331 permits a valid current-SHA Reviewer approval to enter an explicitly scoped
 host merge Effect. Current branch/check/identity/exit gates remain; actual merge
 is separate from Chief Task completion, signed forge review, release and deployment.
+
+#2342 keeps autonomous progress as Chief guidance under configurable action/time
+budgets. Explicit human-selected operations contacts receive only scoped Project
+assistance; replies bind the original question, requirements, generation and
+candidate. Original inbox/Effects and schedules handle notification compensation;
+watch never grants host privileges. See [assistance](docs/chief-assistance.md).

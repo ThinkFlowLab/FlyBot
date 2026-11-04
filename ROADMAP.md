@@ -189,3 +189,8 @@ requires exact operator corroboration, never a guessed worker release.
 Effects, with Draft ready, configured CI/review/queue and unknown-write recovery.
 Runtime merge is opt-in per repository/base; contributor delivery still follows
 Owner-authorized CI/merge scope and does not authorize a deployment.
+
+#2342: scoped operations consultation, original-message notification reminders,
+configurable compensation schedules and current-state reply fences. Disposable
+DSH/HTTP acceptance separates deterministic Chief/native/external protocol evidence
+from paid-model judgement, actual host repair and production rollout.

@@ -93,3 +93,49 @@ test('native notification contains only a reference and cannot bypass the common
   f.active(true)
   await assert.rejects(f.inbox.endpoint('claim', { ...f.body, requestId: 'cannot-restart' }, f.actor), /exit|active/)
 })
+
+test('generation or operations-recipient rotation supersedes an otherwise matching Chief question before claim/reply/delivery', async () => {
+  const { assistanceScope } = await import('../src/host/project-chief-assistance.js')
+  for (const change of ['generation', 'contact']) {
+    const f = fixture(), task = f.rt.state.tasks.t
+    task.title = 'Fix runner'; task.collaboration = { generation: 1 }
+    f.rt.state.projectChiefPolicies = { p: { operationsContact: { memberId: 'owner', agentId: 'agent' } } }
+    f.receipt.assistanceScope = assistanceScope(f.rt.state, task, 'operations')
+    const claim = await f.inbox.endpoint('claim', { ...f.body, requestId: 'take' }, f.actor)
+    const token = f.inbox.stage(f.rt.state.projectAgents.carrier, f.receipt); await f.rt.save()
+    if (change === 'generation') task.collaboration.generation++
+    else f.rt.state.projectChiefPolicies.p.operationsContact.agentId = 'replacement'
+    assert.equal((await f.inbox.endpoint('list', f.body, f.actor)).items[0].phase, 'superseded')
+    await assert.rejects(f.inbox.endpoint('complete', { ...f.body, ...claim.claim, requestId: 'late', text: 'Done', publish: true }, f.actor), /no longer current/)
+    await f.rt.projectEffects.drain()
+    assert.equal(f.rt.state.projectEffects[token.id].status, 'cancelled')
+    assert.equal(f.publications(), 0)
+  }
+})
+
+test('Chief compensation reuses one message and original Effect, while live claims and lost commit prevent another delivery', async () => {
+  const f = fixture(), task = f.rt.state.tasks.t, carrier = f.rt.state.projectAgents.carrier
+  task.chiefQuestion.recipient = { participationId: 'participation', consultationId: f.receipt.id, agentId: 'agent' }
+  f.rt.state.personalAgentParticipations = { participation: f.participation }
+  f.rt.projectChiefControl = { validateActor: async actor => { if (actor.chiefJobId !== 'authorized') throw Error('stale Chief') } }
+  const chief = { memberId: 'owner', chiefJobId: 'authorized' }
+  const original = f.inbox.stage(carrier, f.receipt); await f.rt.save(); await f.rt.projectEffects.drain()
+  assert.equal(f.rt.state.projectEffects[original.id].status, 'done')
+  await assert.rejects(f.inbox.remind(task, 'denied', { memberId: 'owner' }), /stale/)
+  f.saveFailure(true); await assert.rejects(f.inbox.remind(task, 'unsaved', chief), /save failed/); f.saveFailure(false)
+  assert.deepEqual(f.receipt.notificationEffect, original)
+  const remind = await f.inbox.remind(task, 'compensate', chief)
+  assert.equal(remind.effectId, original.id); assert.ok(remind.generation > original.generation)
+  assert.equal((await f.inbox.remind(task, 'concurrent', chief)).status, 'already-pending')
+  await f.rt.projectEffects.drain()
+  const first = await f.inbox.endpoint('claim', { ...f.body, requestId: 'take' }, f.actor)
+  assert.equal((await f.inbox.remind(task, 'claimed', chief)).status, 'already-claimed')
+  f.tick(1001)
+  await f.inbox.remind(task, 'expired', chief); await f.rt.projectEffects.drain()
+  const next = await f.inbox.endpoint('claim', { ...f.body, requestId: 'retake' }, f.actor)
+  assert.ok(next.claim.generation > first.claim.generation)
+  await assert.rejects(f.inbox.endpoint('complete', { ...f.body, ...first.claim, requestId: 'late', text: 'Old repair', publish: true }, f.actor), /claim|generation/)
+  await f.inbox.endpoint('complete', { ...f.body, ...next.claim, requestId: 'result', text: 'Verified advice', publish: true }, f.actor)
+  assert.equal(f.publications(), 1)
+  assert.equal((await f.inbox.remind(task, 'completed', chief)).status, 'already-handled')
+})

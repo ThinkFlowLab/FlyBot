@@ -1,3 +1,4 @@
+import { consultationCurrent } from './project-chief-assistance.js'
 // One private message protocol over the original consultation records and Effects.
 // A message lease grants no Task initiative and is never a worker-exit proof.
 import { createHash, randomUUID } from 'node:crypto'
@@ -18,14 +19,14 @@ export function createProjectAgentInbox(rt, consultations, { now = Date.now, not
     return config
   }
   const records = carrier => (ownEntry(rt.state.projectAgentTranscripts ?? {}, carrier.id) ?? []).filter(row => row.version === 'conversation-handoff/v1' && row.projectId === carrier.projectId && row.returnTo === carrier.id && row.initiatedBy === carrier.memberId && (row.direction === 'incoming' || ['completed', 'failed'].includes(row.status)))
-  const version = row => digest([row.id, row.projectId, row.returnTo, row.direction ?? 'outgoing', row.text, row.chiefDecisionId ?? null, row.requiresHuman === true])
+  const version = row => digest([row.id, row.projectId, row.returnTo, row.direction ?? 'outgoing', row.text, row.chiefDecisionId ?? null, row.requiresHuman === true, row.assistanceScope ?? null, row.assistance ?? null])
   const principal = (actor, carrier) => digest([actor.memberId, carrier.personalAgentId, actor.personalAgentCredentialId ?? null, actor.personalAgentCredentialGeneration ?? null, actor.watchGrantId ?? null, actor.watchGeneration ?? null, actor.sessionId ?? null])
   function current(carrier, row) {
     rt.personalAgents.requireParticipation(carrier)
     if (!records(carrier).includes(row)) throw fail('Message belongs to another private mailbox', 'bot/forbidden')
     if (row.direction === 'incoming') {
       const task = ownEntry(rt.state.tasks ?? {}, row.linkedTaskId)
-      if (!task || ['accepted', 'cancelled'].includes(task.status) || task.projectId !== carrier.projectId || task.chiefQuestion?.decisionId !== row.chiefDecisionId) throw fail('Chief question is no longer current')
+      if (!consultationCurrent(rt.state, row, task)) throw fail('Chief question is no longer current')
     }
   }
   async function access(body, actor, message = false, live = true) {
@@ -51,7 +52,7 @@ export function createProjectAgentInbox(rt, consultations, { now = Date.now, not
   function metadata(carrier, row) {
     const state = stateOf(row), effect = ownEntry(rt.state.projectEffects ?? {}, row.notificationEffect?.id)
     const task = ownEntry(rt.state.tasks ?? {}, row.linkedTaskId)
-    const superseded = row.direction === 'incoming' && state.phase !== 'handled' && (!task || ['accepted', 'cancelled'].includes(task.status) || task.chiefQuestion?.decisionId !== row.chiefDecisionId)
+    const superseded = row.direction === 'incoming' && state.phase !== 'handled' && !consultationCurrent(rt.state, row, task)
     return { version: 'agent-inbox/v1', id: row.id, projectId: row.projectId, agentId: carrier.personalAgentId, participationId: carrier.participationId,
       kind: row.direction === 'incoming' ? 'consultation.question' : 'consultation.answer', consultationId: row.id, taskId: row.linkedTaskId ?? null, initiativeTransferred: false, requiresHuman: row.requiresHuman === true,
       phase: superseded ? 'superseded' : state.phase, generation: state.generation, messageVersion: version(row), createdAt: row.at, updatedAt: state.updatedAt ?? row.at,
@@ -201,9 +202,9 @@ export function createProjectAgentInbox(rt, consultations, { now = Date.now, not
       return { message: metadata(carrier, row) }
     })
   }
-  function stage(carrier, row) {
+  function stage(carrier, row, reminderRequestId) {
     const revision = rt.personalAgents.participationFor(carrier.personalAgentId, carrier.projectId)?.notification?.revision ?? 0
-    const token = rt.projectEffects.stage({ kind: 'consultation.notify', key: row.id, projectId: carrier.projectId, taskId: row.linkedTaskId ?? null, replace: true, payload: { consultationId: row.id, agentId: carrier.personalAgentId, carrierId: carrier.id, memberId: carrier.memberId, notificationRevision: revision } })
+    const token = rt.projectEffects.stage({ kind: 'consultation.notify', key: row.id, projectId: carrier.projectId, taskId: row.linkedTaskId ?? null, replace: true, payload: { consultationId: row.id, agentId: carrier.personalAgentId, carrierId: carrier.id, memberId: carrier.memberId, notificationRevision: revision, ...(reminderRequestId ? { reminderRequestId } : {}) } })
     row.notificationEffect = token
     return token
   }
@@ -234,6 +235,26 @@ export function createProjectAgentInbox(rt, consultations, { now = Date.now, not
     current(carrier, row)
     return { messageId: row.id, status: 'received', transport: 'webhook' }
   }
+  async function remind(task, requestId, actor) {
+    await rt.projectChiefControl.validateActor(actor)
+    if (!stable(requestId)) throw fail('Reminder needs a stable Chief decision ID')
+    const recipient = task.chiefQuestion?.recipient, participation = recipient?.participationId && rt.state.personalAgentParticipations?.[recipient.participationId]
+    const carrier = participation && ownEntry(rt.state.projectAgents ?? {}, participation.carrierId)
+    const row = carrier && records(carrier).find(item => item.id === recipient.consultationId)
+    if (!row || carrier.personalAgentId !== recipient.agentId || carrier.projectId !== task.projectId) throw fail('No current personal-agent assistance message')
+    current(carrier, row)
+    const state = stateOf(row)
+    if (['handled', 'awaiting-approval'].includes(state.phase)) return { status: 'already-handled' }
+    if (state.claim?.expiresAt > now() || rt.personalAgents.agentOf(carrier.personalAgentId)?.kind === 'internal' && rt.projectAgents.inboxExecutionActive?.(carrier)) return { status: 'already-claimed' }
+    const original = row.notificationEffect, effect = ownEntry(rt.state.projectEffects ?? {}, original?.id)
+    if (effect && ['pending', 'running'].includes(effect.status)) return { status: 'already-pending' }
+    if (effect?.status === 'cancelled') throw fail('Revoked notification needs fresh Chief recipient judgement')
+    const token = stage(carrier, row, requestId)
+    try { await rt.projectEffects.persist(token) }
+    catch (error) { if (rt.projectEffects.discardUncommitted(token)) row.notificationEffect = original; throw error }
+    rt.projectScheduler?.wake()
+    return { status: 'reminded', messageId: row.id, effectId: token.id, generation: token.generation }
+  }
   function recover() {
     if (rt.readOnly?.() !== undefined) return false
     let changed = false
@@ -248,5 +269,5 @@ export function createProjectAgentInbox(rt, consultations, { now = Date.now, not
     return changed
   }
   rt.projectEffects.register('agent.inbox.state', { run: effect => ({ messageId: effect.payload.messageId, status: 'durable-inbox-state' }) })
-  return { endpoint, legacyReply, stage, deliver, recover }
+  return { endpoint, legacyReply, stage, deliver, recover, remind }
 }
