@@ -327,6 +327,29 @@ test('a read-only window does not say the state journal is recording (#2153)', a
   assert.match(stoppedHeld.markdown, /^state journal: stopped \(.*not a plain file.*\)$/m)
 })
 
+// The writer opens on the first save, so a host that has not saved yet has not read or repaired
+// anything: `recording` there promises a line nobody asked the file for. A journal with no
+// `opened` is the shape before this change and still says `recording`.
+test('a state journal that has not opened says it starts with the first save (#2373)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const notStarted = { status: () => ({ recording: true, opened: false }) }
+  const fresh = await host(home, { journal: notStarted, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.match(fresh.markdown, /^state journal: not started \(opens with the first save\)$/m)
+  assert.equal(fresh.facts.stateJournal, 'not started (opens with the first save)')
+
+  const legacy = { status: () => ({ recording: true }) }
+  const old = await host(home, { journal: legacy, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.match(old.markdown, /^state journal: recording$/m)
+  assert.equal(old.facts.stateJournal, 'recording')
+
+  // A read-only window keeps its own wording, before the first save as after it.
+  const readOnly = () => 'Another dsh (pid 1 on host) holds the team'
+  const held = await host(home, { journal: notStarted, readOnly, config: { diagnosticsFile: false } }).diagnostics.report({})
+  assert.match(held.markdown, /^state journal: paused \(this window is read-only\)$/m)
+  assert.equal(held.facts.stateJournal, 'paused (this window is read-only)')
+})
+
 // The Read-only row answered one constant for every window that may not write, but the store
 // answers three ways (#2153): `stuck` (the team file cannot be read) is not a live lock at all,
 // and a report that calls a newer or unreadable team file "another dsh holds the team" sends the

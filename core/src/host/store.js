@@ -55,7 +55,10 @@ export function install(rt) {
     ? {
         path: journalPath,
         record: (snapshot) => (journalWriter ??= openJournal({ path: journalPath, warn })).record(snapshot),
-        status: () => journalWriter?.status() ?? { recording: true },
+        // Until that first save there is no writer to answer: `opened: false` says the journal was
+        // never read, so `recording` cannot promise a line this host never asked for. Reading the
+        // status opens nothing — opening here would be the write the lazy open avoids (#2351).
+        status: () => (journalWriter === undefined ? { recording: true, opened: false } : { ...journalWriter.status(), opened: true }),
       }
     : undefined
 
