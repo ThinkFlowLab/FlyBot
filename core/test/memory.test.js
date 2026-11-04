@@ -1957,3 +1957,32 @@ test('#2159: a hard-linked journal file takes no record, and the memory write st
   const recorded = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
   assert.deepEqual(recorded.map(record => record.op), ['add'], 'the record lands once the file carries one name')
 })
+
+// P-514: `ends` judged with `text.length` while it stepped by code point, so a user message under
+// REVIEW_USER_LINE_MAX (3000 characters) was cut in the middle. 2900 characters are 5800 UTF-16
+// units, so the unfixed bound keeps 1500 of them (a 2000-unit head and a 1000-unit tail) and drops
+// 1400. ASCII is the control: it is under the limit in both readings and must read the same.
+test('a user line under 3000 characters is kept whole for the review (P-514)', async () => {
+  const render = async (text) => {
+    const history = {
+      b2: [
+        { event: { seq: 20, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Start here.' }] } } },
+        { event: { seq: 21, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } } },
+      ],
+    }
+    const replies = [JSON.stringify({ changes: [] })]
+    const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
+    await call('state', {})
+    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+    await reviewed(call)
+    await stop()
+    const prompt = requests[0].messages[0].content[0].text
+    const line = prompt.split('\n').find(one => one.startsWith(`User: ${[...text][0]}`))
+    assert.ok(line !== undefined, `the user line is in the review context:\n${prompt}`)
+    return line
+  }
+  const wide = '😀'.repeat(2900)
+  assert.equal(await render(wide), `User: ${wide}`, '2900 characters are under the 3000-character limit, though they are 5800 UTF-16 units')
+  const ascii = 'a'.repeat(2900)
+  assert.equal(await render(ascii), `User: ${ascii}`, 'ASCII under the limit reads the same before and after')
+})

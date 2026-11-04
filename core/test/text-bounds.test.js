@@ -70,3 +70,23 @@ test('#2321: the memory review clip is the shared one, not a third copy (core/sr
   assert.equal(duplicate, undefined, `core/src/host/memory.js:${duplicate} keeps its own clip: import the one from ./text.js`)
   assert.match(source, /import \{[^}]*\bclip\b[^}]*\} from '\.\/text\.js'/, 'core/src/host/memory.js must import clip from ./text.js')
 })
+
+// P-514: two more bounds, declared inside a factory and a module rather than exported, are named
+// here the same way the table names its rows: a revert to `text.length <= max` fails at the
+// consumer's own `file:line`, not somewhere in a rendered prompt.
+const LIMITS_514 = [
+  { consumer: 'ends', path: 'host/memory.js', declaration: 'const ends = (text, max) =>' },
+  { consumer: 'oneLine', path: 'host/room-context.js', declaration: 'const oneLine = (value, max) =>' },
+]
+
+for (const row of LIMITS_514) {
+  test(`P-514: ${row.consumer} judges with fits, not with UTF-16 units (${locate(row.path, row.declaration)})`, () => {
+    const where = locate(row.path, row.declaration)
+    const source = read(row.path)
+    const from = source.indexOf(row.declaration)
+    assert.notEqual(from, -1, `${where} declaration moved: ${row.declaration}`)
+    const block = source.slice(from)
+    const body = block.slice(0, block.indexOf('\n\n') === -1 ? block.length : block.indexOf('\n\n'))
+    assert.equal(body.includes('fits('), true, `${where} judges in UTF-16 units: it must judge with fits(...) from the shared boundary`)
+  })
+}

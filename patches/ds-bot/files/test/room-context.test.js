@@ -265,3 +265,20 @@ test('P-305: a clipped transcript line ends on a whole emoji', () => {
   assert.equal(before.text.isWellFormed(), true)
   assert.equal(before.text, `${'b'.repeat(budget - 3)}\u{1F600}…`)
 })
+
+// P-514: `oneLine` judged with `flat.length` while its cut steps by code point, so a title under
+// its own limit was cut. 80 characters are under the 80-character title limit although they are
+// 160 UTF-16 units; the whole title must reach the board.
+test('a board line of characters outside the BMP is under its own limit and is not cut (P-514)', () => {
+  const title = '😀'.repeat(80)
+  const name = '😀'.repeat(40)
+  const tasks = { overall: { id: 'overall', kind: 'group', status: 'open', title, ownerBotId: 'chief', origin: { roomId: 'room' }, updatedAt: 2 } }
+  const board = formatRoomBoard(tasks, { roomId: 'room', nameOf: () => name })
+  const line = board.split('\n').find(one => one.includes('😀'))
+  assert.ok(line !== undefined, `the card is on the board:\n${board}`)
+  // The holder name goes through oneLine at 40, the title through oneLine at 80; each is under its
+  // limit in characters (40 and 80) though over it in UTF-16 units (80 and 160).
+  assert.ok(line.startsWith(`- ${name} [`), `all 40 characters of the holder name are kept: ${line.slice(0, 60)}`)
+  assert.ok(line.includes(title), `all 80 characters of the title are kept: ${line.slice(-60)}`)
+  assert.equal(line.includes('…'), false, line)
+})
