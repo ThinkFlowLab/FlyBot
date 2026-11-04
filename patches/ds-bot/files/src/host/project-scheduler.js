@@ -34,6 +34,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     }
     return keys.size
   }
+  const queueOrder = () => Math.max(0, ...Object.values(entries()).map(row => row.order ?? 0)) + 1
   const quota = project => project.quota?.maxConcurrent ?? 2
   async function captureWait(task, source) {
     const attempt = state.projectAttempts?.[task.deliveryAttemptId]
@@ -65,7 +66,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     const c = task.collaboration
     let entry = Object.values(entries()).find(row => row.kind === 'resume' && row.attemptId === attempt.id && row.handoffId === c.currentHandoffId && row.generation === c.generation)
     if (!entry) {
-      entry = { id: `queue-${randomUUID()}`, kind: 'resume', projectId: task.projectId, taskId: task.id, attemptId: attempt.id, handoffId: c.currentHandoffId, generation: c.generation, targetBotId: definition.id, initialTarget: { role: definition.role }, memberId: c.initiatedBy ?? attempt.initiatedBy, status: 'waiting', enqueuedAt: Date.now(), updatedAt: Date.now() }
+      entry = { id: `queue-${randomUUID()}`, kind: 'resume', projectId: task.projectId, taskId: task.id, attemptId: attempt.id, handoffId: c.currentHandoffId, generation: c.generation, targetBotId: definition.id, initialTarget: { role: definition.role }, memberId: c.initiatedBy ?? attempt.initiatedBy, status: 'waiting', order: queueOrder(), enqueuedAt: Date.now(), updatedAt: Date.now() }
       setEntry(entries(), entry.id, entry); savingQueueEntries.add(entry.id)
       try { await rt.save() } catch (error) { delete entries()[entry.id]; throw error } finally { savingQueueEntries.delete(entry.id) }
     }
@@ -123,7 +124,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     const resourceReason = resourceBlock(project.id, initialTarget)
     if (slots(project.id) < quota(project) && !resourceReason && !Object.values(entries()).some(row => row.projectId === project.id && row.status === 'waiting')) return rt.projectDelivery.endpoint('project-task-run', { ...body, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}) }, actor)
     const entry = { id: `queue-${randomUUID()}`, projectId: project.id, taskId: task.id, requestId: body.requestId, requestKey,
-      memberId: actor.memberId, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
+      memberId: actor.memberId, repositoryBinding: execution.binding, ...(initialTarget ? { initialTarget } : {}), status: 'waiting', order: queueOrder(), ...(resourceReason ? { reason: resourceReason } : {}), enqueuedAt: Date.now(), updatedAt: Date.now() }
     setEntry(entries(), entry.id, entry)
     await rt.save()
     return { queue: structuredClone(entry) }
@@ -133,9 +134,11 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
     let changed = false
     for (const task of Object.values(state.tasks)) if (task.chiefQuestion || task.collaboration?.status === 'waiting-children') await captureWait(task)
     for (const project of rt.listProjects()) if (revalidate(project.id)) changed = true
-    const pending = Object.values(entries()).filter(entry => entry.status === 'waiting').sort((a, b) => a.enqueuedAt - b.enqueuedAt || a.id.localeCompare(b.id))
+    const pending = Object.values(entries()).filter(entry => entry.status === 'waiting').sort((a, b) => a.enqueuedAt - b.enqueuedAt || (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id))
+    const savingProjects = new Set()
     for (const entry of pending) {
-      if (savingQueueEntries.has(entry.id)) continue
+      if (savingQueueEntries.has(entry.id)) { savingProjects.add(entry.projectId); continue }
+      if (savingProjects.has(entry.projectId)) continue
       const project = rt.readProject(entry.projectId)
       if (!project || project.status !== 'active') { entry.status = 'blocked'; entry.reason = 'Project is archived or unavailable'; changed = true; continue }
       if (slots(project.id) >= quota(project)) continue
