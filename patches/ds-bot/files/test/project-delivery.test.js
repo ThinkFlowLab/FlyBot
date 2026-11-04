@@ -1017,7 +1017,7 @@ test('npm test missing vitest after clean is runner-startup blockage and prepara
   assert.equal((await import('node:fs')).existsSync(join(path, 'node_modules/stale')), false)
   // A transport runner fixture delegates to the real Node assertions; this is
   // not an installed Vitest or a paid-model acceptance claim.
-  const runner = '#!/usr/bin/env node\nconst r=require("node:child_process").spawnSync(process.execPath,["--test","code.test.mjs"],{stdio:"inherit"});process.exit(r.status??1)\n'
+  const runner = '#!/usr/bin/env node\nconst r=require("node:child_process").spawnSync(process.execPath,["--test","--test-reporter=tap","code.test.mjs"],{stdio:"inherit"});process.exit(r.status??1)\n'
   settings.workspacePrepareCommand = [process.execPath, '-e', `const fs=require('fs');fs.mkdirSync('node_modules/.bin',{recursive:true});fs.writeFileSync('node_modules/.bin/vitest',${JSON.stringify(runner)},{mode:0o755})`]
   await finish()
   assert.equal(attempt.candidateSha, sha); assert.equal(attempt.evidence.tests.sha, sha)
