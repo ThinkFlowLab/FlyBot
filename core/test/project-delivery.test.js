@@ -1799,3 +1799,14 @@ test('actual Chief route admits a pinned inspect input and Dev receives the PR o
   assert.equal(git(attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), attempt.baseSha)
   assert.equal(attempt.candidateSha, undefined)
 })
+
+
+test('a newly created unsealed successor after failure pins current host HEAD even for non-forced routing', async t => {
+  const f = await baselineResourceFixture(t)
+  f.previous.status = 'failed'
+  const id = await f.rt.projectDelivery.reworkPool({ task: f.task, claim: { id: 'failed-route', attemptId: f.previous.id, botId: 'p1:chief' }, reason: 'Host repair is complete; route back', force: false })
+  const next = f.rt.state.projectAttempts[id]
+  assert.notEqual(id, f.previous.id); assert.equal(next.baseSha, f.latest)
+  await f.rt.projectDelivery.preparePoolRole(f.task, { id: 'failed-route-prepare', attemptId: id, generation: 2 }, f.definition)
+  assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), f.latest)
+})

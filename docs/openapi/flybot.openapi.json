@@ -29442,7 +29442,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -29520,7 +29520,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -31569,7 +31569,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -31677,7 +31677,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -31784,7 +31784,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -31878,7 +31878,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -31972,7 +31972,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -32081,7 +32081,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       }
     },
     {
@@ -42498,7 +42498,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -42591,7 +42591,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -42683,7 +42683,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -42775,7 +42775,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -43154,7 +43154,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -43230,7 +43230,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739"
+        "sha256": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -44587,7 +44587,7 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "daa5cc8185abc1ec84421ae3fcd5574a50573cfd1a7c4cb10941158e29c79a13",
-      "core/src/host/project-delivery.js": "0bc3c003d363e4630efcd04c18f1d47b693db2013dfba753a8270923630a6739",
+      "core/src/host/project-delivery.js": "31adb25fe196913628d67ee18b87a18015f07bc5746e824f15732a72d4443f2b",
       "core/src/host/project-development-service.js": "3738f0e5fc3c78c1c7d3fb98d57af6f0ddeacfa54ae9fe7cb3d738b937e6a117",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "5557782333a0b3437dacde2b6924fe12ea54225098571fa8e404d79a432be549",
