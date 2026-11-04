@@ -1276,7 +1276,8 @@
               "pending",
               "resolved",
               "exhausted",
-              "commit-failed"
+              "commit-failed",
+              "transport-incomplete"
             ]
           },
           "feedback": {
@@ -5566,7 +5567,10 @@
               "unsupported-route",
               "authority-unavailable",
               "resource-unavailable",
-              "execution-failed"
+              "execution-failed",
+              "source-changed",
+              "input-protocol",
+              "acceptance-evidence-missing"
             ]
           },
           "retryable": {
@@ -5576,15 +5580,13 @@
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "maxItems": 16
+            }
           },
           "actions": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "maxItems": 16
+            }
           },
           "stopBudgetExhausted": {
             "type": "boolean"
@@ -5602,7 +5604,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^[a-f0-9]{64}$"
+                "pattern": "^[a-f0-9]{40}$"
               },
               {
                 "type": "null"

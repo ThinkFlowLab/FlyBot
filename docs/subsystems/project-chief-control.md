@@ -316,3 +316,5 @@ not exit proof. Other legal decisions remain available; evidence-supported
 Tester/Reviewer recovery uses existing resumeVerification. Historical rejection
 text is audit data, not a current routing constraint. No JSON boolean repair,
 fixed DAG, generic recovery scheduler or new state store is added.
+
+A failed correction dispatch is transport-incomplete, not a pending model turn. Machine-readable recovery kinds distinguish changed sources, input protocol and missing acceptance evidence; candidate references remain full40-character Git SHAs.

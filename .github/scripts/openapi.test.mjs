@@ -100,3 +100,11 @@ test('Chief assistance API exposes explicit operations scope and bounded compens
   assert.throws(() => validate(query.resultSchema, { ...value, policy: { enabled: true, autonomy: { maxRecoveryActions: 21 } } }, spec), /maxRecoveryActions: number out of bounds/)
   assert.throws(() => validate(query.resultSchema, { ...value, compensation: [{ ...value.compensation[0], nextCheckAt: 'guessed' }] }, spec), /nextCheckAt:/)
 })
+
+test('Chief source/acceptance failures and incomplete correction transport remain machine readable', () => {
+  const spec = readSpec(), query = operationFor(spec, 'project-development', { kind: 'query', name: 'chief.state' })
+  const recovery = { version: 'chief-recovery/v1', kind: 'source-changed', retryable: false, conditions: ['fresh source'], actions: ['Chief reassesses'], candidateSha: 'a'.repeat(40) }
+  const value = { compensation: [], health: { enabled: true, status: 'degraded', lastSuccessAt: null, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true }, template: {}, schedule: null, runs: [{ id: 'run', projectId: 'project', status: 'failed', recoveryIssue: recovery, correction: { version: 'chief-correction/v1', round: 1, limit: 2, status: 'transport-incomplete', feedback: [] }, lastResult: { ok: false, invocation: 2, source: 'host-dispatch', responseSha256: null, diagnosticSha256: 'b'.repeat(64), receivedAt: 2 }, failureDetail: { invocation: 2, stage: 'dispatch', code: 'bot/chief', responseSha256: null, diagnosticSha256: 'b'.repeat(64), recoveryKind: 'source-changed', criteriaIssues: [], at: 2 } }] }
+  validate(query.resultSchema, value, spec)
+  for (const kind of ['input-protocol', 'acceptance-evidence-missing']) { value.runs[0].recoveryIssue.kind = kind; validate(query.resultSchema, value, spec) }
+})
