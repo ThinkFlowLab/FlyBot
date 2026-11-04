@@ -162,8 +162,18 @@ export function ErrorToast({ useUi, actions }) {
   }, [toast?.token])
   if (!toast) return null
   const info = toast.tone === 'info'
+  // A read-only refusal is the one failure the window can end by itself: the other holder is gone,
+  // so the client's full-state read makes this window writable without a page reload that would
+  // drop what is in the composer.
+  const readOnly = toast.code === 'bot/read-only'
+  const reload = () => {
+    actions.dismissToast(toast.token)
+    void Promise.resolve(actions.reloadTeam?.()).catch(error => actions.reportError?.(error, 'reload'))
+  }
   return h('div', { className: 'bt-toast', role: info ? 'status' : 'alert', 'data-tone': toast.tone, 'data-leaving': leaving || undefined },
     h('span', { className: 'bt-toast-text' }, toast.text),
+    toast.code ? h('span', { className: 'bt-tag bt-toast-code' }, toast.code) : null,
+    readOnly ? h('button', { type: 'button', className: 'bt-toast-link bt-toast-reload', onClick: reload }, t('Reload')) : null,
     info ? null : h('button', { type: 'button', className: 'bt-toast-link', onClick: () => { actions.dismissToast(toast.token); actions.openSettings('feedback') } }, t('Details')),
     h('button', { type: 'button', className: 'bt-icon-btn bt-toast-close', 'aria-label': t('Dismiss'), onClick: () => actions.dismissToast(toast.token) }, h(CloseIcon)))
 }
@@ -190,6 +200,7 @@ export const FEEDBACK_CSS = `
 .bt-toast-text::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#e02135;margin:0 8px 1px 0}
 .bt-toast-link{flex:none;border:0;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:6px}
 .bt-toast-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-toast .bt-toast-code{max-width:180px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .bt-toast-close{flex:none}
 @keyframes bt-toast-in{from{transform:translateY(16px) scale(.94)}}
 @media (prefers-reduced-motion:reduce){.bt-toast{animation:none}.bt-toast[data-leaving]{transition:none}}

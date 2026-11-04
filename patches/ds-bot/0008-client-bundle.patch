@@ -11194,20 +11194,7 @@ diff --git a/client.js b/client.js
 -var PHRASES = {
 -  thinking: ["Thinking about it", "Weighing the options", "Working out a plan", "Sorting out the details"],
 -  working: ["On it", "Busy with it", "Moving ahead", "Taking care of it", "Making headway"]
-+
-+// src/client/board-card.js
-+var import_react16 = require("react");
-+var TASK_SKIN = {
-+  card: "bt-board-card",
-+  top: "bt-board-card-top",
-+  id: "bt-board-id",
-+  badge: "bt-board-badge",
-+  title: "bt-board-title",
-+  labels: "bt-board-labels",
-+  label: "bt-board-label",
-+  owner: "bt-board-who",
-+  note: "bt-board-note"
- };
+-};
 -var TOOL_PHRASES = [
 -  [/web_?search|search_?web/i, "Searching online"],
 -  [/fetch|browse|browser|web/i, "Reading a page"],
@@ -11243,6 +11230,20 @@ diff --git a/client.js b/client.js
 -    case "update_bot": {
 -      const target = findBot(arg("name")) ?? findBot(arg("bot")) ?? (arg("bot") ? void 0 : self);
 -      return { label: t("Updating {name}", { name: target?.name ?? t("a Bot") }), state: "sending" };
++
++// src/client/board-card.js
++var import_react16 = require("react");
++var TASK_SKIN = {
++  card: "bt-board-card",
++  top: "bt-board-card-top",
++  id: "bt-board-id",
++  badge: "bt-board-badge",
++  title: "bt-board-title",
++  labels: "bt-board-labels",
++  label: "bt-board-label",
++  owner: "bt-board-who",
++  note: "bt-board-note"
++};
 +function BoardCard({
 +  card,
 +  skin = TASK_SKIN,
@@ -13016,7 +13017,11 @@ diff --git a/client.js b/client.js
 -        (0, import_react8.createElement)("div", { className: "bt-update-text" }, dshText),
 -        dshMessage ? (0, import_react8.createElement)("div", { className: "bt-update-error", role: "alert" }, t("The update did not finish: {reason}", { reason: dshMessage })) : null,
 -        (0, import_react8.createElement)(
--          "div",
++        (0, import_react19.createElement)("div", { className: "bt-update-title" }, t("DSH {version}", { version: dsh.verified })),
++        (0, import_react19.createElement)("div", { className: "bt-update-text" }, dshText),
++        dshMessage ? (0, import_react19.createElement)("div", { className: "bt-update-error", role: "alert" }, t("The update did not finish: {reason}", { reason: dshMessage })) : null,
++        (0, import_react19.createElement)(
+           "div",
 -          { className: "bt-update-actions" },
 -          dsh.kind === "app" ? dsh.available ? (0, import_react8.createElement)("button", { type: "button", className: "bt-update-go", onClick: () => void actions.openAppUpdates(dsh.verified).catch(() => {
 -          }) }, t("Open updates")) : null : !dsh.available && dshPhase === "idle" ? null : dshPhase === "installed" ? null : (0, import_react8.createElement)("button", {
@@ -13285,11 +13290,6 @@ diff --git a/client.js b/client.js
 -}
 -function BrandName() {
 -  return (0, import_react8.createElement)("span", { style: { fontWeight: 600, fontSize: 14 } }, "DS Bot");
-+        (0, import_react19.createElement)("div", { className: "bt-update-title" }, t("DSH {version}", { version: dsh.verified })),
-+        (0, import_react19.createElement)("div", { className: "bt-update-text" }, dshText),
-+        dshMessage ? (0, import_react19.createElement)("div", { className: "bt-update-error", role: "alert" }, t("The update did not finish: {reason}", { reason: dshMessage })) : null,
-+        (0, import_react19.createElement)(
-+          "div",
 +          { className: "bt-update-actions" },
 +          dsh.kind === "app" ? dsh.available ? (0, import_react19.createElement)("button", { type: "button", className: "bt-update-go", onClick: () => void actions.openAppUpdates(dsh.verified).catch(() => {
 +          }) }, t("Open updates")) : null : !dsh.available && dshPhase === "idle" ? null : dshPhase === "installed" ? null : (0, import_react19.createElement)("button", {
@@ -22445,16 +22445,16 @@ diff --git a/client.js b/client.js
    { width: 20, height: 20, viewBox: "0 0 16 16", fill: "currentColor", "aria-hidden": true },
 -  (0, import_react25.createElement)("path", { d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" })
 +  (0, import_react39.createElement)("path", { d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" })
-+);
+ );
+-var MARKS = { github: GitHubMark };
+-var ABOUT = { github: () => t("Repositories, issues, and pull requests") };
 +var FeishuMark = () => (0, import_react39.createElement)(
 +  "svg",
 +  { width: 20, height: 20, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
 +  (0, import_react39.createElement)("path", { d: "M3.2 6.6c3 .1 6.4 1.5 8.6 3.9-1.9.4-3.5 1.4-4.7 2.9-1.9-.6-3.4-1.9-3.9-3.6-.2-.7-.2-1.5 0-3.2z" }),
 +  (0, import_react39.createElement)("path", { d: "M16.8 5.4c-2.9.2-5.6 1.5-7.4 3.4 1.7 1.2 3.1 2.8 3.9 4.9 2.2-1.1 3.8-3.2 4-5.6.1-.9-.1-1.9-.4-2.7z" }),
 +  (0, import_react39.createElement)("path", { d: "M8.6 12.1c.9.7 1.7 1.6 2.2 2.7-1.1.2-2.3 0-3.3-.6.2-.8.6-1.5 1.1-2.1z" })
- );
--var MARKS = { github: GitHubMark };
--var ABOUT = { github: () => t("Repositories, issues, and pull requests") };
++);
 +var MARKS = { github: GitHubMark, composio: ConnectorIcon, feishu: FeishuMark };
 +var ABOUT = {
 +  github: () => t("Repositories, issues, and pull requests"),
@@ -23023,12 +23023,17 @@ diff --git a/client.js b/client.js
      if (!toast) return void 0;
      setLeaving(false);
      const fade = setTimeout(() => setLeaving(true), TOAST_MS);
-@@ -10389,15 +10389,16 @@ function ErrorToast({ useUi, actions }) {
+@@ -10389,15 +10389,23 @@ function ErrorToast({ useUi, actions }) {
      };
    }, [toast?.token]);
    if (!toast) return null;
 -  return (0, import_react26.createElement)(
 +  const info = toast.tone === "info";
++  const readOnly = toast.code === "bot/read-only";
++  const reload = () => {
++    actions.dismissToast(toast.token);
++    void Promise.resolve(actions.reloadTeam?.()).catch((error) => actions.reportError?.(error, "reload"));
++  };
 +  return (0, import_react40.createElement)(
      "div",
 -    { className: "bt-toast", role: "alert", "data-leaving": leaving || void 0 },
@@ -23036,6 +23041,8 @@ diff --git a/client.js b/client.js
 -    (0, import_react26.createElement)("button", { type: "button", className: "bt-toast-link", onClick: () => {
 +    { className: "bt-toast", role: info ? "status" : "alert", "data-tone": toast.tone, "data-leaving": leaving || void 0 },
 +    (0, import_react40.createElement)("span", { className: "bt-toast-text" }, toast.text),
++    toast.code ? (0, import_react40.createElement)("span", { className: "bt-tag bt-toast-code" }, toast.code) : null,
++    readOnly ? (0, import_react40.createElement)("button", { type: "button", className: "bt-toast-link bt-toast-reload", onClick: reload }, t("Reload")) : null,
 +    info ? null : (0, import_react40.createElement)("button", { type: "button", className: "bt-toast-link", onClick: () => {
        actions.dismissToast(toast.token);
        actions.openSettings("feedback");
@@ -23045,7 +23052,7 @@ diff --git a/client.js b/client.js
    );
  }
  var FEEDBACK_CSS = `
-@@ -10416,47 +10416,56 @@ var FEEDBACK_CSS = `
+@@ -10416,47 +10416,57 @@ var FEEDBACK_CSS = `
  .bt-fb-text{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
  .bt-fb-code{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
  .bt-event-error{color:#e02135}
@@ -23057,6 +23064,7 @@ diff --git a/client.js b/client.js
  .bt-toast-text::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#e02135;margin:0 8px 1px 0}
  .bt-toast-link{flex:none;border:0;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:6px}
  .bt-toast-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
++.bt-toast .bt-toast-code{max-width:180px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
  .bt-toast-close{flex:none}
 -@keyframes bt-toast-in{from{transform:translate(-50%,16px) scale(.94)}}
 +@keyframes bt-toast-in{from{transform:translateY(16px) scale(.94)}}
@@ -26235,9 +26243,13 @@ diff --git a/client.js b/client.js
      memoryForget: (botId, entry) => call("memory-forget", { botId, scope: entry.scope, topic: entry.topic, text: entry.text }),
      diagnostics: (payload) => call("diagnostics", payload),
      diagnosticsLog: () => call("diagnostics-log"),
-@@ -13846,6 +13846,8 @@ function apply(ctx) {
+@@ -13844,8 +13844,11 @@ function apply(ctx) {
+     // A failed action away from any form (a menu, the palette) shows as a toast.
+     reportError: (error, where = "action") => {
        noteClientError(where, error);
-       ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
+-      ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
++      const code = typeof error?.code === "string" ? error.code : void 0;
++      ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now(), ...code ? { code } : {} } }));
      },
 +    // A short confirmation (e.g. "Invite link copied") in the same toast, without the error styling.
 +    notify: (text2) => ui2.set((state) => ({ ...state, toast: { text: String(text2), tone: "info", token: Date.now() } })),

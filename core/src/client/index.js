@@ -659,7 +659,10 @@ export function apply(ctx) {
     // A failed action away from any form (a menu, the palette) shows as a toast.
     reportError: (error, where = 'action') => {
       noteClientError(where, error)
-      ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }))
+      // The code is what the toast can act on: a read-only refusal is answered by reading the team
+      // again, and its sentence never says `bot/read-only`.
+      const code = typeof error?.code === 'string' ? error.code : undefined
+      ui.set(state => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now(), ...(code ? { code } : {}) } }))
     },
     // A short confirmation (e.g. "Invite link copied") in the same toast, without the error styling.
     notify: text => ui.set(state => ({ ...state, toast: { text: String(text), tone: 'info', token: Date.now() } })),
