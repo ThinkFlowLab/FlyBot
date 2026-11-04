@@ -553,3 +553,12 @@ test('an actual SDK protocol subprocess must exit before its Chief input wait fr
   assert.equal(rt.state.projectAttempts.a.status, 'running'); assert.equal(rt.state.projectExecutions.run.status, 'running')
   assert.equal(rt.state.projectHarnessWorkers[id].backendSessionId, 'bound-thread')
 })
+
+test('Chief reservation save failure must release its unstarted resource',async t=>{
+const {rt,harness}=await fixture(t);
+rt.projectAgents={isDelegationActive:()=>true}; rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex':{status:'ready'}};delete rt.state.projectResourceLeases.l;
+rt.state.projectExecutions={inspection:{invocation:1}};let saves=0;rt.save=async()=>{if(++saves===2)throw new Error('correlation save failed')};
+await assert.rejects(harness.chiefTurn({agent:{id:'public-p',projectId:'p',lastRequest:{}},delegation:{id:'d',chiefJob:{runId:'inspection',invocation:1}},definition:{execution:{harness:'codex',resourceIds:['r']}},context:{text:'Inspect'},text:'Inspect',onResult:async()=>{}}),/correlation save failed/);
+assert.equal(rt.projectResources.occupied('r'),0);
+assert.equal(Object.values(rt.state.projectResourceLeases)[0].chiefRunId,'inspection');
+});

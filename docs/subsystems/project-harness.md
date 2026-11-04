@@ -378,3 +378,6 @@ Native input budgeting fences the actual `claim.workerId` against the temporary 
 
 
 #2330 tags Chief workers with their host control invocation. Restart/deadline reconciliation cannot reuse a prior invocation's released SDK worker as proof that the current invocation exited. Backend thread/context restoration retains the original Harness binding gates.
+
+
+Chief lease correlation is written on the canonical reservation, since reserve returns a copy. Its save remains inside the pre-dispatch cleanup boundary: a failed correlation save releases only the proven unbound reservation, preserving runtime capacity and the original failure.

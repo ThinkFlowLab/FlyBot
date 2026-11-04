@@ -93,7 +93,9 @@ export function createProjectScheduledTasks(rt) {
   }
   async function pump() {
     for (const row of Object.values(rows())) {
-      const targetHandler = handler(row.target)
+      if (row.status === 'deleted') continue
+      let targetHandler
+      try { targetHandler = handler(row.target) } catch (error) { row.error = error.message; await rt.save(); continue }
       if (targetHandler.status) for (const delivery of Object.values(row.deliveries).filter(item => item.status !== 'queued' && item.status !== 'completed')) {
         const outcome = targetHandler.status({ row, delivery })
         if (!outcome) continue

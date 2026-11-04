@@ -385,6 +385,7 @@ export function createProjectAgents(rt) {
         const lease = await rt.projectResources.reserve({ projectId, attemptId: `chief-turn-${delegation.id}`, sessionKey: delegation.id, role: 'chief', harness: 'flybot', resourceIds: definition.execution.resourceIds, maxConcurrent: 1 })
         if (rt.projectResources.setting(projectId, lease.resourceId).type !== 'local') throw refuse('Native Chief requires a local resource')
         lease.chiefRunId = runId; lease.chiefInvocation = invocation
+        Object.assign(state.projectResourceLeases[lease.id], { chiefRunId: runId, chiefInvocation: invocation })
         delegation.resourceLease = lease; agent.lastRequest.resourceLease = lease
         await rt.projectResources.markStarted(lease.id, lease.generation, { kind: 'native-turn', handle: delegation.exchangeId, botId: agent.botId, sessionId: agent.sessionId })
       }

@@ -92,3 +92,12 @@ test('Chief deliveries reconcile persisted terminal/recovery states after restar
   outcome = { runId: 'durable-chief', status: 'completed', error: null }; await f.service.pump()
   assert.equal(delivery.status, 'completed'); assert.equal(delivery.error, null); assert.equal(dispatched, 1)
 })
+
+test('an unavailable logical target cannot prevent another scheduled inspection from running', async () => {
+  const f = setup(), valid = await f.save({})
+  f.rt.state.projectScheduledTasks.missing = { id: 'missing', projectId: 'p', target: { kind: 'removed-plugin' }, status: 'active', enabled: true, deliveries: {} }
+  await f.service.accept('chief-old', [{ schedule_id: valid.scheduleId, occurrence_at: '2026-11-04T01:00:00Z', reminder_prompt: valid.config.prompt }])
+  await f.service.pump(); await new Promise(resolve => setImmediate(resolve))
+  assert.equal(f.runs.length, 1)
+  assert.match(f.rt.state.projectScheduledTasks.missing.error, /unavailable/)
+})
