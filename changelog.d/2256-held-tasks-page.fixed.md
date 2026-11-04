@@ -1,1 +1,0 @@
-A workflow lane that holds more cards than its page listed now offers the rest: `workflow/state` takes a `heldLimit` (20 by default, 200 at most), and the stage's dead `3 more held tasks` line is a **Show 3 more held tasks** button that unfolds every held id — each still re-matchable — and folds back to **Show less** (#2256).

@@ -1,1 +1,0 @@
-A Bot's **Scheduled tasks** card in a read-only window draws nothing when the Bot has no scheduled tasks, instead of the bare heading over an empty body; a writable window keeps its **New task** row, and a locked card that has tasks keeps its heading and rows ([#2286](https://github.com/ThinkFlowLab/FlyBot/issues/2286)).

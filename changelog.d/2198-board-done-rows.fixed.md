@@ -1,1 +1,0 @@
-A card in the Project board's **Done** group keeps its title, its priority and the board it opens: the done column no longer draws `#<task-id>` with no priority, and clicking the card opens the Bot or group the work lives on ([#2198](https://github.com/ThinkFlowLab/FlyBot/issues/2198)).

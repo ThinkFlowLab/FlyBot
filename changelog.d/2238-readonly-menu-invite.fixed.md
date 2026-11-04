@@ -1,1 +1,0 @@
-A Bot's right-click menu in a read-only window no longer offers **Copy invite link**: the entry needs `social.createInvite`, which the host refuses there, so it is hidden instead of painting a failure. Writable windows keep the entry unchanged ([#2238](https://github.com/ThinkFlowLab/FlyBot/issues/2238)).
