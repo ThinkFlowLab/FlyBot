@@ -5,7 +5,7 @@ import { ownEntry, setEntry } from './store.js'
 
 export const EFFECT_PROTOCOL = 'project-effect/v1'
 export class EffectDeferred extends Error {
-  constructor(message, { waitingFor = 'resource' } = {}) { super(message); this.waitingFor = waitingFor }
+  constructor(message, { waitingFor = 'resource', retryAfterMs } = {}) { super(message); this.waitingFor = waitingFor; if (retryAfterMs !== undefined && (!Number.isSafeInteger(retryAfterMs) || retryAfterMs < 100 || retryAfterMs > 86400000)) throw new Error('Invalid deferred-effect retry interval'); this.retryAfterMs = retryAfterMs }
 }
 export class EffectCancelled extends Error {}
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -117,7 +117,7 @@ export function createProjectEffects(rt, { now = Date.now } = {}) {
         else {
           if (!(failure instanceof EffectDeferred)) ++row.failures
           const retry = retrySettings(row.kind)
-          row.dueAt = now() + (failure instanceof EffectDeferred ? retry.baseDelayMs : Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** Math.min(row.failures, 20)))
+          row.dueAt = now() + (failure instanceof EffectDeferred ? failure.retryAfterMs ?? retry.baseDelayMs : Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** Math.min(row.failures, 20)))
           change(row, row.failures >= retry.maxFailures ? 'failed' : 'pending')
         }
       }
