@@ -846,9 +846,13 @@ test('P-482: a locked Bot card with tasks keeps the heading and the rows', () =>
 // with the task, so its row says which connectors an unattended run would carry. A room task has
 // no single Bot's switch, so it says nothing: drawing one would state a falsehood.
 const CONNECTORS = [
-  { id: 'github', name: 'GitHub', state: 'connected' },
-  { id: 'composio', name: 'Composio', state: 'connected' },
+  { id: 'github', name: 'GitHub', state: 'ready' },
+  { id: 'composio', name: 'Composio', state: 'ready' },
 ]
+// The host writes exactly four connector states — off, connecting, ready, error — and the row
+// names only what can give the run tools (#2354). The fixture below used to say 'connected', a
+// value the host never writes, which is why any predicate let it through.
+const ERRORED = { id: 'composio', name: 'Composio', state: 'error' }
 const reachRoster = bot => ({ bots: [bot], rooms: [], byId: { [bot.id]: bot }, roomsById: {}, connectors: CONNECTORS })
 const reachLines = roster => {
   seeded.push({ available: true, tasks: [ACTIVE] }, null)
@@ -872,7 +876,7 @@ test('#2323 c: every connected connector off reads as no connectors', () => {
 })
 
 test('#2323 d: a sender connector never appears in the sentence', () => {
-  const roster = { ...reachRoster({ id: 'b1', name: 'B' }), connectors: [...CONNECTORS, { id: 'feishu', name: 'Feishu', state: 'connected', kind: 'sender' }] }
+  const roster = { ...reachRoster({ id: 'b1', name: 'B' }), connectors: [...CONNECTORS, { id: 'feishu', name: 'Feishu', state: 'ready', kind: 'sender' }] }
   const lines = reachLines(roster)
   assert.equal(reachOf(lines), 'Runs with GitHub, Composio')
   assert.ok(!lines.join('|').includes('Feishu'), 'a sender has neither tools nor a way in')
@@ -884,4 +888,27 @@ test('#2323 e: a room task says nothing about reach', () => {
   seeded.push({ available: true, tasks: [roomTask] })
   const lines = text(render(RoomSchedules({ room: { id: 'room-1', name: 'Team room', origin: 'group' }, actions: spy() })))
   assert.ok(!lines.some(line => line.startsWith('Runs with')), lines.join('|'))
+})
+
+// #2354: reconcile() unmounts a connection before it writes `error`
+// (core/src/host/connectors.js:750-757), so a failed connector's tools are gone and its row must
+// not promise them; `connecting` has no tools yet either. The Connectors page still draws a switch
+// for both, which is how the owner reconnects, so `connectedConnectors` keeps its own predicate.
+test('#2354 a: a failed connection is not named as carried, a ready one still is', () => {
+  const roster = { ...reachRoster({ id: 'b1', name: 'B' }), connectors: [CONNECTORS[0], ERRORED] }
+  const lines = reachLines(roster)
+  assert.equal(reachOf(lines), 'Runs with GitHub')
+  assert.ok(!lines.join('|').includes('Composio'), 'a connector whose connection failed carries nothing')
+})
+
+test('#2354 b: nothing ready left reads as no connectors, not as the failed ones', () => {
+  const roster = { ...reachRoster({ id: 'b1', name: 'B' }), connectors: [{ id: 'github', name: 'GitHub', state: 'error' }, ERRORED] }
+  assert.equal(reachOf(reachLines(roster)), 'Runs with no connectors')
+})
+
+test('#2354 c: a connector still connecting is not named', () => {
+  const roster = { ...reachRoster({ id: 'b1', name: 'B' }), connectors: [CONNECTORS[0], { id: 'composio', name: 'Composio', state: 'connecting' }] }
+  const lines = reachLines(roster)
+  assert.equal(reachOf(lines), 'Runs with GitHub')
+  assert.ok(!lines.join('|').includes('Composio'), 'a connecting connector has no tools yet')
 })
