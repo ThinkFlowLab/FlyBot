@@ -18854,10 +18854,17 @@ function ErrorToast({ useUi, actions }) {
   }, [toast?.token]);
   if (!toast) return null;
   const info = toast.tone === "info";
+  const readOnly = toast.code === "bot/read-only";
+  const reload = () => {
+    actions.dismissToast(toast.token);
+    void Promise.resolve(actions.reloadTeam?.()).catch((error) => actions.reportError?.(error, "reload"));
+  };
   return (0, import_react40.createElement)(
     "div",
     { className: "bt-toast", role: info ? "status" : "alert", "data-tone": toast.tone, "data-leaving": leaving || void 0 },
     (0, import_react40.createElement)("span", { className: "bt-toast-text" }, toast.text),
+    toast.code ? (0, import_react40.createElement)("span", { className: "bt-tag bt-toast-code" }, toast.code) : null,
+    readOnly ? (0, import_react40.createElement)("button", { type: "button", className: "bt-toast-link bt-toast-reload", onClick: reload }, t("Reload")) : null,
     info ? null : (0, import_react40.createElement)("button", { type: "button", className: "bt-toast-link", onClick: () => {
       actions.dismissToast(toast.token);
       actions.openSettings("feedback");
@@ -18887,6 +18894,7 @@ var FEEDBACK_CSS = `
 .bt-toast-text::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#e02135;margin:0 8px 1px 0}
 .bt-toast-link{flex:none;border:0;background:none;color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:6px}
 .bt-toast-link:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-toast .bt-toast-code{max-width:180px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .bt-toast-close{flex:none}
 @keyframes bt-toast-in{from{transform:translateY(16px) scale(.94)}}
 @media (prefers-reduced-motion:reduce){.bt-toast{animation:none}.bt-toast[data-leaving]{transition:none}}
@@ -22817,7 +22825,8 @@ function apply(ctx) {
     // A failed action away from any form (a menu, the palette) shows as a toast.
     reportError: (error, where = "action") => {
       noteClientError(where, error);
-      ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
+      const code = typeof error?.code === "string" ? error.code : void 0;
+      ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now(), ...code ? { code } : {} } }));
     },
     // A short confirmation (e.g. "Invite link copied") in the same toast, without the error styling.
     notify: (text2) => ui2.set((state) => ({ ...state, toast: { text: String(text2), tone: "info", token: Date.now() } })),
