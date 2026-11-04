@@ -1432,6 +1432,8 @@ export function install(rt) {
                 ...(attempt.pr ? [{ pr: attempt.pr.number, sha: attempt.pr.sha, checks: 'unknown' }] : []),
               ]
             },
+            validateRecovery: input => rt.projectDelivery.validateRecovery(input),
+            resumeVerification: input => rt.projectDelivery.resumeVerification(input),
             complete: input => rt.projectDelivery.completePoolRole(input),
             rework: input => rt.projectDelivery.reworkPool(input),
           })

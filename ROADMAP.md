@@ -178,3 +178,9 @@ not live npm ci provisioning or production Vitest acceptance.
 with all-plan preflight, immutable business evidence and explicit incomplete
 recovery. Tests distinguish deterministic role transport and actual SDK execution
 with a local provider fixture from paid-model/live project acceptance.
+
+#2347 adds bounded inspection/stop reconciliation, explicit recovery facts and
+same-Attempt Tester/Reviewer continuation. Real disposable unmanaged DSH restart
+reaches a later original scheduled inspection with deterministic inference; paid
+model/live-instance acceptance stays separate. Legacy missing namespace evidence
+requires exact operator corroboration, never a guessed worker release.

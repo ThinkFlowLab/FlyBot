@@ -505,3 +505,7 @@ Personal GitHub comments explicitly reject installation credentials; project aut
 
 
 #2330 adds a trusted internal stopChiefJob lifecycle port. It fences the exact exchange, removes its queued input, waits for SDK release or native whenIdle, restores only its own prompt, and persists invocation-bound exit proof while retaining the resident Session. A late old callback cannot restore another invocation's prompt. Unknown exit retains busy isolation.
+
+#2347 persists Chief invocation/carrier/host boundaries before execution. Native
+restart reconciliation proves the old host birth ended; SDK admission without a
+handle never falls back to cancelling the resident native Chief. Stops are bounded.

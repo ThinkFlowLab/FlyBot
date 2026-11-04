@@ -196,3 +196,6 @@ prevents send. The published FlyBot type declares the additive optional seam.
 #2338 extends the original Workflow pool adapter with same-worker receipt correction.
 SDK uses the existing input channel; native uses the original idle Agent Session
 and tool guard. No plugin gains independent Task admission or completion authority.
+
+#2347 extends the trusted original pool adapter with recovery preflight and
+sealed-candidate verification continuation; current rights and exit gates remain.

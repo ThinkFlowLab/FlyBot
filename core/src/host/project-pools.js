@@ -536,6 +536,17 @@ export function createProjectPools(rt) {
     receipt.acceptance = { claimId: claim.id, botId: claim.botId, generation: claim.generation, acceptedAt: receipt.acceptedAt, ...(claim.chiefRunId ? { chiefRunId: claim.chiefRunId } : {}) }
     await rt.save(); return clone(claim)
   }
+  async function validateChiefRoute(body, actor) {
+    const task = taskOf(body.taskId), c = task.collaboration
+    rt.projectChiefControl.requireJobActor(actor, task.projectId)
+    rt.requireProjectAccess(actor, task.projectId, 'run-control')
+    if (!c || c.generation !== body.expectedGeneration) throw refuse('Chief routing snapshot is stale')
+    const target = targetOf(task.projectId, body.targetBotId)
+    await authority(task)
+    await adapter?.validateRecovery?.({ task, target })
+    if (c.generation !== body.expectedGeneration) throw refuse('Chief routing snapshot is stale')
+    return target
+  }
   async function chiefRoute(body, actor) {
     const task = taskOf(body.taskId), c = task.collaboration
     rt.projectChiefControl.requireJobActor(actor, task.projectId)
@@ -544,6 +555,7 @@ export function createProjectPools(rt) {
     const target = targetOf(task.projectId, body.targetBotId)
     if (target.role === 'chief') throw refuse('Chief must decide a concrete next role or request human clarification')
     reasonOf(body.reason)
+    await validateChiefRoute(body, actor)
     await authority(task)
     await checkAdmission(task, { from: `${task.projectId}:chief`, to: target.id, attemptId: c.attemptId, requestId: body.decisionId, purpose: 'chief-intervention' })
     if (c.generation !== body.expectedGeneration) throw refuse('Chief routing snapshot is stale')
@@ -564,7 +576,10 @@ export function createProjectPools(rt) {
       c.initiatedBy = actor.memberId; c.sourceSessionId = null
       const previous = rt.state.projectAttempts?.[c.attemptId]
       if ((target.policyRole ?? target.role) === 'developer') c.attemptId = await adapter.rework({ task, claim: oldClaim ?? { attemptId: c.attemptId, id: body.decisionId, botId: `${task.projectId}:chief` }, reason: body.reason, force: body.rework !== false, decisionId: body.decisionId })
-      else if (previous && previous.status !== 'running') throw refuse('Interrupted delivery must return to Developer in a new Attempt')
+      else if (previous && previous.status !== 'running') {
+        if (!adapter.resumeVerification) throw refuse('Interrupted delivery requires an evidence-supported recovery adapter')
+        await adapter.resumeVerification({ task, target, decisionId: body.decisionId, reason: body.reason })
+      }
       return await offer(task, { from: `${task.projectId}:chief`, to: target.id, reason: body.reason, requestId: body.decisionId, attemptId: c.attemptId, purpose: 'chief-intervention' })
     } catch (error) {
       c.status = 'blocked'; c.block = { reason: String(error.message), decisionId: body.decisionId, at: Date.now() }; await rt.save(); throw error
@@ -625,7 +640,7 @@ export function createProjectPools(rt) {
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
     correct,
     resumeChildren: (id, waitId) => serial(() => resumeChildren(id, waitId)),
-    claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
+    claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), validateChiefRoute: (body, actor) => serial(() => validateChiefRoute(body, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {
   rt.projectPools = createProjectPools(rt)

@@ -1,6 +1,8 @@
 ---
 subsystem: project-chief-control
 owned_paths:
+  - core/src/host/project-chief-recovery.js
+  - core/test/project-chief-recovery.test.js
   - core/src/host/project-chief-lifecycle.js
   - core/test/project-chief-lifecycle.test.js
   - core/src/host/project-chief-protocol.js
@@ -264,3 +266,8 @@ Missing-runner facts additionally include stage=runner-startup. testsStarted is
 configured command invocation; Chief must not interpret it as assertion execution.
 
 #2346 adds bounded contextRecovery facts from claim/worker history, including resumed versus reconstructed identity and source hashes. Chief chooses recovery; no automatic human escalation follows a context mismatch.
+
+#2347 adds typed recovery facts, namespace/birth-checked unmanaged native-Chief
+exit, bounded durable stop attempts and safe sealed-candidate verification recovery.
+Unknown SDK/container execution stays isolated, including after policy revocation.
+See [recovery API and operator guide](../chief-recovery.md).

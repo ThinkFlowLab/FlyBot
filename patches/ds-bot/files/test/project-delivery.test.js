@@ -1915,3 +1915,46 @@ test('a newly created unsealed successor after failure pins current host HEAD ev
   await prepareRole(f.rt, f.task, { id: 'failed-route-prepare', attemptId: id, generation: 2 }, f.definition)
   assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), f.latest)
 })
+
+for (const role of ['tester', 'reviewer']) test('interrupted sealed candidate resumes ' + role + ' in the same Attempt only with current evidence', async t => {
+  const f = await setup(t); await f.start('resume-' + role); await implement(f)
+  if (role === 'reviewer') await f.gate('tester')
+  const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id], sha = attempt.candidateSha, oldRun = attempt.runId
+  task.collaboration = { kind: 'code', attemptId: attempt.id, generation: 3 }; attempt.status = 'interrupted'
+  const target = { id: 'p1:' + role, role }
+  await f.rt.projectDelivery.validateRecovery({ task, target })
+  await f.rt.projectDelivery.resumeVerification({ task, target, decisionId: 'recovery-decision', reason: 'Continue verification of the original sealed candidate' })
+  assert.equal(attempt.status, 'running'); assert.equal(attempt.candidateSha, sha); assert.equal(task.deliveryAttemptId, attempt.id)
+  assert.notEqual(attempt.runId, oldRun); assert.equal(attempt.resumptions.length, 1)
+  await f.rt.projectDelivery.resumeVerification({ task, target, decisionId: 'recovery-decision', reason: 'Duplicate delivery' })
+  assert.equal(attempt.resumptions.length, 1); assert.equal(Object.keys(f.rt.state.projectAttempts).length, 1)
+  assert.equal(git(attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), sha)
+})
+
+test('verification recovery preflight rejects unsealed/stale candidates and Reviewer without tests before routing effects', async t => {
+  const f = await setup(t); await f.start('recovery-gates')
+  const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id], target = { id: 'p1:reviewer', role: 'reviewer' }
+  task.collaboration = { kind: 'code', attemptId: attempt.id, generation: 3 }
+  await assert.rejects(f.rt.projectDelivery.validateRecovery({ task, target }), error => error.code === 'bot/chief-protocol' && error.recovery.kind === 'unsupported-route')
+  assert.equal(task.collaboration.generation, 3)
+  await implement(f); attempt.status = 'interrupted'
+  await assert.rejects(f.rt.projectDelivery.validateRecovery({ task, target }), /passing host tests/)
+  await f.rt.projectDelivery.validateRecovery({ task, target: { id: 'p1:tester', role: 'tester' } })
+  attempt.status = 'running'; await f.gate('tester'); attempt.status = 'interrupted'
+  await f.rt.projectDelivery.validateRecovery({ task, target })
+  writeFileSync(attempt.evidence.tests.log, 'changed test evidence')
+  await assert.rejects(f.rt.projectDelivery.validateRecovery({ task, target }), /unchanged matching host test log/)
+  writeFileSync(join(attempt.workspaces.developer.path, 'code.mjs'), '// unverified mutation')
+  await assert.rejects(f.rt.projectDelivery.validateRecovery({ task, target: { id: 'p1:tester', role: 'tester' } }), /unchanged clean sealed candidate/)
+  assert.equal(attempt.status, 'interrupted'); assert.equal(task.collaboration.generation, 3)
+})
+
+test('unknown SDK or native allocation exit cannot be bypassed by choosing another verification role', async t => {
+  const f = await setup(t); await f.start('unknown-verification-exit'); await implement(f)
+  const attempt = f.attempt(), task = f.rt.state.tasks[f.task.id]
+  task.collaboration = { kind: 'code', attemptId: attempt.id, generation: 3 }; attempt.status = 'interrupted'
+  f.rt.state.projectHarnessWorkers ??= {}
+  f.rt.state.projectHarnessWorkers.unknown = { id: 'unknown', attemptId: attempt.id, status: 'unreachable' }
+  await assert.rejects(f.rt.projectDelivery.resumeVerification({ task, target: { id: 'p1:tester', role: 'tester' }, decisionId: 'unknown', reason: 'Cannot bypass unknown exit' }), error => error.code === 'bot/chief-recovery' && error.recovery.kind === 'worker-exit-unknown')
+  assert.equal(attempt.status, 'interrupted'); assert.equal(attempt.resumptions, undefined)
+})

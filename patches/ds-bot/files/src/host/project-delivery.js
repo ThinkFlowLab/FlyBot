@@ -1,3 +1,5 @@
+import { chiefRecoveryError } from './project-chief-recovery.js'
+import { chiefProtocolError } from './project-chief-protocol.js'
 // Delivery coordinates artifacts/worktrees around the existing Workflow service.
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
@@ -516,7 +518,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
       return { baseSha: attempt.baseSha ?? null, checkoutSha: attempt.candidateSha ?? attempt.seedSha ?? attempt.baseSha ?? null,
         availableInputs: await approvedRepositoryInputs(project), snapshot: await integrationSnapshot(attempt),
         preparationFailure: attempt.preparationFailures?.at(-1) ?? null,
-        materialization: workspaceFor(attempt, 'developer')?.materialization ?? null }
+        materialization: workspaceFor(attempt, 'developer')?.materialization ?? null, verificationRecovery: { attemptStatus: attempt.status, sealedCandidate: Boolean(attempt.candidateSha && attempt.evidence.implementation?.sha === attempt.candidateSha), testsPassedForCandidate: Boolean(attempt.evidence.tests?.passed && attempt.evidence.tests.sha === attempt.candidateSha), requires: ['current requirements and repository binding', 'clean sealed candidate', 'all old allocation exits confirmed', 'normal Task-role context admission'], reviewerRequires: 'matching passing host test command and immutable log' } }
     } catch { return { status: 'unavailable', reason: 'Registered repository or workspace facts are unavailable; preserve prior execution and inspect current bindings' } }
   }
   async function admitChiefInputs(taskId, inputs, actor, saved) {
@@ -1049,6 +1051,39 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
       attempt.acceptedViaChief = decision.id; if (task.result) task.result.summary = `Chief confirmed: ${decision.reason}`; task.completedBy = { kind: 'chief', authorizedBy: actor.memberId, decisionId: decision.id, runId: actor.chiefJobId }; await rt.save(); return accepted
     } catch (error) { attempt.chiefDecision = prior; throw error }
   }
+  async function validateRecovery({ task, target }) {
+    const attempt = ownEntry(attempts(), task.collaboration?.attemptId), capability = target.policyRole ?? target.role
+    if (!attempt || capability === 'developer') return
+    const refuseRoute = (message, actions) => Object.assign(chiefProtocolError('targetBotId', message, task.id), { recovery: { version: 'chief-recovery/v1', kind: 'unsupported-route', retryable: false, attemptId: attempt.id, attemptStatus: attempt.status, candidateSha: attempt.candidateSha ?? null, actions, conditions: [message] } })
+    if (!['running', 'interrupted', 'failed'].includes(attempt.status) || attempt.cancelRequested || attempt.supersededBy || task.deliveryAttemptId !== attempt.id) throw refuseRoute('a current active or recoverable Attempt; preserve ended/superseded history', ['inspect current Attempt', 'choose an explicit rework or reopen action'])
+    if (task.collaboration.kind !== 'code' || !['tester', 'reviewer'].includes(capability)) {
+      if (attempt.status !== 'running') throw refuseRoute('a running non-code Attempt or explicit rework', ['choose an explicit rework'])
+      return
+    }
+    if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision || task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw refuseRoute('matching current Task requirements', ['rework against current requirements'])
+    settingsOf(projectOf(task.projectId, attempt))
+    if (!attempt.candidateSha || attempt.evidence.implementation?.sha !== attempt.candidateSha) throw refuseRoute('a host-sealed candidate before verification routing', ['route to a permitted implementation role', 'admit approved repository inputs when appropriate'])
+    try { await verifyCandidate(attempt) } catch { throw refuseRoute('the unchanged clean sealed candidate and valid child inputs', ['inspect candidate/workspace evidence', 'choose explicit rework']) }
+    if (capability === 'reviewer') {
+      const tests = attempt.evidence.tests, settings = settingsOf(projectOf(task.projectId, attempt))
+      if (!tests?.passed || tests.sha !== attempt.candidateSha || JSON.stringify(tests.command) !== JSON.stringify(settings.testCommand)) throw refuseRoute('matching passing host tests for Reviewer recovery', ['request tests', 'inspect environment readiness'])
+      try { if (await fileDigest(tests.log) !== tests.sha256) throw new Error('changed') } catch { throw refuseRoute('an unchanged matching host test log', ['request fresh tests']) }
+    }
+  }
+  async function resumeVerification({ task, target, decisionId, reason }) {
+    const attempt = ownEntry(attempts(), task.collaboration?.attemptId)
+    if (!attempt || attempt.status === 'running') return
+    try { await validateRecovery({ task, target }) } catch (error) { throw chiefRecoveryError('unsupported-route', error.message, { attemptId: attempt.id, conditions: error.recovery?.conditions ?? [], actions: error.recovery?.actions ?? [] }) }
+    const leases = Object.values(state.projectResourceLeases ?? {}).filter(row => row.attemptId === attempt.id), workers = Object.values(state.projectHarnessWorkers ?? {}).filter(row => row.attemptId === attempt.id), native = Object.values(state.projectNativeWorkers ?? {}).filter(row => row.attemptId === attempt.id)
+    if (leases.some(row => row.status !== 'released') || workers.some(row => !confirmedWorkerExit(state, row)) || native.some(row => !nativeExitConfirmed(state, row)) || Object.values(state.bots ?? {}).some(row => row.ephemeral && row.attemptId === attempt.id)) throw chiefRecoveryError('worker-exit-unknown', 'Verification recovery waits for confirmed exit of every previous allocation', { retryable: true, attemptId: attempt.id, conditions: ['all exact worker and lease exits confirmed'], actions: ['inspect registered execution evidence'] })
+    const previousRunId = attempt.runId, runId = `pool-resume-${hash(attempt.id + ':' + decisionId)}`
+    const resumption = { kind: 'sealed-candidate-verification', decisionId, previousRunId, runId, previousStatus: attempt.status, candidateSha: attempt.candidateSha, targetBotId: target.id, reason, at: Date.now(), leaseIds: leases.map(row => row.id), workerIds: workers.map(row => row.id) }
+    ;(attempt.resumptions ??= []).push(resumption)
+    attempt.runId = runId; attempt.status = 'running'; attempt.updatedAt = Date.now()
+    rt.bindProject({ kind: 'run', id: previousRunId, projectId: task.projectId, taskId: task.id, attemptId: attempt.id, status: 'failed' })
+    rt.bindProject({ kind: 'run', id: runId, projectId: task.projectId, taskId: task.id, attemptId: attempt.id, status: 'queued' })
+    await rt.save()
+  }
   async function reworkPool({ task, claim, reason, force = false, decisionId }) {
     const previous = ownEntry(attempts(), claim.attemptId)
     if (!previous) throw reject('Chief rework has no original Attempt')
@@ -1145,7 +1180,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider } = {}) {
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone', 'decision-directory'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {

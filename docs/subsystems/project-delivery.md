@@ -642,3 +642,8 @@ Vitest or live npm-ci/provider acceptance.
 patch never repeats code/testing/review or replaces a frozen business output.
 [Input correction](project-inputs.md#invalid-receipt-correction-2338) records the
 original evidence and post-failure reconciliation boundaries.
+
+#2347 allows explicit Chief routing of an interrupted sealed candidate to Tester
+or Reviewer only after current requirements, clean candidate, matching evidence
+and all prior exits are verified. Same Attempt/Task-role context and immutable
+resumptions are preserved. [Recovery contract](../chief-recovery.md).

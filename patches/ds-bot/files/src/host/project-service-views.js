@@ -59,6 +59,7 @@ export function attemptMetadataView(attempt) {
   if (attempt.release) result.release = { ...pick(attempt.release, ['id', 'status', 'observedAt']), ...pick(attempt.release.spec, ['repository', 'tag', 'sha', 'mode']), sourceRef: { query: 'release.status', attemptId: attempt.id } }
   if (attempt.pr) result.pr = pick(attempt.pr, ['number', 'sha', 'url', 'repository'])
   if (attempt.publicationBinding) result.publicationBinding = pick(attempt.publicationBinding, ['number', 'repository', 'branch', 'previousSha', 'upstreamSha', 'upstreamRef'])
+  if (attempt.resumptions) result.resumptions = { total: attempt.resumptions.length, recent: attempt.resumptions.slice(-5).map(row => pick(row, ['kind', 'decisionId', 'previousRunId', 'runId', 'previousStatus', 'candidateSha', 'targetBotId', 'at'])), source: { query: 'attempt.context', attemptId: attempt.id, section: 'resumptions' } }
   if (attempt.integrationInputs) result.integrationInputs = attempt.integrationInputs.slice(0, 20).map(row => pick(row, ['version', 'repository', 'ref', 'sha', 'purpose']))
   if (attempt.evidence?.tests?.preparation) result.environment = pick(attempt.evidence.tests.preparation, ['id', 'status', 'executor', 'workspaceId', 'resourceId', 'identitySha256', 'sha256'])
   if (attempt.workspaces) result.workspaces = Object.fromEntries(Object.entries(attempt.workspaces).slice(0, 32).map(([role, row]) => [role, pick(row, ['id', 'status', 'role', 'resourceId', 'materialization'])]))

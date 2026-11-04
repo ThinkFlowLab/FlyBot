@@ -568,7 +568,8 @@ test('dormant native end cannot consume an SDK Chief job before worker registrat
     assert.equal(rt.projectAgents.isDelegationActive(input.agent.id, input.delegation.id), true)
     return 'delayed-sdk-worker'
   }
-  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'chief-window', prompt: 'Inspect', projectFacts: {}, onResult: async () => { callbacks++ } })
+  rt.state.projectExecutions['chief-window'] = { id: 'chief-window', projectId: 'p1', invocation: 1, status: 'running' }
+  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, invocation: 1, runId: 'chief-window', prompt: 'Inspect', projectFacts: {}, onResult: async () => { callbacks++ } })
   await request.onResult({ ok: true, text: '{}' })
   assert.equal(callbacks, 1)
   assert.equal(rt.state.projectAgents[original.public.id].lastRequest.phase, 'completed')
@@ -807,7 +808,8 @@ test('resident native Chief receives fresh job facts in each turn instead of rel
   rt.deliver = async args => { sends.push({ ...args, system: rt.botOf(chief.botId).systemPrompt }); return originalDeliver(args) }
   for (const index of [1, 2]) {
     let completed = false
-    await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: `chief-${index}`, prompt: 'Judge only this current job', projectFacts: { tasks: [{ taskId: `task-${index}`, title: `FRESH_JOB_${index}` }] }, onResult: async () => { completed = true } })
+    rt.state.projectExecutions[`chief-${index}`] = { id: `chief-${index}`, projectId: 'p1', invocation: 1, status: 'running' }
+    await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, invocation: 1, runId: `chief-${index}`, prompt: 'Judge only this current job', projectFacts: { tasks: [{ taskId: `task-${index}`, title: `FRESH_JOB_${index}` }] }, onResult: async () => { completed = true } })
     const sent = sends.at(-1)
     assert.match(sent.text, new RegExp(`FRESH_JOB_${index}`))
     assert.match(sent.text, /Judge only this current job/)
@@ -934,7 +936,7 @@ test('native Chief deadline fencing waits for actual idleness and preserves the 
   const { rt } = await setup(t)
   const { public: chief } = await get(rt, alice)
   rt.projectChiefControl.validateActor = async () => {}
-  rt.state.projectExecutions.deadline = { projectId: 'p1' }
+  rt.state.projectExecutions.deadline = { id: 'deadline', projectId: 'p1', invocation: 1, status: 'running' }
   await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'deadline', invocation: 1, prompt: 'Bounded inspection', projectFacts: {}, onResult: async () => {} })
   let idle, cancelled = false
   rt.resolveAgent = async () => ({ inbox: {}, cancel() { cancelled = true }, whenIdle: () => new Promise(resolve => { idle = resolve }) })
@@ -946,4 +948,27 @@ test('native Chief deadline fencing waits for actual idleness and preserves the 
   assert.equal(proof.confirmed, true); assert.equal(proof.invocation, 1)
   assert.equal(rt.projectAgents.chiefBusy('p1'), false)
   assert.equal(rt.state.projectAgents[chief.id].sessionId, rt.botOf(chief.botId).sessionId)
+})
+
+test('native exit deadline is bounded and cannot silently release its live execution', async t => {
+  const { rt } = await setup(t); await get(rt, alice)
+  rt.projectChiefControl.validateActor = async () => {}
+  rt.state.projectChiefPolicies = { p1: { inspection: { lifecycle: { stopTimeoutMs: 20 } } } }
+  rt.state.projectExecutions.bounded = { id: 'bounded', projectId: 'p1', invocation: 1, status: 'running' }
+  await rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: 'bounded', invocation: 1, prompt: 'Bounded exit', projectFacts: {}, onResult: async () => {} })
+  rt.resolveAgent = async () => ({ inbox: {}, cancel() {}, whenIdle: () => new Promise(() => {}) })
+  const proof = await rt.projectAgents.stopChiefJob('p1', 'bounded')
+  assert.equal(proof.confirmed, false); assert.match(proof.reason, /timed out/)
+  assert.equal(rt.projectAgents.chiefBusy('p1'), true, 'Revoked but live execution retains its Session boundary')
+})
+
+test('failed Chief execution-boundary commit cannot strand a busy delegation before dispatch', async t => {
+  const { rt } = await setup(t); await get(rt, alice)
+  rt.projectChiefControl.validateActor = async () => {}
+  const run = rt.state.projectExecutions.uncommitted = { id: 'uncommitted', projectId: 'p1', invocation: 1, status: 'running' }
+  const save = rt.save; let failed = false
+  rt.save = async () => { if (!failed && rt.projectAgents.chiefBusy('p1')) { failed = true; throw new Error('boundary snapshot failed') } return save() }
+  await assert.rejects(rt.projectAgents.startChiefJob({ projectId: 'p1', actor: alice, runId: run.id, invocation: 1, prompt: 'Do not dispatch before commit', projectFacts: {}, onResult: async () => {} }), /boundary snapshot failed/)
+  assert.equal(failed, true); assert.equal(rt.projectAgents.chiefBusy('p1'), false)
+  assert.equal(run.exitProof.kind, 'chief-never-dispatched')
 })

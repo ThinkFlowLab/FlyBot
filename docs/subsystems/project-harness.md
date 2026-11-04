@@ -458,3 +458,7 @@ Correction turns disable tools while preserving the role filesystem profile;
 sealed execution logs/result hashes remain original. Stale turn frames are ignored.
 Native correction waits for the original Agent to idle and denies business tools.
 See [receipt contract](project-inputs.md#invalid-receipt-correction-2338).
+
+#2347 distinguishes in-process native-Chief host birth from independent SDK,
+container and native-role tool lifecycles; host exit cannot release the latter.
+Verification continuation still uses the original Task-role restoration gates.

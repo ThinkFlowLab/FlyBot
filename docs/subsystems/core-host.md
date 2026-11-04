@@ -995,3 +995,7 @@ The [compatibility contract](project-compatibility.md) inventories original entr
 private proposal archive and current-scope feedback preserve immutable business
 evidence; Task views expose correction status without proposal text or paths.
 See [input contract](project-inputs.md#invalid-receipt-correction-2338).
+
+#2347 preserves cancelled/unknown Chief invocation barriers until exact exit proof,
+with typed recovery health and paged Attempt resumption history. The disposable
+unmanaged DSH restart demo exercises the existing scheduler, not another timer.
