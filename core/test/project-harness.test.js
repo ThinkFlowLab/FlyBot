@@ -569,7 +569,7 @@ test('pre-worker SDK admission failure releases its reservation without deleting
     if (kind === 'profile') delete rt.config.projectResources.r.profiles
     if (kind === 'model') delete rt.config.projectResources.r.profiles.owner.codex.model
     if (kind === 'binding') {
-      const { taskSession, backendBindingKey } = await import('../src/host/project-task-sessions.js')
+      const { taskSession } = await import('../src/host/project-task-sessions.js')
       const session = rt.projectDelivery.sessionFor(), logical = taskSession(rt.state, session)
       logical.bindings.push({ version: 'task-role-binding/v2', key: 'foreign', workerId: 'missing', sessionId: 'retained-thread' })
     }
