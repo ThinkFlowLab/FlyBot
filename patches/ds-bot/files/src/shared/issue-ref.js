@@ -6,8 +6,10 @@
 // front makes it part of an identifier, a version, a hex colour or a URL fragment (`C#7`, `1.2#3`,
 // `#3366ff`, `help/#123`), and a word character behind means the number keeps going (`#1360abc`).
 // `owner/repo#12` is its own shape, tried separately, so this separation cannot swallow it: there
-// the `#` follows a repo name rather than a space.
-const ISSUE_REF = /(?<![\w./-])#(\d{1,7})(?![\w])|(?:github\.com\/)?([\w.-]+)\/([\w.-]+)#(\d{1,7})(?![\w])|github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/(\d{1,7})(?![\w])/gi
+// the `#` follows a repo name rather than a space. It needs the same boundary in front, or a URL
+// whose path has a segment before the `#` reads as that shape and names an issue nobody meant
+// (`https://example.com/page#123`, #1392).
+const ISSUE_REF = /(?<![\w./-])#(\d{1,7})(?![\w])|(?<![\w./-])(?:github\.com\/)?([\w.-]+)\/([\w.-]+)#(\d{1,7})(?![\w])|github\.com\/([\w.-]+)\/([\w.-]+)\/(?:issues|pull)\/(\d{1,7})(?![\w])/gi
 
 // The id a match of `ISSUE_REF` names, normalised to `#1234`. The three shapes carry their number in
 // different groups (1, 4, 7); every reader takes it from here, so no caller can pick the wrong one.
