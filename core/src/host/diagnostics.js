@@ -246,15 +246,28 @@ export function install(rt) {
   // quote. So the answer is a sentence in every case, never a throw, and no read permission is
   // needed for a file that would otherwise have to be opened.
   const NOT_PLAIN = 'not a plain file (nothing is read or written)'
+  // The team file is not a journal leaf (#2404): the store reads it through the link
+  // (`readFile(statePath)` follows the last name) and its next save renames a temp name over this
+  // one (`rename(temp, statePath)`), so a link is read and replaced, not ignored. A directory or a
+  // check that cannot run keeps the leaf sentence above: no read of those lands either.
+  const LINKED_STATE = 'not a plain file (described only; the store reads the team file through the link and the next save replaces the name)'
+  const stateNotPlain = async path => {
+    try {
+      const info = await lstat(path)
+      return info.isSymbolicLink() || (info.isFile() && info.nlink > 1) ? LINKED_STATE : NOT_PLAIN
+    } catch {
+      return NOT_PLAIN
+    }
+  }
   // A path is cleaned with this host's own home, not the process's: a machine shows `~/.dsh/...`
   // and a test's temporary home shows `~/...`, so no report carries the folder a person lives in.
   const cleanPath = text => cleanText(text, { home, redact: rt.redactSecrets })
-  const fileFact = async (path, { missing }) => {
+  const fileFact = async (path, { missing, notPlain }) => {
     if (path === undefined) return undefined
     try {
       const kind = await fileKind(path)
       if (kind === 'absent') return missing
-      if (kind !== 'real') return NOT_PLAIN
+      if (kind !== 'real') return notPlain === undefined ? NOT_PLAIN : await notPlain(path)
       const info = await lstat(path)
       return `${cleanPath(path)} (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`
     } catch {
@@ -278,7 +291,8 @@ export function install(rt) {
       // The file that team is saved in, in the same shape as the two below (#2394): `lstat` only,
       // because the team file holds members and messages and a report may describe it and never
       // open it. `none yet` is a computer that has not saved this team — naming it creates nothing.
-      stateFile: await fileFact(statePath, { missing: 'none yet (this computer has not saved the team)' }),
+      // A link is described by the store's own shape (#2404), not by the journal leaf's sentence.
+      stateFile: await fileFact(statePath, { missing: 'none yet (this computer has not saved the team)', notPlain: stateNotPlain }),
       models: models.length > 0 ? models.join(', ') : undefined,
       // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
       // live state.lock are different faults, and the sidebar shows this same sentence, so the

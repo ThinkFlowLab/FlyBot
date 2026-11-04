@@ -646,6 +646,10 @@ async function realHost(t, { saved, locked = false, prepare } = {}) {
   return { home, statePath, rt, readOnly: rt.readOnly(), report: await rt.diagnostics.report({}) }
 }
 
+// The state line's own sentence for a link or a second name (#2404). The journal leaf keeps
+// `nothing is read or written`; the store reads this file through the link and replaces the name.
+const LINKED_STATE = 'not a plain file (described only; the store reads the team file through the link and the next save replaces the name)'
+
 // #2394: the report counts the team — Bots, Main Bots, group chats — and never says what that team
 // is saved in. `rt.statePath` was already on the runtime (store.js), and the file holds the members
 // and the messages themselves, so the line describes it with `lstat` alone: size and last write
@@ -681,7 +685,8 @@ test('a computer that has not saved the team says so, and naming the file create
 
 // The team file's bytes are the members and the messages. A directory, a link and a second name are
 // each a name this report may describe and must not read through — and the bytes behind the link and
-// the other name stay exactly as they were.
+// the other name stay exactly as they were. A directory keeps the journal leaf's sentence, which is
+// true of it; a link says what the store does with that shape instead (#2404).
 test('a team file that is a directory, a link or a second name is named as not a plain file (#2394)', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
@@ -702,8 +707,8 @@ test('a team file that is a directory, a link or a second name is named as not a
   mkdirSync(linked, { recursive: true })
   symlinkSync(target, join(linked, 'state.json'))
   const linkedReport = await host(linked, { ...quiet, statePath: join(linked, 'state.json') }).diagnostics.report({})
-  assert.equal(linkedReport.facts.stateFile, 'not a plain file (nothing is read or written)')
-  assert.match(linkedReport.markdown, /^state file: not a plain file \(nothing is read or written\)$/m)
+  assert.equal(linkedReport.facts.stateFile, LINKED_STATE)
+  assert.match(linkedReport.markdown, /^state file: not a plain file \(described only; the store reads the team file through the link and the next save replaces the name\)$/m)
   assert.equal(readFileSync(target, 'utf8'), kept, 'the file behind the link keeps its bytes')
 
   const plain = join(elsewhere, 'plain.json')
@@ -713,10 +718,43 @@ test('a team file that is a directory, a link or a second name is named as not a
   linkSync(plain, join(shared, 'state.json'))
   const hardReport = await host(shared, { ...quiet, statePath: join(shared, 'state.json') }).diagnostics.report({})
   assert.equal(lstatSync(plain).nlink, 2, 'this is a file with a second name')
-  assert.equal(hardReport.facts.stateFile, 'not a plain file (nothing is read or written)')
-  assert.match(hardReport.markdown, /^state file: not a plain file \(nothing is read or written\)$/m)
+  assert.equal(hardReport.facts.stateFile, LINKED_STATE)
+  assert.match(hardReport.markdown, /^state file: not a plain file \(described only; the store reads the team file through the link and the next save replaces the name\)$/m)
   assert.equal(readFileSync(plain, 'utf8'), kept, 'the other name keeps its bytes')
   assert.equal(hardReport.markdown.includes(home), false, 'the line never carries the home folder')
+})
+
+// #2404: the state line borrowed the journal leaf's sentence, `nothing is read or written`, but the
+// store does both with the team file: `readFile(statePath)` follows the link and `rename(temp,
+// statePath)` replaces the name on the next save. A linked `state.json` therefore said nothing had
+// been read in the line above a `Read-only` row that could only exist because the read happened and
+// failed. The state line describes its own file: described only, read through the link, name
+// replaced by the next save. A directory or a check that cannot run keeps the leaf sentence, which
+// is true of it.
+test('a linked team file is described as read through the link, not as nothing being read (#2404)', async (t) => {
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  const newer = '{"version":99}\n'
+  const target = join(elsewhere, 'newer.json')
+  writeFileSync(target, newer)
+
+  const linked = await realHost(t, { prepare: statePath => symlinkSync(target, statePath) })
+  const line = linked.report.markdown.match(/^state file: (.*)$/m)?.[1]
+  assert.ok(line !== undefined, 'the report still names the team file')
+  assert.doesNotMatch(line, /nothing is read or written/, 'the line must not deny the read the row below it proves')
+  assert.match(line, /the store reads the team file through the link and the next save replaces the name/)
+  assert.match(linked.report.markdown, /^\| Read-only \| The Bot team file .* could not be read \(saved by a newer FlyBot; update FlyBot\)/m,
+    'the row that only exists because the file was read stays as it is')
+  assert.equal(readFileSync(target, 'utf8'), newer, 'the file behind the link keeps its bytes')
+
+  const plain = join(elsewhere, 'plain.json')
+  writeFileSync(plain, newer)
+  const shared = await realHost(t, { prepare: statePath => linkSync(plain, statePath) })
+  const hardLine = shared.report.markdown.match(/^state file: (.*)$/m)?.[1]
+  assert.equal(lstatSync(plain).nlink, 2, 'this is a file with a second name')
+  assert.doesNotMatch(hardLine, /nothing is read or written/, 'a second name is read and replaced the same way')
+  assert.match(hardLine, /the store reads the team file through the link and the next save replaces the name/)
+  assert.equal(readFileSync(plain, 'utf8'), newer, 'the other name keeps its bytes')
 })
 
 // The line is read information, not a write: a window another dsh keeps read-only still names the
