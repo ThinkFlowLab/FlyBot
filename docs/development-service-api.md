@@ -161,6 +161,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | task.reject | attemptId、reason等原返工参数 | 管；原证据/停止/新Attempt路径，新Task不改变Chief裁定权 |
 | attempt.stop | attemptId | 管；请求原worker停止，未证实退出继续持有租约 |
 | attempt.cleanup | attemptId | 管；只在受支持的终止/退出状态清理，不删除Task历史 |
+| attempt.reconcile-exit | attemptId、claimId、generation、reason | 管；核验实际退出与待对账责任，持久退场旧 claim 并 fence 代次；不取消/选路，随后重新取 integration-state |
 | attempt.integration-bind | attemptId、generation、inputs:[{ref,sha,purpose?}]、expectedWorkspace（取integration-state快照） | 管；实际引用、SHA/测试/Review绑定，非伪造“已合并” |
 | attempt.publication-retry | attemptId | 管；原PR绑定/幂等恢复，不另建重复PR |
 | release.request | attemptId、tag、sha、mode?:observe/publish、name?、notes? | 管；默认只观察，publish是显式发布授权 |
