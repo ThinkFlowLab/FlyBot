@@ -5,7 +5,7 @@
 // fill that slice. Progress for the open job is a compact board snapshot in the
 // same turn, not those essays.
 import { columnOf, compareForWork, progressOf } from '../shared/task-board.js'
-import { cut } from '../shared/text-boundary.js'
+import { cut, fits } from '../shared/text-boundary.js'
 import { fenceUntrusted } from './delivery.js'
 
 // Characters, not a tokenizer. The essays this was measured on are mostly CJK,
@@ -42,7 +42,7 @@ const oneLine = (value, max) => {
     flat += code < 0x20 || code === 0x7f || char === '<' || char === '>' ? ' ' : char
   }
   flat = flat.replace(/\s+/g, ' ').trim()
-  if (flat.length <= max) return flat
+  if (fits(flat, max)) return flat
   return `${cut(flat, Math.max(0, max - 1)).text}…`
 }
 

@@ -5239,7 +5239,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +import { currentParticipants } from './room-membership.js'
 +import { defineTool } from './tool-schema.js'
 +import { clip, codePoints, splitRef, unquote } from './text.js'
-+import { codePointStart, cut } from '../shared/text-boundary.js'
++import { codePointStart, cut, fits } from '../shared/text-boundary.js'
  import { output } from './tools.js'
 +import { retiredBot } from './store.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -5765,7 +5765,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    // A long message often ends with what the user wants of it, so both ends stay.
 -  const ends = (text, max) => (text.length > max ? `${text.slice(0, Math.ceil(max * 2 / 3))} …(middle cut)… ${text.slice(-Math.floor(max / 3))}` : text)
 +  const ends = (text, max) => {
-+    if (text.length <= max) return text
++    if (fits(text, max)) return text
 +    const tail = text.slice(codePointStart(text, text.length - Math.floor(max / 3)))
 +    // Stepping back onto a boundary can keep one more unit at the tail; the head gives it back.
 +    const head = cut(text, Math.min(Math.ceil(max * 2 / 3), max - tail.length))
@@ -11852,7 +11852,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const view = (await call('memory-view', { botId: 'b2' })).value
    assert.equal(view.error, null)
    assert.equal(view.summary?.text, 'You like tea.')
-@@ -1076,3 +1076,801 @@ test('a memory call names the current part of the Bot chat', async (t) => {
+@@ -1076,3 +1076,830 @@ test('a memory call names the current part of the Bot chat', async (t) => {
    assert.equal(answer.ok, true)
    assert.equal(requests[0].sessionId, 'b2-part2')
  })
@@ -12653,6 +12653,35 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  await tool('remember', { text: 'Ship on Tuesday', scope: 'team' }, 'g3')
 +  const recorded = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
 +  assert.deepEqual(recorded.map(record => record.op), ['add'], 'the record lands once the file carries one name')
++})
++
++// P-514: `ends` judged with `text.length` while it stepped by code point, so a user message under
++// REVIEW_USER_LINE_MAX (3000 characters) was cut in the middle. 2900 characters are 5800 UTF-16
++// units, so the unfixed bound keeps 1500 of them (a 2000-unit head and a 1000-unit tail) and drops
++// 1400. ASCII is the control: it is under the limit in both readings and must read the same.
++test('a user line under 3000 characters is kept whole for the review (P-514)', async () => {
++  const render = async (text) => {
++    const history = {
++      b2: [
++        { event: { seq: 20, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Start here.' }] } } },
++        { event: { seq: 21, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } } },
++      ],
++    }
++    const replies = [JSON.stringify({ changes: [] })]
++    const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
++    await call('state', {})
++    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
++    await reviewed(call)
++    await stop()
++    const prompt = requests[0].messages[0].content[0].text
++    const line = prompt.split('\n').find(one => one.startsWith(`User: ${[...text][0]}`))
++    assert.ok(line !== undefined, `the user line is in the review context:\n${prompt}`)
++    return line
++  }
++  const wide = '😀'.repeat(2900)
++  assert.equal(await render(wide), `User: ${wide}`, '2900 characters are under the 3000-character limit, though they are 5800 UTF-16 units')
++  const ascii = 'a'.repeat(2900)
++  assert.equal(await render(ascii), `User: ${ascii}`, 'ASCII under the limit reads the same before and after')
 +})
 diff --git a/test/model-menu.test.js b/test/model-menu.test.js
 --- a/test/model-menu.test.js

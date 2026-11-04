@@ -28,7 +28,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
 import { clip, codePoints, splitRef, unquote } from './text.js'
-import { codePointStart, cut } from '../shared/text-boundary.js'
+import { codePointStart, cut, fits } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -1269,7 +1269,7 @@ export function install(rt) {
   const saveCursors = () => (writeFolder(root) ? writeText(cursorsPath, JSON.stringify(cursors)) : Promise.resolve())
   // A long message often ends with what the user wants of it, so both ends stay.
   const ends = (text, max) => {
-    if (text.length <= max) return text
+    if (fits(text, max)) return text
     const tail = text.slice(codePointStart(text, text.length - Math.floor(max / 3)))
     // Stepping back onto a boundary can keep one more unit at the tail; the head gives it back.
     const head = cut(text, Math.min(Math.ceil(max * 2 / 3), max - tail.length))
