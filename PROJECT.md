@@ -15,8 +15,9 @@ preserves drafts and admits explicit inspect/integrate inputs through existing
 Effects. Chief selects only approved repository sources. #2327 adds bounded, durable Chief protocol correction in the resident Session;
 exhaustion retains incomplete judgement without automatic escalation. Follow-ups:
 #2328 adds confirmed-idle wait suspension and FIFO continuation re-admission
-through the original queue; exit-unknown capacity remains held. Remaining: #2330
-inspection recovery. See
+through the original queue; exit-unknown capacity remains held. #2330 adds durable scheduled inspection reconciliation, configured deadlines,
+exit-proven bounded recovery and health visibility; independent Task refusals do not
+abort other decisions. No automatic business escalation or live rollout. See
 [delivery contract](docs/subsystems/project-delivery.md). Live Task mutation and
 deployment remain separate from source/test delivery.
 

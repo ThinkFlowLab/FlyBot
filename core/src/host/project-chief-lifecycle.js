@@ -1,6 +1,7 @@
 // Mechanical inspection lifecycle; no business routing or automatic human escalation.
 export const INSPECTION_LIFECYCLE = { queueTimeoutMs: 600000, runTimeoutMs: 900000, recoveryDelayMs: 5000, maxRecoveries: 2, overdueMs: 3600000 }
 export function inspectionLifecycle(inspection) {
+  if (inspection?.lifecycle !== undefined && (!inspection.lifecycle || typeof inspection.lifecycle !== 'object' || Array.isArray(inspection.lifecycle))) throw new Error('Invalid Chief inspection lifecycle configuration')
   const value = { ...INSPECTION_LIFECYCLE, ...inspection?.lifecycle }
   for (const [key, number] of Object.entries(value)) if (!(key in INSPECTION_LIFECYCLE) || !Number.isSafeInteger(number) || number < (key === 'maxRecoveries' ? 0 : 1) || number > (key === 'maxRecoveries' ? 4 : 86400000)) throw new Error('Invalid Chief inspection lifecycle configuration: ' + key)
   return value

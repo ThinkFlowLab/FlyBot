@@ -13,6 +13,14 @@ Dated, short lessons from real FlyBot work. Agents read this **before coding**. 
 
 ## Open lessons
 
+### 2026-11-04 — An enabled schedule is not a completed inspection (Seen 1×)
+
+A process-local waiter disappears on restart; correlate durable occurrence and Run
+instead. Bound preparation/execution separately from exit proof, fence late results,
+and recover only the exact released invocation. A single Task gate refusal must not
+abort independent inspection decisions or be called a successful round.
+
+
 ### 2026-11-04 — Releasing a slot requires re-admission and lock ordering (Seen 1×)
 
 A suspended Attempt still has a Run; filter both using the same trusted exit facts.

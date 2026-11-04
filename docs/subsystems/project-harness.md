@@ -375,3 +375,6 @@ Native input budgeting fences the actual `claim.workerId` against the temporary 
 
 
 #2328 extends the actual SDK protocol subprocess test: result completion alone retains project/resource capacity; only stop acknowledgement plus process exit releases the input wait. The fixture bridge is deterministic and does not perform vendor inference.
+
+
+#2330 tags Chief workers with their host control invocation. Restart/deadline reconciliation cannot reuse a prior invocation's released SDK worker as proof that the current invocation exited. Backend thread/context restoration retains the original Harness binding gates.

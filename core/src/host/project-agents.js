@@ -384,7 +384,8 @@ export function createProjectAgents(rt) {
       if (definition.execution?.resourceIds?.length) {
         const lease = await rt.projectResources.reserve({ projectId, attemptId: `chief-turn-${delegation.id}`, sessionKey: delegation.id, role: 'chief', harness: 'flybot', resourceIds: definition.execution.resourceIds, maxConcurrent: 1 })
         if (rt.projectResources.setting(projectId, lease.resourceId).type !== 'local') throw refuse('Native Chief requires a local resource')
-        delegation.resourceLease = lease
+        lease.chiefRunId = runId; lease.chiefInvocation = invocation
+        delegation.resourceLease = lease; agent.lastRequest.resourceLease = lease
         await rt.projectResources.markStarted(lease.id, lease.generation, { kind: 'native-turn', handle: delegation.exchangeId, botId: agent.botId, sessionId: agent.sessionId })
       }
       await rt.projectChiefControl.validateActor(actor)
@@ -639,7 +640,8 @@ export function createProjectAgents(rt) {
         for (const message of [...(active.inbox?.nextStep ?? []), ...(active.inbox?.nextTurn ?? [])]) if (message.source?.exchangeId === request.exchangeId) active.inbox.remove?.(message.id)
         active.cancel?.({ kind: 'hook', reason: 'Configured Chief inspection deadline' })
         await active.whenIdle()
-        if (delegation?.resourceLease) await rt.projectResources.release(delegation.resourceLease.id, delegation.resourceLease.generation, { handle: delegation.exchangeId, exited: true })
+        const lease = delegation?.resourceLease ?? request.resourceLease
+        if (lease) await rt.projectResources.release(lease.id, lease.generation, { handle: request.exchangeId, exited: true })
         confirmed = true
       }
       if (!confirmed || agent.lastRequest !== request) return { confirmed: false }

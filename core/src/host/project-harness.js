@@ -388,6 +388,7 @@ export function createProjectHarness(rt) {
     if (!rt.projectAgents.isDelegationActive(agent.id, delegation.id)) throw refuse('Chief delegation is no longer active')
     const lease = await rt.projectResources.reserve({ projectId: agent.projectId, attemptId: `chief-turn-${delegation.id}`, role: agent.role ?? 'chief', sessionKey: delegation.id,
       harness: definition.execution.harness, resourceIds: definition.execution.resourceIds, maxConcurrent: 1 })
+    if (delegation.chiefJob) { lease.chiefRunId = delegation.chiefJob.runId; lease.chiefInvocation = delegation.chiefJob.invocation; await rt.save() }
     let workerId
     try {
       const selected = await profile(agent.projectId, lease.resourceId, definition.execution.harness)

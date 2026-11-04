@@ -413,3 +413,30 @@ test('restart requeues taskless inspection only with exact confirmed exit, curre
     if (kind === 'unknown') assert.equal(run.recovery.exitConfirmed, false)
   }
 })
+
+test('taskless SDK inspection recovery refuses missing, active or mismatched lease evidence', async () => {
+  for (const kind of ['confirmed', 'missing', 'active', 'generation']) {
+    const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+    run.purpose = 'inspection'; delete run.taskId; run.workerId = 'sdk-chief'
+    f.rt.state.projectHarnessWorkers = { 'sdk-chief': { id: 'sdk-chief', chiefRunId: run.id, chiefInvocation: run.invocation, projectId: 'p', attemptId: 'chief-a', role: 'chief', resourceId: 'r', leaseId: 'chief-l', generation: 3, status: 'released', releaseProof: { kind: 'sdk-stop-ack-and-process-exit', generation: 3 } } }
+    f.rt.state.projectResourceLeases = kind === 'missing' ? {} : { 'chief-l': { id: 'chief-l', chiefRunId: run.id, chiefInvocation: run.invocation, projectId: 'p', attemptId: 'chief-a', role: 'chief', resourceId: 'r', generation: kind === 'generation' ? 2 : 3, status: kind === 'active' ? 'running' : 'released', worker: { kind: 'sdk', handle: 'sdk-chief' } } }
+    const restored = createProjectChiefControl(f.rt); f.rt.projectChiefControl = restored; restored.recover()
+    run.recovery = { status: 'waiting-exit', attempts: 0, notBefore: Date.now() - 1 }
+    await restored.pump(); await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(run.status, kind === 'confirmed' ? 'running' : 'interrupted', kind)
+  }
+})
+
+test('scheduled reminder coalescing and policy changes never re-authorize stale occurrences', async () => {
+  const f = await controlFixture()
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Finish the original turn' }))
+  const policy = f.rt.state.projectChiefPolicies.p
+  f.rt.projectAgents.chiefBusy = () => true
+  const a = await f.control.request('p', 'inspection', { scheduleId: 's', occurrenceId: 'old' })
+  const b = await f.control.request('p', 'inspection', { scheduleId: 's', occurrenceId: 'new' })
+  assert.equal(a.status, 'cancelled'); assert.equal(a.recovery.supersededBy, b.id)
+  policy.revision++; f.rt.projectAgents.chiefBusy = () => false
+  await f.control.pump(); assert.equal(b.status, 'cancelled')
+  const reference = await f.control.scheduled({ row: { id: 's', revision: 99, projectId: 'p', config: { prompt: 'Changed' } }, delivery: { id: 'old' } })
+  assert.equal(reference.runId, a.id)
+})

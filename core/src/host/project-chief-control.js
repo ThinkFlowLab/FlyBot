@@ -121,7 +121,8 @@ export function createProjectChiefControl(rt) {
     return run
   }
   async function scheduled({ row, delivery }) {
-    const run = await request(row.projectId, 'inspection', { scheduleId: row.id, scheduleRevision: row.revision, occurrenceId: delivery.id, prompt: row.config.prompt })
+    const prior = Object.values(rt.state.projectExecutions ?? {}).find(run => run.kind === 'chief-control' && run.projectId === row.projectId && run.source?.scheduleId === row.id && run.source?.occurrenceId === delivery.id)
+    const run = prior ?? await request(row.projectId, 'inspection', { scheduleId: row.id, scheduleRevision: row.revision, occurrenceId: delivery.id, prompt: row.config.prompt })
     return { runId: run.id, pending: ['queued', 'running', 'correction-pending'].includes(run.status) }
   }
   const scheduledState = ({ row, delivery }) => scheduledInspectionState(rt.state, row, delivery)
@@ -238,9 +239,9 @@ export function createProjectChiefControl(rt) {
       }
       const results = [], failures = []
       for (const decision of parsed.decisions) {
+        try {
         const applied = run.appliedDecisions?.find(row => row.taskId === decision.taskId)
         if (applied) { if (applied.intent !== digest(decision)) throw refuse('A prior invocation already applied this Task decision; inspect its current state in a new job'); results.push(rt.state.projectChiefDecisions[applied.id]); continue }
-        try {
         const audit = await applyDecision(job, decision); results.push(audit)
         ;(run.appliedDecisions ??= []).push({ taskId: decision.taskId, intent: digest(decision), id: audit.id })
         if (rt.state.tasks[decision.taskId]?.chiefActionIssue) delete rt.state.tasks[decision.taskId].chiefActionIssue
@@ -252,6 +253,7 @@ export function createProjectChiefControl(rt) {
           await rt.save()
         }
       }
+      await validateActor(job.actor)
       if (run.correction) run.correction.status = 'resolved'
       delete run.failure
       run.status = failures.length ? 'partial' : 'done'; run.decisionFailures = failures; if (failures.length) run.failure = `${failures.length} Task decisions were refused; independent decisions continued`; run.summary = parsed.summary.slice(0, 8000); run.decisionIds = results.map(row => row.id); run.executionEvidence = result.executionEvidence ?? null
@@ -293,12 +295,14 @@ export function createProjectChiefControl(rt) {
     } finally { if (run.invocation !== job.invocation) return; run.lastInvocationFinishedAt = Date.now(); if (!correcting) run.finishedAt = Date.now(); if (active.get(run.id) === job) active.delete(run.id); if (!correcting) waiters.delete(run.id); await rt.save(); if (correcting) rt.projectScheduler?.wake() }
   }
   async function inspectionExited(run) {
-    const workers = Object.values(rt.state.projectHarnessWorkers ?? {}).filter(row => row.chiefRunId === run.id && (row.chiefInvocation === undefined || row.chiefInvocation === run.invocation))
-    const leases = Object.values(rt.state.projectResourceLeases ?? {}).filter(row => workers.some(worker => worker.leaseId === row.id))
-    if (workers.length) return workers.every(row => confirmedWorkerExit(rt.state, row)) && leases.every(row => row.status === 'released')
+    const workers = Object.values(rt.state.projectHarnessWorkers ?? {}).filter(row => row.chiefRunId === run.id && (row.chiefInvocation === undefined ? row.id === run.workerId : row.chiefInvocation === run.invocation))
+    const leases = Object.values(rt.state.projectResourceLeases ?? {}).filter(row => row.chiefRunId === run.id && row.chiefInvocation === run.invocation || workers.some(worker => worker.leaseId === row.id))
+    if (leases.some(row => row.status !== 'released')) return false
+    if (workers.length) return workers.every(row => confirmedWorkerExit(rt.state, row) && leases.some(lease => lease.id === row.leaseId && lease.projectId === row.projectId && lease.attemptId === row.attemptId && lease.role === row.role && lease.resourceId === row.resourceId && lease.generation === row.generation && lease.worker?.handle === row.id))
+    if (leases.length && leases.every(row => row.releaseProof && (!row.worker && row.releaseProof.kind === 'unbound-reservation-release' || row.worker?.kind === 'native-turn' && ['host-confirmed-worker-exit', 'systemd-prior-invocation-exited'].includes(row.releaseProof.kind)))) return true
     const agent = rt.state.projectAgents?.[`public-${run.projectId}`], proof = agent?.lastRequest?.exitProof
     if (proof?.confirmed && proof.runId === run.id && agent.lastRequest.chiefRunId === run.id && proof.carrierGeneration === agent.carrierGeneration && proof.invocation === run.invocation) return true
-    if (run.exitProof?.confirmed && run.exitProof.runId === run.id && run.exitProof.invocation === run.invocation) return true
+    if (['native-chief-quiescent', 'sdk-chief-confirmed-exit', 'chief-never-dispatched'].includes(run.exitProof?.kind) && run.exitProof?.confirmed && run.exitProof.runId === run.id && run.exitProof.invocation === run.invocation) return true
     return Boolean(await priorScopeExited(run.processScope))
   }
   async function inspectionBarrier(current) {

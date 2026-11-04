@@ -250,3 +250,6 @@ project-agent-history保留messages字段，默认最近50条，limit为1..100�
 GitHub App 的操作权限、Token生命周期、故障恢复及审计见 [GitHub自动化](github-automation.md)。连接选择与Task执行权限独立，代理不得替自己更换凭据。
 
 #2325：purpose 默认为 integrate，封存时要求实际集成；inspect 只让获准提交在执行资源中可见，不要求合并，也不代表测试通过。availableInputs 最多列20个已由操作员提供的 refs/remotes/operator/* 引用。提交不在目录中时先由获准操作员提供，不自动获取任意远端。
+
+
+#2330：`chief.configure.payload.inspection.lifecycle` 支持 queueTimeoutMs/runTimeoutMs/recoveryDelayMs/overdueMs（1–86400000 毫秒）和 maxRecoveries（0–4）；默认分别为 600000/900000/5000/3600000 和 2。`chief.state.result.health` 返回启用、逾期/退化状态及各阶段时间；`runs` 中 correction-pending/incomplete/partial/interrupted 具有不同含义。定时 delivery 通过持久 runId 对账，acknowledgement、巡检成功、裁决应用、实际项目推进相互独立。

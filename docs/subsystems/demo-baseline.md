@@ -185,3 +185,6 @@ The actual native JSON/SQLite return probe waits through the original preparing 
 
 
 #2327 adds optional correctOnce fault injection to the inbox fixture model: malformed requirement strings must receive host feedback and be corrected by the same Chief conversation. Production runtime tests assert both faults and both successful corrections.
+
+
+#2330 allows the deterministic mock reply hook to return a Promise for bounded fault-injection tests. The production backend regression holds a native Chief response until the configured deadline, releases the old response, confirms actual quiescence and restarts the backend before durable inspection recovery. Fixture cleanup removes its own homes and processes.

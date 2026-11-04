@@ -1020,6 +1020,187 @@
           "impact"
         ]
       },
+      "InspectionLifecycle": {
+        "type": "object",
+        "properties": {
+          "queueTimeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "runTimeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "recoveryDelayMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "maxRecoveries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "overdueMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          }
+        },
+        "additionalProperties": false
+      },
+      "InspectionHealth": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "pending",
+              "healthy",
+              "degraded",
+              "overdue"
+            ]
+          },
+          "lastOccurrenceAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastStartedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastCompletedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSuccessAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastAppliedDecisionAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overdueMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "active": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "runId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Opaque server-issued ID; never infer authority from it."
+                },
+                "occurrenceId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "ageMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "failure": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "recovery": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "deadlineAt": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": true,
+              "required": [
+                "runId",
+                "status",
+                "ageMs",
+                "deadlineAt"
+              ]
+            }
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "enabled",
+          "status",
+          "lastSuccessAt",
+          "lastAppliedDecisionAt",
+          "active"
+        ]
+      },
       "ChiefCorrection": {
         "type": "object",
         "properties": {
@@ -8396,6 +8577,9 @@
       "DevelopmentQueryChiefStateResult": {
         "type": "object",
         "properties": {
+          "health": {
+            "$ref": "#/components/schemas/InspectionHealth"
+          },
           "policy": {
             "type": "object",
             "properties": {
@@ -8417,6 +8601,20 @@
                 "minLength": 1,
                 "maxLength": 200,
                 "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "inspection": {
+                "type": "object",
+                "properties": {
+                  "lifecycle": {
+                    "$ref": "#/components/schemas/InspectionLifecycle"
+                  },
+                  "correctionBudget": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4
+                  }
+                },
+                "additionalProperties": true
               }
             },
             "additionalProperties": true,
@@ -8561,6 +8759,7 @@
         },
         "additionalProperties": true,
         "required": [
+          "health",
           "policy",
           "template",
           "schedule",
@@ -13766,6 +13965,9 @@
           "inspection": {
             "type": "object",
             "properties": {
+              "lifecycle": {
+                "$ref": "#/components/schemas/InspectionLifecycle"
+              },
               "correctionBudget": {
                 "type": "integer",
                 "minimum": 0,
@@ -13889,6 +14091,9 @@
       "DevelopmentCommandChiefConfigureResult": {
         "type": "object",
         "properties": {
+          "health": {
+            "$ref": "#/components/schemas/InspectionHealth"
+          },
           "policy": {
             "type": "object",
             "properties": {
@@ -13910,6 +14115,20 @@
                 "minLength": 1,
                 "maxLength": 200,
                 "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "inspection": {
+                "type": "object",
+                "properties": {
+                  "lifecycle": {
+                    "$ref": "#/components/schemas/InspectionLifecycle"
+                  },
+                  "correctionBudget": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4
+                  }
+                },
+                "additionalProperties": true
               }
             },
             "additionalProperties": true,
@@ -14054,6 +14273,7 @@
         },
         "additionalProperties": true,
         "required": [
+          "health",
           "policy",
           "template",
           "schedule",
@@ -19185,6 +19405,9 @@
           "chief": {
             "type": "object",
             "properties": {
+              "health": {
+                "$ref": "#/components/schemas/InspectionHealth"
+              },
               "policy": {
                 "type": "object",
                 "properties": {
@@ -19206,6 +19429,20 @@
                     "minLength": 1,
                     "maxLength": 200,
                     "description": "Opaque server-issued ID; never infer authority from it."
+                  },
+                  "inspection": {
+                    "type": "object",
+                    "properties": {
+                      "lifecycle": {
+                        "$ref": "#/components/schemas/InspectionLifecycle"
+                      },
+                      "correctionBudget": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4
+                      }
+                    },
+                    "additionalProperties": true
                   }
                 },
                 "additionalProperties": true,
@@ -19350,6 +19587,7 @@
             },
             "additionalProperties": true,
             "required": [
+              "health",
               "policy",
               "template",
               "schedule",
@@ -26655,6 +26893,9 @@
           "inspection": {
             "type": "object",
             "properties": {
+              "lifecycle": {
+                "$ref": "#/components/schemas/InspectionLifecycle"
+              },
               "correctionBudget": {
                 "type": "integer",
                 "minimum": 0,
@@ -26728,6 +26969,9 @@
       "ProjectChiefConfigureResult": {
         "type": "object",
         "properties": {
+          "health": {
+            "$ref": "#/components/schemas/InspectionHealth"
+          },
           "policy": {
             "type": "object",
             "properties": {
@@ -26749,6 +26993,20 @@
                 "minLength": 1,
                 "maxLength": 200,
                 "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "inspection": {
+                "type": "object",
+                "properties": {
+                  "lifecycle": {
+                    "$ref": "#/components/schemas/InspectionLifecycle"
+                  },
+                  "correctionBudget": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4
+                  }
+                },
+                "additionalProperties": true
               }
             },
             "additionalProperties": true,
@@ -26893,6 +27151,7 @@
         },
         "additionalProperties": true,
         "required": [
+          "health",
           "policy",
           "template",
           "schedule",
@@ -26951,6 +27210,9 @@
       "ProjectChiefStateResult": {
         "type": "object",
         "properties": {
+          "health": {
+            "$ref": "#/components/schemas/InspectionHealth"
+          },
           "policy": {
             "type": "object",
             "properties": {
@@ -26972,6 +27234,20 @@
                 "minLength": 1,
                 "maxLength": 200,
                 "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "inspection": {
+                "type": "object",
+                "properties": {
+                  "lifecycle": {
+                    "$ref": "#/components/schemas/InspectionLifecycle"
+                  },
+                  "correctionBudget": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4
+                  }
+                },
+                "additionalProperties": true
               }
             },
             "additionalProperties": true,
@@ -27116,6 +27392,7 @@
         },
         "additionalProperties": true,
         "required": [
+          "health",
           "policy",
           "template",
           "schedule",
@@ -30168,7 +30445,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a"
+        "sha256": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00"
       }
     },
     {
@@ -33143,7 +33420,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a"
+        "sha256": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00"
       }
     },
     {
@@ -33240,10 +33517,10 @@
         "unifiedCommandReceipt": true
       },
       "invokesModel": false,
-      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing.",
+      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a"
+        "sha256": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00"
       }
     },
     {
@@ -33342,7 +33619,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduled-tasks.js",
-        "sha256": "f99a7e28a95c4525672c88059878ede4b88c45b5b668dfc25f3a1dd519bab3c0"
+        "sha256": "9e82ecfbc2d4adeb78c55872ebe7e58397a623b958142191c55291e7dd2133a6"
       }
     },
     {
@@ -33515,7 +33792,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -33620,7 +33897,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "8ee1d4040cff7ede7b4c540bb0b020061406bea718d649a7a7b1792c63cc1553"
+        "sha256": "a1b2fbe8b0e8cf3c4d3fe005338b03d9eebdd4d7c5e7c47e24d6020e48b37064"
       }
     },
     {
@@ -37668,7 +37945,7 @@
       "notes": "FBA may only use view=summary, which never borrows native private history. Use v1 roles and consultations for external agents.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -37761,7 +38038,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -37832,7 +38109,7 @@
       "notes": "Default latest50; byte-budgeted messages, oversized records use messageIndex source pages. Snapshot prefix survives append, edits invalidate cursor. Private defaults to the current human.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -37905,7 +38182,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -37981,7 +38258,7 @@
       "notes": "Human facts and role-authored inference have distinct authority. Updates retain history; memory is not permission.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -38150,7 +38427,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -38242,7 +38519,7 @@
       "notes": "External agents should prefer v1 consultation.ask. A consultation is not a Task handoff.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -38315,7 +38592,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -38849,7 +39126,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       }
     },
     {
@@ -44025,7 +44302,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a"
+        "sha256": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -44120,10 +44397,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": false,
-      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing.",
+      "notes": "30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a"
+        "sha256": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -44199,7 +44476,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a"
+        "sha256": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -44296,7 +44573,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduled-tasks.js",
-        "sha256": "f99a7e28a95c4525672c88059878ede4b88c45b5b668dfc25f3a1dd519bab3c0"
+        "sha256": "9e82ecfbc2d4adeb78c55872ebe7e58397a623b958142191c55291e7dd2133a6"
       },
       "aliasOf": "development.command.schedule.configure"
     },
@@ -44465,7 +44742,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada"
+        "sha256": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760"
       },
       "aliasOf": "development.command.proposal.publish"
     },
@@ -44568,7 +44845,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "8ee1d4040cff7ede7b4c540bb0b020061406bea718d649a7a7b1792c63cc1553"
+        "sha256": "a1b2fbe8b0e8cf3c4d3fe005338b03d9eebdd4d7c5e7c47e24d6020e48b37064"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -45060,10 +45337,11 @@
       "core/src/host/project-agent-inbox.js": "046ccf3aa9bb6c2f57c010ba3f798786f2de4acb603b4482e85bfee5ccac96f9",
       "core/src/host/project-agent-skills.js": "6545f39aec7bbb8bd812558d37422fae1fa0e4fc7ab2fa02f1c50501d29c8445",
       "core/src/host/project-agent-webhook.js": "129d8ea133a5d85f3b3cb2627dee45fe8617552b422213b93539436dd7a1e5ce",
-      "core/src/host/project-agents.js": "73970119c983c9c20a05fbe15f9342b7837a431d68d8c57a93a356830b75fada",
+      "core/src/host/project-agents.js": "c1a3540bc030aec39defe2228359e93062d1412241ea46ac6fc9069ad39dd760",
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
-      "core/src/host/project-chief-control.js": "2f325b1b6043fd39b1c3603889f5458f4583732cfa5a42cec18d6d915fd2e67a",
+      "core/src/host/project-chief-control.js": "b0a850f45289b9806c3d869dd12452b3f268f79238efb80cf9cf2de68fd40f00",
+      "core/src/host/project-chief-lifecycle.js": "dd32210b4cb103cb3f37d0cbaf34efea6cd240260055134827eb3668e1af18c6",
       "core/src/host/project-chief-protocol.js": "a09d85e04171b22625d3eed131dd6a5227dc1a946ad39d8a59f017bb75f71936",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
@@ -45090,7 +45368,7 @@
       "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
       "core/src/host/project-github.js": "bf6d3891a6fa9c0516cd330d3322a750fc6db8813752f7801d4d9760fca84061",
       "core/src/host/project-harness-turn.js": "a8ab111b8d5473a27413968e4ea5c2631ea472c992414e9387da245463f7b21a",
-      "core/src/host/project-harness.js": "8ee1d4040cff7ede7b4c540bb0b020061406bea718d649a7a7b1792c63cc1553",
+      "core/src/host/project-harness.js": "a1b2fbe8b0e8cf3c4d3fe005338b03d9eebdd4d7c5e7c47e24d6020e48b37064",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "dd52c6ddc7b0f2614ecaa3c3cccbea7a39ea914f24e1602946b93a290eff622e",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
@@ -45111,7 +45389,7 @@
       "core/src/host/project-role-policy.js": "19f4b5275bf62d1f39c153e542ffd3eff0231168f5fc7da7e9c831789e41287e",
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
       "core/src/host/project-runtime-setup.js": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0",
-      "core/src/host/project-scheduled-tasks.js": "f99a7e28a95c4525672c88059878ede4b88c45b5b668dfc25f3a1dd519bab3c0",
+      "core/src/host/project-scheduled-tasks.js": "9e82ecfbc2d4adeb78c55872ebe7e58397a623b958142191c55291e7dd2133a6",
       "core/src/host/project-scheduler.js": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
