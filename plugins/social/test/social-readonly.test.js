@@ -280,3 +280,66 @@ test('#2228: a read-only waiting room keeps its code, drops Leave and Enter chat
     assert.ok(tags.includes('face-wait-roster'), 'who has joined is still drawn')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #2418: a Bot's own settings → Sharing. A read-only window drew the invite mint, the one-click share
+// and People with access (Revoke); the host refuses every one of them with `bot/read-only`.
+const detailsTree = (roster) => {
+  const app = loadApp()
+  const inst = { hooks: {}, effects: [], props: { bot: { id: 'bot_a', name: 'Alice' }, actions: {}, roster } }
+  render(app.BotSocialDetails, inst)
+  return render(app.BotSocialDetails, inst)
+}
+const SHARING_WRITES = ['mint-invite', 'share-with-friend', 'manage-access']
+
+test('#2418: a read-only window draws no Sharing write control', async () => {
+  fixtures()
+  try {
+    const tree = detailsTree(readOnlyRoster())
+    const tags = flybotTags(tree)
+    // Red first on a091ddc07d: 3 tags and the Copy invite link button.
+    const writes = tags.filter(tag => SHARING_WRITES.includes(tag))
+    assert.deepEqual(writes, [], `no Sharing write control in a read-only window, saw ${writes.join(',')}`)
+    const writeButtons = buttonLabels(tree).filter(label => label.startsWith('Copy invite link') || label === 'Share with a friend')
+    assert.deepEqual(writeButtons, [], `no Sharing write button in a read-only window, saw ${writeButtons.join(',')}`)
+    // The card is not silently blank: it says why.
+    const hint = byTag(tree, 'sharing-readonly')
+    assert.equal(hint.length, 1, 'the Sharing card says the window is read-only')
+    assert.match(String((hint[0].children ?? []).flat().join(' ')), /read-only/, 'the sentence names the reason')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2418: a writable window keeps the Sharing controls', async () => {
+  fixtures()
+  try {
+    const tree = detailsTree(writableRoster())
+    const tags = flybotTags(tree)
+    for (const tag of SHARING_WRITES) assert.ok(tags.includes(tag), `a writable window keeps ${tag}`)
+    assert.deepEqual(byTag(tree, 'sharing-readonly'), [], 'a writable window shows no read-only note')
+  } finally { delete globalThis.__flybot__ }
+})
+
+// #2418: a local group's Members card (flybot.room.members) — Invite by link mints a real join link.
+const membersTree = (roster) => {
+  const app = loadApp()
+  const inst = { hooks: {}, effects: [], props: { room: { id: 'r1', members: [] }, roster, actions: {}, call: async () => ({}), host: async () => ({}) } }
+  return render(app.LocalInviteRow, inst)
+}
+
+test('#2418: a read-only window draws no Members-card invite control', async () => {
+  fixtures()
+  try {
+    const tree = membersTree(readOnlyRoster())
+    assert.deepEqual(byTag(tree, 'room-invite-mint'), [], 'no Create link in a read-only window')
+    assert.deepEqual(buttonLabels(tree).filter(label => label === 'Create link' || label === 'New link'), [])
+    assert.equal(byTag(tree, 'room-invite-readonly').length, 1, 'the Members card says the window is read-only')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2418: a writable window keeps the Members-card invite control', async () => {
+  fixtures()
+  try {
+    const tree = membersTree(writableRoster())
+    assert.equal(byTag(tree, 'room-invite-mint').length, 1, 'a writable window keeps Create link')
+    assert.deepEqual(byTag(tree, 'room-invite-readonly'), [])
+  } finally { delete globalThis.__flybot__ }
+})
