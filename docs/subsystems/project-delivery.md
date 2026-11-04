@@ -673,3 +673,7 @@ Reviewer needs a real exact-SHA, Session-marked Review by a different App; optio
 Tester checks never replace host tests. Host merge uses separately selected App identity
 and existing policy. Legacy publication remains unchanged; disabling App mode during
 an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps.md).
+
+## Exit reconciliation (#2375)
+
+`attempt.reconcile-exit` requires current configure authority, attemptId, claimId, generation and reason. It rechecks exact worker/Session/allocation exit, preparation and Chief occupancy, pending results/correction and unknown publication effects before committing pool retirement. It preserves drafts/candidates and does not cancel or revive the Attempt. Fetch a fresh `attempt.integration-state` before `attempt.integration-bind`; inputs are not candidate/PR evidence.

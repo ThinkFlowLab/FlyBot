@@ -22,7 +22,7 @@ const operations = Object.freeze({
   'handoff.get': 'project-handoff-get', 'handoff.list': 'project-handoff-list',
   'task.propose': 'task-create', 'task.change.request': 'project-task-change-request', 'task.run': 'project-task-run', 'task.detail': 'project-task-detail',
   'task.accept': 'project-task-accept', 'task.reject': 'project-task-reject',
-  'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
+  'attempt.reconcile-exit': 'project-attempt-reconcile-exit', 'attempt.stop': 'project-attempt-stop', 'attempt.cleanup': 'project-attempt-cleanup',
   'attempt.integration-state': 'project-attempt-integration-state', 'attempt.integration-bind': 'project-attempt-integration-bind',
   'release.request': 'project-release-request', 'release.reconcile': 'project-release-reconcile', 'release.status': 'project-release-status',
   'attempt.publication-retry': 'project-attempt-publication-retry', 'attempt.log': 'project-attempt-log',
@@ -110,7 +110,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
 
 export function createDevelopmentService(rt) {
   const receipts = rt.projectEffects ? createCommandReceipts(rt) : null
-  const management = new Set(['github.connection.configure', 'release.request', 'release.reconcile', 'role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
+  const management = new Set(['github.connection.configure', 'release.request', 'release.reconcile', 'role.decide', 'attempt.stop', 'attempt.cleanup', 'queue.retry', 'chief.inspect', 'chief.configure', 'schedule.configure', 'effect.retry', 'attempt.reconcile-exit', 'attempt.integration-bind', 'attempt.publication-retry', 'source.subscribe', 'source.disable', 'source.poll'])
   const readCommand = new Set(['inbox.claim', 'inbox.renew', 'inbox.complete', 'inbox.fail', 'inbox.connection.configure', 'agent.mode', 'consultation.ask', 'consultation.reply'])
   const actionFor = name => ['task.propose', 'proposal.publish', 'comment.publish'].includes(name) ? 'create' : management.has(name) ? 'configure' : readCommand.has(name) ? 'read' : name === 'task.accept' || name === 'task.reject' ? 'accept' : 'task-write'
 

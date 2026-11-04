@@ -2024,3 +2024,84 @@ test('SDK publication observed before a writeback failure is reconciled through 
   assert.equal(f.published.length, 0); assert.equal(observations, 2)
   assert.equal(attempt.publicationRecoveries[0].kind, 'sdk-candidate-reconcile')
 })
+
+test('proven exited active claim retires durably before a fresh integration snapshot, without cancellation', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false })
+  const c = f.task.collaboration, generation = c.generation
+  Object.assign(f.attempt.roleSessions.developer, { id: 'retiring-session', poolClaimId: 'retiring-claim', generation })
+  const proof = { kind: 'sdk-stop-ack-and-process-exit', workerId: 'retiring-worker', generation: 7, at: Date.now() }
+  const lease = { id: 'retiring-lease', projectId: 'p1', taskId: f.task.id, attemptId: f.attempt.id, resourceId: 'test', role: 'developer', principalId: 'owner-1', generation: 7, status: 'released', worker: { kind: 'sdk', handle: 'retiring-worker' }, releaseProof: proof }
+  f.rt.state.projectResourceLeases[lease.id] = lease
+  f.rt.state.projectHarnessWorkers = { 'retiring-worker': { id: 'retiring-worker', projectId: 'p1', taskId: f.task.id, attemptId: f.attempt.id, role: 'developer', sessionKey: 'retiring-session', resourceId: 'test', principalId: 'owner-1', leaseId: lease.id, generation: 7, status: 'released', releaseProof: proof } }
+  c.claim = { id: 'retiring-claim', taskId: f.task.id, projectId: 'p1', attemptId: f.attempt.id, botId: 'p1:developer', workerId: 'retiring-worker', generation, status: 'active', exitConfirmed: false }
+  await assert.rejects(integrationCall(f, 'query', 'attempt.integration-state', {}), /confirmed execution exit/)
+  assert.equal((await f.rt.projectDelivery.recoveryFacts(f.task)).executionCheckpoint.blockers[0].kind, 'claim-active')
+  const payload = { generation, claimId: c.claim.id, reason: 'Execution exited without transferring its claim; preserve the draft' }
+  await assert.rejects(integrationCall(f, 'command', 'attempt.reconcile-exit', payload, bob), /access denied/)
+  const save = f.rt.save
+  f.rt.save = async () => {}
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-attempt-reconcile-exit', { projectId: 'p1', attemptId: f.attempt.id, ...payload }, alice), /commit was not confirmed/)
+  assert.equal(c.claim.status, 'active'); assert.equal(c.generation, generation)
+  f.rt.save = save
+  const result = await integrationCall(f, 'command', 'attempt.reconcile-exit', payload, alice, 'retire-exact-claim')
+  assert.equal(result.result.retirement.claimId, 'retiring-claim')
+  assert.equal(c.claim.status, 'interrupted'); assert.equal(c.generation, generation + 1)
+  assert.ok(f.rt.projectEffects.intentCommitted(c.claim.retirement.effect))
+  assert.equal(f.attempt.cancelRequested, undefined)
+  assert.equal((await integrationCall(f, 'command', 'attempt.reconcile-exit', payload, alice, 'retire-exact-claim')).replayed, true)
+  await integrationCall(f, 'command', 'attempt.reconcile-exit', payload, alice, 'repeat-retirement')
+  assert.equal(c.generation, generation + 1)
+  await assert.rejects(f.rt.projectPools.decide(f.task.id, { ...c.claim, generation }, { action: 'arbitrate', reason: 'Late old result' }), /stale/)
+  const saved = (await integrationCall(f, 'query', 'attempt.integration-state', {})).result
+  await integrationCall(f, 'command', 'attempt.integration-bind', { inputs: [{ ref: f.ref, sha: f.source }], generation: saved.generation, expectedWorkspace: saved.snapshot })
+  assert.equal(f.attempt.integrationInputs[0].sha, f.source)
+  assert.equal(f.attempt.candidateSha, undefined); assert.equal(f.attempt.evidence.tests, undefined)
+  const disk = JSON.parse(readFileSync(join(f.home, 'state.json'), 'utf8'))
+  assert.equal(disk.tasks[f.task.id].collaboration.claim.status, 'interrupted')
+})
+
+test('exit retirement refuses guessed proof, pending results, cancellation and changed claims', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false }), c = f.task.collaboration
+  const session = f.attempt.roleSessions.developer
+  Object.assign(session, { poolClaimId: 'exact', generation: c.generation })
+  const proof = { kind: 'sdk-stop-ack-and-process-exit', workerId: 'worker', generation: 4, at: 123 }
+  const lease = { id: 'lease', projectId: 'p1', attemptId: f.attempt.id, role: 'developer', resourceId: 'r', generation: 4, status: 'released', worker: { kind: 'sdk', handle: 'worker' }, releaseProof: proof }
+  f.rt.state.projectResourceLeases.lease = lease
+  const worker = { id: 'worker', projectId: 'p1', taskId: f.task.id, attemptId: f.attempt.id, role: 'developer', sessionKey: session.id, resourceId: 'r', leaseId: 'lease', generation: 4, status: 'released', releaseProof: proof }
+  f.rt.state.projectHarnessWorkers = { worker }
+  c.claim = { id: 'exact', taskId: f.task.id, projectId: 'p1', attemptId: f.attempt.id, botId: 'p1:developer', workerId: worker.id, generation: c.generation, status: 'active', exitConfirmed: true }
+  const payload = { generation: c.generation, claimId: 'exact', reason: 'Retire only the confirmed allocation' }
+  const denied = pattern => assert.rejects(integrationCall(f, 'command', 'attempt.reconcile-exit', payload), pattern)
+  delete worker.releaseProof; await denied(/confirmed execution exit/); worker.releaseProof = proof
+  lease.resourceId = 'foreign'; await denied(/allocation/); lease.resourceId = 'r'
+  session.poolClaimId = 'different'; await denied(/confirmed execution exit/); session.poolClaimId = 'exact'
+  worker.resultHash = 'pending'; await denied(/pending worker result/); delete worker.resultHash
+  f.rt.state.projectEffects.unknown = { taskId: f.task.id, kind: 'github.publish', status: 'running', payload: { attemptId: f.attempt.id } }
+  await denied(/pending external writes/); delete f.rt.state.projectEffects.unknown
+  f.attempt.cancelRequested = true; await denied(/cancelled/); delete f.attempt.cancelRequested
+  const background = f.rt.projectDelegations.background
+  f.rt.projectDelegations.background = async () => { c.generation++ }
+  await denied(/snapshot changed/)
+  f.rt.projectDelegations.background = background
+  assert.equal(c.claim.status, 'active'); assert.equal(c.claim.retirement, undefined)
+})
+
+test('native exited claim and old Chief invocation use their existing exact exit contracts', async t => {
+  const f = await additionalIntegrationFixture(t, { merge: false }), c = f.task.collaboration
+  const session = f.attempt.roleSessions.developer
+  Object.assign(session, { poolClaimId: 'native-claim', generation: c.generation })
+  const row = { id: 'native-id', version: 'project-native-worker/v2', status: 'quiescent', projectId: 'p1', taskId: f.task.id, attemptId: f.attempt.id, role: 'developer', sessionKey: session.id, sessionId: 'physical', bindingKey: 'binding', generation: 1 }
+  row.releaseProof = { kind: 'native-agent-quiescent', registeredWorkEmpty: true, workerId: row.id, sessionId: row.sessionId, bindingKey: row.bindingKey, generation: 1 }
+  f.rt.state.projectNativeWorkers = { [row.id]: row }
+  c.claim = { id: 'native-claim', taskId: f.task.id, projectId: 'p1', attemptId: f.attempt.id, botId: 'p1:developer', workerId: row.id, generation: c.generation, status: 'interrupted' }
+  c.generation++ // Restart fenced the execution generation before explicit retirement.
+  await integrationCall(f, 'command', 'attempt.reconcile-exit', { generation: c.generation, claimId: c.claim.id, reason: 'Native registered work is quiescent' })
+  assert.equal(c.claim.retirement.proof.workerId, row.id)
+  const generation = c.generation
+  const run = { id: 'old-chief-run', projectId: 'p1', kind: 'chief-control', invocation: 1, status: 'interrupted', exitProof: { kind: 'native-chief-prior-host-exited', confirmed: true, runId: 'old-chief-run', invocation: 1 } }
+  f.rt.state.projectExecutions[run.id] = run
+  c.claim = { id: 'chief-claim', taskId: f.task.id, projectId: 'p1', attemptId: f.attempt.id, botId: 'p1:chief', chiefRunId: run.id, generation, status: 'active' }
+  await integrationCall(f, 'command', 'attempt.reconcile-exit', { generation, claimId: c.claim.id, reason: 'The exact native Chief invocation has exited' })
+  assert.equal(c.claim.retirement.proof.chiefRunId, run.id)
+  assert.equal(c.generation, generation + 1)
+})

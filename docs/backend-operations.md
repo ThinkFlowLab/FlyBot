@@ -205,3 +205,16 @@ Codex 终端会解析资源内 SDK 自带的 CLI 并放到 PATH；codexLoginAvai
 真正失效的 OAuth token 仍需原生登录流程；源码合入不会自动修复现场凭据。
 网络超时不会被当成重新登录要求，工具自身的认证错误也不会冒充模型登录失效。
 Task/Session/候选/Review 证据保留；Chief 决定换用已授权资源、等待或请求协助。
+
+### Retire an already exited claim
+
+`attempt.stop` cancels; it is not pause/resume. If an exact worker has confirmed
+exit but its claim remains active, a current manager may call v1 command
+`attempt.reconcile-exit` with `attemptId`, `claimId`, current `generation` and
+bounded `reason`. The command verifies the existing allocation/exit contracts and
+commits retirement through pool Effects. Unresolved result/correction, external
+writes, preparations or another running Chief remain explicit blockers. Read
+`attempt.integration-state` again afterward; use its new generation and exact
+snapshot for `attempt.integration-bind`. Neither command creates a candidate,
+claims a PR, grants test/Review success or selects the next role. Chief context
+includes the current execution checkpoint and blocker references.

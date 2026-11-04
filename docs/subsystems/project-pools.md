@@ -205,3 +205,7 @@ See [receipt correction](project-inputs.md#invalid-receipt-correction-2338).
 #2347 preflights recovery routes before changing generation, returns unsupported
 routes to Chief, and reuses the existing delivery adapter for evidence-supported
 Tester/Reviewer continuation. No default next role or extra acceptance authority.
+
+## Confirmed-exit retirement (#2375)
+
+An explicit manager/Chief recovery action uses the existing pool lock and Effects to retire the exact exited claim and fence its generation. Failed/unconfirmed persistence rolls back the staged retirement. Receipt history retains the old claim; late results cannot transfer initiative. No next role is selected.
