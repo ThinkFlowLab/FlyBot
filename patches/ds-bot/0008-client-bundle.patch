@@ -657,7 +657,7 @@ diff --git a/client.js b/client.js
    "{name} didn't answer in time": "{name} 没有及时回应",
    "{name} paused for your approval": "{name} 停下来等你批准",
    "{name} started on it": "{name} 开始做了",
-@@ -506,12 +506,31 @@ var ZH = {
+@@ -506,12 +506,32 @@ var ZH = {
    "Asked to make the tool call it wrote as text": "工具调用被写成了文字，已让它重新调用",
    "A Bot": "一个 Bot",
    "{name} is waiting for your approval": "{name} 等你批准",
@@ -674,6 +674,7 @@ diff --git a/client.js b/client.js
    "Waiting for your approval": "等你批准",
 -  "in its own chat": "在自己的对话里",
 +  "Waiting for their approval": "等对方批准",
++  "The decision was not sent.": "决定没有发出去。",
 +  "Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.": "你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。",
 +  "Turn on auto-send": "打开自动发送",
 +  "Approve and always auto-send in this room": "批准并在此房间始终自动发送",
@@ -8368,14 +8369,24 @@ diff --git a/client.js b/client.js
 -  const onDismiss = () => {
 -    setAnswered(question.id);
 -    void actions.dismissQuestion(sessionId);
+-  };
+-  return (0, import_react4.createElement)(
 +function GroupEvent({ prefix, room: room2, name, roster, actions }) {
 +  return (0, import_react11.createElement)(
-+    "div",
+     "div",
+-    { className: inline ? "bt-q-inline" : "bt-q-dock" },
+-    (0, import_react4.createElement)(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline })
 +    { className: "bt-event" },
 +    (0, import_react11.createElement)("span", null, prefix),
 +    room2 ? (0, import_react11.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react11.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react11.createElement)("span", null, name) : null
-+  );
-+}
+   );
+ }
+-function QuestionDock({ sessionId, useRoster, useCards, useSession, actions }) {
+-  const question = useRoster((value) => value.questions?.[sessionId]);
+-  const drawn = useCards?.((state) => state[sessionId]?.[question?.callId] > 0) === true;
+-  const loading = useSession?.(historyLoading) === true;
+-  if (question === void 0 || question.callId && (drawn || loading)) return null;
+-  return (0, import_react4.createElement)(PendingQuestion, { sessionId, question, actions, inline: false });
 +function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
 +  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
 +  const self = roster.byId[sessionId];
@@ -8389,16 +8400,80 @@ diff --git a/client.js b/client.js
 +    { className: "bt-event" },
 +    (0, import_react11.createElement)("button", { type: "button", title: result, onClick: () => actions.openMemory(target.id) }, (0, import_react11.createElement)(MemoryIcon), label)
 +  );
-+}
+ }
+-function AnsweredCell({ node }) {
+-  const data = node.data ?? {};
+-  const questions = Array.isArray(data.questions) ? data.questions : [];
+-  if (questions.length === 0) {
+-    return data.text ? (0, import_react4.createElement)("div", { className: "bt-urow" }, (0, import_react4.createElement)("div", { className: "bt-ububble" }, data.text)) : null;
+-  }
+-  const answers = Array.isArray(data.answers) ? data.answers : [];
+-  return (0, import_react4.createElement)("div", { className: "bt-q-inline" }, questions.map((question) => (0, import_react4.createElement)(SettledQuestion, {
+-    key: question.id,
+-    question,
+-    answer: answers.find((answer) => answer.id === question.id) ?? { selected: [] }
+-  })));
 +function PartLine({ time }) {
 +  return (0, import_react11.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react11.createElement)("span", null, dayLabel(time)) : null);
-+}
+ }
+-
+-// src/client/secret-card.js
+-var import_react5 = require("react");
+-var MIN_VALUE = 4;
+-var NONE = {};
+-var KeyIcon = () => (0, import_react5.createElement)(
+-  "svg",
+-  { width: 15, height: 15, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-  (0, import_react5.createElement)("path", { d: "M7 9.5a3.5 3.5 0 1 1 0 .01z" }),
+-  (0, import_react5.createElement)("path", { d: "M10.4 10.6L17 10.6M14.5 10.6v2.4M16.6 10.6v1.8" })
+-);
+-var LockIcon = () => (0, import_react5.createElement)(
+-  "svg",
+-  { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-  (0, import_react5.createElement)("path", { d: "M6.5 9V7a3.5 3.5 0 0 1 7 0v2" }),
+-  (0, import_react5.createElement)("rect", { x: 4.5, y: 9, width: 11, height: 8, rx: 2 })
+-);
+-var WarnIcon = () => (0, import_react5.createElement)(
+-  "svg",
+-  { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+-  (0, import_react5.createElement)("path", { d: "M10 3.5l7 12.5H3z" }),
+-  (0, import_react5.createElement)("path", { d: "M10 8.5v3.5M10 14.2h.01" })
+-);
+-var MASK_BY_CSS = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("-webkit-text-security", "disc");
+-var insecure = () => typeof location !== "undefined" && location.protocol === "http:" && !/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/.test(location.hostname);
+-var scopeLabel = (scope, roster) => {
+-  if (scope === "all") return t("All Bots");
+-  const names = (scope ?? []).map((id) => roster.byId[id]?.name).filter(Boolean);
+-  return names.length === 0 ? t("No Bot") : names.join(t(" and "));
 +var scrollParent = (node) => {
 +  for (let at = node.parentElement; at; at = at.parentElement) {
 +    if (/(auto|scroll)/.test(getComputedStyle(at).overflowY)) return at;
 +  }
 +  return null;
-+};
+ };
+-var when = (time) => Number.isFinite(time) ? new Date(time).toLocaleString(dateLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+-function MaskedInput({ value, onChange, onEnter, label, autoFocus = false }) {
+-  return (0, import_react5.createElement)("input", {
+-    className: "bt-secret-input",
+-    type: MASK_BY_CSS ? "text" : "password",
+-    "data-masked": MASK_BY_CSS ? "" : void 0,
+-    value,
+-    autoFocus,
+-    autoComplete: MASK_BY_CSS ? "off" : "new-password",
+-    autoCorrect: "off",
+-    autoCapitalize: "off",
+-    spellCheck: false,
+-    "data-1p-ignore": "",
+-    "data-lpignore": "true",
+-    "data-bwignore": "",
+-    "data-form-type": "other",
+-    "aria-label": label,
+-    placeholder: t("Paste or type the key"),
+-    onChange: (event) => onChange(event.target.value),
+-    onKeyDown: (event) => {
+-      if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+-      event.preventDefault();
+-      onEnter?.();
 +function EarlierParts({ sessionId, roster, actions, useUi }) {
 +  const [view, setView] = (0, import_react11.useState)({ items: [], cursor: void 0, loading: true, failed: false, startedAt: null });
 +  const top = (0, import_react11.useRef)(null);
@@ -8419,8 +8494,7 @@ diff --git a/client.js b/client.js
 +      busy.current = false;
 +      if (alive.current) setView((current) => ({ ...current, loading: false, failed: true }));
 +    });
-   };
--  return (0, import_react4.createElement)(
++  };
 +  (0, import_react11.useEffect)(() => {
 +    alive.current = true;
 +    load(void 0);
@@ -8454,13 +8528,11 @@ diff --git a/client.js b/client.js
 +        last.msgKeys.push(keyOf(item));
 +      } else rows.push({ kind: "bot", texts: [item.text], msgKeys: [keyOf(item)] });
 +      continue;
-+    }
+     }
 +    rows.push(item);
 +  }
 +  return (0, import_react11.createElement)(
-     "div",
--    { className: inline ? "bt-q-inline" : "bt-q-dock" },
--    (0, import_react4.createElement)(QuestionView, { key: question.id, question, onAnswer, onDismiss, ownAnswer: question.allowCustom === true, raised: !inline })
++    "div",
 +    { className: "bt-earlier", role: "feed", "aria-label": t("Earlier messages"), "aria-busy": view.loading },
 +    (0, import_react11.createElement)(
 +      "div",
@@ -8496,14 +8568,8 @@ diff --git a/client.js b/client.js
 +      }
 +    }),
 +    (0, import_react11.createElement)(PartLine, { time: view.startedAt })
-   );
- }
--function QuestionDock({ sessionId, useRoster, useCards, useSession, actions }) {
--  const question = useRoster((value) => value.questions?.[sessionId]);
--  const drawn = useCards?.((state) => state[sessionId]?.[question?.callId] > 0) === true;
--  const loading = useSession?.(historyLoading) === true;
--  if (question === void 0 || question.callId && (drawn || loading)) return null;
--  return (0, import_react4.createElement)(PendingQuestion, { sessionId, question, actions, inline: false });
++  );
++}
 +function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, useUi, actions }) {
 +  const roster = useRoster((value) => value);
 +  const data = node.data;
@@ -8529,7 +8595,7 @@ diff --git a/client.js b/client.js
 +  const unreadOpening = useTurnClock((state) => {
 +    const first = openingTurn(state[sessionId], order, hiddenTurns);
 +    return first?.turn === turn && unseenSince(visit, first.start) ? clockLabel(first.start) : "";
-+  });
+   });
 +  const body = triggerBody();
 +  return unreadOpening ? (0, import_react11.createElement)(import_react11.Fragment, null, (0, import_react11.createElement)("div", { className: "bt-open-new" }, (0, import_react11.createElement)(NewDivider), (0, import_react11.createElement)("div", { className: "bt-time-sep", role: "separator" }, unreadOpening)), body) : body;
 +  function triggerBody() {
@@ -8583,10 +8649,38 @@ diff --git a/client.js b/client.js
 +    if (source.kind === "user-question-reply") return null;
 +    return (0, import_react11.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
 +  }
-+}
+ }
+-function ScopeSwitch({ value, onChange, bot }) {
+-  const options = [["all", t("All Bots")], ["bot", t("Only {name}", { name: bot.name })]];
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-secret-scope", role: "radiogroup", "aria-label": t("Who may use it") },
+-    (0, import_react5.createElement)("span", { className: "bt-secret-glide", "data-at": value === "all" ? 0 : 1, "aria-hidden": true }),
+-    options.map(([id, text]) => (0, import_react5.createElement)("button", {
+-      key: id,
+-      type: "button",
+-      role: "radio",
+-      "aria-checked": value === id,
+-      className: "bt-secret-seg",
+-      onClick: () => onChange(id)
+-    }, text))
+-  );
 +function NewDivider() {
 +  return (0, import_react11.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react11.createElement)("span", null, t("New")));
-+}
+ }
+-function SecretHead({ bot, title, detail, name, onClose }) {
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-q-head bt-secret-head" },
+-    (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 28 }), (0, import_react5.createElement)("span", { className: "bt-secret-lock" }, (0, import_react5.createElement)(LockIcon))),
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-q-text" },
+-      (0, import_react5.createElement)("p", { className: "bt-q-title" }, title),
+-      (0, import_react5.createElement)("div", { className: "bt-q-detail" }, (0, import_react5.createElement)("code", { className: "bt-secret-name" }, name), detail ? ` · ${detail}` : "")
+-    ),
+-    onClose ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react5.createElement)(CloseIcon)) : null
+-  );
 +function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
 +  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
 +  (0, import_react11.useEffect)(() => {
@@ -8604,10 +8698,87 @@ diff --git a/client.js b/client.js
 +    return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
 +  });
 +  return fresh ? (0, import_react11.createElement)(NewDivider) : null;
-+}
+ }
+-function SecretCard({ bot, request, roster, actions }) {
+-  const [value, setValue] = (0, import_react5.useState)("");
+-  const [scope, setScope] = (0, import_react5.useState)("all");
+-  const [replacing, setReplacing] = (0, import_react5.useState)(false);
+-  const [busy, setBusy] = (0, import_react5.useState)(false);
+-  const [error, setError] = (0, import_react5.useState)("");
+-  const noteId = (0, import_react5.useId)();
+-  const secret = (roster.secrets ?? []).find((entry) => entry.name === request.name);
+-  const run = (promise) => {
+-    setBusy(true);
+-    setError("");
+-    return Promise.resolve(promise).then(() => setValue(""), (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
+-  };
+-  const cancel = () => run(actions.secretCancel(request.id));
+-  const long = value.trim().length >= MIN_VALUE;
+-  const save = () => {
+-    if (long && !busy) void run(actions.secretSet({ requestId: request.id, value, scope }));
+-  };
+-  const allow = () => {
+-    if (!busy) void run(actions.secretAllow(request.id));
+-  };
+-  const filling = request.kind === "fill" || replacing;
+-  const warn = insecure() ? (0, import_react5.createElement)("div", { className: "bt-secret-warn", role: "note" }, (0, import_react5.createElement)(WarnIcon), t("This page is not on HTTPS: the key crosses the network unencrypted.")) : null;
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-q bt-secret", role: "group", "aria-describedby": noteId, "data-kind": request.kind },
+-    (0, import_react5.createElement)(SecretHead, {
+-      bot,
+-      title: request.kind === "allow" ? t("Let {bot} use {name}?", { bot: bot.name, name: request.name }) : t("{name} needs a key", { name: bot.name }),
+-      detail: request.purpose,
+-      name: request.name,
+-      onClose: busy ? void 0 : cancel
+-    }),
+-    request.kind === "allow" ? (0, import_react5.createElement)("div", { className: "bt-secret-saved" }, (0, import_react5.createElement)(KeyIcon), t("Saved for {scope}", { scope: scopeLabel(secret?.scope, roster) })) : null,
+-    filling ? (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-body" },
+-      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: setValue, onEnter: save, label: t("Value of {name}", { name: request.name }), autoFocus: replacing })),
+-      request.kind === "fill" ? (0, import_react5.createElement)(ScopeSwitch, { value: scope, onChange: setScope, bot }) : null
+-    ) : null,
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-note", id: noteId },
+-      t("{bot} never sees the value. It reaches {bot}'s shell as ", { bot: bot.name }),
+-      (0, import_react5.createElement)("code", null, `$DSH_SECRET_${request.name}`),
+-      ".",
+-      filling && value !== "" && !long ? t(" At least {count} characters.", { count: MIN_VALUE }) : ""
+-    ),
+-    warn,
+-    error ? (0, import_react5.createElement)("div", { className: "bt-secret-error", role: "alert" }, error) : null,
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-q-foot" },
+-      request.kind === "allow" && !replacing ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: () => setReplacing(true) }, t("Replace value")) : null,
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: cancel }, t("Cancel")),
+-      filling ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: !long || busy, onClick: save }, busy ? t("Saving…") : t("Save")) : (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: allow }, busy ? t("Allowing…") : t("Allow"))
+-    )
+-  );
 +function Nothing() {
 +  return null;
-+}
+ }
+-function SettledSecret({ bot, request, roster }) {
+-  const canceled = request.status === "canceled";
+-  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-q bt-q-settled bt-secret bt-secret-done", role: "group", "aria-label": text, "data-status": request.status },
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-q-head" },
+-      (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 22 })),
+-      (0, import_react5.createElement)("div", { className: "bt-q-text" }, (0, import_react5.createElement)(
+-        "p",
+-        { className: "bt-q-title" },
+-        text,
+-        canceled ? null : (0, import_react5.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
+-      )),
+-      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
+-    )
+-  );
 +var HIDDEN_REMOVED_TOOLS = /* @__PURE__ */ new Set(["ask_user_question"]);
 +var isConnectorTool = (name) => typeof name === "string" && /^mcp__(github|composio)__/.test(name);
 +var SILENT_REGISTRATION_TOOLS = /* @__PURE__ */ new Set([
@@ -8663,7 +8834,9 @@ diff --git a/client.js b/client.js
 +  }
 +  if (parts.length === 0) return null;
 +  return (0, import_react11.createElement)("div", { className: "bt-event" }, parts.join(" · "));
-+}
+ }
+-function RequestView({ bot, request, roster, actions }) {
+-  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
 +var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
 +function clockLabel(time, now = Date.now()) {
 +  const date = new Date(time);
@@ -8674,15 +8847,33 @@ diff --git a/client.js b/client.js
 +  if (days === 1) return t("Yesterday {time}", { time: clock4 });
 +  const sameYear = date.getFullYear() === new Date(now).getFullYear();
 +  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
-+}
+ }
+-function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
+-  const bot = roster.byId[sessionId];
+-  if (!bot) return null;
+-  const request = (roster.secretRequests?.[bot.id] ?? []).find((entry) => entry.callId === callId && (entry.sessionId ?? sessionId) === sessionId);
+-  if (request) return (0, import_react5.createElement)("div", { className: "bt-q-inline" }, (0, import_react5.createElement)(RequestView, { bot, request, roster, actions }));
+-  if (done && /already saved/.test(contentText(content))) {
+-    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
 +function nextTurnStart(turns, turn) {
 +  let next;
 +  for (const key in turns) {
 +    const candidate = Number(key);
 +    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
-+  }
+   }
+-  return null;
 +  return next === void 0 ? void 0 : turns[next].first;
-+}
+ }
+-function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
+-  const roster = useRoster((value) => value);
+-  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
+-  const loading = useSession?.(historyLoading) === true;
+-  const bot = roster.byId[sessionId];
+-  if (!bot || currentPart(bot) !== sessionId) return null;
+-  const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
+-  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
+-  if (waiting.length === 0) return null;
+-  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
 +function openingTurn(turns, firstTurns, hiddenTurns) {
 +  if (!turns || !firstTurns) return null;
 +  const start = nextTurnStart(turns, -Infinity);
@@ -8692,55 +8883,75 @@ diff --git a/client.js b/client.js
 +  const earlier = listed.filter((entry) => entry < turn);
 +  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
  }
--function AnsweredCell({ node }) {
--  const data = node.data ?? {};
--  const questions = Array.isArray(data.questions) ? data.questions : [];
--  if (questions.length === 0) {
--    return data.text ? (0, import_react4.createElement)("div", { className: "bt-urow" }, (0, import_react4.createElement)("div", { className: "bt-ububble" }, data.text)) : null;
+-function ScopeEditor({ secret, roster, onSave }) {
+-  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
+-  const [picked, setPicked] = (0, import_react5.useState)(secret.scope === "all" ? [] : secret.scope);
+-  const toggle = (id) => setPicked((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
+-  const same = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-secret-edit-block" },
+-    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Who may use it")),
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-radios", role: "radiogroup", "aria-label": t("Who may use {name}", { name: secret.name }) },
+-      [["all", t("All Bots")], ["some", t("Chosen Bots")]].map(([id, text]) => (0, import_react5.createElement)(
+-        "label",
+-        { key: id, className: "bt-secret-radio" },
+-        (0, import_react5.createElement)("input", { type: "radio", name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }),
+-        text
+-      ))
+-    ),
+-    mode === "some" ? (0, import_react5.createElement)("div", { className: "bt-secret-bots" }, roster.bots.map((bot) => (0, import_react5.createElement)("button", {
+-      key: bot.id,
+-      type: "button",
+-      className: "bt-secret-bot",
+-      "aria-pressed": picked.includes(bot.id),
+-      onClick: () => toggle(bot.id)
+-    }, (0, import_react5.createElement)(BotAvatar, { bot, size: 20, badge: false, live: false }), bot.name, picked.includes(bot.id) ? (0, import_react5.createElement)(CheckIcon) : null))) : null,
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-row-actions" },
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
+-    )
+-  );
 +var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
 +function movedOnSince(visit, turns, hiddenTurns) {
 +  if (typeof visit?.entered !== "number") return false;
 +  for (const key in turns ?? {}) {
 +    if (hiddenTurns?.includes(Number(key))) continue;
 +    if (turns[key].first !== void 0 && turns[key].first > visit.entered) return true;
-   }
--  const answers = Array.isArray(data.answers) ? data.answers : [];
--  return (0, import_react4.createElement)("div", { className: "bt-q-inline" }, questions.map((question) => (0, import_react4.createElement)(SettledQuestion, {
--    key: question.id,
--    question,
--    answer: answers.find((answer) => answer.id === question.id) ?? { selected: [] }
--  })));
++  }
 +  return false;
  }
--
--// src/client/secret-card.js
--var import_react5 = require("react");
--var MIN_VALUE = 4;
--var NONE = {};
--var KeyIcon = () => (0, import_react5.createElement)(
--  "svg",
--  { width: 15, height: 15, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--  (0, import_react5.createElement)("path", { d: "M7 9.5a3.5 3.5 0 1 1 0 .01z" }),
--  (0, import_react5.createElement)("path", { d: "M10.4 10.6L17 10.6M14.5 10.6v2.4M16.6 10.6v1.8" })
--);
--var LockIcon = () => (0, import_react5.createElement)(
--  "svg",
--  { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--  (0, import_react5.createElement)("path", { d: "M6.5 9V7a3.5 3.5 0 0 1 7 0v2" }),
--  (0, import_react5.createElement)("rect", { x: 4.5, y: 9, width: 11, height: 8, rx: 2 })
--);
--var WarnIcon = () => (0, import_react5.createElement)(
--  "svg",
--  { width: 14, height: 14, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
--  (0, import_react5.createElement)("path", { d: "M10 3.5l7 12.5H3z" }),
--  (0, import_react5.createElement)("path", { d: "M10 8.5v3.5M10 14.2h.01" })
--);
--var MASK_BY_CSS = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("-webkit-text-security", "disc");
--var insecure = () => typeof location !== "undefined" && location.protocol === "http:" && !/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/.test(location.hostname);
--var scopeLabel = (scope, roster) => {
--  if (scope === "all") return t("All Bots");
--  const names = (scope ?? []).map((id) => roster.byId[id]?.name).filter(Boolean);
--  return names.length === 0 ? t("No Bot") : names.join(t(" and "));
+-function ValueEditor({ secret, onSave }) {
+-  const [value, setValue] = (0, import_react5.useState)("");
+-  const [replaced, setReplaced] = (0, import_react5.useState)(false);
+-  const long = value.trim().length >= MIN_VALUE;
+-  const save = () => {
+-    if (!long) return;
+-    void Promise.resolve(onSave(value)).then((ok) => {
+-      if (ok) {
+-        setValue("");
+-        setReplaced(true);
+-      }
+-    });
+-  };
+-  const edit = (next) => {
+-    setValue(next);
+-    setReplaced(false);
+-  };
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-secret-edit-block" },
+-    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Replace the value")),
+-    (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-inline" },
+-      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: edit, onEnter: save, label: t("New value of {name}", { name: secret.name }) })),
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
+-    ),
+-    value !== "" && !long ? (0, import_react5.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react5.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react5.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
 +var settledVisit = (visit) => typeof visit?.seen === "number" && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit;
 +function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
 +  const turn = location2.turn;
@@ -8764,38 +8975,57 @@ diff --git a/client.js b/client.js
 +    null,
 +    label ? (0, import_react11.createElement)("div", { className: "bt-time-sep", role: "separator" }, label) : null,
 +    fresh ? (0, import_react11.createElement)(NewDivider) : null
-+  );
-+}
+   );
+ }
+-function SecretRow({ secret, roster, actions, run, open, onToggle }) {
+-  const [confirm, setConfirm] = (0, import_react5.useState)(false);
+-  (0, import_react5.useEffect)(() => {
+-    if (!open) setConfirm(false);
+-  }, [open]);
+-  const asker = secret.requestedBy ? roster.byId[secret.requestedBy]?.name ?? t("a deleted Bot") : t("you");
+-  const allowed = secret.scope === "all" ? [] : secret.scope.map((id) => roster.byId[id]).filter(Boolean);
+-  const meta = [t("Asked by {name}", { name: asker }), t("added {time}", { time: when(secret.createdAt) }), secret.lastUsedAt ? t("last used {time}", { time: when(secret.lastUsedAt) }) : t("not used yet")].join(" · ");
+-  return (0, import_react5.createElement)(
+-    "div",
+-    { className: "bt-secret-item", "data-open": open ? "" : void 0 },
+-    (0, import_react5.createElement)(
+-      "button",
+-      { type: "button", className: "bt-set-row bt-secret-summary", "aria-expanded": open, onClick: onToggle },
+-      (0, import_react5.createElement)(
+-        "span",
+-        { className: "bt-set-copy" },
+-        (0, import_react5.createElement)("span", { className: "bt-secret-title" }, (0, import_react5.createElement)(KeyIcon), (0, import_react5.createElement)("code", { className: "bt-secret-name" }, secret.name), secret.purpose ? (0, import_react5.createElement)("span", { className: "bt-secret-purpose" }, secret.purpose) : null),
+-        (0, import_react5.createElement)("span", { className: "bt-set-hint" }, meta)
+-      ),
+-      (0, import_react5.createElement)(
+-        "span",
+-        { className: "bt-set-control" },
+-        secret.scope === "all" ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("All Bots")) : allowed.length === 0 ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react5.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react5.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
+-      )
+-    ),
+-    open ? (0, import_react5.createElement)(
+-      "div",
+-      { className: "bt-secret-edit" },
+-      (0, import_react5.createElement)(ScopeEditor, { key: JSON.stringify(secret.scope), secret, roster, onSave: (scope) => run(actions.secretUpdate(secret.name, scope)) }),
+-      (0, import_react5.createElement)(ValueEditor, { secret, onSave: (value) => run(actions.secretSet({ name: secret.name, value })) }),
+-      (0, import_react5.createElement)(
+-        "div",
+-        { className: "bt-secret-row-actions" },
+-        confirm ? [
+-          (0, import_react5.createElement)("span", { key: "q", className: "bt-set-hint" }, t("Delete {name}? Bots lose it at once.", { name: secret.name })),
+-          (0, import_react5.createElement)("button", { key: "no", type: "button", className: "bt-soft bt-soft-sm", onClick: () => setConfirm(false) }, t("Keep")),
+-          (0, import_react5.createElement)("button", { key: "yes", type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => run(actions.secretDelete(secret.name)) }, t("Delete"))
+-        ] : (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => setConfirm(true) }, (0, import_react5.createElement)(TrashIcon), t("Delete"))
+-      )
+-    ) : null
+-  );
 +function Shimmer({ children }) {
 +  return (0, import_react11.createElement)("span", { className: "bt-shimmer" }, children);
 +}
 +var PHRASES = {
 +  thinking: ["Thinking about it", "Weighing the options", "Working out a plan", "Sorting out the details"],
 +  working: ["On it", "Busy with it", "Moving ahead", "Taking care of it", "Making headway"]
- };
--var when = (time) => Number.isFinite(time) ? new Date(time).toLocaleString(dateLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
--function MaskedInput({ value, onChange, onEnter, label, autoFocus = false }) {
--  return (0, import_react5.createElement)("input", {
--    className: "bt-secret-input",
--    type: MASK_BY_CSS ? "text" : "password",
--    "data-masked": MASK_BY_CSS ? "" : void 0,
--    value,
--    autoFocus,
--    autoComplete: MASK_BY_CSS ? "off" : "new-password",
--    autoCorrect: "off",
--    autoCapitalize: "off",
--    spellCheck: false,
--    "data-1p-ignore": "",
--    "data-lpignore": "true",
--    "data-bwignore": "",
--    "data-form-type": "other",
--    "aria-label": label,
--    placeholder: t("Paste or type the key"),
--    onChange: (event) => onChange(event.target.value),
--    onKeyDown: (event) => {
--      if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
--      event.preventDefault();
--      onEnter?.();
++};
 +var TOOL_PHRASES = [
 +  [/web_?search|search_?web/i, "Searching online"],
 +  [/fetch|browse|browser|web/i, "Reading a page"],
@@ -8821,8 +9051,7 @@ diff --git a/client.js b/client.js
 +    case "message_bot": {
 +      const target = findBot(arg("to"));
 +      return { label: target ? t("Asking {name}", { name: target.name }) : t("Asking another Bot"), state: "sending" };
-     }
--  });
++    }
 +    case "stop_bot": {
 +      const target = findBot(arg("bot"));
 +      return { label: target ? t("Stopping {name}", { name: target.name }) : t("Stopping another Bot"), state: "sending" };
@@ -8850,66 +9079,25 @@ diff --git a/client.js b/client.js
 +      const phrase = TOOL_PHRASES.find(([pattern]) => pattern.test(name))?.[1];
 +      return { label: phrase ? t(phrase) : null, state: toolState(name) };
 +  }
- }
--function ScopeSwitch({ value, onChange, bot }) {
--  const options = [["all", t("All Bots")], ["bot", t("Only {name}", { name: bot.name })]];
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-secret-scope", role: "radiogroup", "aria-label": t("Who may use it") },
--    (0, import_react5.createElement)("span", { className: "bt-secret-glide", "data-at": value === "all" ? 0 : 1, "aria-hidden": true }),
--    options.map(([id, text]) => (0, import_react5.createElement)("button", {
--      key: id,
--      type: "button",
--      role: "radio",
--      "aria-checked": value === id,
--      className: "bt-secret-seg",
--      onClick: () => onChange(id)
--    }, text))
--  );
++}
 +function workPhrase(tool) {
 +  if (!tool) return t("Thinking about it");
 +  return toolActivity(tool, () => void 0, () => void 0)?.label ?? t("Using {tool}", { tool });
  }
--function SecretHead({ bot, title, detail, name, onClose }) {
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-q-head bt-secret-head" },
--    (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 28 }), (0, import_react5.createElement)("span", { className: "bt-secret-lock" }, (0, import_react5.createElement)(LockIcon))),
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-q-text" },
--      (0, import_react5.createElement)("p", { className: "bt-q-title" }, title),
--      (0, import_react5.createElement)("div", { className: "bt-q-detail" }, (0, import_react5.createElement)("code", { className: "bt-secret-name" }, name), detail ? ` · ${detail}` : "")
--    ),
--    onClose ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react5.createElement)(CloseIcon)) : null
--  );
+-function AddSecret({ actions, run, onDone }) {
+-  const [name, setName] = (0, import_react5.useState)("");
+-  const [purpose, setPurpose] = (0, import_react5.useState)("");
+-  const [value, setValue] = (0, import_react5.useState)("");
+-  const ready = /^[A-Za-z][\w-]{0,63}$/.test(name.trim()) && value.trim().length >= MIN_VALUE;
+-  const save = () => {
+-    if (!ready) return;
+-    void run(actions.secretSet({ name, purpose, value, scope: "all" })).then((ok) => {
+-      if (ok) {
+-        setValue("");
+-        onDone();
 +function workText(tool, step) {
 +  return step ? t("{action}: {detail}", { action: workPhrase(tool), detail: step }) : `${workPhrase(tool)}…`;
- }
--function SecretCard({ bot, request, roster, actions }) {
--  const [value, setValue] = (0, import_react5.useState)("");
--  const [scope, setScope] = (0, import_react5.useState)("all");
--  const [replacing, setReplacing] = (0, import_react5.useState)(false);
--  const [busy, setBusy] = (0, import_react5.useState)(false);
--  const [error, setError] = (0, import_react5.useState)("");
--  const noteId = (0, import_react5.useId)();
--  const secret = (roster.secrets ?? []).find((entry) => entry.name === request.name);
--  const run = (promise) => {
--    setBusy(true);
--    setError("");
--    return Promise.resolve(promise).then(() => setValue(""), (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
--  };
--  const cancel = () => run(actions.secretCancel(request.id));
--  const long = value.trim().length >= MIN_VALUE;
--  const save = () => {
--    if (long && !busy) void run(actions.secretSet({ requestId: request.id, value, scope }));
--  };
--  const allow = () => {
--    if (!busy) void run(actions.secretAllow(request.id));
--  };
--  const filling = request.kind === "fill" || replacing;
--  const warn = insecure() ? (0, import_react5.createElement)("div", { className: "bt-secret-warn", role: "note" }, (0, import_react5.createElement)(WarnIcon), t("This page is not on HTTPS: the key crosses the network unencrypted.")) : null;
--  return (0, import_react5.createElement)(
++}
 +function useLiveNote(actions, sessionId, id, entry) {
 +  const key = entry ? JSON.stringify(entry) : "";
 +  (0, import_react11.useEffect)(() => {
@@ -8933,7 +9121,10 @@ diff --git a/client.js b/client.js
 +      if (entry && key !== seen) {
 +        seen = key;
 +        setLive({ replies: entry.replies ?? [] });
-+      }
+       }
+-    });
+-  };
+-  return (0, import_react5.createElement)(
 +      timer = setTimeout(tick, document.hidden ? 5e3 : 1e3);
 +    };
 +    void tick();
@@ -8954,37 +9145,16 @@ diff --git a/client.js b/client.js
 +  const room2 = roster.roomsById[sessionId];
 +  return (0, import_react11.createElement)(
      "div",
--    { className: "bt-q bt-secret", role: "group", "aria-describedby": noteId, "data-kind": request.kind },
--    (0, import_react5.createElement)(SecretHead, {
--      bot,
--      title: request.kind === "allow" ? t("Let {bot} use {name}?", { bot: bot.name, name: request.name }) : t("{name} needs a key", { name: bot.name }),
--      detail: request.purpose,
--      name: request.name,
--      onClose: busy ? void 0 : cancel
--    }),
--    request.kind === "allow" ? (0, import_react5.createElement)("div", { className: "bt-secret-saved" }, (0, import_react5.createElement)(KeyIcon), t("Saved for {scope}", { scope: scopeLabel(secret?.scope, roster) })) : null,
--    filling ? (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-body" },
--      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: setValue, onEnter: save, label: t("Value of {name}", { name: request.name }), autoFocus: replacing })),
--      request.kind === "fill" ? (0, import_react5.createElement)(ScopeSwitch, { value: scope, onChange: setScope, bot }) : null
--    ) : null,
+-    { className: "bt-set-row bt-set-paste bt-secret-add" },
+-    (0, import_react5.createElement)("input", { className: "bt-input", "aria-label": t("Key name"), placeholder: t("NAME, e.g. GITHUB_TOKEN"), value: name, spellCheck: false, autoComplete: "off", autoFocus: true, onChange: (event) => setName(event.target.value.toUpperCase()) }),
+-    (0, import_react5.createElement)("input", { className: "bt-input", "aria-label": t("What it is for"), placeholder: t("What it is for"), value: purpose, autoComplete: "off", onChange: (event) => setPurpose(event.target.value) }),
+-    (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: setValue, onEnter: save, label: t("Value") })),
 -    (0, import_react5.createElement)(
 -      "div",
--      { className: "bt-secret-note", id: noteId },
--      t("{bot} never sees the value. It reaches {bot}'s shell as ", { bot: bot.name }),
--      (0, import_react5.createElement)("code", null, `$DSH_SECRET_${request.name}`),
--      ".",
--      filling && value !== "" && !long ? t(" At least {count} characters.", { count: MIN_VALUE }) : ""
--    ),
--    warn,
--    error ? (0, import_react5.createElement)("div", { className: "bt-secret-error", role: "alert" }, error) : null,
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-q-foot" },
--      request.kind === "allow" && !replacing ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: () => setReplacing(true) }, t("Replace value")) : null,
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: cancel }, t("Cancel")),
--      filling ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: !long || busy, onClick: save }, busy ? t("Saving…") : t("Save")) : (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: allow }, busy ? t("Allowing…") : t("Allow"))
+-      { className: "bt-secret-row-actions" },
+-      (0, import_react5.createElement)("span", { className: "bt-set-hint" }, t("New keys are for all Bots; narrow it down afterwards.")),
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onDone }, t("Cancel")),
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !ready, onClick: save }, t("Save key"))
 -    )
 +    { className: "bt-group-replies" },
 +    replies.map((reply, index) => {
@@ -9068,25 +9238,29 @@ diff --git a/client.js b/client.js
 +    })
    );
  }
--function SettledSecret({ bot, request, roster }) {
--  const canceled = request.status === "canceled";
--  const text = canceled ? t("{bot} asked for {name}", { bot: bot.name, name: request.name }) : request.status === "allowed" ? t("Allowed {bot} to use {name}", { bot: bot.name, name: request.name }) : t("Saved {name}", { name: request.name });
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-q bt-q-settled bt-secret bt-secret-done", role: "group", "aria-label": text, "data-status": request.status },
+-function SecretsPage({ roster, actions, run, Section }) {
+-  const [open, setOpen] = (0, import_react5.useState)(null);
+-  const [adding, setAdding] = (0, import_react5.useState)(false);
+-  const secrets = roster.secrets ?? [];
+-  return [
 -    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-q-head" },
--      (0, import_react5.createElement)("span", { className: "bt-secret-who" }, (0, import_react5.createElement)(BotMark, { bot, size: 22 })),
--      (0, import_react5.createElement)("div", { className: "bt-q-text" }, (0, import_react5.createElement)(
--        "p",
--        { className: "bt-q-title" },
--        text,
--        canceled ? null : (0, import_react5.createElement)("span", { className: "bt-secret-scope-tag" }, ` · ${scopeLabel(request.scope, roster)}`)
--      )),
--      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
--    )
--  );
+-      "p",
+-      { key: "about", className: "bt-secret-about" },
+-      t("Keys your Bots asked for. Bots never see the values: they use them as "),
+-      (0, import_react5.createElement)("code", null, "$DSH_SECRET_NAME"),
+-      t(" in their shell, and every value is replaced by "),
+-      (0, import_react5.createElement)("code", null, "[secret:NAME]"),
+-      t(" before anything goes to a model.")
+-    ),
+-    (0, import_react5.createElement)(
+-      Section,
+-      { key: "list", title: t("Secrets · {count}", { count: secrets.length }) },
+-      secrets.length === 0 && !adding ? (0, import_react5.createElement)("div", { className: "bt-set-row" }, (0, import_react5.createElement)("span", { className: "bt-set-hint" }, t("No keys yet. When a Bot needs one, it shows a card in its chat."))) : null,
+-      secrets.map((secret) => (0, import_react5.createElement)(SecretRow, { key: secret.name, secret, roster, actions, run, open: open === secret.name, onToggle: () => setOpen(open === secret.name ? null : secret.name) })),
+-      adding ? (0, import_react5.createElement)(AddSecret, { actions, run, onDone: () => setAdding(false) }) : null
+-    ),
+-    adding ? null : (0, import_react5.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setAdding(true) }, t("Add a key")))
+-  ];
 +var DRAWN = /* @__PURE__ */ new Set(["message_bot", "stop_bot", "create_bot", "update_bot", "group_relay", "create_group", "update_group", "delete_group", "post_to_group", "ask_user", "request_secret", "ask_user_question", "read_group_chat", "remember", "forget"]);
 +var CARDS = /* @__PURE__ */ new Set(["ask_user", "request_secret"]);
 +function callTree(root) {
@@ -9101,9 +9275,7 @@ diff --git a/client.js b/client.js
 +  };
 +  visit(root);
 +  return calls;
- }
--function RequestView({ bot, request, roster, actions }) {
--  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
++}
 +function useShownCards(actions, sessionId, callIds) {
 +  const key = JSON.stringify(callIds);
 +  (0, import_react11.useLayoutEffect)(() => {
@@ -9112,14 +9284,7 @@ diff --git a/client.js b/client.js
 +    actions.noteCards(sessionId, ids, 1);
 +    return () => actions.noteCards(sessionId, ids, -1);
 +  }, [sessionId, key]);
- }
--function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
--  const bot = roster.byId[sessionId];
--  if (!bot) return null;
--  const request = (roster.secretRequests?.[bot.id] ?? []).find((entry) => entry.callId === callId && (entry.sessionId ?? sessionId) === sessionId);
--  if (request) return (0, import_react5.createElement)("div", { className: "bt-q-inline" }, (0, import_react5.createElement)(RequestView, { bot, request, roster, actions }));
--  if (done && /already saved/.test(contentText(content))) {
--    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
++}
 +function renderCall(call4, { sessionId, roster, actions, useUi, findBot }) {
 +  const tool = toolName(call4);
 +  const done = call4.kind === "tool-result";
@@ -9195,20 +9360,10 @@ diff --git a/client.js b/client.js
 +      return done && !call4.isError ? (0, import_react11.createElement)(MemoryEvent, { sessionId, scope: arg("scope"), result: contentText(call4.content), roster, actions, findBot }) : null;
 +    default:
 +      return null;
-   }
--  return null;
- }
--function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
++  }
++}
 +function ToolCell({ node, sessionId, useRoster, useUi, actions }) {
-   const roster = useRoster((value) => value);
--  const shown = useCards?.((state) => state[sessionId]) ?? NONE;
--  const loading = useSession?.(historyLoading) === true;
--  const bot = roster.byId[sessionId];
--  if (!bot || currentPart(bot) !== sessionId) return null;
--  const drawn = (entry) => entry.callId && entry.sessionId === sessionId && (loading || shown[entry.callId] > 0);
--  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
--  if (waiting.length === 0) return null;
--  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
++  const roster = useRoster((value) => value);
 +  const root = node.data.root;
 +  const turn = node.location?.turn?.turn ?? root.turn;
 +  const hidden = isHiddenTurn(roster, sessionId, turn);
@@ -9223,39 +9378,75 @@ diff --git a/client.js b/client.js
 +  const env = { sessionId, roster, actions, useUi, findBot };
 +  return (0, import_react11.createElement)(import_react11.Fragment, null, drawn.map((call4, index) => (0, import_react11.createElement)(import_react11.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
  }
--function ScopeEditor({ secret, roster, onSave }) {
--  const [mode, setMode] = (0, import_react5.useState)(secret.scope === "all" ? "all" : "some");
--  const [picked, setPicked] = (0, import_react5.useState)(secret.scope === "all" ? [] : secret.scope);
--  const toggle = (id) => setPicked((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
--  const same = mode === "all" ? secret.scope === "all" : secret.scope !== "all" && [...picked].sort().join() === [...secret.scope].sort().join();
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-secret-edit-block" },
--    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Who may use it")),
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-radios", role: "radiogroup", "aria-label": t("Who may use {name}", { name: secret.name }) },
--      [["all", t("All Bots")], ["some", t("Chosen Bots")]].map(([id, text]) => (0, import_react5.createElement)(
--        "label",
--        { key: id, className: "bt-secret-radio" },
--        (0, import_react5.createElement)("input", { type: "radio", name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }),
--        text
--      ))
--    ),
--    mode === "some" ? (0, import_react5.createElement)("div", { className: "bt-secret-bots" }, roster.bots.map((bot) => (0, import_react5.createElement)("button", {
--      key: bot.id,
--      type: "button",
--      className: "bt-secret-bot",
--      "aria-pressed": picked.includes(bot.id),
--      onClick: () => toggle(bot.id)
--    }, (0, import_react5.createElement)(BotAvatar, { bot, size: 20, badge: false, live: false }), bot.name, picked.includes(bot.id) ? (0, import_react5.createElement)(CheckIcon) : null))) : null,
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-row-actions" },
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
--    )
--  );
-+
+-var SECRET_CSS = `
+-.bt-secret-head{align-items:center;gap:10px}
+-.bt-secret-who{position:relative;flex:none;display:inline-flex}
+-.bt-secret-lock{position:absolute;right:-5px;bottom:-4px;width:16px;height:16px;border-radius:50%;background:var(--bt-main);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1.5px var(--bt-bubble)}
+-.bt-secret-lock svg{width:11px;height:11px}
+-.bt-secret-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:16px;padding:1px 6px;border-radius:5px;background:var(--bt-hover);color:var(--bt-ink)}
+-.bt-secret-body{display:flex;flex-direction:column;gap:8px}
+-.bt-secret-field{align-items:center;min-height:36px}
+-.bt-secret-input{flex:1;width:100%;min-width:0;margin:0;padding:0;border:0;outline:none;background:transparent;color:var(--bt-ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:20px;letter-spacing:.04em}
+-.bt-secret-input[data-masked]{-webkit-text-security:disc}
+-.bt-secret-input::placeholder{color:var(--bt-ink-3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:0}
+-.bt-secret-scope{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;align-self:flex-start;padding:2px;border-radius:999px;background:var(--bt-hover)}
+-.bt-secret-glide{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:999px;background:var(--bt-main);box-shadow:0 1px 3px rgba(20,20,20,.08),inset 0 0 0 .5px color-mix(in srgb,var(--bt-ink) 6%,transparent);transition:${spring(SPRING_SHAPE, "transform")}}
+-.bt-secret-glide[data-at="1"]{transform:translateX(100%)}
+-.bt-secret-seg{position:relative;z-index:1;height:28px;padding:0 14px;border:0;border-radius:999px;background:none;color:var(--bt-ink-2);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer;transition:color .16s ease}
+-.bt-secret-seg[aria-checked=true]{color:var(--bt-ink);font-weight:500}
+-.bt-secret-seg:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
+-/* A key card asks the user to act, so the process group carrying it stays open in every
+-   work-details mode (same override as .bt-group-replies in styles.js). */
+-[data-step-process]:has(.bt-secret)>div:first-child{display:none!important}
+-[data-step-process]:has(.bt-secret)>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
+-.bt-secret-ok{display:flex;align-items:center;gap:4px;margin-top:6px;animation:bt-secret-in .22s cubic-bezier(.22,1,.36,1)}
+-.bt-secret-ok svg{width:13px;height:13px;color:#16a34a}
+-@keyframes bt-secret-in{from{opacity:0;transform:translateY(-2px)}}
+-.bt-secret-saved{display:flex;align-items:center;gap:6px;font-size:13px;line-height:18px;color:var(--bt-ink-2)}
+-.bt-secret-note{font-size:12px;line-height:17px;color:var(--bt-ink-3)}
+-.bt-secret-note code,.bt-secret-about code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px}
+-.bt-secret-warn{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;font-size:12px;line-height:16px;color:#b25e09;background:color-mix(in srgb,#f59e0b 12%,transparent)}
+-.bt-secret-error{font-size:12px;line-height:16px;color:#e02135}
+-.bt-secret .bt-q-btn:disabled{opacity:.5;cursor:default}
+-.bt-secret-done .bt-q-head{align-items:center}
+-.bt-secret-done .bt-q-title{font-size:13px;line-height:18px;color:var(--bt-ink-2);font-weight:500}
+-.bt-secret-scope-tag{font-weight:400;color:var(--bt-ink-3)}
+-.bt-secret-check{color:var(--bt-green,#22a06b);animation:bt-secret-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} backwards}
+-.bt-secret-done{animation:bt-secret-settle .32s cubic-bezier(.22,1,.36,1) backwards}
+-@keyframes bt-secret-pop{from{opacity:0;transform:scale(.4)}}
+-@keyframes bt-secret-settle{from{opacity:.4;transform:scale(.985)}}
+-.bt-secret-event{display:inline-flex;align-items:center;gap:5px}
+-.bt-secret-dock{flex-direction:column;align-items:center}
+-.bt-secret-dock .bt-q{max-width:min(550px,calc(100% - 32px))}
+-.bt-secret-about{margin:0 0 12px;padding:0 4px;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
+-.bt-secret-title{display:flex;align-items:center;gap:6px;min-width:0;color:var(--bt-ink)}
+-.bt-secret-title svg{flex:none;color:var(--bt-ink-2)}
+-.bt-secret-purpose{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2)}
+-.bt-secret-faces{display:inline-flex}
+-.bt-secret-faces>*+*{margin-left:-6px}
+-.bt-secret-edit{display:flex;flex-direction:column;gap:14px;padding:4px 12px 14px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
+-.bt-secret-edit-block{display:flex;flex-direction:column;gap:8px}
+-.bt-secret-edit-label{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
+-.bt-secret-radios{display:flex;gap:16px;font-size:13px}
+-.bt-secret-radio{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+-.bt-secret-bots{display:flex;flex-wrap:wrap;gap:6px}
+-.bt-secret-bot{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px 0 5px;border-radius:999px;border:.5px solid var(--bt-line);background:var(--bt-card);color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease}
+-.bt-secret-bot[aria-pressed=true]{background:var(--bt-active);color:var(--bt-ink);border-color:var(--bt-line-2)}
+-.bt-secret-bot svg{width:13px;height:13px}
+-.bt-secret-inline{display:flex;gap:8px;align-items:center}
+-.bt-secret-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+-.bt-secret-row-actions .bt-set-hint{flex:1}
+-.bt-secret-danger{color:#e02135;display:inline-flex;align-items:center;gap:4px}
+-.bt-secret-danger svg{width:13px;height:13px}
+-.bt-secret-add .bt-input{height:34px}
+-@media (prefers-reduced-motion:reduce){.bt-secret-glide{transition:none}.bt-secret-check,.bt-secret-done,.bt-secret-ok,.bt-secret-edit{animation:none}}
+-`;
+ 
+-// src/client/turn-reasoning.js
+-function turnReasoning(steps, current) {
+-  const members = steps.length ? steps : [current];
+-  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
+-  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
 +// src/client/awaiting.js
 +var AWAIT_REPLY_MS = 10 * 60 * 1e3;
 +function awaitingReply(roster, sessionId, now = Date.now()) {
@@ -9263,25 +9454,70 @@ diff --git a/client.js b/client.js
 +  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
 +  return now - at < AWAIT_REPLY_MS;
  }
--function ValueEditor({ secret, onSave }) {
--  const [value, setValue] = (0, import_react5.useState)("");
--  const [replaced, setReplaced] = (0, import_react5.useState)(false);
--  const long = value.trim().length >= MIN_VALUE;
--  const save = () => {
--    if (!long) return;
--    void Promise.resolve(onSave(value)).then((ok) => {
--      if (ok) {
--        setValue("");
--        setReplaced(true);
--      }
-+
+-var texts = (step) => step.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "");
+-var thinkingLive = (step) => step.status === "running" && texts(step).length === 0 && step.blocks.some((block) => block.kind === "reasoning");
+-var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reasoning").map((block) => block.text).join("\n").trim();
+ 
+-// src/client/cells.js
+-var import_react6 = require("react");
+-var import_react_dom = require("react-dom");
+-var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+-var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
+-function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, useUi, lead, mentions }) {
+-  const onClick = (event) => {
+-    const target = mentionTarget(event);
+-    if (target === null) return;
+-    event.preventDefault();
+-    event.stopPropagation();
+-    actions.openSession(target);
+-  };
+-  const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
+-  return (0, import_react6.createElement)(
+-    "div",
+-    { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
+-    texts2.map((text, index) => {
+-      const key = msgKey ? `${msgKey}:${index}` : void 0;
+-      const picked = key ? reactions?.[index] ?? [] : [];
+-      const last = index === texts2.length - 1;
+-      const live = streaming && last;
+-      return (0, import_react6.createElement)(
+-        "div",
+-        { key: index, className: "bt-msg" },
+-        (0, import_react6.createElement)(
+-          "div",
+-          { className: "bt-msg-line" },
+-          lead && last ? lead : null,
+-          (0, import_react6.createElement)(
+-            "div",
+-            { className: "bt-bubble" },
+-            (0, import_react6.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
+-          ),
+-          live ? null : (0, import_react6.createElement)(MessageTools, { text, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(msgKey, index, emoji) : void 0, actions })
+-        ),
+-        picked.length ? (0, import_react6.createElement)("div", { className: "bt-reacts" }, picked.map((emoji) => (0, import_react6.createElement)("button", {
+-          key: emoji,
+-          type: "button",
+-          className: "bt-react",
+-          "aria-label": t("Remove reaction {emoji}", { emoji }),
+-          onClick: () => actions.toggleReaction(msgKey, index, emoji)
+-        }, emoji))) : null
+-      );
+-    })
+-  );
 +// src/client/remote-approval-wait.js
 +var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
 +function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
 +  if (!remote) return null;
 +  if (tool && inputAt <= (tool.at ?? 0)) return null;
 +  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
-+}
+ }
+-var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+-function useDismiss(open, close, refs) {
+-  (0, import_react6.useEffect)(() => {
+-    if (!open) return void 0;
+-    const onDown = (event) => {
+-      if (refs.some((ref) => ref.current?.contains(event.target))) return;
+-      close();
 +
 +// src/client/activity-row-host.js
 +var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
@@ -9351,27 +9587,14 @@ diff --git a/client.js b/client.js
 +    const check = () => {
 +      frame = 0;
 +      if (lastTurnOnScreen("assistant-step") > sendTurn.current) setReplied(true);
-+    };
+     };
+-    const onKey = (event) => {
+-      if (event.key === "Escape") {
+-        event.stopPropagation();
+-        close();
 +    const observer = new MutationObserver(() => {
 +      if (!frame) frame = requestAnimationFrame(check);
-     });
--  };
--  const edit = (next) => {
--    setValue(next);
--    setReplaced(false);
--  };
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-secret-edit-block" },
--    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Replace the value")),
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-inline" },
--      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: edit, onEnter: save, label: t("New value of {name}", { name: secret.name }) })),
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
--    ),
--    value !== "" && !long ? (0, import_react5.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react5.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react5.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
--  );
++    });
 +    observer.observe(document.querySelector("[data-conversation-scroll]") ?? document.body, { childList: true, subtree: true });
 +    check();
 +    return () => {
@@ -9380,49 +9603,7 @@ diff --git a/client.js b/client.js
 +    };
 +  }, [remote, sending]);
 +  return replied;
- }
--function SecretRow({ secret, roster, actions, run, open, onToggle }) {
--  const [confirm, setConfirm] = (0, import_react5.useState)(false);
--  (0, import_react5.useEffect)(() => {
--    if (!open) setConfirm(false);
--  }, [open]);
--  const asker = secret.requestedBy ? roster.byId[secret.requestedBy]?.name ?? t("a deleted Bot") : t("you");
--  const allowed = secret.scope === "all" ? [] : secret.scope.map((id) => roster.byId[id]).filter(Boolean);
--  const meta = [t("Asked by {name}", { name: asker }), t("added {time}", { time: when(secret.createdAt) }), secret.lastUsedAt ? t("last used {time}", { time: when(secret.lastUsedAt) }) : t("not used yet")].join(" · ");
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-secret-item", "data-open": open ? "" : void 0 },
--    (0, import_react5.createElement)(
--      "button",
--      { type: "button", className: "bt-set-row bt-secret-summary", "aria-expanded": open, onClick: onToggle },
--      (0, import_react5.createElement)(
--        "span",
--        { className: "bt-set-copy" },
--        (0, import_react5.createElement)("span", { className: "bt-secret-title" }, (0, import_react5.createElement)(KeyIcon), (0, import_react5.createElement)("code", { className: "bt-secret-name" }, secret.name), secret.purpose ? (0, import_react5.createElement)("span", { className: "bt-secret-purpose" }, secret.purpose) : null),
--        (0, import_react5.createElement)("span", { className: "bt-set-hint" }, meta)
--      ),
--      (0, import_react5.createElement)(
--        "span",
--        { className: "bt-set-control" },
--        secret.scope === "all" ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("All Bots")) : allowed.length === 0 ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react5.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react5.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
--      )
--    ),
--    open ? (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-edit" },
--      (0, import_react5.createElement)(ScopeEditor, { key: JSON.stringify(secret.scope), secret, roster, onSave: (scope) => run(actions.secretUpdate(secret.name, scope)) }),
--      (0, import_react5.createElement)(ValueEditor, { secret, onSave: (value) => run(actions.secretSet({ name: secret.name, value })) }),
--      (0, import_react5.createElement)(
--        "div",
--        { className: "bt-secret-row-actions" },
--        confirm ? [
--          (0, import_react5.createElement)("span", { key: "q", className: "bt-set-hint" }, t("Delete {name}? Bots lose it at once.", { name: secret.name })),
--          (0, import_react5.createElement)("button", { key: "no", type: "button", className: "bt-soft bt-soft-sm", onClick: () => setConfirm(false) }, t("Keep")),
--          (0, import_react5.createElement)("button", { key: "yes", type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => run(actions.secretDelete(secret.name)) }, t("Delete"))
--        ] : (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => setConfirm(true) }, (0, import_react5.createElement)(TrashIcon), t("Delete"))
--      )
--    ) : null
--  );
++}
 +function useRunningHost(active, where = RUNNING_HOST) {
 +  const [host, setHost] = (0, import_react12.useState)(null);
 +  (0, import_react12.useEffect)(() => {
@@ -9447,18 +9628,7 @@ diff --git a/client.js b/client.js
 +    };
 +  }, [active, where]);
 +  return host;
- }
--function AddSecret({ actions, run, onDone }) {
--  const [name, setName] = (0, import_react5.useState)("");
--  const [purpose, setPurpose] = (0, import_react5.useState)("");
--  const [value, setValue] = (0, import_react5.useState)("");
--  const ready = /^[A-Za-z][\w-]{0,63}$/.test(name.trim()) && value.trim().length >= MIN_VALUE;
--  const save = () => {
--    if (!ready) return;
--    void run(actions.secretSet({ name, purpose, value, scope: "all" })).then((ok) => {
--      if (ok) {
--        setValue("");
--        onDone();
++}
 +function useRowEntrances(replacing) {
 +  const check = (0, import_react12.useRef)(replacing);
 +  check.current = replacing;
@@ -9495,12 +9665,12 @@ diff --git a/client.js b/client.js
 +        item.dataset.btEnter = reply && check.current() ? "after-collapse" : "new";
 +        item.addEventListener("animationend", settle);
        }
-+    };
+     };
+-    window.addEventListener("mousedown", onDown);
+-    window.addEventListener("keydown", onKey, true);
 +    const observer = new MutationObserver(() => {
 +      if (!frame) frame = requestAnimationFrame(scan);
-     });
--  };
--  return (0, import_react5.createElement)(
++    });
 +    scan();
 +    return () => {
 +      cancelAnimationFrame(frame);
@@ -9603,17 +9773,7 @@ diff --git a/client.js b/client.js
 +  if (!host || phase === null || !shown) return null;
 +  const elapsed = now - shown.at >= 6e4 ? elapsedLabel(now - shown.at) : null;
 +  return (0, import_react_dom2.createPortal)((0, import_react12.createElement)(
-     "div",
--    { className: "bt-set-row bt-set-paste bt-secret-add" },
--    (0, import_react5.createElement)("input", { className: "bt-input", "aria-label": t("Key name"), placeholder: t("NAME, e.g. GITHUB_TOKEN"), value: name, spellCheck: false, autoComplete: "off", autoFocus: true, onChange: (event) => setName(event.target.value.toUpperCase()) }),
--    (0, import_react5.createElement)("input", { className: "bt-input", "aria-label": t("What it is for"), placeholder: t("What it is for"), value: purpose, autoComplete: "off", onChange: (event) => setPurpose(event.target.value) }),
--    (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: setValue, onEnter: save, label: t("Value") })),
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-row-actions" },
--      (0, import_react5.createElement)("span", { className: "bt-set-hint" }, t("New keys are for all Bots; narrow it down afterwards.")),
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onDone }, t("Cancel")),
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !ready, onClick: save }, t("Save key"))
++    "div",
 +    { className: "bt-typing", "data-exiting": phase === "out" ? "" : void 0, "data-carry": carry && phase !== "out" ? "" : void 0, "data-remote": remote ? "" : void 0, "data-flybot": shown.key === "remote-approval" ? "remote-approval" : void 0, "aria-hidden": true },
 +    bot ? (0, import_react12.createElement)(BotMark, { bot, size: 28, state: markState.current, live: true, pokeable: true }) : (0, import_react12.createElement)(RoomAvatar, { room: room2, roster, size: 28 }),
 +    (0, import_react12.createElement)(
@@ -9625,154 +9785,10 @@ diff --git a/client.js b/client.js
 +        (0, import_react12.createElement)(Shimmer, null, `${shown.text}…`),
 +        elapsed ? (0, import_react12.createElement)("span", { className: "bt-typing-time" }, `· ${elapsed}`) : null
 +      )
-     )
--  );
--}
--function SecretsPage({ roster, actions, run, Section }) {
--  const [open, setOpen] = (0, import_react5.useState)(null);
--  const [adding, setAdding] = (0, import_react5.useState)(false);
--  const secrets = roster.secrets ?? [];
--  return [
--    (0, import_react5.createElement)(
--      "p",
--      { key: "about", className: "bt-secret-about" },
--      t("Keys your Bots asked for. Bots never see the values: they use them as "),
--      (0, import_react5.createElement)("code", null, "$DSH_SECRET_NAME"),
--      t(" in their shell, and every value is replaced by "),
--      (0, import_react5.createElement)("code", null, "[secret:NAME]"),
--      t(" before anything goes to a model.")
--    ),
--    (0, import_react5.createElement)(
--      Section,
--      { key: "list", title: t("Secrets · {count}", { count: secrets.length }) },
--      secrets.length === 0 && !adding ? (0, import_react5.createElement)("div", { className: "bt-set-row" }, (0, import_react5.createElement)("span", { className: "bt-set-hint" }, t("No keys yet. When a Bot needs one, it shows a card in its chat."))) : null,
--      secrets.map((secret) => (0, import_react5.createElement)(SecretRow, { key: secret.name, secret, roster, actions, run, open: open === secret.name, onToggle: () => setOpen(open === secret.name ? null : secret.name) })),
--      adding ? (0, import_react5.createElement)(AddSecret, { actions, run, onDone: () => setAdding(false) }) : null
--    ),
--    adding ? null : (0, import_react5.createElement)("div", { key: "add", className: "bt-actions" }, (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setAdding(true) }, t("Add a key")))
--  ];
--}
--var SECRET_CSS = `
--.bt-secret-head{align-items:center;gap:10px}
--.bt-secret-who{position:relative;flex:none;display:inline-flex}
--.bt-secret-lock{position:absolute;right:-5px;bottom:-4px;width:16px;height:16px;border-radius:50%;background:var(--bt-main);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1.5px var(--bt-bubble)}
--.bt-secret-lock svg{width:11px;height:11px}
--.bt-secret-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:16px;padding:1px 6px;border-radius:5px;background:var(--bt-hover);color:var(--bt-ink)}
--.bt-secret-body{display:flex;flex-direction:column;gap:8px}
--.bt-secret-field{align-items:center;min-height:36px}
--.bt-secret-input{flex:1;width:100%;min-width:0;margin:0;padding:0;border:0;outline:none;background:transparent;color:var(--bt-ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:20px;letter-spacing:.04em}
--.bt-secret-input[data-masked]{-webkit-text-security:disc}
--.bt-secret-input::placeholder{color:var(--bt-ink-3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:0}
--.bt-secret-scope{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;align-self:flex-start;padding:2px;border-radius:999px;background:var(--bt-hover)}
--.bt-secret-glide{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:999px;background:var(--bt-main);box-shadow:0 1px 3px rgba(20,20,20,.08),inset 0 0 0 .5px color-mix(in srgb,var(--bt-ink) 6%,transparent);transition:${spring(SPRING_SHAPE, "transform")}}
--.bt-secret-glide[data-at="1"]{transform:translateX(100%)}
--.bt-secret-seg{position:relative;z-index:1;height:28px;padding:0 14px;border:0;border-radius:999px;background:none;color:var(--bt-ink-2);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer;transition:color .16s ease}
--.bt-secret-seg[aria-checked=true]{color:var(--bt-ink);font-weight:500}
--.bt-secret-seg:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
--/* A key card asks the user to act, so the process group carrying it stays open in every
--   work-details mode (same override as .bt-group-replies in styles.js). */
--[data-step-process]:has(.bt-secret)>div:first-child{display:none!important}
--[data-step-process]:has(.bt-secret)>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
--.bt-secret-ok{display:flex;align-items:center;gap:4px;margin-top:6px;animation:bt-secret-in .22s cubic-bezier(.22,1,.36,1)}
--.bt-secret-ok svg{width:13px;height:13px;color:#16a34a}
--@keyframes bt-secret-in{from{opacity:0;transform:translateY(-2px)}}
--.bt-secret-saved{display:flex;align-items:center;gap:6px;font-size:13px;line-height:18px;color:var(--bt-ink-2)}
--.bt-secret-note{font-size:12px;line-height:17px;color:var(--bt-ink-3)}
--.bt-secret-note code,.bt-secret-about code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px}
--.bt-secret-warn{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;font-size:12px;line-height:16px;color:#b25e09;background:color-mix(in srgb,#f59e0b 12%,transparent)}
--.bt-secret-error{font-size:12px;line-height:16px;color:#e02135}
--.bt-secret .bt-q-btn:disabled{opacity:.5;cursor:default}
--.bt-secret-done .bt-q-head{align-items:center}
--.bt-secret-done .bt-q-title{font-size:13px;line-height:18px;color:var(--bt-ink-2);font-weight:500}
--.bt-secret-scope-tag{font-weight:400;color:var(--bt-ink-3)}
--.bt-secret-check{color:var(--bt-green,#22a06b);animation:bt-secret-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} backwards}
--.bt-secret-done{animation:bt-secret-settle .32s cubic-bezier(.22,1,.36,1) backwards}
--@keyframes bt-secret-pop{from{opacity:0;transform:scale(.4)}}
--@keyframes bt-secret-settle{from{opacity:.4;transform:scale(.985)}}
--.bt-secret-event{display:inline-flex;align-items:center;gap:5px}
--.bt-secret-dock{flex-direction:column;align-items:center}
--.bt-secret-dock .bt-q{max-width:min(550px,calc(100% - 32px))}
--.bt-secret-about{margin:0 0 12px;padding:0 4px;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
--.bt-secret-title{display:flex;align-items:center;gap:6px;min-width:0;color:var(--bt-ink)}
--.bt-secret-title svg{flex:none;color:var(--bt-ink-2)}
--.bt-secret-purpose{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2)}
--.bt-secret-faces{display:inline-flex}
--.bt-secret-faces>*+*{margin-left:-6px}
--.bt-secret-edit{display:flex;flex-direction:column;gap:14px;padding:4px 12px 14px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
--.bt-secret-edit-block{display:flex;flex-direction:column;gap:8px}
--.bt-secret-edit-label{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink-2)}
--.bt-secret-radios{display:flex;gap:16px;font-size:13px}
--.bt-secret-radio{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
--.bt-secret-bots{display:flex;flex-wrap:wrap;gap:6px}
--.bt-secret-bot{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px 0 5px;border-radius:999px;border:.5px solid var(--bt-line);background:var(--bt-card);color:var(--bt-ink-2);font:inherit;font-size:12px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease}
--.bt-secret-bot[aria-pressed=true]{background:var(--bt-active);color:var(--bt-ink);border-color:var(--bt-line-2)}
--.bt-secret-bot svg{width:13px;height:13px}
--.bt-secret-inline{display:flex;gap:8px;align-items:center}
--.bt-secret-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
--.bt-secret-row-actions .bt-set-hint{flex:1}
--.bt-secret-danger{color:#e02135;display:inline-flex;align-items:center;gap:4px}
--.bt-secret-danger svg{width:13px;height:13px}
--.bt-secret-add .bt-input{height:34px}
--@media (prefers-reduced-motion:reduce){.bt-secret-glide{transition:none}.bt-secret-check,.bt-secret-done,.bt-secret-ok,.bt-secret-edit{animation:none}}
--`;
--
--// src/client/turn-reasoning.js
--function turnReasoning(steps, current) {
--  const members = steps.length ? steps : [current];
--  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
--  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
++    )
 +  ), host);
- }
--var texts = (step) => step.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "");
--var thinkingLive = (step) => step.status === "running" && texts(step).length === 0 && step.blocks.some((block) => block.kind === "reasoning");
--var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reasoning").map((block) => block.text).join("\n").trim();
- 
--// src/client/cells.js
--var import_react6 = require("react");
--var import_react_dom = require("react-dom");
--var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
--var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
--function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId, msgKey, useUi, lead, mentions }) {
--  const onClick = (event) => {
--    const target = mentionTarget(event);
--    if (target === null) return;
--    event.preventDefault();
--    event.stopPropagation();
--    actions.openSession(target);
--  };
--  const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
--  return (0, import_react6.createElement)(
--    "div",
--    { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
--    texts2.map((text, index) => {
--      const key = msgKey ? `${msgKey}:${index}` : void 0;
--      const picked = key ? reactions?.[index] ?? [] : [];
--      const last = index === texts2.length - 1;
--      const live = streaming && last;
--      return (0, import_react6.createElement)(
--        "div",
--        { key: index, className: "bt-msg" },
--        (0, import_react6.createElement)(
--          "div",
--          { className: "bt-msg-line" },
--          lead && last ? lead : null,
--          (0, import_react6.createElement)(
--            "div",
--            { className: "bt-bubble" },
--            (0, import_react6.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions })
--          ),
--          live ? null : (0, import_react6.createElement)(MessageTools, { text, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(msgKey, index, emoji) : void 0, actions })
--        ),
--        picked.length ? (0, import_react6.createElement)("div", { className: "bt-reacts" }, picked.map((emoji) => (0, import_react6.createElement)("button", {
--          key: emoji,
--          type: "button",
--          className: "bt-react",
--          "aria-label": t("Remove reaction {emoji}", { emoji }),
--          onClick: () => actions.toggleReaction(msgKey, index, emoji)
--        }, emoji))) : null
--      );
--    })
--  );
++}
++
 +// src/client/dsh-offer.js
 +var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
 +var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
@@ -9781,20 +9797,7 @@ diff --git a/client.js b/client.js
 +  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
 +  if (dsh.kind === "npm") return true;
 +  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
- }
--var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
--function useDismiss(open, close, refs) {
--  (0, import_react6.useEffect)(() => {
--    if (!open) return void 0;
--    const onDown = (event) => {
--      if (refs.some((ref) => ref.current?.contains(event.target))) return;
--      close();
--    };
--    const onKey = (event) => {
--      if (event.key === "Escape") {
--        event.stopPropagation();
--        close();
--      }
++}
 +
 +// src/client/overlay-hooks.js
 +var import_react13 = require("react");
@@ -9811,9 +9814,7 @@ diff --git a/client.js b/client.js
 +    return () => {
 +      escapeLayers.splice(escapeLayers.indexOf(ref), 1);
 +      if (escapeLayers.length === 0) window.removeEventListener("keydown", onEscapeKey);
-     };
--    window.addEventListener("mousedown", onDown);
--    window.addEventListener("keydown", onKey, true);
++    };
 +  }, []);
 +}
 +function useDialogFocus(ref) {
@@ -13386,10 +13387,11 @@ diff --git a/client.js b/client.js
  @keyframes bt-update-pop{from{opacity:0;transform:scale(.96);filter:blur(4px)}}
  .bt-update-title{font-size:14px;line-height:20px;font-weight:600}
  .bt-update-text{margin-top:2px;font-size:12.5px;line-height:18px;color:var(--bt-ink-2)}
-@@ -5491,1679 +5491,2794 @@ var SIDEBAR_CSS = `
+@@ -5490,1680 +5490,2795 @@ var SIDEBAR_CSS = `
+ .bt-agent-edit input{width:100%;border:0;border-radius:6px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;font-size:13px;line-height:20px;padding:2px 8px;outline:none;box-shadow:inset 0 0 0 .5px var(--bt-line-2)}
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
- @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
+-@media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
 -`;
 -
 -// src/client/header.js
@@ -13683,6 +13685,7 @@ diff --git a/client.js b/client.js
 -    actions.clearQuote(quote.token);
 -    const excerpt = quote.text.replace(/\s+/g, " ").trim();
 -    const line = `> ${excerpt.length > 200 ? `${excerpt.slice(0, 200)}…` : excerpt}
++@media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
  
 +.bt-row-wrap{position:relative;display:flex;align-items:center;width:100%;min-width:0}
 +.bt-row-wrap>.bt-row{flex:1 1 auto;min-width:0;width:100%}
@@ -22201,16 +22204,16 @@ diff --git a/client.js b/client.js
    { width: 20, height: 20, viewBox: "0 0 16 16", fill: "currentColor", "aria-hidden": true },
 -  (0, import_react25.createElement)("path", { d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" })
 +  (0, import_react39.createElement)("path", { d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" })
- );
--var MARKS = { github: GitHubMark };
--var ABOUT = { github: () => t("Repositories, issues, and pull requests") };
++);
 +var FeishuMark = () => (0, import_react39.createElement)(
 +  "svg",
 +  { width: 20, height: 20, viewBox: "0 0 20 20", fill: "currentColor", "aria-hidden": true },
 +  (0, import_react39.createElement)("path", { d: "M3.2 6.6c3 .1 6.4 1.5 8.6 3.9-1.9.4-3.5 1.4-4.7 2.9-1.9-.6-3.4-1.9-3.9-3.6-.2-.7-.2-1.5 0-3.2z" }),
 +  (0, import_react39.createElement)("path", { d: "M16.8 5.4c-2.9.2-5.6 1.5-7.4 3.4 1.7 1.2 3.1 2.8 3.9 4.9 2.2-1.1 3.8-3.2 4-5.6.1-.9-.1-1.9-.4-2.7z" }),
 +  (0, import_react39.createElement)("path", { d: "M8.6 12.1c.9.7 1.7 1.6 2.2 2.7-1.1.2-2.3 0-3.3-.6.2-.8.6-1.5 1.1-2.1z" })
-+);
+ );
+-var MARKS = { github: GitHubMark };
+-var ABOUT = { github: () => t("Repositories, issues, and pull requests") };
 +var MARKS = { github: GitHubMark, composio: ConnectorIcon, feishu: FeishuMark };
 +var ABOUT = {
 +  github: () => t("Repositories, issues, and pull requests"),
@@ -23737,11 +23740,10 @@ diff --git a/client.js b/client.js
    prefs: "ds-bot:prefs",
    surface: "ds-bot:surface",
    agentSessions: "ds-bot:agent-sessions",
-@@ -11029,253 +11029,17 @@ function migrateStorage(storage = globalThis.localStorage) {
-     migrateBrowsers(storage);
+@@ -11030,252 +11030,16 @@ function migrateStorage(storage = globalThis.localStorage) {
    } catch {
    }
--  try {
+   try {
 -    const prefs = JSON.parse(storage.getItem(STORAGE.prefs) ?? "null");
 -    if (prefs && Object.hasOwn(LEGACY_THEMES, prefs.theme ?? "")) {
 -      storage.setItem(STORAGE.prefs, JSON.stringify({ ...prefs, theme: LEGACY_THEMES[prefs.theme] }));
@@ -23915,7 +23917,6 @@ diff --git a/client.js b/client.js
 -      (0, import_react30.createElement)("div", { className: "bt-mw-state bt-mw-ask" }, `${t("Waiting for your approval")}${since(now, entry.approvals[0].at)}`),
 -      entry.approvals.map((approval) => (0, import_react30.createElement)(ApprovalCard, { key: approval.id, approval, bot, actions }))
 -    );
-+  try {
 +    const prefs = JSON.parse(storage.getItem(STORAGE.prefs) ?? "null");
 +    if (prefs && Object.hasOwn(LEGACY_THEMES, prefs.theme ?? "")) {
 +      storage.setItem(STORAGE.prefs, JSON.stringify({ ...prefs, theme: LEGACY_THEMES[prefs.theme] }));
@@ -24088,7 +24089,7 @@ diff --git a/client.js b/client.js
            type: "button",
            className: "bt-bcard-x",
            "aria-label": t("Close tab"),
-@@ -11367,87 +11367,196 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
+@@ -11367,87 +11367,203 @@ function BrowserCards({ bot, sessionId, roster, actions, useBrowserTabs, useBrow
              void actions.browserCloseTab(bot.id, tabId);
            }
          }, "×"),
@@ -24127,9 +24128,10 @@ diff --git a/client.js b/client.js
 +    long ? (0, import_react44.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
 +  );
 +}
-+function SharedRoomApprovals({ room: room2 }) {
++function SharedRoomApprovals({ room: room2, roster }) {
 +  const [items, setItems] = (0, import_react44.useState)(room2.pendingApprovals ?? []);
 +  const [busy, setBusy] = (0, import_react44.useState)("");
++  const [error, setError] = (0, import_react44.useState)("");
 +  const face = room2.origin === "face-to-face";
 +  (0, import_react44.useEffect)(() => {
 +    const haveItems = Array.isArray(room2.pendingApprovals) && room2.pendingApprovals.length;
@@ -24148,11 +24150,15 @@ diff --git a/client.js b/client.js
 +    };
 +  }, [room2.id, room2.viewerRole, room2.pendingCount, face]);
 +  if (room2.viewerRole !== "invited-owner" && !face || !items.length) return null;
++  const locked = lockedWindow(roster);
 +  const decide = async (item, decision) => {
 +    setBusy(item.id);
 +    try {
 +      await call("social/decide-approval", { approvalId: item.id, decision });
 +      setItems((list) => list.filter((entry) => entry.id !== item.id));
++      setError("");
++    } catch (failure) {
++      setError(failure?.message || t("The decision was not sent."));
 +    } finally {
 +      setBusy("");
 +    }
@@ -24165,9 +24171,11 @@ diff --git a/client.js b/client.js
 +      "div",
 +      { key: item.id, className: "bt-set-row" },
 +      (0, import_react44.createElement)("span", { className: "bt-set-copy" }, item.text || item.summary || item.to || t("Outbound reply")),
-+      (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
-+      (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
-+    ))
++      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
++      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
++    )),
++    locked ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
++    error ? (0, import_react44.createElement)("div", { className: "bt-error", role: "alert" }, error) : null
 +  );
 +}
 +function FaceMembers({ room: room2, roster, actions }) {
@@ -24216,7 +24224,7 @@ diff --git a/client.js b/client.js
 +      room2.sharedFrom.invitedAt ? (0, import_react44.createElement)("div", { className: "bt-set-hint" }, t("Invited {when}", { when: new Date(room2.sharedFrom.invitedAt).toLocaleString() })) : null,
 +      (0, import_react44.createElement)("button", { type: "button", className: "bt-more", onClick: leaveMine }, t("Remove my Bot"))
 +    ) : face ? null : room2.notice ? (0, import_react44.createElement)(About, { key: "notice", title: "Notice", text: room2.notice }) : (0, import_react44.createElement)("button", { key: "notice", type: "button", className: "bt-more", onClick: openSettings }, t("Add a notice in group settings")),
-+    face ? null : (0, import_react44.createElement)(SharedRoomApprovals, { key: "approvals", room: room2 }),
++    face ? null : (0, import_react44.createElement)(SharedRoomApprovals, { key: "approvals", room: room2, roster }),
 +    face && (room2.face?.status === "candidate" || room2.face?.status === "joining") ? null : face ? (0, import_react44.createElement)(FaceMembers, { key: "members", room: room2, roster, actions }) : (0, import_react44.createElement)(
        "div",
        { key: "members" },

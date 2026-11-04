@@ -145,13 +145,14 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
  
  const TAB_LABELS = { details: 'Details', browser: 'Browser' }
  
-@@ -113,16 +113,100 @@ function About({ text, title = 'About' }) {
+@@ -113,16 +113,119 @@ function About({ text, title = 'About' }) {
  
  // A group's overview: what members read, who is in it, and who answers. Changes are
  // made in its settings.
-+function SharedRoomApprovals({ room }) {
++function SharedRoomApprovals({ room, roster }) {
 +  const [items, setItems] = useState(room.pendingApprovals ?? [])
 +  const [busy, setBusy] = useState('')
++  const [error, setError] = useState('')
 +  const face = room.origin === 'face-to-face'
 +  useEffect(() => {
 +    const haveItems = Array.isArray(room.pendingApprovals) && room.pendingApprovals.length
@@ -167,19 +168,37 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +    return () => { alive = false }
 +  }, [room.id, room.viewerRole, room.pendingCount, face])
 +  if ((room.viewerRole !== 'invited-owner' && !face) || !items.length) return null
++  // A decision is a write, so a read-only window cannot make one: the host would answer
++  // `bot/read-only` (or `bot/blocked-shared` in a room with several members) after the click.
++  // The card keeps its headline, count and rows; the two buttons give way to one line carrying the
++  // host's own sentence, the same shape the drawer's Settings view uses (#2381).
++  const locked = lockedWindow(roster)
 +  const decide = async (item, decision) => {
 +    setBusy(item.id)
 +    try {
 +      await call('social/decide-approval', { approvalId: item.id, decision })
 +      setItems(list => list.filter(entry => entry.id !== item.id))
++      setError('')
++    } catch (failure) {
++      // A refused decision used to vanish here: the card kept drawing the same two buttons and said
++      // nothing, so the click read as a no-op. The host's own words are the only reason to show.
++      setError(failure?.message || t('The decision was not sent.'))
 +    } finally { setBusy('') }
 +  }
 +  return h('div', { key: 'approvals', className: 'bt-shared-wait', 'data-flybot': 'room-pending-approvals' },
 +    h('div', { className: 'bt-section-title' }, t('Waiting for your approval'), h('span', { className: 'bt-chip' }, t('{count} to approve', { count: items.length }))),
 +    items.map(item => h('div', { key: item.id, className: 'bt-set-row' },
 +      h('span', { className: 'bt-set-copy' }, item.text || item.summary || item.to || t('Outbound reply')),
-+      h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'approve') }, t('Approve')),
-+      h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))))
++      locked
++        ? null
++        : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'approve') }, t('Approve')),
++      locked
++        ? null
++        : h('button', { type: 'button', className: 'bt-mini', disabled: busy === item.id, onClick: () => decide(item, 'reject') }, t('Reject')))),
++    locked
++      ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
++      : null,
++    error ? h('div', { className: 'bt-error', role: 'alert' }, error) : null)
 +}
 +
 +// One row per person, each with the Bots they brought; my own Bot opens its chat (#229, #457).
@@ -229,7 +248,7 @@ diff --git a/src/client/details-drawer.js b/src/client/details-drawer.js
 +        : room.notice
 +          ? h(About, { key: 'notice', title: 'Notice', text: room.notice })
 +          : h('button', { key: 'notice', type: 'button', className: 'bt-more', onClick: openSettings }, t('Add a notice in group settings')),
-+    face ? null : h(SharedRoomApprovals, { key: 'approvals', room }),
++    face ? null : h(SharedRoomApprovals, { key: 'approvals', room, roster }),
 +    face && (room.face?.status === 'candidate' || room.face?.status === 'joining')
 +      ? null
 +      : face
