@@ -69,8 +69,8 @@ const bot = { id: 'a', name: 'Chief', pinned: false, hidden: false, model: '', i
 const permissions = { defaultPreset: 'workspace-write', options: [{ value: 'read-only', name: 'Read only' }, { value: 'workspace-write', name: 'Workspace' }, { value: 'danger-full-access', name: 'Full access' }] }
 const base = { bots: [bot], rooms: [], byId: { a: bot }, roomsById: {}, prefs: {}, mainBotIds: ['a'], connectors: [], memory: false, exchangeTurns: {}, questions: {}, permissions }
 const rosterWith = (readOnly) => (readOnly === undefined ? { ...base } : { ...base, readOnly })
-// The group overview this pull request deliberately does not touch (P-544 owns it); it is drawn
-// here so the test can say its shape did not change.
+// The group overview #2391 left alone and P-544 now owns; it is drawn here so the Bot overview's
+// own shape can be told apart from the group's.
 const room = {
   id: 'r1', name: 'Team room', origin: 'group', named: true, members: ['a'], admin: 'a',
   participants: [], presentedParticipants: [], pinned: false, hidden: false, notice: '',
@@ -187,14 +187,16 @@ test('#2391: a writable window keeps the overview\'s write controls and draws no
   }
 })
 
-// P-544 owns the group overview's read-only shape. This pull request claims the Bot overview only, so
-// the group drawer is expected to keep exactly the shape it has on the base commit: the rename control
-// still drawn, no read-only sentence added. Written down here so a later change to it is deliberate.
-test('#2391: the group overview is left as it was — this pull request claims the Bot overview only', () => {
+// P-544: the group overview took the same shape as the Bot overview — one sentence in the host's
+// words, the name as plain text, no rename control.
+test('P-544: a read-only group overview says why once and draws the name as plain text', () => {
   slots = []
   const entries = tree(roomRosterWith(SENTENCE), actions, 'r1')
-  assert.ok(renameButton(entries), 'a group keeps the rename control the base commit draws')
-  assert.deepEqual(statusLine(entries), [], 'no read-only sentence is added to the group overview')
+  assert.equal(statusLine(entries).length, 1, "the host's sentence is drawn once")
+  assert.deepEqual(renameButton(entries), undefined, 'the name is not a rename control in a locked window')
+  const plain = nodes(entries).find(node => node.type === 'div' && hasClass(node, 'bt-drawer-name') && ownText(node).trim() === 'Team room')
+  assert.ok(plain, 'the name is still drawn, as plain text')
+  assert.equal(plain.props.title, 'Team room', 'the plain name keeps the full text as its title')
   assert.deepEqual(modelTriggers(entries), [], 'a group never had a model menu')
   assert.deepEqual(permissionRows(entries), [], 'a group never had permission presets')
 })

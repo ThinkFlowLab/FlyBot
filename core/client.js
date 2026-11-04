@@ -19893,7 +19893,6 @@ function SharedRoomApprovals({ room: room2, roster }) {
       locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
       locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
     )),
-    locked ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
     error ? (0, import_react44.createElement)("div", { className: "bt-error", role: "alert" }, error) : null
   );
 }
@@ -19928,7 +19927,12 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
     if (mine) void actions.updateRoom(room2.id, { removeParticipants: [{ kind: "bot", id: mine.handle || mine.id, remote: Boolean(mine.handle) }] });
   };
   const face = room2.origin === "face-to-face";
+  const locked = lockedWindow(roster);
   return [
+    // P-544: the group overview's writes are gone in a locked window, so it says why once, above
+    // the reads it still draws. The approval card used to carry its own copy (#2381); one page,
+    // one sentence.
+    locked ? (0, import_react44.createElement)("div", { key: "read-only", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
     (0, import_react44.createElement)(FlyBotRoomOverview, { key: "plugin-overview", room: room2, roster, actions }),
     invited && room2.sharedFrom && !face ? (0, import_react44.createElement)(
       "div",
@@ -19936,7 +19940,7 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
       (0, import_react44.createElement)("div", { className: "bt-section-title" }, title),
       (0, import_react44.createElement)("div", { className: "bt-set-hint" }, t("Your Bot was invited to this room by {name}", { name: room2.sharedFrom.inviterName })),
       room2.sharedFrom.invitedAt ? (0, import_react44.createElement)("div", { className: "bt-set-hint" }, t("Invited {when}", { when: new Date(room2.sharedFrom.invitedAt).toLocaleString() })) : null,
-      (0, import_react44.createElement)("button", { type: "button", className: "bt-more", onClick: leaveMine }, t("Remove my Bot"))
+      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-more", onClick: leaveMine }, t("Remove my Bot"))
     ) : face ? null : room2.notice ? (0, import_react44.createElement)(About, { key: "notice", title: "Notice", text: room2.notice }) : (0, import_react44.createElement)("button", { key: "notice", type: "button", className: "bt-more", onClick: openSettings }, t("Add a notice in group settings")),
     face ? null : (0, import_react44.createElement)(SharedRoomApprovals, { key: "approvals", room: room2, roster }),
     face && (room2.face?.status === "candidate" || room2.face?.status === "joining") ? null : face ? (0, import_react44.createElement)(FaceMembers, { key: "members", room: room2, roster, actions }) : (0, import_react44.createElement)(
@@ -20119,7 +20123,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
       "div",
       { key: "id", className: "bt-drawer-id", "data-move": side },
       bot ? (0, import_react44.createElement)(BotAvatar, { bot, size: 64, state: botState(running, doing, roster.questions?.[part] !== void 0), main: isMainBot, badge: false, gaze: true, pokeable: true }) : (0, import_react44.createElement)(RoomAvatar, { room: room2, roster, size: 64 }),
-      bot?.remote ? (0, import_react44.createElement)("div", { className: "bt-drawer-name" }, current) : bot && lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-drawer-name", title: current }, current) : room2?.origin === "face-to-face" ? (0, import_react44.createElement)("div", { className: "bt-drawer-name bt-drawer-name-face", title: current }, current) : editing ? (0, import_react44.createElement)("input", {
+      bot?.remote ? (0, import_react44.createElement)("div", { className: "bt-drawer-name" }, current) : bot && lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-drawer-name", title: current }, current) : room2?.origin === "face-to-face" ? (0, import_react44.createElement)("div", { className: "bt-drawer-name bt-drawer-name-face", title: current }, current) : room2 && lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-drawer-name", title: current }, current) : editing ? (0, import_react44.createElement)("input", {
         className: "bt-drawer-name-input",
         autoFocus: true,
         value: draftName,
