@@ -64,19 +64,7 @@ complete live App/provider/release/multi-repository/UI acceptance or authorize d
 
 ## Fork Project State — 2026-10-31
 
-### Backend delivery branch — 2026-11-02
-
-`delivery/ai-centric-development-service` packages the complete S1–S6 backend at1811e3b8f,
-including verified-exit, approved integration and Chief/SDK recovery fixes. Its root
-README documents existing-service authentication, direct v1/legacy HTTP usage,
-explicit task publication/start, isolated source demo setup and evidence limits.
-This is a documentation/branch handoff, not another service listener, schema change,
-main merge, runtime rollout or takeover of original frontend Task40/PR48.
-No deployment credentials or operator private files are included.
-
-### Earlier service implementation evidence
-
-Detailed S1–S6 implementation/recovery history is [archived verbatim](docs/history/2026-11-03-service-integration.md). Existing contracts remain in their subsystem docs. New convergence work is not deployed; preserve healthy frontend Task40/PR48 and native schedules. Backend work remains in this owner-authorized session.
+Earlier source snapshot/deployment checkpoints are [preserved verbatim](docs/history/2026-11-04-recovery-source-checkpoints.md). Current interfaces follow the README and subsystem contracts. Keep original frontend Task40/PR48 and healthy schedules; this backend work is direct-session source delivery without deployment.
 
 ## Historical upstream Project State
 

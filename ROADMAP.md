@@ -121,16 +121,7 @@ Completed M7.2–M7.5 implementation checkpoints are retained verbatim in
 [the historical record](docs/history/2026-11-03-completed-m7-checkpoints.md). Current
 role/resource/Session contracts and outstanding acceptance remain below and in the active roadmap.
 
-### M7 validation update — 2026-11-01
-
-Owner requested Codex-only real acceptance on the current machine using zy95-12 GitHub.
-Run the opt-in dedicated-profile SDK/Workflow/PR/return/retry/acceptance path and record
-its exact source SHA. Do not block this scoped demonstration on Claude configuration;
-keep the broader mixed-Harness/two-resource criteria explicitly outstanding.
-
-Codex-only local demonstration: passed at `73161f3`; real artifact PR #31 returned,
-#32 re-tested/re-reviewed and script-accepted at its exact SHA. No merge/deployment.
-Broader Claude/mixed-resource/browser-auth/restart checks remain separate future work.
+Earlier Codex demo acceptance is [preserved verbatim](docs/history/2026-11-04-recovery-source-checkpoints.md); it grants no new live-provider, deployment or credential authority. Current tests and live acceptance remain distinct.
 
 ## Owner-authorized collaboration repairs — 2026-11-01
 
