@@ -959,7 +959,11 @@ export function createWorkflowService({
   // carries an acceptance gate or evidence, which is what lets a real pull request carry a verdict.
   // The answer is stored on the run and posted as one line — never read by anything that decides.
   function shadowOf(item, task, run) {
-    const handoff = storableHandoff(task?.handoff)
+    const stored = storableHandoff(task?.handoff)
+    // #2468: a lane move is not a caller's contract handoff. It is `{from, to, at, reason}`
+    // naming two lanes, so passing it to the shadow pass would record a rejection it never
+    // asked for and hide the derived verdict a card with acceptance/evidence still deserves.
+    const handoff = stored && (stored.card !== undefined || stored.fromRole !== undefined || stored.toRole !== undefined) ? stored : null
     const acceptance = plainObject(task?.acceptance)
     const evidence = Array.isArray(task?.evidence) ? task.evidence : null
     if (!handoff && !acceptance && !evidence) return null

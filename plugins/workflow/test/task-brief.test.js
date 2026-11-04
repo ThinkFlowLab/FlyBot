@@ -26,6 +26,8 @@ test('a re-dispatch to another lane keeps the brief and records one handoff', ()
   assert.equal(moved.task.handoff.from, first.name)
   assert.equal(moved.task.handoff.to, second.name)
   assert.ok(moved.task.handoff.at)
+  // #2468: a lane move is not a contract handoff, so it records no shadow verdict.
+  assert.equal(moved.shadow, undefined)
 
   // A call that still passes a brief keeps working: with none stored, it is stored.
   svc.assign({ workflowId: first.id, taskId: 'task-2', title: 'Other card', brief: 'Only fact.' })
