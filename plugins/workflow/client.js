@@ -150,6 +150,7 @@ window.__ModuleLoader__.load({
       'Show {count} more Bots': '展开另外 {count} 个 Bot',
       'Show {count} more held tasks': '展开另外持有中的 {count} 个任务',
       'Showing {shown} of {count} held tasks': '共有 {count} 个持有中的任务，当前显示 {shown} 个',
+      Paused: '已暂停',
       // Stage timeline (#1489). The key is the English line; service.js and
       // narrate.js keep the Chinese text only as the fallback for rows written
       // before the key existed.
@@ -520,11 +521,11 @@ window.__ModuleLoader__.load({
     function RunStrip({ workflow, run, focused, locked, onFocus, onPause, onResume, onStop, onTab, onOpenDrawer }) {
       const running = (run.running ?? []).map(id => nodeOf(workflow, id)).filter(Boolean)
       const chipClass = run.status === 'done' ? 'done' : (run.status === 'failed' ? 'failed' : (run.paused ? 'queued' : (running[0] ? 'running' : 'queued')))
-      const chipLabel = run.status === 'done' ? tr('Done') : (run.status === 'failed' ? tr('Failed') : (run.paused ? tr('Pause') : (running[0] ? tr('Running') : tr('Queued'))))
+      const chipLabel = run.status === 'done' ? tr('Done') : (run.status === 'failed' ? tr('Failed') : (run.paused ? tr('Paused') : (running[0] ? tr('Running') : tr('Queued'))))
       const meta = run.status === 'failed'
         ? failureText(run)
         : run.paused
-        ? `${tr('Pause')} · ${running.map(node => node.name).join(' ‖ ') || '—'} · ${run.doneCount}/${run.nodeCount}`
+        ? `${tr('Paused')} · ${running.map(node => node.name).join(' ‖ ') || '—'} · ${run.doneCount}/${run.nodeCount}`
         : (running[0]
           ? `${tr('Running')} · ${running.map(node => node.name).join(' ‖ ')} · ${run.doneCount}/${run.nodeCount}`
           : (run.status === 'done' ? tr('Done') : tr('Waiting for a task')))
@@ -1065,6 +1066,7 @@ window.__ModuleLoader__.load({
         live: true,
         task: run.task,
         status: run.status,
+        paused: run.paused === true,
         at: run.updatedAt,
         failure: run.failure,
         current: workflow.run?.id === run.id,
@@ -1390,10 +1392,11 @@ window.__ModuleLoader__.load({
         // #1618: keep HH:MM in its own non-shrinking column with a gap before the
         // status chip, and paint Failed once — skip wf-hist-reason when it only
         // repeats the chip label (generic Failed with no host detail).
-        const chipLabel = tr(STATUS_KEY[item.status] ?? 'Queued')
+        const chipLabel = item.paused === true ? tr('Paused') : tr(STATUS_KEY[item.status] ?? 'Queued')
         const reason = item.status === 'failed' ? failureText(item) : ''
         const showReason = Boolean(reason) && reason !== chipLabel
-        const chipClass = item.status === 'done' ? 'done'
+        const chipClass = item.paused === true ? 'queued'
+          : item.status === 'done' ? 'done'
           : item.status === 'running' ? 'running'
           : item.status === 'failed' ? 'failed'
           : 'queued'

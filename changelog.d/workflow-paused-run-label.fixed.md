@@ -1,0 +1,1 @@
+A run frozen by a Stop that could not release its Bot is now named **Paused** wherever it is read: the stage strip says `Paused` instead of the `Pause` action's name, and the Runs tab keeps the run's `paused` flag instead of drawing the frozen run as `Running` while it hands nothing on.
