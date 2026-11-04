@@ -533,7 +533,7 @@ window.__ModuleLoader__.load({
         const applyBots = useCallback(list => setBots(archivedOf(list)), [])
         useEffect(() => {
           const offs = [feed.subscribe(applyBots)]
-          try { offs.push(flybot.fields?.on?.('change', c => { if (c && (c.key === 'archived' || c.key === 'parent' || c.key === 'treeRole' || c.removed)) feed.refresh() })) } catch { /* no change feed */ }
+          try { offs.push(flybot.fields?.on?.('change', c => { if (c && (c.key === 'archived' || c.key === 'parent' || c.key === 'treeRole' || c.key === 'retired' || c.removed)) feed.refresh() })) } catch { /* no change feed */ }
           try { if (typeof flybot.on === 'function') offs.push(flybot.on('bot.removed', () => feed.refresh())) } catch { /* no removal event */ }
           return () => { for (const off of offs) { try { off?.() } catch { /* already gone */ } } }
         }, [applyBots, feed])
