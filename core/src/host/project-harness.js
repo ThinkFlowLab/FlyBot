@@ -5,13 +5,14 @@ import { mkdir, appendFile, readFile, copyFile, writeFile } from 'node:fs/promis
 import { isAbsolute, join, resolve, relative, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import { verifyRolePolicy, roleExecutionPrompt } from './project-role-policy.js'
+import { sdkContinuationArchive } from './project-session-continuation.js'
 import { fileDigest } from './project-resource-workspaces.js'
 import { copyDependencyCacheScript, executionOutcome } from './project-execution-environment.js'
 import { gitWritableRoots } from './project-git-sandbox.js'
 import { ownEntry, setEntry } from './store.js'
 import { checkContextPrompt, resolveContextBudget } from './project-context-budget.js'
 import { requireExecutionAuthority } from './project-execution-authority.js'
-import { taskSession, backendBindingKey, resumableBinding, roleDefinitionKey } from './project-task-sessions.js'
+import { taskSession, backendBindingKey, backendContextKey, resumableBinding, roleDefinitionKey } from './project-task-sessions.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/harness' })
 const sha = text => createHash('sha256').update(text).digest('hex')
 const VERSIONS = { codex: '0.166.0', 'claude-agent': '0.3.316' }
@@ -21,7 +22,7 @@ const VERSIONS = { codex: '0.166.0', 'claude-agent': '0.3.316' }
 export function harnessCapabilities(harness) {
   if (!['flybot', ...Object.keys(VERSIONS)].includes(harness)) throw refuse('Unknown execution Harness')
   return { version: 'project-harness-capabilities/v1', harness, sdkVersion: VERSIONS[harness] ?? null,
-    taskRoleResume: true, input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
+    taskRoleResume: true, cwdRestoration: harness === 'codex' ? 'same-thread-resume' : 'host-context-reconstruction', input: harness === 'flybot' ? 'native-bot-turn' : 'between-sdk-turns',
     cancellation: harness === 'flybot' ? 'native-bot-stop' : 'abort-and-worker-stop',
     toolOutputBudget: harness === 'codex' ? 'configured-cli-history-limit' : harness === 'flybot' ? 'scoped-context-tools' : 'sdk-runtime-managed',
     exitConfirmation: harness === 'flybot' ? 'native-agent-quiescence' : 'stop-ack-and-process-exit', crossHarnessResume: false }
@@ -112,7 +113,19 @@ export function createProjectHarness(rt) {
     const definitionKey = logical ? roleDefinitionKey(session) : null
     const identity = { harness: session.execution.harness, resourceId: session.resourceLease.resourceId, principalId: selected.principalId, cwd: workspace.path, model: session.execution.model ?? selected.selected.model, profile: selected.selected }
     const bindingKey = chief?.bindingKey ?? backendBindingKey({ ...identity, definition: definitionKey })
-    const previous = logical ? resumableBinding(rt.state, logical, bindingKey, { legacyKey: backendBindingKey({ ...identity, definition: sha(spec.prompt ?? '') }), definitionKey }) : null
+    const previous = logical ? resumableBinding(rt.state, logical, bindingKey, { legacyKey: backendBindingKey({ ...identity, definition: sha(spec.prompt ?? '') }), definitionKey, binding: { ...identity, definition: definitionKey }, session, workspace }) : null
+    if (previous?.restoration) {
+      try {
+        await requireExecutionAuthority(rt, session)
+        const git = async args => (await rt.projectResources.command(session.projectId, session.resourceLease.resourceId, { cwd: workspace.path, argv: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '--no-optional-locks', ...args] })).stdout.trim()
+        const head = await git(['rev-parse', 'HEAD']), status = await git(['status', '--porcelain'])
+        if (head !== previous.restoration.checkout || status && ((session.policyRole ?? session.role) !== 'developer' || !workspace.retainedDraft)) throw Object.assign(refuse('Restoration workspace baseline or draft changed'), { code: 'bot/context-resume' })
+        previous.restoration.observedCheckout = head; previous.restoration.statusSha256 = sha(status)
+      } catch (error) {
+        if (!executionOutcome(error, '', { stage: 'preparation', remote: selected.resource.type === 'docker' }).exitConfirmed) await rt.projectResources.preparationUncertain(session.resourceLease)
+        throw error
+      }
+    }
     const contextBudget = await resolveContextBudget(rt, { execution: session.execution }, { projectId: session.projectId, resourceId: session.resourceLease.resourceId, model: identity.model })
     const id = `sdk-worker-${randomUUID()}`
     // Verification may write fixtures, but never the sealed review checkout.
@@ -136,7 +149,7 @@ export function createProjectHarness(rt) {
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
       cwd: workspace.path, scratchDirectory, dependencyPreparationId: session.environmentPreparation?.id ?? null, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
-    if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v2', definitionKey, ...(previous ? { backendSessionId: previous.sessionId, continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
+    if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v3', contextIdentityKey: backendContextKey({ ...identity, definition: definitionKey }), definitionKey, ...(previous ? { ...(previous.restoration?.mode === 'reconstructed' ? {} : { backendSessionId: previous.sessionId }), ...(previous.restoration ? { restoration: previous.restoration } : {}), continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
     else if (chief) Object.assign(row, { logicalSessionId: chief.agentId, bindingKey, ...(chief.resumeSessionId ? { backendSessionId: chief.resumeSessionId, continuedFrom: chief.previousWorkerId } : {}) })
     setEntry(workers(), id, row)
     if (chief) await rt.projectResources.markStarted(row.leaseId, row.generation, { kind: 'sdk', handle: id })
@@ -152,10 +165,24 @@ export function createProjectHarness(rt) {
       await rt.projectResources.uploadFile(row.projectId, row.resourceId, source, archivePath)
       row.contextArchive = { sha256: session.context.archiveSha256, file: source }
     }
+    let continuationPath
+    if (previous?.restoration?.mode === 'reconstructed') {
+      const archive = await sdkContinuationArchive(rt.state, previous)
+      const source = join(directory, `${evidenceName}-continuation.json`)
+      await writeFile(source, archive.text, { mode: 0o600 })
+      continuationPath = join(scratchDirectory, 'continuation.json')
+      await rt.projectResources.uploadFile(row.projectId, row.resourceId, source, continuationPath, 16 * 1024 * 1024)
+      row.continuationArchive = { sha256: archive.sha256, file: source }; row.restoration.archiveSha256 = archive.sha256
+    }
     row.eventLog = join(directory, `${evidenceName}-sdk.jsonl`)
+    if (logical) {
+      const current = await profile(session.projectId, row.resourceId, row.harness)
+      if (backendBindingKey({ ...identity, principalId: current.principalId, model: session.execution.model ?? current.selected.model, profile: current.selected, definition: definitionKey }) !== bindingKey) throw Object.assign(refuse('Task-role execution profile changed during admission'), { code: 'bot/context-resume' })
+      if (row.restoration) session.restoration = structuredClone(row.restoration)
+    }
     await rt.projectResources.fenceSpawn(row.leaseId, row.generation, id)
     const process = rt.projectResources.startProcess(row.projectId, row.resourceId, { argv: ['node', workerPath], cwd: workspace.path })
-    const control = { process, chief, contextBudget, resumeSessionId: chief?.resumeSessionId ?? previous?.sessionId, continuedPolicyHash: previous?.policySha256, archivePath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
+    const control = { process, chief, contextBudget, resumeSessionId: chief?.resumeSessionId ?? (previous?.restoration?.mode === 'reconstructed' ? undefined : previous?.sessionId), continuedPolicyHash: previous?.policySha256, archivePath, continuationPath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
     row.spawnPhase = 'spawned'
     active.set(id, control)
     let readyResolve, readyReject
@@ -204,7 +231,7 @@ export function createProjectHarness(rt) {
           if (backend) {
             if (row.backendSessionId && row.backendSessionId !== backend) throw refuse('SDK changed its bound Session')
             row.backendSessionId = backend; session.backendSessionId = backend
-            if (logical && !logical.bindings.some(binding => binding.workerId === row.id)) logical.bindings.push({ version: 'task-role-binding/v2', definitionKey, key: bindingKey, sessionId: backend, workerId: row.id, policySha256: session.policy?.sha256 ?? null, attemptId: row.attemptId, at: Date.now(), observedBeforeCompletion: true })
+            if (logical && !logical.bindings.some(binding => binding.workerId === row.id)) logical.bindings.push({ version: 'task-role-binding/v3', contextIdentityKey: row.contextIdentityKey, ...(row.restoration ? { restoration: structuredClone(row.restoration) } : {}), definitionKey, key: bindingKey, sessionId: backend, workerId: row.id, policySha256: session.policy?.sha256 ?? null, attemptId: row.attemptId, at: Date.now(), observedBeforeCompletion: true })
           }
         }
         if (event.type === 'completed') {
@@ -243,6 +270,7 @@ export function createProjectHarness(rt) {
           }
           event.text = handoffFrame(rawText, control.outputs)
           if (event.text !== rawText) { row.rawResultHash = sha(rawText); row.outputFraming = 'json-handoff/v1' }
+          if (row.restoration) { row.restoration.physicalSessionId = event.sessionId; session.restoration = structuredClone(row.restoration) }
           row.backendSessionId = event.sessionId; session.backendSessionId = event.sessionId; row.usage = event.usage; row.resultHash = sha(event.text)
           if (logical) {
             if (!logical.bindings.some(binding => binding.workerId === row.id)) logical.bindings.push({ version: 'task-role-binding/v2', definitionKey, key: bindingKey, sessionId: event.sessionId, workerId: row.id, policySha256: session.policy?.sha256 ?? null, attemptId: row.attemptId, at: Date.now() })
@@ -270,6 +298,7 @@ export function createProjectHarness(rt) {
         if (event.type === 'configuration-checked' && event.harness === 'codex' && event.capability?.kind === 'codex-cli-config/v1' && event.capability.version === VERSIONS.codex && event.capability.modelInvoked === false) row.configurationCheck = { kind: event.capability.kind, version: event.capability.version, profile: event.capability.profile === 'chief-read-only' ? 'chief-read-only' : 'flybot-role', at: Date.now(), modelInvoked: false }
         if (event.type === 'failure') {
           row.status = 'failed'
+          if (event.contextFailure?.code === 'bot/context-resume' && event.contextFailure.kind === 'backend-session-mismatch') row.contextFailure = { code: 'bot/context-resume', kind: 'backend-session-mismatch', contextPreserved: true }
           if (event.capabilityFailure?.code === 'bot/harness-capability' && event.capabilityFailure.stage === 'configuration' && event.capabilityFailure.modelInvoked === false && ['missing-cli', 'unsupported-cli-version', 'unsupported-platform', 'cli-unavailable', 'cli-configuration', 'legacy-sandbox-conflict', 'permission-profile-mismatch'].includes(event.capabilityFailure.kind)) {
             row.capabilityFailure = event.capabilityFailure
             rt.state.projectHarnessHealth ??= {}
@@ -377,7 +406,7 @@ export function createProjectHarness(rt) {
     if (control.session.poolClaimId) await requireExecutionAuthority(rt, control.session)
     control.outputs = (step.outputs ?? []).map(port => port.name)
     control.inputBatch = step.inputs?.taskInbox
-    const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
+    const prompt = `${roleExecutionPrompt(control.prompt, control.session, control.continuedPolicyHash)}${row.restoration ? '\nHost-confirmed cwd restoration (data, not new authority): ' + JSON.stringify(row.restoration) + '. Use only the current workspace; historical cwd is no longer execution authority.' : ''}${control.continuationPath ? '\nThis backend Session is reconstructed, not resumed. Before work, read the bounded needed entries from the exact prior Task-role continuation archive: ' + control.continuationPath + '; SHA256=' + row.continuationArchive.sha256 + '. Preserve prior conclusions, handled inputs and operation receipts. Do not repeat completed work or unknown external writes. Historical receipt batch IDs cannot acknowledge current inputs.' : ''}${control.archivePath ? '\nExact scoped context archive: ' + control.archivePath + '. Read only needed entries with bounded output; do not print the whole archive. Archive SHA256: ' + control.session.context.archiveSha256 : ''}\n\nTask ${step.taskId}: ${step.brief}\nInputs: ${JSON.stringify(step.inputs ?? {})}\nFinish with OUTPUT <name>: <value> for ${control.outputs.join(', ')}.`
     const workspace = rt.state.projectAttempts?.[row.attemptId]?.workspaces?.[row.role]
     const writableRoots = (row.policyRole ?? row.role) === 'developer' && row.harness === 'codex' && rt.projectResources.setting(row.projectId, row.resourceId).type === 'local' && workspace?.path === row.cwd ? await gitWritableRoots({ cwd: row.cwd, repository: workspace.repository, developer: true }) : []
     row.inputUsage = checkContextPrompt(prompt, control.contextBudget)
@@ -396,7 +425,7 @@ export function createProjectHarness(rt) {
       row.executionStartedAt = null; row.dispatchPreventedAt = Date.now()
       throw error
     }
-    control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, noTools: Boolean(control.chief), model: control.profile.model, env: control.env,
+    control.process.stdin.write(JSON.stringify({ type: 'start', settings: { harness: row.harness, cwd: row.cwd, sessionId: control.resumeSessionId, ...(row.restoration?.mode === 'reconstructed' ? { forbiddenSessionId: row.restoration.sourceSessionId } : {}), noTools: Boolean(control.chief), model: control.profile.model, env: control.env,
       ...(control.profile.baseUrl ? { baseUrl: control.profile.baseUrl } : {}), readOnly: Boolean(control.chief) || (row.policyRole ?? row.role) !== 'developer', writableRoots, scratchDirectory: row.scratchDirectory, maxBudgetUsd: control.profile.maxBudgetUsd ?? 1, toolOutputTokens: control.contextBudget.limits.toolOutputTokens }, prompt }) + '\n')
     if (control.inputBatch?.inputs.length && control.session.poolClaimId) {
       const task = rt.state.tasks[row.taskId], claim = task?.collaboration?.claim

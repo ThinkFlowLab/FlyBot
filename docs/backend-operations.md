@@ -165,3 +165,12 @@ starts: inspect stage=runner-startup and reason=test-runner-unavailable. Exit127
 not a business assertion failure. Configure an authorized workspacePrepareCommand
 for every host-verifier checkout; a manual npm ci or Docker preparation is not a
 replacement for this hook, and configuration alone is not a same-candidate test PASS.
+
+### Task-role cwd restoration (#2346)
+
+Do not clear bindings or worker history. Latest-worker recovery is intentional and
+uses the same compatibility gates. Inspect contextRestoration mode and source/current
+physical IDs: resumed is the original SDK thread; reconstructed uses an audited
+archive and preserves logical identity. Identity/profile/exit failures require their
+actual recovery condition, not force release. See [operator details and offline
+SDK validation](task-session-recovery.md). No live deployment follows source merge.

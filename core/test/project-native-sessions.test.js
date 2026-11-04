@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createProjectEffects } from '../src/host/project-effects.js'
 import { pinTaskRoleDefinition } from '../src/host/project-task-sessions.js'
 import { createProjectNativeSessions, nativeExitConfirmed } from '../src/host/project-native-sessions.js'
@@ -48,6 +53,50 @@ test('native incompatible cwd, definition, unknown exit and foreign bindings ref
   }
   f.rt.state.projectNativeWorkers.bot1.releaseProof.generation++
   assert.throws(() => f.service.previous(f.session, f.workspace), /forbidden/)
+})
+
+test('native cwd restoration preserves logical identity and archived conclusions in a new correctly bound physical Session', async t => {
+  const f = fixture(), root = await mkdtemp(join(tmpdir(), 'flybot-native-cwd-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  f.rt.home = root
+  const text = 'Original task goal, convention and pending handoff'
+  f.session.context = { text, sha256: createHash('sha256').update(text).digest('hex') }
+  f.rt.state.tasks.t.id = 't'; f.rt.state.tasks.t.title = 'Continue the original Task'
+  f.rt.state.projectAttempts = { a: { id: 'a', projectId: 'p', taskId: 't', roleSessions: { developer: f.session } } }
+  f.agent.session.seq = 1
+  await f.service.bind(f.session, f.workspace, 'bot1'); await f.service.stop('bot1')
+  delete f.rt.state.bots.bot1
+  const path = join(root, 'new-cwd'); await mkdir(path)
+  execFileSync('git', ['init', '-q', path])
+  execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: path })
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' }).trim()
+  const session = { ...structuredClone(f.session), id: 'role-2', attemptId: 'a2', status: 'prepared' }
+  const workspace = { id: 'workspace-2', projectId: 'p', attemptId: 'a2', role: 'developer', status: 'allocated', path, materialization: { expectedCheckout: sha, actualCheckout: sha } }
+  f.rt.state.projectAttempts.a2 = { id: 'a2', projectId: 'p', taskId: 't', status: 'running', roleSessions: { developer: session }, workspaces: { developer: workspace } }
+  f.rt.state.projectWorkspaces = { [workspace.id]: workspace }; f.rt.state.tasks.t.deliveryAttemptId = 'a2'
+  f.rt.state.bots.bot2 = { id: 'bot2', sessionId: 'physical-2', workspaceId: workspace.id, attemptId: 'a2', instructions: 'Current role policy' }
+  const carrier = { session: { id: 'physical-2', header: { cwd: path }, seq: 0 }, status: 'idle', cancel() {}, async whenIdle() {} }
+  f.rt.resolveAgent = async id => id === 'physical-1' ? f.agent : carrier
+  f.rt.ctx.agents.get = id => id === 'physical-1' ? f.agent : carrier
+  f.rt.ctx.sessionController = { async page(body) {
+    assert.equal(body.address.sessionId, 'physical-1'); assert.equal(body.throughSeq, 0)
+    return { records: [{ event: { seq: 0, type: 'message', data: { role: 'assistant', text: 'Retained previous conclusion; tests need another pass' } } }], hasMore: false }
+  } }
+  f.rt.state.projectTaskInputs = { handled: { id: 'handled', projectId: 'p', taskId: 't', status: 'handled', sha256: 'a'.repeat(64) } }
+  const result = await f.service.bind(session, workspace, 'bot2')
+  assert.equal(result.sessionId, 'physical-2')
+  const row = f.rt.state.projectNativeWorkers.bot2
+  assert.equal(row.restoration.mode, 'reconstructed'); assert.equal(row.restoration.sourceSessionId, 'physical-1')
+  assert.equal(row.continuedFrom, 'bot1'); assert.equal(row.cwd, path)
+  assert.equal(f.rt.state.projectTaskSessions[row.logicalSessionId].bindings.length, 2)
+  const archive = JSON.parse(await readFile(session.continuationArchive.target, 'utf8'))
+  assert.match(JSON.stringify(archive.previousMessages), /Retained previous conclusion/)
+  assert.equal(archive.facts.inputs[0].status, 'handled')
+  assert.match(f.rt.state.bots.bot2.instructions, /not replay unknown writes|not replay unknown/)
+  await f.service.activate(session, 'bot2')
+  assert.deepEqual(f.unarchived(), [], 'A newly reconstructed carrier cannot be called a resumed old physical Session')
+  await f.service.stop('bot2')
+  assert.equal(nativeExitConfirmed(f.rt.state, row), true)
 })
 test('failed native drain keeps execution held and denies later input', async () => {
   const f = fixture(); await f.service.bind(f.session, f.workspace, 'bot1'); f.fail(true)

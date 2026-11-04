@@ -137,7 +137,7 @@ export function createDevelopmentService(rt) {
     const policy = row => row ? { version: row.version, role: row.role, policyRole: row.policyRole ?? row.role, commit: row.commit, profile: row.profile, sha256: row.sha256 } : null
     const session = (row, section = 'roleSessions') => {
       const { context, policy: rules } = row
-      const keys = ['id', 'projectId', 'taskId', 'attemptId', 'role', 'policyRole', 'logicalSessionId', 'definitionRef', 'definitionRevision', 'definitionKey', 'generation', 'poolClaimId', 'status', 'botId', 'sessionId', 'backendSessionId']
+      const keys = ['id', 'projectId', 'taskId', 'attemptId', 'role', 'policyRole', 'logicalSessionId', 'definitionRef', 'definitionRevision', 'definitionKey', 'generation', 'poolClaimId', 'status', 'botId', 'sessionId', 'backendSessionId', 'restoration']
       return { ...Object.fromEntries(keys.filter(key => row[key] !== undefined).map(key => [key, structuredClone(row[key])])),
         execution: row.execution ? { harness: row.execution.harness, model: row.execution.model ?? null, resourceIds: (row.execution.resourceIds ?? []).slice(0, 20) } : null,
         definitionSource: { query: 'attempt.context', attemptId: attempt.id, section },

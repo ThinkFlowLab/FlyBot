@@ -262,3 +262,5 @@ source of truth, not a misleading enabled flag or an in-memory waiter.
 
 Missing-runner facts additionally include stage=runner-startup. testsStarted is
 configured command invocation; Chief must not interpret it as assertion execution.
+
+#2346 adds bounded contextRecovery facts from claim/worker history, including resumed versus reconstructed identity and source hashes. Chief chooses recovery; no automatic human escalation follows a context mismatch.

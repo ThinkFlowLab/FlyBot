@@ -45,6 +45,14 @@ test('continuation resumes the bound Codex thread, preserving resource cwd', asy
   assert.equal(observed[1].workingDirectory, request.cwd)
 })
 
+test('the SDK cannot silently substitute a different thread for resume or reuse a reconstructed source identity', async () => {
+  for (const mode of [{ sessionId: 'original', threadId: 'different' }, { forbiddenSessionId: 'original', threadId: 'original' }]) {
+    const emitted = []
+    await assert.rejects(runHarnessTurn({ ...request, ...mode }, { emit: event => emitted.push(event), loadCodex: codex([{ type: 'thread.started', thread_id: mode.threadId }, { type: 'turn.completed' }]) }), { code: 'bot/context-resume' })
+    assert.equal(emitted.length, 0)
+  }
+})
+
 test('Claude Agent SDK uses explicit environment and forwards permission requests', async () => {
   let options, asked = false
   const result = await runHarnessTurn({ ...request, harness: 'claude-agent' }, { emit() {}, permission: async () => { asked = true; return { allow: false } },
