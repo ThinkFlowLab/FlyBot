@@ -10,7 +10,7 @@ import { install as installProjectInputs } from '../src/host/project-inputs.js'
 import { createProjectResources } from '../src/host/project-resources.js'
 import { createProjectHarness, handoffFrame, harnessCapabilities } from '../src/host/project-harness.js'
 
-async function fixture(t) {
+async function fixture(t, roleGithub) {
   const root = await mkdtemp(join(tmpdir(), 'flybot-harness-contract-'))
   const runtimeDir = join(root, 'runtime'), cwd = join(root, 'work')
   await mkdir(join(runtimeDir, 'src/host'), { recursive: true }); await mkdir(cwd)
@@ -36,7 +36,7 @@ lines.on('line',line=>{const m=JSON.parse(line);
       bindSession: async (_workspace, bot) => rt.projectResources.markStarted(session.resourceLease.id, session.resourceLease.generation, { kind: 'sdk', handle: bot.id }), releaseSession: async () => {} } }
   process.env.FLYBOT_TEST_HARNESS_SECRET = 'unit-credential-opaque-value'
   rt.projectResources = createProjectResources(rt)
-  const harness = createProjectHarness(rt)
+  const harness = createProjectHarness(rt, { roleGithub })
   t.after(async () => { for (const id of Object.keys(rt.state.projectHarnessWorkers ?? {})) await harness.release(id); delete process.env.FLYBOT_TEST_HARNESS_SECRET; await rm(root, { recursive: true, force: true }) })
   return { rt, harness, cwd }
 }
@@ -720,4 +720,28 @@ if(m.type==='input'){if(!m.protocolCorrection||!m.turnId)throw Error('Expected n
   assert.equal(results, 2); assert.equal(executions, 1); assert.equal(worker.backendSessionId, 'original-thread')
   assert.equal(worker.resultHash, originalHash); assert.equal(await readFile(worker.sealedLog, 'utf8'), originalLog)
   assert.equal(worker.inputCorrectionResult.turnId, 'receipt-idle-claim-1')
+})
+
+
+test('role App worker capability is checked before admission and auth frames never enter event evidence', async t => {
+  const token = 'ghs_fixture_ipc_token', scope = { sha256: 'a'.repeat(64) }
+  let issues = 0
+  const roleGithub = { async bind(_session, row) { row.githubAccess = { ...scope }; return scope }, async issue() { issues++; return { token, metadata: scope, expiresAt: Date.now() + 60000 } }, redact: value => value }
+  let { rt, harness, cwd } = await fixture(t, roleGithub)
+  await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Never start without role capability' }), /lacks role App/)
+  assert.equal(issues, 0)
+  ;({ rt, harness, cwd } = await fixture(t, roleGithub))
+  const file = join(rt.config.projectResources.r.runtimeDir, 'src/host/project-harness-worker.mjs')
+  let source = await readFile(file, 'utf8')
+  source = source.replace("write({type:'ready',sdk:", "write({type:'ready',roleGithub:'role-github/v1',sdk:")
+  source = source.replace("if(m.type==='start') {", "if(m.type==='start') {globalThis.start=m;write({type:'github-auth-request',id:'11111111-1111-4111-8111-111111111111'});return;} if(m.type==='github-auth-response'){if(m.value?.token!=='ghs_fixture_ipc_token')process.exit(8);m.settings=globalThis.start.settings;")
+  await writeFile(file, source)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Scoped auth IPC' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Frozen requirement', outputs: [{ name: 'implementation' }] })
+  assert.equal((await result).ok, true); assert.equal(issues, 1)
+  const row = rt.state.projectHarnessWorkers[id], log = await readFile(row.eventLog, 'utf8')
+  assert.ok(!log.includes('github-auth')); assert.ok(!log.includes(token)); assert.ok(!JSON.stringify(rt.state).includes(token))
+  await harness.release(id)
+  assert.equal(row.githubAccess.renewing, false)
 })

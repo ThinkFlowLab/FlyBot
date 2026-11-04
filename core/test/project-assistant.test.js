@@ -61,7 +61,7 @@ async function start({ github = 'Birfy', schedule = true } = {}) {
   // a test can switch automation tasks on later exactly as the Plugins page does.
   const pendingAttach = []
   if (!schedule) {
-    ctx.inject = (names, attach) => { pendingAttach.push(() => attach({ schedule: service, effect: (execute, label) => ctx.effect(execute, label) })) }
+    ctx.inject = (names, attach) => { if (names.includes('schedule')) pendingAttach.push(() => attach({ schedule: service, effect: (execute, label) => ctx.effect(execute, label) })) }
   }
   const attachSchedule = () => { for (const run of pendingAttach.splice(0)) run() }
   const agents = new Map()

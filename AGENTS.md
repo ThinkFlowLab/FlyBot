@@ -33,7 +33,8 @@ exact human/Project credential and verify its login, with no automation/ambient 
 
 For runtime Project roles (#2331), exact-candidate Reviewer approve enters the
 host merge flow only under explicit operator Project/repository/base/check policy.
-Roles do not execute merge commands or receive credentials. This is separate from
+Roles do not execute merge commands. #2365 explicitly permits role-bound App
+credentials through dedicated helpers; no Owner fallback or generic Token export. This is separate from
 signed forge Review PASS and Chief Task acceptance; actual branch gates still apply.
 Contributor PRs to FlyBot retain the pipeline rules and current Owner-authorized
 target-branch scope below. See [decision](decisions/2026-11-04-reviewed-host-merge.md).
@@ -323,7 +324,7 @@ The Bot team:
 ## Hard rules
 
 1. **Build on DSH; never patch it.** Bot features use the documented plugin APIs. The desktop app starts DSH only through its documented entry points (`@deepseek-ai/dsh/profile-boot`, the `dsh` CLI). Never patch DeepSeek Harness or depend on files inside a DSH install. If something is missing in DSH, stop and say so; do not work around it with a patch.
-2. **No secrets.** Never write, print or commit API keys, tokens, cookies or `DSH_HOME` contents. Use the mock model (`core/dev/mock-llm.mjs`) for tests; it needs no key. Every one of the owner's own Bots gets the owner's saved keys on every turn (owner decision 2026-10-22, #601); a key a shell cannot use is named in `DSH_SECRETS_WITHHELD` (`NAME:reason`, never a value: `remote-bot`, `not-in-scope`, `unknown-bot`): read the reason instead of assuming the owner did not configure it.
+2. **No secrets.** Never write, print or commit API keys, tokens, cookies or `DSH_HOME` contents. Use the mock model (`core/dev/mock-llm.mjs`) for tests; it needs no key. Except App-bound Project roles (saved keys withheld as `project-role-app`), every one of the owner's own Bots gets the owner's saved keys on every turn (owner decision 2026-10-22, #601); a key a shell cannot use is named in `DSH_SECRETS_WITHHELD` (`NAME:reason`, never a value: `remote-bot`, `not-in-scope`, `unknown-bot`): read the reason instead of assuming the owner did not configure it.
 3. **Only original material.** Do not copy code, text, icons, logos or graphics from other products or websites.
 4. **The core is ds-bot + patches.** Change `core/`, then run `node scripts/ds-bot-patches.mjs generate` and `check`, and commit `core/` and `patches/` together. CI fails if `ds-bot/` differs from the pin or `core/` differs from `ds-bot/` + patches.
 5. **`client.js` is generated.** Change `core/src/client/`, then run `npm run build` in `core/` and commit both files. Never edit `client.js` by hand.

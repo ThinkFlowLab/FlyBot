@@ -166,3 +166,9 @@ can reconcile it automatically (remote preparation is not inferred exited). Init
 reservation/batch save failures cannot leak a startup capability before return.
 
 #2334 retains preparation.exitUnknown after remote command timeout/transport uncertainty. endPreparation cannot settle that fence and reclamation cannot infer exit from a dead docker client. Operator preparation network declarations reuse existing fixed-command authority; they grant no SDK network access. See the delivery environment contract.
+
+
+#2365 role App resources require Git, gh, mkfifo and the pinned role-capable runtime.
+Per-execution helpers/private FIFO metadata remain isolated from global auth and
+ordinary host tests; current resource/lease authority gates every grant. App keys
+stay on the host. [Configuration and expiry boundaries](../role-github-apps.md).

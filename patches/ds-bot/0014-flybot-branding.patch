@@ -1393,7 +1393,7 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
        ].join('\n')
      },
    }))
-@@ -465,14 +465,43 @@ export function install(rt) {
+@@ -465,14 +465,44 @@ export function install(rt) {
      return ctx.llm.stream({ ...options, messages: fresh, ...(system !== undefined ? { system } : {}) })
    })
 
@@ -1430,6 +1430,7 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
      let used = false
      for (const secret of secrets.values()) {
 -      if (!canUse(secret, botId)) continue
++      if (rt.projectHarness?.roleGithubActive?.(bot.id)) { withheld.push(`${secret.name}:project-role-app`); continue }
 +      if (bot.remote !== undefined) {
 +        withheld.push(`${secret.name}:${WITHHELD_REASONS.REMOTE}`)
 +        continue
@@ -1719,14 +1720,16 @@ diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 diff --git a/test/secrets.test.js b/test/secrets.test.js
 --- a/test/secrets.test.js
 +++ b/test/secrets.test.js
-@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
+@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
  import { apply } from '../index.js'
+-import { canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
 +import { SOURCE_KIND } from '../src/host/constants.js'
- import { canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
++import { install as installSecrets, canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
  import { fakeContext } from './fake-ctx.js'
 
+ // Test values are random on every run, so a leak can only come from this run.
 @@ -73,9 +73,10 @@ const TEAM = {
    questions: {},
  }
@@ -1783,7 +1786,7 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 
    // Coder asks too, while a second Writer card would be superseded by the first answer.
    const asked = await bench.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'c3')
-@@ -267,6 +267,54 @@ test('a deleted Bot leaves every scope list and takes its cards along', async (t
+@@ -267,12 +267,60 @@ test('a deleted Bot leaves every scope list and takes its cards along', async (t
    assert.deepEqual(JSON.parse(readFileSync(join(bench.home, 'secrets.json'), 'utf8')).secrets[0].scope, ['b2'])
  })
 
@@ -1838,7 +1841,14 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
  test('tool results and model requests lose the values', async (t) => {
    const bench = start()
    t.after(bench.stop)
-@@ -302,3 +302,115 @@ test('tool results and model requests lose the values', async (t) => {
+   const value = fresh()
+   await bench.call('secret-set', { name: 'DEMO_TOKEN', value })
+-  const [execute] = bench.listeners['tools/execute']
++  const execute = (execution, next) => bench.listeners['tools/execute'].reduceRight((continuation, listener) => () => listener(execution, continuation), next)()
+   const ok = await execute({}, async () => ({ isError: false, value: { kind: 'foreground', stdout: { text: `${value}\n`, truncated: false } }, content: [{ type: 'text', text: value }], meta: { stdout: value } }))
+   assert.deepEqual(ok, { isError: false, value: { kind: 'foreground', stdout: { text: '[secret:DEMO_TOKEN]\n', truncated: false } } })
+   const failed = await execute({}, async () => ({ isError: true, error: { message: `bad ${value}` }, content: [{ type: 'text', text: `bad ${value}` }] }))
+@@ -302,3 +302,130 @@ test('tool results and model requests lose the values', async (t) => {
    stream({ ...options, system: 'clean', messages: [] }, next)
    assert.equal(passed.length, 2)
  })
@@ -1953,6 +1963,21 @@ diff --git a/test/secrets.test.js b/test/secrets.test.js
 +  assert.ok(Object.hasOwn(entry.variables, 'DSH_SECRETS_WITHHELD'))
 +  assert.match(entry.variables.DSH_SECRETS_WITHHELD.description, /never a value/)
 +  assert.deepEqual(bench.env({ id: 'sub-9', session: { header: { id: 'sub-9', parentSession: 'gone' } } }), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:unknown-bot' })
++})
++
++
++test('active native App role withholds saved Owner secrets while personal Bots retain their normal scope', async t => {
++  const home = mkdtempSync(join(tmpdir(), 'role-app-owner-secrets-')), token = fresh(), contributors = []
++  writeFileSync(join(home, 'secrets.json'), JSON.stringify({ version: 1, secrets: [{ name: 'GITHUB_TOKEN', value: token, scope: 'all' }] }))
++  const ctx = fakeContext({ services: { shellEnv: { register(entry) { contributors.push(entry); return () => {} } } } })
++  let roleActive = true
++  const rt = { ctx, home, state: {}, readOnly() {}, warn() {}, whoseAgent: () => ({ bot: { id: 'role-bot' } }), projectHarness: { roleGithubActive: () => roleActive } }
++  installSecrets(rt); await rt.loadSecrets()
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true }) })
++  const env = () => contributors.at(-1).resolve({ agent: { id: 'role-bot' }, arguments: {} })
++  assert.deepEqual(env(), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:project-role-app' })
++  roleActive = false
++  assert.equal(env().DSH_SECRET_GITHUB_TOKEN, token)
 +})
 diff --git a/test/store.test.js b/test/store.test.js
 --- a/test/store.test.js

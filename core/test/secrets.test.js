@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
-import { canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
+import { install as installSecrets, canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
 import { fakeContext } from './fake-ctx.js'
 
 // Test values are random on every run, so a leak can only come from this run.
@@ -336,7 +336,7 @@ test('tool results and model requests lose the values', async (t) => {
   t.after(bench.stop)
   const value = fresh()
   await bench.call('secret-set', { name: 'DEMO_TOKEN', value })
-  const [execute] = bench.listeners['tools/execute']
+  const execute = (execution, next) => bench.listeners['tools/execute'].reduceRight((continuation, listener) => () => listener(execution, continuation), next)()
   const ok = await execute({}, async () => ({ isError: false, value: { kind: 'foreground', stdout: { text: `${value}\n`, truncated: false } }, content: [{ type: 'text', text: value }], meta: { stdout: value } }))
   assert.deepEqual(ok, { isError: false, value: { kind: 'foreground', stdout: { text: '[secret:DEMO_TOKEN]\n', truncated: false } } })
   const failed = await execute({}, async () => ({ isError: true, error: { message: `bad ${value}` }, content: [{ type: 'text', text: `bad ${value}` }] }))
@@ -477,4 +477,19 @@ test('the withheld-reason variable is declared, so a turn that withholds a key s
   assert.ok(Object.hasOwn(entry.variables, 'DSH_SECRETS_WITHHELD'))
   assert.match(entry.variables.DSH_SECRETS_WITHHELD.description, /never a value/)
   assert.deepEqual(bench.env({ id: 'sub-9', session: { header: { id: 'sub-9', parentSession: 'gone' } } }), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:unknown-bot' })
+})
+
+
+test('active native App role withholds saved Owner secrets while personal Bots retain their normal scope', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'role-app-owner-secrets-')), token = fresh(), contributors = []
+  writeFileSync(join(home, 'secrets.json'), JSON.stringify({ version: 1, secrets: [{ name: 'GITHUB_TOKEN', value: token, scope: 'all' }] }))
+  const ctx = fakeContext({ services: { shellEnv: { register(entry) { contributors.push(entry); return () => {} } } } })
+  let roleActive = true
+  const rt = { ctx, home, state: {}, readOnly() {}, warn() {}, whoseAgent: () => ({ bot: { id: 'role-bot' } }), projectHarness: { roleGithubActive: () => roleActive } }
+  installSecrets(rt); await rt.loadSecrets()
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true }) })
+  const env = () => contributors.at(-1).resolve({ agent: { id: 'role-bot' }, arguments: {} })
+  assert.deepEqual(env(), { DSH_SECRETS_WITHHELD: 'GITHUB_TOKEN:project-role-app' })
+  roleActive = false
+  assert.equal(env().DSH_SECRET_GITHUB_TOKEN, token)
 })

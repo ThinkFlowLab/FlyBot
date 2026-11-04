@@ -259,3 +259,18 @@ Chief 配置补充 `operationsContact:{memberId,agentId}|null`（仅本人配置
 `chief.state.compensation` 提供附加原 Chief schedules 的 nextCheckAt 等元数据。
 新 incoming consultation 的 assistance/assistanceScope 绑定当前任务状态；旧代次回复拒绝。
 完整约束、原始信封及运维边界见 [协助闭环](chief-assistance.md) 和 OpenAPI schemas。
+
+
+## SDK GitHub App候选恢复（#2365）
+
+角色App模式复用当前接口，不公开Token签发端点。`github.connection`返回roleGithub
+配置状态、revision和identityReuse。`task`/`tasks`的execution.githubAccess仅含身份、
+scope hash、状态、续期标记及到期时间；`task.detail`的Attempt保留sdkPublication和
+sdkCandidateEffect，PR身份区分Dev与宿主merger。`attempt.context`新增
+sdkPublication/publicationRecoveries分页源。
+
+`attempt.publication-retry`的payload可加`phase:"candidate"`：当前有配置权限的管理者
+在原执行已确认退出、保留干净SDK提交/角色证据和原远端PR时，通过原github.candidate
+Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、不重写SHA、
+不替代测试/Review/Chief关闭。省略phase保留原有审核后发布恢复前置条件。
+完整操作顺序、示例和凭据边界见[角色App指南](role-github-apps.md)和OpenAPI。

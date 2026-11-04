@@ -520,3 +520,12 @@ owned participation and shares only the current Project assistance record. Nativ
 and external agents reply through the same inbox; current-state fences apply to
 legacy reply as well. Watch does not grant host-operation authority. See
 [assistance](../chief-assistance.md).
+
+
+## Role App execution — 2026-11-04
+
+#2365 adds conditional role conventions: an explicitly App-bound Dev publishes the
+original Draft with its verified author/committer and a Reviewer submits an actual
+exact-SHA App Review. No role selects credentials or executes merge; absent App mode
+retains original host sealing/publication. Frozen older policy remains historical;
+new Attempts capture the updated conventions and delivery template.

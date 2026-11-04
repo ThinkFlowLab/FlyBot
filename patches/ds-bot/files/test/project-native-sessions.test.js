@@ -346,3 +346,19 @@ test('native ongoing authority follows the live carrier when a resumed physical 
   assert.equal(f.rt.state.projectNativeWorkers.bot1.sessionId, f.rt.state.projectNativeWorkers.bot2.sessionId)
   assert.equal(await f.service.validateStep(f.agent), true)
 })
+
+test('native App credentials bind only after durable activation and close before waiting for native exit', async () => {
+  const f = fixture(), events = []
+  f.rt.projectHarness = { async bindNativeGithub(session, row) { assert.ok(f.rt.projectEffects.intentCommitted(row.activationEffect)); assert.equal(session.id, row.sessionKey); events.push('credentials-bound') }, async closeNativeGithub() { events.push('credentials-closed') } }
+  await f.service.bind(f.session, f.workspace, 'bot1')
+  assert.deepEqual(events, [])
+  await f.service.activate(f.session, 'bot1')
+  assert.deepEqual(events, ['credentials-bound'])
+  let release; f.hold(new Promise(resolve => { release = resolve }))
+  const stopping = f.service.stop('bot1')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(events, ['credentials-bound', 'credentials-closed'])
+  assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), false)
+  release(); await stopping
+  assert.equal(nativeExitConfirmed(f.rt.state, f.rt.state.projectNativeWorkers.bot1), true)
+})

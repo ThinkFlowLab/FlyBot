@@ -227,7 +227,7 @@ test('managed delivery definitions and role/model snapshots cannot be edited or 
   const attempt = fixture.attempt()
   assert.equal(attempt.workflowDefinition.nodes[0].model, 'fixture/model')
   for (const operation of ['graph', 'set-model', 'concurrency', 'reset', 'delete']) await assert.rejects(fixture.rt.projectEndpoint('project-workflow', { projectId: 'p1', workflowId: attempt.workflowId, operation, nodes: [] }, alice), /immutable/)
-  assert.equal(attempt.workflowVersion, 'project-delivery/v8')
+  assert.equal(attempt.workflowVersion, 'project-delivery/v9')
 })
 
 
@@ -1971,4 +1971,53 @@ test('Reviewer approve automatically commits a host merge intent after the exact
   assert.equal(effect.payload.intent.candidateSha, attempt.evidence.review.sha)
   assert.equal(attempt.status, 'waiting-acceptance'); assert.notEqual(f.rt.state.tasks[f.task.id].status, 'accepted')
   assert.equal(attempt.evidence.review.report.repositoryVerdict, 'INC', 'Host merge authorization must not fabricate a signed forge Review PASS')
+})
+
+test('role App delivery adopts the actual SDK commit and existing Draft before tests instead of resealing another SHA', async t => {
+  const f = await setup(t)
+  await f.start('sdk-commit-adoption')
+  const attempt = f.attempt(), workspace = attempt.workspaces.developer
+  f.rt.config.projectGithubConnections = { dev: { credential: 'github-app', appId: 7, installationId: 70, projectIds: ['p1'], repositories: ['example/demo'] } }
+  f.rt.config.projectRepositories['example/demo'].roleGithub = { enabled: true, revision: 1, branches: ['main'], roles: { developer: { connectionId: 'dev' } } }
+  let observations = 0
+  f.rt.projectDelivery = createProjectDelivery(f.rt, { publisher: f.publisher, roleArtifacts: { publication: async (_attempt, { sha }) => { observations++; return { number: 18, sha, repository: 'example/demo', url: 'https://github.com/example/demo/pull/18', identity: { provider: 'github-app', appId: 7, login: 'dev-app[bot]' } } }, review: async current => ({ id: 25, sha: current.candidateSha, identity: { provider: 'github-app', appId: 8, login: 'review-app[bot]' }, independent: true }) } })
+  writeFileSync(join(workspace.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
+  git(workspace.path, ['add', '.']); git(workspace.path, ['commit', '-m', 'SDK-authored candidate retained verbatim'])
+  const candidate = git(workspace.path, ['rev-parse', 'HEAD'])
+  await f.gate('developer')
+  assert.equal(attempt.candidateSha, candidate)
+  assert.equal(attempt.pr.number, 18)
+  assert.equal(attempt.sdkPublication.sha, candidate)
+  assert.equal(f.rt.state.projectEffects[attempt.sdkCandidateEffect.id].status, 'done')
+  assert.equal(attempt.evidence.tests, undefined, 'Early Draft is not tested or reviewed delivery')
+  assert.equal(f.published.length, 0, 'The host does not create another PR')
+  assert.equal(observations, 1)
+  await f.gate('developer'); assert.equal(observations, 1)
+  await f.gate('tester'); assert.equal(attempt.evidence.tests.sha, candidate)
+  await f.gate('reviewer', { review: JSON.stringify({ commit: candidate, verdict: 'approve', summary: 'Exact SDK candidate independently reviewed' }) })
+  assert.equal(attempt.evidence.review.forgeReview.id, 25)
+  assert.equal(attempt.pr.sha, candidate); assert.equal(attempt.status, 'waiting-acceptance')
+  assert.equal(f.published.length, 0); assert.equal(observations, 2)
+})
+
+test('SDK publication observed before a writeback failure is reconciled through the original candidate Effect without a second PR', async t => {
+  const f = await setup(t); await f.start('sdk-candidate-reconcile')
+  const attempt = f.attempt(), workspace = attempt.workspaces.developer
+  f.rt.config.projectGithubConnections = { dev: { credential: 'github-app', appId: 7, installationId: 70, projectIds: ['p1'], repositories: ['example/demo'] } }
+  f.rt.config.projectRepositories['example/demo'].roleGithub = { enabled: true, revision: 1, branches: ['main'], roles: { developer: { connectionId: 'dev' } } }
+  let observations = 0, writebackFailure = true
+  f.rt.projectDelivery = createProjectDelivery(f.rt, { publisher: f.publisher, roleArtifacts: { publication: async (_attempt, { sha }) => { observations++; if (writebackFailure) throw Error('Remote PR exists; writeback interrupted'); return { number: 18, sha, repository: 'example/demo', url: 'https://github.com/example/demo/pull/18', roleScopeSha256: 'a'.repeat(64) } } } })
+  writeFileSync(join(workspace.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
+  git(workspace.path, ['add', '.']); git(workspace.path, ['commit', '-m', 'Original published SDK commit'])
+  const sha = git(workspace.path, ['rev-parse', 'HEAD'])
+  await assert.rejects(f.gate('developer'), /writeback interrupted/)
+  assert.equal(attempt.candidateSha, undefined); assert.equal(attempt.pr, undefined)
+  const effect = f.rt.state.projectEffects[attempt.sdkCandidateEffect.id]
+  assert.equal(effect.status, 'pending'); assert.equal(effect.executions, 1)
+  writebackFailure = false
+  const recovered = await f.rt.projectEndpoint('project-attempt-publication-retry', { attemptId: attempt.id, phase: 'candidate' }, alice)
+  assert.equal(recovered.attempt.candidateSha, sha); assert.equal(attempt.pr.number, 18)
+  assert.equal(effect.id, attempt.sdkCandidateEffect.id); assert.equal(effect.status, 'done')
+  assert.equal(f.published.length, 0); assert.equal(observations, 2)
+  assert.equal(attempt.publicationRecoveries[0].kind, 'sdk-candidate-reconcile')
 })

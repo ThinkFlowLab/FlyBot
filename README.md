@@ -92,3 +92,6 @@ HTTP 入口为 `POST /api/bot`、事件为 `GET /api/project-events`，
 自动测试通过、真实 SDK 验证、浏览器验收、PR 合入与生产部署分别记录；本分支不承诺未验证的完整真实模型开发闭环。
 
 项目自动化支持显式 gh-cli 或 GitHub App installation；人类选择已预置连接，个人用户授权独立。见 [GitHub配置与身份](docs/github-automation.md)。
+
+项目角色可选择以独立 GitHub App 直接提交、开 Draft PR 和 Review；复用现有连接与资源配置。
+见 [角色 App 配置、认证与恢复](docs/role-github-apps.md)。默认不启用，不需要全局 gh 登录。

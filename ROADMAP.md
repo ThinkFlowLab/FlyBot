@@ -1,5 +1,12 @@
 # FlyBot — Roadmap
 
+## Role App execution — 2026-11-04
+
+#2365 targets delivery with trusted role binding, local/Docker credential helpers,
+exact SDK candidate/PR adoption and independent actual App Review. Preserve existing
+Task-role context and host gates. Tests/actual SDK fixtures and real App write
+acceptance are distinct; no live credential changes or rollout are authorized.
+
 ## Follow-up reliability — 2026-11-04
 
 Implement #2336 reservation cleanup first; then #2337 CLI configuration, #2334

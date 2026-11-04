@@ -1861,6 +1861,21 @@
           "evidence": {
             "type": "object",
             "properties": {
+              "tests": {
+                "$ref": "#/components/schemas/TestVerification"
+              },
+              "execution": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              },
+              "review": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "implementation": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
               "merge": {
                 "$ref": "#/components/schemas/MergeEvidence"
               }
@@ -1933,6 +1948,27 @@
           },
           "merge": {
             "$ref": "#/components/schemas/MergeState"
+          },
+          "sdkPublication": {
+            "$ref": "#/components/schemas/SdkPublication"
+          },
+          "sdkCandidateEffect": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id"
+            ]
           }
         },
         "additionalProperties": true,
@@ -4634,8 +4670,11 @@
             "type": "string"
           },
           "credentialScope": {
-            "const": "project-automation",
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "project-automation",
+              "role-app"
+            ]
           },
           "identity": {
             "$ref": "#/components/schemas/GithubAutomationIdentity"
@@ -4677,12 +4716,18 @@
             "pattern": "^[a-f0-9]{40}$"
           },
           "operation": {
-            "const": "pull-request-publish",
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "pull-request-publish",
+              "sdk-observed-publication"
+            ]
           },
           "executionRole": {
-            "const": "project-delivery-host",
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "project-delivery-host",
+              "developer"
+            ]
           },
           "creatorLogin": {
             "anyOf": [
@@ -4701,6 +4746,17 @@
           "publicationMarker": {
             "type": "string",
             "maxLength": 300
+          },
+          "mergeIdentity": {
+            "$ref": "#/components/schemas/GithubAutomationIdentity"
+          },
+          "roleScopeSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "observedAt": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "additionalProperties": true,
@@ -5180,6 +5236,67 @@
           },
           "inputCorrection": {
             "$ref": "#/components/schemas/InputCorrection"
+          },
+          "githubAccess": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "const": "project-role-github/v1",
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                  },
+                  "policyRole": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                  },
+                  "connectionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Opaque server-issued ID; never infer authority from it."
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "identity": {
+                    "$ref": "#/components/schemas/GithubAutomationIdentity"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "bound",
+                      "stopping",
+                      "closed"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "lastIssuedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "renewing": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true
@@ -5626,6 +5743,112 @@
           "repository",
           "number",
           "baseBranch"
+        ]
+      },
+      "RoleGithubStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "identityReuse": {
+            "type": "boolean"
+          },
+          "verification": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                },
+                "connectionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Opaque server-issued ID; never infer authority from it."
+                },
+                "appId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "installationId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "configured",
+                    "unavailable"
+                  ]
+                }
+              },
+              "additionalProperties": true,
+              "required": [
+                "role",
+                "status"
+              ]
+            },
+            "maxItems": 32
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "enabled",
+          "roles"
+        ]
+      },
+      "SdkPublication": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": "sdk-publication/v1",
+            "type": "string"
+          },
+          "effectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "roleScopeSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "version",
+          "effectId",
+          "roleScopeSha256",
+          "sha",
+          "number",
+          "at"
         ]
       },
       "DevelopmentQueryInboxListPayload": {
@@ -6235,6 +6458,9 @@
               },
               "mergePolicy": {
                 "$ref": "#/components/schemas/ProjectMergePolicyStatus"
+              },
+              "roleGithub": {
+                "$ref": "#/components/schemas/RoleGithubStatus"
               }
             },
             "additionalProperties": true,
@@ -9240,7 +9466,9 @@
               "testHistory",
               "preparationFailures",
               "resumptions",
-              "merge"
+              "merge",
+              "sdkPublication",
+              "publicationRecoveries"
             ]
           },
           "offset": {
@@ -9388,6 +9616,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -9719,6 +9951,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -11494,6 +11730,9 @@
               },
               "mergePolicy": {
                 "$ref": "#/components/schemas/ProjectMergePolicyStatus"
+              },
+              "roleGithub": {
+                "$ref": "#/components/schemas/RoleGithubStatus"
               }
             },
             "additionalProperties": true,
@@ -13604,6 +13843,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -13903,6 +14146,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -14057,6 +14304,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -14211,6 +14462,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -14729,6 +14984,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -23407,6 +23666,9 @@
               },
               "mergePolicy": {
                 "$ref": "#/components/schemas/ProjectMergePolicyStatus"
+              },
+              "roleGithub": {
+                "$ref": "#/components/schemas/RoleGithubStatus"
               }
             },
             "additionalProperties": true
@@ -27373,6 +27635,10 @@
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
           },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
+          },
           "requestId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,100}$"
@@ -27524,6 +27790,10 @@
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
           },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
+          },
           "requestId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,100}$"
@@ -27603,6 +27873,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           },
           "requestId": {
             "type": "string",
@@ -27785,6 +28059,10 @@
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
           },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
+          },
           "requestId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,100}$"
@@ -27861,6 +28139,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -27936,6 +28218,10 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "phase": {
+            "const": "candidate",
+            "type": "string"
           },
           "requestId": {
             "type": "string",
@@ -30362,7 +30648,7 @@
       "notes": "Configuration metadata only; never returns private key path, JWT or installation token. No network probe.",
       "implementation": {
         "path": "core/src/host/project-github-connections.js",
-        "sha256": "5c946368326c970c2d6b6758e5fbc7c6b8a067d9ec9df1e7ac0019eb3e979040"
+        "sha256": "276fb2ed2d0b7d003e8702d02fd26eb8507af4113e03599600f3217897eae76a"
       }
     },
     {
@@ -30528,7 +30814,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       }
     },
     {
@@ -30606,7 +30892,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       }
     },
     {
@@ -30684,7 +30970,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       }
     },
     {
@@ -30762,7 +31048,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       }
     },
     {
@@ -31318,7 +31604,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       }
     },
     {
@@ -31640,7 +31926,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       }
     },
     {
@@ -31722,7 +32008,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -31800,7 +32086,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -32555,7 +32841,7 @@
       "notes": "Selects an existing connection ID; never accepts keys, URLs or tokens. Bot/watch authority cannot select or replace credentials. May perform read-only authentication verification.",
       "implementation": {
         "path": "core/src/host/project-github-connections.js",
-        "sha256": "5c946368326c970c2d6b6758e5fbc7c6b8a067d9ec9df1e7ac0019eb3e979040"
+        "sha256": "276fb2ed2d0b7d003e8702d02fd26eb8507af4113e03599600f3217897eae76a"
       }
     },
     {
@@ -33849,7 +34135,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -33957,7 +34243,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -34064,7 +34350,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -34158,7 +34444,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -34229,7 +34515,17 @@
           "clientCheckIsAuthority": false
         },
         {
-          "code": "same-current-candidate-and-original-pr-binding",
+          "code": "current-attempt-requirements-authority-and-confirmed-worker-exit",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "candidate-phase-requires-role-app-mode-original-dev-session-and-retained-clean-commit",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "omitted-phase-requires-matching-host-tests-review-and-existing-pr-binding",
           "enforcedBy": "server",
           "clientCheckIsAuthority": false
         }
@@ -34249,10 +34545,10 @@
         "unifiedCommandReceipt": true
       },
       "invokesModel": false,
-      "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
+      "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -34361,7 +34657,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       }
     },
     {
@@ -35418,7 +35714,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "db8aa73099164cb395625d833b13fa443f238d5083eaeab63917847338c66685"
+        "sha256": "94f597a01f1f02c8c87c07822570ac5e3da874b5e6cd30cc5282ca2f79743570"
       }
     },
     {
@@ -44686,7 +44982,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -44783,7 +45079,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -44876,7 +45172,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -44968,7 +45264,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -45060,7 +45356,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -45416,7 +45712,17 @@
           "clientCheckIsAuthority": false
         },
         {
-          "code": "same-current-candidate-and-original-pr-binding",
+          "code": "current-attempt-requirements-authority-and-confirmed-worker-exit",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "candidate-phase-requires-role-app-mode-original-dev-session-and-retained-clean-commit",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "omitted-phase-requires-matching-host-tests-review-and-existing-pr-binding",
           "enforcedBy": "server",
           "clientCheckIsAuthority": false
         }
@@ -45436,10 +45742,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": false,
-      "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
+      "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -45515,7 +45821,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff"
+        "sha256": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -46371,7 +46677,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "db8aa73099164cb395625d833b13fa443f238d5083eaeab63917847338c66685"
+        "sha256": "94f597a01f1f02c8c87c07822570ac5e3da874b5e6cd30cc5282ca2f79743570"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -46447,7 +46753,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000"
+        "sha256": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca"
       },
       "aliasOf": "development.query.pools"
     },
@@ -46873,7 +47179,7 @@
       "core/src/host/project-chief-recovery.js": "b4efeef007222a87249a808bc49deb84e0e6014c700bb661629a9eb8426327f7",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
-      "core/src/host/project-codex-config.js": "4ddf4e4e3e2b324b862ad4f6a6c2a90ac3f3003843b8e446f873b146872c4598",
+      "core/src/host/project-codex-config.js": "57a6d5c0b535aabfd4d1fc93f03aec26681429a4933ec8b72f4c496dd14df2f5",
       "core/src/host/project-command-receipts.js": "1e654a257b8bdbbb7fea8f96e214b35437fe855651cc897b318a5fc8987dfe52",
       "core/src/host/project-compatibility.js": "4ab65df4a237fb55ea2c68396bd180bb0a9ed4c42dc63444ce4ef0869c8988bc",
       "core/src/host/project-consultations.js": "9d29e800689a82d10f989133e8bb5d2462c0ea627852902aeaffad90a830e652",
@@ -46881,9 +47187,9 @@
       "core/src/host/project-context-memory.js": "933893b3d6b7b2c7a79365991c1303fb03a665d9529f16ccf57429a753ad4cd0",
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
-      "core/src/host/project-delivery-template.js": "4c4f204fdb1002f90593e1cb27ef183a7bdf0529bdc009b42a857be57c14ce91",
-      "core/src/host/project-delivery.js": "12b8f2b26b4a4bf8c20ca1d9bd58eff9f9067d8235877f3c9c30ab4c64699aff",
-      "core/src/host/project-development-service.js": "f414895ec2407afcf63c8161fd91f0e318811a1bca701e854ff1a2c52f320000",
+      "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
+      "core/src/host/project-delivery.js": "d3919fd6a5035fe5c9d27184384c6edc380e7991442c5c2388ae8833c3f23c35",
+      "core/src/host/project-development-service.js": "90e7e22e5906842324ba0ede5359b09e6d225bee388b4e3721250ab8b951f8ca",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
@@ -46892,21 +47198,22 @@
       "core/src/host/project-execution-environment.js": "bab932919fe2aa6ef9cae2021c3f1b3ffc365b6a9ebb6663ce2a70bf61b5360c",
       "core/src/host/project-execution-exit.js": "50f94881a40c2d0c6288fd081c885c7cabb71f8abec3a8c918e1c0bc852a04f7",
       "core/src/host/project-execution-profile.js": "7106593979d6e21b9e1dab567c8628a7d0252976ed47d42dace337944725da59",
-      "core/src/host/project-git-sandbox.js": "b579b01dcce0708275e9f735d08932481369803382b8f7d24af69639608d724f",
+      "core/src/host/project-git-sandbox.js": "7874051423251c3f561f5f611ad2e27a855cc2c0f57d820262e9e9c057f02b3b",
       "core/src/host/project-github-app.js": "d2cf077873271125c0ad78acde8c1cb039261a4a9229964a4117d1a72081c3ca",
-      "core/src/host/project-github-connections.js": "5c946368326c970c2d6b6758e5fbc7c6b8a067d9ec9df1e7ac0019eb3e979040",
+      "core/src/host/project-github-connections.js": "276fb2ed2d0b7d003e8702d02fd26eb8507af4113e03599600f3217897eae76a",
       "core/src/host/project-github-merge.js": "aa1c31931f46f8214db097e6b06efccb197da522c2e397ac67570040fc6d682b",
       "core/src/host/project-github-read.js": "dbbdbbc0d917bbf20c4fdf7306464cbb682b0191b98c36fddbe70e6837a57943",
-      "core/src/host/project-github.js": "fcb527b191d5b6a77b7c10bad3dad0d22f13e8e4addea4ccd9b2933be71bf601",
-      "core/src/host/project-harness-turn.js": "77b137b906444858326049d62d66b2f3299f06048f2451aa9b2a61d4154e018e",
-      "core/src/host/project-harness.js": "db8aa73099164cb395625d833b13fa443f238d5083eaeab63917847338c66685",
+      "core/src/host/project-github-role-artifacts.js": "a4c04ad7e7d7cac2f1f82a42535f6255e97a5985b4492641e1af64ce26266d1c",
+      "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
+      "core/src/host/project-harness-turn.js": "fdfcccc090134dcdd7fb6ad8ab15d93e2e7ebec7d0a48af27b35f434993aa134",
+      "core/src/host/project-harness.js": "94f597a01f1f02c8c87c07822570ac5e3da874b5e6cd30cc5282ca2f79743570",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "d1da0f7eb2ea07394bffae2522c86ebbbe041d38323ccda8ea2b8d078383e256",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-merge-policy.js": "78b5c4830e5466d102298d5ded6665f65f89537d908e1cf85b0438b868548552",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
-      "core/src/host/project-native-sessions.js": "4b825e7e509d0a9a0279ee7a70d1de383378a1892b7822dc7d478bd46de21c00",
+      "core/src/host/project-native-sessions.js": "cbc3c32cfd21f4364440a84dbab33fe9ea7018f464959574342029d848def48e",
       "core/src/host/project-pools.js": "39abcbd04ea3d5f6bb6cf2cfbf80cab0b59e6afc9a2ef1042a490d80b5266883",
       "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "d4c7e8b4f0d2dd177c3e02fd0afe62b4c13ca10348d8f1caf43c011cda47388b",
@@ -46916,18 +47223,19 @@
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
       "core/src/host/project-resources.js": "24582ddb88111dc46cec134b5bb4489c8c530448b827ffba998d97e6f3b5401e",
-      "core/src/host/project-reviewed-merge.js": "123a866f242de3ec53e9ec3c4d6c5ab7deec1ccc28361363c73fc5d99539c458",
+      "core/src/host/project-reviewed-merge.js": "f34db330ee71cf9459bf88c26ce38aba57b46974225566a62253309dcc3dca2a",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",
+      "core/src/host/project-role-github.js": "0fe150099efc6200fa8eb82e9c1ba04becd3bc905f4a144570094f744281cff4",
       "core/src/host/project-role-governance.js": "fe9ca70113666b0223f55b9225890609c5a1e7ddcb9b6105a3dc0edc3b2ef005",
-      "core/src/host/project-role-policy.js": "ef6e4774b7d1c66fa03364edd3517c858c7cb7e278265963866e737d0568ea0d",
+      "core/src/host/project-role-policy.js": "ba90bf8dcba9f4a2d659f62948b6437d739ee40e2d839cd213181731c4dab8a5",
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
       "core/src/host/project-runtime-setup.js": "7d4ff3f84c0b08540145b40c150262e8d85be957def7f14a06496064f20d51e0",
       "core/src/host/project-scheduled-tasks.js": "78c0e29bb830710dd9109d6a5fd1a67214fff01c55a79a38a3df7e5c3a194324",
       "core/src/host/project-scheduler.js": "9419010ed18fcfe801cab23562ea2ad53cb4dc500078ff1ec2af4438cc6726a6",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
-      "core/src/host/project-service-views.js": "11edc8b334a87e0ecb9da076a2d667e13abb465c2321fa2fe3b5c75cb62be4ec",
+      "core/src/host/project-service-views.js": "693056fc2e92c0afde24798a2aa7bfe6707f0efae8ea3eedf6445be5d827a1c0",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",
@@ -46951,7 +47259,7 @@
       "core/src/host/room-participant.js": "38aaf8a02d1c0faf861aef10d3658e73589b4d2a93024e3bf07ef2a10c459622",
       "core/src/host/roster.js": "9b4bf26bf6de08d0d8483d1ed3f387f6e2bdac0365d3ce015d5a46725fa6cbab",
       "core/src/host/schedules.js": "dec7085301cf6f8bd23c53eb52cdc6e6c643850d2ac66688ea88457d0a37c9ae",
-      "core/src/host/secrets.js": "4cfa86b96a720395680680b3cce2aa63c6c6133ae2faffddc65cc56041f0371d",
+      "core/src/host/secrets.js": "5787cd55f8b7f589605955e234a326a5addd64dc74320b6ca00029291405e524",
       "core/src/host/steering-interrupt.js": "f9bcf7df56303c217abedc96f98a98d4e2e668bb17d9510ada7debd3a8ed207d",
       "core/src/host/steward.js": "9a49eb851bf12df9f35fbf4870ca8d2355dbd5338c7e40d8b57bb9bd44d58e88",
       "core/src/host/store.js": "421d7a745fedff00c9cef2ce1083366bc3169602d24d34583982ee8d0b46cf3b",

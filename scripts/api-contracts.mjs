@@ -186,7 +186,7 @@ q('pools', empty, result({ pools: array(record({ botId: id, role, tasks: array(j
 q('inputs', obj({ ...taskId, ...page, limit: int(1, 200) }, ['taskId']), record({ inputs: array(ref('Input')), next: nullable(id) }), { source: 'core/src/host/project-inputs.js', notes: 'Receipt states distinguish persisted, delivered, model-declared-read and handled; none imply Task completion.' })
 q('sources', obj({ threadId: id, eventId: id, offset: int(), ...page }), record({ sources: array(json), threads: array(json), subscriptions: array(json), events: array(json), next: nullable(id), event: json, text: str(), offset: int(), nextOffset: nullable(int()), sha256: hash }), { source: 'core/src/host/project-sources.js' })
 q('execution.boundary', obj(taskId), record({ projectId: id, profile: json, authority: json, task: nullable(json), repository: json, resources: array(json), harnesses: json, limits: json }), { source: 'core/src/host/project-execution-boundary.js', notes: 'Reports effective current boundaries; it neither runs tests nor grants tools/credentials.' })
-q('attempt.context', obj({ ...attemptId, section: choice('roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions', 'merge'), ...sourcePage }, ['attemptId', 'section']), ref('SourcePage'))
+q('attempt.context', obj({ ...attemptId, section: choice('roleSessions', 'roleSessionHistory', 'rolePolicies', 'evidence', 'feedback', 'requirement', 'failure', 'agentDefinitions', 'integrationAdmissions', 'testHistory', 'preparationFailures', 'resumptions', 'merge', 'sdkPublication', 'publicationRecoveries'), ...sourcePage }, ['attemptId', 'section']), ref('SourcePage'))
 q('attempt.integration-state', obj(attemptId, ['attemptId']), result({ attemptId: id, generation: int(), inputs: array(json), availableInputs: array(json), materialization: nullable(json), snapshot: json }), { permission: 'configure', source: 'core/src/host/project-delivery.js', preconditions: ['current-project-manager', 'current-released-integration-checkpoint'], notes: 'Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.' })
 q('attempt.log', obj({ ...attemptId, role, environmentRole: role, offset: int(), limit: int(4, 8192), expectedSha256: hash }, ['attemptId']), ref('LogPage'), { source: 'core/src/host/project-delivery.js', notes: 'UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.' })
 q('release.status', obj(attemptId, ['attemptId']), result({ release: nullable(ref('Release')) }), { source: 'core/src/host/project-releases.js', preconditions: ['current-project-membership', 'current-release-task-attempt'] })
@@ -371,9 +371,28 @@ schemas.ProjectMergePolicyStatus = record({ configured: bool, enabled: bool, sta
 schemas.MergeState = record({ version: lit('project-reviewed-merge/v1'), status: choice('waiting', 'queued', 'blocked', 'unknown', 'merged', 'cancelled'), reason: str(1000), effectId: id, candidateSha: sha, mergeCommitSha: nullable(sha), baseBranch: str(200), method: choice('squash', 'merge', 'rebase'), createdAt: int(), observedAt: int(), nextCheckAt: nullable(int()), deadlineAt: int() }, ['status', 'candidateSha'])
 schemas.MergeEvidence = record({ sha, mergeCommitSha: sha, repository, number: int(1), baseBranch: str(200), policySha256: hash, reviewSha256: hash, effectId: id, scope: lit('provider-confirmed-merge-observation'), identity: ref('GithubAutomationIdentity'), at: int() }, ['sha', 'mergeCommitSha', 'repository', 'number', 'baseBranch'])
 schemas.Attempt.properties.merge = ref('MergeState')
-schemas.Attempt.properties.evidence = record({ merge: ref('MergeEvidence') })
+schemas.Attempt.properties.evidence.properties.merge = ref('MergeEvidence')
 schemas.TaskView.properties.merge = nullable(ref('MergeState'))
 schemas.GithubPublication.properties.branch = str(200)
 schemas.GithubPublication.properties.publicationMarker = str(300)
 githubStatus.properties.mergePolicy = ref('ProjectMergePolicyStatus')
 githubConnection.properties.mergePolicy = ref('ProjectMergePolicyStatus')
+
+// Role App execution uses the same queries and original candidate/publication Effects.
+schemas.RoleGithubStatus = record({ enabled: bool, revision: int(1), identityReuse: bool, verification: str(), roles: array(record({ role, connectionId: id, appId: int(1), installationId: int(1), revision: int(1), status: choice('configured', 'unavailable') }, ['role', 'status']), 32) }, ['enabled', 'roles'])
+githubStatus.properties.roleGithub = ref('RoleGithubStatus')
+githubConnection.properties.roleGithub = ref('RoleGithubStatus')
+schemas.GithubPublication.properties.credentialScope = choice('project-automation', 'role-app')
+schemas.GithubPublication.properties.operation = choice('pull-request-publish', 'sdk-observed-publication')
+schemas.GithubPublication.properties.executionRole = choice('project-delivery-host', 'developer')
+schemas.GithubPublication.properties.mergeIdentity = ref('GithubAutomationIdentity')
+schemas.GithubPublication.properties.roleScopeSha256 = hash
+schemas.GithubPublication.properties.observedAt = int()
+schemas.SdkPublication = record({ version: lit('sdk-publication/v1'), effectId: id, roleScopeSha256: hash, sha, number: int(1), at: int() }, ['version', 'effectId', 'roleScopeSha256', 'sha', 'number', 'at'])
+schemas.Attempt.properties.sdkPublication = ref('SdkPublication')
+schemas.Attempt.properties.sdkCandidateEffect = record({ id, kind: str() }, ['id'])
+schemas.ExecutionMetadata.properties.githubAccess = nullable(record({ version: lit('project-role-github/v1'), role, policyRole: role, connectionId: id, revision: int(1), identity: ref('GithubAutomationIdentity'), sha256: hash, status: choice('bound', 'stopping', 'closed'), expiresAt: int(), lastIssuedAt: int(), renewing: bool }))
+const publicationRetry = commands.get('attempt.publication-retry')
+publicationRetry.request.properties.phase = lit('candidate')
+publicationRetry.preconditions = [...projectActive, 'current-attempt-requirements-authority-and-confirmed-worker-exit', 'candidate-phase-requires-role-app-mode-original-dev-session-and-retained-clean-commit', 'omitted-phase-requires-matching-host-tests-review-and-existing-pr-binding']
+publicationRetry.notes = 'phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.'

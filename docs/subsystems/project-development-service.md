@@ -241,3 +241,13 @@ v1 github.connection queries and human-only github.connection.configure commands
 
 #2347 exposes typed Chief recovery health and bounded Attempt resumption metadata,
 with full history through the existing hash-bound attempt.context source pages.
+
+
+## Role App execution — 2026-11-04
+
+#2365 extends existing Attempt context paging with sdkPublication/publicationRecoveries
+and existing publication-retry with optional phase:candidate. This manager-authorized
+operation adopts retained, remotely verified SDK artifacts through original Effects;
+it creates no PR, grants no test/Review/Task completion and respects current execution
+exit/requirements/authorization. Public role/App status never returns credentials.
+[Wire contract](../openapi/flybot.openapi.json).

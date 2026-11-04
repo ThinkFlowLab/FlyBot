@@ -146,3 +146,12 @@ optional field is present in Attempt summaries, Chief facts and source context;
 legacy records may omit it. testsStarted describes configured-command invocation.
 
 #2346 types TaskView.execution as ExecutionMetadata with optional contextRestoration/contextFailure. TaskRoleRestoration distinguishes source/current physical IDs, resumed/reconstructed mode, actual checkout and archive hash. Existing attempt.context preserves history; no reset or arbitrary-file API is added.
+
+
+## Role App execution — 2026-11-04
+
+#2365 adds safe execution githubAccess identity/scope/status/expiry metadata and
+Attempt SDK publication/Effect references. Whitelists omit credentials and private
+helper paths. Original PR metadata distinguishes Dev creator and host merger identities;
+context pages retain full scoped evidence/recovery history. OpenAPI documents the
+optional candidate adoption phase of the original publication-retry command.

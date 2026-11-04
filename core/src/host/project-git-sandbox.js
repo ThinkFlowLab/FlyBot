@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 const exec = promisify(execFile)
 const inside = (root, path) => { const rel = relative(root, path); return rel && rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel) }
-export async function gitWritableRoots({ cwd, repository, developer = false }) {
+export async function gitWritableRoots({ cwd, repository, developer = false, appMode = false }) {
   if (!developer) return []
   const path = await realpath(cwd), repo = await realpath(repository)
   const gitPath = async (directory, flag) => {
@@ -13,7 +13,7 @@ export async function gitWritableRoots({ cwd, repository, developer = false }) {
     return realpath(resolve(directory, stdout.trim()))
   }
   const [gitDir, common, expected] = await Promise.all([gitPath(path, '--git-dir'), gitPath(path, '--git-common-dir'), gitPath(repo, '--git-common-dir')])
-  if (gitDir === common && inside(path, gitDir)) return []
+  if (gitDir === common && inside(path, gitDir)) return appMode ? [gitDir] : []
   if (common !== expected || !inside(join(expected, 'worktrees'), gitDir)) throw new Error('Developer Git metadata does not belong to its registered repository worktree')
   // The regular gitdir file names the current worktree, not another worker's index.
   const registered = await realpath((await readFile(join(gitDir, 'gitdir'), 'utf8')).trim())

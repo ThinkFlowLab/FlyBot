@@ -1,3 +1,4 @@
+import { roleGithubRuntime } from './project-role-github-runtime.mjs'
 // Resource-side JSONL worker. No credentials in command arguments or persistent stdin logs.
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -6,8 +7,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runHarnessTurn } from './project-harness-turn.js'
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
-const write = value => process.stdout.write(JSON.stringify(value) + '\n')
-const answers = new Map()
+let githubRuntime
+const write = value => process.stdout.write(JSON.stringify(githubRuntime ? githubRuntime.redact(value) : value) + '\n')
+const answers = new Map(), credentials = new Map()
 let controller, sessionId, settings, busy = false, shuttingDown = false
 const completedTurns = new Map()
 const permission = request => new Promise(resolve => {
@@ -20,6 +22,13 @@ async function turn(message) {
   try {
     settings ??= message.settings
     sessionId ??= settings.sessionId
+    if (settings.roleGithub && !githubRuntime) {
+      githubRuntime = await roleGithubRuntime({ metadata: settings.roleGithub, scratchDirectory: settings.scratchDirectory, env: settings.env, credential: () => new Promise((resolve, reject) => {
+        const id = randomUUID(), timer = setTimeout(() => { credentials.delete(id); reject(Error('Role authorization timed out')) }, 30000)
+        credentials.set(id, { resolve, reject, timer }); write({ type: 'github-auth-request', id })
+      }) })
+      settings = { ...settings, env: githubRuntime.env, githubAuthDirectory: githubRuntime.authDirectory }
+    }
     const emit = value => write({ ...value, ...(message.turnId ? { turnId: message.turnId } : {}) })
     const result = await runHarnessTurn({ ...settings, sessionId, protocolCorrection: message.protocolCorrection === true, prompt: message.prompt }, { emit, permission, signal: controller.signal })
     sessionId = result.sessionId
@@ -36,6 +45,7 @@ input.on('line', line => {
     const message = JSON.parse(line)
     if (message.type === 'start' || message.type === 'input') void turn(message)
     else if (message.type === 'permission') { const resolve = answers.get(message.id); answers.delete(message.id); resolve?.({ allow: message.allow === true }) }
+    else if (message.type === 'github-auth-response') { const pending = credentials.get(message.id); credentials.delete(message.id); if (pending) { clearTimeout(pending.timer); if (message.denied) pending.reject(Error('Role authority refused')); else pending.resolve(message.value) } }
     else if (message.type === 'stop') void shutdown()
   } catch { write({ type: 'failure', reason: 'Invalid worker protocol input' }) }
 })
@@ -43,6 +53,8 @@ async function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
   controller?.abort()
+  for (const value of credentials.values()) { clearTimeout(value.timer); value.reject(Error('Role credential channel closed')) }; credentials.clear()
+  if (githubRuntime) { await githubRuntime.close(); githubRuntime = null }
   for (const resolve of answers.values()) resolve({ allow: false })
   for (let n = 0; busy && n < 100; n++) await new Promise(resolve => setTimeout(resolve, 50))
   if (busy) return // No exit claim while the SDK has not settled; host retains capacity.
@@ -61,4 +73,4 @@ function sdkVersion(name) {
   } catch { /* Missing SDK is an explicit failed handshake, not a simulated version. */ }
   return null
 }
-write({ type: 'ready', receiptCorrection: 'input-correction/v1', pid: process.pid, sdk: { codex: sdkVersion('@openai/codex-sdk'), 'claude-agent': sdkVersion('@anthropic-ai/claude-agent-sdk') } })
+write({ type: 'ready', roleGithub: 'role-github/v1', receiptCorrection: 'input-correction/v1', pid: process.pid, sdk: { codex: sdkVersion('@openai/codex-sdk'), 'claude-agent': sdkVersion('@anthropic-ai/claude-agent-sdk') } })

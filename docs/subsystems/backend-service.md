@@ -132,3 +132,8 @@ Chief invocation history accepts the combined configured maximum: one initial in
 
 
 #2336 types resource lease ownership/reclamation metadata in OpenAPI. The existing project-resources surface reports the actual reservation lifecycle; no general-purpose release/force-clear endpoint is introduced.
+
+
+#2365 keeps the existing public transport and regenerates OpenAPI for role App
+status/identity metadata and candidate-phase publication recovery. No public
+credential issuance API or deployment change; see [role contract](../role-github-apps.md).

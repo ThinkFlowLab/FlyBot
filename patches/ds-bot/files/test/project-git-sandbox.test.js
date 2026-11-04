@@ -22,3 +22,11 @@ test('a registered developer receives only its Git index and objects, never shar
 test('read-only roles gain no extra writable roots, including missing or unrelated paths', async () => {
   assert.deepEqual(await gitWritableRoots({ cwd: '/not-a-workspace', repository: '/private', developer: false }), [])
 })
+test('only opt-in App developers can write their owned standalone clone Git metadata', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'flybot-app-git-sandbox-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  git(root, 'init', '-q')
+  assert.deepEqual(await gitWritableRoots({ cwd: root, repository: root, developer: true }), [])
+  assert.deepEqual(await gitWritableRoots({ cwd: root, repository: root, developer: true, appMode: true }), [await realpath(join(root, '.git'))])
+  assert.deepEqual(await gitWritableRoots({ cwd: root, repository: root, developer: false, appMode: true }), [])
+})

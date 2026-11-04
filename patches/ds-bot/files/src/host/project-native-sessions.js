@@ -119,6 +119,7 @@ export function createProjectNativeSessions(rt, { priorExit = priorScopeExited, 
       await rt.ctx.workspaceRegistry.unarchiveSession(row.sessionId)
       await authority(session)
     }
+    await rt.projectHarness?.bindNativeGithub?.(session, row)
     return { workerId: row.id, sessionId: row.sessionId }
   }
   function ownedSessions(row, bot, sessionId) {
@@ -149,7 +150,7 @@ export function createProjectNativeSessions(rt, { priorExit = priorScopeExited, 
     if (!row) return false
     if (nativeExitConfirmed(rt.state, row)) return clone(row.releaseProof)
     const bot = rt.botOf(botId), sessionId = bot && rt.chatOf(botId)
-    row.status = 'stopping'; await rt.save()
+    row.status = 'stopping'; await rt.projectHarness?.closeNativeGithub?.(row.id); await rt.save()
     try {
       if (row.hostEpoch !== hostEpoch) {
         const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId), scope = lease?.processScope ?? row.processScope
