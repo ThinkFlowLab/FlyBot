@@ -15,7 +15,7 @@ export function githubIdentityMetadata(identity) {
 export function createGithubAppProvider({ request = fetch, now = Date.now, readKey = privateCredentialFile } = {}) {
   const cache = new Map(), refreshing = new Map()
   async function resolve(settings, { repository, permissions = { contents: 'read' } } = {}) {
-    if (!validId(settings.appId) || !validId(settings.installationId) || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? '') || !Object.keys(permissions).length || Object.entries(permissions).some(([key, value]) => !['contents', 'pull_requests', 'issues', 'checks'].includes(key) || !['read', 'write'].includes(value))) throw denied('GitHub App installation scope is not configured')
+    if (!validId(settings.appId) || !validId(settings.installationId) || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? '') || !Object.keys(permissions).length || Object.entries(permissions).some(([key, value]) => !['contents', 'pull_requests', 'issues', 'checks', 'actions'].includes(key) || !['read', 'write'].includes(value) || key === 'actions' && value !== 'read')) throw denied('GitHub App installation scope is not configured')
     let key, material
     try {
       material = await readKey(settings.privateKeyFile)

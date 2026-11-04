@@ -56,3 +56,7 @@ The compact task execution status projection now delegates to the shared develop
 ## GitHub App credential adaptation — #2311
 
 Project reads use the selected gh-cli/App connection and operation-specific installation permissions, verify current authorization before every request and withhold results after scope changes. Personal reads reject App credentials. Responses include sanitized actual provider identity; see [GitHub providers](project-github-automation.md).
+
+## Paged evidence (#2378)
+
+reviews/checks accept page (1–1000000); checks optionally includeStatuses. Response pagination=bounded-page exposes independent page metadata and a response sourceSha256. Check IDs, head SHA/current flag, App ID and status/conclusion remain distinct. A full page is incomplete, later pages cannot alone establish completeness; statuses and check pages never grant a green verdict. Head is reread after checks. External content stays data, and current project/identity checks still surround asynchronous reads.

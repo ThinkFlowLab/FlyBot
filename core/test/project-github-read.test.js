@@ -116,3 +116,21 @@ test('App project reads use minimal scoped installation tokens and never imperso
   await assert.rejects(read({ projectId: 'p', scope: 'personal' }, { memberId: 'alice' }), /independent user/)
   f.suspend(); await assert.rejects(read({ projectId: 'p' }, { memberId: 'alice' }), /installation/); assert.equal(calls, 1)
 })
+
+test('checks expose independently paged current-SHA checks/statuses and never promote an incomplete page', async () => {
+  const f = setup(), sha = 'a'.repeat(40), urls = []
+  const read = createProjectGithubRead(f.rt, { identity: async () => ({ login: 'automation', token: 'private-token' }), request: async url => {
+    urls.push(url)
+    if (url.endsWith('/pulls/1')) return Response.json({ number: 1, head: { sha }, base: { ref: 'main' }, state: 'open' })
+    if (url.includes('check-runs')) return Response.json({ check_runs: Array.from({ length: 20 }, (_, id) => ({ id, name: 'ci-' + id, head_sha: id ? sha : 'b'.repeat(40), status: 'completed', conclusion: 'success', app: { id: 8 } })) })
+    if (url.includes('/statuses?')) return Response.json([{ id: 90, context: 'build', state: 'failure' }])
+    throw Error('unexpected endpoint')
+  } })
+  const result = await read({ projectId: 'p', operation: 'checks', number: 1, page: 2, includeStatuses: true }, { memberId: 'alice' })
+  assert.equal(result.pagination, 'bounded-page'); assert.equal(result.page.checks.nextPage, 3)
+  assert.equal(result.page.statuses.hasMore, false); assert.equal(result.page.statuses.complete, false)
+  assert.equal(result.data.checks[0].current, false); assert.equal(result.data.statuses[0].state, 'failure')
+  assert.equal(result.data.evidenceComplete, false); assert.equal(result.sourceSha256.length, 64)
+  assert.ok(urls.some(url => url.includes('page=2'))); assert.ok(!JSON.stringify(result).includes('private-token'))
+  await assert.rejects(read({ projectId: 'p', operation: 'checks', number: 1, page: 0 }, { memberId: 'alice' }), /page/)
+})

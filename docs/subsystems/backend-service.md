@@ -156,3 +156,7 @@ before binding a source. Chief recovery facts retain specific blocker references
 ## Explicit successor continuation (#2377)
 
 The API inventory describes attempt.continuation-state and the optional task.run continuation object, preserving configure authority, current snapshots, explicit baseline choice and cancelled-predecessor semantics.
+
+## Reviewer evidence API (#2378)
+
+The GitHub read contract adds page/includeStatuses and independent completeness/source-hash metadata. Actions/log access remains under explicit role Apps/resource policy; no new login service, generic URL proxy or Review store is introduced.

@@ -74,3 +74,7 @@ trusted. Merger identity is distinct from Dev creator identity and remains selec
 host App policy. End/revoke/unknown execution stops renewal; expiry metadata does not
 prove remote revocation. Wrappers are not branch-scoped GitHub credentials or a new
 OS trust boundary. See [configuration and recovery](../role-github-apps.md).
+
+## Reviewer Actions access (#2378)
+
+Reviewer installation grants add actions:read only; workflows cannot be rerun, dispatched or edited through git/gh wrappers. gh run view/list and existing scoped gh api support autonomous evidence reads. Downloads outside the default GitHub hosts require an explicit bounded exact downloadHosts list under roleGithub. Provider/tool/network/permission failures have safe distinct diagnostics, with no personal-token fallback or provider stderr disclosure. Publication status distinguishes blocked-on-binding from the current candidate binding; metadata is not Review evidence.

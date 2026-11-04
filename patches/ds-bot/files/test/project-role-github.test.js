@@ -160,3 +160,27 @@ test('a stop or connection revocation during grant audit commit prevents late cr
     await assert.rejects(f.github.issue(f.session, f.worker, metadata.sha256), /revoked/)
   }
 })
+
+test('Reviewer may inspect scoped Actions evidence but cannot execute or change a workflow', () => {
+  const scope = { repository: 'org/repo', policyRole: 'reviewer' }
+  assert.equal(validateRoleCommand(scope, 'gh', ['run', 'view', '123', '--json', 'jobs,headSha,conclusion']), 'gh')
+  assert.equal(validateRoleCommand(scope, 'gh', ['run', 'view', '123', '--log']), 'gh')
+  for (const args of [['run', 'rerun', '123'], ['workflow', 'run', 'build'], ['run', 'view', '123', '--repo', 'foreign/private']]) assert.throws(() => validateRoleCommand(scope, 'gh', args))
+})
+
+test('Reviewer download hosts and Actions grants stay explicit and scoped', () => {
+  const f = fixture(), config = f.rt.config.projectRepositories['org/repo'].roleGithub
+  assert.equal(roleGithubSelection(f.rt, f.project, 'reviewer').metadata.permissions.actions, 'read')
+  config.downloadHosts = ['productionresultssa1.blob.core.windows.net']
+  assert.deepEqual(roleGithubSelection(f.rt, f.project, 'reviewer').metadata.downloadHosts, config.downloadHosts)
+  for (const host of ['*', '*.blob.core.windows.net', 'example.com', 'api.github.com/evil', 'https://github.com']) {
+    config.downloadHosts = [host]; assert.throws(() => roleGithubSelection(f.rt, f.project, 'reviewer'), /download hosts/)
+  }
+})
+
+test('GitHub failure categories reveal recovery conditions without private command output', async () => {
+  const { githubCommandFailure } = await import('../src/host/project-role-github-cli.mjs')
+  for (const [stderr, expected] of [['HTTP 401 private payload', 'authentication-required'], ['HTTP 403 private payload', 'app-permission-denied'], ['HTTP 404 private payload', 'repository-or-object-unavailable'], ['blocked-by-allowlist private payload', 'network-unavailable']]) assert.equal(githubCommandFailure({ stderr }, 'execute'), expected)
+  assert.equal(githubCommandFailure({ code: 'ENOENT' }, 'execute'), 'tool-unavailable')
+  assert.equal(githubCommandFailure({}, 'credential'), 'credential-unavailable')
+})

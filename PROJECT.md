@@ -1,6 +1,9 @@
 # FlyBot — Project State
 
 
+#2378 reuses role Apps for bounded PR/CI reads and hash-verified host logs in Reviewer scratch; absence or incomplete pages are not verification success.
+
+
 #2375 adds explicit exit-proven claim retirement through existing pools/Effects; preserve drafts, pending results and unknown writes. No cancellation or automatic routing.
 
 #2377 makes successor baseline choice explicit and durable; preserve cancelled history, Task-role context and draft lineage without inventing PR or test evidence.
@@ -221,28 +224,16 @@ cutover identities, unknown-exit barriers and private-context publication approv
 Original host/service deployment and real-provider acceptance remain separate.
 See canonical Task, storage, service, compatibility and deployment documentation.
 
-### Remaining backend convergence — #2292
+### Current delivery guarantees
 
-Task execution pins its associated repository independently of Project defaults; local repository-free decision Tasks preserve normal Sessions/handoff/Chief acceptance without inventing code/tests. Actual Codex validation exposed malformed Chief requirement output: types are now explicit, failed admission is visibly blocked and valid retry retains history. Release Tasks now separate explicit human/watch publication authority, durable external observation and Chief closure; unknown results reconcile without repeated publication. Attempt logs and legacy agent history now return bounded hash-bound pages with lossless source references. Initial execution pins an approved active logical role/capability, catalog revision and Task requirements revision. Default developer remains compatible; a unique custom developer can replace it, while ambiguity needs an explicit target. Chief start Effects, capacity queues and Attempts retain the choice. Catalog/requirements changes block pending work for explicit recovery; active Session conventions remain frozen.
+Tasks pin their associated repository and approved role/requirements revisions;
+repository-free decisions do not invent code or tests. Release publication needs
+explicit authority, observed Effects and Chief closure. Large histories use bounded
+hash-bound pages. Missing runner/dependencies are environment failures, not assertion
+failures. Receipts use same-context bounded correction and never acknowledge stale
+inputs. Recovery preserves exact exit proof, candidate/Session/history and permits
+evidence-supported verification continuation. Reviewer approve, host merge, signed
+forge review, release/deployment and Chief acceptance remain distinct. Operations
+consultation uses scoped personal agents; watch grants no host privileges.
 
-#2334 follow-up (updated issue): shell 127 / missing test runners are environment
-blockers. testsStarted records command invocation; stage distinguishes runner startup
-from preparation and tests. Nested Node test markers do not enter host verification.
-
-#2338 preflights input receipts before host side effects and returns correctable
-errors to the original role/Chief Session. Frozen proposals, bounded tool-free
-correction and durable receipts preserve work; stale/revoked input stays denied.
-
-#2347 recovers birth-proven unmanaged native Chief invocations, preserves unknown
-external execution, and admits explicit sealed-candidate verification continuation
-under current authority/context gates. No live rollout or unknown-exit override.
-
-#2331 permits a valid current-SHA Reviewer approval to enter an explicitly scoped
-host merge Effect. Current branch/check/identity/exit gates remain; actual merge
-is separate from Chief Task completion, signed forge review, release and deployment.
-
-#2342 keeps autonomous progress as Chief guidance under configurable action/time
-budgets. Explicit human-selected operations contacts receive only scoped Project
-assistance; replies bind the original question, requirements, generation and
-candidate. Original inbox/Effects and schedules handle notification compensation;
-watch never grants host privileges. See [assistance](docs/chief-assistance.md).
+Detailed dated implementation checkpoints are [preserved verbatim](docs/history/2026-11-04-reliability-memory-checkpoints.md); current contracts remain in the owned subsystem docs.

@@ -1,4 +1,5 @@
 // Bounded, repository-scoped GitHub reads. Never hand credentials or arbitrary URLs to models.
+import { createHash } from 'node:crypto'
 import { ownEntry } from './store.js'
 import { resolveGithubIdentity } from './project-github.js'
 import { projectGithubSettings } from './project-github-connections.js'
@@ -19,6 +20,7 @@ export function createProjectGithubRead(rt, { identity = resolveGithubIdentity, 
   async function read(body, actor) {
     const project = { ...rt.requireProjectAccess(actor, String(body.projectId ?? '')) }
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(project.repository ?? '')) throw refuse('Project repository is unavailable')
+    if (body.page !== undefined && (!Number.isSafeInteger(body.page) || body.page < 1 || body.page > 1000000)) throw refuse('Invalid GitHub evidence page')
     if (body.scope !== undefined && !['personal', 'project'].includes(body.scope)) throw refuse('Unknown GitHub read scope')
     if ((rt.platformIdentityEnabled || backgroundActors.has(actor)) && !await validActor(actor, project)) throw refuse('Human platform session was revoked')
     const operation = body.operation ?? 'issues'
@@ -53,7 +55,13 @@ export function createProjectGithubRead(rt, { identity = resolveGithubIdentity, 
       await validate()
       return JSON.parse(text)
     }
-    let data
+    let data, pagination = 'bounded-first-page', pageInfo
+    const page = body.page ?? 1
+    const pageResult = (rows, source) => {
+      if (!Array.isArray(rows) || rows.length > 20) throw refuse('GitHub evidence page is invalid')
+      pagination = 'bounded-page'; pageInfo ??= {}; pageInfo[source] = { page, hasMore: rows.length === 20, nextPage: rows.length === 20 ? page + 1 : null, complete: page === 1 && rows.length < 20, authority: 'one page is not a complete CI or Review verdict' }
+      return rows
+    }
     const summary = row => ({ number: row.number, title: bounded(row.title), state: row.state, url: row.html_url, updatedAt: row.updated_at, isPullRequest: Boolean(row.pull_request) })
     if (operation === 'thread-events') {
       const pull = body.threadKind === 'pull', root = await get(`/${pull ? 'pulls' : 'issues'}/${number}`)
@@ -77,22 +85,29 @@ export function createProjectGithubRead(rt, { identity = resolveGithubIdentity, 
       if (pull) {
         await page('reviews', `/pulls/${number}/reviews`, row => ({ ...comment(row), modifiedAt: row.submitted_at ?? null, state: row.state }))
         await page('inline', `/pulls/${number}/comments`, comment)
-        await page('checks', `/commits/${root.head.sha}/check-runs`, row => ({ modifiedAt: row.completed_at ?? row.started_at, sha: row.head_sha, state: row.status, conclusion: row.conclusion, url: row.html_url, text: JSON.stringify({ name: row.name, status: row.status, conclusion: row.conclusion, output: row.output }) }))
+        await page('checks', `/commits/${root.head.sha}/check-runs`, row => ({ modifiedAt: row.completed_at ?? row.started_at, sha: row.head_sha, state: row.status, conclusion: row.conclusion, url: row.html_url, text: JSON.stringify({ name: row.name, current: row.head_sha === root.head.sha, status: row.status, conclusion: row.conclusion, output: row.output }) }))
         if ((await get(`/pulls/${number}`)).head?.sha !== root.head.sha) throw refuse('GitHub PR head moved during source polling')
       }
       data = { threadKind: body.threadKind, number, events, pages, headSha: pull ? root.head.sha : null, observation: 'bounded-rotating-pages; intermediate unseen edits are not recoverable' }
     } else if (operation === 'issues' || operation === 'pulls') data = (await get(`/${operation}?state=open&per_page=20&sort=updated&direction=desc`)).slice(0, 20).map(summary)
-    else if (operation === 'reviews') data = (await get(`/pulls/${number}/reviews?per_page=20`)).slice(0, 20).map(row => ({ id: row.id, state: row.state, commit: row.commit_id, author: row.user?.login, url: row.html_url, body: bounded(row.body) }))
+    else if (operation === 'reviews') data = pageResult(await get(`/pulls/${number}/reviews?per_page=20&page=${page}`), 'reviews').filter(row => row.state !== 'PENDING' && row.submitted_at).map(row => ({ id: row.id, state: row.state, commit: row.commit_id, author: row.user?.login, url: row.html_url, body: bounded(row.body), submittedAt: row.submitted_at }))
     else {
       const pr = await get(`/pulls/${number}`)
       if (!/^[a-f0-9]{40}$/.test(pr.head?.sha ?? '')) throw refuse('GitHub did not return a full candidate SHA')
       data = { ...summary(pr), sha: pr.head.sha, base: pr.base?.ref, draft: pr.draft, merged: pr.merged, hold: (pr.labels ?? []).some(label => label.name === 'hold') }
       if (operation === 'checks') {
-        const checks = await get(`/commits/${pr.head.sha}/check-runs?per_page=20`)
-        data.checks = (checks.check_runs ?? []).slice(0, 20).map(row => ({ name: row.name, status: row.status, conclusion: row.conclusion, url: row.html_url }))
+        const checks = await get(`/commits/${pr.head.sha}/check-runs?per_page=20&page=${page}`)
+        data.checks = pageResult(checks.check_runs ?? [], 'checks').map(row => ({ id: row.id, sha: row.head_sha, name: row.name, current: row.head_sha === pr.head.sha, status: row.status, conclusion: row.conclusion, url: row.html_url, appId: row.app?.id ?? null }))
+        data.statuses = []; data.statusesFetched = false
+        if (body.includeStatuses === true) {
+          data.statuses = pageResult(await get(`/commits/${pr.head.sha}/statuses?per_page=20&page=${page}`), 'statuses').map(row => ({ id: row.id, sha: row.sha, context: row.context, state: row.state, url: row.target_url, createdAt: row.created_at, creator: row.creator?.login ?? null }))
+          data.statusesFetched = true
+        }
+        data.evidenceComplete = false // Agent must reconcile pages, check sources and current policy; absence is never success.
+        if ((await get(`/pulls/${number}`)).head?.sha !== pr.head.sha) throw refuse('GitHub PR head moved during evidence query')
       }
     }
-    return { repository: project.repository, operation, scope, executorLogin: selected.login, identity: githubIdentityMetadata(selected), at: Date.now(), limit: 20, pagination: 'bounded-first-page', data }
+    return { repository: project.repository, operation, scope, executorLogin: selected.login, identity: githubIdentityMetadata(selected), at: Date.now(), limit: 20, pagination, ...(pageInfo ? { page: pageInfo, sourceSha256: createHash('sha256').update(JSON.stringify(data)).digest('hex') } : {}), data }
   }
   read.background = async (body, actor) => {
     if (body.scope === 'personal') throw refuse('Background Source reads require Project automation credentials')
