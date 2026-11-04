@@ -1163,7 +1163,7 @@ window.__ModuleLoader__.load({
     // #876: Invite by link in a local group's Members card. The host makes the link (Bot Social records
     // it, so a stranger can join); this row mints, shows the QR and the link, counts down and withdraws.
     // Several people may each get a link (#878): the newest is shown, and a joined one stops showing.
-    function LocalInviteRow({ room } = {}) {
+    function LocalInviteRow({ room, roster } = {}) {
       useStyles()
       const roomId = room?.id
       const [invite, setInvite] = useState(null)
@@ -1202,6 +1202,13 @@ window.__ModuleLoader__.load({
       // Only a link an older Bot Social still dates counts down.
       useEffect(() => (invite?.expiresAt ? everySecond(() => setTick(n => n + 1)) : undefined), [invite?.expiresAt])
       if (!roomId) return null
+      // #2418: every control this row draws writes (mint, revoke, revoke-all, seat), and a read-only
+      // window can only have them refused, so it reads the reason instead.
+      const locked = readOnlyReason(roster)
+      if (locked) {
+        return h('div', { className: 'fs-invite', 'data-flybot': 'room-invite' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-readonly', role: 'status' }, locked))
+      }
       const run = async (fn) => {
         setBusy(true)
         setNote(null)
@@ -3490,13 +3497,20 @@ window.__ModuleLoader__.load({
         return h('div', { 'data-flybot': 'bot-social-details' },
           h(FriendChatSettings, { bot, actions, roster }))
       }
-      return h(OwnBotSharing, { bot })
+      return h(OwnBotSharing, { bot, roster })
     }
 
     // The host draws the Sharing title (#406). People with access tells the invite hint whether
     // anyone has this Bot yet, so the hint mentions Revoke only then (#499).
-    function OwnBotSharing({ bot } = {}) {
+    function OwnBotSharing({ bot, roster } = {}) {
       const [granted, setGranted] = useState(0)
+      // #2418: all three panels below write (create-invite, share-with-friend, revoke-grant), and a
+      // read-only window can only have them refused, so it reads the reason instead.
+      const locked = readOnlyReason(roster)
+      if (locked) {
+        return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'sharing-readonly', role: 'status' }, locked))
+      }
       return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
         h(InviteToBot, { bot, revocable: granted > 0 }),
         h(ShareWithFriend, { bot }),
