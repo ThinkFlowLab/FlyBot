@@ -987,3 +987,6 @@ Store builds safe per-Project event projections from each queued immutable snaps
 The [compatibility contract](project-compatibility.md) inventories original entrypoints and persistent IDs. Store records the legacy boundary only after Effects recovery; Task card constructors/drivers respect it. Original personal Chief and group channels stay in use. Associated native groups require both original history ACL and current Project membership, without importing private history.
 
 #2292 routes explicit release request/reconciliation/status through the existing authenticated channel and restricted gateway. Read-only hosts admit status only; Task result-ready for a release requires Chief approval plus committed verified provider proof, not a PR or model claim. See [release contract](project-releases.md).
+
+
+#2336 connects Workflow admission abort to existing carrier release and claim-scoped reservation rollback. Failure before a returned workerId no longer skips cleanup; unknown execution remains held. See [resources](project-resources.md).

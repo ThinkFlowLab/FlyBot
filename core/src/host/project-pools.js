@@ -415,6 +415,7 @@ export function createProjectPools(rt) {
         if (!failedClaim) continue
         failedClaim.exitConfirmed = false
         if (failedClaim.workerId) { try { failedClaim.exitConfirmed = await adapter.release(failedClaim.workerId) } catch { failedClaim.exitConfirmed = false } }
+        else if (adapter.abort) { try { failedClaim.exitConfirmed = await adapter.abort({ task, claim: failedClaim, reason }) } catch { /* Retain unconfirmed preparation occupancy. */ } }
         await serial(async () => {
           const c = task.collaboration
           if (c.claim?.id !== token.id) return

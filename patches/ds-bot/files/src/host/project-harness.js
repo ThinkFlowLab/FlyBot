@@ -72,6 +72,27 @@ export function createProjectHarness(rt) {
     return JSON.parse(text)
   }
   async function spawn(spec) {
+    const workspace = spec.preparedChief?.workspace ?? rt.projectDelivery.ownsWorkspace(spec.executionProjectId, spec.executionWorkDir)
+    const session = spec.preparedChief?.session ?? (workspace && rt.projectDelivery.sessionFor(workspace))
+    let preparation
+    try {
+      if (session?.resourceLease) preparation = await rt.projectResources.beginPreparation(session.resourceLease.id, session.resourceLease.generation)
+      const id = await spawnPrepared(spec)
+      if (preparation) { await rt.projectResources.endPreparation(preparation); preparation = null }
+      return id
+    }
+    catch (error) {
+      if (preparation) { const token = preparation; preparation = null; try { await rt.projectResources.endPreparation(token) } catch { /* Keep unconfirmed preparation capacity; preserve the admission failure. */ } }
+      const lease = session?.resourceLease
+      if (lease) {
+        const rows = Object.values(workers()).filter(row => row.leaseId === lease.id && row.generation === lease.generation)
+        for (const row of rows) if (active.has(row.id)) { try { await release(row.id) } catch { /* Unknown external exit retains capacity. */ } }
+        try { await rt.projectResources.abortReservation(lease.id, lease.generation, `SDK admission failed: ${error.code ?? 'bot/harness'}`) } catch { /* Preserve the original failure and any unresolved reservation. */ }
+      }
+      throw error
+    }
+  }
+  async function spawnPrepared(spec) {
     const chief = spec.preparedChief
     if (chief && !rt.projectAgents.isDelegationActive(chief.agentId, chief.delegationId)) throw refuse('Chief delegation is no longer active')
     if (!spec.executionWorkDir && !chief) return null
@@ -103,7 +124,7 @@ export function createProjectHarness(rt) {
     const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, chiefInvocation: chief?.runId ? rt.state.projectExecutions?.[chief.runId]?.invocation ?? null : null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId,
-      cwd: workspace.path, scratchDirectory, status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
+      cwd: workspace.path, scratchDirectory, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
     if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v2', definitionKey, ...(previous ? { backendSessionId: previous.sessionId, continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
     else if (chief) Object.assign(row, { logicalSessionId: chief.agentId, bindingKey, ...(chief.resumeSessionId ? { backendSessionId: chief.resumeSessionId, continuedFrom: chief.previousWorkerId } : {}) })
     setEntry(workers(), id, row)
@@ -121,8 +142,10 @@ export function createProjectHarness(rt) {
       row.contextArchive = { sha256: session.context.archiveSha256, file: source }
     }
     row.eventLog = join(directory, `${evidenceName}-sdk.jsonl`)
+    await rt.projectResources.fenceSpawn(row.leaseId, row.generation, id)
     const process = rt.projectResources.startProcess(row.projectId, row.resourceId, { argv: ['node', workerPath], cwd: workspace.path })
     const control = { process, chief, contextBudget, resumeSessionId: chief?.resumeSessionId ?? previous?.sessionId, continuedPolicyHash: previous?.policySha256, archivePath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
+    row.spawnPhase = 'spawned'
     active.set(id, control)
     let readyResolve, readyReject
     control.handshake = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject })

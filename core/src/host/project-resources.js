@@ -18,6 +18,8 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
   const { state, config } = rt
   const leases = () => (state.projectResourceLeases ??= {})
   const resources = () => config.projectResources ?? {}
+  const preparing = new Map()
+  let effectStore
   let recovered = false
   let tail = Promise.resolve()
   const serial = fn => { const result = tail.then(fn, fn); tail = result.then(() => {}, () => {}); return result }
@@ -80,7 +82,110 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     }
     return pending
   }
+  const workerRecords = lease => [...Object.values(state.projectHarnessWorkers ?? {}), ...Object.values(state.projectNativeWorkers ?? {})].filter(row => row.leaseId === lease.id)
+  function unbound(lease) {
+    return !preparing.has(lease.id) && lease.preparation?.status !== 'active' && !lease.worker && !lease.processScope && !workerRecords(lease).length && !Object.values(state.projectAttempts?.[lease.attemptId]?.roleSessions ?? {}).some(row => row.resourceLease?.id === lease.id && row.botId) && !Object.values(state.bots ?? {}).some(row => row.resourceLease?.id === lease.id || row.ephemeral && row.attemptId === lease.attemptId && row.role === lease.role)
+  }
+  function retiredReservation(lease) {
+    const attempt = state.projectAttempts?.[lease.attemptId], owner = lease.reservationOwner
+    if (!attempt || attempt.projectId !== lease.projectId) return false
+    if (['returned', 'cancelled', 'accepted', 'failed'].includes(attempt.status) || attempt.supersededBy) return true
+    if (!owner) return false
+    const task = state.tasks?.[owner.taskId], claim = task?.collaboration?.claim
+    return !task || task.projectId !== lease.projectId || task.deliveryAttemptId !== lease.attemptId || !claim || claim.id !== owner.claimId || claim.generation !== owner.generation || task.collaboration.generation !== owner.generation || claim.status !== 'active'
+  }
+  async function beginPreparation(id, generation) {
+    const lease = requireLease(id, generation)
+    if (lease.status === 'released' || retiredReservation(lease) || preparing.has(id) || lease.preparation?.status === 'active') throw failure('Resource preparation is released, stale or already active')
+    const token = { leaseId: id, generation, id: randomUUID() }, previous = lease.preparation
+    preparing.set(id, token.id)
+    try {
+      lease.preparation = { ...token, status: 'active', processScope: await captureProcessScope(), at: Date.now() }
+      if (rt.projectEffects) {
+        effectHandlers()
+        const intent = rt.projectEffects.stage({ kind: 'resource.preparation', key: `${id}:${token.id}`, projectId: lease.projectId, payload: token })
+        try { await rt.projectEffects.persist(intent) } catch (error) { rt.projectEffects.discardUncommitted(intent); throw error }
+      } else await rt.save()
+      if (lease.status === 'released' || retiredReservation(lease)) throw failure('Resource preparation owner changed before commands')
+      return token
+    } catch (error) {
+      preparing.delete(id)
+      if (previous === undefined) delete lease.preparation; else lease.preparation = previous
+      throw error
+    }
+  }
+  async function endPreparation(token) {
+    const lease = requireLease(token.leaseId, token.generation)
+    if (preparing.get(lease.id) !== token.id || lease.preparation?.id !== token.id) throw failure('Preparation completion is stale')
+    lease.preparation.status = 'settled'; lease.preparation.finishedAt = Date.now()
+    try { await rt.save() } catch (error) { lease.preparation.status = 'active'; throw error }
+    preparing.delete(lease.id)
+  }
+  async function abortReservation(id, generation, reason) {
+    const lease = requireLease(id, generation)
+    if (lease.status === 'released') return true
+    if (preparing.has(id) || lease.preparation?.status === 'active') return false
+    const records = workerRecords(lease)
+    let changedSession, beforeSession
+    const before = structuredClone(lease), worker = records.length === 1 && records[0], beforeWorker = worker && structuredClone(worker)
+    if (!unbound(lease)) {
+      const row = records.length === 1 && records[0]
+      // Only the new bind-before-spawn protocol proves that registration never crossed spawn.
+      if (!row || row.spawnPhase !== 'registered' || row.status !== 'prepared' || row.executionStartedAt != null || lease.worker?.kind !== 'sdk' || lease.worker.handle !== row.id || row.generation !== generation) return false
+      const proof = { kind: 'sdk-worker-not-started', workerId: row.id, generation, at: Date.now() }
+      row.spawnPhase = 'aborted'; row.status = 'released'; row.releasedAt = proof.at; row.releaseProof = proof
+      lease.status = 'released'; lease.releasedAt = proof.at; lease.releaseProof = proof
+      const attempt = state.projectAttempts?.[row.attemptId], session = attempt?.roleSessions?.[row.role]
+      if (session?.botId === row.id) { changedSession = session; beforeSession = structuredClone(session); session.status = 'released'; session.releasedAt = proof.at }
+    } else {
+      lease.status = 'released'; lease.releasedAt = Date.now(); lease.releaseProof = { kind: 'unbound-reservation-release', at: lease.releasedAt }
+    }
+    lease.reclamation = { reason: String(reason).slice(0, 400), at: Date.now(), owner: structuredClone(lease.reservationOwner ?? null) }
+    let intent
+    try {
+      if (rt.projectEffects) {
+        effectHandlers()
+        intent = rt.projectEffects.stage({ kind: 'resource.reclaim', key: `${id}:${generation}`, projectId: lease.projectId, payload: { leaseId: id, generation } })
+        lease.reclamation.effect = intent; await rt.projectEffects.persist(intent)
+      } else await rt.save()
+    } catch (error) {
+      if (!intent || rt.projectEffects.discardUncommitted(intent)) {
+        for (const key of Object.keys(lease)) delete lease[key]
+        Object.assign(lease, before)
+        if (worker) { for (const key of Object.keys(worker)) delete worker[key]; Object.assign(worker, beforeWorker) }
+        if (changedSession) { for (const key of Object.keys(changedSession)) delete changedSession[key]; Object.assign(changedSession, beforeSession) }
+      }
+      throw error
+    }
+    rt.projectScheduler?.wake()
+    return true
+  }
+  async function fenceSpawn(id, generation, workerId) {
+    const lease = requireLease(id, generation), row = state.projectHarnessWorkers?.[workerId]
+    if (lease.status !== 'running' || !row || row.spawnPhase !== 'registered' || lease.worker?.handle !== workerId || row.leaseId !== id || row.generation !== generation || retiredReservation(lease)) throw failure('Resource startup reservation is released, stale or retired')
+    row.spawnPhase = 'starting'
+    try {
+      if (rt.projectEffects) {
+        effectHandlers()
+        const token = rt.projectEffects.stage({ kind: 'resource.spawn', key: `${id}:${generation}:${workerId}`, projectId: lease.projectId, payload: { leaseId: id, generation, workerId } })
+        row.spawnEffect = token
+        try { await rt.projectEffects.persist(token) } catch (error) { if (rt.projectEffects.discardUncommitted(token)) row.spawnPhase = 'registered'; throw error }
+      } else await rt.save()
+    } catch (error) { if (row.spawnPhase === 'starting') row.spawnPhase = 'registered'; throw error } // The caller has not crossed external spawn when the fence itself throws.
+    requireBinding(lease.projectId, lease)
+    if (lease.status !== 'running' || row.spawnPhase !== 'starting' || retiredReservation(lease)) throw failure('Resource startup changed before external spawn')
+  }
+  function effectHandlers() {
+    if (!rt.projectEffects || rt.projectEffects === effectStore) return
+    rt.projectEffects?.register('resource.spawn', { run: row => ({ workerId: row.payload.workerId, status: 'spawn-fenced' }) }, { replace: true })
+    rt.projectEffects.register('resource.preparation', { run: row => ({ leaseId: row.payload.leaseId, status: 'preparation-fenced' }) }, { replace: true })
+    rt.projectEffects.register('resource.reclaim', { run: row => ({ leaseId: row.payload.leaseId, status: 'reclaimed-before-spawn' }) }, { replace: true })
+    effectStore = rt.projectEffects
+  }
+  effectHandlers()
   async function reserve(request) {
+    const owner = request.reservationOwner
+    if (owner && (typeof owner.taskId !== 'string' || typeof owner.claimId !== 'string' || !Number.isSafeInteger(owner.generation) || owner.generation < 1 || owner.sessionId !== undefined && owner.sessionId !== request.sessionKey)) throw failure('Invalid reservation ownership')
     const existing = Object.values(leases()).find(row => row.sessionKey === request.sessionKey)
     if (existing) {
       if (existing.projectId !== request.projectId || existing.attemptId !== request.attemptId || existing.role !== request.role || existing.harness !== request.harness || existing.status === 'released') throw failure('Execution resource Session key is already bound or released')
@@ -89,19 +194,28 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     const selected = select(request)
     const lease = { id: `resource-lease-${randomUUID()}`, generation: 1, projectId: request.projectId, attemptId: request.attemptId, role: request.role,
       sessionKey: request.sessionKey, purpose: request.purpose ?? 'execution', resourceId: selected.id, harness: request.harness, principalId: rt.readProject(request.projectId).ownerUserId, runtimeUser: selected.item.type === 'docker' ? selected.item.user : `uid:${process.getuid?.() ?? 'unknown'}`,
-      bindingHash: bindingHash(selected.item), status: 'reserved', createdAt: Date.now() }
+      ...(request.reservationOwner ? { reservationOwner: structuredClone(request.reservationOwner) } : {}), bindingHash: bindingHash(selected.item), status: 'reserved', createdAt: Date.now() }
     setEntry(leases(), lease.id, lease)
-    await rt.save()
+    try { await rt.save() } catch (error) {
+      // No caller received this reservation, so no external startup was authorized.
+      lease.status = 'released'; lease.releasedAt = Date.now(); lease.releaseProof = { kind: 'unbound-reservation-release', at: lease.releasedAt }; lease.reclamation = { reason: 'Initial reservation save failed before admission returned', at: lease.releasedAt }
+      throw error
+    }
     return structuredClone(lease)
   }
   async function reserveRoles(projectId, attemptId, definitions) {
     plan(projectId, definitions)
     const reserved = {}
-    for (const role of definitions?.roles ?? []) {
-      if (role.role === 'chief' || !role.execution?.resourceIds?.length) continue
-      reserved[role.role] = await reserve({ projectId, attemptId, role: role.role, sessionKey: `${attemptId}:${role.role}`, ...role.execution })
+    try {
+      for (const role of definitions?.roles ?? []) {
+        if (role.role === 'chief' || !role.execution?.resourceIds?.length) continue
+        reserved[role.role] = await reserve({ projectId, attemptId, role: role.role, sessionKey: `${attemptId}:${role.role}`, ...role.execution })
+      }
+      return reserved
+    } catch (error) {
+      for (const lease of Object.values(reserved)) { try { await abortReservation(lease.id, lease.generation, 'Batch admission failed before returning reservations') } catch { /* Reconciliation retains any uncommitted cleanup. */ } }
+      throw error
     }
-    return reserved
   }
   function requireLease(id, generation) {
     const lease = ownEntry(leases(), id)
@@ -111,8 +225,10 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
   async function markStarted(id, generation, worker) {
     const lease = requireLease(id, generation)
     if (lease.status === 'released') throw failure('Execution resource lease was released')
+    if (retiredReservation(lease)) throw failure('Execution reservation owner is no longer current')
     if (lease.worker && JSON.stringify(lease.worker) !== JSON.stringify(worker)) throw failure('Execution resource worker is already bound')
     const scope = setting(lease.projectId, lease.resourceId).type === 'local' ? await captureProcessScope() : null
+    if (lease.status === 'released' || retiredReservation(lease)) throw failure('Execution reservation changed before binding')
     lease.worker = structuredClone(worker); lease.status = 'running'
     if (scope) lease.processScope = scope
     await rt.save()
@@ -126,7 +242,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     const supervisor = worker?.kind === 'native' && supervisorProofMatches(scope, confirmation?.proof) && await priorExit(scope)
     if (requireLease(id, generation) !== lease || lease.worker !== worker || lease.processScope !== scope) throw failure('Execution resource binding changed during exit inspection')
     if (lease.status === 'released') return
-    const confirmed = supervisor || !worker || worker.kind === 'native' && !ownEntry(state.bots ?? {}, worker.botId) && native?.leaseId === lease.id && nativeExitConfirmed(state, native) || worker.kind !== 'native' && typeof worker.handle === 'string' && worker.handle.length > 0 && confirmation?.handle === worker.handle && confirmation?.exited === true
+    const confirmed = supervisor || !worker && unbound(lease) || worker.kind === 'native' && !ownEntry(state.bots ?? {}, worker.botId) && native?.leaseId === lease.id && nativeExitConfirmed(state, native) || worker.kind !== 'native' && typeof worker.handle === 'string' && worker.handle.length > 0 && confirmation?.handle === worker.handle && confirmation?.exited === true
     lease.status = confirmed ? 'released' : 'stopping'
     if (confirmed) { lease.releasedAt = Date.now(); lease.releaseProof ??= confirmation?.proof ?? native?.releaseProof ?? { kind: worker ? 'host-confirmed-worker-exit' : 'unbound-reservation-release', at: lease.releasedAt } }
     await rt.save()
@@ -166,7 +282,16 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
       if (lease.processScope?.hostPid === process.pid) {
         if (lease.worker?.kind === 'native' && rt.projectDelivery?.nativeSessions?.currentHost(lease.worker.botId) || lease.worker?.kind === 'sdk' && rt.projectHarness?.hasController(lease.worker.handle) || lease.worker?.kind === 'native-turn' && rt.projectAgents?.hasExchange(lease.worker.handle)) continue
       }
-      if (!lease.worker) { if (lease.status === 'unreachable') await release(lease.id, lease.generation); continue }
+      if (lease.preparation?.status === 'active') {
+        if (preparing.has(lease.id)) continue
+        if (setting(lease.projectId, lease.resourceId).type !== 'local' || !await priorExit(lease.preparation.processScope)) continue
+        lease.preparation.status = 'settled'; lease.preparation.recoveryProof = { kind: 'systemd-prior-invocation-exited', previousInvocationId: lease.preparation.processScope.invocationId, at: Date.now() }; await rt.save()
+      }
+      if (workerRecords(lease).some(row => row.spawnPhase === 'registered') && retiredReservation(lease)) { await serial(() => abortReservation(lease.id, lease.generation, 'Registered worker lost its startup owner before spawn')); continue }
+      if (!lease.worker) {
+        if (unbound(lease) && (lease.status === 'unreachable' || retiredReservation(lease))) await serial(() => unbound(lease) && active(lease) && (lease.status === 'unreachable' || retiredReservation(lease)) ? abortReservation(lease.id, lease.generation, 'No current reservation owner remains before binding') : undefined)
+        continue
+      }
       if (lease.worker.kind === 'native' && !ownEntry(state.bots ?? {}, lease.worker.botId)) await release(lease.id, lease.generation)
       else if (lease.worker.kind !== 'native' && lease.status !== 'unreachable') { lease.status = 'unreachable'; changed = true }
     }
@@ -221,7 +346,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     return structuredClone(row)
   }
   return { setting, requireBinding, uploadFile, downloadFile, list, checkPool, plan, command, startProcess, probe, occupied, reconcile, recover,
-    reserveRoles: (...args) => serial(() => reserveRoles(...args)),
+    beginPreparation: (...args) => serial(() => beginPreparation(...args)), endPreparation: (...args) => serial(() => endPreparation(...args)), abortReservation: (...args) => serial(() => abortReservation(...args)), fenceSpawn: (...args) => serial(() => fenceSpawn(...args)), reserveRoles: (...args) => serial(() => reserveRoles(...args)),
     reserve: request => serial(() => reserve(request)), markStarted: (...args) => serial(() => markStarted(...args)), release: (...args) => serial(() => release(...args)) }
 }
 export function install(rt) { rt.projectResources = createProjectResources(rt) }

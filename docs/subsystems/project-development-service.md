@@ -235,3 +235,6 @@ v1 github.connection queries and human-only github.connection.configure commands
 
 
 #2327 projects pending Chief protocol correction as awaiting-chief/chief-correction, and exhausted correction as blocked/chief-recovery. No framework-selected personal-agent escalation or destination is inferred.
+
+
+#2336 execution metadata includes startupPhase, while raw resource views retain reservation owner, reclamation reason/effect and exact release proof. Confirmed no-start evidence uses the shared exit predicate; phase alone grants no execution or acceptance.

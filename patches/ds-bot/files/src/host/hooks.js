@@ -1393,6 +1393,13 @@ export function install(rt) {
             ready({ task, definition }) {
               try { rt.projectResources.plan(task.projectId, { roles: [definition] }); return true } catch { return false }
             },
+            async abort({ task, claim, reason }) {
+              const attempt = rt.state.projectAttempts?.[claim.attemptId]
+              for (const session of Object.values(attempt?.roleSessions ?? {})) if (session.poolClaimId === claim.id && session.botId) {
+                try { await lifecycle.release(session.botId) } catch { /* Do not assume unknown exit. */ }
+              }
+              return rt.projectDelivery.abortPoolAdmission(task, claim, reason)
+            },
             async execute({ task, claim, definition }) { return lifecycle.spawn(await rt.projectDelivery.preparePoolRole(task, claim, definition)) },
             async dispatch({ task, claim, workerId }) {
               const taskInbox = await rt.projectInputs?.prepare(task.id, claim)

@@ -381,3 +381,11 @@ Native input budgeting fences the actual `claim.workerId` against the temporary 
 
 
 Chief lease correlation is written on the canonical reservation, since reserve returns a copy. Its save remains inside the pre-dispatch cleanup boundary: a failed correlation save releases only the proven unbound reservation, preserving runtime capacity and the original failure.
+
+
+#2336 wraps SDK profile/model/binding, registration, archive transfer and spawn
+admission in one cleanup boundary. Before external spawn a durable resource.spawn
+intent fences the exact lease/generation/worker. Registered-only failures roll back
+through resource.reclaim; possibly spawned work retains occupancy until real exit.
+The shared exit predicate accepts only the exact matching no-start proof, not missing
+PID/workerId. This does not clear prior Task-role bindings or enable a fresh Session.

@@ -83,7 +83,7 @@ export function executionMetadataView(state, row) {
   const lease = row.leaseId && state.projectResourceLeases?.[row.leaseId]
   const exit = native ? nativeExitConfirmed(state, row) : confirmedWorkerExit(state, row)
   return { ...pick(row, ['id', 'role', 'resourceId', 'generation', 'sessionKey', 'logicalSessionId', 'createdAt', 'executionStartedAt', 'releasedAt']),
-    harness: native ? 'flybot' : row.harness ?? null, status: row.status,
+    harness: native ? 'flybot' : row.harness ?? null, status: row.status, startupPhase: native ? null : row.spawnPhase ?? null,
     policyRole: session?.policyRole ?? row.policyRole ?? row.role ?? null,
     definitionRevision: session?.definitionRevision ?? null,
     activationEffectId: native ? row.activationEffect?.id ?? null : null,

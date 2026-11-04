@@ -140,3 +140,27 @@ Native resource release now requires a matching projectNativeWorkers native-agen
 
 
 Removing a current role resource grant or changing its registered Resource binding revokes ongoing canonical execution at the existing scheduler check. The same SDK/native stop and physical-exit proof govern release; current permissions never justify a silent new Session or an assumed exit.
+
+
+## Reservation ownership and startup rollback — #2336
+
+Pool reservations retain Task/claim/generation/Session ownership. The existing
+reconciler reclaims retired/superseded or invalid-claim reservations only after
+checking no worker, process scope, bound Session or ephemeral Bot exists. Startup
+registration and reclamation serialize with binding; late binding/spawn refuses a
+released or stale owner. Active preparation and unknown external execution remain
+occupied regardless of age or an empty controller list.
+
+SDK registration uses a durable starting fence before external spawn. A registered
+worker that never crossed that fence may receive exact sdk-worker-not-started proof;
+starting/spawned workers require the original physical exit protocol. Reclamation
+uses committed Effects, preserves original owner/reason and rolls back uncommitted
+state on save failure. The dispatcher is woken only after release. No workspace,
+draft, candidate, logical Session or prior binding is deleted, and no new timer exists.
+
+
+Preparation itself has a fenced active/settled lifetime. In-flight commands keep
+capacity after claim retirement until their actual callback settles. A restarted
+active preparation remains unknown; only the existing exact local supervisor proof
+can reconcile it automatically (remote preparation is not inferred exited). Initial
+reservation/batch save failures cannot leak a startup capability before return.

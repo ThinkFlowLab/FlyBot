@@ -8,6 +8,14 @@ architecture lives in [docs/architecture.md](docs/architecture.md) and
 Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 [docs/governance.md](docs/governance.md). Dated decisions: [decisions/](decisions/README.md).
 
+## Follow-up reliability delivery — 2026-11-04
+
+Owner authorizes sequential #2336/#2337/#2334/#2346/#2338/#2347/#2331/#2342
+implementation, one PR each, tests/memory/docs and validated merge to the delivery
+branch. #2336 establishes owned reservation rollback and a durable pre-spawn fence;
+unknown execution, workspace/context and current authority remain protected.
+No live task/configuration/credential mutation or deployment is implied.
+
 ## Execution recovery — 2026-11-04
 
 #2325 aligns actual reused SDK/resource checkouts with pinned baseline/seed facts,

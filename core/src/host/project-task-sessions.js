@@ -115,6 +115,10 @@ export function confirmedWorkerExit(state, worker) {
       lease.worker?.kind === 'sdk' && lease.worker.handle === worker.id && lease.releaseProof?.kind === proof.kind && lease.releaseProof.workerId === worker.id && lease.releaseProof.generation === worker.generation && lease.releaseProof.at === proof.at)
   }
   const proof = worker.releaseProof
+  if (proof?.kind === 'sdk-worker-not-started') {
+    const lease = ownEntry(state.projectResourceLeases ?? {}, worker.leaseId)
+    return worker.spawnPhase === 'aborted' && worker.executionStartedAt == null && proof.workerId === worker.id && proof.generation === worker.generation && lease?.status === 'released' && lease.generation === worker.generation && lease.worker?.handle === worker.id && lease.projectId === worker.projectId && lease.attemptId === worker.attemptId && lease.resourceId === worker.resourceId && lease.role === worker.role && lease.releaseProof?.kind === proof.kind && lease.releaseProof.workerId === worker.id && lease.releaseProof.at === proof.at
+  }
   if (proof?.kind === 'sdk-stop-ack-and-process-exit') return proof.generation === worker.generation
   if (proof?.kind !== 'systemd-prior-invocation-exited' || !/^[a-f0-9]{32}$/.test(proof.previousInvocationId ?? '')) return false
   const lease = ownEntry(state.projectResourceLeases ?? {}, worker.leaseId)
