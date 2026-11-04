@@ -67,12 +67,19 @@ async function decisionFiles(dir) {
 // is what `project_state` and the board's opened row already answer for a missing one.
 async function fileAt(dir, path) {
   if (isDecisionPath(path) && await dirKind(dirname(join(dir, path))) !== 'real') {
-    throw new Error(`not a plain file: ${path}`)
+    throw notPlainFile(path, true)
   }
   const info = await lstat(join(dir, path))
-  if (!info.isFile()) throw new Error(`not a plain file: ${path}`)
+  if (!info.isFile()) throw notPlainFile(path, info.isSymbolicLink())
   return info
 }
+
+// A name that is there but is not a plain file. `absent` marks the shapes this reader already
+// answers as a missing file — a symlink (#2055) and a decision whose `decisions/` is not a real
+// folder here — so the listing drops them exactly like an absent name. Anything else (a folder, a
+// fifo, a device) is a name the reader cannot read, which the listing answers instead of dropping
+// (#2461): a folder whose `PROJECT.md` is a directory is not a folder with no Project State file.
+const notPlainFile = (path, absent) => Object.assign(new Error(`not a plain file: ${path}`), { absent })
 
 // One Project State file with its byte size, content hash and last-modified time. Exported
 // because the board reads the file a decided meeting archived, and it must refuse exactly what
@@ -90,20 +97,40 @@ export async function describeFile(dir, path) {
 // The repository gate belongs to the tool, not to every reader (#1809): a decision file is the
 // board's own artifact and shows up in a folder that is not a repository, while `project_state`
 // keeps refusing such a folder by default. Only the board passes `{ repository: false }`.
+// The reason a listed name has no row, short enough to sit inside one: the system's own errno when
+// it gave one, else the rule the name broke (a folder where a plain file belongs). The name itself
+// stays in the row, so the reason never repeats it and never carries a parenthesis of its own.
+const unreadableReason = (error) => {
+  if (typeof error?.code === 'string' && error.code !== '') return error.code
+  const message = String(error?.message ?? error ?? '').split('\n')[0]
+  return message.startsWith('not a plain file') ? 'not a plain file' : (message.replace(/[()]/g, '') || 'unknown')
+}
+
+// One listed name: a row with its byte size, hash and mtime, or the reason it has none. A name that
+// is absent — or is a link, which this reader reads as absent (#2055) — adds nothing; a name that is
+// there and could not be read is `unreadable: <path> (<reason>)`, never a silent omission (#2461).
+async function listedRow(dir, path) {
+  try {
+    return { file: await describeFile(dir, path) }
+  } catch (error) {
+    if (error?.absent === true || error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return null
+    return { unreadable: { path, reason: unreadableReason(error) } }
+  }
+}
+
 export async function listProjectState(dir, { repository = true } = {}) {
   if (repository && !await repositoryAt(dir)) return { ok: false, reason: `not a repository: ${dir}` }
   const found = []
-  for (const path of PROJECT_STATE_PATHS) {
-    try {
-      found.push(await describeFile(dir, path))
-    } catch { /* an absent Project State file is simply not listed */ }
+  const unreadable = []
+  const add = async (path) => {
+    const row = await listedRow(dir, path)
+    if (row === null) return
+    if (row.file !== undefined) found.push(row.file)
+    else unreadable.push(row.unreadable)
   }
-  for (const path of await decisionFiles(dir)) {
-    try {
-      found.push(await describeFile(dir, path))
-    } catch { /* a file that vanished between readdir and read is not listed */ }
-  }
-  return { ok: true, dir, files: found }
+  for (const path of PROJECT_STATE_PATHS) await add(path)
+  for (const path of await decisionFiles(dir)) await add(path)
+  return { ok: true, dir, files: found, unreadable }
 }
 
 // The bytes of one named Project State file, bounded at `MAX_BYTES`. The path is checked
@@ -145,14 +172,21 @@ export function workDirFor(rt, exec) {
   return rt.teamFolder?.()
 }
 
-const listed = ({ files }) => files.length === 0
+// The answer the tool prints: the rows a caller compares hashes with, and — after them — the names
+// that are there but could not be read. `none` is the answer for a folder with nothing to read,
+// which is exactly what an unreadable name is not (#2461).
+const listed = ({ files, unreadable }) => files.length === 0 && unreadable.length === 0
   ? 'project state: no Project State files in this folder'
-  : ['project state:', ...files.map(file => `${file.path}\t${file.bytes} bytes\tsha256:${file.sha256}\t${file.mtime}`)].join('\n')
+  : [
+      'project state:',
+      ...files.map(file => `${file.path}\t${file.bytes} bytes\tsha256:${file.sha256}\t${file.mtime}`),
+      ...unreadable.map(({ path, reason }) => `unreadable: ${path} (${reason})`),
+    ].join('\n')
 
 export function install(rt) {
   rt.ctx.tools.register(defineTool({
     name: 'project_state',
-    description: 'Read the Project State files of your working folder: PROJECT.md, ROADMAP.md, docs/governance.md, decisions/*.md, LESSONS.md. Without `file` it lists each with its byte size, sha256 content hash and last-modified time, so you can compare the hash with the copy you already have. With `file` it returns that one file, bounded. Answers `absent`, `too large` or `not a repository` with the reason instead of an empty document.',
+    description: 'Read the Project State files of your working folder: PROJECT.md, ROADMAP.md, docs/governance.md, decisions/*.md, LESSONS.md. Without `file` it lists each with its byte size, sha256 content hash and last-modified time, so you can compare the hash with the copy you already have. With `file` it returns that one file, bounded. Answers `absent`, `too large` or `not a repository` with the reason instead of an empty document, and a listed name that is there but cannot be read as `unreadable: <path> (<reason>)` rather than leaving it out.',
     parameters: {
       file: { type: 'string', description: 'Optional Project State path to read, e.g. decisions/x.md; omit to list them all' },
     },
