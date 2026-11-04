@@ -291,8 +291,15 @@ export function install(rt) {
       if (await fileKind(logPath) === 'other') { refuseLeaf(); return }
       // Rotation moves the full log to `<logPath>.1`, and the truncate alone left every rotated line
       // on disk after the user asked for the error log to be cleared. That one name belongs to this
-      // log, so it goes in the same chain and behind the same guard.
-      await rm(`${logPath}.1`, { force: true })
+      // log, so it goes in the same chain and behind the same guard. The removal keeps a try of its
+      // own: a copy that cannot be removed (a directory under that name, a folder without its write
+      // bit) must not reject the chain before the truncate runs, or the window says "cleared" while
+      // the leaf still holds every line. The line names the leftover, never the folder.
+      try {
+        await rm(`${logPath}.1`, { force: true })
+      } catch (error) {
+        console.error('[ds-bot] diagnostics log rotated copy not removed:', error?.code ?? clean(error?.message ?? String(error)))
+      }
       await writeFile(logPath, '', 'utf8')
     }).catch(() => {})
     await writing

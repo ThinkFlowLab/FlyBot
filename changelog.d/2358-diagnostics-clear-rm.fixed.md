@@ -1,0 +1,1 @@
+Settings → Feedback's **Clear** now truncates the log even when the rotated copy cannot be removed: that removal reports itself in one line on stderr instead of stopping the truncate, so "Cleared the error log." matches the file on disk again ([#2358](https://github.com/ThinkFlowLab/FlyBot/issues/2358)).
