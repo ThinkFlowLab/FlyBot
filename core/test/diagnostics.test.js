@@ -791,6 +791,38 @@ test('a team file linking to a folder keeps the leaf sentence, not the read-thro
   assert.equal(existsSync(join(elsewhere, 'not-there.json')), false, 'asking the link creates nothing')
 })
 
+// #2428: a link can name a plain file this host cannot read at all. `stat` alone answered "a plain
+// file", so the state line promised a read and a save that the row below it already contradicted:
+// `readFile(statePath)` fails EACCES, the store lands in `stuck`, `writable()` stays false and no
+// save ever renames over the name. The permission is asked with `access(path, R_OK)`, which opens
+// nothing and reads no byte, and only a target this host may read earns the link sentence.
+test('a team file linking to a file it cannot read keeps the leaf sentence, not the read-through-link one', {
+  // Root reads a file without its read bits, so the case cannot be built there; the runner marks
+  // it skipped instead of asserting something the kernel never enforces.
+  skip: process.getuid?.() === 0 ? 'root reads a file without its read bits' : undefined,
+}, async (t) => {
+  const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
+  const target = join(elsewhere, 'unreadable.json')
+  const kept = '{"version":2,"bots":{}}\n'
+  writeFileSync(target, kept)
+  chmodSync(target, 0o000)
+  // The restore is registered before the folder's removal, and the body restores it as well, so a
+  // failed assertion never leaves a `000` file behind the symlink for a later hook to trip over.
+  t.after(() => chmodSync(target, 0o600))
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+
+  const linked = await realHost(t, { prepare: statePath => symlinkSync(target, statePath) })
+  const line = linked.report.markdown.match(/^state file: (.*)$/m)?.[1]
+  assert.equal(linked.report.facts.stateFile, 'not a plain file (nothing is read or written)',
+    'a link the store cannot read through is not described as read through')
+  assert.equal(line, 'not a plain file (nothing is read or written)')
+  assert.match(linked.report.markdown, /^\| Read-only \| The Bot team file .* could not be read \(EACCES\)/m,
+    'the row below it says that read happened and failed')
+
+  chmodSync(target, 0o600)
+  assert.equal(readFileSync(target, 'utf8'), kept, 'the target keeps every byte while it is unreadable')
+})
+
 // The line is read information, not a write: a window another dsh keeps read-only still names the
 // team file, the way it still counts the team it shows.
 test('a read-only window names the team file too (#2394)', async (t) => {
