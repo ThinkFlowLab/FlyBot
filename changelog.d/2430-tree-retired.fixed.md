@@ -1,0 +1,1 @@
+The tree model now treats a Bot retired with `archive_bot` as out of the tree everywhere: it no longer occupies its parent's `maxChildren` slot, and its children move up to its own parent instead of being stranded under a Bot that cannot be messaged ([#2430](https://github.com/ThinkFlowLab/FlyBot/issues/2430)).
