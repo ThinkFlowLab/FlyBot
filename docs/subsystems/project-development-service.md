@@ -232,3 +232,6 @@ The [root README](../../README.md), [API reference](../development-service-api.m
 ## GitHub App credential adaptation — #2311
 
 v1 github.connection queries and human-only github.connection.configure commands compose the original broker/Effects/receipts. No new gateway endpoint or role-executor port is exposed. See [GitHub providers](project-github-automation.md).
+
+
+#2327 projects pending Chief protocol correction as awaiting-chief/chief-correction, and exhausted correction as blocked/chief-recovery. No framework-selected personal-agent escalation or destination is inferred.

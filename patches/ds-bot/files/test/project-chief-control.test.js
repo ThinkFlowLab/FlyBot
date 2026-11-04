@@ -50,7 +50,7 @@ async function controlFixture({ modern = false, dependency = false } = {}) {
   let request, accepted = 0, permitted = true
   const roles = ['chief', 'developer', 'tester', 'reviewer'].map(role => ({ id: `p:${role}`, role }))
   const rt = { state: { tasks: { t: task }, projectExecutions: {}, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: 'candidate', evidence: {} } }, projectChiefPolicies: { p: { enabled: true, authorityMemberId: 'owner', revision: 1, inspection: { thresholds, prompt: 'Inspect evidence' } } }, projectAgents: { 'public-p': { id: 'public-p', projectId: 'p', visibility: 'public', botId: 'chief', sessionId: 'chief', carrierGeneration: 1 } } }, config: {}, save: async () => {}, projects: { requireActive() {} }, requireProjectAccess(actor, id) { if (!permitted || actor.memberId !== 'owner' || id !== 'p') throw new Error('Current role denied') }, projectDelegations: { background: async () => true }, bindProject(body) { rt.state.projectExecutions[body.id] = { ...body }; return { id: body.projectId, status: 'active' } }, projectAgents: { deliveryDefinitions: () => ({ roles }), chiefBusy: () => false, startChiefJob: async args => { request = args; return 'native-job' } }, projectDelivery: { chiefAccept: async () => { accepted++; task.status = 'accepted' } } }
-  const control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
+  let control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
   if (modern) {
     const { createProjectEffects } = await import('../src/host/project-effects.js')
     const { install: installLifecycle, createTaskContract } = await import('../src/host/project-task-lifecycle.js')
@@ -60,6 +60,7 @@ async function controlFixture({ modern = false, dependency = false } = {}) {
     rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture())
     rt.projectScheduler = { wake() {}, request: async () => { ++accepted; return { admitted: true } } }
     installLifecycle(rt)
+    control = createProjectChiefControl(rt); rt.projectChiefControl = control
     if (dependency) {
       const { createTaskContract, addTaskDependencies } = await import('../src/host/project-task-lifecycle.js')
       const child = { id: 'child', projectId: 'p', title: 'Cancelled independent goal', criteria: 'Independent result', status: 'cancelled' }
@@ -71,7 +72,7 @@ async function controlFixture({ modern = false, dependency = false } = {}) {
   }
   await control.pump()
   const result = overrides => ({ ok: true, text: JSON.stringify({ summary: 'Judgement', decisions: [{ taskId: 't', action: 'close', reason: 'Criteria met', criteria: [{ criterion: task.criteria, passed: true, evidence: 'Verified host facts' }], ...overrides }] }), executionEvidence: { kind: 'native-chief', chiefRunId: request.runId, carrierGeneration: 1, botId: 'chief', sessionId: 'chief' } })
-  return { rt, task, control, request, result, accepted: () => accepted, revokeRole() { permitted = false } }
+  return { rt, task, control, get request() { return request }, result, accepted: () => accepted, revokeRole() { permitted = false } }
 }
 test('a new Chief request wakes execution and duplicate receipts do not create a wake loop', async () => {
   const f = await controlFixture()
@@ -229,7 +230,7 @@ test('validated Chief completion can publish bounded role proposals but cannot a
     return { proposal: { id: 'pending-role-proposal' } }
   }
   const result = f.result(), body = JSON.parse(result.text)
-  body.decisions = []
+  body.decisions = [{ taskId: 't', action: 'continue', reason: 'Role proposal awaits human governance approval' }]
   body.roleProposals = [{ action: 'add', role: 'analyst', reason: 'Investigate architecture', fields: { policyRole: 'reviewer' }, requestId: 'untrusted-id' }]
   result.text = JSON.stringify(body)
   await f.request.onResult(result)
@@ -242,24 +243,97 @@ test('validated Chief completion can publish bounded role proposals but cannot a
   const invalid = g.result(), parsed = JSON.parse(invalid.text)
   parsed.roleProposals = Array.from({ length: 5 }, () => ({})); invalid.text = JSON.stringify(parsed)
   await g.request.onResult(invalid)
-  assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'failed')
+  assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'correction-pending')
   assert.match(g.rt.state.projectExecutions[g.request.runId].failure, /bounded array/)
 })
 
 
-test('malformed Chief admission remains visible and a valid explicit retry clears only the active failure', async () => {
-  const f = await controlFixture({ modern: true })
+test('malformed Chief admission receives structured feedback and its valid correction preserves the original failure history', async () => {
+  const f = await controlFixture({ modern: true }), run = f.rt.state.projectExecutions[f.request.runId]
   assert.match(f.request.prompt, /requirements\.criteria.*string/)
   await f.request.onResult(f.result({ action: 'admit', reason: 'Clarify scope', requirements: { criteria: ['Exact candidate passes'] } }))
   assert.equal(f.task.projectTask.admission.status, 'proposed')
-  assert.match(f.task.projectTask.admission.failure.reason, /bounded nonempty text/)
-  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed')
-  const { taskView } = await import('../src/host/project-development-service.js')
-  const view = taskView(f.rt.state, f.task)
-  assert.equal(view.phase, 'blocked'); assert.equal(view.waitingFor, 'chief-recovery')
-  const { admitTask } = await import('../src/host/project-task-lifecycle.js')
-  admitTask(f.task, { id: 'valid-retry', projectId: 'p', taskId: 't', executorRole: 'chief', runId: 'retry-run', initiatedBy: 'owner', reason: 'Original string requirements are adequate' })
-  assert.equal(f.task.projectTask.admission.failure, undefined)
-  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed', 'Historical failed run is preserved')
+  assert.equal(run.status, 'correction-pending'); assert.equal(f.task.chiefDecisionIssue.status, 'pending')
+  assert.equal(run.correction.feedback[0].fields[0].field, 'requirements.criteria')
+  await f.control.pump(); await f.request.onResult(f.result({ action: 'admit', reason: 'Original string requirements are adequate' }))
+  assert.equal(run.status, 'done', run.failure); assert.equal(f.task.projectTask.admission.status, 'accepted')
+  assert.equal(run.correction.status, 'resolved'); assert.equal(run.correction.feedback.length, 1)
+  assert.equal(run.invocationHistory.length, 2); assert.equal(f.task.chiefDecisionIssue, undefined)
   await f.rt.projectEffects.close()
+})
+
+for (const action of ['route', 'return']) test(action + ' missing target is fed back to Chief and a corrected decision reaches the role pool', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }), rework: async () => 'a' })
+  const taskId = f.task.id, attemptId = f.task.deliveryAttemptId, first = f.request
+  await first.onResult(f.result({ action, reason: 'Tests failed; repair code' }))
+  assert.equal(run.status, 'correction-pending')
+  assert.equal(run.correction.feedback.at(-1).fields[0].field, 'targetBotId')
+  assert.equal(f.task.chiefQuestion, undefined)
+  await f.control.pump()
+  assert.match(f.request.prompt, /targetBotId/)
+  assert(f.request.projectFacts.logicalBots.some(row => row.id === 'p:developer'))
+  await f.request.onResult(f.result({ action, targetBotId: 'p:developer', reason: 'Repair failing tests' }))
+  assert.equal(run.status, 'done', run.failure)
+  assert.equal(f.task.collaboration.botId, 'p:developer')
+  assert.equal(f.task.collaboration.status, 'queued')
+  assert.equal(f.task.id, taskId); assert.equal(f.task.deliveryAttemptId, attemptId)
+  await first.onResult({ ok: false, text: 'Late callback' })
+  assert.equal(run.status, 'done', 'old invocation cannot overwrite the corrected result')
+})
+test('correction budget exhaustion remains an explicit incomplete judgement and never creates a human consultation', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  run.correctionLimit = 1
+  let consultations = 0; f.rt.projectAgents.contactUser = () => { consultations++; return {} }
+  await f.request.onResult(f.result({ action: 'route' })); await f.control.pump()
+  await f.request.onResult(f.result({ action: 'route' }))
+  assert.equal(run.status, 'incomplete'); assert.equal(run.correction.status, 'exhausted')
+  assert.equal(f.task.collaboration.block.waitingFor, 'chief-recovery')
+  assert.equal(consultations, 0); assert.equal(f.task.chiefQuestion, undefined)
+})
+
+test('unknown, empty, Chief and foreign routing targets return bounded feedback without route side effects', async () => {
+  for (const targetBotId of ['', 7, 'p:chief', 'elsewhere:developer', 'p:retired']) {
+    const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+    let routed = 0; f.rt.projectPools.chiefRoute = async () => { routed++ }
+    await f.request.onResult(f.result({ action: 'route', targetBotId }))
+    assert.equal(run.status, 'correction-pending'); assert.equal(routed, 0)
+    assert.equal(run.correction.feedback[0].fields[0].field, 'targetBotId')
+  }
+})
+test('permission revocation or a stale corrected snapshot cannot gain authority from feedback', async () => {
+  const f = await controlFixture(); await f.request.onResult(f.result({ action: 'route' })); f.revokeRole(); await f.control.pump()
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'failed'); assert.equal(f.accepted(), 0)
+  const g = await controlFixture(); await g.request.onResult(g.result({ action: 'route' })); await g.control.pump(); ++g.task.collaboration.generation
+  await g.request.onResult(g.result({ action: 'route', targetBotId: 'p:developer' }))
+  assert.equal(g.rt.state.projectExecutions[g.request.runId].status, 'failed')
+  assert.match(g.rt.state.projectExecutions[g.request.runId].failure, /snapshot.*stale/)
+})
+test('SDK correction waits for the exact prior worker generation and confirmed resource release', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  await f.request.onResult(f.result({ action: 'route' }))
+  run.correction.priorExecution = { kind: 'sdk-chief', workerId: 'sdk', generation: 3 }
+  f.rt.state.projectHarnessWorkers = { sdk: { id: 'sdk', chiefRunId: run.id, projectId: 'p', generation: 3, status: 'stopping', leaseId: 'lease' } }
+  f.rt.state.projectResourceLeases = { lease: { status: 'stopping' } }
+  await f.control.pump(); assert.equal(run.status, 'correction-pending')
+  const worker = f.rt.state.projectHarnessWorkers.sdk; worker.status = 'released'; worker.releaseProof = { kind: 'sdk-stop-ack-and-process-exit', generation: 3 }
+  await f.control.pump(); assert.equal(run.status, 'correction-pending')
+  f.rt.state.projectResourceLeases.lease.status = 'released'; worker.generation = 4
+  await f.control.pump(); assert.equal(run.status, 'correction-pending')
+  worker.generation = 3; await f.control.pump(); assert.equal(run.status, 'running')
+})
+test('an uncommitted correction cannot authorize another Chief invocation after a failed save', async () => {
+  const f = await controlFixture({ modern: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  const save = f.rt.save; f.rt.save = async () => {}
+  await assert.rejects(f.request.onResult(f.result({ action: 'admit', requirements: { criteria: [] } })), /commit was not confirmed/)
+  assert.equal(run.status, 'failed'); assert.equal(run.correction.status, 'commit-failed')
+  f.rt.save = save; await save(); await f.control.pump()
+  assert.equal(run.status, 'failed'); assert.equal(f.accepted(), 0)
+  await f.rt.projectEffects.close()
+})
+test('an omitted task decision is protocol feedback, not an implicit human escalation', async () => {
+  const f = await controlFixture(), response = f.result(); response.text = JSON.stringify({ summary: 'No decision', decisions: [] })
+  await f.request.onResult(response)
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'correction-pending')
+  assert.equal(f.task.chiefQuestion, undefined)
 })

@@ -499,3 +499,6 @@ project-agent-history defaults to the latest50 messages (limit1–100), retainin
 ## GitHub App credential adaptation — #2311
 
 Personal GitHub comments explicitly reject installation credentials; project automation status reports sanitized provider metadata. Human connection selection cannot be delegated to Bots. See [GitHub providers](project-github-automation.md).
+
+
+#2327 strengthens autonomous-progress instructions and supplies structured protocol correction through the same resident Chief Session. Completion records correcting/incomplete rather than claiming success for malformed output; consultation remains an explicit Chief decision. See [Chief control](project-chief-control.md).

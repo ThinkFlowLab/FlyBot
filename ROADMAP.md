@@ -6,6 +6,8 @@ Implement and merge #2325 → #2327 → #2328 → #2330 sequentially into
 `delivery/ai-centric-development-service`, one PR per issue. #2325 covers actual
 workspace materialization and explicit source admission; Chief owns recovery
 choices, the host preserves authority, evidence and execution-exit gates.
+#2327 implements same-Session correction with structured feedback and a configured
+budget; no implicit role routing or human escalation. Remaining: #2328 and #2330.
 
 ## Agent connection authorization — 2026-11-03
 

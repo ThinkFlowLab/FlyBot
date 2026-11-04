@@ -182,3 +182,6 @@ Quota assertions use an operator-owned verification gate in the disposable test 
 ## Persisted admission checkpoint (#2189 integration)
 
 The actual native JSON/SQLite return probe waits through the original preparing Attempt reservation before asserting running pool protocol. SQL can expose this committed intermediate row before initialization finishes. A failed Attempt fails explicitly; the original protocol, running, context, single-resource, tests and cleanup assertions remain. The first full SQLite run reproduced this timing race; this is a deterministic-provider fixture correction, not a production delivery verdict.
+
+
+#2327 adds optional correctOnce fault injection to the inbox fixture model: malformed requirement strings must receive host feedback and be corrected by the same Chief conversation. Production runtime tests assert both faults and both successful corrections.
