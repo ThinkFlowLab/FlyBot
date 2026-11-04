@@ -1,0 +1,1 @@
+A Bot's Sharing card in a read-only window keeps **People with access** (who has this Bot, and its Auto-send state) and drops only its writes — no Revoke, no invite, no Share with a friend ([#2446](https://github.com/ThinkFlowLab/FlyBot/issues/2446)).

@@ -289,18 +289,29 @@ const detailsTree = (roster) => {
   render(app.BotSocialDetails, inst)
   return render(app.BotSocialDetails, inst)
 }
-const SHARING_WRITES = ['mint-invite', 'share-with-friend', 'manage-access']
+// #2446: People with access is a read card (`social/access` is `{ read: true }`), so only the
+// invite and the one-click share are writes here; its Revoke and Auto-send are checked below.
+const SHARING_WRITES = ['mint-invite', 'share-with-friend']
+// #2446: the write tags inside People with access, read by the same probe the other read-only tests use.
+const ACCESS_WRITES = ['manage-access-revoke', 'revoke-grant', 'access-auto-send']
 
 test('#2418: a read-only window draws no Sharing write control', async () => {
   fixtures()
   try {
     const tree = detailsTree(readOnlyRoster())
     const tags = flybotTags(tree)
-    // Red first on a091ddc07d: 3 tags and the Copy invite link button.
+    // Red first on a091ddc07d: 3 tags and the Copy invite link button. #2446: People with access is
+    // a read (social/access is `{ read: true }`), so the card stays and only its writes go; the read
+    // half is checked below.
     const writes = tags.filter(tag => SHARING_WRITES.includes(tag))
     assert.deepEqual(writes, [], `no Sharing write control in a read-only window, saw ${writes.join(',')}`)
+    const sharingWrites = ['mint-invite', 'share-with-friend', 'manage-access-revoke', 'revoke-grant', 'access-auto-send']
+    assert.deepEqual(tags.filter(tag => sharingWrites.includes(tag)), [], `no write inside the Sharing card, saw ${tags.filter(tag => sharingWrites.includes(tag)).join(',')}`)
     const writeButtons = buttonLabels(tree).filter(label => label.startsWith('Copy invite link') || label === 'Share with a friend')
     assert.deepEqual(writeButtons, [], `no Sharing write button in a read-only window, saw ${writeButtons.join(',')}`)
+    // The read half stays: the list of who has this Bot is drawn, without a way to change it.
+    assert.equal(byTag(tree, 'manage-access').length, 1, 'People with access is still drawn in a read-only window')
+    assert.deepEqual(byTag(tree, 'revoke-grant'), [], 'no Revoke in a read-only window')
     // The card is not silently blank: it says why.
     const hint = byTag(tree, 'sharing-readonly')
     assert.equal(hint.length, 1, 'the Sharing card says the window is read-only')
@@ -314,6 +325,8 @@ test('#2418: a writable window keeps the Sharing controls', async () => {
     const tree = detailsTree(writableRoster())
     const tags = flybotTags(tree)
     for (const tag of SHARING_WRITES) assert.ok(tags.includes(tag), `a writable window keeps ${tag}`)
+    assert.equal(byTag(tree, 'manage-access').length, 1, 'a writable window keeps People with access')
+    assert.deepEqual(tags.filter(tag => ACCESS_WRITES.includes(tag)), [], 'a writable window draws the read card before its list loads, with no write tag yet')
     assert.deepEqual(byTag(tree, 'sharing-readonly'), [], 'a writable window shows no read-only note')
   } finally { delete globalThis.__flybot__ }
 })
@@ -341,5 +354,73 @@ test('#2418: a writable window keeps the Members-card invite control', async () 
     const tree = membersTree(writableRoster())
     assert.equal(byTag(tree, 'room-invite-mint').length, 1, 'a writable window keeps Create link')
     assert.deepEqual(byTag(tree, 'room-invite-readonly'), [])
+  } finally { delete globalThis.__flybot__ }
+})
+
+// #2446 (P-557): #2418 dropped the whole Sharing card in a read-only window, but People with access
+// is a read (`social/access` is registered `{ read: true }`). The list stays; only its writes go.
+const ACCESS = {
+  grants: [
+    { id: 'g1', grantee: '@eve.home', name: 'Eve', handle: '@eve.home', home: '@eve.home', person: '@eve.home', autoSend: true, rooms: [] },
+    { id: 'g2', grantee: '@bob.home', name: 'Bob', handle: '@bob.home', home: '@bob.home', person: '@bob.home', autoSend: false, rooms: [] },
+  ],
+  rooms: [],
+}
+const accessFixtures = () => {
+  const calls = []
+  globalThis.__flybot__ = {
+    call: (endpoint, payload) => {
+      calls.push([endpoint, payload])
+      if (endpoint === 'social/access') return Promise.resolve(ACCESS)
+      return Promise.resolve({})
+    },
+  }
+  return calls
+}
+const accessTree = async (props) => {
+  const app = loadApp()
+  const inst = { hooks: {}, effects: [], props: { bot: { id: 'bot_a', name: 'Alice' }, ...props } }
+  render(app.ManageAccess, inst)
+  runEffects(inst)
+  await tick()
+  return render(app.ManageAccess, inst)
+}
+
+test('#2446: a read-only Sharing card keeps the People with access list', async () => {
+  const calls = accessFixtures()
+  try {
+    const tree = await accessTree({ readOnly: true })
+    const tags = flybotTags(tree)
+    assert.ok(tags.includes('manage-access'), 'the People with access card is still drawn')
+    assert.equal(tags.filter(tag => tag === 'access-grant').length, 2, 'every person with access is still listed')
+    const names = []
+    walk(tree, node => { if (node?.props?.className === 'fs-name') names.push(String((node.children ?? []).flat().join(' ')).trim()) })
+    assert.deepEqual(names.filter(name => name === 'Eve' || name === 'Bob'), ['Eve', 'Bob'], 'each row names its person')
+    assert.ok(tags.includes('access-meta'), 'the handle under the name is still read from social/access')
+    // The read half is a read: only social/access is asked, and nobody can take access away here.
+    assert.deepEqual(calls.filter(([endpoint]) => endpoint !== 'social/access'), [], 'a read-only card writes nothing')
+    assert.deepEqual(tags.filter(tag => ['manage-access-revoke', 'revoke-grant', 'access-auto-send'].includes(tag)), [], 'no Revoke and no Auto-send switch in a read-only window')
+    assert.deepEqual(buttonLabels(tree).filter(label => label === 'Revoke' || label === 'Keep'), [], 'no revoke step in a read-only window')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2446: a read-only Sharing card shows Auto-send as a state, not a switch', async () => {
+  accessFixtures()
+  try {
+    const tree = await accessTree({ readOnly: true })
+    assert.deepEqual(byTag(tree, 'access-auto-send'), [], 'no Auto-send switch in a read-only window')
+    const states = byTag(tree, 'access-auto-state')
+    assert.equal(states.length, 2, 'one Auto-send state per person')
+    assert.deepEqual(states.map(node => String((node.children ?? []).flat().join(' ')).trim()), ['Auto-send on', 'Auto-send off'], 'the state says what the pair is set to')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2446: a writable Sharing card keeps Revoke and the Auto-send switch', async () => {
+  accessFixtures()
+  try {
+    const tree = await accessTree({})
+    assert.equal(byTag(tree, 'revoke-grant').length, 2, 'a writable window keeps one Revoke per person')
+    assert.equal(byTag(tree, 'access-auto-send').length, 2, 'a writable window keeps the Auto-send switch')
+    assert.deepEqual(byTag(tree, 'access-auto-state'), [], 'a writable window draws no state text instead of its switch')
   } finally { delete globalThis.__flybot__ }
 })
