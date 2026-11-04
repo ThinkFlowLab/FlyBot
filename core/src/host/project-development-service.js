@@ -51,6 +51,8 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   const nativeCandidate = ownEntry(state.projectNativeWorkers ?? {}, claim?.workerId)
   const nativeWorker = sameTask(nativeCandidate, task) ? nativeCandidate : null
   const executionView = executionMetadataView(state, sdk ?? nativeWorker)
+  const receiptCorrection = claim?.inputCorrection
+  if (executionView && receiptCorrection) executionView.inputCorrection = { version: receiptCorrection.version, round: receiptCorrection.round, limit: receiptCorrection.limit, status: receiptCorrection.status, proposalSha256: receiptCorrection.proposal?.sha256 ?? null, feedback: receiptCorrection.feedback.map(({ kind, field, correctable, sideEffects, businessEffects }) => ({ kind, field, correctable, sideEffects, businessEffects })) }
   const nativeActivated = nativeWorker && isIntentCommitted(nativeWorker.activationEffect)
   const native = ownEntry(state.bots ?? {}, claim?.workerId)
   const nativeActive = native?.projectId === task.projectId && (!attempt || native.attemptId === attempt.id) && activity[claim?.workerId]
@@ -63,6 +65,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (task.status === 'cancelled' || c?.status === 'cancelled' || attempt?.status === 'cancelled') phase = 'cancelled'
   else if (attempt?.cancelRequested || c?.status === 'stopping') { phase = 'stopping'; waitingFor = 'worker-exit' }
   else if (nativeWorker?.status === 'stopping' || nativeWorker?.status === 'stop-unconfirmed') { phase = nativeWorker.status === 'stopping' ? 'stopping' : 'blocked'; waitingFor = 'worker-exit'; reason = c?.block?.reason ?? null }
+  else if (receiptCorrection?.status === 'pending') { phase = 'awaiting-input'; waitingFor = 'role-correction'; reason = 'Original role is correcting input receipts; business proposal is preserved' }
   else if (task.chiefDecisionIssue?.status === 'pending') { phase = 'awaiting-chief'; waitingFor = 'chief-correction'; reason = task.chiefDecisionIssue.feedback.message }
   else if (task.chiefDecisionIssue?.status === 'exhausted') { phase = 'blocked'; waitingFor = 'chief-recovery'; reason = 'Chief judgement incomplete; correction budget exhausted' }
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }

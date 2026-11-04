@@ -9,20 +9,26 @@ const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
 const write = value => process.stdout.write(JSON.stringify(value) + '\n')
 const answers = new Map()
 let controller, sessionId, settings, busy = false, shuttingDown = false
+const completedTurns = new Map()
 const permission = request => new Promise(resolve => {
   const id = randomUUID(); answers.set(id, resolve); write({ type: 'permission', id, request })
 })
 async function turn(message) {
+  if (message.turnId && completedTurns.has(message.turnId)) { write(completedTurns.get(message.turnId)); return }
   if (busy) { write({ type: 'failure', reason: 'SDK Session is already answering' }); return }
   busy = true; controller = new AbortController()
   try {
     settings ??= message.settings
     sessionId ??= settings.sessionId
-    const result = await runHarnessTurn({ ...settings, sessionId, prompt: message.prompt }, { emit: write, permission, signal: controller.signal })
+    const emit = value => write({ ...value, ...(message.turnId ? { turnId: message.turnId } : {}) })
+    const result = await runHarnessTurn({ ...settings, sessionId, protocolCorrection: message.protocolCorrection === true, prompt: message.prompt }, { emit, permission, signal: controller.signal })
     sessionId = result.sessionId
-    write({ type: 'completed', ...result })
+    const response = { type: 'completed', ...result, ...(message.turnId ? { turnId: message.turnId } : {}) }
+    if (message.turnId) { completedTurns.set(message.turnId, response); if (completedTurns.size > 16) completedTurns.delete(completedTurns.keys().next().value) }
+    busy = false
+    write(response)
     if (settings.probe) void shutdown()
-  } catch (error) { write({ type: 'failure', reason: ['bot/harness-capability', 'bot/context-resume'].includes(error?.code) ? error.message : 'SDK execution failed; inspect the redacted event evidence and resource environment', ...(error?.code === 'bot/context-resume' ? { contextFailure: { code: error.code, kind: 'backend-session-mismatch', contextPreserved: true } } : {}), ...(error?.code === 'bot/harness-capability' ? { capabilityFailure: { code: error.code, kind: error.capability, stage: 'configuration', modelInvoked: false } } : {}) }) }
+  } catch (error) { write({ type: 'failure', ...(message.turnId ? { turnId: message.turnId } : {}), reason: ['bot/harness-capability', 'bot/context-resume'].includes(error?.code) ? error.message : 'SDK execution failed; inspect the redacted event evidence and resource environment', ...(error?.code === 'bot/context-resume' ? { contextFailure: { code: error.code, kind: 'backend-session-mismatch', contextPreserved: true } } : {}), ...(error?.code === 'bot/harness-capability' ? { capabilityFailure: { code: error.code, kind: error.capability, stage: 'configuration', modelInvoked: false } } : {}) }) }
   finally { busy = false }
 }
 input.on('line', line => {
@@ -55,4 +61,4 @@ function sdkVersion(name) {
   } catch { /* Missing SDK is an explicit failed handshake, not a simulated version. */ }
   return null
 }
-write({ type: 'ready', pid: process.pid, sdk: { codex: sdkVersion('@openai/codex-sdk'), 'claude-agent': sdkVersion('@anthropic-ai/claude-agent-sdk') } })
+write({ type: 'ready', receiptCorrection: 'input-correction/v1', pid: process.pid, sdk: { codex: sdkVersion('@openai/codex-sdk'), 'claude-agent': sdkVersion('@anthropic-ai/claude-agent-sdk') } })

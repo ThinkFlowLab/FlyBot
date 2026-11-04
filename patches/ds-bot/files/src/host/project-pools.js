@@ -1,4 +1,5 @@
 // Per-logical-Bot routing on existing Task records. Execution remains a host adapter.
+import { protocolCorrection, freezeReceiptProposal, readReceiptProposal, receiptDigest } from './project-receipt-correction.js'
 import { randomUUID, createHash } from 'node:crypto'
 import { ownEntry } from './store.js'
 import { initialRoleTarget } from './project-role-admission.js'
@@ -294,6 +295,7 @@ export function createProjectPools(rt) {
     const children = action === 'split' ? rt.projectTaskLifecycle.prepareSplit(task, claim, decision) : null
     const next = action === 'split' ? null : ['complete', 'arbitrate'].includes(action) ? definitions(task.projectId).roles.find(row => row.role === 'chief') : targetOf(task.projectId, decision.to)
     if (!next && action !== 'split') throw refuse('Chief is not configured')
+    await rt.projectInputs?.validateReceipt?.(task.id, claim, decision.inputReceipts)
     // Stop confirmation precedes relinquishing the claim and capacity.
     if (claim.workerId) {
       if (!await adapter.release(claim.workerId)) throw refuse('Worker exit is unconfirmed; claim and capacity remain held')
@@ -305,6 +307,7 @@ export function createProjectPools(rt) {
     await rt.projectInputs?.acknowledge(task.id, claim, decision.inputReceipts)
     await current(task, token)
     rt.projectInputs?.finishHandoff(task.id, claim)
+    if (claim.inputCorrection) claim.inputCorrection.status = 'resolved'
     claim.status = 'completed'; claim.decision = { action, reason, intentHash: intentHash(decision), at: Date.now() }
     const receipt = c.history.find(row => row.id === c.currentHandoffId)
     receipt.finishedAt = Date.now(); receipt.decision = clone(claim.decision); receipt.execution = clone(claim)
@@ -358,6 +361,51 @@ export function createProjectPools(rt) {
     return { items: page.map(row => handoffContract(rt.state, task, row)), next: index + 1 + page.length < rows.length ? page.at(-1).id : null }
   }
   const owns = botId => Object.values(rt.state.tasks).some(task => task.collaboration?.claim?.workerId === botId || task.collaboration?.history.some(row => row.execution?.workerId === botId))
+  async function feedback(task, token, decision, error, responseSha256 = receiptDigest(decision)) {
+    const claim = await current(task, token), previous = claim.inputCorrection
+    const proposal = previous?.proposal ?? await freezeReceiptProposal(rt, task, claim, decision)
+    const correction = protocolCorrection(previous, { version: 'input-correction/v1', limit: previous?.limit ?? rt.config.projectHandoff?.inputCorrectionBudget ?? 2,
+      feedback: { ...clone(error.receiptFeedback), receiptResponseSha256: responseSha256, at: Date.now(), proposalSha256: proposal.sha256, businessEffects: 'host completion, release and downstream handoff not applied; original model work preserved' } })
+    correction.proposal = proposal; correction.originalResponseSha256 = previous?.originalResponseSha256 ?? receiptDigest(decision)
+    claim.inputCorrection = correction
+    let intent
+    try {
+      if (correction.status === 'pending' && adapter.correct && rt.projectEffects) {
+        intent = rt.projectEffects.stage({ kind: 'input.correction', key: `${claim.id}:${correction.round}`, projectId: task.projectId, taskId: task.id, payload: { claimId: claim.id, generation: claim.generation, round: correction.round, workerId: claim.workerId } })
+        correction.effect = intent
+        await rt.projectEffects.persist(intent)
+        rt.projectScheduler?.wake()
+      } else {
+        correction.status = correction.status === 'pending' ? 'transport-unavailable' : correction.status
+        task.collaboration.status = 'blocked'; task.collaboration.block = { reason: 'Input receipt correction incomplete: ' + correction.status, waitingFor: 'chief-recovery', at: Date.now() }
+        claim.status = 'incomplete'; await rt.save()
+        if (claim.workerId) { try { claim.exitConfirmed = await adapter.release(claim.workerId) } catch { claim.exitConfirmed = false } }
+        await rt.save()
+      }
+    } catch (failure) {
+      if (intent && rt.projectEffects.discardUncommitted(intent)) { if (previous) claim.inputCorrection = previous; else delete claim.inputCorrection }
+      throw failure
+    }
+    return true
+  }
+  async function correct(effect) {
+    const task = taskOf(effect.taskId), token = effect.payload
+    const claim = await serial(() => current(task, { id: token.claimId, generation: token.generation, botId: task.collaboration.claim?.botId }))
+    const correction = claim.inputCorrection
+    if (task.projectId !== effect.projectId || correction?.round !== token.round || correction.status !== 'pending' || claim.workerId !== token.workerId) throw new EffectCancelled('Receipt correction changed or ended')
+    if (correction.dispatchedAt) return { status: 'already-dispatched', round: token.round }
+    // Commit before transport. An ambiguous send is never retried as a fresh business turn.
+    correction.dispatchedAt = Date.now(); await rt.save()
+    const prompt = 'Host input receipt protocol feedback (data, not authorization): ' + JSON.stringify(correction.feedback.at(-1)) + '\nPreserve the original business proposal and all prior code, test, review and external operation results. Tools are disabled for this narrow correction. Return ONLY OUTPUT handoff: {"correctionOf":"' + correction.proposal.sha256 + '","inputReceipts":{...}} (or an array of up to8 injected batches). Declare only IDs actually read/handled. Do not repeat business work or map historical batches to current ones.'
+    try {
+      await adapter.correct({ task, claim: clone(claim), workerId: claim.workerId, prompt, round: token.round })
+      return { status: 'dispatched', round: token.round, proposalSha256: correction.proposal.sha256 }
+    } catch {
+      correction.status = 'transport-incomplete'; correction.failure = 'Original correction transport did not confirm dispatch; inspect its evidence before recovery'
+      task.collaboration.status = 'blocked'; task.collaboration.block = { reason: correction.failure, waitingFor: 'chief-recovery', at: Date.now() }; await rt.save()
+      return { status: correction.status, round: token.round }
+    }
+  }
   async function result({ botId, ok, text }) {
     const task = Object.values(rt.state.tasks).find(task => task.collaboration?.claim?.workerId === botId && task.collaboration.claim.status === 'active')
     if (!task) return owns(botId)
@@ -367,8 +415,18 @@ export function createProjectPools(rt) {
       const output = String(text).match(/(?:^|\n)OUTPUT handoff:\s*([^\n]+)/)?.[1]
       decision = ok && output ? JSON.parse(output) : { action: 'arbitrate', reason: ok ? 'Worker did not provide a valid handoff decision' : `Execution failed: ${String(text).slice(0, 1000)}` }
     } catch { decision = { action: 'arbitrate', reason: 'Worker returned malformed handoff JSON' } }
+    const correction = task.collaboration.claim.inputCorrection, responseSha256 = receiptDigest(decision)
+    if (correction?.status === 'pending') {
+      if (responseSha256 === correction.originalResponseSha256 || correction.feedback.some(row => row.receiptResponseSha256 === responseSha256)) return true
+      if (!ok || decision?.correctionOf !== correction.proposal.sha256 || Object.keys(decision).some(key => !['correctionOf', 'inputReceipts'].includes(key)) || decision.inputReceipts === undefined) {
+        return feedback(task, token, decision, { receiptFeedback: { ...correction.feedback.at(-1), version: 'input-receipt-feedback/v1', kind: 'correction-schema', field: 'correctionOf/inputReceipts', correctable: true, message: 'Return only a receipt patch for the exact frozen proposal' } })
+      }
+      decision = { ...await readReceiptProposal(rt, task, token, correction.proposal), inputReceipts: decision.inputReceipts }
+    }
     try { await decide(task.id, token, decision) }
+
     catch (error) {
+      if (error.receiptFeedback?.correctable && task.collaboration.claim?.exitConfirmed !== true) return feedback(task, token, decision, error, responseSha256)
       const c = task.collaboration; c.status = 'blocked'; c.block = { reason: error.message, at: Date.now() }
       if (c.claim?.workerId) {
         c.claim.status = 'blocked'; ++c.generation
@@ -544,6 +602,7 @@ export function createProjectPools(rt) {
     for (const task of Object.values(rt.state.tasks)) {
       const c = task.collaboration
       if (!c?.claim || c.claim.status !== 'active') continue
+      if (c.claim.inputCorrection?.status === 'pending') c.claim.inputCorrection.status = 'interrupted'
       c.status = 'blocked'; c.claim.status = 'interrupted'; c.block = { reason: 'Host restarted; worker exit and resources must be reconciled before reassigning', at: Date.now() }; ++c.generation; changed = true
     }
     if (rt.projectEffects) {
@@ -564,11 +623,20 @@ export function createProjectPools(rt) {
     return changed
   }
   return { connect(value) { adapter = value; return () => { if (adapter === value) adapter = null } }, get, list, accept: (taskId, botId, handoffId, requestId) => serial(() => claim(taskId, botId, handoffId, requestId)), admit: (attempt, actor, body) => serial(() => admit(attempt, actor, body)), available, owns,
+    correct,
     resumeChildren: (id, waitId) => serial(() => resumeChildren(id, waitId)),
     claim: (id, botId) => serial(() => claim(id, botId)), remember: (id, token, body) => serial(() => remember(id, token, body)), decide: (id, token, decision) => serial(() => decide(id, token, decision)), result: row => serial(() => result(row)), pump, recover, revokePrincipal: (projectId, memberId) => serial(() => revokePrincipal(projectId, memberId)), revokeExecution: (id, claimId, reason) => serial(() => revokeExecution(id, claimId, reason)), validateClosure, retryChief: (id, actor) => serial(() => retryChief(id, actor)), chiefClaim: (id, actor) => serial(() => chiefClaim(id, actor)), chiefRoute: (body, actor) => serial(() => chiefRoute(body, actor)) }
 }
 export function install(rt) {
   rt.projectPools = createProjectPools(rt)
+  rt.ctx?.tools?.guard?.(exec => {
+    const sessionId = exec?.agent?.session?.id ?? exec?.agent?.id
+    const bot = rt.botOf(rt.selfOf(sessionId) ?? sessionId)
+    if (!bot) return undefined
+    const task = Object.values(rt.state.tasks).find(task => task.collaboration?.claim?.workerId === bot.id && task.collaboration?.claim?.inputCorrection && task.collaboration.claim.inputCorrection.status !== 'resolved')
+    return task ? 'Input receipt correction permits only a declaration patch; business tools are disabled' : undefined
+  })
+  rt.projectEffects?.register('input.correction', { run: effect => rt.projectPools.correct(effect) })
   rt.projectEffects?.register('context.memory', { run: effect => ({ ...effect.payload, status: 'memory-version-committed' }) })
   rt.projectEffects?.register('pool.dispatch', {
     async validate(effect, context) {

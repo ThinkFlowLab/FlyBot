@@ -47,6 +47,8 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     // Reject stale Project delegations, then intercept managed schedule deliveries.
     'on agent/pre-step',
     'tools guard',
+    // Narrow Task-role receipt corrections deny business tools in the original Session.
+    'tools guard',
     'on agent/pre-step',
     'on llm/adapters-updated',
     'on session/event',

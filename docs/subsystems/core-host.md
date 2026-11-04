@@ -990,3 +990,8 @@ The [compatibility contract](project-compatibility.md) inventories original entr
 
 
 #2336 connects Workflow admission abort to existing carrier release and claim-scoped reservation rollback. Failure before a returned workerId no longer skips cleanup; unknown execution remains held. See [resources](project-resources.md).
+
+#2338 reuses Effects for bounded original-claim input receipt correction. Its
+private proposal archive and current-scope feedback preserve immutable business
+evidence; Task views expose correction status without proposal text or paths.
+See [input contract](project-inputs.md#invalid-receipt-correction-2338).

@@ -200,6 +200,7 @@ export function createProjectHarness(rt) {
       try {
         const signal = JSON.parse(line), lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
         if (signal.type === 'ready' && active.get(id) === control) {
+          control.receiptCorrectionSupported = signal.receiptCorrection === 'input-correction/v1'
           control.readyObserved = true
           control.observedSdkVersion = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$/.test(signal.sdk?.[row.harness] ?? '') ? signal.sdk[row.harness] : null
           if (signal.sdk?.[row.harness] !== VERSIONS[row.harness]) readyReject(refuse('SDK version on selected resource is missing or incompatible'))
@@ -212,6 +213,7 @@ export function createProjectHarness(rt) {
         if (active.get(id) !== control || row.status === 'released' || currentLease?.generation !== row.generation || currentLease.status === 'released') return
         if (line.length > 1024 * 1024) throw refuse('SDK event exceeds maximum size')
         const event = redact(JSON.parse(line), control.env)
+        if (control.correctionTurnId && ['completed', 'sdk-event', 'failure', 'permission', 'configuration-checked'].includes(event.type) && event.turnId !== control.correctionTurnId) return
         row.lastEventAt = Date.now()
         row.eventCount++
         row.eventBytes = (row.eventBytes ?? 0) + Buffer.byteLength(JSON.stringify(event))
@@ -220,6 +222,7 @@ export function createProjectHarness(rt) {
         row.lastEventHash = sha(JSON.stringify(event))
         if (event.type === 'stopped') control.stoppedConfirmed = event.released === true
         if (event.type === 'ready') { control.ready = true; if (row.status === 'prepared') row.status = 'idle' }
+        if (event.type === 'permission' && control.correctionTurnId) { control.process.stdin.write(JSON.stringify({ type: 'permission', id: event.id, allow: false }) + '\n'); return }
         if (event.type === 'permission') { row.status = 'waiting-input'; row.pending = { id: event.id, kind: 'permission', request: event.request } }
         if (event.type === 'sdk-event') {
           row.lastEventAt = Date.now()
@@ -238,6 +241,11 @@ export function createProjectHarness(rt) {
           rt.projectResources.setting(row.projectId, row.resourceId)
           if (row.backendSessionId && row.backendSessionId !== event.sessionId) throw refuse('SDK result names another Session')
           const rawText = event.text
+          if (control.correctionTurnId) {
+            if (event.sessionId !== row.backendSessionId) throw refuse('Receipt correction changed its backend Session')
+            row.inputCorrectionResult = { turnId: control.correctionTurnId, sha256: sha(rawText), at: Date.now() }
+            row.status = 'completed'; await report(row, true, rawText); return
+          }
           if (!control.chief && session.poolClaimId && (control.safeInputTurns ?? 0) < 4) {
             const task = rt.state.tasks[row.taskId], claim = task?.collaboration?.claim
             if (claim?.id === session.poolClaimId && claim.status === 'active' && task.collaboration.generation === claim.generation) {
@@ -336,6 +344,23 @@ export function createProjectHarness(rt) {
       return
     }
     for (const listener of listeners) await listener({ botId: row.id, ok, text })
+  }
+  async function correctInput({ workerId, task, claim, prompt, round }) {
+    const row = ownEntry(workers(), workerId)
+    if (!row) return null
+    const control = active.get(workerId)
+    if (!control || control.closed || !control.receiptCorrectionSupported || row.status !== 'completed' || row.projectId !== task.projectId || row.taskId !== task.id || row.attemptId !== claim.attemptId || control.session.poolClaimId !== claim.id) throw refuse('Original SDK receipt-correction channel is unavailable')
+    await requireExecutionAuthority(rt, control.session)
+    const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
+    if (!lease || lease.generation !== row.generation || lease.status === 'released' || task.collaboration.claim !== claim && task.collaboration.claim?.id !== claim.id || task.collaboration.generation !== claim.generation || claim.inputCorrection?.round !== round) throw refuse('Receipt correction scope changed')
+    checkContextPrompt(prompt, control.contextBudget)
+    control.correctionTurnId = `receipt-${claim.id}-${round}`
+    control.reported = false; control.inputBatch = null; row.status = 'running'
+    await rt.save()
+    await requireExecutionAuthority(rt, control.session)
+    if (active.get(workerId) !== control || control.closed || task.collaboration.claim?.inputCorrection?.status !== 'pending' || task.collaboration.claim.inputCorrection.round !== round || lease.status === 'released') throw refuse('Receipt correction was superseded before delivery')
+    control.process.stdin.write(JSON.stringify({ type: 'input', turnId: control.correctionTurnId, protocolCorrection: true, prompt }) + '\n')
+    return { ok: true }
   }
   async function taskInputWake(taskId) {
     const task = ownEntry(rt.state.tasks ?? {}, taskId), claim = task?.collaboration?.claim
@@ -519,7 +544,7 @@ export function createProjectHarness(rt) {
     }
     delete row.pending; row.status = 'running'; await rt.save(); return { sent: true }
   }
-  return { profile, spawn, dispatch, checkNativeInput, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
+  return { profile, spawn, dispatch, correctInput, checkNativeInput, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
     capabilities: harnessCapabilities, owns: id => Boolean(ownEntry(workers(), id)), hasController: id => active.has(id) && !active.get(id).closed, versions: VERSIONS }
 }
 export function install(rt) { rt.projectHarness = createProjectHarness(rt) }

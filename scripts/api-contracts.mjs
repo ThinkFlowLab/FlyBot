@@ -348,3 +348,7 @@ schemas.Attempt.properties.evidence = record({ tests: ref('TestVerification'), e
 schemas.TaskRoleRestoration = record({ version: lit('task-role-cwd-restoration/v1'), mode: choice('resumed', 'reconstructed'), logicalSessionId: id, contextIdentityKey: hash, sourceWorkerId: id, sourceSessionId: id, physicalSessionId: id, sourceAttemptId: id, attemptId: id, workspaceId: id, checkout: sha, observedCheckout: sha, archiveSha256: hash, at: int() })
 schemas.ExecutionMetadata = record({ id, logicalSessionId: id, role, harness: nullable(harness), status: str(), startupPhase: nullable(str()), contextRestoration: nullable(ref('TaskRoleRestoration')), contextFailure: nullable(json), exitConfirmed: bool, capabilityFailure: nullable(json), environmentObservations: array(json, 8) })
 schemas.TaskView.properties.execution = nullable(ref('ExecutionMetadata'))
+
+// Receipt correction is an internal role protocol, observable through existing Task views.
+schemas.InputCorrection = record({ version: lit('input-correction/v1'), round: int(1, 5), limit: int(0, 4), status: choice('pending', 'resolved', 'exhausted', 'transport-unavailable', 'transport-incomplete', 'interrupted'), proposalSha256: nullable(hash), feedback: array(record({ kind: str(), field: str(), correctable: bool, sideEffects: str(), businessEffects: str() }), 5) }, ['version', 'round', 'limit', 'status'])
+schemas.ExecutionMetadata.properties.inputCorrection = ref('InputCorrection')

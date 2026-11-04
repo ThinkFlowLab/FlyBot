@@ -6,6 +6,7 @@ import { fileDigest } from './project-resource-workspaces.js'
 import { ownEntry, setEntry } from './store.js'
 import { dependencyFact } from './project-task-lifecycle.js'
 import { inspectionLifecycle, inspectionHealth, scheduledInspectionState } from './project-chief-lifecycle.js'
+import { protocolCorrection } from './project-receipt-correction.js'
 import { CHIEF_AUTONOMY, parseChiefResponse, correctionBudget, chiefProtocolError } from './project-chief-protocol.js'
 import { confirmedWorkerExit } from './project-task-sessions.js'
 import { stageRoleSummary } from './project-context-memory.js'
@@ -232,6 +233,16 @@ export function createProjectChiefControl(rt) {
       if (run.taskId && !parsed.decisions.some(row => row.taskId === run.taskId)) throw chiefProtocolError('decisions', 'an explicit decision for the requested Task', run.taskId)
       if (run.taskId) { const task = rt.state.tasks[run.taskId]; if (task.collaboration?.claim?.chiefRunId === run.id) { task.collaboration.claim.workerId = execution.workerId ?? `native-chief-job-${run.id}`; task.collaboration.claim.executionEvidence = execution } }
       job.executionEvidence = execution
+      for (const decision of parsed.decisions) {
+        if (run.appliedDecisions?.some(row => row.taskId === decision.taskId)) continue
+        const saved = job.snapshot.find(row => row.taskId === decision.taskId)
+        if (!saved) throw chiefProtocolError('taskId', 'an exact Task in this invocation snapshot', decision.taskId)
+        try { rt.projectInputs?.validateChiefReceipt?.(decision.taskId, saved, run, decision.inputReceipts) }
+        catch (error) {
+          if (!error.receiptFeedback?.correctable) throw error
+          throw Object.assign(chiefProtocolError('inputReceipts', 'the exact injected snapshot IDs and handled subset of read', decision.taskId), { receiptFeedback: error.receiptFeedback })
+        }
+      }
       const roleProposals = parsed.roleProposals ?? []
       if (!Array.isArray(roleProposals) || roleProposals.length > 4) throw refuse('Chief role proposals must be a bounded array')
       run.roleProposalIds = []
@@ -264,8 +275,8 @@ export function createProjectChiefControl(rt) {
       if (active.get(run.id) !== job || run.status !== 'running') return { ignored: true }
       if (error.code === 'bot/chief-protocol') {
         const previous = run.correction, round = (previous?.round ?? 0) + 1, limit = run.correctionLimit ?? correctionBudget(policyOf(run.projectId))
-        const feedback = { code: error.code, taskId: error.taskId, fields: error.fields, message: error.message.slice(0, 500), at: Date.now(), sideEffects: 'response protocol rejected before applying its decisions', appliedTaskIds: (run.appliedDecisions ?? []).map(row => row.taskId) }
-        run.correction = { version: 'chief-correction/v1', round, limit, status: round <= limit ? 'pending' : 'exhausted', feedback: [...(previous?.feedback ?? []), feedback].slice(-5), priorExecution: structuredClone(job.executionEvidence ?? null) }
+        const feedback = { ...(error.receiptFeedback ? { receiptFeedback: error.receiptFeedback } : {}), code: error.code, taskId: error.taskId, fields: error.fields, message: error.message.slice(0, 500), at: Date.now(), sideEffects: 'response protocol rejected before applying its decisions', appliedTaskIds: (run.appliedDecisions ?? []).map(row => row.taskId) }
+        run.correction = protocolCorrection(previous, { version: 'chief-correction/v1', limit, feedback, priorExecution: job.executionEvidence ?? null })
         run.status = round <= limit ? 'correction-pending' : 'incomplete'; run.failure = feedback.message
         if (rt.projectEffects) {
           const token = rt.projectEffects.stage({ kind: 'chief.correction', key: `${run.id}:${round}`, projectId: run.projectId, ...(run.taskId ? { taskId: run.taskId } : {}), payload: { runId: run.id, round, feedbackSha256: digest(feedback) } })

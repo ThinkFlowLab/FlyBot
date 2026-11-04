@@ -692,3 +692,32 @@ test('registered SDK failure before spawn rolls back capacity with a verifiable 
   assert.equal(confirmedWorkerExit(rt.state, row), true)
   assert.equal(rt.state.projectAttempts, undefined, 'No Task history is rewritten by resource cleanup')
 })
+
+test('SDK receipt correction keeps its physical Session and sealed execution, and discards late prior completions', async t => {
+  const { rt, harness, task, id } = await taskInputFixture(t, `
+import{createInterface}from'node:readline';const write=v=>process.stdout.write(JSON.stringify(v)+'\\n');write({type:'ready',receiptCorrection:'input-correction/v1',sdk:{codex:'0.166.0'}});
+createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);return;}
+if(m.type==='start'){write({type:'sdk-event',event:{type:'thread.started',thread_id:'original-thread'}});write({type:'completed',sessionId:'original-thread',text:'OUTPUT handoff: {"action":"arbitrate","reason":"Original business result"}'});}
+if(m.type==='input'){if(!m.protocolCorrection||!m.turnId)throw Error('Expected narrow correction');write({type:'completed',sessionId:'original-thread',text:'OUTPUT handoff: {"action":"complete","reason":"Late original result"}'});write({type:'completed',turnId:m.turnId,sessionId:'original-thread',text:'OUTPUT handoff: {"correctionOf":"proposal","inputReceipts":[]}'});}
+});`)
+  const claim = task.collaboration.claim; claim.attemptId = 'a'; claim.inputCorrection = { status: 'pending', round: 1 }
+  let executions = 0, results = 0, originalHash, originalLog
+  rt.projectDelivery.recordExecution = async () => { ++executions }
+  let finish, fail
+  const done = new Promise((resolve, reject) => { finish = resolve; fail = reject })
+  harness.onResult(async result => {
+    try {
+      ++results
+      if (results === 1) {
+        originalHash = rt.state.projectHarnessWorkers[id].resultHash; originalLog = await readFile(rt.state.projectHarnessWorkers[id].sealedLog, 'utf8')
+        await harness.correctInput({ workerId: id, task, claim, prompt: 'Correct only the receipt', round: 1 })
+      } else finish(result)
+    } catch (error) { fail(error) }
+  })
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Current work', outputs: [{ name: 'handoff' }] })
+  const result = await done, worker = rt.state.projectHarnessWorkers[id]
+  assert.equal(result.ok, true); assert.match(result.text, /correctionOf/)
+  assert.equal(results, 2); assert.equal(executions, 1); assert.equal(worker.backendSessionId, 'original-thread')
+  assert.equal(worker.resultHash, originalHash); assert.equal(await readFile(worker.sealedLog, 'utf8'), originalLog)
+  assert.equal(worker.inputCorrectionResult.turnId, 'receipt-idle-claim-1')
+})

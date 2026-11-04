@@ -121,3 +121,18 @@ test('Codex tool history has a host-selected limit without replacing SDK compact
   assert.equal(observed[1].id, 'kept-thread')
   for (const limit of [0, -1, 1.5, '1536']) await assert.rejects(runHarnessTurn({ ...request, toolOutputTokens: limit }, { loadCodex: async () => { throw new Error('Must validate before loading SDK') } }), /output budget/)
 })
+
+test('receipt correction resumes the original SDK Session without tools or changing its role filesystem profile', async () => {
+  const observed = []
+  await runHarnessTurn({ ...request, sessionId: 'original', protocolCorrection: true }, { emit() {}, loadCodex: codex([{ type: 'thread.started', thread_id: 'original' }, { type: 'turn.completed' }], value => observed.push(value)) })
+  assert.equal(observed[1].id, 'original'); assert.equal(observed[0].config.features.shell_tool, false)
+  assert.equal(observed[0].config.permissions['flybot-role'].extends, ':workspace')
+  assert.equal(observed[1].sandboxMode, undefined)
+  assert.equal(observed[0].config.hooks.PreToolUse[0].hooks[0].type, 'command')
+  let asked = false
+  await runHarnessTurn({ ...request, harness: 'claude-agent', sessionId: 'original', protocolCorrection: true }, { emit() {}, permission: () => { asked = true }, loadClaude: async () => ({ query({ options }) {
+    assert.deepEqual(options.tools, []); assert.equal(options.resume, 'original')
+    return (async function* () { assert.equal((await options.canUseTool('Bash', {}, {})).behavior, 'deny'); yield { type: 'result', subtype: 'success', session_id: 'original', result: 'receipt patch' } })()
+  } }) })
+  assert.equal(asked, false)
+})
