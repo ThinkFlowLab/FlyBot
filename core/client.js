@@ -19407,6 +19407,7 @@ var projectMembers = (roster) => [
   ...(roster?.rooms ?? []).map((room2) => ({ kind: "group", id: room2.id, name: room2.name, projectId: room2.projectId ?? null }))
 ];
 function ProjectsList({ projects, roster, call: call4, reload }) {
+  const locked = lockedWindow(roster);
   const members = projectMembers(roster);
   const bind = async (choice, project) => {
     const [kind, id] = String(choice ?? "").split(":");
@@ -19434,7 +19435,7 @@ function ProjectsList({ projects, roster, call: call4, reload }) {
           "div",
           { className: "bt-project-row-controls" },
           (0, import_react42.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openProjectBoard(project.id) }, t("Open board")),
-          (0, import_react42.createElement)(
+          locked ? null : (0, import_react42.createElement)(
             "select",
             {
               className: "bt-select",
@@ -19464,7 +19465,7 @@ function ProjectsList({ projects, roster, call: call4, reload }) {
           label: member.name,
           hint: member.kind === "group" ? t("Group") : t("Bot")
         },
-        (0, import_react42.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
+        locked ? null : (0, import_react42.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
           void unbind(member);
         } }, t("Unbind"))
       ))
@@ -19496,9 +19497,12 @@ function ProjectsPage({ roster, actions, run, call: call4 }) {
       setState({ projects: state.projects, error: error?.message ?? String(error) });
     }
   };
+  const locked = lockedWindow(roster);
   return [
     state.error === null ? null : (0, import_react42.createElement)("div", { key: "error", className: "bt-error", role: "alert" }, state.error),
-    (0, import_react42.createElement)(
+    // The host refuses `project-create` and `project-bind` in a read-only window, so the page draws
+    // no control that would call them; the Project list and its facts stay readable.
+    locked ? null : (0, import_react42.createElement)(
       SetSection,
       { key: "new", title: t("New Project") },
       (0, import_react42.createElement)(

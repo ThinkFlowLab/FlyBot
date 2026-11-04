@@ -159,3 +159,50 @@ test('a row opens its board, a Bot binds with its Project id, and unbinding send
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.deepEqual(calls[2], ['project-bind', { kind: 'group', id: 'r1', projectId: null }])
 })
+
+// #2305: the host refuses `project-create` and `project-bind` in a window that holds the team
+// read-only, so the page draws none of the controls that call them — the name field, New Project,
+// the row's Bind choice and every Unbind — while the readable half stays: the Project row and its
+// facts, Open board, and the members already bound.
+const writeControls = (nodes) => [
+  ...nodes.filter(node => node.type === 'input' && node.props['aria-label'] === 'Project name'),
+  ...nodes.filter(node => node.type === 'select' && /^Bind to /.test(node.props['aria-label'] ?? '')),
+  ...nodes.filter(node => node.type === 'button' && ['New Project', 'Unbind'].includes(text(node))),
+]
+const lockedRoster = { ...roster, readOnly: 'Another window holds this team read-only.' }
+
+test('a read-only window draws no write on the Projects page', async () => {
+  const project = { id: 'project-1', name: 'Site', workDir: '/work/site' }
+  const call = async () => ({ projects: [project] })
+  slots = []
+  effects = []
+  render(ProjectsPage, { roster: lockedRoster, actions, run: fn => fn, call })
+  await flush()
+  const page = render(ProjectsPage, { roster: lockedRoster, actions, run: fn => fn, call })
+  const nodes = all(page)
+  assert.deepEqual(writeControls(nodes), [], 'a read-only window offers no Projects write')
+  assert.ok(!nodes.some(node => node.type === 'h3' && text(node) === 'New Project'), 'the create form is not drawn')
+  assert.ok(nodes.some(node => node.props?.label === 'Site'), 'the Project is still listed')
+  assert.ok(nodes.some(node => node.props?.hint === '/work/site'), 'the Project facts stay')
+  assert.ok(nodes.some(node => node.type === 'button' && text(node) === 'Open board'), 'Open board stays')
+  assert.ok(nodes.some(node => node.props?.label === 'Ops'), 'a bound member is still listed')
+
+  const list = all(ProjectsList({ projects: [project], roster: lockedRoster, call, reload: async () => {} }))
+  assert.deepEqual(writeControls(list), [], 'the list offers no Bind or Unbind either')
+  assert.ok(list.some(node => node.type === 'button' && text(node) === 'Open board'))
+})
+
+test('a writable window keeps every Projects write control', async () => {
+  const project = { id: 'project-1', name: 'Site', workDir: '/work/site' }
+  const call = async () => ({ projects: [project] })
+  slots = []
+  effects = []
+  render(ProjectsPage, { roster, actions, run: fn => fn, call })
+  await flush()
+  const nodes = all(render(ProjectsPage, { roster, actions, run: fn => fn, call }))
+  const controls = writeControls(nodes)
+  assert.equal(controls.length, 4, 'name field, New Project, Bind and one Unbind')
+  assert.equal(nodes.filter(node => node.type === 'input' && node.props['aria-label'] === 'Project name').length, 1)
+  assert.equal(nodes.filter(node => node.type === 'select').length, 1)
+  assert.equal(nodes.filter(node => node.type === 'button' && text(node) === 'Unbind').length, 1)
+})
