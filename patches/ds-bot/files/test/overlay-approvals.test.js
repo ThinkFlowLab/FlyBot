@@ -90,7 +90,7 @@ test('#260: one card per approval: a dock-drawn one is not repeated, and reads l
     assert.match(text, /Waiting for approval/)
     assert.match(text, /Helper → @chief\.uia\.home/)
     assert.doesNotMatch(text, /Sent by/)
-    assert.doesNotMatch(text, /"children":\["[^"]*need your approval/, 'the long policy reason is a tooltip, not a headline')
+    assert.match(text, /"className":"bt-flybot-approval-reason","title":"messages to @chief\.uia\.home's Bots need your approval"/, 'P-538: the policy reason is drawn as its own line, not left to a hover title')
     assert.equal((text.match(/bt-flybot-approval"/g) ?? []).length, 1)
     // A chat that shows a2 claims it: nothing more to draw for it.
     inst.hooks[PENDING].value = [held({ id: 'a2' })]

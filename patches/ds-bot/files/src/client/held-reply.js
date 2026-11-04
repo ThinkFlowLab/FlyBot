@@ -9,6 +9,7 @@ import { registry } from './flybot-registry.js'
 import { claimApprovals } from './approval-claims.js'
 import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
+import { reasonLine } from './reason-line.js'
 import { lockedWindow } from './schedules.js'
 import { hostText, t } from './i18n.js'
 import { relativeShort } from './text.js'
@@ -65,9 +66,12 @@ export function HeldReplyActions({ held, actions, roster }) {
   // #2409: same rule as the dock and the room card; an absent or unparseable stamp draws nothing.
   const at = typeof held.createdAt === 'number' ? held.createdAt : Date.parse(held.createdAt)
   const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null
+  // P-538: the same sentence and the same bound the dock's card draws.
+  const reason = reasonLine(held.reason)
   const plain = h('div', { className: 'bt-held-card', role: 'region', 'aria-label': t('Waiting for your approval') },
     h('div', { className: 'bt-held-head' }, t('Waiting for your approval'), age),
     h('div', { className: 'bt-flybot-approval-origin' }, t('{from} → {to}', { from: held.from ?? t('A Bot'), to: held.toName })),
+    reason ? h('div', { className: 'bt-flybot-approval-reason', title: reason.title }, reason.text) : null,
     locked ? readOnlyLine() : h('div', { className: 'bt-flybot-approval-actions' },
       h('button', { type: 'button', disabled: busy, onClick: () => decide('reject') }, t('Reject')),
       h('button', { type: 'button', className: 'bt-flybot-approve', disabled: busy, onClick: () => decide('approve') }, t('Approve'))),

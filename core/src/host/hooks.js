@@ -568,6 +568,9 @@ export function install(rt) {
       turn: a.request.meta.replyIn.turn,
       to: toRemote(a.request.to)?.handle ?? null,
       ...(a.recipientName ? { toOwner: a.recipientName } : {}),
+      // P-538: the sentence the hold was made with travels with it, so the bubble in the chat can
+      // show why the reply waits instead of leaving it to the dock's hover title.
+      ...(a.reason ? { reason: a.reason } : {}),
       // #968: the view's answer is normalized here, where the record is read: `noRetry` and a terminal
       // sentence both become `retry: false`, so a record written before #954 gets the same answer as a new
       // one, and no renderer has to match a reason string.

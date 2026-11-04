@@ -3240,6 +3240,14 @@ var canRetry = (record) => {
   return !TERMINAL.some((reason) => reason.test(said));
 };
 
+// src/client/reason-line.js
+var REASON_POINTS = 200;
+var reasonLine = (reason) => {
+  if (typeof reason !== "string" || reason.trim() === "") return null;
+  const full2 = reason.toWellFormed();
+  return { text: fits(full2, REASON_POINTS) ? full2 : [...full2].slice(0, REASON_POINTS).join("") + "…", title: full2 };
+};
+
 // src/shared/face-title.js
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function isGenericFaceTitle(name) {
@@ -4644,9 +4652,10 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
         const waiting = isApprovalWaiting(approval.status);
         const at = typeof approval.createdAt === "number" ? approval.createdAt : Date.parse(approval.createdAt);
         const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
+        const reason = reasonLine(approval.reason);
         return (0, import_react6.createElement)(
           "div",
-          { key: approval.id, className: "bt-flybot-approval", title: approval.reason ?? void 0 },
+          { key: approval.id, className: "bt-flybot-approval" },
           (0, import_react6.createElement)("div", { className: "bt-flybot-approval-head" }, failed ? t("Not sent") : t("Waiting for approval"), waiting ? age : null),
           (0, import_react6.createElement)(
             "div",
@@ -4654,6 +4663,7 @@ function FlyBotApprovals({ useRoster, actions } = {}) {
             t("{from} → {to}", { from: approval.senderName ?? t("A Bot"), to: recipientName(approval, roster) }),
             approval.request.hop > 0 ? ` · ${t("delegated")}` : ""
           ),
+          reason ? (0, import_react6.createElement)("div", { className: "bt-flybot-approval-reason", title: reason.title }, reason.text) : null,
           failed && approval.error ? (0, import_react6.createElement)("div", { className: "bt-flybot-approval-error" }, approval.error) : null,
           (0, import_react6.createElement)("div", { className: "bt-flybot-approval-text" }, approval.request.text),
           approval.request.attachments?.length ? (0, import_react6.createElement)("ul", { className: "bt-flybot-approval-files", "aria-label": t("Attached files") }, approval.request.attachments.map((file, index) => (0, import_react6.createElement)("li", { key: index, title: file.path ?? file.name }, `${file.name} · ${fileSize(file.size)}`, file.path ? (0, import_react6.createElement)("div", { className: "bt-flybot-approval-path" }, file.path) : null))) : null,
@@ -4699,6 +4709,7 @@ var FLYBOT_CSS = `
 .bt-flybot-approval { background: var(--bt-card, #fff); border: 1px solid var(--bt-line, rgba(0,0,0,.12)); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; }
 .bt-flybot-approval-head { font-weight: 600; margin-bottom: 4px; }
 .bt-flybot-approval-origin { font-size: 12px; opacity: .7; margin-bottom: 4px; }
+.bt-flybot-approval-reason { font-size: 12px; line-height: 1.4; margin: 0 0 6px; overflow-wrap: anywhere; }
 .bt-flybot-approval-text { white-space: pre-wrap; max-height: 120px; overflow: auto; margin-bottom: 8px; }
 .bt-flybot-approval-path { font-family: ui-monospace, monospace; font-size: 11px; opacity: .7; overflow-wrap: anywhere; }
 .bt-flybot-approval-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -6874,11 +6885,13 @@ function HeldReplyActions({ held, actions, roster }) {
   }
   const at = typeof held.createdAt === "number" ? held.createdAt : Date.parse(held.createdAt);
   const age = Number.isFinite(at) && at > 0 ? ` · ${relativeShort(at)}` : null;
+  const reason = reasonLine(held.reason);
   const plain = (0, import_react10.createElement)(
     "div",
     { className: "bt-held-card", role: "region", "aria-label": t("Waiting for your approval") },
     (0, import_react10.createElement)("div", { className: "bt-held-head" }, t("Waiting for your approval"), age),
     (0, import_react10.createElement)("div", { className: "bt-flybot-approval-origin" }, t("{from} → {to}", { from: held.from ?? t("A Bot"), to: held.toName })),
+    reason ? (0, import_react10.createElement)("div", { className: "bt-flybot-approval-reason", title: reason.title }, reason.text) : null,
     locked ? readOnlyLine() : (0, import_react10.createElement)(
       "div",
       { className: "bt-flybot-approval-actions" },
