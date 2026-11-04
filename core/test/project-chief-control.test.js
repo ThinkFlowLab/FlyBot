@@ -49,7 +49,7 @@ async function controlFixture({ modern = false, dependency = false } = {}) {
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
   const roles = ['chief', 'developer', 'tester', 'reviewer'].map(role => ({ id: `p:${role}`, role }))
-  const rt = { state: { tasks: { t: task }, projectExecutions: {}, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: 'candidate', evidence: {} } }, projectChiefPolicies: { p: { enabled: true, authorityMemberId: 'owner', revision: 1, inspection: { thresholds, prompt: 'Inspect evidence' } } }, projectAgents: { 'public-p': { id: 'public-p', projectId: 'p', visibility: 'public', botId: 'chief', sessionId: 'chief', carrierGeneration: 1 } } }, config: {}, save: async () => {}, projects: { requireActive() {} }, requireProjectAccess(actor, id) { if (!permitted || actor.memberId !== 'owner' || id !== 'p') throw new Error('Current role denied') }, projectDelegations: { background: async () => true }, bindProject(body) { rt.state.projectExecutions[body.id] = { ...body }; return { id: body.projectId, status: 'active' } }, projectAgents: { deliveryDefinitions: () => ({ roles }), chiefBusy: () => false, startChiefJob: async args => { request = args; return 'native-job' } }, projectDelivery: { chiefAccept: async () => { accepted++; task.status = 'accepted' } } }
+  const rt = { state: { tasks: { t: task }, projectExecutions: {}, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: 'candidate', evidence: {} } }, projectChiefPolicies: { p: { enabled: true, authorityMemberId: 'owner', revision: 1, inspection: { thresholds, prompt: 'Inspect evidence' } } }, projectAgents: { 'public-p': { id: 'public-p', projectId: 'p', visibility: 'public', botId: 'chief', sessionId: 'chief', carrierGeneration: 1 } } }, config: {}, save: async () => {}, projects: { requireActive() {} }, requireProjectAccess(actor, id) { if (!permitted || actor.memberId !== 'owner' || id !== 'p') throw new Error('Current role denied') }, projectDelegations: { background: async () => true }, bindProject(body) { rt.state.projectExecutions[body.id] = { ...body }; return { id: body.projectId, status: 'active' } }, projectAgents: { deliveryDefinitions: () => ({ roles }), chiefBusy: () => false, startChiefJob: async args => { request = args; request.capturedInvocation = rt.state.projectExecutions[args.runId].invocation; return 'native-job' } }, projectDelivery: { chiefAccept: async () => { accepted++; task.status = 'accepted' } } }
   let control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
   if (modern) {
     const { createProjectEffects } = await import('../src/host/project-effects.js')
@@ -70,7 +70,18 @@ async function controlFixture({ modern = false, dependency = false } = {}) {
     }
     await control.request('p', 'intake', { requirementRevision: 1 }, task.id)
   }
+  const originalPump = control.pump
+  control.pump = async () => {
+    await originalPump()
+    for (let index = 0; index < 200; ++index) {
+      const running = Object.values(rt.state.projectExecutions).find(row => row.status === 'running')
+      if (!running || request?.runId === running.id && request.capturedInvocation === running.invocation) return
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    throw new Error('Chief dispatch preparation did not settle')
+  }
   await control.pump()
+  if (!request) throw new Error(JSON.stringify(Object.values(rt.state.projectExecutions).map(row => ({status:row.status,failure:row.failure,dispatchFailure:row.dispatchFailure}))))
   const result = overrides => ({ ok: true, text: JSON.stringify({ summary: 'Judgement', decisions: [{ taskId: 't', action: 'close', reason: 'Criteria met', criteria: [{ criterion: task.criteria, passed: true, evidence: 'Verified host facts' }], ...overrides }] }), executionEvidence: { kind: 'native-chief', chiefRunId: request.runId, carrierGeneration: 1, botId: 'chief', sessionId: 'chief' } })
   return { rt, task, control, get request() { return request }, result, accepted: () => accepted, revokeRole() { permitted = false } }
 }
@@ -336,4 +347,69 @@ test('an omitted task decision is protocol feedback, not an implicit human escal
   await f.request.onResult(response)
   assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'correction-pending')
   assert.equal(f.task.chiefQuestion, undefined)
+})
+
+test('scheduled inspection references settle from durable run status instead of an in-memory waiter', async () => {
+  const f = await controlFixture()
+  const delivery = { id: 'occurrence-1' }, row = { id: 'schedule', projectId: 'p', config: { prompt: 'Inspect' } }
+  const reference = await f.control.scheduled({ row, delivery })
+  assert.ok(reference.runId)
+  const run = f.rt.state.projectExecutions[reference.runId]
+  run.status = 'failed'; run.failure = 'Confirmed refusal'
+  const replay = await f.control.scheduled({ row, delivery })
+  assert.equal(replay.runId, run.id)
+  assert.equal(f.control.scheduledState({ row, delivery }).status, 'failed')
+})
+
+test('expired inspections revoke old callbacks, settle delivery and requeue only with confirmed exit', async () => {
+  const f = await controlFixture(), now = Date.now()
+  const run = f.rt.state.projectExecutions[f.request.runId]
+  run.purpose = 'inspection'; run.taskId = undefined
+  f.rt.state.projectChiefPolicies.p.inspection.lifecycle = { runTimeoutMs: 1, recoveryDelayMs: 1 }
+  run.startedAt = now - 10000
+  const old = f.request
+  f.rt.projectAgents.stopChiefJob = async () => ({ confirmed: true, kind: 'native-chief-quiescent', runId: run.id })
+  await f.control.pump(); await new Promise(resolve => setImmediate(resolve))
+  assert.equal(run.status, 'interrupted')
+  await old.onResult({ ok: true, text: JSON.stringify({ summary: 'Late', decisions: [{taskId:'t',action:'needs-human',reason:'Late result'}] }), executionEvidence: { kind:'native-chief', botId:'chief',sessionId:'chief',chiefRunId:run.id,carrierGeneration:1 } })
+  assert.equal(f.task.chiefQuestion, undefined)
+  run.recovery.notBefore = Date.now() - 1
+  await f.control.pump(); await new Promise(resolve => setImmediate(resolve))
+  assert.equal(run.status, 'running'); assert.equal(run.recovery.attempts, 1)
+  assert.notEqual(f.request.actor.chiefToken, old.actor.chiefToken)
+})
+
+test('one refused inspection route preserves its gate while an independent Task still receives judgement', async () => {
+  const f = await controlFixture()
+  const run = f.rt.state.projectExecutions[f.request.runId]; run.purpose = 'inspection'; delete run.taskId
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Finish the fixture arbitration before a project inspection' }))
+  f.rt.state.tasks.other = { id: 'other', projectId: 'p', title: 'Independent pending item', criteria: 'Checked', status: 'open' }
+  f.task.collaboration.status = 'blocked'
+  await f.control.request('p', 'inspection', { requestId: 'independent-inspection' })
+  await f.control.pump()
+  f.rt.projectPools.chiefRoute = async () => { throw new Error('Chief intervention is waiting for confirmed worker exit') }
+  const request = f.request
+  await request.onResult({ ...f.result({ action: 'continue' }), text: JSON.stringify({ summary: 'Inspect independent work', decisions: [{ taskId: 't', action: 'route', targetBotId: 'p:developer', reason: 'Try repairing the candidate' }, { taskId: 'other', action: 'continue', reason: 'Independent facts recorded without closure' }] }) })
+  const inspected = f.rt.state.projectExecutions[request.runId]
+  assert.equal(inspected.status, 'partial'); assert.equal(inspected.decisionFailures.length, 1)
+  assert.ok(f.rt.state.tasks.other.chiefObservations)
+  assert.match(f.task.chiefActionIssue.message, /confirmed worker exit/)
+  assert.equal(f.task.status, 'result-ready')
+})
+
+test('restart requeues taskless inspection only with exact confirmed exit, current authority and committed recovery', async () => {
+  for (const kind of ['confirmed', 'unknown', 'revoked', 'save-failed']) {
+    const f = await controlFixture({ modern: kind === 'save-failed' })
+    const run = f.rt.state.projectExecutions[f.request.runId]; run.purpose = 'inspection'; delete run.taskId
+    const restored = createProjectChiefControl(f.rt); f.rt.projectChiefControl = restored
+    assert.equal(restored.recover(), true)
+    run.recovery = { status: 'waiting-exit', attempts: 0, notBefore: Date.now() - 1 }
+    if (kind !== 'unknown') run.exitProof = { confirmed: true, kind: 'native-chief-quiescent', runId: run.id, invocation: run.invocation }
+    if (kind === 'revoked') f.revokeRole()
+    if (kind === 'save-failed') f.rt.save = async () => {} // No durable Effects acknowledgement.
+    await restored.pump(); await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(run.status, kind === 'confirmed' ? 'running' : kind === 'unknown' ? 'interrupted' : 'failed', kind)
+    if (kind === 'confirmed') assert.equal(run.recovery.attempts, 1)
+    if (kind === 'unknown') assert.equal(run.recovery.exitConfirmed, false)
+  }
 })

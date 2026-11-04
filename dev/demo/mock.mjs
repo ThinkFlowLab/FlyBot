@@ -19,7 +19,7 @@ export function mockModel(observations, { reply } = {}) {
       const last = body.messages?.at(-1)?.content
       const result = Array.isArray(last) && last.some(block => block.type === 'tool_result')
       const tools = body.tools?.some(tool => tool.name === 'bash')
-      const blocks = reply?.({ body, result, tools }) ?? (tools && !result
+      const blocks = await reply?.({ body, result, tools }) ?? (tools && !result
         ? [{ type: 'tool_use', id: 'm0-shell', name: 'bash', input: { description: 'Verify isolated cwd, write code and run a test', command: probeCommand } }]
         : [{ type: 'text', text: 'OUTPUT proof: M0 execution finished; verify proof.json independently.' }])
       observations.push({ toolRequested: tools && !result, toolResult: Boolean(result),

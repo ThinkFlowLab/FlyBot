@@ -93,6 +93,16 @@ export function createProjectScheduledTasks(rt) {
   }
   async function pump() {
     for (const row of Object.values(rows())) {
+      const targetHandler = handler(row.target)
+      if (targetHandler.status) for (const delivery of Object.values(row.deliveries).filter(item => item.status !== 'queued' && item.status !== 'completed')) {
+        const outcome = targetHandler.status({ row, delivery })
+        if (!outcome) continue
+        if (delivery.status !== outcome.status) { (delivery.transitions ??= []).push({ from: delivery.status, to: outcome.status, at: Date.now() }); delivery.transitions = delivery.transitions.slice(-8) }
+        Object.assign(delivery, outcome)
+        if (outcome.status !== 'running') delivery.finishedAt ??= Date.now()
+        else delete delivery.finishedAt
+        await rt.save()
+      }
       if (!row.enabled || row.status === 'deleted') continue
       try { await reconcile(row) } catch (error) { row.error = error.message; await rt.save(); continue }
       for (const delivery of Object.values(row.deliveries).filter(item => item.status === 'queued')) {
@@ -100,8 +110,20 @@ export function createProjectScheduledTasks(rt) {
         try {
           rt.requireProjectAccess(actor, row.projectId, 'configure')
           await rt.projectDelegations?.background(actor.memberId)
-          delivery.status = 'running'; await rt.save()
-          void Promise.resolve(handler(row.target).run({ row: structuredClone(row), delivery: structuredClone(delivery), actor })).then(async () => { delivery.status = 'completed'; delivery.finishedAt = Date.now(); await rt.save() }, async error => { delivery.status = 'failed'; delivery.error = String(error.message).slice(0, 1000); delivery.finishedAt = Date.now(); await rt.save() }).catch(error => rt.warn('Scheduled-task result save failed: %s', error.message))
+          delivery.status = 'running'; delivery.startedAt = Date.now(); delivery.generation = (delivery.generation ?? 0) + 1; const generation = delivery.generation; await rt.save()
+          void Promise.resolve(handler(row.target).run({ row: structuredClone(row), delivery: structuredClone(delivery), actor })).then(async reference => {
+            if (delivery.generation !== generation || delivery.status !== 'running') return
+            if (reference?.runId && handler(row.target).status) {
+              delivery.runId = reference.runId
+              const outcome = handler(row.target).status({ row, delivery })
+              if (outcome) Object.assign(delivery, outcome)
+              if (delivery.status !== 'running') delivery.finishedAt = Date.now()
+            } else { delivery.status = 'completed'; delivery.finishedAt = Date.now() }
+            await rt.save()
+          }, async error => {
+            if (delivery.generation !== generation || delivery.status !== 'running') return
+            delivery.status = 'failed'; delivery.error = String(error.message).slice(0, 1000); delivery.finishedAt = Date.now(); await rt.save()
+          }).catch(error => rt.warn('Scheduled-task result save failed: %s', error.message))
         } catch (error) { delivery.status = 'failed'; delivery.error = String(error.message).slice(0, 1000); delivery.finishedAt = Date.now() }
         await rt.save()
       }

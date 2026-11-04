@@ -10,6 +10,7 @@ import { test } from 'node:test'
 import { backendConfig, callApi, connection, prepareBackend, readJson, root } from '../../scripts/backend-lib.mjs'
 import { mockModel } from '../../dev/demo/mock.mjs'
 import { inboxModel } from '../../dev/demo/agent-inbox-model.mjs'
+import { openSqliteState } from '../../core/src/host/project-state-sqlite.js'
 import { readSpec, validateExchange, validate } from '../../scripts/api-contract-validation.mjs'
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -38,10 +39,20 @@ async function launch(home, env) {
   } catch (error) { await close(); throw error }
 }
 
-test('production backend retains canonical Tasks/auth across restart, keeps consultation private and serves scoped SSE', { timeout: 90000 }, async t => {
+test('production backend retains canonical Tasks/auth across restart, keeps consultation private and serves scoped SSE', { timeout: 150000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'flybot-backend-runtime-')), port = await freePort()
   const inboxDriver = inboxModel({ correctOnce: true })
-  const model = mockModel([], { reply: inboxDriver.reply })
+  let holdInspection = true, releaseInspection, inspectionRequests = 0
+  const inspectionMarker = 'INSPECTION_RECOVERY_ACCEPTANCE_2330'
+  const model = mockModel([], { reply(options) {
+    if (JSON.stringify(options.body.messages).includes(inspectionMarker) && JSON.stringify(options.body.system).includes('For each configured Chief job')) {
+      ++inspectionRequests
+      const response = [{ type: 'text', text: JSON.stringify({ summary: 'Actual isolated empty-project inspection', decisions: [] }) }]
+      if (holdInspection) return new Promise(resolve => { releaseInspection = () => resolve(response) })
+      return response
+    }
+    return inboxDriver.reply(options)
+  } })
   model.listen(0, '127.0.0.1'); await once(model, 'listening')
   const env = { ...process.env, DEEPSEEK_API_KEY: 'isolated-test-provider', DEEPSEEK_BASE_URL: `http://127.0.0.1:${model.address().port}/v1` }
   const profile = prepareBackend(home, backendConfig({ port }))
@@ -215,6 +226,50 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   assert.equal(after.replayed, true)
   assert.equal(after.result.id, taskId)
   await assert.rejects(callApi(nextTransport, 'project-read', { id: project.id }, bob.sessionToken), /forbidden/)
+  // Insert only a queued reminder in this disposable stopped home. All execution,
+  // cancellation, exit proof, restart recovery and result persistence below are real.
+  const { project: recoveryProject } = await apiNext('project-create', { name: inspectionMarker })
+  const configured = await devNext('command', 'chief.configure', recoveryProject.id, { enabled: true, inspection: { lifecycle: { runTimeoutMs: 3000, recoveryDelayMs: 3000 }, enabled: true } }, 'configure-inspection-recovery')
+  const scheduleId = configured.result.policy.scheduleId
+  await host.close(); host = null
+  const database = openSqliteState({ path: join(home, 'bot/state.sqlite') })
+  try {
+    const state = database.read(), schedule = state.projectScheduledTasks[scheduleId]
+    schedule.deliveries['fixture-inspection-occurrence'] = { id: 'fixture-inspection-occurrence', scheduleId: schedule.scheduleId, revision: schedule.revision, occurrenceAt: new Date().toISOString(), at: Date.now(), status: 'queued' }
+    database.write(state)
+  } finally { database.close() }
+  host = await launch(home, env)
+  let interruptedRun
+  for (let pass = 0; pass < 150; pass++) {
+    const chief = await devNext('query', 'chief.state', recoveryProject.id, {})
+    interruptedRun = chief.result.runs.find(row => row.source?.occurrenceId === 'fixture-inspection-occurrence')
+    if (interruptedRun?.status === 'interrupted' && releaseInspection) break
+    await pause(100)
+  }
+  assert.equal(interruptedRun?.status, 'interrupted'); assert.ok(inspectionRequests >= 1)
+  holdInspection = false; releaseInspection()
+  let confirmed = false
+  for (let pass = 0; pass < 100; pass++) {
+    const chief = await devNext('query', 'chief.state', recoveryProject.id, {})
+    const run = chief.result.runs.find(row => row.id === interruptedRun.id)
+    if (run?.exitProof?.confirmed) { confirmed = true; break }
+    await pause(50)
+  }
+  assert.equal(confirmed, true, 'Actual native whenIdle/stop must confirm exit before restart recovery')
+  await host.close(); host = null
+  host = await launch(home, env)
+  let recovered
+  for (let pass = 0; pass < 150; pass++) {
+    const chief = await devNext('query', 'chief.state', recoveryProject.id, {})
+    const run = chief.result.runs.find(row => row.id === interruptedRun.id)
+    if (run?.status === 'done' && chief.result.schedule.deliveries.some(row => row.runId === run.id && row.status === 'completed')) { recovered = chief.result; break }
+    await pause(100)
+  }
+  assert.ok(recovered, 'Taskless scheduled inspection must reconcile and complete after actual backend restart')
+  assert.equal(recovered.runs.filter(row => row.source?.occurrenceId === 'fixture-inspection-occurrence').length, 1)
+  assert.equal(recovered.runs.find(row => row.id === interruptedRun.id).invocation, 2)
+  assert.ok(recovered.health.lastSuccessAt); assert.equal(recovered.health.lastAppliedDecisionAt, null)
+  assert.equal((await devNext('query', 'tasks', recoveryProject.id, {})).result.tasks.length, 0)
   await host.close(); host = null
   const statePath = join(home, 'bot/state.json'), future = JSON.stringify({ version: 99, note: 'Preserve this unsupported guard' })
   writeFileSync(statePath, future)

@@ -77,3 +77,18 @@ test('ordinary native tool continuation with no new inbox messages remains admit
   assert.equal(result.kind, 'enter', 'No managed reminder was consumed, so the native continuation must run')
   assert.deepEqual(result.messages, [])
 })
+
+test('Chief deliveries reconcile persisted terminal/recovery states after restart without replaying the occurrence', async () => {
+  const f = setup(), row = await f.save({})
+  let outcome = { runId: 'durable-chief', status: 'running', error: null }, dispatched = 0
+  f.service.register('role', { resolve: async () => ({ botId: 'chief-old' }), run: async () => { ++dispatched; return { runId: 'durable-chief' } }, status: () => outcome })
+  await f.service.accept('chief-old', [{ schedule_id: row.scheduleId, occurrence_at: '2026-11-04T00:00:00Z', reminder_prompt: row.config.prompt }])
+  await f.service.pump(); await new Promise(resolve => setImmediate(resolve))
+  const delivery = Object.values(f.rt.state.projectScheduledTasks[row.id].deliveries)[0]
+  assert.equal(delivery.status, 'running'); assert.equal(delivery.runId, 'durable-chief')
+  f.service.recover(); outcome = { runId: 'durable-chief', status: 'failed', error: 'Interrupted, waiting for exit' }
+  await f.service.pump(); assert.equal(delivery.status, 'failed')
+  outcome = { runId: 'durable-chief', status: 'running', error: null }; await f.service.pump(); assert.equal(delivery.finishedAt, undefined)
+  outcome = { runId: 'durable-chief', status: 'completed', error: null }; await f.service.pump()
+  assert.equal(delivery.status, 'completed'); assert.equal(delivery.error, null); assert.equal(dispatched, 1)
+})
