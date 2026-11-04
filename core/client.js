@@ -951,6 +951,7 @@ var ZH = {
   "{first}, {second} and {count} more are waiting for your approval": "{first}、{second} 等 {total} 个等你批准",
   "Waiting for your approval": "等你批准",
   "Waiting for their approval": "等对方批准",
+  "The decision was not sent.": "决定没有发出去。",
   "Your Bots post in rooms without asking each time. Use Auto-send in the room header to turn it off.": "你的 Bot 会在房间里直接发送，不再每次询问。要关掉，用房间标题里的自动发送。",
   "Turn on auto-send": "打开自动发送",
   "Approve and always auto-send in this room": "批准并在此房间始终自动发送",
@@ -19824,9 +19825,10 @@ function About({ text: text2, title = "About" }) {
     long ? (0, import_react44.createElement)("button", { type: "button", className: "bt-more", onClick: () => setOpen((value) => !value) }, open ? t("Show less") : t("Show more")) : null
   );
 }
-function SharedRoomApprovals({ room: room2 }) {
+function SharedRoomApprovals({ room: room2, roster }) {
   const [items, setItems] = (0, import_react44.useState)(room2.pendingApprovals ?? []);
   const [busy, setBusy] = (0, import_react44.useState)("");
+  const [error, setError] = (0, import_react44.useState)("");
   const face = room2.origin === "face-to-face";
   (0, import_react44.useEffect)(() => {
     const haveItems = Array.isArray(room2.pendingApprovals) && room2.pendingApprovals.length;
@@ -19845,11 +19847,15 @@ function SharedRoomApprovals({ room: room2 }) {
     };
   }, [room2.id, room2.viewerRole, room2.pendingCount, face]);
   if (room2.viewerRole !== "invited-owner" && !face || !items.length) return null;
+  const locked = lockedWindow(roster);
   const decide = async (item, decision) => {
     setBusy(item.id);
     try {
       await call("social/decide-approval", { approvalId: item.id, decision });
       setItems((list) => list.filter((entry) => entry.id !== item.id));
+      setError("");
+    } catch (failure) {
+      setError(failure?.message || t("The decision was not sent."));
     } finally {
       setBusy("");
     }
@@ -19862,9 +19868,11 @@ function SharedRoomApprovals({ room: room2 }) {
       "div",
       { key: item.id, className: "bt-set-row" },
       (0, import_react44.createElement)("span", { className: "bt-set-copy" }, item.text || item.summary || item.to || t("Outbound reply")),
-      (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
-      (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
-    ))
+      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "approve") }, t("Approve")),
+      locked ? null : (0, import_react44.createElement)("button", { type: "button", className: "bt-mini", disabled: busy === item.id, onClick: () => decide(item, "reject") }, t("Reject"))
+    )),
+    locked ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+    error ? (0, import_react44.createElement)("div", { className: "bt-error", role: "alert" }, error) : null
   );
 }
 function FaceMembers({ room: room2, roster, actions }) {
@@ -19908,7 +19916,7 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
       room2.sharedFrom.invitedAt ? (0, import_react44.createElement)("div", { className: "bt-set-hint" }, t("Invited {when}", { when: new Date(room2.sharedFrom.invitedAt).toLocaleString() })) : null,
       (0, import_react44.createElement)("button", { type: "button", className: "bt-more", onClick: leaveMine }, t("Remove my Bot"))
     ) : face ? null : room2.notice ? (0, import_react44.createElement)(About, { key: "notice", title: "Notice", text: room2.notice }) : (0, import_react44.createElement)("button", { key: "notice", type: "button", className: "bt-more", onClick: openSettings }, t("Add a notice in group settings")),
-    face ? null : (0, import_react44.createElement)(SharedRoomApprovals, { key: "approvals", room: room2 }),
+    face ? null : (0, import_react44.createElement)(SharedRoomApprovals, { key: "approvals", room: room2, roster }),
     face && (room2.face?.status === "candidate" || room2.face?.status === "joining") ? null : face ? (0, import_react44.createElement)(FaceMembers, { key: "members", room: room2, roster, actions }) : (0, import_react44.createElement)(
       "div",
       { key: "members" },
