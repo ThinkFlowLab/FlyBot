@@ -617,6 +617,13 @@ export function validateWorkflow(raw, options = {}) {
   }
 
   const nodeIds = def.nodes.map((node) => node.id)
+  // An edge names one fact at each end, and a node may spell that fact with a space (#1298): the
+  // alignment check reads both sides the way every other rule in this file does, or a definition
+  // that validation otherwise accepts is refused as misaligned over its spelling.
+  const specsOf = new Map(def.nodes.map((node) => [node.id, {
+    outputs: new Set(node.outputs.map(canonicalSpec).filter(Boolean)),
+    inputs: new Set(node.inputs.map(canonicalSpec).filter(Boolean)),
+  }]))
   for (const edge of def.edges) {
     if (!edge.from || !edge.to) {
       problems.push(message('edge/without-both-ends', 'an edge names only one end', { edge }))
@@ -632,9 +639,9 @@ export function validateWorkflow(raw, options = {}) {
       )
       continue
     }
-    const fromNode = nodeById(def, from.node)
-    const toNode = nodeById(def, to.node)
-    if (!fromNode.outputs.includes(from.artifact) || !toNode.inputs.includes(to.artifact)) {
+    const fromSpecs = specsOf.get(from.node)
+    const toSpecs = specsOf.get(to.node)
+    if (!fromSpecs?.outputs.has(from.artifact) || !toSpecs?.inputs.has(to.artifact)) {
       problems.push(
         message(
           'edge/misaligned',
