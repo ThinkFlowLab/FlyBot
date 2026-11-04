@@ -108,3 +108,10 @@ test('Chief source/acceptance failures and incomplete correction transport remai
   validate(query.resultSchema, value, spec)
   for (const kind of ['input-protocol', 'acceptance-evidence-missing']) { value.runs[0].recoveryIssue.kind = kind; validate(query.resultSchema, value, spec) }
 })
+
+test('merged candidate handoff separates transport receipt, Chief outcome and Task acceptance', () => {
+  const spec = readSpec(), value = { effectId: 'handoff-effect', candidateSha: 'a'.repeat(40), status: 'delivered', reason: null, waitingFor: null, runId: 'chief-run', runStatus: 'failed', runFailure: 'Execution transport unavailable', waitingRunId: null, createdAt: 1, requestedAt: 2 }
+  validate({ $ref: '#/components/schemas/MergeHandoff' }, value, spec)
+  assert.throws(() => validate({ $ref: '#/components/schemas/MergeHandoff' }, { ...value, status: 'accepted' }, spec), /status:/)
+  assert.throws(() => validate({ $ref: '#/components/schemas/MergeHandoff' }, { ...value, candidateSha: 'unverified' }, spec), /candidateSha:/)
+})

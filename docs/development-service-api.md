@@ -278,3 +278,7 @@ Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、
 完整操作顺序、示例和凭据边界见[角色App指南](role-github-apps.md)和OpenAPI。
 
 `task.run` 可带 `continuation:{mode:"continue"|"latest",previousAttemptId,generation,expectedWorkspace,expectedBaseSha?}`，需要当前管理权限；快照取 `attempt.continuation-state`。continue 沿用已核验旧 seed 与来源，latest 要求 expectedBaseSha 等于快照的 latestBaseSha，且不丢弃草稿，基线冲突仍须显式 integrate。取消的前序不会复活，新 Attempt 不继承测试/Review 通过。
+
+### 已合入候选的 Chief 收尾状态
+
+现有 `task`/`task.detail`、Attempt 元数据及 `effects` 查询可共同读取 `merge.chiefHandoff`：`effectId`、`status`、`reason`、`waitingFor`、`runId`、`runStatus`、`runFailure`、`waitingRunId`、`createdAt`、`requestedAt` 和 `candidateSha`。具体结构见 OpenAPI `MergeHandoff`。`status=delivered` 表示 Chief 请求已持久化，不代表 Chief 已执行成功或 Task 已验收。通知重试仍用原 `effect.retry` 权限和请求契约；无需重新 publish/merge。

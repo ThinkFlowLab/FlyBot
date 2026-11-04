@@ -1,3 +1,4 @@
+import { mergeHandoffView } from './project-reviewed-merge.js'
 import { autonomyPolicy, operationsContact, assistanceRequest, assistanceScope, assistanceFacts, compensationSchedules } from './project-chief-assistance.js'
 import { classifyChiefRecovery, progressCheckpoint } from './project-chief-recovery.js'
 // Chief arbitration uses existing Tasks, Runs, Sessions and resource leases.
@@ -146,7 +147,7 @@ export function createProjectChiefControl(rt) {
         evidence: { implementation: attempt?.evidence.implementation ? { sha: attempt.evidence.implementation.sha, paths: attempt.evidence.implementation.paths } : null,
           tests: attempt?.evidence.tests ? { sha: attempt.evidence.tests.sha, passed: attempt.evidence.tests.passed, status: attempt.evidence.tests.status ?? null, stage: attempt.evidence.tests.stage ?? null, reason: attempt.evidence.tests.reason ?? null, testsStarted: attempt.evidence.tests.testsStarted ?? null, preparation: attempt.evidence.tests.preparation ? { id: attempt.evidence.tests.preparation.id, status: attempt.evidence.tests.preparation.status, executor: attempt.evidence.tests.preparation.executor, sha256: attempt.evidence.tests.preparation.sha256 } : null, sha256: attempt.evidence.tests.sha256, command: attempt.evidence.tests.command } : null,
           review: attempt?.evidence.review ? { sha: attempt.evidence.review.sha, verdict: attempt.evidence.review.verdict, summary: attempt.evidence.review.summary, repositoryVerdict: attempt.evidence.review.report?.repositoryVerdict ?? 'INC' } : null,
-          merge: attempt?.evidence.merge ? structuredClone(attempt.evidence.merge) : null, mergeState: attempt?.merge ? { status: attempt.merge.status, reason: attempt.merge.reason, nextCheckAt: attempt.merge.nextCheckAt, mergeCommitSha: attempt.merge.mergeCommitSha ?? null } : null,
+          merge: attempt?.evidence.merge ? structuredClone(attempt.evidence.merge) : null, mergeState: attempt?.merge ? { status: attempt.merge.status, reason: attempt.merge.reason, nextCheckAt: attempt.merge.nextCheckAt, mergeCommitSha: attempt.merge.mergeCommitSha ?? null, chiefHandoff: mergeHandoffView(rt.state, attempt) } : null,
           outputs: attempt?.evidence.developer?.outputs ?? null, pr: attempt?.pr ? { number: attempt.pr.number, sha: attempt.pr.sha, url: attempt.pr.url } : null }, inspection: facts }
     }))
   }
@@ -158,6 +159,7 @@ export function createProjectChiefControl(rt) {
     if (!task || task.projectId !== run.projectId || !saved || terminal.has(task.status) && decision.action !== 'reopen') throw refuse('Chief decision names an unavailable Task')
     if (task.projectTask && task.projectTask.requirements.revision !== saved.taskContract?.requirements.revision) throw refuse('Task requirements changed after Chief snapshot')
     if ((task.collaboration?.generation ?? 0) !== saved.generation || task.deliveryAttemptId !== saved.attemptId && (task.deliveryAttemptId ?? null) !== saved.attemptId || (rt.state.projectAttempts?.[task.deliveryAttemptId]?.candidateSha ?? null) !== saved.candidateSha) throw refuse('Task progressed after the Chief snapshot; decision is stale')
+    if (digest(rt.state.projectAttempts?.[task.deliveryAttemptId]?.evidence?.merge ?? null) !== digest(saved.evidence?.merge ?? null)) throw chiefProtocolError('snapshot', 'fresh facts after merge evidence changed', task.id)
     const reason = typeof decision.reason === 'string' ? decision.reason.trim() : ''
     if (!reason || reason.length > 4000 || !['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen', 'resolve-dependency', 'retry-notification', 'reconcile-exit'].includes(decision.action)) throw refuse('Chief decision needs a supported action and bounded reason')
     if (decision.action === 'needs-human') { assistanceRequest(decision); if (decision.recipient === 'operations' && !operationsContact(rt, task.projectId, policyOf(task.projectId).operationsContact)) throw refuse('No operations contact is configured') }
@@ -263,6 +265,7 @@ export function createProjectChiefControl(rt) {
             if ((current.collaboration?.generation ?? 0) !== saved.generation) changed.push('generation')
             if ((current.deliveryAttemptId ?? null) !== saved.attemptId) changed.push('Attempt')
             if ((rt.state.projectAttempts?.[current.deliveryAttemptId]?.candidateSha ?? null) !== saved.candidateSha) changed.push('candidate')
+            if (digest(rt.state.projectAttempts?.[current.deliveryAttemptId]?.evidence?.merge ?? null) !== digest(saved.evidence?.merge ?? null)) changed.push('merge evidence')
             if (current.title !== saved.title || (current.criteria ?? '') !== saved.criteria || current.projectTask && current.projectTask.requirements.revision !== saved.taskContract?.requirements.revision) changed.push('requirements')
           }
           if (changed.length) throw Object.assign(chiefProtocolError('snapshot', `fresh facts after ${changed.join(', ')} changed`, decision.taskId), { recovery: { version: 'chief-recovery/v1', kind: 'stale-snapshot', changedFields: changed, retryable: false, conditions: ['fresh scoped snapshot; never rebase old input receipts'], actions: ['Chief reassesses current facts'] } })

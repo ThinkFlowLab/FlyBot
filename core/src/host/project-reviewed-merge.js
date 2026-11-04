@@ -4,9 +4,79 @@ import { EffectCancelled, EffectDeferred, EffectExhausted } from './project-effe
 import { confirmedWorkerExit } from './project-task-sessions.js'
 import { nativeExitConfirmed } from './project-native-sessions.js'
 import { verifyRolePolicy } from './project-role-policy.js'
+export function mergeHandoffView(state, attempt) {
+  const handoff = attempt?.merge?.chiefHandoff
+  if (!handoff) return null
+  const savedEffect = state.projectEffects?.[handoff.effect?.id], savedRun = state.projectExecutions?.[handoff.runId]
+  const effect = savedEffect?.projectId === attempt.projectId && savedEffect.taskId === attempt.taskId ? savedEffect : null
+  const run = savedRun?.projectId === attempt.projectId && savedRun.source?.attemptId === attempt.id && savedRun.source.candidateSha === handoff.candidateSha ? savedRun : null
+  return { effectId: handoff.effect?.id ?? null, candidateSha: handoff.candidateSha, status: effect?.status === 'done' ? 'delivered' : effect?.status ?? 'uncommitted', reason: effect?.error ?? null, waitingFor: effect?.waitingFor ?? null,
+    runId: handoff.runId ?? null, runStatus: run?.status ?? null, runFailure: run?.failure?.slice(0, 1000) ?? null, waitingRunId: handoff.waitingRunId ?? null, createdAt: handoff.createdAt, requestedAt: handoff.requestedAt ?? null }
+}
 export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, validatePublication, serialAttempt, now = Date.now }) {
   const attempts = () => rt.state.projectAttempts ?? {}
   const policyOf = attempt => { const project = projectOf(attempt.projectId, attempt); return projectMergePolicy(settingsOf(project), project.defaultBranch ?? 'main') }
+  function mergeProof(attempt) {
+    const proof = attempt?.evidence?.merge, effect = rt.state.projectEffects?.[proof?.effectId], intent = effect?.payload?.intent
+    if (!proof || !intent || proof.scope !== 'provider-confirmed-merge-observation' || !/^[0-9a-f]{40}$/.test(proof.mergeCommitSha ?? '') || proof.sha !== attempt.candidateSha || effect?.kind !== 'github.merge' || effect.projectId !== attempt.projectId || effect.taskId !== attempt.taskId || effect.payload.attemptId !== attempt.id || effect.payload.candidateSha !== proof.sha || attempt.merge?.effectId !== effect.id || proof.repository !== intent?.repository || proof.number !== intent.number || attempt.pr?.repository !== proof.repository || attempt.pr?.number !== proof.number || attempt.pr?.sha !== proof.sha || proof.policySha256 !== effect.payload.policySha256 || proof.reviewSha256 !== effect.payload.reviewSha256) return null
+    return proof
+  }
+  const proofKey = proof => mergeDigest([proof.effectId, proof.sha, proof.mergeCommitSha, proof.repository, proof.number, proof.baseBranch, proof.policySha256, proof.reviewSha256])
+  function currentTask(attempt) {
+    const task = rt.state.tasks[attempt.taskId]
+    if (!task || task.projectId !== attempt.projectId || task.deliveryAttemptId !== attempt.id || ['accepted', 'cancelled'].includes(task.status) || attempt.cancelRequested || attempt.status === 'cancelled' || ['cancelled', 'closed', 'stopping'].includes(task.collaboration?.status)) throw new EffectCancelled('Merged candidate is no longer awaiting current Task acceptance')
+    return task
+  }
+  async function stageHandoff(attempt) {
+    const proof = mergeProof(attempt)
+    if (!proof) return null
+    const key = proofKey(proof), previous = attempt.merge.chiefHandoff
+    if (attempt.merge.status !== 'merged') {
+      attempt.merge.observations = [...(attempt.merge.observations ?? []), { status: attempt.merge.status, reason: attempt.merge.reason, reconciledBy: proof.effectId, at: now() }].slice(-8)
+      Object.assign(attempt.merge, { status: 'merged', reason: 'provider-confirmed-merge-retained', nextCheckAt: null })
+    }
+    const token = rt.projectEffects.stage({ kind: 'chief.merge-handoff', key, projectId: attempt.projectId, taskId: attempt.taskId, payload: { attemptId: attempt.id, candidateSha: proof.sha, proofKey: key } })
+    if (previous?.effect?.id !== token.id) attempt.merge.chiefHandoff = { effect: token, candidateSha: proof.sha, createdAt: now() }
+    try { await rt.projectEffects.persist(token) }
+    catch (error) { if (rt.projectEffects.discardUncommitted(token)) { if (previous) attempt.merge.chiefHandoff = previous; else delete attempt.merge.chiefHandoff }; throw error }
+    return token
+  }
+  rt.projectEffects?.register('chief.merge-handoff', {
+    run: async (effect, context) => {
+      const attempt = attempts()[effect.payload.attemptId], proof = mergeProof(attempt)
+      if (!proof || proofKey(proof) !== effect.payload.proofKey || attempt.merge.chiefHandoff?.effect?.id !== effect.id) throw new EffectCancelled('Merge handoff evidence was superseded')
+      currentTask(attempt)
+      const handoff = attempt.merge.chiefHandoff, policy = rt.state.projectChiefPolicies?.[attempt.projectId]
+      if (!policy?.enabled) throw new EffectDeferred('Confirmed merge awaits configured Chief authority', { waitingFor: 'chief-authority' })
+      rt.requireProjectAccess({ memberId: policy.authorityMemberId }, attempt.projectId, 'configure')
+      context.assertCurrent()
+      const source = { mergeEffectId: proof.effectId, attemptId: attempt.id, candidateSha: proof.sha }
+      const runs = Object.values(rt.state.projectExecutions ?? {}).filter(row => row.kind === 'chief-control' && row.projectId === attempt.projectId)
+      const prior = runs.find(row => row.source?.mergeEffectId === proof.effectId && row.source.attemptId === attempt.id && row.source.candidateSha === proof.sha)
+      // Finish the existing Chief turn first; its fresh correction snapshot sees the merge.
+      const active = runs.find(row => ['queued', 'running', 'correction-pending', 'interrupted'].includes(row.status) && row !== prior)
+      if (active) { handoff.waitingRunId = active.id; throw new EffectDeferred('Confirmed merge awaits the current Chief judgement', { waitingFor: 'chief-current-decision' }) }
+      const run = prior ?? await rt.projectChiefControl.request(attempt.projectId, 'inspection', source, attempt.taskId)
+      context.assertCurrent(); currentTask(attempt)
+      if (proofKey(mergeProof(attempt) ?? {}) !== effect.payload.proofKey) throw new EffectCancelled('Candidate merge changed during Chief handoff')
+      handoff.runId = run.id; handoff.requestedAt ??= now(); delete handoff.waitingRunId
+      // The Run and its receipt are saved together, including a request whose response was lost.
+      await rt.projectEffects.persist({ id: effect.id, generation: effect.generation })
+      return { runId: run.id, attemptId: attempt.id, candidateSha: proof.sha, mergeEffectId: proof.effectId }
+    },
+  }, { replace: true })
+  async function reconcileHandoffs() {
+    let staged = 0
+    for (const attempt of Object.values(attempts())) {
+      if (staged >= 32) { rt.projectScheduler?.wake(); break }
+      if (!mergeProof(attempt)) continue
+      try { currentTask(attempt) } catch (error) { if (error instanceof EffectCancelled) continue; throw error }
+      const handoff = attempt.merge.chiefHandoff
+      if (handoff?.effect && rt.projectEffects.intentCommitted(handoff.effect)) continue
+      await stageHandoff(attempt); ++staged
+    }
+    return staged
+  }
   function reviewScope(attempt, task) {
     const role = attempt.roleAssignments?.reviewer ?? 'reviewer', session = attempt.roleSessions?.[role], review = attempt.evidence.review
     if (!session || (session.policyRole ?? session.role) !== 'reviewer' || review?.logicalRole !== role || review.roleSessionId !== session.id || review.policySha256 !== attempt.rolePolicies?.[role]?.sha256) throw new EffectCancelled('Reviewer approval has no matching pinned execution scope')
@@ -46,8 +116,10 @@ export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, va
     }
   }
   rt.projectEffects?.register('github.merge', {
-    validate: checked,
+    validate: (effect, context) => mergeProof(attempts()[effect.payload.attemptId])?.effectId === effect.id ? context.assertCurrent() : checked(effect, context),
     run: (effect, context) => serialAttempt(effect.payload.attemptId, async () => {
+      const recorded = attempts()[effect.payload.attemptId]
+      if (mergeProof(recorded)?.effectId === effect.id) { await stageHandoff(recorded); return structuredClone(recorded.evidence.merge) }
       const { attempt, policy } = await checked(effect, context)
       if (now() > attempt.merge.deadlineAt) { attempt.merge.status = 'blocked'; attempt.merge.reason = 'merge-wait-budget-exhausted'; await rt.save(); throw new EffectExhausted('Merge wait budget exhausted; retain evidence for Chief judgement') }
       const broker = publisherOf(projectOf(attempt.projectId, attempt), () => validate(effect, context))
@@ -72,8 +144,7 @@ export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, va
       if (observation.status === 'merged') {
         await validate(effect, context)
         attempt.evidence.merge = { sha: attempt.candidateSha, mergeCommitSha: observation.mergeCommitSha, repository: effect.payload.intent.repository, number: effect.payload.intent.number, baseBranch: policy.baseBranch, policySha256: effect.payload.policySha256, reviewSha256: effect.payload.reviewSha256, effectId: effect.id, scope: 'provider-confirmed-merge-observation', identity: structuredClone(effect.payload.intent.mergeIdentity ?? effect.payload.intent.identity), at: observation.observedAt }
-        await rt.save()
-        if (rt.state.projectChiefPolicies?.[attempt.projectId]?.enabled) await rt.projectChiefControl.request(attempt.projectId, 'inspection', { mergeEffectId: effect.id, attemptId: attempt.id, candidateSha: attempt.candidateSha })
+        await stageHandoff(attempt)
         rt.projectScheduler?.wake()
         return structuredClone(attempt.evidence.merge)
       }
@@ -104,5 +175,5 @@ export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, va
     if (attempt.merge?.status !== 'merged' || attempt.merge.candidateSha !== attempt.candidateSha || attempt.merge.policySha256 !== mergeDigest(policy) || !attempt.evidence.merge || observed?.merged !== true || observed.mergeCommitSha !== attempt.evidence.merge.mergeCommitSha || observed.baseRef !== policy.baseBranch) throw new Error('Configured automatic merge is not confirmed for this candidate and target')
     return true
   }
-  return { stage, requireMerged, policyOf }
+  return { stage, requireMerged, policyOf, reconcileHandoffs }
 }

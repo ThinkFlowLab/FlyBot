@@ -318,3 +318,9 @@ text is audit data, not a current routing constraint. No JSON boolean repair,
 fixed DAG, generic recovery scheduler or new state store is added.
 
 A failed correction dispatch is transport-incomplete, not a pending model turn. Machine-readable recovery kinds distinguish changed sources, input protocol and missing acceptance evidence; candidate references remain full40-character Git SHAs.
+
+## Merged-candidate facts — #2413
+
+A merge-to-Chief request is an idempotent scoped inspection, separate from Task acceptance. The delivery Effects adapter waits for existing Chief work rather than starting concurrent judgements for the same Project. A running judgement that predates merge evidence receives `stale-snapshot` correction with the changed merge field and a fresh snapshot in the same Run/Session. No old input receipt is rebased and no next role is selected by the host.
+
+A successful current Chief decision resolves its own waiting marker through the existing path; historical correction/failure records remain on the original Run. New merge facts do not erase all pending feedback, rework or criteria failures. Notification delivery, Chief execution outcome and Task acceptance remain separately observable.

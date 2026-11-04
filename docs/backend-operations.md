@@ -233,3 +233,9 @@ block and exact candidate/tests/Review/merge records remain. Inspect actual merg
 policy/checks separately from Reviewer approve. Explicit reconcile-exit retires
 only a proven-exited old claim; inspect unknown SDK/Docker/native/preparation exit
 through their original contracts. Chief chooses subsequent actions or consultation.
+
+### Merged candidate awaiting Chief closure (#2413)
+
+Read Task/Attempt `merge.status` and `merge.chiefHandoff` together. A delivered handoff only confirms a persisted Chief request; inspect its `runId`, `runStatus`, `runFailure` and original acceptance evidence. A pending handoff names its `effectId` and `waitingFor` (`chief-authority` or `chief-current-decision` where applicable). Existing current inspection/correction keeps its own exit/recovery budget.
+
+Startup and normal scheduler reconciliation backfill missing handoff intents from trusted saved merge evidence, without publishing or merging again. An exhausted notification Effect may be retried only through the existing authorized `effect.retry` command. Do not clear pending inputs or fake acceptance criteria to remove a wait. Candidate replacement, cancellation, missing formal binding and revoked access retain their gates. This source behavior is distinct from an unverified live OpenToday timeline.

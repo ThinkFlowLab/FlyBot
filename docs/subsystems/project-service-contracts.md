@@ -166,3 +166,7 @@ paths are returned only through the existing human resource-administrator termin
 ## Explicit successor continuation (#2377)
 
 Attempt metadata includes safe continuation mode, predecessor, workspace id, source baseline and admission references. Full evidence remains retrievable under current scope; input text/PR numbers cannot manufacture continuation admission.
+
+## Merge handoff metadata — #2413
+
+Task/Attempt metadata derives `merge.chiefHandoff` from the existing scoped Effect and Chief Run, not a new store. The shared safe projection distinguishes delivery from execution and acceptance, bounds diagnostics, and withholds foreign Project Run diagnostics. OpenAPI defines the nullable metadata on MergeState; existing read scopes and source pagination remain.

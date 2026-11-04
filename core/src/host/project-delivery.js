@@ -1,7 +1,7 @@
 import { roleGithubSelection, roleGithubStatus } from './project-role-github.js'
 import { createGithubRoleArtifacts } from './project-github-role-artifacts.js'
 import { projectMergePolicyStatus } from './project-merge-policy.js'
-import { createReviewedMerge } from './project-reviewed-merge.js'
+import { createReviewedMerge, mergeHandoffView } from './project-reviewed-merge.js'
 import { chiefRecoveryError } from './project-chief-recovery.js'
 import { chiefProtocolError } from './project-chief-protocol.js'
 // Delivery coordinates artifacts/worktrees around the existing Workflow service.
@@ -225,7 +225,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     await rt.save()
   }
   const current = taskId => Object.values(attempts()).reverse().find(attempt => attempt.taskId === taskId)
-  const view = attempt => structuredClone(attempt)
+  const view = attempt => { const result = structuredClone(attempt); if (result.merge) result.merge.chiefHandoff = mergeHandoffView(state, attempt); return result }
   async function fail(attempt, error, status = 'failed') {
     attempt.status = status
     attempt.failure = { message: String(error?.message ?? error).slice(0, 1000), at: Date.now() }
@@ -1332,7 +1332,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone', 'decision-directory'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { reconcileExit, releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { reconcileExit, releases, recoveryFacts, admitChiefInputs, reconcileExecutions: async () => { await reconcileExecutionAuthority(rt); await reviewedMerge.reconcileHandoffs() }, exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {
