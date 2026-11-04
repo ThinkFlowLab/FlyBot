@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import { homedir, hostname, tmpdir } from 'node:os'
@@ -821,6 +821,85 @@ test('a team file linking to a file it cannot read keeps the leaf sentence, not 
 
   chmodSync(target, 0o600)
   assert.equal(readFileSync(target, 'utf8'), kept, 'the target keeps every byte while it is unreadable')
+})
+
+// The store keeps backups beside the team file, and a report about a team that cannot be read
+// must say whether they are there and whether they can be read: one `state.json.v1` taken before
+// a version-1 migration, and `state.json.broken-<stamp>` copies of a file that could not be read.
+// The line lists names only — `lstat` for each and one `readdir` for the broken names, never an
+// open: a backup holds the same members, messages and saved keys as the file itself.
+test('a host with no state backups says none', async (t) => {
+  const { rt } = await realHost(t)
+  await rt.save()
+  const report = await rt.diagnostics.report({})
+  assert.equal(report.facts.stateBackups, 'none')
+  assert.match(report.markdown, /^state backups: none$/m)
+})
+
+test('one readable backup is named with its size and age, and no other line moves', async (t) => {
+  const { home, rt } = await realHost(t)
+  await rt.save()
+  const before = (await rt.diagnostics.report({})).markdown.split('\n')
+  const v1 = join(home, 'state.json.v1')
+  writeFileSync(v1, 'x'.repeat(12 * 1024))
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000)
+  utimesSync(v1, twoHoursAgo, twoHoursAgo)
+
+  const report = await rt.diagnostics.report({})
+  assert.equal(report.facts.stateBackups, 'state.json.v1 (12 KB, 2 h ago)')
+  const shown = report.markdown.split('\n')
+  const at = shown.indexOf('state backups: state.json.v1 (12 KB, 2 h ago)')
+  assert.ok(at > 0, 'the report carries the line')
+  assert.match(shown[at - 1], /^state file: /, 'it follows the team file line inside the same block')
+  const withoutBackups = text => text.filter(line => !line.startsWith('state backups: '))
+  assert.deepEqual(withoutBackups(shown), withoutBackups(before), 'the backups line is the only line this change adds')
+})
+
+test('a backup whose lstat fails is named with its code and the report still prints', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => {
+    try { chmodSync(home, 0o700) } catch { /* the home is already gone */ }
+    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+  })
+  writeFileSync(join(home, 'state.json'), '{"version":2}\n')
+  writeFileSync(join(home, 'state.json.v1'), '{"version":1}\n')
+  chmodSync(home, 0o000)
+  const report = await host(home, { config: { diagnosticsFile: false }, statePath: join(home, 'state.json') }).diagnostics.report({})
+  assert.equal(report.facts.stateBackups, 'state.json.v1 (unreadable: EACCES)')
+  assert.match(report.markdown, /^state backups: state\.json\.v1 \(unreadable: EACCES\)$/m)
+  assert.match(report.markdown, /^state file: /m, 'the team file line still prints')
+})
+
+test('a backup that is a directory or a link to nothing is drawn from its own lstat', async (t) => {
+  const asDir = await realHost(t)
+  mkdirSync(join(asDir.home, 'state.json.v1'))
+  const dirReport = await asDir.rt.diagnostics.report({})
+  assert.match(dirReport.facts.stateBackups, /^state\.json\.v1 \(\d+ (?:B|KB|MB), .+\)$/,
+    'a name lstat answers for keeps the size-and-age shape, whatever it points at')
+  assert.doesNotMatch(dirReport.markdown, /unreadable: not a plain file/, 'no sentence is invented for a name lstat could describe')
+
+  const dangling = await realHost(t)
+  symlinkSync(join(dangling.home, 'missing-backup'), join(dangling.home, 'state.json.v1'))
+  const linkReport = await dangling.rt.diagnostics.report({})
+  assert.match(linkReport.facts.stateBackups, /^state\.json\.v1 \(\d+ (?:B|KB|MB), .+\)$/)
+  assert.equal(existsSync(join(dangling.home, 'missing-backup')), false, 'asking the link creates nothing')
+})
+
+test('the broken copies are listed newest first, three at most, with the rest counted', async (t) => {
+  const { home, rt } = await realHost(t, { locked: true })
+  const readOnly = (await rt.diagnostics.report({})).markdown.match(/^\| Read-only \| (.*)$/m)?.[1]
+  for (let i = 1; i <= 5; i += 1) {
+    const name = join(home, `state.json.broken-${1000 + i}`)
+    writeFileSync(name, 'x'.repeat(12 * 1024))
+    const when = new Date(Date.now() - i * 3_600_000)
+    utimesSync(name, when, when)
+  }
+  writeFileSync(join(home, 'other.txt'), 'not a backup')
+  const report = await rt.diagnostics.report({})
+  assert.equal(report.facts.stateBackups, 'state.json.broken-1001 (12 KB, 1 h ago), state.json.broken-1002 (12 KB, 2 h ago), state.json.broken-1003 (12 KB, 3 h ago), and 2 more')
+  assert.match(report.markdown, /^state backups: state\.json\.broken-1001 /m)
+  assert.doesNotMatch(report.markdown, /other\.txt/, "only the store's own backup prefix is listed")
+  assert.equal(report.markdown.match(/^\| Read-only \| (.*)$/m)?.[1], readOnly, 'the Read-only row is unchanged')
 })
 
 // The line is read information, not a write: a window another dsh keeps read-only still names the
