@@ -291,6 +291,34 @@ export function createWorkflowService({
     for (const nodeId of running) armDeadline(item, run, nodeId)
   }
 
+  // A Stop whose release failed froze the run on purpose (#1476), and `hold()`
+  // writes those flags without syncing timers, so the deadline of the node it was
+  // on is the only retry the run gets. `expireStep()` used to return at `paused`
+  // and consume that timer, leaving the run holding its lane slot until the owner
+  // pressed Stop again — exactly what "a lost Bot cannot hold a lane slot forever"
+  // rules out. Releasing again here ends the run as `paused-expired` once the Bot
+  // finally goes; while it still will not, the deadline is armed again.
+  async function expireStoppedRun(item, run, nodeId) {
+    const ids = Object.values(run.ephemeral ?? {})
+    const failed = await releaseAll(ids, release, warn)
+    for (const [node, id] of Object.entries(run.ephemeral ?? {})) {
+      if (!failed.includes(id)) delete run.ephemeral[node]
+    }
+    if (failed.length > 0) {
+      run.updatedAt = now()
+      setTimerAt('deadline', run.id, nodeId, stepTimeoutMsOf(item), () => expireStep(item.id, run.id, nodeId))
+      warn(`flybot-workflow: run ${run.id} still cannot release ${failed.length} Bot(s); its next deadline retries`)
+      write()
+      return
+    }
+    clearRunTimers(run.id)
+    endRun(item, run, { code: 'paused-expired', text: `stop retried at the step deadline (${stepTimeoutMinutesOf(item)} min)` })
+    push(item.id, [failureLine(run)], now())
+    delete run.handed
+    archiveCutoffRun(item.id, run)
+    write()
+  }
+
   // A step that reaches its deadline is failed, frees its Bots and says which
   // step it was, so a lost Bot cannot hold a lane slot forever. The deadline is a
   // limit on the wait, not proof nothing arrived: a step was killed at 45 minutes
@@ -302,7 +330,16 @@ export function createWorkflowService({
       const minutes = stepTimeoutMinutesOf(item)
       const lane = laneOf(workflowId)
       const run = lane.active.find(candidate => candidate.id === runId)
-      if (!item || !run || run.status !== 'running' || run.paused === true) return
+      if (!item || !run || run.status !== 'running') return
+      if (run.paused === true) {
+        // An owner's Pause takes its deadline away, so a paused run that still
+        // has this timer is the one a failed Stop froze with a Bot it could not
+        // remove: the deadline is that run's retry.
+        if (run.releasePending !== true) return
+        await expireStoppedRun(item, run, nodeId)
+        await drainAll()
+        return present()
+      }
       if (run.nodeStatus?.[nodeId] !== 'running') return
       const node = nodeById(item, nodeId)
       warn(`flybot-workflow: step ${nodeId} timed out after ${minutes} minutes`)
