@@ -1812,6 +1812,10 @@ export function createWorkflowService({
           return { ok: true, matched: false }
         }
       }
+      // #1668: the side that lost the card keeps one line saying where it went.
+      // The push below rides the write that attaches the new target, so the
+      // target's own lines stay exactly as they are and nothing is written twice.
+      const from = held?.kind === 'workflow' && held.id !== decision.id ? workflow(held.id) : undefined
       const key = `${decision.kind}:${decision.id}`
       const prev = state.routes[taskId]
       if (prev?.key === key) return { ok: true, matched: true, already: true, decision }
@@ -1830,6 +1834,17 @@ export function createWorkflowService({
       const assigned = this.assign({ workflowId: decision.id, taskId, title, ...(typeof task.brief === 'string' && task.brief !== '' ? { brief: task.brief } : {}) })
       const finish = (value) => {
         if (value?.ok === false) return value
+        if (from) {
+          const label = summarizeTask(task)
+          const to = workflow(decision.id)
+          const name = to?.name ?? decision.id
+          push(from.id, [{
+            kind: 'system',
+            key: 'Task re-matched · {task} → {to}',
+            params: { task: label, to: name },
+            text: `任务已改投 · ${label} → ${name}`,
+          }], now())
+        }
         rememberClaim(taskId, decision)
         write()
         return { ...present(), matched: true, already: false, decision }
