@@ -34682,7 +34682,7 @@
       "notes": "One shared warning disclosure: omit warningId to page summaries (limit1–20); choose warningId/topic for bounded details (limit1–8000 characters). events uses a separate eventOffset byte cursor. sha256 fences topic pages; ifNoneMatch suppresses unchanged text. Historical facts never authorize actions.",
       "implementation": {
         "path": "core/src/host/project-warnings.js",
-        "sha256": "5b8b3ecf9e979088fc58c7c4d28587baba5d7b63078970ff976bb064478836ab"
+        "sha256": "2f10a1b462ad8bcef2f57fea8d8a908cf99eebcfce6f5eb6a64994262daa669a"
       }
     },
     {
@@ -36437,7 +36437,7 @@
       "notes": "Acknowledge records an explicit read declaration only; no progress/acceptance is inferred. Stop cancels only a Chief coordination invocation, or interrupts one role execution preserving its Task/draft. A fresh inspection is a separate authorized command after exit reconciliation.",
       "implementation": {
         "path": "core/src/host/project-warnings.js",
-        "sha256": "5b8b3ecf9e979088fc58c7c4d28587baba5d7b63078970ff976bb064478836ab"
+        "sha256": "2f10a1b462ad8bcef2f57fea8d8a908cf99eebcfce6f5eb6a64994262daa669a"
       }
     },
     {
@@ -50470,7 +50470,7 @@
       "core/src/host/project-task-sessions.js": "fcf27b51759b86f50c5cf6e35fde236cb8b76cc5aa10262444063abcf6cd1d17",
       "core/src/host/project-team.js": "72c3975a4fed654f3750e82a9388320934be7cf322b05cd59bbac26d6e4ede77",
       "core/src/host/project-test-diagnostics.js": "fed63d4c8631ba8d5dcf39764829bb4c0fe9fb28d7e95b61ed232a21d48c4957",
-      "core/src/host/project-warnings.js": "5b8b3ecf9e979088fc58c7c4d28587baba5d7b63078970ff976bb064478836ab",
+      "core/src/host/project-warnings.js": "2f10a1b462ad8bcef2f57fea8d8a908cf99eebcfce6f5eb6a64994262daa669a",
       "core/src/host/prompt.js": "919e8c5b28c27af6b9570a7be22609230ea4395d3fd4b7215083f9bc25978d72",
       "core/src/host/reach.js": "0b8f2868b36d99ccf896605685a82bcb20f670e092feec24560ff19a2a20824e",
       "core/src/host/remote-chat.js": "7b83196031e922af5b44419dde60a66e414a8326bbeb641c69593667442fa81d",

@@ -168,3 +168,17 @@ test('inconsistent historical bindings cannot disclose another Project Task or S
   assert.equal(summary.historical, true)
   assert(!JSON.stringify([summary, detail]).includes('OTHER_PROJECT_PRIVATE'))
 })
+
+test('first-layer warnings carry collection time, Task identity and the Chief inspection impact scope', async () => {
+  const f = fixture(), actor = { memberId: 'owner' }
+  f.state.tasks.t.title = 'Repair code'
+  f.tick(3600001); await f.rt.projectWarnings.reconcile()
+  const sdk = (await f.rt.projectWarnings.query({ projectId: 'p' }, actor)).items[0]
+  assert.equal(sdk.task.title, 'Repair code'); assert.equal(sdk.observedAt, 3600001)
+  f.state.projectExecutions = { r: { id: 'r', projectId: 'p', kind: 'chief-control', purpose: 'inspection', status: 'running', invocation: 1, createdAt: 1, startedAt: 1, source: { blockedTaskId: 't' } } }
+  await f.rt.projectWarnings.reconcile()
+  const chief = (await f.rt.projectWarnings.query({ projectId: 'p' }, actor)).items.find(w => w.kind === 'chief-duration')
+  assert.equal(chief.chief.scope.taskId, 't')
+  assert.equal(chief.chief.eligibleTaskCount, 1)
+  assert.equal(chief.chief.eligibleTaskPreview[0].title, 'Repair code')
+})
