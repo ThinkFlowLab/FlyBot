@@ -256,10 +256,10 @@ queued reminders coalesce to the latest scoped inspection; historical records re
 `inspection.lifecycle` configures queueTimeoutMs (600000), runTimeoutMs (900000),
 recoveryDelayMs (5000), maxRecoveries (2, range 0–4) and overdueMs (3600000).
 Durations accept integers 1–86400000. Dispatch preparation/model transport runs
-outside the pump lock, so it cannot prevent its own deadline checks. The original
+outside the pump lock, so it cannot prevent warning reconciliation. The original
 configured schedule and dispatcher supply all wakes; no new business timer exists.
 
-A deadline fences the old capability and records interrupted/failed, not worker exit.
+Since #2518 elapsed queue/run thresholds only warn. An explicit authorized stop or actual interrupted execution fences the old capability; elapsed time never proves exit.
 SDK recovery requires matching invocation, generation, released lease and trusted
 stop/process proof. Native recovery cancels the exact exchange and waits for actual
 agent idleness before persisting its bound exit receipt. Restart can also use existing
@@ -297,10 +297,10 @@ See [recovery API and operator guide](../chief-recovery.md).
 wakes the original inspection after observed merge. Chief completion stays separate.
 
 #2342 adds human-selected current operations contacts, bounded public assistance
-requests and advisory autonomy budgets. Chief alone selects consultation or a
+requests and recovery observations without a deadline. Chief alone selects consultation or a
 same-message retry-notification judgement. Original inbox/Effect claims and original
 logical schedules remain authoritative; no host privileges or alternate controller.
-Inspection projects recipient/delivery/claim/reply and recovery-budget metadata;
+Inspection projects recipient/delivery/claim/reply and recovery action/progress metadata;
 other Chief schedules expose actual native nextDueAt. Generation, requirements,
 Attempt/candidate and contact/role changes supersede old assistance. See
 [operator and API guide](../chief-assistance.md).
@@ -362,3 +362,5 @@ successor request through the original delivery port, not automatic rework.
 Repository input admission is a separate decision with a fresh snapshot; combining
 it with continuation is rejected rather than silently dropping inputs. Omitting
 continuation retains existing route/rework and verification recovery behavior.
+
+#2518 queue/execution thresholds warn rather than interrupt. Shared warning context requests and exact-scope stop use current authority; resident memory and Task history remain. See [warnings](project-warnings.md).

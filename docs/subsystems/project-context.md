@@ -159,3 +159,5 @@ Sequential native Chief jobs must receive current facts in their actual turn inp
 ## Project Task lifecycle convergence (#2179)
 
 Project Task context carries the current versioned requirements, its own parent continuation and child result references. These are Task data under the same complete-input budget; an accepted child reference does not imply integration. The parent reads its original role work summary rather than a child role transcript.
+
+#2518 warningRequests reuse the original same-Session context exchange and result budgets. See [warnings](project-warnings.md).

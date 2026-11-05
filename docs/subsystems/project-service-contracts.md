@@ -170,3 +170,5 @@ Attempt metadata includes safe continuation mode, predecessor, workspace id, sou
 ## Merge handoff metadata — #2413
 
 Task/Attempt metadata derives `merge.chiefHandoff` from the existing scoped Effect and Chief Run, not a new store. The shared safe projection distinguishes delivery from execution and acceptance, bounds diagnostics, and withholds foreign Project Run diagnostics. OpenAPI defines the nullable metadata on MergeState; existing read scopes and source pagination remain.
+
+#2518 warning metadata shares committed Project events; details/actions retain configure authority and exact source fences. See [warnings](project-warnings.md).

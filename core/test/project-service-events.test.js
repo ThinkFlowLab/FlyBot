@@ -99,3 +99,18 @@ test('committed role approval proposals are public scoped facts without personal
   assert.deepEqual(snapshot.entities.map(row => row.id), ['proposal'])
   assert.throws(() => bus.snapshot('p', { entityType: 'private-agent' }), /Unknown public/)
 })
+
+test('human warning fallback uses committed scoped events and exposes metadata without private evidence', () => {
+  const bus = createProjectServiceEvents(), state = seed(); bus.load(state)
+  const start = bus.snapshot('p')
+  state.projectWarnings = { w: { id: 'w', projectId: 'p', kind: 'chief-duration', at: 1, reason: 'Private diagnostic detail', reads: { owner: { secret: 'not public' } }, delivery: { kind: 'human-mailbox', memberId: 'owner' } } }
+  const token = bus.prepare(state)
+  assert.equal(bus.query('p', { after: start.cursor }).events.length, 0)
+  bus.saved(token)
+  const event = bus.query('p', { after: start.cursor }).events[0]
+  assert.equal(event.type, 'warning.changed')
+  assert(!JSON.stringify(event).includes('Private diagnostic'))
+  assert(!JSON.stringify(event).includes('not public'))
+  assert.equal(bus.snapshot('p', { entityType: 'warning' }).entities[0].id, 'w')
+  assert.equal(bus.snapshot('other', { entityType: 'warning' }).entities.length, 0)
+})

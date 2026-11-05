@@ -1,6 +1,6 @@
 // Reviewer approval enters an authorized host Effect; Chief still owns Task closure.
 import { projectMergePolicy, mergeDigest } from './project-merge-policy.js'
-import { EffectCancelled, EffectDeferred, EffectExhausted } from './project-effects.js'
+import { EffectCancelled, EffectDeferred } from './project-effects.js'
 import { confirmedWorkerExit } from './project-task-sessions.js'
 import { nativeExitConfirmed } from './project-native-sessions.js'
 import { verifyRolePolicy } from './project-role-policy.js'
@@ -98,7 +98,6 @@ export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, va
     if (!policy) throw Object.assign(new EffectCancelled('Project automatic merge policy disabled'), { mergeStatus: 'cancelled', mergeReason: 'policy-disabled' })
     const retry = rt.state.projectEffects?.[effect.id]?.retries?.at(-1)
     if (retry && retry.at > (attempt.merge.budgetRenewedAt ?? attempt.merge.createdAt)) { attempt.merge.budgetRenewedAt = retry.at; attempt.merge.deadlineAt = retry.at + policy.maxWaitMs }
-    if (now() > attempt.merge.deadlineAt) throw Object.assign(new EffectExhausted('Merge wait budget exhausted'), { mergeReason: 'merge-wait-budget-exhausted' })
     if (mergeDigest(policy) !== effect.payload.policySha256 || mergeDigest(attempt.evidence.review) !== effect.payload.reviewSha256 || attempt.evidence.tests?.sha256 !== effect.payload.testSha256) throw new EffectCancelled('Merge policy or verified candidate evidence changed')
     await validatePublication(effect, { ...context, inline: false })
     const task = rt.state.tasks[attempt.taskId]
@@ -121,7 +120,6 @@ export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, va
       const recorded = attempts()[effect.payload.attemptId]
       if (mergeProof(recorded)?.effectId === effect.id) { await stageHandoff(recorded); return structuredClone(recorded.evidence.merge) }
       const { attempt, policy } = await checked(effect, context)
-      if (now() > attempt.merge.deadlineAt) { attempt.merge.status = 'blocked'; attempt.merge.reason = 'merge-wait-budget-exhausted'; await rt.save(); throw new EffectExhausted('Merge wait budget exhausted; retain evidence for Chief judgement') }
       const broker = publisherOf(projectOf(attempt.projectId, attempt), () => validate(effect, context))
       if (typeof broker.merge !== 'function') throw new EffectCancelled('Selected publication adapter has no merge capability')
       let observation

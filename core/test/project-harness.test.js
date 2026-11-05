@@ -295,7 +295,7 @@ test('command workers bind distinct scratch directories and clean them only afte
 })
 
 
-test('SDK Chief context requests continue the same worker before final judgement and retain memory effects', async t => {
+for (const disclosure of ['context', 'warning']) test('SDK Chief ' + disclosure + ' requests continue the same worker before final judgement and retain memory effects', async t => {
   const {rt,harness}=await fixture(t)
   const {roleContext,readContextArchive}=await import('../src/host/project-role-context.js')
   const path=join(rt.config.projectResources.r.runtimeDir,'src/host/project-harness-worker.mjs')
@@ -304,7 +304,7 @@ import{createInterface}from'node:readline';
 const write=v=>process.stdout.write(JSON.stringify(v)+'\\n');write({type:'ready',sdk:{codex:'0.166.0'}});
 createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
 if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20)}
-if(m.type==='start'){write({type:'sdk-event',event:{type:'thread.started',thread_id:'chief-context-thread'}});write({type:'completed',sessionId:'chief-context-thread',text:JSON.stringify({contextRequests:[{kind:'knowledge',id:'fact'}]})})}
+if(m.type==='start'){write({type:'sdk-event',event:{type:'thread.started',thread_id:'chief-context-thread'}});write({type:'completed',sessionId:'chief-context-thread',text:JSON.stringify(${JSON.stringify(disclosure === 'warning' ? {warningRequests:[{warningId:'warning-fixture',topic:'progress'}]} : {contextRequests:[{kind:'knowledge',id:'fact'}]})})})}
 if(m.type==='input'){if(!m.prompt.includes('Verified pnpm decision'))process.exit(2);write({type:'completed',sessionId:'chief-context-thread',text:JSON.stringify({reply:'Retained the project decision',actions:[],memoryUpdates:[{text:'Project uses pnpm',topic:'development'}]})})}
 });`)
   const context=roleContext({projectId:'p',role:'chief',definition:{},knowledge:[{id:'fact',text:'Verified pnpm decision'}],retrieval:true})
@@ -313,7 +313,8 @@ if(m.type==='input'){if(!m.prompt.includes('Verified pnpm decision'))process.exi
   rt.projectAgents={isDelegationActive:()=>true,contextExchange:async(agentId,delegationId,data,snapshot)=>{
     assert.equal(agentId,'public-p');assert.equal(delegationId,'d');exchanges++
     if(data.memoryUpdates?.length)memoryWrites+=data.memoryUpdates.length
-    return {reads:data.contextRequests?.length?readContextArchive(snapshot,data.contextRequests):[],writes:[]}
+    if(data.warningRequests?.length)assert.equal(data.warningRequests[0].warningId,'warning-fixture')
+    return {reads:data.warningRequests?.length?[{text:'Verified pnpm decision'}]:data.contextRequests?.length?readContextArchive(snapshot,data.contextRequests):[],writes:[]}
   }}
   rt.config.projectResources.r.harnesses=['codex'];rt.state.projectResourceHealth={r:{status:'ready',at:Date.now()}};rt.state.projectHarnessHealth={'p:r:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources['r'], rt.readProject('p'), 'r', 'codex').profile }};delete rt.state.projectResourceLeases.l
   const agent={id:'public-p',projectId:'p',lastRequest:{}}
@@ -325,7 +326,7 @@ if(m.type==='input'){if(!m.prompt.includes('Verified pnpm decision'))process.exi
   assert.equal(exchanges,2);assert.equal(memoryWrites,1)
   await harness.release(id)
   assert.equal(rt.projectResources.occupied('r'),0)
-  assert.match(await readFile(rt.state.projectHarnessWorkers[id].sealedLog,'utf8'),/contextRequests/)
+  assert.match(await readFile(rt.state.projectHarnessWorkers[id].sealedLog,'utf8'),new RegExp(disclosure === 'warning' ? 'warningRequests' : 'contextRequests'))
 })
 
 
@@ -888,4 +889,30 @@ test('refresh-token reuse reaches the original worker/profile health without bec
   const current = rt.projectResources.harnessHealth('p','r','codex')
   assert.equal(current.status, 'unconfigured'); assert.notEqual(current.profile.id, before)
   await harness.release(id)
+})
+
+for (const harnessKind of ['codex', 'claude-agent']) test(harnessKind + ' execution keeps running past the obsolete total timeout and exposes bounded evidence', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  rt.config.projectExecutionTimeoutMs = 1000
+  const resource = rt.config.projectResources.r
+  resource.harnesses.push('claude-agent'); resource.profiles.owner['claude-agent'] = resource.profiles.owner.codex
+  rt.projectDelivery.sessionFor().execution.harness = harnessKind
+  const path = join(resource.runtimeDir, 'src/host/project-harness-worker.mjs')
+  const event = harnessKind === 'codex' ? { type: 'item.started', item: { id: 'command-1', type: 'command_execution', command: 'npm test', status: 'in_progress' } } : { type: 'assistant', session_id: 'bound-thread', message: { content: [{ type: 'tool_use', id: 'command-1', name: 'Bash', input: { command: 'npm test' } }] } }
+  const worker = (await readFile(path, 'utf8')).replace(/  write\(\{type:'completed'.*\n/, `  write({type:'sdk-event',event:${JSON.stringify(event)}});\n`)
+  await writeFile(path, worker)
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Long operation' })
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Run tests', outputs: [{ name: 'implementation' }] })
+  await new Promise(resolve => setTimeout(resolve, 1200))
+  const row = rt.state.projectHarnessWorkers[id]
+  assert.equal(row.status, 'running')
+  assert.equal(row.activity.command, 'npm test')
+  assert.equal(harness.observe(id).connection, 'connected')
+  assert.equal(harness.observe(id).process, 'unknown', 'A connected controller cannot assert actual executor liveness')
+  const source = await harness.events(id)
+  assert.equal(source.status, 'observed'); assert(source.entries.length)
+  assert(!JSON.stringify(source).includes('sk-unitsecret'))
+  await assert.rejects(harness.events(id, { eventOffset: -1 }), /cursor/)
+  assert.equal(await harness.release(id), true)
+  assert.equal(harness.observe(id).process, 'exit-confirmed')
 })

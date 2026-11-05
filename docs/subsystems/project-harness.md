@@ -178,7 +178,7 @@ errors. Tests cover missing bridges, mismatched versions and the complete callba
 Repair R2 (#35): SDK delivery dispatch assembles complete pinned role conventions after Workflow node cleaning, alongside the bounded role context; Session policy hash verification precedes spawn. The SDK contract test checks the actual worker input beyond the old prompt limit. See [Project role conventions](project-agents.md).
 
 
-Repair R3 (#36): A pool claim binds one actual receiving role Session/lease and routes its explicit handoff decision through the trusted host adapter. Resources are released only after confirmed worker exit. SDK timeout is configurable via `projectExecutionTimeoutMs`, separately from Chief scheduled inspection. See [pool contract](project-pools.md).
+Repair R3 (#36): A pool claim binds one actual receiving role Session/lease and routes its explicit handoff decision through the trusted host adapter. Resources are released only after confirmed worker exit. Since #2518 SDK total duration warns hourly; the old projectExecutionTimeoutMs cutoff is retired. Chief scheduled inspection remains separate. See [pool contract](project-pools.md).
 
 
 Repair R4 (#37): SDK Chief conversation turns use a read-only
@@ -532,3 +532,5 @@ manager, automatic role choice or change to SDK sandbox policy.
 ## Reviewer evidence (#2378)
 
 Command roles with a bound App retain the limited proxy and GitHub API/Git/object hosts. Optional exact operator downloadHosts permits selected GitHub/Azure log storage hosts; no wildcard or general network proxy. Chief/no-tools and receipt correction keep their prior boundaries. SDK Reviewer receives a size/hash-verified current host test log in its existing scratch via resource upload, with source SHA/command/executor. Recheck authority/source after transfer. The candidate remains read-only; scratch logs are reference data and cannot replace the immutable host record. Native context points to the same host artifact contract.
+
+#2518 removes SDK total wall-clock failure; both SDK adapters expose bounded activity/events to the shared [warning service](project-warnings.md). Connection/events never substitute for process exit proof.

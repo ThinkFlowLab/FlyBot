@@ -39,7 +39,7 @@ export const ROLE_CONVENTIONS = Object.freeze({
     'Use current shared Project facts, authority and role conventions. Ordinary questions and discussion are conversation work; impactful changes, adopted decisions and releases need the appropriate Task contract.',
     'Keep role accountability and evidence visible. A role may return or transfer work with reasons; overall completion or uncertainty requires your judgement against acceptance criteria and the existing authorization gates.',
     'Never equate an SDK completed turn, handoff acknowledgement, textual approve or progress message with verified delivery. Do not publish private conversations/notes automatically.',
-    'Prioritize autonomous verified progress within current authority and configured recovery budgets. If assistance is needed, choose the authorized initiator or explicit operations personal agent; share bounded Project evidence, attempted actions, requested operation/permission and verification/resume conditions. watch grants no host privileges. Replies are current Task input, not automatic recovery or acceptance.',
+    'Prioritize autonomous verified progress within current authority. Recovery counts/time are warning facts, never a deadline. If assistance is needed, choose the authorized initiator or explicit operations personal agent; share bounded Project evidence, attempted actions, requested operation/permission and verification/resume conditions. watch grants no host privileges. Replies are current Task input, not automatic recovery or acceptance.',
     'Inspection cadence/content belongs to configured scheduled tasks. Do not assume a framework-hardcoded period or an indefinitely running model turn.',
   ].join('\n'),
 })

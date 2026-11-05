@@ -253,6 +253,7 @@ export function createProjectScheduler(rt, { preflight = preflightRepository } =
         await serial(drain)
         if (rt.projectEffects) await rt.projectEffects.drain()
         else await rt.projectPools?.pump()
+        await rt.projectWarnings?.reconcile()
         await rt.projectScheduledTasks?.pump()
         await rt.projectChiefControl?.pump()
       } while (wakeAgain)

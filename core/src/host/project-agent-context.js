@@ -11,15 +11,19 @@ async function budgetFor(rt, agent) {
   const bot = rt.botOf(agent.botId)
   return resolveContextBudget(rt, { model: bot?.model ?? rt.config.projectModel ?? rt.cachedDefault?.() })
 }
-export async function exchangeProjectContext(rt, agentId, delegationId, { contextRequests = [], memoryUpdates = [], memoryRequests = [] }, snapshot, { authorize, isDelegationActive }) {
+export async function exchangeProjectContext(rt, agentId, delegationId, { contextRequests = [], memoryUpdates = [], memoryRequests = [], warningRequests = [] }, snapshot, { authorize, isDelegationActive }) {
   const agent = ownEntry(rt.state.projectAgents ?? {}, agentId)
   if (!agent || agent.id !== `public-${agent.projectId}` || agent.visibility !== 'public' || !isDelegationActive(agentId, delegationId)) throw forbidden('Chief context delegation is unavailable')
   const authority = await authorize(rt.botOf(agent.botId))
   if (authority.delegation.readOnly && memoryUpdates.length) throw forbidden('Read-only conversations cannot publish memory')
   if (snapshot?.archive?.projectId !== agent.projectId || snapshot.archive.role !== 'chief') throw forbidden('Context belongs to another Project or role')
-  if (![contextRequests, memoryUpdates, memoryRequests].every(rows => Array.isArray(rows) && rows.length <= 4)) throw fail('Chief context operations exceed their budget')
+  if (![contextRequests, memoryUpdates, memoryRequests, warningRequests].every(rows => Array.isArray(rows) && rows.length <= 4)) throw fail('Chief context operations exceed their budget')
   const budget = await budgetFor(rt, agent)
   const reads = contextRequests.length ? readContextArchive(snapshot, contextRequests, { projectId: agent.projectId, role: 'chief' }) : []
+  for (const request of warningRequests) {
+    const value = await rt.projectWarnings.query({ ...request, projectId: agent.projectId }, authority.actor)
+    reads.push({ kind: 'warning', id: request.warningId, ...value })
+  }
   const memories = memoryRequests.map(request => {
     if (!rt.botMemoryRecall) throw forbidden('Bot memory is unavailable')
     const found = rt.botMemoryRecall(agent.botId, { topic: request.topic, query: request.query, offset: request.offset ?? 0, limit: request.limit ?? 4 })
@@ -39,7 +43,7 @@ export async function exchangeProjectContext(rt, agentId, delegationId, { contex
 }
 export async function readProjectAgentContext(rt, bot, body, { authorize, contextExchange, privateNotes, logOf, rooms, chiefMemory }) {
   const { agent, actor, delegation } = await authorize(bot)
-  if (body.contextRequests || body.memoryRequests || body.memoryUpdates) return contextExchange(agent.id, delegation.id, body, agent.lastRequest.context)
+  if (body.contextRequests || body.memoryRequests || body.memoryUpdates || body.warningRequests) return contextExchange(agent.id, delegation.id, body, agent.lastRequest.context)
   const budget = await budgetFor(rt, agent)
   const detail = await rt.projectEndpoint('project-detail', { id: agent.projectId }, actor)
   const notes = agent.visibility === 'private' && !agent.returnAgentId ? ownEntry(privateNotes(), agent.id) ?? [] : []

@@ -4,8 +4,8 @@
 
 本规范描述当前交付分支的**实际公开网关**，供 grok-bot、dots 等个人代理的客户端实现使用。
 OpenAPI 3.1 JSON 可直接下载解析；不需要启动 Swagger，也没有新增 `/openapi.json` HTTP 路由。
-它覆盖104个原生分派入口（其中包含 `project-development`）、30个 v1 查询、35个 v1 命令，
-并展开个人会话和旧工作流的子操作，共188种请求分支。入口数量和操作名称由源码校验。
+它覆盖104个原生分派入口（其中包含 `project-development`）、31个 v1 查询、36个 v1 命令，
+并展开个人会话和旧工作流的子操作，共190种请求分支。入口数量和操作名称由源码校验。
 这份规范不等于部署证明，也不表示已实现特定厂商的回调或登录适配器。
 
 #2308 增加[统一私人消息箱与通知协议](agent-inbox.md)：原生/外部代理共用领取、续租、结果提交及恢复，
@@ -41,7 +41,7 @@ POST 请求在 `components.schemas.BotRequest.oneOf` 中按 `endpoint`，
 | `invokesModel`、`notes` | 模型调用、兼容接口和分支限制 |
 | `implementation` | 对应实现文件与源码 hash，供版本核对 |
 
-`x-flybot-workflows` 给出接入/协作/恢复步骤；`x-flybot-examples` 给出20个经过 Schema 校验的占位请求。
+`x-flybot-workflows` 给出接入/协作/恢复步骤；`x-flybot-examples` 给出21个经过 Schema 校验的占位请求。
 示例 ID、域名和密码均不能直接用于真实调用。`x-excluded-surfaces` 列出未公开或未实现的能力。
 
 请求 Schema 是明确的**规范客户端格式**，拒绝未声明字段；旧服务端的部分接口仍会忽略多余字段、
@@ -165,3 +165,5 @@ node --test .github/scripts/openapi.test.mjs .github/scripts/backend-runtime.tes
 不是 grok-bot 厂商适配认证，不证明真实收费模型/真实 GitHub发布/所有接口分支均做过端到端执行。
 
 Written-by: Codex
+
+#2518 adds manager-scoped `warnings` disclosure and `warning.action` (inspect/stop) to the same development envelope. Operational warnings use the same native/external private Inbox; warning delivery grants no execution rights. See [warning contract](subsystems/project-warnings.md).

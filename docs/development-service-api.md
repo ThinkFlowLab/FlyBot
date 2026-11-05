@@ -5,7 +5,7 @@
 [OpenAPI 3.1 JSON](openapi/flybot.openapi.json) 给出全部公开分派请求/响应 Schema、逐操作权限、
 状态影响和前置条件；第三方个人代理的凭据签发、登录和自主协作见[接入指南](third-party-bot-integration.md)。
 
-本页对应当前分支实际路由：**29个v1查询、34个v1命令**，以及对象管理使用的原生接口。
+本页对应当前分支实际路由：**31个v1查询、36个v1命令**，以及对象管理使用的原生接口。
 咨询和Task主动权交接是两种契约；角色执行回调不是公开HTTP命令。没有Swagger页面；以下请求均可由CLI或HTTP调用。
 
 ## 传输、身份与统一返回
@@ -128,6 +128,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | attempt.integration-state | attemptId | 当前候选/受信集成绑定、availableInputs、materialization和工作区快照；读 |
 | attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
 | release.status | attemptId | 当前Release请求/目标/外部证据；项目读，不发布 |
+| warnings | warningId?、topic?、offset?、limit?、sha256?、ifNoneMatch?、eventOffset? | 管；公共摘要→专题→有界证据；过期来源标历史，查看不执行动作 |
 | chief.state | {} | 当前Chief策略、原定时任务、待裁定/活跃控制工作；读 |
 | effects | taskId?、limit?:1..200 | 已提交意图/执行/等待/失败摘要；私有command结果限当前主体 |
 | command.receipt | commandRequestId、commandName? | 当前独立主体的幂等回执/commit状态/结果引用 |
@@ -169,6 +170,7 @@ Worker已登记不等于已运行；进程或Bot消失不等于退出；角色�
 | release.reconcile | attemptId | 管；仅核对已有外部结果，不重复发布 |
 | queue.cancel | queueId | 写；取消原等待请求，不伪造worker退出或Chief关闭 |
 | queue.retry | queueId, targetRole? | 管；重验原始发起人、要求和资源；不是换请求人借权 |
+| warning.action | warningId、expectedScope、action:acknowledge/inspect/stop | 管；显式声明已读、请求巡检或只停止当前执行；不取消Task，未知退出保留占用 |
 | chief.inspect | taskId? | 管；一次原Chief巡检/裁定工作，不增框架轮询器 |
 | chief.configure | enabled；inspection? | 管；配置原Chief授权和原生定时任务，默认巡检30分钟是配置值 |
 | schedule.configure | operation:save/delete等、id?及原schedule定义 | 管；复用Project定时任务，不创建另一调度器 |
@@ -286,3 +288,5 @@ Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、
 GET `/ready` 无需成员凭据，只返回后端状态可写性：200 `{"status":"ready","writable":true}`；503 为 degraded/unavailable、writable=false。它与仅表示进程存活的 `/health` 分开，也不代表模型、资源或项目验收成功。
 
 TaskView 的 `dispatch` 对应当前 handoff 的 Effect；`committed` 是运行时校验证据，非原始 SQL 列。`chief.state` 的 `lastResult.inputReceiptSummaries` 提供已校验的声明摘要，`provided`、batchId、read/handled ID 与 remaining 均不等于任务验收。存在未处理输入的 close 进入已有纠错；Chief 可明确 continue 处理本批，原通知链继续交付余下输入。具体字段见 DispatchState、ChiefInputReceiptSummary。
+
+Warning API: query `warnings` lists summaries or reads warningId/topic with offset/limit/sha256/ifNoneMatch; events also take eventOffset. Command `warning.action` takes warningId/expectedScope/action(acknowledge|inspect|stop). Requires configure rights; stop preserves Task and unknown exits retain capacity. See [full warning contract](subsystems/project-warnings.md).

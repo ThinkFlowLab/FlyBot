@@ -4608,7 +4608,8 @@
             "type": "string",
             "enum": [
               "consultation.question",
-              "consultation.answer"
+              "consultation.answer",
+              "project.warning"
             ]
           },
           "consultationId": {
@@ -9929,6 +9930,457 @@
           "value"
         ]
       },
+      "DevelopmentQueryWarningsPayload": {
+        "type": "object",
+        "properties": {
+          "warningId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "topic": {
+            "type": "string",
+            "enum": [
+              "execution",
+              "chief",
+              "progress",
+              "merge",
+              "handoffs",
+              "recoveryActions",
+              "events"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8000
+          },
+          "eventOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "ifNoneMatch": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DevelopmentQueryWarningsRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "query",
+                "type": "string"
+              },
+              "name": {
+                "const": "warnings",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentQueryWarningsPayload"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentQueryWarningsResult": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "kind": {
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "taskId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Opaque server-issued ID; never infer authority from it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "at": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "elapsedMs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "historical": {
+                "type": "boolean"
+              },
+              "expectedScope": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "source": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "blockers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "execution": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "chief": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "progress": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "delivery": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "topics": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "kind",
+              "projectId",
+              "taskId",
+              "at",
+              "elapsedMs",
+              "historical",
+              "expectedScope",
+              "source",
+              "reason",
+              "blockers",
+              "execution",
+              "chief",
+              "progress",
+              "delivery",
+              "topics"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Opaque server-issued ID; never infer authority from it."
+                    },
+                    "taskId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Opaque server-issued ID; never infer authority from it."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "elapsedMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "historical": {
+                      "type": "boolean"
+                    },
+                    "expectedScope": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "source": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "blockers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "execution": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "chief": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "progress": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "delivery": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "topics": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "id",
+                    "kind",
+                    "projectId",
+                    "taskId",
+                    "at",
+                    "elapsedMs",
+                    "historical",
+                    "expectedScope",
+                    "source",
+                    "reason",
+                    "blockers",
+                    "execution",
+                    "chief",
+                    "progress",
+                    "delivery",
+                    "topics"
+                  ]
+                },
+                "maxItems": 20
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "nextOffset": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "items",
+              "total",
+              "nextOffset"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "warningId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "topic": {
+                "type": "string"
+              },
+              "historical": {
+                "type": "boolean"
+              },
+              "expectedScope": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "notModified": {
+                "type": "boolean"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalChars": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 8000
+              },
+              "nextOffset": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "warningId",
+              "topic",
+              "historical",
+              "expectedScope",
+              "sha256",
+              "notModified",
+              "offset",
+              "totalChars",
+              "text",
+              "nextOffset"
+            ]
+          }
+        ]
+      },
+      "DevelopmentQueryWarningsSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentQueryWarningsResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
       "DevelopmentQueryExecutionBoundaryPayload": {
         "type": "object",
         "properties": {
@@ -12054,7 +12506,8 @@
               "execution",
               "resource",
               "input",
-              "role-proposal"
+              "role-proposal",
+              "warning"
             ]
           },
           "after": {
@@ -13875,6 +14328,258 @@
               },
               "result": {
                 "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureResult"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/CommandReceipt"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "reconstructed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "version",
+              "result",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
+      "DevelopmentCommandWarningActionPayload": {
+        "type": "object",
+        "properties": {
+          "warningId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "expectedScope": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "acknowledge",
+              "inspect",
+              "stop"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "warningId",
+          "expectedScope",
+          "action"
+        ]
+      },
+      "DevelopmentCommandWarningActionRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "project-development",
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "name": {
+                "const": "warning.action",
+                "type": "string"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "payload": {
+                "$ref": "#/components/schemas/DevelopmentCommandWarningActionPayload"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "expectedGeneration": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedCandidateSha": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "kind",
+              "name",
+              "projectId",
+              "payload",
+              "requestId"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "DevelopmentCommandWarningActionResult": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "acknowledged": {
+                "const": true,
+                "type": "boolean"
+              },
+              "warningId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "acknowledged",
+              "warningId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "runId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "runId",
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "stopped": {
+                "type": "boolean"
+              },
+              "waitingFor": {
+                "anyOf": [
+                  {
+                    "const": "worker-exit",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "stopped",
+              "waitingFor",
+              "runId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "stopped": {
+                "type": "boolean"
+              },
+              "waitingFor": {
+                "anyOf": [
+                  {
+                    "const": "worker-exit",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "taskCancelled": {
+                "const": false,
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "stopped",
+              "waitingFor",
+              "taskCancelled"
+            ]
+          }
+        ]
+      },
+      "DevelopmentCommandWarningActionSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": "project-development/v1",
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,100}$"
+              },
+              "result": {
+                "$ref": "#/components/schemas/DevelopmentCommandWarningActionResult"
               },
               "receipt": {
                 "$ref": "#/components/schemas/CommandReceipt"
@@ -32307,6 +33012,9 @@
             "$ref": "#/components/schemas/DevelopmentQuerySourcesRequest"
           },
           {
+            "$ref": "#/components/schemas/DevelopmentQueryWarningsRequest"
+          },
+          {
             "$ref": "#/components/schemas/DevelopmentQueryExecutionBoundaryRequest"
           },
           {
@@ -32362,6 +33070,9 @@
           },
           {
             "$ref": "#/components/schemas/DevelopmentCommandInboxConnectionConfigureRequest"
+          },
+          {
+            "$ref": "#/components/schemas/DevelopmentCommandWarningActionRequest"
           },
           {
             "$ref": "#/components/schemas/DevelopmentCommandConsultationAskRequest"
@@ -32606,7 +33317,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -32694,7 +33405,7 @@
       "notes": "UTF-16 source page of own consultation; no public SSE entry and no Task initiative. Use returned source hash on continuation.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -32860,7 +33571,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -32938,7 +33649,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       }
     },
     {
@@ -33016,7 +33727,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       }
     },
     {
@@ -33094,7 +33805,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       }
     },
     {
@@ -33172,7 +33883,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       }
     },
     {
@@ -33728,7 +34439,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       }
     },
     {
@@ -33898,6 +34609,83 @@
       }
     },
     {
+      "operationId": "development.query.warnings",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "query",
+        "name": "warnings",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryWarningsRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryWarningsResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentQueryWarningsSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "configure",
+      "humanRoles": [
+        "owner",
+        "maintainer"
+      ],
+      "condition": "current-manager-and-active-project",
+      "personalAgent": {
+        "safe": false,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "read-only",
+        "retry": "read-again-with-current-authorization-and-cursor",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "One shared warning disclosure: omit warningId to page summaries (limit1–20); choose warningId/topic for bounded details (limit1–8000 characters). events uses a separate eventOffset byte cursor. sha256 fences topic pages; ifNoneMatch suppresses unchanged text. Historical facts never authorize actions.",
+      "implementation": {
+        "path": "core/src/host/project-warnings.js",
+        "sha256": "0364c17dbe69446f04bf8203e21cd75b2d0b67a1ea26a446423ba0cf21722185"
+      }
+    },
+    {
       "operationId": "development.query.execution.boundary",
       "transport": {
         "method": "POST",
@@ -34050,7 +34838,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       }
     },
     {
@@ -34453,7 +35241,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
+        "sha256": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85"
       }
     },
     {
@@ -34780,7 +35568,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-service-events.js",
-        "sha256": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec"
+        "sha256": "3caad5574cf85014514a70008ef06a803809912462268d0eeaf66790d07c19c0"
       }
     },
     {
@@ -34858,7 +35646,7 @@
       "notes": "Committed facts only; expired cursor requires a fresh snapshot, not blind replay of commands.",
       "implementation": {
         "path": "core/src/host/project-service-events.js",
-        "sha256": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec"
+        "sha256": "3caad5574cf85014514a70008ef06a803809912462268d0eeaf66790d07c19c0"
       }
     },
     {
@@ -35147,7 +35935,7 @@
       "notes": "Same application service for native and external personal agents. Lease duration is configured; message ownership is not a Task executor identity.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -35242,7 +36030,7 @@
       "notes": "Same application service for native and external personal agents. Lease duration is configured; message ownership is not a Task executor identity.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -35354,7 +36142,7 @@
       "notes": "Safe replies await human approval. Completed/acknowledged message never closes a Task or accepts a Handoff. Exact result requestId/content replays idempotently.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -35450,7 +36238,7 @@
       "notes": "No worker exit or resource release is inferred from failure/expiry.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
       }
     },
     {
@@ -35542,7 +36330,114 @@
       "notes": "Only selects an operator-provisioned connection ID, never accepts URL/key/token. Existing unverified external descriptors are not auto-enabled. Can send one metadata-only verification request.",
       "implementation": {
         "path": "core/src/host/project-agent-inbox.js",
-        "sha256": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927"
+        "sha256": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc"
+      }
+    },
+    {
+      "operationId": "development.command.warning.action",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "project-development",
+        "kind": "command",
+        "name": "warning.action",
+        "version": "project-development/v1"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandWarningActionRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandWarningActionResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/DevelopmentCommandWarningActionSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        },
+        {
+          "personalAgentToken": []
+        }
+      ],
+      "permission": "configure",
+      "humanRoles": [
+        "owner",
+        "maintainer"
+      ],
+      "condition": "current-manager-and-active-project",
+      "personalAgent": {
+        "safe": false,
+        "watch": true,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "writes-require-current-watch-grant-and-generation",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "current-project-membership",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "active-project",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "writable-store",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-warning-execution-scope",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "current-configure-authority",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "stable-requestId",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "explicit-warning-read-declaration",
+          "explicit-inspection-or-stop-only-this-execution",
+          "no-Task-cancellation",
+          "unknown-exit-retains-occupancy"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "command-receipt",
+        "retry": "same-principal-project-name-requestId-and-identical-payload; read-command.receipt-on-uncertain-outcome",
+        "unifiedCommandReceipt": true
+      },
+      "invokesModel": false,
+      "notes": "Acknowledge records an explicit read declaration only; no progress/acceptance is inferred. Stop cancels only a Chief coordination invocation, or interrupts one role execution preserving its Task/draft. A fresh inspection is a separate authorized command after exit reconciliation.",
+      "implementation": {
+        "path": "core/src/host/project-warnings.js",
+        "sha256": "0364c17dbe69446f04bf8203e21cd75b2d0b67a1ea26a446423ba0cf21722185"
       }
     },
     {
@@ -36231,7 +37126,7 @@
       "notes": "Never bypasses Chief. Capacity busy means queue, not permission to create another Task. Cross-repository auto-split remains deferred.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
+        "sha256": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a"
       }
     },
     {
@@ -37323,7 +38218,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
+        "sha256": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a"
       }
     },
     {
@@ -37449,7 +38344,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
+        "sha256": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a"
       }
     },
     {
@@ -37548,7 +38443,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
+        "sha256": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85"
       }
     },
     {
@@ -37653,7 +38548,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
+        "sha256": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85"
       }
     },
     {
@@ -37925,7 +38820,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -38030,7 +38925,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "fddda86a073dab3e2de4ee517f190841b3a1f339e895b5050ecf175e27ee6551"
+        "sha256": "77e876bc107f36c9023603257cc987e5e5f8d5eceee69be8a2dbcec98da02f5b"
       }
     },
     {
@@ -42078,7 +42973,7 @@
       "notes": "FBA may only use view=summary, which never borrows native private history. Use v1 roles and consultations for external agents.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42171,7 +43066,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42242,7 +43137,7 @@
       "notes": "Default latest50; byte-budgeted messages, oversized records use messageIndex source pages. Snapshot prefix survives append, edits invalidate cursor. Private defaults to the current human.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42315,7 +43210,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42391,7 +43286,7 @@
       "notes": "Human facts and role-authored inference have distinct authority. Updates retain history; memory is not permission.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42560,7 +43455,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42652,7 +43547,7 @@
       "notes": "External agents should prefer v1 consultation.ask. A consultation is not a Task handoff.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -42725,7 +43620,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -43259,7 +44154,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       }
     },
     {
@@ -43350,7 +44245,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-resources.js",
-        "sha256": "49a680e91c703f514ff1b8d80aa77ab07860dcc61c81d6ae80fb8e62fd9d24d4"
+        "sha256": "1c88bbce4d1cd0b7e3d2950a7882dfe31fdd1ca60858dd95864590cd2d68ae91"
       }
     },
     {
@@ -47222,7 +48117,7 @@
       "notes": "Never bypasses Chief. Capacity busy means queue, not permission to create another Task. Cross-repository auto-split remains deferred.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
+        "sha256": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a"
       },
       "aliasOf": "development.command.task.run"
     },
@@ -47298,7 +48193,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -48235,7 +49130,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
+        "sha256": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a"
       },
       "aliasOf": "development.command.queue.cancel"
     },
@@ -48348,7 +49243,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-scheduler.js",
-        "sha256": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef"
+        "sha256": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a"
       },
       "aliasOf": "development.command.queue.retry"
     },
@@ -48445,7 +49340,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
+        "sha256": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -48548,7 +49443,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
+        "sha256": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -48624,7 +49519,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
+        "sha256": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -48890,7 +49785,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-agents.js",
-        "sha256": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6"
+        "sha256": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe"
       },
       "aliasOf": "development.command.proposal.publish"
     },
@@ -48993,7 +49888,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "fddda86a073dab3e2de4ee517f190841b3a1f339e895b5050ecf175e27ee6551"
+        "sha256": "77e876bc107f36c9023603257cc987e5e5f8d5eceee69be8a2dbcec98da02f5b"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -49069,7 +49964,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
+        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
       },
       "aliasOf": "development.query.pools"
     },
@@ -49285,6 +50180,7 @@
       "project-github-comment"
     ],
     "queries": [
+      "warnings",
       "github.connection",
       "inbox.list",
       "inbox.get",
@@ -49350,6 +50246,7 @@
       "source.subscribe",
       "source.disable",
       "source.poll",
+      "warning.action",
       "effect.retry",
       "comment.publish"
     ],
@@ -49406,6 +50303,8 @@
       "source.disable": "project-source-disable",
       "source.poll": "project-source-poll",
       "execution.boundary": "project-execution-boundary",
+      "warnings": "project-warnings",
+      "warning.action": "project-warning-action",
       "pools": "project-task-pools",
       "effect.retry": "project-effect-retry",
       "comment.publish": "project-github-comment"
@@ -49439,9 +50338,9 @@
       "project-close-confirm"
     ],
     "nativeEndpointCount": 104,
-    "versionedQueryCount": 30,
-    "versionedCommandCount": 35,
-    "dispatchVariantCount": 188,
+    "versionedQueryCount": 31,
+    "versionedCommandCount": 36,
+    "dispatchVariantCount": 190,
     "sources": {
       "core/src/host/agents.js": "79908a1904312d18b8ddac4bde534210eb1bc5f8e92136bbf35a3591042e9692",
       "core/src/host/approvals.js": "0892ca1bad7c996854d91f56c57068e407b508ba8d42c34868a4eae221e30e2a",
@@ -49485,17 +50384,17 @@
       "core/src/host/platform-identity.js": "551795f4251cc705582560274eccf68a8955a26f51c807a74b8948261508a29e",
       "core/src/host/plugin-model.js": "64477d6900bb6abea40c7ffe0e55d51e61e54bcfbe03e5d5a5e9647b40b69fc8",
       "core/src/host/project-access.js": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123",
-      "core/src/host/project-agent-context.js": "fea96ce858086e24bf9974099780c1494606289fbca9dab5becde302b86b0b0b",
-      "core/src/host/project-agent-inbox.js": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927",
+      "core/src/host/project-agent-context.js": "8491c608d60ac9713414c740ca4a6113aaa9c9bbaa46b9ce50058d4e56164d1b",
+      "core/src/host/project-agent-inbox.js": "146b0ff1549c291ade715a28f78106eb1238081736a455631fa3f1db1792d5bc",
       "core/src/host/project-agent-skills.js": "6545f39aec7bbb8bd812558d37422fae1fa0e4fc7ab2fa02f1c50501d29c8445",
       "core/src/host/project-agent-webhook.js": "129d8ea133a5d85f3b3cb2627dee45fe8617552b422213b93539436dd7a1e5ce",
-      "core/src/host/project-agents.js": "d3a19a8ddc16e7c1af34b8d47a7a874bb4f3596aeb9ba6f5adf38c6bcd88a4c6",
+      "core/src/host/project-agents.js": "a1b9137c18ac472144c8c80aba8f8d4ede0ac9607d34bdefdbfcf55fb477a0fe",
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5",
+      "core/src/host/project-chief-control.js": "c981a89066b44e0a6a1bc947792df1616468f1ced0aefedaa56958183895af85",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
-      "core/src/host/project-chief-protocol.js": "324bb2fe60caf5ad53019ad1a7e6622b04f378e1639bdb7c8e3e6afe644429d6",
+      "core/src/host/project-chief-protocol.js": "037a1495cb95e0b45cfc93af2e6e117b0fe7213379981becdec035e13b6bb496",
       "core/src/host/project-chief-recovery.js": "c80a9d791aab06d4b343e8740a25a471ddf93e0af52b59dd9b7e6fc835c0d824",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
@@ -49509,25 +50408,25 @@
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
       "core/src/host/project-delivery.js": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d",
-      "core/src/host/project-development-service.js": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71",
+      "core/src/host/project-development-service.js": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
       "core/src/host/project-execution-boundary.js": "9e7afe568024e19517a3d5430a0483a6ea5e2c910a53de056d83db3896d3eb16",
       "core/src/host/project-execution-capacity.js": "751b48e26f6ed1ad4c000337174b39ab4c113c494cbb7bd5a2a8369cbae10aa4",
-      "core/src/host/project-execution-environment.js": "bab932919fe2aa6ef9cae2021c3f1b3ffc365b6a9ebb6663ce2a70bf61b5360c",
+      "core/src/host/project-execution-environment.js": "fef49963d7a743b7c3797b265a6a0c1b12c9f1f6ed617b51893fafbd6493d29f",
       "core/src/host/project-execution-exit.js": "50f94881a40c2d0c6288fd081c885c7cabb71f8abec3a8c918e1c0bc852a04f7",
       "core/src/host/project-execution-profile.js": "7106593979d6e21b9e1dab567c8628a7d0252976ed47d42dace337944725da59",
       "core/src/host/project-git-sandbox.js": "7874051423251c3f561f5f611ad2e27a855cc2c0f57d820262e9e9c057f02b3b",
       "core/src/host/project-github-app.js": "f2d1855cb3f203a7c515dec8d40826c805f62d5257837df60201d50e75cd9812",
       "core/src/host/project-github-connections.js": "276fb2ed2d0b7d003e8702d02fd26eb8507af4113e03599600f3217897eae76a",
-      "core/src/host/project-github-merge.js": "aa1c31931f46f8214db097e6b06efccb197da522c2e397ac67570040fc6d682b",
+      "core/src/host/project-github-merge.js": "b57d24c34305117ebb297a4d1a584d575045d68296604a017db1175adf6d5755",
       "core/src/host/project-github-read.js": "d54785b17e60ab5a18b00223e65de0b352a00e25e5d69ba2f7633b5193e04e02",
       "core/src/host/project-github-role-artifacts.js": "a4c04ad7e7d7cac2f1f82a42535f6255e97a5985b4492641e1af64ce26266d1c",
       "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
       "core/src/host/project-harness-auth.js": "2684b6687433e128197a0cc67b671bbd02c3c71e39428af7393d0c0ca1658ac7",
       "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
-      "core/src/host/project-harness.js": "fddda86a073dab3e2de4ee517f190841b3a1f339e895b5050ecf175e27ee6551",
+      "core/src/host/project-harness.js": "77e876bc107f36c9023603257cc987e5e5f8d5eceee69be8a2dbcec98da02f5b",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
@@ -49543,19 +50442,19 @@
       "core/src/host/project-releases.js": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885",
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
-      "core/src/host/project-resources.js": "49a680e91c703f514ff1b8d80aa77ab07860dcc61c81d6ae80fb8e62fd9d24d4",
+      "core/src/host/project-resources.js": "1c88bbce4d1cd0b7e3d2950a7882dfe31fdd1ca60858dd95864590cd2d68ae91",
       "core/src/host/project-review-evidence.js": "da3f72d2cefcf725c19f590e926ce391af36d45df97163b0d4a07699cef5ceb9",
-      "core/src/host/project-reviewed-merge.js": "f178310efb224fa9bd51042e4a1b14122fc4fd9a155a7e43da17a5e668a29aa8",
+      "core/src/host/project-reviewed-merge.js": "b89a38053f79277e8516e44975123a8056a99fb8c69ac1d4c88889b5a89e738b",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",
       "core/src/host/project-role-github.js": "3f66e09f5995b8b8a1542f75f0a988b331a3a6867525e38820aea1a68e2d85d1",
       "core/src/host/project-role-governance.js": "fe9ca70113666b0223f55b9225890609c5a1e7ddcb9b6105a3dc0edc3b2ef005",
-      "core/src/host/project-role-policy.js": "ba90bf8dcba9f4a2d659f62948b6437d739ee40e2d839cd213181731c4dab8a5",
+      "core/src/host/project-role-policy.js": "fe08ac2b838a3dba50479c78934ae81bfff0f88916593f74a1c4ea68909404aa",
       "core/src/host/project-rooms.js": "148ba6f39086dc74e0c9c92ab368361b256b5185490d7983e957dd28890cfbe9",
       "core/src/host/project-runtime-setup.js": "9dbb23e21deef68a779845ed0e31ec0feaefa3c3eaf35b27f26f8c5de797c61c",
       "core/src/host/project-scheduled-tasks.js": "78c0e29bb830710dd9109d6a5fd1a67214fff01c55a79a38a3df7e5c3a194324",
-      "core/src/host/project-scheduler.js": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef",
-      "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
+      "core/src/host/project-scheduler.js": "1ee91c9ba09d98d49abcc40ce7fac2b98ab227a2da6f8564355137336a031b5a",
+      "core/src/host/project-service-events.js": "3caad5574cf85014514a70008ef06a803809912462268d0eeaf66790d07c19c0",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
       "core/src/host/project-service-views.js": "5aa29281a97fb24eea9413bc3eef83447b2e164ef5b249053da7e6aec5b466fd",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
@@ -49571,6 +50470,7 @@
       "core/src/host/project-task-sessions.js": "fcf27b51759b86f50c5cf6e35fde236cb8b76cc5aa10262444063abcf6cd1d17",
       "core/src/host/project-team.js": "72c3975a4fed654f3750e82a9388320934be7cf322b05cd59bbac26d6e4ede77",
       "core/src/host/project-test-diagnostics.js": "fed63d4c8631ba8d5dcf39764829bb4c0fe9fb28d7e95b61ed232a21d48c4957",
+      "core/src/host/project-warnings.js": "0364c17dbe69446f04bf8203e21cd75b2d0b67a1ea26a446423ba0cf21722185",
       "core/src/host/prompt.js": "919e8c5b28c27af6b9570a7be22609230ea4395d3fd4b7215083f9bc25978d72",
       "core/src/host/reach.js": "0b8f2868b36d99ccf896605685a82bcb20f670e092feec24560ff19a2a20824e",
       "core/src/host/remote-chat.js": "7b83196031e922af5b44419dde60a66e414a8326bbeb641c69593667442fa81d",
@@ -49689,6 +50589,23 @@
     }
   ],
   "x-flybot-examples": [
+    {
+      "id": "read-warning-summaries",
+      "actor": "project-manager",
+      "request": {
+        "endpoint": "project-development",
+        "payload": {
+          "version": "project-development/v1",
+          "kind": "query",
+          "name": "warnings",
+          "projectId": "PROJECT_ID",
+          "payload": {
+            "offset": 0,
+            "limit": 10
+          }
+        }
+      }
+    },
     {
       "id": "discover-login-mode",
       "actor": "anonymous",

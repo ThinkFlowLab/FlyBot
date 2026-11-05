@@ -77,3 +77,5 @@ Persistent Project effects and GitHub receipts: [project-effects](project-effect
 [Release Tasks](project-releases.md) bind explicit publication authorization and observed external proof to the existing Attempt/Effects and Chief closure.
 
 Project automation credential providers: [GitHub automation](project-github-automation.md).
+
+- [Project warnings](project-warnings.md) — shared progressive disclosure, delivery and execution-action fences.

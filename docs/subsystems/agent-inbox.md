@@ -94,3 +94,5 @@ pending notifications are retained. No reminder repeats the operational repair.
 The disposable DSH probe uses the original restricted gateway and an independent
 signed receiver, including503, restart and duplicate notification. See
 [assistance](../chief-assistance.md).
+
+#2518 operational project.warning messages use the original durable Inbox/notification path as acknowledgement-only facts, without consultation or initiative transfer. See [warnings](project-warnings.md).

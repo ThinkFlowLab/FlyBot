@@ -996,3 +996,39 @@ test('Chief operations recipient is explicitly selected instead of borrowing req
   task.collaboration.generation++
   await assert.rejects(rt.projectEndpoint('project-consultation-reply', { projectId: 'p1', consultationId: recipient.consultationId, requestId: 'old', text: 'Delayed advice', publish: true }, alice), /no longer current/)
 })
+
+test('stalled Chief warnings use the original personal Inbox without creating a Task consultation', async t => {
+  const { rt } = await setup(t), owner = await get(rt, alice)
+  const { createProjectWarnings } = await import('../src/host/project-warnings.js')
+  rt.state.projectChiefPolicies = { p1: { enabled: true, operationsContact: { memberId: alice.memberId, agentId: owner.mine.personalAgentId } } }
+  rt.state.projectExecutions = { stalled: { id: 'stalled', projectId: 'p1', kind: 'chief-control', purpose: 'inspection', status: 'running', invocation: 1, createdAt: 1, startedAt: 1 } }
+  rt.projectWarnings = createProjectWarnings(rt, { now: () => 900001 })
+  await rt.projectWarnings.reconcile(); await rt.projectEffects.drain()
+  const warnings = await rt.projectEndpoint('project-warnings', { projectId: 'p1' }, alice)
+  assert.equal(warnings.items.length, 1)
+  assert.equal(warnings.items[0].delivery.kind, 'personal-agent')
+  const inbox = await rt.projectAgentInbox.endpoint('list', { projectId: 'p1', agentId: owner.mine.personalAgentId }, alice)
+  const message = inbox.items.find(row => row.id === warnings.items[0].id)
+  assert.equal(message.kind, 'project.warning'); assert.equal(message.initiativeTransferred, false)
+  assert.equal(Object.keys(rt.state.tasks).length, 0)
+  await assert.rejects(rt.projectEndpoint('project-warnings', { projectId: 'p1' }, bob), /denied/i)
+  await assert.rejects(rt.projectWarnings.query({ projectId: 'p2', warningId: message.id }, alice), /another Project/)
+})
+
+test('one resident Chief Session progressively reads shared warning topics and unchanged pages', async t => {
+  const { rt } = await setup(t)
+  const { createProjectWarnings } = await import('../src/host/project-warnings.js')
+  rt.state.projectExecutions = { stalled: { id: 'stalled', projectId: 'p1', kind: 'chief-control', purpose: 'inspection', status: 'running', invocation: 1, createdAt: 1, startedAt: 1 } }
+  rt.projectWarnings = createProjectWarnings(rt, { now: () => 900001 })
+  await rt.projectWarnings.reconcile()
+  const warning = (await rt.projectWarnings.query({ projectId: 'p1' }, alice)).items[0]
+  const sent = await message(rt, alice, 'public', 'Inspect this warning'), agent = rt.state.projectAgents[sent.agent.id], bot = rt.botOf(agent.botId), sessionId = agent.sessionId
+  const first = await rt.projectAgents.context(bot, { warningRequests: [{ warningId: warning.id, topic: 'chief', limit: 128 }] })
+  assert.equal(first.reads[0].text.length, 128); assert(first.reads[0].nextOffset)
+  const next = await rt.projectAgents.context(bot, { warningRequests: [{ warningId: warning.id, topic: 'chief', offset: first.reads[0].nextOffset, sha256: first.reads[0].sha256 }] })
+  assert(next.reads[0].text.length)
+  const unchanged = await rt.projectAgents.context(bot, { warningRequests: [{ warningId: warning.id, topic: 'chief', ifNoneMatch: first.reads[0].sha256 }] })
+  assert.equal(unchanged.reads[0].notModified, true); assert.equal(unchanged.reads[0].text, '')
+  assert.equal(agent.sessionId, sessionId)
+  await assert.rejects(rt.projectAgents.context(bot, { warningRequests: Array.from({ length: 5 }, () => ({ warningId: warning.id })) }), /budget/)
+})

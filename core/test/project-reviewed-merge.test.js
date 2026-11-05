@@ -59,14 +59,13 @@ test('new unhandled Task feedback holds merge without fabricating a receipt or r
   await f.host.stage(f.attempt); await f.rt.projectEffects.drain(); assert.equal(f.counts().reads, 0)
   handled = true; f.tick(1000); await f.rt.projectEffects.drain(); assert.equal(f.attempt.merge.status, 'merged')
 })
-test('failed commit cannot start a merge; terminal wait budget renews only through an authorized original Effect retry', async () => {
+test('failed commit cannot start a merge; elapsed wait budgets do not block a valid candidate', async () => {
   const f = fixture(); f.fail(true)
   await assert.rejects(f.host.stage(f.attempt), /disk failed/); assert.equal(f.attempt.merge, undefined); assert.equal(f.counts().writes, 0)
   f.fail(false); f.mode('waiting'); const token = await f.host.stage(f.attempt)
   await f.rt.projectEffects.drain(); f.tick(11000); await f.rt.projectEffects.drain()
-  assert.equal(f.rt.state.projectEffects[token.id].status, 'failed'); assert.equal(f.attempt.merge.reason, 'merge-wait-budget-exhausted')
-  await f.rt.projectEffects.retry({ projectId: 'p', effectId: token.id, requestId: 'repair-ci' }, { memberId: 'owner' })
-  f.mode('merged'); await f.rt.projectEffects.drain(); assert.equal(f.attempt.merge.status, 'merged')
+  assert.equal(f.rt.state.projectEffects[token.id].status, 'pending'); assert.notEqual(f.attempt.merge.reason, 'merge-wait-budget-exhausted')
+  f.mode('merged'); f.tick(11000); await f.rt.projectEffects.drain(); assert.equal(f.attempt.merge.status, 'merged')
 })
 
 test('confirmed merge hands off after notification recovery independently of the merge wait budget', async () => {
