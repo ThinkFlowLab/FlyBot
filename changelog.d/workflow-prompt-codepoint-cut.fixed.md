@@ -1,0 +1,1 @@
+A workflow node prompt, the task brief handed to a run, and the reply a step hands on now stop on their character bound without splitting the character there: the cut counts code points like a task title already did, so a prompt or reply that ends in an emoji or another character outside the BMP no longer carries half of it as a replacement character.
