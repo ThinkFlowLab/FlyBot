@@ -28,7 +28,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
 import { clip, codePoints, splitRef, unquote } from './text.js'
-import { codePointStart, cut, fits } from '../shared/text-boundary.js'
+import { cut, fits } from '../shared/text-boundary.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -1267,13 +1267,26 @@ export function install(rt) {
     return cursors
   }
   const saveCursors = () => (writeFolder(root) ? writeText(cursorsPath, JSON.stringify(cursors)) : Promise.resolve())
+  // The UTF-16 index of the n-th character: a budget spent in characters needs an index, and
+  // `text.length` counts units, so a character outside the BMP would spend two of it.
+  // Stepping whole code points makes the index a boundary by construction, so no cut lands
+  // between the halves of a surrogate pair.
+  const charIndex = (text, chars) => {
+    let index = 0
+    for (let n = 0; n < chars && index < text.length; n += 1) index += text.codePointAt(index) > 0xffff ? 2 : 1
+    return index
+  }
+
   // A long message often ends with what the user wants of it, so both ends stay.
   const ends = (text, max) => {
     if (fits(text, max)) return text
-    const tail = text.slice(codePointStart(text, text.length - Math.floor(max / 3)))
-    // Stepping back onto a boundary can keep one more unit at the tail; the head gives it back.
-    const head = cut(text, Math.min(Math.ceil(max * 2 / 3), max - tail.length))
-    return `${head.text} …(middle cut)… ${tail}`
+    // Flattened first, as `cut` did: text that arrives with an unpaired surrogate is stored
+    // as U+FFFD rather than half a character.
+    const flat = text.toWellFormed()
+    const tailChars = Math.floor(max / 3)
+    const tail = flat.slice(charIndex(flat, codePoints(flat) - tailChars))
+    const head = flat.slice(0, charIndex(flat, max - tailChars))
+    return `${head} …(middle cut)… ${tail}`
   }
 
   // Lines say who spoke. The user's lines are kept longest: what they say is what

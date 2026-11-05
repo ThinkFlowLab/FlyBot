@@ -606,6 +606,30 @@ test('a long user line cut for the review keeps whole characters at both ends (#
     assert.deepEqual(Buffer.from(keptHead, 'utf8'), Buffer.from(text.slice(0, keptHead.length), 'utf8'))
     assert.deepEqual(Buffer.from(keptTail, 'utf8'), Buffer.from(text.slice(-keptTail.length), 'utf8'))
   }
+  // The two ends spend the budget in characters too, not in UTF-16 units: 3,500 emoji are 7,000
+  // units, so unit arithmetic kept 1,516 characters of the 3,000-character budget, a
+  // 1,000-character head and a 500-character tail. The whole line is `MAX` characters plus the
+  // marker, the head is the rendered line's first 2,000 characters (the `User: ` label included)
+  // and the tail its last 1,000. ASCII of the same length is the control: it spent the budget
+  // correctly before the change too.
+  for (const [text, sample] of [['🚀'.repeat(3500), 'User: 🚀'], ['a'.repeat(3500), 'User: a']]) {
+    const prompt = await render(text)
+    const line = prompt.split('\n').find(one => one.startsWith(sample))
+    assert.ok(line !== undefined, `the user line is in the review context:\n${prompt}`)
+    assert.equal(line.isWellFormed(), true)
+    assert.equal(line.includes('\ufffd'), false)
+    const mark = ' …(middle cut)… '
+    const at = line.indexOf(mark)
+    assert.ok(at > 0, line.slice(0, 40))
+    const head = [...line.slice(0, at)]
+    const tail = [...line.slice(at + mark.length)]
+    assert.equal(head.length + tail.length, MAX, 'the view keeps the whole 3,000-character budget')
+    assert.equal(head.length, Math.ceil((MAX * 2) / 3), 'the head keeps its 2,000 characters')
+    assert.equal(tail.length, Math.floor(MAX / 3), 'the tail keeps its 1,000 characters')
+    const message = [...text]
+    assert.equal(head.slice('User: '.length).join(''), message.slice(0, head.length - 'User: '.length).join(''))
+    assert.equal(tail.join(''), message.slice(-tail.length).join(''))
+  }
 })
 
 test('when a turn ends, the memory review keeps what the user said, through the same rules', async (t) => {
