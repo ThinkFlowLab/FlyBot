@@ -3411,7 +3411,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
  .bt-to-label{color:var(--bt-ink-2)}
  .bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
-@@ -280,7 +280,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
+@@ -280,9 +280,18 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-option[aria-selected=true]{background:var(--bt-active)}
  .bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
  .bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3421,7 +3421,16 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 +.bt-option-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);white-space:normal;overflow-wrap:anywhere}
  .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
  .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
++/* #2502: the host sentence and its Reload entry share one row; the sidebar's own rule sizes
++   the button, this only places it beside the sentence instead of under it. */
++.bt-readonly-line{display:flex;align-items:center;gap:8px}
++.bt-readonly-line>.bt-hint{flex:1 1 auto;min-width:0}
++.bt-readonly-line>.bt-read-only-reload{flex:none;margin:0}
++.bt-readonly-line-head{padding:0 20px 8px}
++.bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
  .bt-nc-spacer{flex:1}
+ .bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
+ .bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
 @@ -309,6 +309,10 @@ button.bt-q-opt:active{background:var(--bt-active)}
  .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
  .bt-send:disabled{opacity:.35;cursor:default}

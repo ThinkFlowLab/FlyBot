@@ -5238,6 +5238,13 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-option-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);white-space:normal;overflow-wrap:anywhere}
 .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
 .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
+/* #2502: the host sentence and its Reload entry share one row; the sidebar's own rule sizes
+   the button, this only places it beside the sentence instead of under it. */
+.bt-readonly-line{display:flex;align-items:center;gap:8px}
+.bt-readonly-line>.bt-hint{flex:1 1 auto;min-width:0}
+.bt-readonly-line>.bt-read-only-reload{flex:none;margin:0}
+.bt-readonly-line-head{padding:0 20px 8px}
+.bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
 .bt-nc-spacer{flex:1}
 .bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
 .bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
@@ -6885,7 +6892,7 @@ function useInlineEntry(policy) {
 }
 function HeldReplyActions({ held, actions, roster }) {
   const locked = lockedWindow(roster);
-  const readOnlyLine = () => (0, import_react10.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly));
+  const readOnlyLine2 = () => (0, import_react10.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly));
   const custom = useInlineEntry(held?.by);
   const [busy, setBusy] = (0, import_react10.useState)(false);
   const [error, setError] = (0, import_react10.useState)("");
@@ -6915,7 +6922,7 @@ function HeldReplyActions({ held, actions, roster }) {
       (0, import_react10.createElement)("span", null, held.status === "approved" ? t("Sent to {to}", { to: held.toName }) : held.status === "auto" ? t("Auto-sent to {to}", { to: held.toName }) : failed ? t("Not sent: delivery failed") : t("Not sent")),
       // #968: the terminal answer comes from one predicate, not from `status === 'failed'` here and a
       // different field elsewhere. A failure that can never succeed draws no button on any surface.
-      failed && canRetry(held) ? locked ? readOnlyLine() : (0, import_react10.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
+      failed && canRetry(held) ? locked ? readOnlyLine2() : (0, import_react10.createElement)("button", { type: "button", className: "bt-held-retry", disabled: busy, onClick: () => decide("retry") }, t("Retry")) : null,
       error ? (0, import_react10.createElement)("span", { className: "bt-flybot-approval-error", role: "alert" }, error) : null
     );
   }
@@ -6928,7 +6935,7 @@ function HeldReplyActions({ held, actions, roster }) {
     (0, import_react10.createElement)("div", { className: "bt-held-head" }, t("Waiting for your approval"), age),
     (0, import_react10.createElement)("div", { className: "bt-flybot-approval-origin" }, t("{from} → {to}", { from: held.from ?? t("A Bot"), to: held.toName })),
     reason ? (0, import_react10.createElement)("div", { className: "bt-flybot-approval-reason", title: reason.title }, reason.text) : null,
-    locked ? readOnlyLine() : (0, import_react10.createElement)(
+    locked ? readOnlyLine2() : (0, import_react10.createElement)(
       "div",
       { className: "bt-flybot-approval-actions" },
       (0, import_react10.createElement)("button", { type: "button", disabled: busy, onClick: () => decide("reject") }, t("Reject")),
@@ -8725,6 +8732,24 @@ function progressOf(task) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+// src/client/read-only.js
+var readOnlySaid = (roster) => typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
+function readOnlyLine(h50, roster, actions, { key, className, style, reload = true } = {}) {
+  if (!readOnlySaid(roster)) return null;
+  return h50(
+    "div",
+    { key, className: ["bt-readonly-line", className].filter(Boolean).join(" "), style },
+    h50("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)),
+    reload ? h50("button", {
+      type: "button",
+      className: "bt-read-only-reload",
+      onClick: () => {
+        void Promise.resolve(actions?.reloadTeam?.()).catch((error) => actions?.reportError?.(error, "reload"));
+      }
+    }, t("Reload")) : null
+  );
+}
+
 // src/client/inbox.js
 var import_react15 = require("react");
 var KEEP_MS = 7 * 864e5;
@@ -9359,7 +9384,7 @@ function InboxDialog({ roster, useWork, useSessions, actions, leaving = false })
       (0, import_react15.createElement)(
         "div",
         { className: "bt-mem-body bt-inbox-body" },
-        ...locked ? [(0, import_react15.createElement)("p", { key: "readonly", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly))] : [],
+        ...locked ? [readOnlyLine(import_react15.createElement, roster, actions, { key: "readonly" })] : [],
         (0, import_react15.createElement)("div", { className: "bt-inbox-feedback", role: "status", "aria-live": "polite" }, feedback),
         GROUPS.map((group) => {
           const settled = group.id === "done" ? model.doneAll ?? groups.done : null;
@@ -10719,7 +10744,7 @@ function TeamSidebar(props) {
     return entries2.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || Number(foreign(a)) - Number(foreign(b)) || b.at - a.at);
   }, [roster, updated]);
   const main = roster.byId[roster.mainBotId];
-  const readOnlySaid = typeof roster.readOnly === "string" && roster.readOnly.trim() !== "";
+  const readOnlySaid2 = typeof roster.readOnly === "string" && roster.readOnly.trim() !== "";
   const readOnlyReload = (0, import_react19.createElement)("button", {
     type: "button",
     className: "bt-read-only-reload",
@@ -10758,10 +10783,10 @@ function TeamSidebar(props) {
       (0, import_react19.createElement)(UpdateButton, { useUpdate: props.useUpdate, actions }),
       (0, import_react19.createElement)("button", { type: "button", className: "bt-round", "aria-label": t("New…"), title: t("New…"), onClick: () => actions.openNewChat("new") }, (0, import_react19.createElement)(PlusIcon))
     ),
-    wide && readOnlySaid ? (0, import_react19.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
-    wide && readOnlySaid ? readOnlyReload : null,
-    !wide && readOnlySaid ? (0, import_react19.createElement)("div", { className: "bt-hint bt-read-only", role: "status", title: hostText(roster.readOnly), "aria-label": hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
-    !wide && readOnlySaid ? readOnlyReload : null,
+    wide && readOnlySaid2 ? (0, import_react19.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+    wide && readOnlySaid2 ? readOnlyReload : null,
+    !wide && readOnlySaid2 ? (0, import_react19.createElement)("div", { className: "bt-hint bt-read-only", role: "status", title: hostText(roster.readOnly), "aria-label": hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
+    !wide && readOnlySaid2 ? readOnlyReload : null,
     (0, import_react19.createElement)(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
     (0, import_react19.createElement)(KanbanRow, { wide, useUi, actions }),
     (0, import_react19.createElement)(ProjectsNav, { wide }),
@@ -14604,7 +14629,7 @@ function MemoryDialog({ bot, actions, roster, leaving = false }) {
       (0, import_react28.createElement)(
         "div",
         { className: "bt-mem-body" },
-        locked ? (0, import_react28.createElement)("p", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+        readOnlyLine(import_react28.createElement, roster, actions),
         error ? (0, import_react28.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, hostText(error)) : null,
         view === null ? error ? null : (0, import_react28.createElement)(Skeleton) : page === "entries" ? (0, import_react28.createElement)(Entries, { bot, view, remove: locked ? null : remove }) : (0, import_react28.createElement)(Summary, { bot, view, regenerate })
       ),
@@ -19566,7 +19591,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
         // A window that holds the team read-only still opens every page here, so the header says
         // why nothing can be changed, in the host's own sentence and above the refusal below it:
         // the standing state first, the answer to one pressed control closest to that control.
-        typeof roster?.readOnly === "string" && roster.readOnly.trim() ? (0, import_react42.createElement)("div", { className: "bt-hint bt-read-only", role: "status", style: { padding: "0 20px 8px", textAlign: "left" } }, hostText(roster.readOnly)) : null,
+        readOnlyLine(import_react42.createElement, roster, actions, { key: "readonly", className: "bt-readonly-line-head" }),
         shown === "usage" ? null : errorLine,
         shown === "usage" ? null : (0, import_react42.createElement)(
           "div",
@@ -20199,7 +20224,7 @@ function GroupOverview({ room: room2, roster, actions, usage, useWork, openSetti
     // P-544: the group overview's writes are gone in a locked window, so it says why once, above
     // the reads it still draws. The approval card used to carry its own copy (#2381); one page,
     // one sentence.
-    locked ? (0, import_react44.createElement)("div", { key: "read-only", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+    readOnlyLine(import_react44.createElement, roster, actions, { key: "read-only" }),
     (0, import_react44.createElement)(FlyBotRoomOverview, { key: "plugin-overview", room: room2, roster, actions }),
     invited && room2.sharedFrom && !face ? (0, import_react44.createElement)(
       "div",
@@ -20340,7 +20365,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
         { key: "set-body", className: "bt-drawer-body bt-set-body", "data-move": move },
         // #2387: the lock is the window's, not the Bot's — a read-only window draws the host's sentence
         // in place of a group's form too, exactly as it already did for a Bot's.
-        lockedWindow(roster) ? (0, import_react44.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : bot ? (0, import_react44.createElement)(BotSettingsForm, { bot, roster, actions, run }) : (0, import_react44.createElement)(GroupSettingsForm, { room: room2, roster, actions, run, onDeleted: close })
+        lockedWindow(roster) ? readOnlyLine(import_react44.createElement, roster, actions) : bot ? (0, import_react44.createElement)(BotSettingsForm, { bot, roster, actions, run }) : (0, import_react44.createElement)(GroupSettingsForm, { room: room2, roster, actions, run, onDeleted: close })
       )
     ];
   }
@@ -20434,7 +20459,7 @@ function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, roster, a
         // locked window refuses every one of them. Say so once at the top and draw the read half only,
         // which is the values themselves (P-547) — the name above is already text, and the settings
         // gear still opens the page that explains the window.
-        lockedWindow(roster) ? (0, import_react44.createElement)("div", { key: "read-only", className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+        lockedWindow(roster) ? readOnlyLine(import_react44.createElement, roster, actions, { key: "read-only" }) : null,
         lockedWindow(roster) ? (0, import_react44.createElement)(ReadOnlyOverview, { key: "read", bot, roster }) : null,
         lockedWindow(roster) ? null : (0, import_react44.createElement)(
           "div",

@@ -8,6 +8,7 @@ import { dateLocale, hostText, t } from './i18n.js'
 import { memoryBlockedNotice, memoryEmptyNotice } from './memory-empty.js'
 import { summaryBlocks } from './text.js'
 import { useLinger } from './motion.js'
+import { readOnlyLine } from './read-only.js'
 
 const POLL_MS = 1500
 const MENU_EXIT_MS = 120
@@ -321,7 +322,7 @@ export function MemoryDialog({ bot, actions, roster, leaving = false }) {
           h('button', { type: 'button', role: 'menuitem', disabled: count === 0 || view?.summarizing, onClick: regenerate },
             h('span', { className: 'bt-menu-label' }, t('Regenerate summary')))) : null),
       h('div', { className: 'bt-mem-body' },
-        locked ? h('p', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+        readOnlyLine(h, roster, actions),
         error ? h('div', { className: 'bt-error', role: 'alert', style: { padding: 0 } }, hostText(error)) : null,
         view === null ? (error ? null : h(Skeleton))
           : page === 'entries' ? h(Entries, { bot, view, remove: locked ? null : remove })
