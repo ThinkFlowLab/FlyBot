@@ -14,3 +14,7 @@ Tests cover actual grants, changed binding/symlink/common-directory refusal and
 read-only policy. Opt-in actual pinned SDK/CLI fixtures use fresh profile directories
 and a deterministic provider; their success does not establish live OpenToday or
 private GitHub integration acceptance. See [Harness](../docs/subsystems/project-harness.md).
+
+The full role-policy budget caught growing roadmap chronology during verification.
+Archive earlier checkpoint text verbatim and retain current boundaries inline;
+keep all required policy sources and the 384000-byte limit unchanged.
