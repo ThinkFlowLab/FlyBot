@@ -213,8 +213,10 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
               })),
               remotes.map(person => h(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") })),
             ]),
-      face ? h(Card, { title: t('Who answers') }, h(Row, { label: t(modeLabel), hint: t(modeHint) })) : null,
-      face ? h(Card, { title: t('Working folder') }, h(Row, { label: t('Folder'), hint: room.workDir || t('Not set') })) : null,
+      // Both facts are reads (`shownMode` and `room.workDir`), so a locked page keeps them as
+      // text for every group, the way a face-to-face room already did (#2492).
+      h(Card, { title: t('Who answers') }, h(Row, { label: t(modeLabel), hint: t(modeHint) })),
+      h(Card, { title: t('Working folder') }, h(Row, { label: t('Folder'), hint: room.workDir || t('Not set') })),
       room.notice ? h(Card, { title: t('Notice') }, h(Row, { label: t('Group notice'), hint: room.notice, stack: true })) : null)
   }
   const update = patch => run(actions.updateRoom(room.id, patch))
