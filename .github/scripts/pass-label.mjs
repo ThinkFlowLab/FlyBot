@@ -36,13 +36,19 @@ const SHORT = 12
 
 const firstLine = (body) => String(body ?? '').split('\n').map((line) => line.trim()).find((line) => line !== '') ?? ''
 
+// The gates compare a `Written-by:` name with the policy's roster case-insensitively (#1131:
+// `review-gate` lowercases both sides before `writers.has(...)`), so every reader of a conclusion here
+// does the same — one rule, one place, and a label cannot go missing where the gate accepted the PASS.
+const isListedWriter = (writers, name) =>
+  new Set(writers.map((w) => String(w).toLowerCase())).has(String(name).toLowerCase())
+
 // Does this body decide that the tip was PASSed? `Correction from …` never does, whatever it quotes.
 export function verdictOf(body, { writers = [], association } = {}) {
   if (!ASSOCIATIONS.has(String(association ?? '').toUpperCase())) return null
   if (/^Correction\b/i.test(firstLine(body))) return null
   const report = parseReport(body)
   if (report.verdict !== 'PASS') return null
-  if (!report.writer || !writers.includes(report.writer)) return null
+  if (!report.writer || !isListedWriter(writers, report.writer)) return null
   return report
 }
 
@@ -71,8 +77,7 @@ export function strangerPassOf(body, { writers = [], association } = {}) {
   if (/^Correction\b/i.test(firstLine(body))) return null
   const report = parseReport(body)
   if (report.verdict !== 'PASS' || !report.tip || !report.writer) return null
-  const listed = new Set(writers.map((w) => String(w).toLowerCase()))
-  if (listed.has(String(report.writer).toLowerCase())) return null
+  if (isListedWriter(writers, report.writer)) return null
   return { writer: report.writer, tip: report.tip }
 }
 
