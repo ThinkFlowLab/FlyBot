@@ -407,11 +407,15 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
    return h(Card, { title: t('Memory') },
      h('button', { type: 'button', className: 'bt-set-row bt-bs-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },
        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, label)),
-@@ -199,9 +199,28 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -199,14 +199,35 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
      const timer = setTimeout(() => setConfirming(false), 4000)
      return () => clearTimeout(timer)
    }, [confirming])
 +  if (bot.remote) return null
++  // DSH settings can change the model list at any time; the hint should match it. The hook sits
++  // above the read-only branch because the lock can lift under a page that is already mounted:
++  // both views must run the same hooks in the same order, or React unmounts the whole dialog (#2474).
++  useEffect(() => { void actions.refreshModels?.() }, [bot.id])
    const isMainBot = isMainOf(roster, bot.id)
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
    const isTile = roster.mainBotId === bot.id
@@ -436,6 +440,11 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
    const save = patch => run(actions.updateBot(bot.id, patch))
    const duplicate = () => run(actions.duplicateBot(bot.id).then(copy => actions.openSession(copy.id)))
    const remove = () => { if (confirming) void run(actions.deleteBot(bot.id)); else setConfirming(true) }
+-  // DSH settings can change the model list at any time; the hint should match it.
+-  useEffect(() => { void actions.refreshModels?.() }, [bot.id])
+   return h('div', { className: 'bt-bs' },
+     h('div', { className: 'bt-bs-hero' },
+       h('div', { className: 'bt-avatar-anchor' },
 @@ -222,8 +222,9 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
        h(Row, { label: t('Label'), hint: t('Optional. Shown under the name.') }, h(InlineText, { label: t('Label'), value: bot.role, placeholder: t('Research, admin…'), maxLength: 24, onSave: role => save({ role }) }))),
      h(Card, { title: t('Model') },

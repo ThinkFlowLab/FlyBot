@@ -30,20 +30,30 @@ const h = (type, props, ...children) => ({ type, props: { ...props, children: ch
 let slots = []
 let index = 0
 let effects = []
+// React counts a component's hooks on every render and refuses a count that changed under the
+// same instance: one more hook throws during that render, one fewer after it. Keep both rules
+// and React's own messages, so a roster that flips under a mounted page fails here the way
+// React 18.3.1 fails it (#2474).
+let previousHookCount = null
+const hook = () => {
+  const at = index++
+  if (previousHookCount !== null && at >= previousHookCount) throw new Error('Rendered more hooks than during the previous render.')
+  return at
+}
 const react = {
   createElement: h, Component: class {}, Fragment: Symbol('F'),
-  useMemo: (fn) => { const at = index++; if (!(at in slots)) slots[at] = fn(); return slots[at] },
+  useMemo: (fn) => { const at = hook(); if (!(at in slots)) slots[at] = fn(); return slots[at] },
   useState: (initial) => {
-    const at = index++
+    const at = hook()
     if (!(at in slots)) slots[at] = typeof initial === 'function' ? initial() : initial
     return [slots[at], (value) => { slots[at] = typeof value === 'function' ? value(slots[at]) : value }]
   },
-  useCallback: (fn) => { const at = index++; if (!(at in slots)) slots[at] = fn; return slots[at] },
-  useRef: (value) => { const at = index++; if (!(at in slots)) slots[at] = { current: value }; return slots[at] },
-  useEffect: (fn) => { const at = index++; if (!(at in slots)) { slots[at] = true; effects.push(fn) } },
-  useLayoutEffect() {},
-  useId: () => 'id',
-  useSyncExternalStore: (_subscribe, get) => get(),
+  useCallback: (fn) => { const at = hook(); if (!(at in slots)) slots[at] = fn; return slots[at] },
+  useRef: (value) => { const at = hook(); if (!(at in slots)) slots[at] = { current: value }; return slots[at] },
+  useEffect: (fn) => { const at = hook(); if (!(at in slots)) { slots[at] = true; effects.push(fn) } },
+  useLayoutEffect: () => { hook() },
+  useId: () => { hook(); return 'id' },
+  useSyncExternalStore: (_subscribe, get) => { hook(); return get() },
 }
 const win = { location: { hash: '' }, addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }
 const module = { exports: {} }
@@ -125,21 +135,23 @@ const isWidget = (node) => WIDGETS.has(node.type) || WRITE_WIDGET_NAMES.has(name
 // A page is drawn by the dialog one level down, so mounting it means calling it with the
 // props the dialog handed it; child components are called too, one at a time, because the
 // controls a locked window must not draw sit inside them.
-const expand = (node, out = [], depth = 0) => {
-  if (Array.isArray(node)) { for (const item of node) expand(item, out, depth); return out }
+const expand = (node, out = [], depth = 0, deep = false) => {
+  if (Array.isArray(node)) { for (const item of node) expand(item, out, depth, deep); return out }
   if (!node || typeof node !== 'object') return out
   if (typeof node.type === 'function' && depth < 8) {
-    if (isWidget(node)) { out.push(node); expand(node.props?.children, out, depth + 1); return out }
+    if (isWidget(node) && !deep) { out.push(node); expand(node.props?.children, out, depth + 1, deep); return out }
     const saved = slots
     const savedIndex = index
+    const savedCount = previousHookCount
     slots = []
     index = 0
+    previousHookCount = null
     let rendered
-    try { rendered = node.type({ ...node.props }) } catch { out.push(node); return out } finally { slots = saved; index = savedIndex }
-    return expand(rendered, out, depth + 1)
+    try { rendered = node.type({ ...node.props }) } catch { out.push(node); return out } finally { slots = saved; index = savedIndex; previousHookCount = savedCount }
+    return expand(rendered, out, depth + 1, deep)
   }
   out.push(node)
-  expand(node.props?.children, out, depth)
+  expand(node.props?.children, out, depth, deep)
   return out
 }
 
@@ -148,12 +160,14 @@ const mount = (roster, key, id, name, calls = []) => {
   slots = []
   effects = []
   index = 0
+  previousHookCount = null
   const tree = SettingsDialog({ page: key, id, roster, actions, useUpdate: () => ({}) })
   const node = all(tree).find(entry => typeof entry.type === 'function' && entry.type.name === name)
   assert.ok(node, `the dialog draws ${name}`)
   slots = []
   effects = []
   index = 0
+  previousHookCount = null
   const nodes = expand(node.type(node.props))
   return { tree, nodes, actions, calls }
 }
@@ -230,4 +244,30 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   assert.ok(mount(baseRoster, 'connectors', null, 'ConnectorsPage').nodes.some(node => nameOf(node) === 'ConnectorRow'), 'Connectors keeps its live rows')
   assert.ok(mount(baseRoster, 'capabilities', null, 'CapabilitiesPage').nodes.some(node => nameOf(node) === 'CapabilityRow'), 'Capabilities keeps its rows')
   assert.ok(mount(baseRoster, 'secrets', null, 'SecretsPage').nodes.some(node => nameOf(node) === 'SecretRow'), 'Secrets keeps its rows')
+})
+
+// The window can be unlocked under a page that is already on screen: the other window holding
+// the team closes, the host's read-only sentence goes away, and settings.js keeps the same
+// dialog instance (its key is the page and the id, not the lock). A page whose locked view
+// returns before one of its hooks then changes its hook count, and React unmounts the whole
+// Settings surface with "Rendered more hooks than during the previous render." (#2474).
+test('every Settings page re-renders when the window unlocks under it (#2474)', () => {
+  for (const page of PAGES) {
+    previousHookCount = null
+    const tree = SettingsDialog({ page: page.key, id: page.id, roster: lockedRoster, actions: makeActions([]), useUpdate: () => ({}) })
+    const node = all(tree).find(entry => typeof entry.type === 'function' && entry.type.name === page.name)
+    assert.ok(node, `the dialog draws ${page.name}`)
+    slots = []
+    effects = []
+    index = 0
+    node.type(node.props)                                   // the locked render, already on screen
+    previousHookCount = index
+    index = 0
+    const rendered = node.type({ ...node.props, roster: baseRoster })   // the same instance, writable now
+    if (index < previousHookCount) throw new Error('Rendered fewer hooks than expected. This may be caused by an accidental early return statement.')
+    const nodes = expand(rendered)
+    const html = text(expand(rendered, [], 0, true))
+    assert.ok(html.length > 0, `${page.name} still draws its page after the flip`)
+    assert.ok(nodes.filter(isControl).length > 0, `${page.name} still draws its live controls after the flip`)
+  }
 })

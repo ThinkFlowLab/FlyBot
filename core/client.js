@@ -14912,6 +14912,9 @@ function BotSettingsForm({ bot, roster, actions, run }) {
     return () => clearTimeout(timer);
   }, [confirming]);
   if (bot.remote) return null;
+  (0, import_react30.useEffect)(() => {
+    void actions.refreshModels?.();
+  }, [bot.id]);
   const isMainBot = isMainOf(roster, bot.id);
   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
   const isTile = roster.mainBotId === bot.id;
@@ -14958,9 +14961,6 @@ function BotSettingsForm({ bot, roster, actions, run }) {
     if (confirming) void run(actions.deleteBot(bot.id));
     else setConfirming(true);
   };
-  (0, import_react30.useEffect)(() => {
-    void actions.refreshModels?.();
-  }, [bot.id]);
   return (0, import_react30.createElement)(
     "div",
     { className: "bt-bs" },

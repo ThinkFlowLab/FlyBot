@@ -18885,6 +18885,9 @@ diff --git a/client.js b/client.js
 +    return () => clearTimeout(timer);
 +  }, [confirming]);
 +  if (bot.remote) return null;
++  (0, import_react30.useEffect)(() => {
++    void actions.refreshModels?.();
++  }, [bot.id]);
 +  const isMainBot = isMainOf(roster, bot.id);
 +  const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
 +  const isTile = roster.mainBotId === bot.id;
@@ -18936,9 +18939,6 @@ diff --git a/client.js b/client.js
 -  const status = view === null ? "" : page === "entries" ? count === 1 ? t("1 entry") : t("{count} entries", { count }) : view.summarizing && view.summary ? t("Updating…") : view.summary && view.fresh ? when3 ? t("Updated {time}", { time: when3 }) : t("Updated just now") : "";
 -  const busy = answer?.pending === true;
 -  return (0, import_react17.createElement)(
-+  (0, import_react30.useEffect)(() => {
-+    void actions.refreshModels?.();
-+  }, [bot.id]);
 +  return (0, import_react30.createElement)(
      "div",
 -    { className: "bt-mem-layer", "data-leaving": leaving || void 0 },

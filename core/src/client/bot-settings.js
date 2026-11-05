@@ -205,6 +205,10 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
     return () => clearTimeout(timer)
   }, [confirming])
   if (bot.remote) return null
+  // DSH settings can change the model list at any time; the hint should match it. The hook sits
+  // above the read-only branch because the lock can lift under a page that is already mounted:
+  // both views must run the same hooks in the same order, or React unmounts the whole dialog (#2474).
+  useEffect(() => { void actions.refreshModels?.() }, [bot.id])
   const isMainBot = isMainOf(roster, bot.id)
   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
   const isTile = roster.mainBotId === bot.id
@@ -229,8 +233,6 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
   const save = patch => run(actions.updateBot(bot.id, patch))
   const duplicate = () => run(actions.duplicateBot(bot.id).then(copy => actions.openSession(copy.id)))
   const remove = () => { if (confirming) void run(actions.deleteBot(bot.id)); else setConfirming(true) }
-  // DSH settings can change the model list at any time; the hint should match it.
-  useEffect(() => { void actions.refreshModels?.() }, [bot.id])
   return h('div', { className: 'bt-bs' },
     h('div', { className: 'bt-bs-hero' },
       h('div', { className: 'bt-avatar-anchor' },
