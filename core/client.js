@@ -15337,8 +15337,10 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
           remotes.map((person) => (0, import_react31.createElement)(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") }))
         ]
       ),
-      face ? (0, import_react31.createElement)(Card, { title: t("Who answers") }, (0, import_react31.createElement)(Row, { label: t(modeLabel), hint: t(modeHint) })) : null,
-      face ? (0, import_react31.createElement)(Card, { title: t("Working folder") }, (0, import_react31.createElement)(Row, { label: t("Folder"), hint: room2.workDir || t("Not set") })) : null,
+      // Both facts are reads (`shownMode` and `room.workDir`), so a locked page keeps them as
+      // text for every group, the way a face-to-face room already did (#2492).
+      (0, import_react31.createElement)(Card, { title: t("Who answers") }, (0, import_react31.createElement)(Row, { label: t(modeLabel), hint: t(modeHint) })),
+      (0, import_react31.createElement)(Card, { title: t("Working folder") }, (0, import_react31.createElement)(Row, { label: t("Folder"), hint: room2.workDir || t("Not set") })),
       room2.notice ? (0, import_react31.createElement)(Card, { title: t("Notice") }, (0, import_react31.createElement)(Row, { label: t("Group notice"), hint: room2.notice, stack: true })) : null
     );
   }

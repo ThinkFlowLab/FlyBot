@@ -321,3 +321,22 @@ test('a read-only face-to-face room states who answers and its working folder (#
   assert.ok(facts.includes('/work/face'), 'with the folder the room works in')
   assert.deepEqual(nodes.filter(isControl).map(nameOf), [], 'both facts are text, not controls')
 })
+
+// The face-room case above is the same two facts on the other origin: a plain group's read-only
+// page drew neither, while its writable page draws both as a control. They are reads (`room.mode`
+// through `shownMode`, and `room.workDir`), so the locked page keeps them as text too.
+test('a read-only plain group states who answers and its working folder', () => {
+  const { nodes, calls } = mount(lockedRoster, 'groups', 'r1', 'GroupSettingsForm')
+  const facts = text(nodes)
+  assert.ok(facts.includes('Who answers'), 'the page says who answers')
+  assert.ok(facts.includes('Admin leads'), 'with the mode the writable page shows')
+  assert.ok(facts.includes('Working folder'), 'the page names the working folder')
+  assert.ok(facts.includes('/work/ops'), 'with the folder the group works in')
+  assert.deepEqual(nodes.filter(isControl).map(nameOf), [], 'both facts are text, not controls')
+  for (const button of pressure(nodes)) { try { button.props.onClick?.() } catch { /* the press is the point, not its answer */ } }
+  assert.deepEqual(calls, [], 'and neither fact writes anything when drawn')
+  // A zero only counts if the same reader sees the controls on the writable page next door.
+  const writable = mount(baseRoster, 'groups', 'r1', 'GroupSettingsForm').nodes
+  assert.ok(writable.some(node => node.type === Segmented), 'the writable page draws the mode picker')
+  assert.ok(writable.some(node => node.type === FolderMenu), 'and the folder menu')
+})
