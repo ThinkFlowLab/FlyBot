@@ -2195,6 +2195,9 @@ window.__ModuleLoader__.load({
           const real = Array.isArray(rows)
             ? rows.filter(task => task && task.title && task.status !== 'cancelled').map(task => ({
               id: task.id, title: task.title, status: task.status, priority: task.priority, column: columnOf(task),
+              // #2495: the card is the authority on its own facts, and this list is the panel's
+              // only read of the card — dropping `brief` here is what made the hand-off title-only.
+              brief: task.brief,
             }))
             : []
           setTasks(real)
@@ -2268,7 +2271,10 @@ window.__ModuleLoader__.load({
           actions?.openSession?.(botId)
           return
         }
-        const value = await call('workflow/assign', { workflowId: target, taskId: task.id, title: task.title })
+        // #2495: hand the card's own facts over, and say so explicitly even when it holds none —
+        // an omitted `brief` keeps whatever an earlier call cached under this task id.
+        const brief = typeof task.brief === 'string' ? task.brief : ''
+        const value = await call('workflow/assign', { workflowId: target, taskId: task.id, title: task.title, brief })
         if (value?.ok === false) { setError(value.error ?? ''); return }
         setPack(value)
         setOpenId(target)

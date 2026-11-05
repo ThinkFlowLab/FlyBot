@@ -1,0 +1,1 @@
+Handing a card to a Workflow from the panel now carries the card's own facts into the run instead of dropping them: the assign body sends the card's `brief` verbatim, and an explicit empty one when the card holds none, so a brief cached by an earlier call cannot come back ([#2495](https://github.com/ThinkFlowLab/FlyBot/issues/2495)).
