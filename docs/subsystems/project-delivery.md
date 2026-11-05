@@ -1,6 +1,8 @@
 ---
 subsystem: project-delivery
 owned_paths:
+  - core/src/host/project-delivery-options.js
+  - core/test/project-delivery-options.test.js
   - core/src/host/project-execution-environment.js
   - core/test/project-execution-environment.test.js
   - core/src/host/project-test-diagnostics.js
@@ -732,3 +734,30 @@ An unconfirmed save restores the old status/pointer; no cancellation or live wor
 stop is inferred. Ordinary public task.run still refuses active Attempts.
 
 #2518 merge wait expiration is advisory; actual forge/candidate/check/Review gates remain. Resource/preparation commands honor explicit operation budgets without a shorter transport clamp. See [warnings](project-warnings.md).
+
+
+## Scoped Attempt acceptance and next delivery (#2526)
+
+Chief accept-attempt verifies current code/requirements/candidate, host tests, Review,
+policy/SDK evidence, provider-confirmed merge and actual execution exit. Its bounded
+completed/remaining/evidence record belongs to the Attempt. An attempt.accept Effect
+commits status/settlement and canonical Run completion together; failed/no-op commits
+roll back provisional fields. Duplicate content returns the original committed result;
+changed settlement content refuses. Task remains result-ready and unfinished. Unhandled
+inputs, unknown native/SDK exit and unresolved external writes retain their gates.
+The Effect notifies the original Chief inspection queue for a fresh decision; it never
+selects a downstream role. Old merge handoff backfill stops at this settlement.
+
+The original continuation-state/task.run contract adds explicit mode next. It requires
+a committed settlement, fresh generation/workspace and expectedBaseSha, live configure
+rights and normal scheduler quota/resource admission. Read the actual provider target
+HEAD and verify its local Git objects include the accepted merge. Missing objects and
+non-containing target histories have distinct diagnostics. A moved target, dirty draft,
+new input or repository mismatch refuses, preserving history. The successor has a new
+branch and publication identity, empty verification evidence and feedback identifying
+the accepted scope/remaining work. It retains Task-role identity and supported SDK
+resumption. Existing continue/latest retain their original unmerged-PR contracts.
+Whole-Task close revalidates every criterion/dependency/input and delivery evidence;
+a scoped settlement neither closes the Task nor forces another Attempt. Current
+settlement workspaces remain retained until closure or successor admission; historical
+cleanup cannot delete a newer allocation sharing their path.

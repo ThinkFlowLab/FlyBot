@@ -364,3 +364,35 @@ it with continuation is rejected rather than silently dropping inputs. Omitting
 continuation retains existing route/rework and verification recovery behavior.
 
 #2518 queue/execution thresholds warn rather than interrupt. Shared warning context requests and exact-scope stop use current authority; resident memory and Task history remain. See [warnings](project-warnings.md).
+
+
+## Delivery observations and Chief choices (#2526)
+
+Each Task snapshot is a detached copy with a hash over its relevant Task/Attempt,
+requirements, candidate/evidence, settlement and input identities. Async external
+reads are bracketed by scope checks. A changed Task is marked stale in that snapshot;
+execution refuses only the affected old decision and uses existing protocol correction.
+No global GitHub/executor transaction, second state store or new retry timer is added.
+
+repositoryRecovery.nextActions and continuation-state.nextActions describe scoped
+ready/blocked/unknown prechecks, reasons and provider source/observation time. Structural
+checks are shared with delivery commands; ready is not authority or proof of business
+completion. The normal Chief decision action/reason/criteria supplies its recommendation.
+The read view may reference that already-applied decision, explicitly marked as history;
+no recommendation is selected by the host or executed from that read projection.
+accept-attempt additionally supplies delivery:{completed,remaining,evidence:[references]}.
+After committed acceptance a new scoped inspection lets Chief choose start-next with
+an explicit active implementation Bot and fresh continuation:{mode:'next',...}. Other
+lawful choices remain available. close still needs every overall criterion satisfied.
+
+Chief must first query facts, correct or change its approach autonomously. The addressed
+Personal Agent, then its human if necessary, is the last resort for genuinely missing
+information/authority or human-only decisions. Counts and elapsed time are warnings;
+they do not automatically select assistance, roles or Task closure. Detailed evidence
+continues through existing log/context/warning paging, within unchanged input budgets.
+
+
+A failed/blocked queued next-delivery admission is included in the same scoped facts.
+The existing recovery-notification pass requests one deduplicated fresh Chief inspection
+for the current accepted Attempt and queue intent. Changed/superseded sources are fenced;
+no queue retry, role or human escalation is selected. Original quota queues remain owners.

@@ -2446,3 +2446,215 @@ test('protected Chief exit retirement excludes only its exact current coordinati
   assert.equal(c.claim.status, 'interrupted')
   assert.equal(lease.status, 'running', 'The current Chief execution was not falsely released')
 })
+
+async function mergedDelivery(t) {
+  const f = await setup(t)
+  await f.start('merged-delivery'); await complete(f)
+  const a = f.attempt()
+  git(f.repository, ['merge', '--ff-only', a.candidateSha])
+  f.publisher.read = async pr => ({ sha: pr.sha, state: 'closed', merged: true, mergeCommitSha: a.candidateSha, baseRef: 'main', baseSha: git(f.repository, ['rev-parse', 'main']) })
+  const originalJobAuthority = f.rt.projectChiefControl.requireJobActor
+  f.rt.projectChiefControl.requireJobActor = actor => { if (actor.chiefJobId !== 'fixture-chief') throw Error('Chief job required') }
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  const actor = { ...alice, chiefJobId: 'fixture-chief' }
+  const settle = () => f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: a.candidateSha, decision: { id: 'accept-current', action: 'accept-attempt', reason: 'Accept arithmetic delivery while the original goal continues', delivery: { completed: 'Addition implementation and regression verified', remaining: 'Cover the next independently deliverable requirement', evidence: ['current candidate, host tests and Review'] } } }, actor)
+  return { ...f, a, actor, settle, originalJobAuthority }
+}
+test('merged Attempt can be accepted without closing its Task, then start a separate delivery on verified target HEAD', async t => {
+  const f = await mergedDelivery(t)
+  await f.settle()
+  assert.equal(f.a.status, 'accepted')
+  assert.notEqual(f.task.status, 'accepted', 'Attempt acceptance must not close the entire Task')
+  assert.equal(f.a.settlement.completed, 'Addition implementation and regression verified')
+  const facts = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: f.a.id }, alice)
+  assert.deepEqual(facts.modes, ['next'])
+  const choice = { mode: 'next', previousAttemptId: f.a.id, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha }
+  const next = await f.rt.projectEndpoint('project-task-run', { taskId: f.task.id, requestId: 'next-delivery', continuation: choice }, alice)
+  assert.notEqual(next.attempt.id, f.a.id)
+  assert.equal(next.attempt.baseSha, f.a.candidateSha)
+  assert.equal(next.attempt.publicationBinding, undefined)
+  assert.equal(git(next.attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), f.a.candidateSha)
+  assert.equal(f.a.pr.number, 1)
+  assert.equal((await f.rt.projectEndpoint('project-task-run', { taskId: f.task.id, requestId: 'next-delivery', continuation: choice }, alice)).already, true)
+})
+
+test('scoped Attempt acceptance rolls back a failed or no-op save and remains idempotent after commit', async t => {
+  const f = await mergedDelivery(t), save = f.rt.save, original = f.a.status
+  f.task.collaboration = { initiatedBy: alice.memberId, generation: 1, status: 'chief-working', botId: 'p1:chief', history: [], claim: { id: 'chief-claim', botId: 'p1:chief', chiefRunId: 'fixture-chief', status: 'active', generation: 1 } }
+  for (const failure of [async () => { throw Error('save unavailable') }, async () => {}]) {
+    f.rt.save = failure
+    await assert.rejects(f.settle())
+    assert.equal(f.a.status, original)
+    assert.equal(f.a.settlement, undefined)
+    assert.equal(f.task.collaboration.claim.status, 'active'); assert.equal(f.task.collaboration.status, 'chief-working')
+    assert.notEqual(f.task.status, 'accepted')
+  }
+  f.rt.save = save
+  await f.settle()
+  const receipt = structuredClone(f.a.settlement)
+  assert.equal((await f.settle()).already, true)
+  assert.deepEqual(f.a.settlement, receipt)
+  assert.notEqual(f.task.status, 'accepted')
+})
+for (const changed of ['candidate', 'requirements', 'provider', 'authority', 'exit']) test('scoped Attempt acceptance refuses changed ' + changed, async t => {
+  const f = await mergedDelivery(t)
+  if (changed === 'candidate') f.a.evidence.tests.sha = 'old'
+  if (changed === 'requirements') f.task.criteria += ' new requirement'
+  if (changed === 'provider') f.publisher.read = async pr => ({ sha: pr.sha, state: 'open', merged: false, baseRef: 'main' })
+  if (changed === 'authority') f.rt.projectChiefControl.requireJobActor = () => { throw Error('authority revoked') }
+  if (changed === 'exit') { f.rt.state.projectResourceLeases.late = { id: 'late', projectId: 'p1', attemptId: f.a.id, resourceId: 'unknown', generation: 1, role: 'developer', worker: { kind: 'sdk', handle: 'late-worker' }, status: 'unreachable' }; (f.rt.state.projectHarnessWorkers ??= {})['late-worker'] = { id: 'late-worker', leaseId: 'late', projectId: 'p1', attemptId: f.a.id, role: 'developer', resourceId: 'unknown', generation: 1, status: 'unreachable' } }
+  await assert.rejects(f.settle())
+  assert.equal(f.a.settlement, undefined)
+  assert.notEqual(f.task.status, 'accepted')
+})
+test('next delivery refuses moved remote target, unrelated target and retained draft without clearing old binding', async t => {
+  const f = await mergedDelivery(t)
+  await f.settle()
+  const facts = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: f.a.id }, alice)
+  const body = { taskId: f.task.id, requestId: 'stale-next', continuation: { mode: 'next', previousAttemptId: f.a.id, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } }
+  writeFileSync(join(f.repository, 'later'), 'advanced target'); git(f.repository, ['add', 'later']); git(f.repository, ['commit', '-m', 'Target advanced'])
+  await assert.rejects(f.rt.projectEndpoint('project-task-run', body, alice), /snapshot|baseline/)
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, 1)
+  const current = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: f.a.id }, alice)
+  body.continuation.expectedBaseSha = current.latestBaseSha; body.continuation.expectedWorkspace = current.snapshot
+  writeFileSync(join(f.a.workspaces.developer.path, 'code.mjs'), 'retained unsealed draft\n')
+  await assert.rejects(f.rt.projectEndpoint('project-task-run', body, alice), /draft|snapshot/)
+  assert.equal(readFileSync(join(f.a.workspaces.developer.path, 'code.mjs'), 'utf8'), 'retained unsealed draft\n')
+  assert.equal(f.a.pr.number, 1)
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, 1)
+})
+test('post-merge read reports unknown provider results and refuses a mixed local snapshot', async t => {
+  const f = await mergedDelivery(t)
+  f.publisher.read = async () => { throw Error('provider unavailable') }
+  const choices = await f.rt.projectDelivery.deliveryOptions(f.task, alice)
+  assert.equal(choices.actions.find(row => row.action === 'accept-attempt').status, 'unknown')
+  f.publisher.read = async pr => { f.task.criteria += ' changed during read'; return { sha: pr.sha, state: 'closed', merged: true, mergeCommitSha: f.a.candidateSha, baseRef: 'main' } }
+  await assert.rejects(f.rt.projectDelivery.deliveryOptions(f.task, alice), /fresh delivery facts/)
+  assert.equal(f.a.status, 'waiting-acceptance')
+})
+
+test('accepted Attempt can later satisfy overall Task closure without reopening or rewriting its settlement', async t => {
+  const f = await mergedDelivery(t)
+  await f.settle()
+  const settlement = structuredClone(f.a.settlement)
+  await f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: f.a.candidateSha, decision: { id: 'close-whole-goal', action: 'close', reason: 'Every original criterion is now met' } }, f.actor)
+  assert.equal(f.task.status, 'accepted')
+  assert.deepEqual(f.a.settlement, settlement)
+})
+test('pending external write and unknown native exit block scoped acceptance; current settlement cannot be cleaned early', async t => {
+  const f = await mergedDelivery(t)
+  f.rt.state.projectEffects.unknownWrite = { id: 'unknownWrite', kind: 'github.review', status: 'running', payload: { attemptId: f.a.id } }
+  await assert.rejects(f.settle(), /pending external/)
+  delete f.rt.state.projectEffects.unknownWrite
+  f.rt.state.projectNativeWorkers = { old: { id: 'old', attemptId: f.a.id, projectId: 'p1', status: 'unreachable' } }
+  await assert.rejects(f.settle(), /native-exit-unknown/)
+  delete f.rt.state.projectNativeWorkers.old
+  await f.settle()
+  await assert.rejects(f.rt.projectEndpoint('project-attempt-cleanup', { attemptId: f.a.id }, alice), /unsettled Task/)
+})
+
+test('Chief chooses acceptance then a fresh explicit next delivery through its original decision loop', async t => {
+  const f = await mergedDelivery(t), requests = [], rt = f.rt
+  rt.projectChiefControl.requireJobActor = f.originalJobAuthority
+  const carrier = { id: 'public-p1', projectId: 'p1', visibility: 'public', botId: 'a', sessionId: 'a', carrierGeneration: 1 }
+  rt.state.projectAgents ??= {}; rt.state.projectAgents[carrier.id] = carrier
+  rt.state.projectChiefPolicies = { p1: { enabled: true, authorityMemberId: alice.memberId, revision: 1, inspection: { thresholds: { maxHandoffsWithoutProgress: 3, longExecutionMs: 10000, missingHeartbeatMs: 5000, longWaitMs: 8000 }, prompt: 'Inspect current delivery' } } }
+  rt.projectAgents.startChiefJob = async args => { requests.push(args); return 'fixture-chief-turn' }
+  const waitRequest = async count => { for (let pass = 0; pass < 400 && requests.length < count; ++pass) { await rt.projectChiefControl.pump(); await new Promise(resolve => setTimeout(resolve, 5)) }; assert.ok(requests.length >= count) }
+  const reply = (request, decision) => request.onResult({ ok: true, text: JSON.stringify({ summary: 'Chief recommendation based on current facts', decisions: [{ taskId: f.task.id, ...decision }] }), executionEvidence: { kind: 'native-chief', chiefRunId: request.runId, carrierGeneration: 1, botId: 'a', sessionId: 'a' } })
+  await rt.projectChiefControl.request('p1', 'inspection', { requestId: 'post-merge-judgement' }, f.task.id)
+  await waitRequest(1)
+  assert.equal(requests[0].projectFacts.tasks[0].repositoryRecovery.nextActions.actions.find(row => row.action === 'accept-attempt').status, 'ready')
+  await reply(requests[0], { action: 'accept-attempt', reason: 'Accept the first verified delivery, keep the overall goal open', delivery: { completed: 'Verified addition implementation', remaining: 'Deliver the next requirement', evidence: ['candidate, tests, Review and provider merge'] } })
+  assert.equal(rt.state.projectExecutions[requests[0].runId].status, 'done')
+  assert.equal(f.a.status, 'accepted'); assert.notEqual(f.task.status, 'accepted')
+  assert.equal(Object.keys(rt.state.projectAttempts).length, 1, 'Acceptance must not automatically dispatch Developer')
+  await rt.projectEffects.drain(); await waitRequest(2)
+  const saved = requests[1].projectFacts.tasks.find(row => row.taskId === f.task.id), facts = saved.repositoryRecovery.continuationOptions
+  assert.deepEqual(facts.modes, ['next'])
+  assert.equal(saved.repositoryRecovery.nextActions.recommendation.action, 'accept-attempt')
+  assert.equal(saved.repositoryRecovery.nextActions.recommendation.alreadyApplied, true)
+  await reply(requests[1], { action: 'start-next', targetBotId: 'p1:developer', reason: 'Choose the next independent delivery from verified target HEAD', continuation: { mode: 'next', previousAttemptId: facts.attemptId, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } })
+  assert.equal(rt.state.projectExecutions[requests[1].runId].status, 'done', rt.state.projectExecutions[requests[1].runId].failure)
+  const next = rt.state.projectAttempts[f.task.deliveryAttemptId]
+  assert.notEqual(next.id, f.a.id); assert.equal(next.baseSha, f.a.candidateSha); assert.equal(next.publicationBinding, undefined)
+  assert.notEqual(f.task.status, 'accepted'); assert.equal(f.task.chiefQuestion, undefined)
+})
+
+test('two real SDK-protocol pool deliveries retain the Task-role thread and create a new PR after scoped acceptance', async t => {
+  const f = await setup(t, undefined, { sdkContract: true, pool: true }), { rt, directory } = f, runtimeDir = join(directory, 'next-sdk-runtime')
+  mkdirSync(join(runtimeDir, 'src/host'), { recursive: true })
+  writeFileSync(join(runtimeDir, 'src/host/project-harness-worker.mjs'), `
+import{createInterface}from'node:readline';import{writeFileSync,readFileSync}from'node:fs';import{execFileSync}from'node:child_process';
+const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');send({type:'ready',sdk:{codex:'0.166.0'}});
+createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.type==='stop'){send({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);return;}if(m.type!=='start')return;
+let d;if(!m.settings.readOnly){const next=readFileSync('code.mjs','utf8').includes('a+b');writeFileSync('code.mjs','export const add=(a,b)=>a+b;'+(next?' // next delivery':'')+'\\n');d={action:'handoff',to:'p1:tester',reason:'Host-test this implementation',outputs:{implementation:'Delivered requested improvement'}};}
+else if(m.prompt.includes('Independently review the candidate diff'))d={action:'complete',reason:'Verified the exact candidate',outputs:{review:JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),verdict:'approve',summary:'Exact candidate and host tests inspected'})}};
+else d={action:'handoff',to:'p1:reviewer',reason:'Request host test execution and review',outputs:{tests:'Run configured host tests'}};
+const id=m.settings.sessionId??('sdk-thread-'+process.pid);send({type:'sdk-event',event:{type:'thread.started',thread_id:id}});send({type:'completed',sessionId:id,text:'OUTPUT handoff: '+JSON.stringify(d)});});`)
+  rt.config.projectResources = { one: { type: 'local', root: directory, runtimeDir, capacity: 1, allowedProjectOwnerIds: ['owner-1'], harnesses: ['codex'], profiles: { 'owner-1': { codex: { home: join(directory, 'sdk-home'), configDir: join(directory, 'sdk-config'), model: 'contract-model' } } } } }
+  rt.state.projectResourceHealth = { one: { status: 'ready', at: Date.now() } }
+  rt.state.projectHarnessHealth = { 'p1:one:codex': { status: 'ready', profile: harnessProfile(rt.config.projectResources.one, rt.readProject('p1'), 'one', 'codex').profile } }
+  for (const role of ['developer', 'tester', 'reviewer']) await rt.projectEndpoint('project-agent-definition', { projectId: 'p1', role, execution: { harness: 'codex', resourceIds: ['one'] } }, alice)
+  const wait = async a => { for (let pass = 0; pass < 800; ++pass) { await rt.projectPools.pump(); if (a.status === 'waiting-acceptance' && rt.projectResources.occupied('one') === 0 && f.task.collaboration.status === 'arbitration') return; await new Promise(resolve => setTimeout(resolve, 10)) }; assert.fail(JSON.stringify({ status: a.status, collaboration: f.task.collaboration, failure: a.failure })) }
+  await f.start('first-sdk-delivery'); const first = f.attempt(); await wait(first)
+  const dev = Object.values(rt.state.projectHarnessWorkers).find(row => row.attemptId === first.id && row.role === 'developer')
+  git(f.repository, ['merge', '--ff-only', first.candidateSha])
+  f.publisher.read = async pr => ({ sha: pr.sha, state: pr.number === first.pr.number ? 'closed' : 'open', merged: pr.number === first.pr.number, mergeCommitSha: first.candidateSha, baseRef: 'main', baseSha: git(f.repository, ['rev-parse', 'main']) })
+  rt.projectChiefControl.requireJobActor = () => {}
+  await rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: first.candidateSha, decision: { id: 'sdk-accept', action: 'accept-attempt', reason: 'The first delivery is accepted; continue original goal', delivery: { completed: 'Addition implementation', remaining: 'Implement the next requested improvement', evidence: ['host tests, released SDK execution, exact Review and merge'] } } }, { ...alice, chiefJobId: 'sdk-chief' })
+  const facts = await rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: first.id }, alice)
+  const result = await rt.projectEndpoint('project-task-run', { taskId: f.task.id, requestId: 'next-sdk-delivery', targetRole: 'developer', continuation: { mode: 'next', previousAttemptId: first.id, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } }, alice)
+  const second = rt.state.projectAttempts[result.attempt.id]; await wait(second)
+  const resumed = Object.values(rt.state.projectHarnessWorkers).find(row => row.attemptId === second.id && row.role === 'developer')
+  assert.equal(resumed.continuedFrom, dev.id); assert.equal(resumed.backendSessionId, dev.backendSessionId)
+  assert.equal(second.roleSessions.developer.logicalSessionId, first.roleSessions.developer.logicalSessionId)
+  assert.equal(second.baseSha, first.candidateSha); assert.equal(second.publicationBinding, undefined)
+  assert.notEqual(second.branch, first.branch); assert.notEqual(second.pr.number, first.pr.number)
+  assert.equal(second.feedback.reason, 'Implement the next requested improvement')
+  assert.equal(first.pr.number, 1); assert.notEqual(f.task.status, 'accepted')
+})
+
+test('next baseline must contain the accepted merge and changed replay content cannot rewrite settlement', async t => {
+  const f = await mergedDelivery(t)
+  await f.settle()
+  f.publisher.read = async pr => ({ sha: pr.sha, state: 'closed', merged: true, mergeCommitSha: f.a.candidateSha, baseRef: 'main', baseSha: f.a.baseSha })
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: f.a.id }, alice), /does not contain/)
+  const different = { id: 'changed-scope', action: 'accept-attempt', delivery: { completed: 'Different delivery', remaining: 'Changed remaining scope', evidence: ['new statement'] } }
+  await assert.rejects(f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: f.a.candidateSha, decision: different }, f.actor), /scope cannot change/)
+  assert.equal(f.a.settlement.completed, 'Addition implementation and regression verified')
+})
+
+test('committed scoped acceptance survives Store restart and notifies only a fresh Chief inspection', async t => {
+  const f = await mergedDelivery(t)
+  f.rt.state.projectChiefPolicies = { p1: { enabled: true, authorityMemberId: alice.memberId, revision: 1, inspection: { thresholds: { maxHandoffsWithoutProgress: 3, longExecutionMs: 10000, missingHeartbeatMs: 5000, longWaitMs: 8000 }, prompt: 'Inspect current delivery' } } }
+  f.rt.projectChiefControl.request = async () => { throw Error('controller unavailable before restart') }
+  await f.settle()
+  const token = structuredClone(f.a.settlement.effect)
+  await f.rt.ctx.dispose()
+  const ctx = fakeContext()
+  Object.assign(ctx, { llm: { listProviders: () => [], listModels: async () => [] }, workspaceRegistry: { get: () => undefined, archiveSession: async () => {} }, sessionController: { resolveAgent: async () => ({ agent: undefined }) }, sessions: { flush: async () => {} } })
+  const restarted = createRuntime(ctx, f.rt.config)
+  restarted.projectDelivery = createProjectDelivery(restarted, { publisher: f.publisher })
+  t.after(() => ctx.dispose())
+  await restarted.load()
+  assert.equal(restarted.state.projectAttempts[f.a.id].status, 'accepted')
+  assert.equal(restarted.projectEffects.intentCommitted(token), true)
+  assert.notEqual(restarted.state.tasks[f.task.id].status, 'accepted')
+  // Observe the original durable queue receipt; no model execution is needed here.
+  await restarted.projectEffects.drain()
+  const runs = Object.values(restarted.state.projectExecutions).filter(row => row.source?.acceptanceEffectId === token.id)
+  assert.equal(runs.length, 1)
+  await restarted.projectEffects.drain()
+  assert.equal(Object.values(restarted.state.projectExecutions).filter(row => row.source?.acceptanceEffectId === token.id).length, 1)
+  assert.equal(Object.keys(restarted.state.projectAttempts).length, 1)
+})
+
+test('invalid scoped acceptance and wrong expected candidate fail before committing any settlement', async t => {
+  const f = await mergedDelivery(t)
+  for (const delivery of [undefined, { completed: 'result', remaining: '', evidence: ['evidence'] }, { completed: 'result', remaining: 'next', evidence: [] }, { completed: 'result', remaining: 'next', evidence: ['x'.repeat(1201)] }]) {
+    await assert.rejects(f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: f.a.candidateSha, decision: { id: 'invalid', action: 'accept-attempt', delivery } }, f.actor), /delivery needs/)
+  }
+  await assert.rejects(f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: 'old', decision: { id: 'wrong-sha', action: 'accept-attempt', delivery: { completed: 'done', remaining: 'next', evidence: ['host evidence'] } } }, f.actor), /current candidate/)
+  assert.equal(f.a.settlement, undefined)
+})

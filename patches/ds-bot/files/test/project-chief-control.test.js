@@ -44,12 +44,14 @@ test('failed schedule configuration does not silently enable autonomous Chief au
   assert.equal(control.template.when.seconds, 1800)
 })
 
-async function controlFixture({ modern = false, dependency = false, withInputs = false, inputCount = 1 } = {}) {
+async function controlFixture({ modern = false, dependency = false, withInputs = false, inputCount = 1, reviewed = false, prepare } = {}) {
   const { createProjectPools } = await import('../src/host/project-pools.js')
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
   const roles = ['chief', 'developer', 'tester', 'reviewer'].map(role => ({ id: `p:${role}`, role }))
   const rt = { state: { tasks: { t: task }, projectExecutions: {}, projectAttempts: { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: 'candidate', evidence: {} } }, projectChiefPolicies: { p: { enabled: true, authorityMemberId: 'owner', revision: 1, inspection: { thresholds, prompt: 'Inspect evidence' } } }, projectAgents: { 'public-p': { id: 'public-p', projectId: 'p', visibility: 'public', botId: 'chief', sessionId: 'chief', carrierGeneration: 1 } } }, config: {}, save: async () => {}, projects: { requireActive() {} }, requireProjectAccess(actor, id) { if (!permitted || actor.memberId !== 'owner' || id !== 'p') throw new Error('Current role denied') }, projectDelegations: { background: async () => true }, bindProject(body) { rt.state.projectExecutions[body.id] = { ...body }; return { id: body.projectId, status: 'active' } }, projectAgents: { deliveryDefinitions: () => ({ roles }), chiefBusy: () => false, startChiefJob: async args => { request = args; request.capturedInvocation = rt.state.projectExecutions[args.runId].invocation; return 'native-job' } }, projectDelivery: { chiefAccept: async () => { accepted++; task.status = 'accepted' } } }
+  if (prepare) await prepare(rt, task)
+  if (reviewed) rt.state.projectAttempts.a.evidence.review = { verdict: 'approve', sha: 'candidate' }
   if (withInputs) {
     const { createProjectEffects } = await import('../src/host/project-effects.js'), { install } = await import('../src/host/project-inputs.js')
     rt.projectEffects = createProjectEffects(rt); rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture()); install(rt)
@@ -676,8 +678,7 @@ test('malformed JSON uses existing correction with response hash and never repai
 })
 
 test('close refusal names the missing acceptance evidence rather than revoking an existing Review', async () => {
-  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
-  f.rt.state.projectAttempts.a.evidence.review = { verdict: 'approve', sha: 'candidate' }
+  const f = await controlFixture({ reviewed: true }), run = f.rt.state.projectExecutions[f.request.runId]
   await f.request.onResult(f.result({ criteria: [{ criterion: 'Actual condition', passed: false, evidence: '' }] }))
   assert.equal(run.recoveryIssue.kind, 'acceptance-evidence-missing')
   assert.ok(run.failureDetail.criteriaIssues.some(row => row.startsWith('criteria[0].evidence')))
@@ -827,4 +828,40 @@ test('Chief stop-execution and explicit warning read declarations use the same s
   assert.deepEqual(actions.map(a => a.action), ['acknowledge', 'stop'])
   assert.equal(actions[1].expectedScope, 'scope'); assert.equal(f.accepted(), 0)
   assert.equal(f.rt.state.projectChiefDecisions[Object.keys(f.rt.state.projectChiefDecisions)[0]].stop.waitingFor, 'worker-exit')
+})
+
+test('Chief snapshot is detached and a late evidence change requests fresh facts without accepting or escalating', async () => {
+  const f = await controlFixture({ reviewed: true }), saved = f.request.projectFacts.tasks[0]
+  assert.equal(saved.deliverySnapshot.status, 'current')
+  f.rt.state.projectAttempts.a.evidence.review.summary = 'Arrived after snapshot'
+  assert.equal(saved.evidence.review.summary, undefined)
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0)
+  assert.notEqual(f.task.status, 'accepted')
+  assert.equal(f.task.chiefQuestion, undefined)
+  assert.match(JSON.stringify(f.rt.state.projectExecutions), /fresh Task, Attempt, requirements and evidence/)
+})
+test('concurrent change while reading one Task marks that Task snapshot stale without selecting a recovery route', async () => {
+  const f = await controlFixture({ prepare(rt, task) { rt.projectDelivery.recoveryFacts = async () => { task.criteria = 'Changed during external read'; return {} } } })
+  assert.equal(f.request.projectFacts.tasks[0].deliverySnapshot.status, 'stale')
+  await f.request.onResult(f.result({ action: 'needs-human' }))
+  assert.equal(f.task.chiefQuestion, undefined)
+  assert.equal(f.accepted(), 0)
+})
+
+test('failed queued next delivery reuses the original recovery notification pass without retrying or escalating', async () => {
+  const f = await controlFixture({ async prepare(rt, task) {
+    const { createProjectEffects } = await import('../src/host/project-effects.js')
+    rt.projectEffects = createProjectEffects(rt); rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture())
+    rt.projectEffects.register('attempt.accept', { run: () => ({ accepted: true }) })
+    const token = rt.projectEffects.stage({ kind: 'attempt.accept', key: 'settlement', projectId: 'p', taskId: task.id, payload: { attemptId: 'a' } })
+    Object.assign(rt.state.projectAttempts.a, { status: 'accepted', settlement: { effect: token } })
+    rt.state.projectQueue = { q: { id: 'q', projectId: 'p', taskId: task.id, status: 'failed', reason: 'Target branch advanced', continuation: { mode: 'next', previousAttemptId: 'a', expectedBaseSha: 'old' } } }
+    await rt.projectEffects.persist(token)
+  } })
+  const notices = () => Object.values(f.rt.state.projectExecutions).filter(row => row.source?.failedQueueId === 'q')
+  assert.equal(notices().length, 1)
+  await f.control.pump(); assert.equal(notices().length, 1)
+  assert.equal(f.rt.state.projectQueue.q.status, 'failed')
+  assert.equal(f.task.chiefQuestion, undefined)
 })

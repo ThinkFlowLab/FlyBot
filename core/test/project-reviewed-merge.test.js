@@ -211,3 +211,20 @@ test('handoff recovery bounds each discovery pass and eventually covers later me
   assert.equal(Object.values(f.rt.state.projectAttempts).filter(row => row.merge.chiefHandoff).length, 40)
   assert.equal(f.counts().reads, 1)
 })
+
+test('scoped accepted delivery does not replay its old merge handoff while the Task remains open', async () => {
+  const f = fixture()
+  await f.host.stage(f.attempt); await f.rt.projectEffects.drain()
+  const proof = structuredClone(f.attempt.evidence.merge)
+  f.rt.projectEffects.register('attempt.accept', { run: () => ({ accepted: true }) })
+  const token = f.rt.projectEffects.stage({ kind: 'attempt.accept', key: 'accepted', projectId: 'p', taskId: 't', payload: { attemptId: 'a' } })
+  f.attempt.status = 'accepted'; f.attempt.settlement = { completed: 'one delivery', remaining: 'continue original Task', effect: token }
+  await f.rt.projectEffects.persist(token)
+  let requests = 0; enableChief(f, async () => { ++requests; return { id: 'unexpected' } }); f.tick(2000)
+  const before = Object.keys(f.rt.state.projectEffects).length
+  await f.host.reconcileHandoffs(); await f.rt.projectEffects.drain()
+  assert.equal(Object.keys(f.rt.state.projectEffects).length, before)
+  assert.equal(requests, 0)
+  assert.deepEqual(f.attempt.evidence.merge, proof)
+  assert.notEqual(f.task.status, 'accepted')
+})

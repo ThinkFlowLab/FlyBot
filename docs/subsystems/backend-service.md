@@ -197,3 +197,10 @@ unchanged; OpenAPI source fingerprints reflect the implementation changes.
 #2519 updates the generated implementation fingerprints for inline SDK Reviewer
 host-test evidence. Public endpoints, schemas, permissions and prerequisites stay
 unchanged; the complete log is private execution input, not a new API response.
+
+
+#2526 extends existing continuation-state/task.run with mode next and typed
+DeliveryChoices/AttemptSettlement projections. Chief accept-attempt and start-next
+remain authenticated Chief decision actions, not new arbitrary public write routes.
+The original task.accept endpoint retains whole-Task semantics. See the development
+API reference for current prerequisites and fresh target/generation/workspace fields.

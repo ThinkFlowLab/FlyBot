@@ -124,7 +124,7 @@ SDK角色worker使用宿主内部绑定，不可拿“Dev”字符串调用角�
 | sources | 原source查询过滤/分页 | 当前项目绑定的Issue/PR来源订阅与游标；读 |
 | execution.boundary | taskId? | 当前权限/仓库/资源/Harness边界及readiness；不运行测试/不授予权限 |
 | attempt.context | attemptId、section、offset?、limit?:1..16000、expectedSha256? | roleSessions/roleSessionHistory/rolePolicies/evidence/feedback/requirement/failure/agentDefinitions/integrationAdmissions精确页；读 |
-| attempt.continuation-state | attemptId | 管；返回取消/中断后当前工作区快照、代次与可选 continue/latest，供 task.run 显式续作 |
+| attempt.continuation-state | attemptId | 管；返回取消/中断后当前工作区快照、代次与可选 continue/latest 或已验收交付的 next，以及 nextActions 预检，供 task.run 显式续作 |
 | attempt.integration-state | attemptId | 当前候选/受信集成绑定、availableInputs、materialization和工作区快照；读 |
 | attempt.log | attemptId、role?、offset?、limit?:4..8192、expectedSha256? | UTF-8字节页，返回text/sha256/nextOffset/totalBytes；读，不接受宿主路径 |
 | release.status | attemptId | 当前Release请求/目标/外部证据；项目读，不发布 |
@@ -279,7 +279,7 @@ Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、
 不替代测试/Review/Chief关闭。省略phase保留原有审核后发布恢复前置条件。
 完整操作顺序、示例和凭据边界见[角色App指南](role-github-apps.md)和OpenAPI。
 
-`task.run` 可带 `continuation:{mode:"continue"|"latest",previousAttemptId,generation,expectedWorkspace,expectedBaseSha?}`，需要当前管理权限；快照取 `attempt.continuation-state`。continue 沿用已核验旧 seed 与来源，latest 要求 expectedBaseSha 等于快照的 latestBaseSha，且不丢弃草稿，基线冲突仍须显式 integrate。取消的前序不会复活，新 Attempt 不继承测试/Review 通过。
+`task.run` 可带 `continuation:{mode:"continue"|"latest"|"next",previousAttemptId,generation,expectedWorkspace,expectedBaseSha?}`，需要当前管理权限；快照取 `attempt.continuation-state`。continue 沿用已核验旧 seed 与来源，latest 要求 expectedBaseSha 等于快照的 latestBaseSha，且不丢弃草稿，基线冲突仍须显式 integrate。取消的前序不会复活，新 Attempt 不继承测试/Review 通过。
 
 ### 已合入候选的 Chief 收尾状态
 
@@ -290,3 +290,30 @@ GET `/ready` 无需成员凭据，只返回后端状态可写性：200 `{"status
 TaskView 的 `dispatch` 对应当前 handoff 的 Effect；`committed` 是运行时校验证据，非原始 SQL 列。`chief.state` 的 `lastResult.inputReceiptSummaries` 提供已校验的声明摘要，`provided`、batchId、read/handled ID 与 remaining 均不等于任务验收。存在未处理输入的 close 进入已有纠错；Chief 可明确 continue 处理本批，原通知链继续交付余下输入。具体字段见 DispatchState、ChiefInputReceiptSummary。
 
 Warning API: query `warnings` lists summaries or reads warningId/topic with offset/limit/sha256/ifNoneMatch; events also take eventOffset. Command `warning.action` takes warningId/expectedScope/action(acknowledge|inspect|stop). Requires configure rights; stop preserves Task and unknown exits retain capacity. See [full warning contract](subsystems/project-warnings.md).
+
+
+### 已合产物验收与后续交付（#2526）
+
+常驻 Chief 可以输出 `accept-attempt`，附
+`delivery:{completed:"本轮认可范围",remaining:"原目标剩余工作",evidence:["实际证据引用"]}`。
+宿主复验候选/需求、测试、Review、当前授权、退出和真实合入，再持久化 Attempt
+settlement；原 Task 不关闭。`task.accept` 的公开语义仍是完整 Task 验收，不能以新
+字段绕过 Chief 裁决。若整个目标已完成，Chief 仍可选择 `close`。
+
+提交后通过原队列通知 Chief 重新观察；不自动启动 Dev。Chief 可选 `start-next`，
+显式给出实现角色 `targetBotId` 及新快照中的 next continuation。配置授权的调用方
+也可沿原接口查询/请求：
+
+1. `attempt.continuation-state {attemptId}` 返回 `modes:["next"]`、generation、snapshot、
+   latestBaseSha、target 和 nextActions。target SHA 来自获准 provider 的实际目标分支，
+   宿主必须已有包含已合成果的对应对象；缺对象与非包含历史分别反馈。
+2. `task.run {taskId,targetRole,continuation:{mode:"next",previousAttemptId,generation,
+   expectedWorkspace:snapshot,expectedBaseSha:latestBaseSha}}` 使用独立 requestId。
+   正常配额/资源忙时进入既有队列，出队时再次核验；重复请求不再开一轮。
+
+新 Attempt 采用新发布分支/PR 身份和空验证证据，保留旧 PR/验收历史、Task-role
+上下文和草稿保护；上下文中携带已交付范围和剩余目标。已合 PR 不可 rework。
+`nextActions` 的 ready/blocked/unknown 只是前置条件投影；推荐由 Chief 原推理轮次
+产生，返回的已有推荐标记 `alreadyApplied:true`，不能据此重放。快照变化需重读。
+个人代理求助由 Chief 在缺权限、必要信息或人决策时作为最后兜底选择，不由框架
+按次数/时间强制升级。没有新增部署、重启、清 binding 或通用工具授权。

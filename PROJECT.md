@@ -18,33 +18,17 @@ architecture lives in [docs/architecture.md](docs/architecture.md) and
 Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 [docs/governance.md](docs/governance.md). Dated decisions: [decisions/](decisions/README.md).
 
-## Runtime and recovery contracts
+## Current runtime and foundation boundaries
 
-Earlier implementation checkpoints are [preserved verbatim](docs/history/2026-11-05-controller-exit-memory-checkpoints.md).
-Current resource profile identity, Task-role context, CLI/configuration validation and
-owned pre-spawn reservations remain binding. Unknown worker/preparation exit keeps
-occupancy; dependency readiness and exact-candidate test evidence remain separate.
-Apps require explicit installations and scoped credentials with no Owner fallback;
-SDK candidate/PR adoption, App Review, host merge and Chief acceptance remain distinct.
-Recovery/correction reuses original queues and schedules, preserves drafts and current
-rights, and never chooses automatic business escalation. All canonical subsystem
-contracts remain active. No live task/config/credential change or deployment is implied.
-
-## Established backend foundations
-
-Dated agent-connection, personal-agent and backend-convergence implementation
-checkpoints are [preserved verbatim](docs/history/2026-11-04-agent-foundation-checkpoints.md).
-Current authority, same-principal inbox/receipt, public OpenAPI and native/external
-agent contracts remain in their subsystem pages; source/fixture results do not
-complete live App/provider/release/multi-repository/UI acceptance or authorize deployment.
-
-## Fork Project State — 2026-10-31
-
-Earlier source snapshot/deployment checkpoints are [preserved verbatim](docs/history/2026-11-04-recovery-source-checkpoints.md). Current interfaces follow the README and subsystem contracts. Keep original frontend Task40/PR48 and healthy schedules; this backend work is direct-session source delivery without deployment.
-
-## Historical upstream Project State
-
-Historical upstream mission, named roles and resource inventory are [preserved verbatim](docs/history/2026-11-03-upstream-project-inventory.md). Current fork ownership and capabilities follow the active state and dated decisions above. The governing and automation boundaries below remain active.
+Earlier runtime, foundation and fork references are [preserved verbatim](docs/history/2026-11-05-attempt-settlement-memory-checkpoints.md#earlier-runtime-and-foundation-references).
+Current profile/CLI identity, owned reservations, actual exit/occupancy, dependency
+readiness and exact candidate evidence remain binding. Apps use explicit installations
+and scoped credentials without Owner fallback. Native/external agents share current
+principal/inbox contracts. Recovery preserves drafts, context, rights and original
+queues/schedules; it never selects business escalation. Source/fixture success grants
+no live App/provider/release/multi-repository/UI acceptance or deployment. Preserve
+frontend Task40/PR48 and healthy schedules; current fork decisions govern inherited
+roles and historical inventory. Canonical subsystem contracts remain active.
 
 ## Governing boundaries
 
@@ -139,36 +123,17 @@ verified bindings; it is not overall Task acceptance. Resource views retain curr
 and unknown leases while digesting only proven released history. Dated UI drafts,
 asset measurements and test reports remain in [the archive](docs/history/2026-11-02-collaboration-implementation.md).
 
-### Task-scoped SDK context and resident Chief memory — 2026-11-01
-The original implementation checkpoint is [preserved verbatim](docs/history/2026-11-04-context-implementation-checkpoint.md). Current contracts and acceptance follow.
+### Current context and service boundaries
 
-Keep Chief durable memory and one logical Session per Task/role. SDKs retain their
-supported persistence/compaction; FlyBot keeps bounded facts and exact binding/exit
-proof, without a second model-history compactor. Rework resumes original context;
-incompatible binding requires explicit recovery. Native continuation now has actual
-DSH deterministic single-resource return/context coverage. Historical deployment and
-probe details, including their original limitations, remain in
-[execution history](docs/history/2026-11-03-execution-evidence.md#task-scoped-sdk-context-and-resident-chief-memory--2026-11-01).
-
-### Service delivery history
-
-Earlier Task40/service publication evidence is [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md).
-Preserve frontend Task40/PR48, original UI and healthy execution. Backend work targets
-only the authorized delivery branch, not main, credentials or deployment.
-
-### Role, collaboration and context convergence
-
-Dated #2184/#2175/#2177 implementation checkpoints are [preserved verbatim](docs/history/2026-11-04-role-convergence-checkpoints.md).
-Current contracts remain active: one logical Session per Task/role; pinned persona,
-resource/profile and current delegation; actual exit before restoring context;
-consultation distinct from durable initiative handoff; private user context is not
-published automatically. Memory is bounded guidance, not authority or delivery
-proof. Preserve immutable source/history pages, verified evidence and independent
-acceptance; historical fixtures do not establish live-provider or UI completion.
-See [agents](docs/subsystems/project-agents.md), [Harness](docs/subsystems/project-harness.md)
-and the Project memory/context contracts for the current implementation.
-
-Earlier backend convergence checkpoints are [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md). Versioned Task/dependency outcomes, transactional facts/Effects, original ACLs and private publication approval remain required; historical deployment is not current acceptance.
+Earlier context/convergence implementation references are [preserved verbatim](docs/history/2026-11-05-attempt-settlement-memory-checkpoints.md).
+Retain one logical Task-role Session, bounded resident Chief memory and Harness-owned
+persistence/compaction; no second history engine. Resource/profile/model/persona,
+current delegation and exact exit/binding proofs constrain continuation. Consultations
+and initiative handoffs stay distinct; private context is not published automatically.
+Task/dependency versions, original ACLs and committed Effects/publication approval
+remain binding. History and memory are not current authorization or delivery proof.
+Preserve frontend Task40/PR48 and original UI; backend source delivery grants no live
+provider/App/release/multi-repository/UI acceptance, credentials or deployment.
 
 ### Current delivery guarantees
 
@@ -187,3 +152,5 @@ Detailed dated implementation checkpoints are [preserved verbatim](docs/history/
 #2518: SDK/inspection/merge elapsed time produces evidence-bearing warnings through one progressive disclosure service. Chief chooses recovery; operational warnings reach existing personal/human inboxes. Unknown exit and current authority remain gates.
 
 #2519: SDK Reviewer receives the complete hash-verified host log inline, without scratch access. Preserve exact candidate/current authority, artifact and execution-context budgets; persist only provenance metadata. Host output is data, never Review or CI approval.
+
+#2526: Chief may accept a merged Attempt scope without closing its Task, then explicitly choose a fresh next delivery. Scoped prechecks are observations; Chief recommends and decides. Personal Agent assistance is the last resort, never a framework-selected escalation.
