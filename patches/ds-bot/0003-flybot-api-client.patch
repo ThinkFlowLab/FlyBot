@@ -2191,7 +2191,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -1,21 +1,32 @@
+@@ -1,21 +1,33 @@
  import { createElement as h, useRef, useState } from 'react'
 -import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 -import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
@@ -2201,7 +2201,9 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
  import { CreateBot } from './create-bot.js'
 +import { afterCreate } from './bot-draft.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
- import { t } from './i18n.js'
+-import { t } from './i18n.js'
++import { hostText, t } from './i18n.js'
++import { lockedWindow } from './schedules.js'
 +import { newChatActionRows } from './flybot-registry.js'
 +import { SlotIcon } from './flybot-slots.js'
 +import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
@@ -2226,12 +2228,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const [cursor, setCursor] = useState(0)
    // The Create Bot form, opened straight from 'create' mode or from the list.
    const [draft, setDraft] = useState(mode === 'create' ? { name: '', fromList: false } : null)
-@@ -24,15 +24,56 @@ export function NewChat({ mode, roster, actions }) {
+@@ -24,15 +24,59 @@ export function NewChat({ mode, roster, actions }) {
    useEscape(close)
    const paneLeft = usePaneLeft()
    const wanted = query.trim().toLowerCase()
 -  const matches = roster.bots.filter(bot => !picked.includes(bot.id) && bot.id !== admin && (wanted === '' || bot.name.toLowerCase().includes(wanted) || (bot.role ?? '').toLowerCase().includes(wanted)))
 +  const bots = listedChatBots(roster)
++  // A read-only window keeps the group pickers as a preview, offers no create, and sends nothing
++  // from them: the host could only answer `bot/read-only` after the press (P-570).
++  const locked = lockedWindow(roster)
    const choosingAdmin = group && admin === null
 -  const exact = roster.bots.some(bot => bot.name.toLowerCase() === wanted)
 +  const pool = choosingAdmin ? bots.filter(bot => !bot.remote) : bots
@@ -2304,7 +2309,8 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    // The admin and at least one more Bot make a group; a message typed below goes with it,
    // else the admin opens by asking what the group is for.
    const makeGroup = async () => {
-     if (admin === null || picked.length === 0) return
+-    if (admin === null || picked.length === 0) return
++    if (locked || admin === null || picked.length === 0) return
      const text = message.trim()
 -    const room = await actions.createRoom([admin, ...picked], { admin, ...(text ? {} : { greet: true }) })
 +    const { members, remotes } = splitRoomPicks(roster, [admin, ...picked])
@@ -2405,6 +2411,23 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('span', { className: 'bt-to-label' }, t('To:')),
          adminBot ? h('span', { key: adminBot.id, className: 'bt-token bt-token-admin', title: t('Admin') },
            h(BotMark, { bot: adminBot, size: 16 }), adminBot.name, h(AdminStar),
+@@ -149,10 +149,12 @@ export function NewChat({ mode, roster, actions }) {
+             else if (event.key === 'Backspace' && query === '') unpick()
+           },
+         }),
+-        group && admin !== null ? h('button', {
+-          type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
+-          title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
+-        }, t('Create group chat')) : null,
++        group && admin !== null ? (locked
++          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
++          : h('button', {
++            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
++            title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
++          }, t('Create group chat'))) : null,
+         h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Close new chat'), onClick: close }, '×')),
+       h('div', { ref: drop, className: 'bt-drop' }, h('div', { ref: glide.box, role: 'listbox', 'aria-label': t('Recipients'), className: 'bt-drop-list' },
+         h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
 @@ -162,11 +162,28 @@ export function NewChat({ mode, roster, actions }) {
                onMouseEnter: () => setCursor(index), onClick: option.run,
              },
