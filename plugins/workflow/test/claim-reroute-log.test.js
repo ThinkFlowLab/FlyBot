@@ -154,7 +154,11 @@ test('#1668: a claim that simply matches appends nothing and writes no bytes', a
   }
 })
 
-test('#1668: already:true appends 0 entries, even on a reroute whose target already runs the card', async () => {
+// #2480: this case used to pin the queued leg's silence (`an already:true
+// ingest writes no source line`), which is the defect the issue names: the
+// target already runs the card, so nothing starts, but the graph that lost it
+// still has to say where it went. The return value is unchanged; the line is new.
+test('#2480: a reroute into a lane that already runs the card logs the source once and starts nothing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'wf-reroute-live-'))
   try {
     const svc = serviceAt(dir)
@@ -172,8 +176,14 @@ test('#1668: already:true appends 0 entries, even on a reroute whose target alre
     assert.equal(already.already, true, 'the live run is not restarted')
     assert.deepEqual(already.decision, { kind: 'workflow', id: beta.id })
 
-    assert.deepEqual(messagesOf(svc, 'Alpha'), sourceBefore, 'an already:true ingest writes no source line')
-    assert.deepEqual(messagesOf(svc, 'Beta'), targetBefore, 'and no target line')
+    const sourceAfter = messagesOf(svc, 'Alpha')
+    assert.equal(sourceAfter.length, sourceBefore.length + 1, 'the source says where the card went')
+    assert.deepEqual(sourceAfter.slice(0, sourceBefore.length), sourceBefore, 'the earlier source entries are untouched')
+    const line = sourceAfter.at(-1)
+    assert.equal(line.key, 'Task re-matched · {task} → {to}')
+    assert.equal(line.params.task, 't-1 · Ship it')
+    assert.equal(line.params.to, 'Beta', 'the line names the destination workflow')
+    assert.deepEqual(messagesOf(svc, 'Beta'), targetBefore, 'no new run and no new target line')
     assert.deepEqual(readStore(dir).claims['t-1'], { kind: 'workflow', id: beta.id }, 'the claim still moved')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -202,6 +212,45 @@ test('#1668: MAX_MESSAGES keeps the source log at 200 and keeps the newest line'
     assert.equal(source[0].id, 'seed-24', 'the oldest entries were dropped as before')
     // The cap is one slice on the same array; the target still fits under it.
     assert.equal(messagesOf(reloaded, 'Beta').length, 4)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// #2480: the bot leg of the same contract — a claim that yields to a local Bot
+// used to attach the new claim and return before the source line was pushed.
+// `from` is resolved before either early return, so the line rides that write.
+test('#2480: a reroute from a workflow to a Bot leaves one line on the source, naming the Bot', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-reroute-bot-'))
+  try {
+    const svc = serviceAt(dir)
+    const alpha = named(svc, 'Alpha')
+    await svc.ingest({ id: 't-1', status: 'open', title: 'Ship it', workflowId: alpha.id })
+    const sourceBefore = messagesOf(svc, 'Alpha')
+
+    const moved = await svc.ingest({ id: 't-1', status: 'open', title: 'Ship it', assignee: 'Chief' })
+    assert.deepEqual(moved.decision, { kind: 'bot', id: 'main' })
+    assert.equal(moved.already, false, 'a real reroute: the Bot takes the card')
+
+    const sourceAfter = messagesOf(svc, 'Alpha')
+    assert.equal(sourceAfter.length, sourceBefore.length + 1, 'the source log gained exactly one entry')
+    assert.deepEqual(sourceAfter.slice(0, sourceBefore.length), sourceBefore, 'the earlier source entries are untouched')
+    const line = sourceAfter.at(-1)
+    assert.equal(line.kind, 'system')
+    assert.equal(line.key, 'Task re-matched · {task} → {to}')
+    assert.equal(line.params.task, 't-1 · Ship it', 'the line names the task')
+    assert.equal(line.params.to, 'Chief', 'the line names the Bot that took the card')
+    assert.equal(line.text, '任务已改投 · t-1 · Ship it → Chief')
+    assert.equal(line.at, CLOCK)
+
+    // Stored, not painted from memory: a reload sees it too.
+    const reloaded = serviceAt(dir)
+    assert.equal(messagesOf(reloaded, 'Alpha').length, sourceAfter.length, 'the line is on disk')
+    assert.equal(readStore(dir).logs[alpha.id].at(-1).params.to, 'Chief')
+
+    const again = await svc.ingest({ id: 't-1', status: 'open', title: 'Ship it', assignee: 'Chief' })
+    assert.equal(again.already, true, 'the card already sits with the Bot')
+    assert.equal(messagesOf(svc, 'Alpha').length, sourceAfter.length, 'a repeated ingest adds nothing')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -1820,18 +1820,39 @@ export function createWorkflowService({
         }
       }
       // #1668: the side that lost the card keeps one line saying where it went.
-      // The push below rides the write that attaches the new target, so the
-      // target's own lines stay exactly as they are and nothing is written twice.
+      // #2480: every leg that attaches the new target writes it, the two early
+      // returns below included, so a yield to a Bot or to a lane that already
+      // runs the card no longer leaves the source graph silent. The push rides
+      // that one write, so the target's own lines stay exactly as they are and
+      // nothing is written twice.
       const from = held?.kind === 'workflow' && held.id !== decision.id ? workflow(held.id) : undefined
+      const logSource = () => {
+        if (!from) return
+        const label = summarizeTask(task)
+        // A Bot target has no lane record, so its own name is the destination;
+        // the id is the fallback for a roster that no longer lists it.
+        const to = decision.kind === 'workflow'
+          ? workflow(decision.id)
+          : (bots() ?? []).find(bot => bot && bot.id === decision.id)
+        const name = to?.name ?? decision.id
+        push(from.id, [{
+          kind: 'system',
+          key: 'Task re-matched · {task} → {to}',
+          params: { task: label, to: name },
+          text: `任务已改投 · ${label} → ${name}`,
+        }], now())
+      }
       const key = `${decision.kind}:${decision.id}`
       const prev = state.routes[taskId]
       if (prev?.key === key) return { ok: true, matched: true, already: true, decision }
       if (decision.kind === 'bot') {
+        logSource()
         rememberClaim(taskId, decision)
         write()
         return { ok: true, matched: true, already: false, decision }
       }
       if (queuedOrRunning(decision.id, taskId)) {
+        logSource()
         rememberClaim(taskId, decision)
         write()
         return { ok: true, matched: true, already: true, decision }
@@ -1841,17 +1862,7 @@ export function createWorkflowService({
       const assigned = this.assign({ workflowId: decision.id, taskId, title, ...(typeof task.brief === 'string' && task.brief !== '' ? { brief: task.brief } : {}) })
       const finish = (value) => {
         if (value?.ok === false) return value
-        if (from) {
-          const label = summarizeTask(task)
-          const to = workflow(decision.id)
-          const name = to?.name ?? decision.id
-          push(from.id, [{
-            kind: 'system',
-            key: 'Task re-matched · {task} → {to}',
-            params: { task: label, to: name },
-            text: `任务已改投 · ${label} → ${name}`,
-          }], now())
-        }
+        logSource()
         rememberClaim(taskId, decision)
         write()
         return { ...present(), matched: true, already: false, decision }
