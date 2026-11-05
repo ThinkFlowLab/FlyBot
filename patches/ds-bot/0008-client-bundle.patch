@@ -17028,7 +17028,7 @@ diff --git a/client.js b/client.js
        className: "bt-folder-input",
        autoFocus: true,
        value: draft,
-@@ -6759,1401 +6759,1904 @@ function FolderMenu({ value, group = false, actions, run, onPick, wide = false }
+@@ -6759,1401 +6759,1907 @@ function FolderMenu({ value, group = false, actions, run, onPick, wide = false }
          if (event.key === "Enter" && !event.nativeEvent.isComposing) typed();
        }
      }),
@@ -19425,6 +19425,7 @@ diff --git a/client.js b/client.js
 +  const admin = roster.byId[room2.admin];
 +  const mode = shownMode(room2, roster);
 +  const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? "";
++  const modeLabel = ROOM_MODES.find(([id]) => id === mode)?.[1] ?? "Everyone";
 +  if (lockedWindow(roster)) {
 +    return (0, import_react31.createElement)(
 +      "div",
@@ -19443,7 +19444,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react31.createElement)(
 +        Card,
 +        { title: t("Members · {count}", { count: face ? people2.length : members.length + humans.length + remotes.length }) },
-+        face ? people2.map((person) => (0, import_react31.createElement)(Row, { key: person.key, label: facePersonLabel(person), hint: t("Human") })) : [
++        face ? people2.map((person) => (0, import_react31.createElement)(FacePersonRow, { key: person.key, person, roster, lead: room2.face?.lead?.handle })) : [
 +          // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
 +          humans.map((person) => (0, import_react31.createElement)(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t("Human") })),
 +          members.map((member) => (0, import_react31.createElement)(Row, {
@@ -19454,6 +19455,8 @@ diff --git a/client.js b/client.js
 +          remotes.map((person) => (0, import_react31.createElement)(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") }))
 +        ]
 +      ),
++      face ? (0, import_react31.createElement)(Card, { title: t("Who answers") }, (0, import_react31.createElement)(Row, { label: t(modeLabel), hint: t(modeHint) })) : null,
++      face ? (0, import_react31.createElement)(Card, { title: t("Working folder") }, (0, import_react31.createElement)(Row, { label: t("Folder"), hint: room2.workDir || t("Not set") })) : null,
 +      room2.notice ? (0, import_react31.createElement)(Card, { title: t("Notice") }, (0, import_react31.createElement)(Row, { label: t("Group notice"), hint: room2.notice, stack: true })) : null
 +    );
 +  }
