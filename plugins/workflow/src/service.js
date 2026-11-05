@@ -1216,6 +1216,11 @@ export function createWorkflowService({
           const claim = state.claims[taskId]
           if (claim?.kind === 'workflow' && claim.id === workflowId) delete state.claims[taskId]
         })
+        // #2475: the lane held the card's facts. Once it is gone they are nobody's,
+        // and a later assignment must not inherit them from the deleted id.
+        Object.keys(state.briefs ?? {}).forEach(taskId => {
+          if (state.briefs[taskId]?.workflowId === workflowId) delete state.briefs[taskId]
+        })
         write()
         return present()
       }
@@ -1309,18 +1314,20 @@ export function createWorkflowService({
       // #1869: a 20–40 line brief is the normal case, so it keeps its line breaks
       // (cleanPrompt) rather than being flattened into one 300-character line.
       const callBrief = cleanPrompt(body.brief, MAX_BRIEF)
-      // #2468: the card holds the facts; a lane is only an executor. A call that still
-      // passes `brief` keeps working, but once the card has a brief that stored brief
-      // wins, so a re-dispatch to another lane carries the same facts. A call that
-      // brings a brief for a card without one stores it on the card.
+      // #2468: the card holds the facts; a lane is only an executor. A call that
+      // omits `brief` keeps the card's stored facts, so a re-dispatch carries them.
+      // #2475: an explicit `brief` is the authority and replaces the cached one, and
+      // `brief: ''` clears it — otherwise a card could never drop old instructions.
       state.briefs ??= {}
       const prior = state.briefs[task.id] ?? {}
-      const brief = callBrief || prior.brief || ''
-      const fromLane = prior.workflowId && prior.workflowId !== workflowId ? prior.workflowId : ''
+      const brief = body.brief === undefined ? prior.brief || '' : callBrief
+      // #2475: a lane that no longer exists records no handoff; delete() drops its
+      // cache entries, and this guard covers an entry written before that fix.
+      const kept = prior.workflowId && prior.workflowId !== workflowId ? workflow(prior.workflowId) : undefined
       state.briefs[task.id] = { ...(brief ? { brief } : {}), workflowId }
       if (brief) task.brief = brief
-      if (fromLane) {
-        task.handoff = { from: workflow(fromLane)?.name ?? fromLane, to: item.name, at: now(), reason: 're-dispatched to another lane' }
+      if (kept) {
+        task.handoff = { from: kept.name, to: item.name, at: now(), reason: 're-dispatched to another lane' }
       }
       write()
       // #1544: the Bot whose tool call started this run, when a Bot started it. The board, the canvas
