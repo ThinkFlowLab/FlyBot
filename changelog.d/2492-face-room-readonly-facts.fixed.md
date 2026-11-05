@@ -1,0 +1,1 @@
+In a read-only window a face-to-face group's Settings page names each person's Bots under them, and states who answers and the room's working folder, instead of drawing every person as **Human** while its own header counted the Bots.

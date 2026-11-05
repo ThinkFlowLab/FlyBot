@@ -647,7 +647,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
  }
  
  // A group chat's settings as grouped cards: its name and notice, who answers, its
-@@ -31,11 +31,49 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+@@ -31,11 +31,54 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
      const timer = setTimeout(() => setConfirming(false), 4000)
      return () => clearTimeout(timer)
    }, [confirming])
@@ -671,6 +671,7 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
    const admin = roster.byId[room.admin]
    const mode = shownMode(room, roster)
    const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
++  const modeLabel = ROOM_MODES.find(([id]) => id === mode)?.[1] ?? 'Everyone'
 +  // Every control here writes `update-room` or `delete-room`, which the host refuses in a
 +  // read-only window; the form then keeps the group's facts as text (#2474).
 +  if (lockedWindow(roster)) {
@@ -682,7 +683,9 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +          h('span', { className: 'bt-bs-sub' }, roomSubtitle(room, roster)))),
 +      h(Card, { title: t('Members · {count}', { count: face ? people.length : members.length + humans.length + remotes.length }) },
 +        face
-+          ? people.map(person => h(Row, { key: person.key, label: facePersonLabel(person), hint: t('Human') }))
++          // A face-to-face room names each person's Bots under them, the way the writable
++          // window does; without `onOpenBot` the row is text and offers no control (#2492).
++          ? people.map(person => h(FacePersonRow, { key: person.key, person, roster, lead: room.face?.lead?.handle }))
 +          : [
 +              // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
 +              humans.map(person => h(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t('Human') })),
@@ -693,6 +696,8 @@ diff --git a/src/client/group-settings.js b/src/client/group-settings.js
 +              })),
 +              remotes.map(person => h(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") })),
 +            ]),
++      face ? h(Card, { title: t('Who answers') }, h(Row, { label: t(modeLabel), hint: t(modeHint) })) : null,
++      face ? h(Card, { title: t('Working folder') }, h(Row, { label: t('Folder'), hint: room.workDir || t('Not set') })) : null,
 +      room.notice ? h(Card, { title: t('Notice') }, h(Row, { label: t('Group notice'), hint: room.notice, stack: true })) : null)
 +  }
    const update = patch => run(actions.updateRoom(room.id, patch))

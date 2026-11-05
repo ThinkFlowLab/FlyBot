@@ -15278,6 +15278,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
   const admin = roster.byId[room2.admin];
   const mode = shownMode(room2, roster);
   const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? "";
+  const modeLabel = ROOM_MODES.find(([id]) => id === mode)?.[1] ?? "Everyone";
   if (lockedWindow(roster)) {
     return (0, import_react31.createElement)(
       "div",
@@ -15296,7 +15297,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
       (0, import_react31.createElement)(
         Card,
         { title: t("Members · {count}", { count: face ? people2.length : members.length + humans.length + remotes.length }) },
-        face ? people2.map((person) => (0, import_react31.createElement)(Row, { key: person.key, label: facePersonLabel(person), hint: t("Human") })) : [
+        face ? people2.map((person) => (0, import_react31.createElement)(FacePersonRow, { key: person.key, person, roster, lead: room2.face?.lead?.handle })) : [
           // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
           humans.map((person) => (0, import_react31.createElement)(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t("Human") })),
           members.map((member) => (0, import_react31.createElement)(Row, {
@@ -15307,6 +15308,8 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
           remotes.map((person) => (0, import_react31.createElement)(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") }))
         ]
       ),
+      face ? (0, import_react31.createElement)(Card, { title: t("Who answers") }, (0, import_react31.createElement)(Row, { label: t(modeLabel), hint: t(modeHint) })) : null,
+      face ? (0, import_react31.createElement)(Card, { title: t("Working folder") }, (0, import_react31.createElement)(Row, { label: t("Folder"), hint: room2.workDir || t("Not set") })) : null,
       room2.notice ? (0, import_react31.createElement)(Card, { title: t("Notice") }, (0, import_react31.createElement)(Row, { label: t("Group notice"), hint: room2.notice, stack: true })) : null
     );
   }

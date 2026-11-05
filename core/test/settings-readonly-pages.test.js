@@ -99,6 +99,20 @@ const baseRoster = {
 }
 const lockedRoster = { ...baseRoster, readOnly: SENTENCE }
 
+// #2492: the same two windows, but a face-to-face room. Two people, one Bot each: my own Chief
+// (Ann) and a friend's Writer (Bob). The page's own header already counts both Bots, so the
+// members card has to name them too, and the room's two facts are the writable page's.
+const faceRoom = {
+  id: 'face', name: 'Face-to-face · Ann, Bob · 482913', origin: 'face-to-face', named: false,
+  members: [], mode: 'everyone', workDir: '/work/face', notice: '',
+  participants: [
+    { kind: 'bot', id: 'chief', handle: '@chief.ann.home', ownerName: 'Ann', ownerHome: 'ann.home' },
+    { kind: 'bot', id: 'writer-bob', remote: true, handle: '@writer.bob.home', ownerName: 'Bob', ownerHome: 'bob.home', displayName: 'Writer' },
+  ],
+}
+const faceRoster = { ...baseRoster, rooms: [faceRoom], roomsById: { face: faceRoom } }
+const faceLocked = { ...faceRoster, readOnly: SENTENCE }
+
 // Every action that asks the host to change something. A locked page may draw an entry that
 // navigates (New Bot, a Bot's row, Open board); it may not draw one that lands here.
 const MUTATING = ['updateBot', 'deleteBot', 'createBot', 'duplicateBot', 'setMain', 'setPrefs', 'setFlags', 'openMemory', 'refreshModels',
@@ -176,6 +190,12 @@ const mount = (roster, key, id, name, calls = []) => {
 const isControl = (node) => ['select', 'input', 'textarea'].includes(nameOf(node))
   || node.props?.role === 'switch'
   || isWidget(node)
+
+// A face-room Bot name is a `button` only when its row got an `onOpenBot`; a locked page must
+// draw none of those, and nothing else a reader could press either — a link, a field, or a
+// span carrying a handler (#2492).
+const INTERACTIVE = new Set(['button', 'a', 'input', 'select', 'textarea'])
+const isInteractive = (node) => INTERACTIVE.has(nameOf(node)) || typeof node.props?.onClick === 'function'
 
 const PAGES = [
   { key: 'general', id: null, name: 'GeneralPage', facts: ['DeepSeek', 'On'] },
@@ -270,4 +290,34 @@ test('every Settings page re-renders when the window unlocks under it (#2474)', 
     assert.ok(html.length > 0, `${page.name} still draws its page after the flip`)
     assert.ok(nodes.filter(isControl).length > 0, `${page.name} still draws its live controls after the flip`)
   }
+})
+
+// #2492: a read-only face-to-face room drew every person with the hint `Human` while its own
+// header counted `2 Bots`, and the names the writable page draws were thrown away with each
+// person's seats. The next change to that branch must not silently lose them again.
+test('a read-only face-to-face room names each person\'s Bot (#2492)', () => {
+  const { nodes, calls } = mount(faceLocked, 'groups', 'face', 'GroupSettingsForm')
+  const facts = text(nodes)
+  assert.match(facts, /Ann \(you\)Chief/, 'my Bot is named under me')
+  assert.match(facts, /BobWriter/, "the friend's Bot is named under them")
+  assert.ok(!facts.includes('Human'), 'a face-to-face room does not call a person Human')
+  for (const button of pressure(nodes)) { try { button.props.onClick?.() } catch { /* the press is the point, not its answer */ } }
+  assert.deepEqual(calls, [], 'the members card offers no write')
+  assert.deepEqual(nodes.filter(isControl).map(nameOf), [], 'the members card draws text rows only')
+  assert.deepEqual(nodes.filter(isInteractive).map(nameOf), [], 'no button, link, field or span with a handler, counted deep')
+  // A zero is only worth reading if the counter can see the buttons when they are there: the
+  // writable page draws these same rows with `onOpenBot`, so it must find `bt-face-bot` buttons.
+  const writable = mount(faceRoster, 'groups', 'face', 'GroupSettingsForm').nodes
+  assert.ok(writable.some(node => nameOf(node) === 'button' && node.props?.className === 'bt-face-bot'),
+    'the same counter finds the writable page\'s Bot opener')
+})
+
+test('a read-only face-to-face room states who answers and its working folder (#2492)', () => {
+  const { nodes } = mount(faceLocked, 'groups', 'face', 'GroupSettingsForm')
+  const facts = text(nodes)
+  assert.ok(facts.includes('Who answers'), 'the page says who answers')
+  assert.ok(facts.includes('Everyone'), 'with the mode the writable page shows')
+  assert.ok(facts.includes('Working folder'), 'the page names the working folder')
+  assert.ok(facts.includes('/work/face'), 'with the folder the room works in')
+  assert.deepEqual(nodes.filter(isControl).map(nameOf), [], 'both facts are text, not controls')
 })
