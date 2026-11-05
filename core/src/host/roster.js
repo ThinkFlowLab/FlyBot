@@ -245,7 +245,16 @@ export function install(rt) {
     const entry = rt.botOf(id) ?? rt.roomOf(id) ?? ownEntry(state.agents, id)
     if (entry === undefined) throw new Error('Unknown conversation')
     if (typeof pinned === 'boolean') entry.pinned = pinned
-    if (typeof hidden === 'boolean') entry.hidden = hidden
+    if (typeof hidden === 'boolean') {
+      entry.hidden = hidden
+      // A room's hide is this switch's, and a face room is re-upserted on every poll; the stamp
+      // is what tells that write apart from the `hidden` an older state left behind, which
+      // `upsertFaceRoom` still clears (#1605, room-membership.js).
+      if (rt.roomOf(id) === entry) {
+        if (hidden) entry.hiddenAt = Date.now()
+        else delete entry.hiddenAt
+      }
+    }
     await rt.save()
     return entry
   }

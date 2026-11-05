@@ -376,7 +376,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      if (patch.model !== undefined) {
        if (patch.model === null || patch.model === '') delete bot.model
        else bot.model = await rt.resolveModel(patch.model)
-@@ -212,17 +212,11 @@ export function install(rt) {
+@@ -212,20 +212,23 @@ export function install(rt) {
      await rt.save()
      if (modelChanged) await rt.applyModel(bot, { force: true })
      if (moved) void rt.followFolder(bot.id)
@@ -394,7 +394,20 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +    const entry = rt.botOf(id) ?? rt.roomOf(id) ?? ownEntry(state.agents, id)
      if (entry === undefined) throw new Error('Unknown conversation')
      if (typeof pinned === 'boolean') entry.pinned = pinned
-     if (typeof hidden === 'boolean') entry.hidden = hidden
+-    if (typeof hidden === 'boolean') entry.hidden = hidden
++    if (typeof hidden === 'boolean') {
++      entry.hidden = hidden
++      // A room's hide is this switch's, and a face room is re-upserted on every poll; the stamp
++      // is what tells that write apart from the `hidden` an older state left behind, which
++      // `upsertFaceRoom` still clears (#1605, room-membership.js).
++      if (rt.roomOf(id) === entry) {
++        if (hidden) entry.hiddenAt = Date.now()
++        else delete entry.hiddenAt
++      }
++    }
+     await rt.save()
+     return entry
+   }
 @@ -235,11 +235,18 @@ export function install(rt) {
    // admin may change its own group but not delete it. Only a member can be admin.
  
@@ -669,7 +682,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,14 +417,45 @@ export function install(rt) {
+@@ -417,12 +417,43 @@ export function install(rt) {
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -679,9 +692,9 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    }
      state.mainBotIds = next
 +    rt.syncDesignatedChief()
-     await rt.save()
-   }
- 
++    await rt.save()
++  }
++
 +  // #638: retire a Bot instead of deleting it. The tree already reads fields['flybot-tree'].retired:
 +  // adoption skips the record and it no longer counts against maxChildren, while its chat, its parts
 +  // and its memory stay where they are. `hidden` keeps it out of the default Bot list the way the
@@ -712,13 +725,11 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      delete state.grants[id]
 +      await rt.reachChanged?.(id)
 +    }
-+    await rt.save()
+     await rt.save()
 +    return { bot, freed }
-+  }
-+
+   }
+ 
    async function deleteBot(id) {
-     const bot = rt.botOf(id)
-     if (bot === undefined) throw new Error('Unknown Bot')
 @@ -434,22 +434,42 @@ export function install(rt) {
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
