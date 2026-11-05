@@ -3,7 +3,7 @@
 // sidebar run uses. A read always settles: a host that never answers becomes
 // an error, an empty store says so, and the file path is not the page.
 import { createElement as h, useEffect, useRef, useState } from 'react'
-import { hostText, t } from './i18n.js'
+import { t } from './i18n.js'
 
 export const READ_MS = 8000
 
@@ -562,11 +562,12 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
   const templates = pack?.templates ?? []
   const templateIds = new Set(templates.map((item) => item.id))
   const yours = (pack?.workflows ?? []).filter((item) => !templateIds.has(item.id))
-  // #2176: a window that holds the team read-only carries the host's own sentence. The page
-  // shows that sentence where Edit was and never opens the editor, so `workflow/graph` is not
-  // offered in the first place instead of being refused after the layout was built. `Use this`
-  // writes `workflow/create`, which the channel's READS list does not hold either, so a
-  // read-only window does not offer that one either.
+  // #2176: a window that holds the team read-only never opens the editor, so `workflow/graph`
+  // is not offered in the first place instead of being refused after the layout was built.
+  // `Use this` writes `workflow/create`, which the channel's READS list does not hold either,
+  // so a read-only window does not offer that one either. The host's standing sentence stays
+  // in the Settings header, once per page: this edit bar drew a second copy of it here, and a
+  // second live region is read out twice.
   const readOnly = typeof roster?.readOnly === 'string' ? roster.readOnly.trim() : ''
   const locked = readOnly !== ''
   const showUse = !locked && (opened?.source === 'factory' || opened?.fromFactory !== undefined)
@@ -600,7 +601,7 @@ export function WorkflowsView({ phase = 'loading', pack = null, error = '', open
         h('button', { type: 'button', onClick: () => onBack?.() }, t('Back')),
         showUse ? h('button', { type: 'button', onClick: () => onUse?.(opened.source === 'factory' ? opened.id : opened.fromFactory) }, t('Use this')) : null,
         locked
-          ? h('span', { className: 'bt-wf-status', role: 'status' }, hostText(readOnly))
+          ? null
           : opened?.source === 'own' ? h('button', { type: 'button', onClick: () => onEditing?.(!editing) }, editing ? t('Finish editing') : t('Edit')) : null),
       h('h3', { className: 'bt-wf-title' }, graph.name),
       graph.description ? h('p', { className: 'bt-wf-hint' }, graph.description) : null,
