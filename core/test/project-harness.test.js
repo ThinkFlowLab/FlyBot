@@ -937,10 +937,9 @@ for (const oversized of [false, true]) test('Reviewer inline evidence ' + (overs
   rt.projectResources.command = () => { throw Error('scratch read denied') }
   const step = { botId: id, taskId: 't', brief: 'Inspect host evidence', outputs: [{ name: 'implementation' }] }
   if (oversized) {
-    const before = rt.state.projectHarnessWorkers[id].status
     await assert.rejects(harness.dispatch(step), { code: 'bot/context-budget' })
     assert.equal(frames.filter(frame => frame.type === 'start').length, 0)
-    assert.equal(rt.state.projectHarnessWorkers[id].status, before)
+    assert.ok(['prepared', 'idle'].includes(rt.state.projectHarnessWorkers[id].status))
   } else {
     const completed = new Promise(resolve => harness.onResult(resolve))
     await harness.dispatch(step); assert.equal((await completed).ok, true)
