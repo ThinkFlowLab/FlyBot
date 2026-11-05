@@ -16158,7 +16158,7 @@ function NewChat({ mode, roster, actions }) {
         }
       });
     }
-    if ((roster.agents ?? []).length === 0) {
+    if (!locked && (roster.agents ?? []).length === 0) {
       options.push({ key: "agent", icon: (0, import_react34.createElement)(TerminalIcon), label: t("Add coding agent"), hint: t("A coding session without a Bot"), run: () => run(async () => {
         await actions.addAgent();
         close();
@@ -16327,7 +16327,7 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
               }
             }
           }),
-          locked && !(group && admin !== null) ? (0, import_react34.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react34.createElement)("button", { type: "button", className: "bt-nc-send", "aria-label": t("Send message"), disabled: busy || message.trim() === "" || picked.length === 0, onClick: sendMessage }, (0, import_react34.createElement)(ArrowUpIcon))
+          locked ? group && admin !== null ? null : (0, import_react34.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react34.createElement)("button", { type: "button", className: "bt-nc-send", "aria-label": t("Send message"), disabled: busy || message.trim() === "" || picked.length === 0, onClick: sendMessage }, (0, import_react34.createElement)(ArrowUpIcon))
         )
       )
     )

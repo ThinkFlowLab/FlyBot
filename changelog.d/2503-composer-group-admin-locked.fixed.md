@@ -1,0 +1,1 @@
+In a read-only window a new group chat that already picked its admin no longer draws a **Send** arrow that does nothing: the composer draws no send control at all, and the host's own read-only sentence stays once, on the To: line where **Create group chat** would be. A writable window is unchanged ([#2503](https://github.com/ThinkFlowLab/FlyBot/issues/2503)).

@@ -2343,7 +2343,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
      const text = message.trim()
      if (group && admin !== null) { await makeGroup(); return }
      if (text === '' || picked.length === 0) return
-@@ -87,24 +87,51 @@ export function NewChat({ mode, roster, actions }) {
+@@ -87,24 +87,52 @@ export function NewChat({ mode, roster, actions }) {
        close()
        return
      }
@@ -2364,6 +2364,8 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 -    options.push({ key: 'new', icon: h(PlusIcon), label: t('Create new Bot'), run: createBot })
 -    options.push({ key: 'group', icon: h(PeopleIcon), label: t('Create group chat'), run: () => { setGroup(true); setCursor(0); inputRef.current?.focus() } })
 -    // A team holds at most one DSH Agent; the entry exists only while there is none.
+-    if ((roster.agents ?? []).length === 0) {
+-      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
 +    if (menuOnly) {
 +      options.push({ key: 'chat', icon: h(ChatIcon), label: t('New chat'), hint: t('Message one of your Bots'), run: () => { setCompose(true); setCursor(0); setTimeout(() => inputRef.current?.focus()) } })
 +    }
@@ -2383,9 +2385,9 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +        },
 +      })
 +    }
-+    // A team holds at most one Agent; the entry exists only while there is none.
-     if ((roster.agents ?? []).length === 0) {
--      options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
++    // A team holds at most one Agent; the entry exists only while there is none, and a read-only
++    // window does not offer it at all: the host answers `add-agent` with `bot/read-only` (P-571b).
++    if (!locked && (roster.agents ?? []).length === 0) {
 +      options.push({ key: 'agent', icon: h(TerminalIcon), label: t('Add coding agent'), hint: t('A coding session without a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
      }
    }
@@ -2483,13 +2485,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('div', { className: 'bt-nc-card' },
            h('span', { className: 'bt-nc-plus', 'aria-hidden': true }, h(PlusIcon)),
            h('textarea', {
-@@ -176,5 +176,7 @@ export function NewChat({ mode, roster, actions }) {
+@@ -176,5 +176,9 @@ export function NewChat({ mode, roster, actions }) {
                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
              },
            }),
 -          h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
-+          locked && !(group && admin !== null)
-+            ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
++          locked
++            ? (group && admin !== null
++              ? null
++              : h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)))
 +            : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
  }
 diff --git a/src/client/overlay-hooks.js b/src/client/overlay-hooks.js
