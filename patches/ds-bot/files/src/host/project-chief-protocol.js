@@ -1,7 +1,7 @@
 import { assistanceRequest } from './project-chief-assistance.js'
 // Protocol feedback is data for Chief judgement, never a workflow or permission grant.
-export const CHIEF_AUTONOMY = 'Within the explicitly authorized Project goals, your first priority is autonomous progress supported by verifiable results. Diagnose errors using current host facts and approved recovery tools; correct malformed decisions or choose another lawful path. After host restart, assess current exit and checkpoint evidence; an old restart message alone does not require a human decision. Do not repeat the same return/route without new facts. Consult the appropriate personal project agent only when needed information, authority or a human-only decision is missing. The host never selects that escalation for you. Never invent evidence or bypass exit, permission or acceptance gates.'
-const actions = new Set(['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen', 'resolve-dependency', 'retry-notification', 'reconcile-exit', 'stop-execution'])
+export const CHIEF_AUTONOMY = 'Within the explicitly authorized Project goals, your first priority is autonomous progress supported by verifiable results. Diagnose errors using current host facts and approved recovery tools; correct malformed decisions or choose another lawful path. After host restart, assess current exit and checkpoint evidence; an old restart message alone does not require a human decision. Do not repeat the same return/route without new facts. Use the corresponding Personal Agent as the last resort only when needed information, authority or a human-only decision is missing. The host never selects that escalation for you. Never invent evidence or bypass exit, permission or acceptance gates.'
+const actions = new Set(['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen', 'resolve-dependency', 'retry-notification', 'reconcile-exit', 'stop-execution', 'accept-attempt', 'start-next'])
 export function chiefProtocolError(field, expected, taskId = null) {
   return Object.assign(new Error(`Chief protocol: ${field} needs ${expected}`), { code: 'bot/chief-protocol', fields: [{ field, expected }], taskId: typeof taskId === 'string' ? taskId.slice(0, 100) : null })
 }
@@ -19,7 +19,7 @@ export function parseChiefResponse(text, roles, { onInvalid } = {}) {
       seen.add(taskId)
       if (!actions.has(decision.action)) throw chiefProtocolError('action', 'a supported Chief action', taskId)
       if (typeof decision.reason !== 'string' || !decision.reason.trim() || decision.reason.length > 4000) throw chiefProtocolError('reason', 'bounded nonempty text up to4000 characters', taskId)
-      if (['route', 'return'].includes(decision.action)) {
+      if (['route', 'return', 'start-next'].includes(decision.action)) {
         if (typeof decision.targetBotId !== 'string' || !decision.targetBotId.trim() || !roles.some(row => row.id === decision.targetBotId && row.role !== 'chief')) throw chiefProtocolError('targetBotId', 'one exact active logical Bot ID from logicalBots, excluding Chief', taskId)
       }
       if (decision.criteria !== undefined) {

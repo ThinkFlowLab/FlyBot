@@ -114,3 +114,5 @@ unchanged results, original personal Inbox and same resident Chief context excha
 The HTTP backend fixture verifies real native DSH warning delivery, host restart
 recovery and explicit stop independently of a timeout. Deterministic fixtures are
 not paid model, live OpenToday or deployment acceptance.
+
+Repeated Chief action refusals reuse task-attention, warning.notify, existing configured maxHandoffsWithoutProgress and progressive disclosure. Count only current deliveryScope audit evidence (including partial-inspection decisionFailures), never foreign, old-scope, applied or still-pending decisions. Chief receives at most five exact current refusal records in the summary; notifications deduplicate normally. Task-attention reasons must still hold to be current, so changed requirements, candidate, evidence or resolved conditions mark old warnings historical. No counter store, timer, automatic role selection or human escalation is added.

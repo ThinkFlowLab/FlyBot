@@ -346,3 +346,16 @@ test('queued Task dispatch projection derives runtime commit proof rather than r
   task.collaboration.currentHandoffId = 'replacement'
   assert.equal(taskView(state, task).dispatch, null)
 })
+
+test('queued next delivery is visible ahead of its prior Chief arbitration and does not change public command shapes', () => {
+  const { service, state, actor } = fixture(), task = state.tasks.t
+  Object.assign(task, { title: 'Goal', criteria: 'Whole goal', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { status: 'arbitration', botId: 'p:chief', history: [] } })
+  state.projectAttempts.a = { id: 'a', projectId: 'p', taskId: 't', status: 'accepted', settlement: { completed: 'one delivery', remaining: 'more work' }, requirement: { title: task.title, criteria: task.criteria }, evidence: {} }
+  state.projectQueue.q = { id: 'q', projectId: 'p', taskId: 't', status: 'waiting', continuation: { mode: 'next', previousAttemptId: 'a' } }
+  const view = service.view(task, actor)
+  assert.equal(view.phase, 'queued'); assert.equal(view.queueId, 'q')
+  assert.ok(view.nextActions.includes('queue.cancel')); assert.ok(view.nextActions.every(action => typeof action === 'string'))
+  assert.ok(view.deliveryChoices.actions.some(action => action.action === 'start-next'))
+  delete state.projectQueue.q
+  assert.equal(service.view(task, actor).phase, 'awaiting-chief')
+})

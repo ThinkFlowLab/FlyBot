@@ -1,3 +1,4 @@
+import { chiefActionRefusals } from './project-delivery-options.js'
 // One disclosure and delivery boundary; warnings are facts, never routing authority.
 import { createHash } from 'node:crypto'
 import { ownEntry, setEntry } from './store.js'
@@ -35,6 +36,7 @@ export function createProjectWarnings(rt, { now = Date.now } = {}) {
     if (rt.readProject(row.projectId)?.status !== 'active' || row.taskId && (!task || task.projectId !== row.projectId || terminal.has(task.status) || task.deliveryAttemptId !== row.attemptId)) return false
     if (row.workerId && (!worker || worker.generation !== row.source.workerGeneration || (worker.executionStartedAt ?? null) !== row.source.executionStartedAt || row.kind === 'sdk-duration' && !['running', 'waiting-input'].includes(worker.status))) return false
     if (row.runId && (!run || run.invocation !== row.source.invocation || !['queued', 'running', 'correction-pending'].includes(run.status))) return false
+    if (row.kind === 'task-attention') { const thresholds = state.projectChiefPolicies?.[row.projectId]?.inspection?.thresholds; if (!thresholds || !inspectionFacts(state, task, thresholds, now()).reasons.includes(row.reason)) return false }
     if (row.kind === 'merge-wait' && (!attempt?.merge || ['merged', 'cancelled'].includes(attempt.merge.status) || attempt.candidateSha !== row.source.candidateSha)) return false
     return !row.taskId || scope(row).generation === row.source.generation && scope(row).requirementsSha256 === row.source.requirementsSha256
   }
@@ -62,7 +64,7 @@ export function createProjectWarnings(rt, { now = Date.now } = {}) {
       historical: !data.current, recordedSource: row.source, expectedScope: hash(data.source), source: data.source, reason: row.reason, blockers: data.blockers, execution: data.execution, chief: data.chief,
       merge: data.merge ? { repository: data.merge.pr?.repository, number: data.merge.pr?.number, candidateSha: data.merge.candidateSha, baseBranch: data.merge.baseBranch, status: data.merge.status, reason: data.merge.reason, observedAt: data.merge.observedAt ?? null, reviewDecision: data.merge.reviewDecision ?? 'unknown', checkCount: data.merge.checkCount ?? null, checks: data.merge.checks?.filter(c => !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(c.conclusion)), threads: data.merge.threads ?? { status: 'unknown' } } : null,
       progress: { candidateSha: attemptOf(row)?.candidateSha ?? null, implementationSha: data.progress.implementation?.sha ?? null, environment: data.progress.environment?.slice(-1) ?? [], tests: data.progress.tests ? { sha: data.progress.tests.sha, passed: data.progress.tests.passed, status: data.progress.tests.status, reason: data.progress.tests.reason, at: data.progress.tests.at } : null, review: data.progress.review ? { sha: data.progress.review.sha, verdict: data.progress.review.verdict } : null, merge: data.progress.merge ? { sha: data.progress.merge.sha, mergeCommitSha: data.progress.merge.mergeCommitSha } : null },
-      delivery: row.delivery ?? null, declaredReads: Object.values(row.reads ?? {}).map(({ memberId, at }) => ({ memberId, at })), unknown: data.unknown, topics: ['execution', 'chief', 'progress', 'merge', 'handoffs', 'recoveryActions', 'events'] }
+      refusedChiefActions: taskOf(row) ? chiefActionRefusals(state, taskOf(row)).slice(-5) : [], delivery: row.delivery ?? null, declaredReads: Object.values(row.reads ?? {}).map(({ memberId, at }) => ({ memberId, at })), unknown: data.unknown, topics: ['execution', 'chief', 'progress', 'merge', 'handoffs', 'recoveryActions', 'events'] }
   }
   async function query(body, actor) {
     rt.requireProjectAccess(actor, body.projectId, 'configure')

@@ -24,7 +24,7 @@ export function createReviewedMerge(rt, { projectOf, settingsOf, publisherOf, va
   const proofKey = proof => mergeDigest([proof.effectId, proof.sha, proof.mergeCommitSha, proof.repository, proof.number, proof.baseBranch, proof.policySha256, proof.reviewSha256])
   function currentTask(attempt) {
     const task = rt.state.tasks[attempt.taskId]
-    if (!task || task.projectId !== attempt.projectId || task.deliveryAttemptId !== attempt.id || ['accepted', 'cancelled'].includes(task.status) || attempt.cancelRequested || attempt.status === 'cancelled' || ['cancelled', 'closed', 'stopping'].includes(task.collaboration?.status)) throw new EffectCancelled('Merged candidate is no longer awaiting current Task acceptance')
+    if (!task || task.projectId !== attempt.projectId || task.deliveryAttemptId !== attempt.id || ['accepted', 'cancelled'].includes(task.status) || attempt.cancelRequested || attempt.status === 'cancelled' || attempt.settlement && rt.projectEffects.intentCommitted(attempt.settlement.effect) || ['cancelled', 'closed', 'stopping'].includes(task.collaboration?.status)) throw new EffectCancelled('Merged candidate is no longer awaiting current Task acceptance')
     return task
   }
   async function stageHandoff(attempt) {

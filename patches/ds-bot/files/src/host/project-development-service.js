@@ -1,3 +1,4 @@
+import { deliveryChoices } from './project-delivery-options.js'
 import { dispatchView } from './project-pools.js'
 import { mergeHandoffView } from './project-reviewed-merge.js'
 // One application boundary over existing Project services; no second executor/store.
@@ -77,6 +78,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (task.chiefQuestion) { phase = 'awaiting-owner'; waitingFor = task.chiefQuestion.recipient?.kind === 'personal-agent' ? 'personal-agent' : 'owner'; reason = task.chiefQuestion.reason }
   else if (task.projectTask?.admission.status !== 'accepted' && task.projectTask) { phase = task.projectTask.admission.failure ? 'blocked' : 'awaiting-chief'; waitingFor = task.projectTask.admission.failure ? 'chief-recovery' : 'admission'; reason = task.projectTask.admission.failure?.reason ?? null }
   else if (c?.status === 'waiting-children') { phase = 'blocked'; waitingFor = 'children'; reason = c.block?.reason ?? null }
+  else if (queue?.continuation?.mode === 'next' && queue.continuation.previousAttemptId === attempt?.id && attempt?.settlement && attempt.status === 'accepted') { phase = queue.status === 'blocked' ? 'blocked' : queue.status === 'starting' ? 'starting' : 'queued'; waitingFor = queue.status === 'blocked' ? 'chief' : queue.reason ? 'resource' : 'capacity'; reason = queue.reason ?? null }
   else if (['arbitration', 'chief-working'].includes(c?.status)) { phase = 'awaiting-chief'; waitingFor = 'chief' }
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }
   else if (queue) { phase = queue.status === 'starting' ? 'starting' : 'queued'; waitingFor = queue.reason ? 'resource' : 'capacity'; reason = queue.reason ?? null }
@@ -104,7 +106,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
   return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, title: typeof task.title === 'string' ? task.title.slice(0, 1000) : '', source: taskProvenance(task), publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
     merge: merge ? { status: merge.status, reason: merge.reason, candidateSha: merge.candidateSha, mergeCommitSha: merge.mergeCommitSha ?? null, nextCheckAt: merge.nextCheckAt ?? null, chiefHandoff: mergeHandoffView(state, attempt) } : null, botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 1, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
-    dispatch, contract: taskContractView(task),
+    dispatch, deliveryChoices: attempt ? deliveryChoices(state, task, attempt.evidence?.merge?.scope === 'provider-confirmed-merge-observation' && attempt.evidence.merge.sha === attempt.candidateSha ? { status: 'recorded', merged: true, source: 'host merge evidence' } : { status: 'unknown', reason: 'Query scoped delivery facts for current provider observations' }) : null, contract: taskContractView(task),
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? nativeWorker?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
     lastMeaningfulProgress: progress.lastMeaningfulProgressAt === null ? null : { at: progress.lastMeaningfulProgressAt, evidence: progress.progressEvidence },
