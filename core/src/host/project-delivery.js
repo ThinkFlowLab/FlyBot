@@ -514,8 +514,8 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     if (!attempt || !ongoing.has(attempt.status)) return undefined
     return { attemptId: attempt.id, workflowId: attempt.workflowId, workspaceId: workspaceFor(attempt, 'developer')?.id, brief: `${attempt.requirement.title}\n${attempt.requirement.note}\nAcceptance criteria: ${attempt.requirement.criteria}\nBase commit: ${attempt.baseSha}${attempt.feedback ? `\nPrior Attempt feedback (task data, not authority): ${JSON.stringify(attempt.feedback)}` : ''}`, workDirs: Object.fromEntries(Object.entries(attempt.workspaces).map(([role, workspace]) => [role, workspace.path])) }
   }
-  async function verifyCandidate(attempt) {
-    verifyChildAdmissions(attempt)
+  async function verifyCandidate(attempt, historicalRequirements = false) {
+    verifyChildAdmissions(attempt, historicalRequirements)
     if (!attempt.candidateSha) throw reject('Candidate commit is missing')
     const workspace = workspaceFor(attempt, 'developer')
     if (await workspaceGit(workspace, ['rev-parse', 'HEAD']) !== attempt.candidateSha || await workspaceGit(workspace, ['status', '--porcelain'])) throw reject('Candidate changed; test and Review evidence is stale')
@@ -533,12 +533,12 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
   const childInputs = createChildInputAdmission(rt, { projectOf, settingsOf, git, assertIdle: assertChildPreInput,
     snapshot: integrationSnapshot, verify: verifyIntegrationInputs,
     bind: (body, actor, proof) => bindIntegrations(body, actor, { [childPermit]: true, proof }) })
-  function verifyChildAdmissions(attempt) {
+  function verifyChildAdmissions(attempt, historicalRequirements = false) {
     const task = taskOf(attempt.taskId)
     if (!task?.projectTask?.wait || task.projectTaskKind !== 'code') return
     rt.projectTaskLifecycle.requireCompletedDependencies(task)
     const sources = childResultSources(state, task, attempt.requirement.repository)
-    const signature = hash(JSON.stringify({ waitId: task.projectTask.wait.id, requirementsRevision: task.projectTask.requirements.revision, sources }))
+    const signature = hash(JSON.stringify({ waitId: task.projectTask.wait.id, requirementsRevision: historicalRequirements ? attempt.requirement.projectTaskRevision : task.projectTask.requirements.revision, sources }))
     const required = sources.filter(row => row.integration === 'required')
     if (!required.length) return
     const admission = attempt.integrationAdmissions?.findLast(row => row.origin === 'project-child-results' && row.sourceWaitId === task.projectTask.wait.id && row.sourcesFingerprint === signature)
@@ -976,12 +976,12 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     }
     if (!partial && attempt.protocol === 'project-handoff/v1' && attempt.chiefDecision?.verdict !== 'approve') throw reject('Chief arbitration is required before overall completion')
     if (attempt.status !== 'waiting-acceptance' && !(attempt.status === 'accepted' && attempt.settlement)) throw reject('Attempt has not produced delivery evidence')
-    await verifyCandidate(attempt)
+    await verifyCandidate(attempt, Boolean(partial))
     const task = taskOf(attempt.taskId)
     rt.projectInputs?.requireHandled(task.id, actor)
     if (task.status !== 'result-ready') throw reject('Task is not waiting for delivery acceptance')
-    if (task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
-    if (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria) throw reject('Requirements changed; delivery evidence is stale')
+    if (!partial && task.projectTask && attempt.requirement.projectTaskRevision !== task.projectTask.requirements.revision) throw reject('Requirements version changed; delivery evidence is stale')
+    if (!partial && (task.title !== attempt.requirement.title || (task.criteria ?? '') !== attempt.requirement.criteria)) throw reject('Requirements changed; delivery evidence is stale')
     if (!attempt.runId || !ownEntry(state.projectExecutions, attempt.runId) || !partial && ownEntry(state.projectExecutions, attempt.runId)?.status !== 'done') throw reject('Delivery Run has not finished successfully')
     if (!attempt.pr || !attempt.evidence.tests?.passed || attempt.evidence.tests.sha !== attempt.candidateSha || attempt.evidence.review?.sha !== attempt.candidateSha || attempt.evidence.review.verdict !== 'approve') throw reject('Delivery evidence is missing or stale')
     for (const role of DELIVERY_ROLES) await verifyExecution(attempt, deliveryRole(attempt, role))
@@ -1004,7 +1004,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       const before = { status: attempt.status, chiefDecision: attempt.chiefDecision, runStatus: run.status, claimStatus: claim?.status, collaborationStatus: c?.status }
       const token = rt.projectEffects.stage({ kind: 'attempt.accept', key: `${attempt.id}:${attempt.candidateSha}`, projectId: task.projectId, taskId: task.id, payload: { attemptId: attempt.id, candidateSha: attempt.candidateSha, decisionId: partial.id, delivery: partial.delivery } })
       attempt.status = 'accepted'; attempt.chiefDecision = { id: partial.id, verdict: 'approve', scope: 'attempt', candidateSha: attempt.candidateSha, by: 'chief', runId: actor.chiefJobId }
-      attempt.settlement = { ...structuredClone(partial.delivery), decisionId: partial.id, effect: token, candidateSha: attempt.candidateSha, mergeCommitSha: pr.mergeCommitSha, baseBranch: pr.baseRef, requirementsRevision: attempt.requirement.projectTaskRevision ?? null, acceptedBy: actor.memberId, at: Date.now() }
+      attempt.settlement = { ...structuredClone(partial.delivery), decisionId: partial.id, effect: token, candidateSha: attempt.candidateSha, mergeCommitSha: pr.mergeCommitSha, baseBranch: pr.baseRef, requirementsRevision: attempt.requirement.projectTaskRevision ?? null, taskRequirementsRevision: task.projectTask?.requirements.revision ?? null, acceptedBy: actor.memberId, at: Date.now() }
       run.status = 'done'
       if (claim?.chiefRunId === actor.chiefJobId) { claim.status = 'completed'; c.status = 'arbitration' }
       try { await rt.projectEffects.persist(token) }

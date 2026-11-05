@@ -865,3 +865,17 @@ test('failed queued next delivery reuses the original recovery notification pass
   assert.equal(f.rt.state.projectQueue.q.status, 'failed')
   assert.equal(f.task.chiefQuestion, undefined)
 })
+
+test('requirement changes after scoped acceptance judgement request fresh facts without blocking the Task', async () => {
+  const f = await controlFixture({ modern: true })
+  ++f.task.projectTask.requirements.revision
+  await f.request.onResult(f.result({ action: 'accept-attempt', delivery: { completed: 'Original slice', remaining: 'Current goal', evidence: ['exact candidate'] } }))
+  const run = f.rt.state.projectExecutions[f.request.runId]
+  assert.equal(run.status, 'correction-pending')
+  assert.equal(run.correction.feedback.at(-1).recovery.kind, 'stale-snapshot')
+  assert.equal(f.accepted(), 0); assert.notEqual(f.task.status, 'blocked'); assert.equal(f.task.chiefQuestion, undefined)
+  await f.rt.projectEffects.drain(); await f.control.pump()
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Inspect the changed requirement before selecting an action' }))
+  assert.equal(run.status, 'done'); assert.equal(f.accepted(), 0)
+  await f.rt.projectEffects.close()
+})

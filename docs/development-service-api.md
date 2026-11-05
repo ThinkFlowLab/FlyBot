@@ -328,3 +328,9 @@ Chief 应读取当前交付选项再判断，Personal Agent 的文字输入也�
 无进展阈值。Chief 的 inspection facts / warning 摘要带最多五条当前失败动作、
 理由和精确拒因；旧作用域、已成功及尚未判定的动作不计入。事实变化后旧提醒
 标记 historical，不再作为当前阻塞；提醒不会自动派角色、停止 Task 或转人工。
+
+### 需求演进后的本轮验收
+
+Task 需求修订号与 Attempt 领取时的修订号允许不同。`accept-attempt` 验收原承诺的已合成果，保留 `delivery.completed/remaining/evidence`，不自动认可当前新需求完成。`deliveryChoices.requirements` / Chief 的 `repositoryRecovery.nextActions.requirements` 返回 `attemptRevision`、`taskRevision`、`changedFields` 和这些字段的 `priorValues`；当前值在 Task requirements 中。原始完整快照由已有 `attempt.context` 的 `section=requirement` 分页读取，不把整段历史反复加入上下文。
+
+Settlement 的 `requirementsRevision` 是 Attempt 原版本；可选 `taskRequirementsRevision` 是验收时当前 Task 版本。旧 settlement 无需迁移。下一轮 Attempt 复制当前 Task 需求。Chief 读后需求再变化时，宿主通过既有 stale-snapshot 纠正反馈要求重新判断；候选/测试/Review/PR SHA、权限、代次、退出与幂等校验保持严格，整单 close 仍独立验证当前需求。
