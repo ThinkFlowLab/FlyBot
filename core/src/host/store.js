@@ -713,7 +713,7 @@ export function install(rt) {
   Object.assign(rt, {
     state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
     committedProjectEvents: { query: (id, options) => committedEvents.query(id, options), snapshot: (id, options) => committedEvents.snapshot(id, options) },
-    stateStorage: { status: () => ({ ...storage.status(), readable: stuck === undefined, writable: readOnly() === undefined }), changes: options => storage.changes(options) },
+    stateStorage: { readable: () => stuck === undefined, status: () => ({ ...storage.status(), readable: stuck === undefined, writable: readOnly() === undefined }), changes: options => storage.changes(options) },
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,
