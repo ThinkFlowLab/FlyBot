@@ -134,3 +134,37 @@ test('superseded hourly messages retain history and pending deliveries cancel in
   assert.equal(Object.values(f.state.projectWarnings).length, 2)
   assert.equal(f.rt.projectWarnings.summaries('p').length, 1)
 })
+
+test('waiting tasks with an unreachable SDK worker still notify Chief and retain unknown occupancy', async () => {
+  const f = fixture(); f.state.projectHarnessWorkers.w.status = 'unreachable'
+  f.state.tasks.t.updatedAt = 1; f.state.tasks.t.collaboration.status = 'blocked'
+  f.state.projectChiefPolicies.p.inspection.thresholds.longWaitMs = 1000
+  f.tick(10001); await f.rt.projectWarnings.reconcile(); await f.rt.projectEffects.drain()
+  assert.equal(f.notices.length, 1)
+  assert.equal(f.state.projectHarnessWorkers.w.status, 'unreachable')
+})
+for (const status of ['running', 'prepared', 'unreachable']) test('Chief operational warning exposes its exact SDK worker and allocation in status=' + status, async () => {
+  const f = fixture(), w = f.state.projectHarnessWorkers.w
+  Object.assign(w, { role: 'chief', chiefRunId: 'r', chiefInvocation: 1, status, leaseId: 'l' })
+  if (status === 'prepared') delete w.executionStartedAt
+  f.state.projectResourceLeases = { l: { id: 'l', projectId: 'p', generation: 1, status: 'running' } }
+  f.state.projectExecutions = { r: { id: 'r', projectId: 'p', kind: 'chief-control', purpose: 'inspection', status: 'running', invocation: 1, createdAt: 1, startedAt: 1, workerId: 'w' } }
+  f.tick(900001); await f.rt.projectWarnings.reconcile(); await f.rt.projectEffects.drain()
+  const warning = (await f.rt.projectWarnings.query({ projectId: 'p' }, { memberId: 'owner' })).items[0]
+  assert.equal(warning.execution.id, 'w'); assert.equal(warning.execution.status, status)
+  assert.equal(warning.execution.allocation.id, 'l')
+  assert.equal(warning.historical, false)
+  assert.equal(warning.delivery.kind, 'human-mailbox')
+})
+
+test('inconsistent historical bindings cannot disclose another Project Task or SDK evidence', async () => {
+  const f = fixture(), actor = { memberId: 'owner' }
+  f.tick(3600001); await f.rt.projectWarnings.reconcile()
+  const head = (await f.rt.projectWarnings.query({ projectId: 'p' }, actor)).items[0]
+  f.state.tasks.t.projectId = 'private'; f.state.tasks.t.title = 'OTHER_PROJECT_PRIVATE_TITLE'
+  f.state.projectHarnessWorkers.w.projectId = 'private'; f.state.projectHarnessWorkers.w.activity = { command: 'OTHER_PROJECT_PRIVATE_COMMAND' }
+  const summary = await f.rt.projectWarnings.query({ projectId: 'p', warningId: head.id }, actor)
+  const detail = await f.rt.projectWarnings.query({ projectId: 'p', warningId: head.id, topic: 'execution' }, actor)
+  assert.equal(summary.historical, true)
+  assert(!JSON.stringify([summary, detail]).includes('OTHER_PROJECT_PRIVATE'))
+})

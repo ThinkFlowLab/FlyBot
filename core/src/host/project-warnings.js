@@ -19,10 +19,11 @@ export function warningData(value, depth = 0) {
 }
 export function createProjectWarnings(rt, { now = Date.now } = {}) {
   const state = rt.state, rows = () => (state.projectWarnings ??= {})
-  const taskOf = row => ownEntry(state.tasks ?? {}, row.taskId)
-  const attemptOf = row => ownEntry(state.projectAttempts ?? {}, row.attemptId)
-  const runOf = row => ownEntry(state.projectExecutions ?? {}, row.runId)
-  const workerOf = row => ownEntry(state.projectHarnessWorkers ?? {}, row.workerId)
+  const scoped = (table, id, projectId) => { const row = ownEntry(table ?? {}, id); return row?.projectId === projectId ? row : null }
+  const taskOf = row => scoped(state.tasks, row.taskId, row.projectId)
+  const attemptOf = row => scoped(state.projectAttempts, row.attemptId, row.projectId)
+  const runOf = row => scoped(state.projectExecutions, row.runId, row.projectId)
+  const workerOf = row => scoped(state.projectHarnessWorkers, row.workerId, row.projectId)
   function scope(row) {
     const task = taskOf(row), attempt = attemptOf(row), run = runOf(row), worker = workerOf(row)
     return { projectId: row.projectId, taskId: row.taskId ?? null, attemptId: task?.deliveryAttemptId ?? row.attemptId ?? null, generation: task?.collaboration?.generation ?? null, requirementsSha256: task ? hash([task.title, task.criteria, task.projectTask?.requirements?.revision]) : null, candidateSha: attempt?.candidateSha ?? null,
@@ -32,18 +33,20 @@ export function createProjectWarnings(rt, { now = Date.now } = {}) {
     if (row.supersededBy) return false
     const task = taskOf(row), attempt = attemptOf(row), run = runOf(row), worker = workerOf(row)
     if (rt.readProject(row.projectId)?.status !== 'active' || row.taskId && (!task || task.projectId !== row.projectId || terminal.has(task.status) || task.deliveryAttemptId !== row.attemptId)) return false
-    if (row.workerId && (!worker || worker.generation !== row.source.workerGeneration || worker.executionStartedAt !== row.source.executionStartedAt || !['running', 'waiting-input'].includes(worker.status))) return false
+    if (row.workerId && (!worker || worker.generation !== row.source.workerGeneration || (worker.executionStartedAt ?? null) !== row.source.executionStartedAt || row.kind === 'sdk-duration' && !['running', 'waiting-input'].includes(worker.status))) return false
     if (row.runId && (!run || run.invocation !== row.source.invocation || !['queued', 'running', 'correction-pending'].includes(run.status))) return false
     if (row.kind === 'merge-wait' && (!attempt?.merge || ['merged', 'cancelled'].includes(attempt.merge.status) || attempt.candidateSha !== row.source.candidateSha)) return false
     return !row.taskId || scope(row).generation === row.source.generation && scope(row).requirementsSha256 === row.source.requirementsSha256
   }
   function facts(row) {
     const task = taskOf(row), attempt = attemptOf(row), worker = workerOf(row), run = runOf(row)
+    const lease = worker && ownEntry(state.projectResourceLeases ?? {}, worker.leaseId)
+    const allocation = lease?.projectId === row.projectId && lease.generation === worker?.generation ? { id: lease.id, generation: lease.generation, resourceId: lease.resourceId, status: lease.status, preparation: lease.preparation ? { status: lease.preparation.status, exitConfirmed: lease.preparation.exitConfirmed } : null } : null
     const history = task?.collaboration?.history ?? []
     const evidence = attempt?.evidence ?? {}
     const blockers = [task?.collaboration?.block?.reason, worker?.authenticationFailure?.code, worker?.capabilityFailure?.code, evidence.tests?.passed === false ? 'Tests did not pass; inspect exact outcome and candidate' : null, evidence.tests?.sha && evidence.tests.sha !== attempt?.candidateSha ? 'Tests refer to a different candidate' : null, evidence.review?.sha && evidence.review.sha !== attempt?.candidateSha ? 'Review refers to a different candidate' : null, worker?.pending?.kind === 'permission' ? 'Execution is waiting for explicit authorization' : null, attempt?.merge?.reason, worker && !rt.projectHarness?.exitConfirmed?.(worker.id) ? 'Worker exit is not confirmed; no release may be inferred' : null].filter(Boolean)
     return warningData({ observedAt: now(), source: scope(row), current: current(row), blockers, task: task ? { title: task.title, status: task.status, criteria: task.criteria, waiting: task.collaboration?.block ?? null, destination: task.collaboration?.botId, question: task.chiefQuestion ? { recipient: task.chiefQuestion.recipient?.kind, at: task.chiefQuestion.at } : null } : null,
-      execution: worker ? { id: worker.id, harness: worker.harness, role: worker.role, logicalSessionId: worker.logicalSessionId, backendSessionId: worker.backendSessionId, resourceId: worker.resourceId, status: worker.status, startedAt: worker.executionStartedAt, lastEventAt: worker.lastEventAt, activity: worker.activity ?? null, observation: rt.projectHarness?.observe?.(worker.id) ?? { connection: 'unknown', process: 'unknown' }, pending: worker.pending ? { kind: worker.pending.kind } : null, exitConfirmed: rt.projectHarness?.exitConfirmed?.(worker.id) ?? false } : null,
+      execution: worker ? { id: worker.id, harness: worker.harness, role: worker.role, logicalSessionId: worker.logicalSessionId, backendSessionId: worker.backendSessionId, resourceId: worker.resourceId, allocation, status: worker.status, startedAt: worker.executionStartedAt, lastEventAt: worker.lastEventAt, activity: worker.activity ?? null, observation: rt.projectHarness?.observe?.(worker.id) ?? { connection: 'unknown', process: 'unknown' }, pending: worker.pending ? { kind: worker.pending.kind } : null, exitConfirmed: rt.projectHarness?.exitConfirmed?.(worker.id) ?? false } : null,
       chief: run ? { id: run.id, purpose: run.purpose, status: run.status, waitingFor: run.waitingFor, invocation: run.invocation, createdAt: run.createdAt, startedAt: run.startedAt, workerId: run.workerId, recovery: run.recovery, recentSuccessAt: Math.max(0, ...Object.values(state.projectExecutions ?? {}).filter(other => other.projectId === row.projectId && other.kind === 'chief-control' && other.status === 'done').map(other => other.finishedAt ?? 0)), occupying: Object.values(state.projectExecutions ?? {}).filter(other => other.projectId === row.projectId && other.kind === 'chief-control' && other.status === 'running').map(other => ({ id: other.id, startedAt: other.startedAt, workerId: other.workerId })) } : null,
       progress: { implementation: evidence.implementation, tests: evidence.tests, review: evidence.review, merge: evidence.merge, environment: attempt?.workspacePreparations?.slice(-3), materialization: Object.values(attempt?.workspaces ?? {}).map(w => w.materialization).filter(Boolean) },
       merge: attempt?.merge ? { ...attempt.merge, pr: attempt.pr, candidateSha: attempt.candidateSha, policy: rt.config.projectRepositories?.[attempt.requirement?.repository]?.mergePolicy } : null,
@@ -138,7 +141,9 @@ export function createProjectWarnings(rt, { now = Date.now } = {}) {
         if (run.kind !== 'chief-control' || run.purpose !== 'inspection' || !['queued', 'running', 'correction-pending'].includes(run.status)) continue
         const timing = inspectionLifecycle(state.projectChiefPolicies?.[run.projectId]?.inspection)
         const queued = run.status === 'queued', limit = queued ? timing.queueTimeoutMs : timing.runTimeoutMs, since = queued ? run.queuedAt ?? run.createdAt : run.startedAt ?? run.createdAt
-        if (now() - since >= limit) await offer({ projectId: run.projectId, runId: run.id, kind: queued ? 'chief-queue' : 'chief-duration', recipient: 'operator', since, thresholdMs: limit, bucket: 1, reason: 'Chief inspection needs attention; notification grants no operational permission' })
+        const worker = ownEntry(state.projectHarnessWorkers ?? {}, run.workerId)
+        const workerId = worker?.projectId === run.projectId && worker.chiefRunId === run.id && worker.chiefInvocation === run.invocation ? worker.id : null
+        if (now() - since >= limit) await offer({ projectId: run.projectId, runId: run.id, workerId, kind: queued ? 'chief-queue' : 'chief-duration', recipient: 'operator', since, thresholdMs: limit, bucket: 1, reason: 'Chief inspection needs attention; notification grants no operational permission' })
       }
       for (const task of Object.values(state.tasks ?? {})) {
         const a = ownEntry(state.projectAttempts ?? {}, task.deliveryAttemptId), policy = state.projectChiefPolicies?.[task.projectId]
