@@ -74,3 +74,13 @@ test('input identity changes invalidate the scope without depending on insertion
   two.status = 'cancelled'; assert.notEqual(deliveryScope(state, task), first)
   delete a.requirement; assert.throws(() => requireAttemptAcceptance(task, a), /snapshot is unavailable/)
 })
+
+test('queued next-admission facts are scoped and ordered, and state changes invalidate a prior choice', () => {
+  const { state, task } = fixture()
+  const entry = { projectId: 'p', taskId: 't', status: 'failed', reason: 'Target advanced', continuation: { mode: 'next', previousAttemptId: 'a', expectedBaseSha: 'base' } }
+  state.projectQueue = { z: { ...entry, id: 'z' }, a: { ...entry, id: 'a', status: 'waiting' }, foreign: { ...entry, id: 'foreign', taskId: 'other' } }
+  const choices = deliveryChoices(state, task)
+  assert.deepEqual(choices.admission.map(row => row.id), ['a', 'z'])
+  state.projectQueue.a.status = 'blocked'
+  assert.notEqual(deliveryScope(state, task), choices.expectedScope)
+})
