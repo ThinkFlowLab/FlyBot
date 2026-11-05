@@ -676,6 +676,14 @@ an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps
 
 ## Exit reconciliation (#2375)
 
+#2483 restart recovery now reaches Chief through the original inspection controller
+without requiring an operator inspect call. The restart failure message preserves
+the checkpoint for judgement instead of prescribing a new Attempt. Persist/reload
+tests cover draft/cwd/logical Session continuity, already persisted blocks, released
+SDK evidence, explicit retirement followed by a separate Chief routing decision,
+and retained unknown occupancy. The existing rework/resume gates clear only the
+current block and retain its audit; notification itself changes no business state.
+
 `attempt.reconcile-exit` requires current configure authority, attemptId, claimId, generation and reason. It rechecks exact worker/Session/allocation exit, preparation and Chief occupancy, pending results/correction and unknown publication effects before committing pool retirement. It preserves drafts/candidates and does not cancel or revive the Attempt. Fetch a fresh `attempt.integration-state` before `attempt.integration-bind`; inputs are not candidate/PR evidence.
 
 ## Explicit successor continuation (#2377)

@@ -120,6 +120,12 @@ See [delegation contract](project-delegations.md).
 
 ## Resource SDK authentication — #2398
 
+#2483 confirms that legacy stored ready without the current profile ID cannot
+admit SDK execution even at occupied=0. Explicit `project-runtime-check` bypasses
+that stale observation, performs the existing bounded probe, saves matching profile
+health and wakes dispatch without restart. A disposable fixture worker covers the
+transition; no computed ID is silently assigned to unverified ready history.
+
 #2398 returns the actual profile HOME/configDir only to the explicit terminal admin;
 public health exposes safe profile IDs. Setup resolves the selected resource SDK CLI,
 not the host/global CLI. Login/check/worker use the same selector; changed profiles

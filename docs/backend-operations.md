@@ -246,6 +246,24 @@ Use GET /ready to detect read-only/unavailable backend state; GET /health only p
 
 ### Queued without a worker, or pending Chief inputs (#2483)
 
+After restart, current blocked/interrupted role work now notifies the configured
+Chief through its existing controller. `chief.state` Run.source identifies the
+interrupted claim, policy and allocation fingerprint; repeated scheduler passes
+reuse the request. New exit evidence or committed `pool.retire` can cause a fresh
+judgement. Inspect actual applied decisions and TaskView phase: notification or
+an enabled schedule is not recovery. Unknown worker exit remains held. No manual
+SQL edit, blanket block clearing or forced Developer routing is required by this
+path; genuine missing exit/authority evidence still needs to be established.
+
+Stored SDK `ready` without a matching current `profile.id` is not current Harness
+readiness. With resource health ready and occupied=0, check `project-resources`
+`harnessStatus` before blaming Project capacity or restart. An authorized Owner or
+Maintainer can call existing `project-runtime-check` with Project/resource/Harness
+to perform a new selected-profile probe; it may invoke paid minimal inference.
+Success saves matching profile health and wakes the existing scheduler, without a
+backend restart. Do not copy the computed ID into old ready state or bypass the
+identity check. Readiness refresh and interrupted-Task recovery are distinct gates.
+
 Use TaskView.dispatch/current pool.dispatch via normal queries to distinguish held logical Bot, resource readiness, Project capacity, missing adapter and refused admission. Its executions count is Effect retries, not model calls. Raw SQL lacking committed cannot prove an uncommitted intent; use runtime query proof. Input receipt accepted is not role acceptance; inspect collaboration history/current handoff separately.
 
 For closure, inspect `chief.state` lastResult.inputReceiptSummaries and correction taskFeedback counts. remaining means outside this injected batch. A valid continue decision can commit an explicitly handled batch and persist the next original input notification. Read-only/zero-progress declarations create no continuation loop; unresolved inputs still prevent close. The host never fakes handled status, drops criteria, chooses a role or escalates after a retry count. Diagnostic response/snapshot hashes are not necessarily state-payload file references.

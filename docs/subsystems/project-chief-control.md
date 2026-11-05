@@ -74,6 +74,23 @@ actual execution still requires physical resource capacity.
 
 ## Restart and process proof
 
+#2483 adds missing interrupted-role notification to the existing controller pump.
+A current recoverable Attempt with a blocked interrupted/intervened role claim
+requests one scoped inspection under the configured policy. Existing durable Run
+source identity binds Project/Task/Attempt/claim, original claim generation, policy
+revision, current allocation evidence and committed exit retirement. Failed routing
+alone cannot generate another notice; changed exit/retirement facts can. Disabled
+authority, cancelled/superseded work, terminal Tasks and Chief's separate arbitration
+claims are excluded. A queued notice is cancelled if its responsibility/facts change.
+
+This is event delivery, not a selected recovery workflow. The resident Chief sees
+current checkpoint/exit evidence and chooses its next action. Existing exit, context,
+input, permission and acceptance gates remain. Unknown exit retains occupancy;
+confirmed retirement can notify Chief again without choosing the next role. No new
+timer, Effect kind, Task store or implicit human escalation is introduced. Integration
+tests persist state, dispose the old Runtime, reload and verify actual re-dispatch;
+their Chief/worker replies are fixtures, distinct from live provider acceptance.
+
 Interrupted work is never assumed successful or automatically freed on missing PID.
 Local workers record the actual systemd invocation and control group only when
 supervisor metadata matches the running process and KillMode=control-group.

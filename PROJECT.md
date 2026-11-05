@@ -1,5 +1,7 @@
 # FlyBot — Project State
 
+#2483 restart recovery notifies the resident Chief through existing durable inspection requests. Current exit/retirement facts wake judgement; Chief chooses recovery and unknown exits remain held. Endpoint tests alone do not prove this notification chain.
+
 #2483: Developer Git mutation rights follow its bound isolated resource clone, independently of App credentials. Shared host Git metadata and read-only role policies keep their existing boundaries.
 
 #2483 dispatch/input follow-up keeps waits attributable and declarations explicit: no acceptance across unhandled batches, no stale notification/decision replay, no automatic role or human escalation.

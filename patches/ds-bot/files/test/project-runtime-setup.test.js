@@ -161,3 +161,27 @@ test('SDK probe preserves typed refresh-token failure and does not reuse readine
   const again = await setup.check(body,owner)
   assert.equal(again.status,'authRequired'); assert.notEqual(again.profile.id,result.profile.id)
 })
+
+test('legacy ready without profile cannot dispatch until an explicit fresh probe binds current identity', async t => {
+  const { setup, rt, body, root } = await fixture(t)
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  const runtime = join(root, 'fixture-runtime'), observed = join(root, 'probe-observed')
+  await mkdir(join(runtime, 'src/host'), { recursive: true })
+  rt.config.projectResources.local.runtimeDir = runtime
+  const definition = { role: 'developer', execution: { harness: 'codex', model: 'fixture-model', resourceIds: ['local'] } }
+  rt.projectAgents.deliveryDefinitions = () => ({ roles: [definition] })
+  await writeFile(join(runtime, 'src/host/project-harness-worker.mjs'), `import{createInterface}from'node:readline';import{writeFileSync}from'node:fs';const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');send({type:'ready',sdk:{codex:'0.166.0'}});createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.type==='start'){writeFileSync(${JSON.stringify(observed)},'fixture probe executed');send({type:'completed'})}if(m.type==='stop'){send({type:'stopped',released:true});process.exit(0)}});`)
+  rt.state.projectResourceHealth = { local: { status: 'ready', at: Date.now() } }
+  rt.state.projectHarnessHealth = { 'p:local:codex': { status: 'ready', at: Date.now() } }
+  assert.equal(rt.projectResources.occupied('local'), 0)
+  assert.equal(rt.projectResources.harnessHealth('p', 'local', 'codex').status, 'unconfigured')
+  assert.throws(() => rt.projectResources.plan('p', { roles: [definition] }), /capacity or readiness/)
+  let wakes = 0; rt.projectScheduler = { wake() { ++wakes } }
+  const result = await setup.endpoint('project-runtime-check', body, owner)
+  assert.equal(await readFile(observed, 'utf8'), 'fixture probe executed', 'Recent legacy ready must not bypass the selected profile check')
+  assert.equal(result.status, 'ready')
+  assert.equal(result.profile.id, (await rt.projectHarness.profile('p', 'local', 'codex')).profile.id)
+  assert.equal(rt.state.projectHarnessHealth['p:local:codex'].profile.id, result.profile.id)
+  assert.equal(rt.projectResources.plan('p', { roles: [definition] })[0].resourceId, 'local')
+  assert.equal(rt.projectResources.occupied('local'), 0); assert.ok(wakes > 0)
+})
