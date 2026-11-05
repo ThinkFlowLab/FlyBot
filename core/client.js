@@ -9037,6 +9037,8 @@ function inboxModel({ roster, work = {}, tasks = [], sessions, workflows = [], n
     }
     if (latest === void 0) continue;
     const at = endedAt(latest);
+    const taskId = latest.task?.id;
+    if (taskId !== void 0 && [...graph.runs ?? [], ...graph.history ?? []].some((run) => run?.status === "done" && run.task?.id === taskId && endedAt(run) > at)) continue;
     const name = typeof graph.name === "string" && graph.name.trim() !== "" ? graph.name.trim() : String(graph.id ?? t("A workflow"));
     const nodeName = typeof latest.failure?.nodeName === "string" ? latest.failure.nodeName.trim() : "";
     const reason = typeof latest.failure?.text === "string" && latest.failure.text !== "" ? latest.failure.text : typeof latest.failure?.code === "string" ? latest.failure.code : "";

@@ -321,6 +321,10 @@ export function inboxModel({ roster, work = {}, tasks = [], sessions, workflows 
     }
     if (latest === undefined) continue
     const at = endedAt(latest)
+    // A task re-run that ended green answers its failure (#P-599): the success is in the same
+    // per-graph history under the same `task.id`, so no Failed card outlives the work.
+    const taskId = latest.task?.id
+    if (taskId !== undefined && [...(graph.runs ?? []), ...(graph.history ?? [])].some(run => run?.status === 'done' && run.task?.id === taskId && endedAt(run) > at)) continue
     const name = typeof graph.name === 'string' && graph.name.trim() !== '' ? graph.name.trim() : String(graph.id ?? t('A workflow'))
     const nodeName = typeof latest.failure?.nodeName === 'string' ? latest.failure.nodeName.trim() : ''
     const reason = typeof latest.failure?.text === 'string' && latest.failure.text !== ''
