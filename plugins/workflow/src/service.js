@@ -942,6 +942,11 @@ export function createWorkflowService({
     const taskId = cleanLine(body.taskId ?? body.id, 80)
     const title = cleanLine(body.title, 300)
     if (!taskId || !title) return { ok: false, error: 'A task needs an id and a title' }
+    // #2485: the same Bot already holds the card. Same shape as the ingest legs'
+    // `prev?.key === key` early return: a repeat writes no line and no store.
+    if (state.routes[taskId]?.key === `bot:${bot.id}`) {
+      return { ok: true, matched: true, already: true, decision: { kind: 'bot', id: bot.id } }
+    }
     // #2485: a card a lane holds can be handed straight to a Bot here, without
     // passing through `ingest`. The lane that lost it gets the same one line,
     // in the write that moves the claim.

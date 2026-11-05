@@ -331,6 +331,7 @@ test('#2485: a card the same Bot already holds is not written again', async () =
 
     const again = svc.assign({ taskId: 't-1', title: 'Ship it', botId: 'main' })
     assert.equal(again.ok, true, again.error)
+    assert.equal(again.already, true, 'the same route is a no-op, as it is on the ingest legs')
     assert.deepEqual(messagesOf(svc, 'Alpha'), before, 'a repeated assignment adds no line')
     assert.deepEqual(readFileSync(join(dir, 'workflows.json')), bytes, 'the store is byte-identical')
     assert.equal(statSync(join(dir, 'workflows.json')).mtimeMs, mtimeMs, 'the store was not rewritten')
