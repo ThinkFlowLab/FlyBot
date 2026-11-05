@@ -84,7 +84,10 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
     const busyShare = use.windowMs > 0 ? use.busyMs / use.windowMs : 0
     const flags = []
     if (counted >= ERROR_TURNS_MIN && errorRate >= ERROR_RATE_MIN) flags.push(`${errors} of ${counted} turns failed`)
-    if (turns > 0 && busyShare >= BUSY_MIN) flags.push(`busy ${percent(busyShare)} of the window`)
+    // Invariant 5 (docs/subsystems/timeline.md): busy is a share of the window busy, not a count of
+    // turns, so a turn that began before the window still makes its Bot busy here — the health view
+    // over the same window already says so, and the two must not disagree.
+    if (busyShare >= BUSY_MIN) flags.push(`busy ${percent(busyShare)} of the window`)
     if (counted === 0) flags.push('no turns')
     if (waiting > 0) flags.push(`${waiting} request(s) unanswered`)
     return {
@@ -139,6 +142,10 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
         lines.push(`- ${bot.counted} ${turnWord(bot.counted)}${failed}`)
         lines.push(`- busy ${percent(bot.busyShare)} of the window`)
         lines.push(`- tokens: ${formatCount(bot.tokens.input)} in / ${formatCount(bot.tokens.output)} out / ${formatCount(bot.tokens.cacheRead)} cached`)
+      } else if (bot.busyShare > 0) {
+        // `turns` counts only the turns that began in the window; one that began before it keeps the
+        // Bot busy through it, which invariant 5 calls busy rather than a turn-less Bot.
+        lines.push(`- busy ${percent(bot.busyShare)} of the window`)
       } else {
         lines.push('- no turns in the window')
       }
