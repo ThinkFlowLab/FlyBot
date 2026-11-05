@@ -5,7 +5,8 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
 import { CreateBot } from './create-bot.js'
 import { afterCreate } from './bot-draft.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
+import { lockedWindow } from './schedules.js'
 import { newChatActionRows } from './flybot-registry.js'
 import { SlotIcon } from './flybot-slots.js'
 import { copiedToClipboard, listedChatBots, pickerBotLabel, splitRoomPicks, ungrantedLocalFix } from '../shared/remote-label.js'
@@ -36,6 +37,9 @@ export function NewChat({ mode, roster, actions }) {
   const paneLeft = usePaneLeft()
   const wanted = query.trim().toLowerCase()
   const bots = listedChatBots(roster)
+  // A read-only window keeps the group pickers as a preview, offers no create, and sends nothing
+  // from them: the host could only answer `bot/read-only` after the press (P-570).
+  const locked = lockedWindow(roster)
   const choosingAdmin = group && admin === null
   const pool = choosingAdmin ? bots.filter(bot => !bot.remote) : bots
   const matches = pool.filter(bot => !picked.includes(bot.id) && bot.id !== admin && (wanted === '' || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? '').toLowerCase().includes(wanted)))
@@ -122,7 +126,7 @@ export function NewChat({ mode, roster, actions }) {
   // The admin and at least one more Bot make a group; a message typed below goes with it,
   // else the admin opens by asking what the group is for.
   const makeGroup = async () => {
-    if (admin === null || picked.length === 0) return
+    if (locked || admin === null || picked.length === 0) return
     const text = message.trim()
     const { members, remotes } = splitRoomPicks(roster, [admin, ...picked])
     const participants = remotes.length === 0 ? undefined : [
@@ -241,10 +245,12 @@ export function NewChat({ mode, roster, actions }) {
             else if (event.key === 'Backspace' && query === '') unpick()
           },
         }),
-        group && admin !== null ? h('button', {
-          type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
-          title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
-        }, t('Create group chat')) : null,
+        group && admin !== null ? (locked
+          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+          : h('button', {
+            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
+            title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
+          }, t('Create group chat'))) : null,
         h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Close new chat'), onClick: close }, '×')),
       h('div', { ref: drop, className: 'bt-drop' }, h('div', { ref: glide.box, role: 'listbox', 'aria-label': t('Recipients'), className: 'bt-drop-list' },
         h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),

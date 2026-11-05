@@ -15513,8 +15513,9 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
     setAdmin(id);
     setMembers((list) => list.filter((item) => item !== id));
   };
+  const locked = lockedWindow(roster);
   const create = async () => {
-    if (busy || admin === null || members.length === 0) return;
+    if (locked || busy || admin === null || members.length === 0) return;
     setBusy(true);
     let room2;
     const done = await run(actions.createRoom([admin, ...members], { admin, ...name.trim() ? { name: name.trim() } : {} }).then((value) => {
@@ -15564,7 +15565,7 @@ function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
       "div",
       { className: "bt-set-row bt-task-foot" },
       (0, import_react31.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onCancel }, t("Cancel")),
-      (0, import_react31.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy || admin === null || members.length === 0, onClick: () => void create() }, t("Create group chat"))
+      locked ? (0, import_react31.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react31.createElement)("button", { type: "button", className: "bt-send bt-soft-sm", disabled: busy || admin === null || members.length === 0, onClick: () => void create() }, t("Create group chat"))
     )
   );
 }
@@ -15998,6 +15999,7 @@ function NewChat({ mode, roster, actions }) {
   const paneLeft = usePaneLeft();
   const wanted = query.trim().toLowerCase();
   const bots = listedChatBots(roster);
+  const locked = lockedWindow(roster);
   const choosingAdmin = group && admin === null;
   const pool = choosingAdmin ? bots.filter((bot) => !bot.remote) : bots;
   const matches = pool.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
@@ -16083,7 +16085,7 @@ function NewChat({ mode, roster, actions }) {
     return afterCreate({ id: bot.id, text: message, actions });
   };
   const makeGroup = async () => {
-    if (admin === null || picked.length === 0) return;
+    if (locked || admin === null || picked.length === 0) return;
     const text2 = message.trim();
     const { members, remotes } = splitRoomPicks(roster, [admin, ...picked]);
     const participants = remotes.length === 0 ? void 0 : [
@@ -16252,7 +16254,7 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
             } else if (event.key === "Backspace" && query === "") unpick();
           }
         }),
-        group && admin !== null ? (0, import_react34.createElement)("button", {
+        group && admin !== null ? locked ? (0, import_react34.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react34.createElement)("button", {
           type: "button",
           className: "bt-send bt-to-create",
           disabled: busy || picked.length === 0,

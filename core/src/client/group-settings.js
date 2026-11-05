@@ -7,7 +7,7 @@ import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
 import { lockedWindow } from './schedules.js'
 import { FolderMenu } from './folder-menu.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 import { StandingApprovalsCard } from './standing-approvals.js'
 import { FlyBotRoomMembers } from './flybot-slots.js'
 import { remoteBotName, remoteBotTitle } from '../shared/remote-label.js'
@@ -324,8 +324,11 @@ export function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
   const [busy, setBusy] = useState(false)
   const toggle = id => setMembers(list => (list.includes(id) ? list.filter(item => item !== id) : [...list, id]))
   const pickAdmin = (id) => { setAdmin(id); setMembers(list => list.filter(item => item !== id)) }
+  // A read-only window keeps the pickers as a preview and offers no create: the host could only
+  // answer `bot/read-only` after the press (#2307's form, P-570).
+  const locked = lockedWindow(roster)
   const create = async () => {
-    if (busy || admin === null || members.length === 0) return
+    if (locked || busy || admin === null || members.length === 0) return
     setBusy(true)
     let room
     const done = await run(actions.createRoom([admin, ...members], { admin, ...(name.trim() ? { name: name.trim() } : {}) }).then((value) => { room = value }))
@@ -349,7 +352,9 @@ export function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
       h('input', { className: 'bt-bs-input', value: name, maxLength: 60, placeholder: t('Name after members'), onChange: event => setName(event.target.value) })),
     h('div', { className: 'bt-set-row bt-task-foot' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
-      h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy || admin === null || members.length === 0, onClick: () => void create() }, t('Create group chat'))))
+      locked
+        ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+        : h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy || admin === null || members.length === 0, onClick: () => void create() }, t('Create group chat'))))
 }
 
 export const GROUP_SETTINGS_CSS = `
