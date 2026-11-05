@@ -185,8 +185,9 @@ export function NewChat({ mode, roster, actions }) {
         },
       })
     }
-    // A team holds at most one Agent; the entry exists only while there is none.
-    if ((roster.agents ?? []).length === 0) {
+    // A team holds at most one Agent; the entry exists only while there is none, and a read-only
+    // window does not offer it at all: the host answers `add-agent` with `bot/read-only` (P-571b).
+    if (!locked && (roster.agents ?? []).length === 0) {
       options.push({ key: 'agent', icon: h(TerminalIcon), label: t('Add coding agent'), hint: t('A coding session without a Bot'), run: () => run(async () => { await actions.addAgent(); close() }) })
     }
   }
@@ -295,7 +296,9 @@ export function NewChat({ mode, roster, actions }) {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
             },
           }),
-          locked && !(group && admin !== null)
-            ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+          locked
+            ? (group && admin !== null
+              ? null
+              : h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)))
             : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
 }

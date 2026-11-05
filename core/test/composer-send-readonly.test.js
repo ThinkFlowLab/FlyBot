@@ -2,7 +2,9 @@
 // `create-room` + `send` for several, and `openBot` sent the typed line when a picker row was
 // pressed — every shape reached a host that can only answer `bot/read-only` after the fact. A
 // locked window now draws the host's own sentence beside the composer instead of a live Send, no
-// press writes, and a writable window sends exactly as before.
+// press writes, and a writable window sends exactly as before. The New… menu is the same shape one
+// step earlier (P-571b): `Add coding agent` asked a host that answers `bot/read-only`, so a locked
+// menu does not draw it and a writable one keeps it.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -73,7 +75,7 @@ const actionsOf = () => {
       send: async (id, text) => { calls.push(['send', id, text]) },
       openSession: id => { calls.push(['open-session', id]) }, closeOverlay() {}, notify() {},
       setFlags: async (id, flags) => { calls.push(['set-flags', id, flags]) },
-      newChatActionRows() {}, addAgent: async () => {}, createBot: async () => ({ id: 'new' }),
+      newChatActionRows() {}, addAgent: async () => { calls.push(['add-agent']) }, createBot: async () => ({ id: 'new' }),
       openSettings() {}, openPalette() {},
     },
   }
@@ -172,6 +174,12 @@ const groupSend = async (roster, picks, { enter = false } = {}) => {
   const sent = await view.send({ enter })
   return { calls: view.calls, ...sent }
 }
+// The New… menu itself: a short action list, no To: row and no composer.
+const menuPane = (roster) => {
+  const { calls, actions } = actionsOf()
+  const pane = mount({ mode: 'new', roster, actions })
+  return { calls, nodes: () => pane.draw() }
+}
 // A picker row pressed with a line typed is the other send path (`openBot`, a search pane).
 const searchThenOpen = async (roster, name) => {
   const { calls, actions } = actionsOf()
@@ -208,6 +216,26 @@ test('a read-only window sends nothing when a picker row is pressed with a line 
   assert.ok(locked.calls.some(call => call[0] === 'open-session' && call[1] === 'chief'), 'opening the session may stay')
 })
 
+// A read-only group chat whose admin is still chosen keeps its Create slot as the host's sentence
+// on the To: line; the composer below must not draw a second live Send for it.
+test('a read-only window draws no Send for a group that still has its admin chosen', async () => {
+  const view = groupCompose(rosterWith(SENTENCE))
+  await view.pick('Chief')
+  await view.pick('Scout')
+  let nodes = view.pane.draw()
+  typeLine(nodes, 'hello there')
+  await flush()
+  nodes = view.pane.draw()
+  assert.equal(sendButton(nodes), undefined, 'the composer draws no live Send control')
+  enterInComposer(nodes)
+  await flush()
+  nodes = view.pane.draw()
+  assert.deepEqual(view.calls, [], 'Enter writes nothing')
+  const line = readOnlyLine(nodes)
+  assert.equal(line.length, 1, "the host's own sentence is shown exactly once")
+  assert.equal(ownText(line[0]).trim(), SENTENCE)
+})
+
 test('a writable window still sends once from the composer', async () => {
   for (const roster of [rosterWith(undefined), rosterWith(''), rosterWith('   ')]) {
     const open = await groupSend(roster, ['Scout'])
@@ -220,4 +248,22 @@ test('a writable window still sends once from the composer', async () => {
     assert.deepEqual(many.calls[1], ['send', 'r-new', 'hello there'], 'then send the line')
     assert.deepEqual(many.calls[2], ['open-session', 'r-new'], 'then open the new room')
   }
+})
+
+// P-571b: the Add coding agent row is an ask the host answers `bot/read-only`, so a locked window
+// must not offer it at all; a writable one keeps the row and it still posts.
+test('a read-only New… menu draws no Add coding agent row', async () => {
+  const menu = menuPane(rosterWith(SENTENCE))
+  const nodes = menu.nodes()
+  assert.ok(nodes.some(optionRow('New group chat')), 'the menu itself is drawn')
+  assert.equal(nodes.some(optionRow('Add coding agent')), false, 'no Add coding agent row in a read-only window')
+  assert.deepEqual(menu.calls, [], 'drawing the menu writes nothing')
+})
+
+test('a writable New… menu keeps Add coding agent and asks once when it is pressed', async () => {
+  const menu = menuPane(rosterWith(undefined))
+  const nodes = menu.nodes()
+  press(nodes, optionRow('Add coding agent'))
+  await flush()
+  assert.deepEqual(menu.calls, [['add-agent']], 'one press asks add-agent exactly once')
 })
