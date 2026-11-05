@@ -1853,6 +1853,16 @@
               }
             ]
           },
+          "deliveryChoices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryChoices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "chiefIssue": {
             "anyOf": [
               {
@@ -33915,7 +33925,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       }
     },
     {
@@ -33993,7 +34003,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       }
     },
     {
@@ -34071,7 +34081,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       }
     },
     {
@@ -34149,7 +34159,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       }
     },
     {
@@ -34705,7 +34715,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       }
     },
     {
@@ -35104,7 +35114,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       }
     },
     {
@@ -48459,7 +48469,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -50230,7 +50240,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479"
+        "sha256": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691"
       },
       "aliasOf": "development.query.pools"
     },
@@ -50675,7 +50685,7 @@
       "core/src/host/project-delivery-options.js": "007a0b1d8e84848511589f21f5fb2498399ded933901aa3042a5950f0a1df356",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
       "core/src/host/project-delivery.js": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59",
-      "core/src/host/project-development-service.js": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479",
+      "core/src/host/project-development-service.js": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",

@@ -274,3 +274,11 @@ Task and Attempt `merge.chiefHandoff` reports the existing notification Effect, 
 One [warning service](project-warnings.md) owns progressive reads and exact-scope
 acknowledgement/inspection/execution stop. Existing receipts and authorization apply;
 no Task cancellation is inferred and unknown exit retains capacity.
+
+
+#2526 adds TaskView.deliveryChoices using the same delivery precheck projection as
+Chief and continuation-state, without provider I/O on polling. Recorded merge facts
+are labelled; unknown provider facts remain unknown. The existing nextActions string
+array still lists permission-scoped public commands. A queued next delivery takes
+precedence over its accepted predecessor's arbitration marker, so actual quota/resource
+waiting stays visible without claiming whole-Task completion.
