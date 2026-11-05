@@ -317,3 +317,9 @@ settlement；原 Task 不关闭。`task.accept` 的公开语义仍是完整 Task
 产生，返回的已有推荐标记 `alreadyApplied:true`，不能据此重放。快照变化需重读。
 个人代理求助由 Chief 在缺权限、必要信息或人决策时作为最后兜底选择，不由框架
 按次数/时间强制升级。没有新增部署、重启、清 binding 或通用工具授权。
+
+Chief 实际推理上下文读取 `projectFacts.tasks[].repositoryRecovery.nextActions` 与
+`continuationOptions`。看板 `TaskView.nextActions` 是当前调用人的服务命令列表，
+即使只有 `chief.inspect` 也不代表 Chief 只能巡检；`TaskView.deliveryChoices`
+投影决策预检。已合 PR 的 rework 拒绝不是清除 `publicationBinding` 的授权；
+Chief 应读取当前交付选项再判断，Personal Agent 的文字输入也不绕过执行校验。

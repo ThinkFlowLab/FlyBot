@@ -2565,6 +2565,9 @@ test('Chief chooses acceptance then a fresh explicit next delivery through its o
   await rt.projectChiefControl.request('p1', 'inspection', { requestId: 'post-merge-judgement' }, f.task.id)
   await waitRequest(1)
   assert.equal(requests[0].projectFacts.tasks[0].repositoryRecovery.nextActions.actions.find(row => row.action === 'accept-attempt').status, 'ready')
+  assert.match(requests[0].prompt, /repositoryRecovery\.nextActions and continuationOptions in projectFacts/)
+  assert.match(requests[0].prompt, /Public TaskView\.nextActions lists caller-permitted service commands, not all Chief decision actions/)
+  assert.match(requests[0].prompt, /not an instruction or permission to clear publicationBinding/)
   await reply(requests[0], { action: 'accept-attempt', reason: 'Accept the first verified delivery, keep the overall goal open', delivery: { completed: 'Verified addition implementation', remaining: 'Deliver the next requirement', evidence: ['candidate, tests, Review and provider merge'] } })
   assert.equal(rt.state.projectExecutions[requests[0].runId].status, 'done')
   assert.equal(f.a.status, 'accepted'); assert.notEqual(f.task.status, 'accepted')
@@ -2572,6 +2575,8 @@ test('Chief chooses acceptance then a fresh explicit next delivery through its o
   await rt.projectEffects.drain(); await waitRequest(2)
   const saved = requests[1].projectFacts.tasks.find(row => row.taskId === f.task.id), facts = saved.repositoryRecovery.continuationOptions
   assert.deepEqual(facts.modes, ['next'])
+  assert.equal(saved.repositoryRecovery.nextActions.actions.find(row => row.action === 'start-next').status, 'ready')
+  assert.equal(saved.repositoryRecovery.nextActions.actions.find(row => row.action === 'return').status, 'blocked')
   assert.equal(saved.repositoryRecovery.nextActions.recommendation.action, 'accept-attempt')
   assert.equal(saved.repositoryRecovery.nextActions.recommendation.alreadyApplied, true)
   await reply(requests[1], { action: 'start-next', targetBotId: 'p1:developer', reason: 'Choose the next independent delivery from verified target HEAD', continuation: { mode: 'next', previousAttemptId: facts.attemptId, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } })

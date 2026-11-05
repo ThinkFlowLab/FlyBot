@@ -396,3 +396,10 @@ A failed/blocked queued next-delivery admission is included in the same scoped f
 The existing recovery-notification pass requests one deduplicated fresh Chief inspection
 for the current accepted Attempt and queue intent. Changed/superseded sources are fenced;
 no queue retry, role or human escalation is selected. Original quota queues remain owners.
+
+Chief receives delivery prechecks at projectFacts.tasks[].repositoryRecovery.nextActions
+and continuationOptions. Public TaskView.nextActions is the caller service-command list,
+not a Chief decision allowlist; TaskView.deliveryChoices uses the shared prechecks.
+The actual Chief job prompt and two-turn runtime regression preserve this distinction
+even when a board offers only chief.inspect. Rework refusals never authorize clearing
+publicationBinding, and Personal Agent prose cannot bypass execution preconditions.
