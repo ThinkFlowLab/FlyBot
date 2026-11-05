@@ -63,3 +63,17 @@ Earlier source snapshot/deployment checkpoints are [preserved verbatim](docs/his
 ## Historical upstream Project State
 
 Historical upstream mission, named roles and resource inventory are [preserved verbatim](docs/history/2026-11-03-upstream-project-inventory.md). Current fork ownership and capabilities follow the active state and dated decisions above. The governing and automation boundaries below remain active.
+
+## Earlier implementation evidence links
+
+M5/M6 and M7 implementation references are [preserved verbatim](docs/history/2026-11-05-review-evidence-memory-checkpoints.md#earlier-project-implementation-references).
+Historical acceptance is not current acceptance. Preserve private credentials,
+current authority/revocation, actual exit proof, independent same-SHA verification
+and unchanged Control Plane reuse; live provider, mixed-resource and deployment
+acceptance remain separate.
+
+Earlier Codex acceptance is [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md); it grants no new deployment, App or credential authority.
+
+Dated candidates, environment probes, schedule observations and historical check
+counts are retained in [the implementation archive](docs/history/2026-11-02-collaboration-implementation.md).
+Their results are not evidence for the current source or Owner visual acceptance.

@@ -73,13 +73,7 @@ Changes to this page, to `ROADMAP.md`, to `docs/governance.md` or to `AGENTS.md`
 decisions, concluded as [docs/governance.md](docs/governance.md) requires and recorded in
 [`decisions/`](decisions/README.md).
 
-M5/M6 and M7 implementation references are [preserved verbatim](docs/history/2026-11-05-review-evidence-memory-checkpoints.md#earlier-project-implementation-references).
-Historical acceptance is not current acceptance. Preserve private credentials,
-current authority/revocation, actual exit proof, independent same-SHA verification
-and unchanged Control Plane reuse; live provider, mixed-resource and deployment
-acceptance remain separate.
-
-Earlier Codex acceptance is [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md); it grants no new deployment, App or credential authority.
+Earlier implementation evidence links are [preserved verbatim](docs/history/2026-11-05-attempt-settlement-memory-checkpoints.md#earlier-implementation-evidence-links); current rights and live acceptance still need fresh proof.
 
 ### Collaboration contract and earlier validation
 
@@ -98,10 +92,6 @@ reuse verified PR bindings and pinned target/source ancestry, never replace a PR
 or silently retarget recorded execution. Complete role rules and knowledge remain
 available under explicit budgets; release only truly unbound failed preparations.
 Safe-mode proposals require explicit requester approval; watch uses current grants.
-
-Dated candidates, environment probes, schedule observations and historical check
-counts are retained in [the implementation archive](docs/history/2026-11-02-collaboration-implementation.md).
-Their results are not evidence for the current source or Owner visual acceptance.
 
 ### Current UI compatibility requirements
 
