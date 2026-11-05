@@ -49,6 +49,75 @@ const workflowPage = await load(await bundleOf('../src/client/workflows.js'))
 const { inboxModel, needsCount, InboxCard, InboxDialog, openCard, workflowsOf, inboxAnswer, GROUPS } = inbox
 const { readWorkflows } = workflowPage
 
+// The page a workflow row opens is only real once Settings renders it: `openSettings('workflow')`
+// and `openSettings('workflows')` record the same shape of call, and Settings quietly falls back
+// to General for a key it does not know. This second harness renders the dialog the way
+// settings-readonly-pages.test.js does, so the page is read off the nav (`aria-current="page"`)
+// instead of off the string the call carried.
+const { outputFiles: settingsFiles } = await build({
+  stdin: {
+    contents: "export { SettingsDialog } from './src/client/settings.js'",
+    resolveDir: fileURLToPath(new URL('..', import.meta.url)),
+  },
+  bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
+  external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
+})
+const hChild = (type, props, ...children) => ({ type, props: { ...props, children: children.flat(Infinity) } })
+const slots = []
+let hookIndex = 0
+const settingsReact = {
+  createElement: hChild, Component: class {}, Fragment: Symbol('F'),
+  useMemo: (fn) => { const at = hookIndex++; if (!(at in slots)) slots[at] = fn(); return slots[at] },
+  useState: (initial) => {
+    const at = hookIndex++
+    if (!(at in slots)) slots[at] = typeof initial === 'function' ? initial() : initial
+    return [slots[at], (value) => { slots[at] = typeof value === 'function' ? value(slots[at]) : value }]
+  },
+  useCallback: (fn) => { const at = hookIndex++; if (!(at in slots)) slots[at] = fn; return slots[at] },
+  useRef: (value) => { const at = hookIndex++; if (!(at in slots)) slots[at] = { current: value }; return slots[at] },
+  useEffect: () => { hookIndex++ },
+  useLayoutEffect: () => { hookIndex++ },
+  useId: () => { hookIndex++; return 'id' },
+  useSyncExternalStore: (_subscribe, get) => { hookIndex++; return get() },
+}
+const settingsModule = { exports: {} }
+runInNewContext(settingsFiles[0].text, {
+  module: settingsModule, exports: settingsModule.exports, console, setTimeout, clearTimeout,
+  requestAnimationFrame: () => 0, cancelAnimationFrame() {},
+  document: { hidden: false, addEventListener() {}, removeEventListener() {}, createElement: () => ({ getContext: () => ({}) }) },
+  navigator: { language: 'en' },
+  localStorage: { getItem: () => null, setItem() {} },
+  window: { location: { hash: '' }, addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) },
+  require: (name) => {
+    if (name === 'react') return settingsReact
+    if (name === 'react-dom') return { createPortal: node => node }
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return {}
+    throw new Error(`no platform module ${name}`)
+  },
+})
+const { SettingsDialog } = settingsModule.exports
+const settingsRoster = {
+  bots: [], byId: {}, rooms: [], roomsById: {}, prefs: { theme: 'deepseek', motion: 'quiet' },
+  models: [], connectors: [], capabilities: [], secrets: [], humans: [], remoteBots: [], mainBotIds: [], memory: false,
+}
+// The nav buttons carry `aria-current="page"` on the page the dialog shows; an unknown key
+// lands on General, which is exactly the defect this reads.
+const currentSettingsPages = (page) => {
+  slots.length = 0
+  hookIndex = 0
+  const found = []
+  const walk = (node) => {
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (!node || typeof node !== 'object') return
+    if (node.type === 'button' && node.props?.['aria-current'] === 'page') {
+      found.push(node.props.children.filter(child => typeof child === 'string').join(''))
+    }
+    walk(node.props?.children)
+  }
+  walk(SettingsDialog({ page, roster: settingsRoster, actions: { closeSettings() {}, openSettings() {}, notify() {} }, useUpdate: () => ({}) }))
+  return found
+}
+
 const plain = value => JSON.parse(JSON.stringify(value))
 const OWN = new Set(['InboxCard', 'Status', 'AnswerFields', 'ResultActions'])
 const expand = (node) => {
@@ -218,13 +287,20 @@ test('#1706: a workflow row has no chat, opens the Workflow graphs page, and ans
   assert.equal(card.bot?.name, 'Writer')
 
   const log = []
+  let opened = null
   const actions = {
     closeInbox: () => log.push('close'),
-    openSettings: page => log.push(`settings ${page}`),
+    openSettings: page => { opened = page; log.push(`settings ${page}`) },
     openSession: id => log.push(`session ${id}`),
   }
   openCard(actions, card)
-  assert.deepEqual(log, ['close', 'settings workflow'])
+  assert.equal(log[0], 'close', 'the Inbox closes behind the row')
+  assert.ok(opened, 'a workflow row opens Settings')
+  // Where the row lands is checked by rendering the page it asks for: the Settings key is
+  // "workflows", and a key the dialog does not know falls back to General without a word.
+  const shown = currentSettingsPages(opened)
+  assert.deepEqual(shown, ['Workflows'], `the row shows the Workflows page, not ${shown.join(', ') || 'nothing'}`)
+  assert.ok(!shown.includes('General'), 'a failed workflow row never lands the reader on General')
   assert.equal(inboxAnswer(actions, card, 'allow'), undefined)
 
   const rendered = expand(InboxCard({ card, roster, now: NOW, busy: false, error: '', onAnswer: () => { throw new Error('a workflow row has no answer field') }, onOpen: () => openCard(actions, card) }))

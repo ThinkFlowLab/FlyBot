@@ -598,10 +598,11 @@ function useNow(ms) {
 
 // Open on a card. A failed workflow run has no chat to land in, so it opens the
 // Workflow graphs page in settings instead (#1706); every other card keeps the chat.
+// The page key is `workflows` — Settings falls back to General for any key it does not list.
 export function openCard(actions, card) {
   actions.closeInbox()
   if (card?.kind === 'workflow') {
-    actions.openSettings('workflow')
+    actions.openSettings('workflows')
     return
   }
   actions.openSession(card.chat)
