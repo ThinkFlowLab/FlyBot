@@ -334,9 +334,9 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       if (remote.merged !== true || remote.sha !== attempt.candidateSha || remote.mergeCommitSha !== attempt.settlement.mergeCommitSha || remote.baseRef !== attempt.settlement.baseBranch || !/^[a-f0-9]{40}$/.test(remote.baseSha ?? '')) throw reject('Next delivery needs a verified current merged PR and target branch')
       const repository = settingsOf(projectOf(attempt.projectId, attempt)).path
       try { await git(repository, ['cat-file', '-e', `${remote.mergeCommitSha}^{commit}`]); await git(repository, ['cat-file', '-e', `${remote.baseSha}^{commit}`]) }
-      catch { throw reject('Verified target HEAD or merged commit is missing; provision the exact approved target objects') }
+      catch { throw Object.assign(reject('Verified target HEAD or merged commit is missing; provision the exact approved target objects'), { details: { kind: 'target-objects-unavailable', repository: attempt.requirement.repository, branch: remote.baseRef, targetSha: remote.baseSha, mergeCommitSha: remote.mergeCommitSha } }) }
       try { await git(repository, ['merge-base', '--is-ancestor', remote.mergeCommitSha, remote.baseSha]) }
-      catch { throw reject('Verified target HEAD does not contain the accepted merge; inspect the current target branch') }
+      catch { throw Object.assign(reject('Verified target HEAD does not contain the accepted merge; inspect the current target branch'), { details: { kind: 'target-history-mismatch', repository: attempt.requirement.repository, branch: remote.baseRef, targetSha: remote.baseSha, mergeCommitSha: remote.mergeCommitSha } }) }
       const snapshot = await integrationSnapshot(attempt)
       rt.requireProjectAccess(actor, task.projectId, permission, task)
       if (deliveryScope(state, task) !== expected) throw chiefProtocolError('snapshot', 'fresh facts after delivery changed', task.id)
@@ -699,7 +699,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       let continuationOptions = null
       if (actor && (attempt.settlement || ['interrupted', 'failed'].includes(attempt.status) || actor.chiefJobId && attempt.status === 'running' && ['blocked', 'chief-working'].includes(task.collaboration?.status)) && (attempt.settlement || attempt.protocol === 'project-handoff/v1')) {
         try { continuationOptions = await continuationState(attempt, actor) }
-        catch (error) { continuationOptions = { status: 'unavailable', reason: error.code === 'bot/delivery' ? error.message : 'Current authority or confirmed execution exit is required before choosing a successor baseline' } }
+        catch (error) { continuationOptions = { status: 'unavailable', reason: error.code === 'bot/delivery' ? error.message : 'Current authority or confirmed execution exit is required before choosing a successor baseline', ...(error.code === 'bot/delivery' && error.details ? { details: structuredClone(error.details) } : {}) } }
       }
       let nextActions = null
       if (actor) { try { nextActions = await deliveryOptions(task, actor) } catch { nextActions = { status: 'unknown', reason: 'Current scoped delivery facts or configure authority are unavailable; refresh before action' } } }
