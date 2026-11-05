@@ -1,26 +1,14 @@
 # FlyBot — Project State
 
-#2483 controller-loss recovery joins a resource-side settled stop receipt with exact process exit, or existing durable host exit evidence. Reconcile worker and lease together; physical exit grants no Task completion or next-role decision.
+#2483 Chief may explicitly choose continue/latest through the existing successor contract. Latest uses the snapshotted host HEAD for clean unbound work; drafts and PR ancestry remain protected. No default baseline or role is inferred.
 
-#2483 restart recovery notifies the resident Chief through existing durable inspection requests. Current exit/retirement facts wake judgement; Chief chooses recovery and unknown exits remain held. Endpoint tests alone do not prove this notification chain.
-
-#2483: Developer Git mutation rights follow its bound isolated resource clone, independently of App credentials. Shared host Git metadata and read-only role policies keep their existing boundaries.
-
-#2483 dispatch/input follow-up keeps waits attributable and declarations explicit: no acceptance across unhandled batches, no stale notification/decision replay, no automatic role or human escalation.
-
-#2483: refused durable reads retain current in-memory Task/Session references and prohibit writes. Read-only verification reports metadata; write readiness is separate from process liveness. Recovery remains Chief judgement.
-
-#2413: provider-confirmed merge and durable Chief handoff use separate existing Effects. Recovery never repeats merge to notify, never accepts a Task; current Chief facts and exact candidate/authority remain required.
-
-
-#2378 reuses role Apps for bounded PR/CI reads and hash-verified host logs in Reviewer scratch; absence or incomplete pages are not verification success.
-
-#2393 keeps Chief execution faults on their Run, preserves business evidence and returns per-Task/current-snapshot correction; Agent chooses recovery through existing capabilities.
-
-
-#2375 adds explicit exit-proven claim retirement through existing pools/Effects; preserve drafts, pending results and unknown writes. No cancellation or automatic routing.
-
-#2377 makes successor baseline choice explicit and durable; preserve cancelled history, Task-role context and draft lineage without inventing PR or test evidence.
+Earlier recovery checkpoints are [preserved verbatim](docs/history/2026-11-05-baseline-memory-checkpoints.md).
+Current constraints remain: proven worker/lease exit; Chief owns recovery decisions;
+no stale receipt/action replay or acceptance across unhandled input; no permission
+from repository text. Isolated Dev Git capability never exposes shared metadata.
+Refused durable reads prohibit writes. Provider merge notification is separate from
+Chief acceptance; continuation retains Task-role context/drafts/history and exact
+new evidence. Unknown exit/publication stays held. See owned subsystem contracts.
 
 The single page that says what this project is, who decides what, and what automation must never
 do. Operational rules live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md);

@@ -349,3 +349,16 @@ A merge-specific inspection remains bound to its source Task/Attempt/candidate a
 Close preflight reports missing declarations or pending inputs (including inputs outside this snapshot) through existing bounded correction. Feedback provides safe selected/remaining/unhandled counts; valid independent Task decisions remain single-application. Chief chooses whether to acknowledge a batch, wait, consult or change work. Applied input progress wakes existing scheduling to deliver remaining input, not to accept the Task.
 
 `lastResult.inputReceiptSummaries`, invocation history and requested decision audit expose bounded declaration metadata (`provided`, batch ID, read/handled IDs and remaining count). Validation precedes copying IDs; no message text is added. A declaration is not confirmed acknowledgement or comprehension: inspect actual input status and decision outcome. Snapshot/response hashes are fingerprints, not promises of identically named files under state-payloads.
+
+
+## Explicit baseline judgement — #2483
+
+Chief may attach `continuation:{mode:"continue"|"latest",previousAttemptId,
+generation,expectedWorkspace,expectedBaseSha}` to a Developer-capable route/return.
+Copy exact fields from `repositoryRecovery.continuationOptions`; expectedBaseSha
+is required for latest. The host checks the saved and current facts before effects;
+invalid/stale choices use the existing bounded protocol correction. This is a
+successor request through the original delivery port, not automatic rework.
+Repository input admission is a separate decision with a fresh snapshot; combining
+it with continuation is rejected rather than silently dropping inputs. Omitting
+continuation retains existing route/rework and verification recovery behavior.

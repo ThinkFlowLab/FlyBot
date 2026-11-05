@@ -1,6 +1,6 @@
 # FlyBot — Roadmap
 
-#2483 controller loss: verify local/Docker worker shutdown and same-generation lease reconciliation; legacy records need actual saved exit evidence. Explicit Chief baseline choice remains the next independent stage.
+#2483 controller loss: verify local/Docker worker shutdown and same-generation lease reconciliation; legacy records need actual saved exit evidence. Chief baseline choice reuses task.run continuation; verify actual checkout SHA, stale-choice correction, draft protection and PR ancestry separately.
 
 #2483 restart: cover saved state reload through Chief choice and actual pool re-dispatch, including historical blocked claims, preserved drafts and exit uncertainty. No fixed recovery role, automatic Task acceptance or live deployment.
 

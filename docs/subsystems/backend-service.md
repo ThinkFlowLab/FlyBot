@@ -186,3 +186,8 @@ Existing Task/Attempt queries expose the OpenAPI `MergeHandoff` projection: dura
 #2483 adds the source-matched public GET /ready contract:200 ready/writable,503 degraded or unavailable. GET /health remains liveness only. The private state-storage verify CLI returns safe JSON diagnostics; it grants no remote repair authority.
 
 #2483 OpenAPI defines DispatchState and ChiefInputReceiptSummary, including runtime-derived commit proof and bounded declarations on chief.state results/history. No new domain endpoint or execution permission is added.
+
+
+#2483 exposes existing continuation-state facts to authenticated Chief judgement
+and reuses task.run for selected successors. Public operations/permissions are
+unchanged; OpenAPI source fingerprints reflect the implementation changes.
