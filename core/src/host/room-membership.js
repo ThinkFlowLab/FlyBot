@@ -2941,8 +2941,9 @@ export function install(rt) {
     // #1605: a face room this home is a member of is a row in the sidebar, never a hidden room.
     // A `hidden` left by an earlier state (a share that ended here, a room made before its snapshot
     // named it open) must not outlive an open or waiting snapshot: the API already lists the room,
-    // so the row has to be there too.
-    if (room.face.status !== 'closed' && room.face.status !== 'left') delete room.hidden
+    // so the row has to be there too. A hide the person chose keeps its `hiddenAt` stamp
+    // (roster.js `setFlags`), and the poll must not overrule it: this runs on every snapshot.
+    if (room.face.status !== 'closed' && room.face.status !== 'left' && !room.hiddenAt) delete room.hidden
     if (spec.name || isAutoFaceTitle(room.name)) room.name = title
     if (Array.isArray(spec.members)) rt.syncFaceParticipants(room, spec.members, spec.localBots)
     // When the lead is one of my Bots it is this room's admin here, so the round asks it first (#476).
