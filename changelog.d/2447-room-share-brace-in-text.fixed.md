@@ -1,0 +1,1 @@
+A chat line that carries a brace — `if (x) { y()` or a lone `}` — reaches the room again instead of being dropped: the room-share parser counts braces outside JSON strings only, so one unbalanced brace no longer ends the envelope early.
