@@ -1,5 +1,7 @@
 # FlyBot — Roadmap
 
+#2483 restart: cover saved state reload through Chief choice and actual pool re-dispatch, including historical blocked claims, preserved drafts and exit uncertainty. No fixed recovery role, automatic Task acceptance or live deployment.
+
 #2483 resource Git parity: verify current Project/Attempt/resource/cwd and private Git metadata before granting Dev its clone `.git`; validate actual SDK mutations and read-only denial separately from live resource acceptance.
 
 #2483 adds typed dispatch waits and bounded Chief input continuation through existing notifications; source/fixture completion remains distinct from the current OpenToday instance.

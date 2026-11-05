@@ -1058,7 +1058,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
         changed = true; continue
       }
       attempt.status = 'interrupted'
-      attempt.failure = { message: 'Host restarted before delivery completed; start a new Attempt', at: Date.now() }
+      attempt.failure = { message: 'Host restarted before delivery completed; preserve the checkpoint for Chief recovery judgement', at: Date.now() }
       rt.taskDeliveryState?.(attempt.taskId, attempt.id, 'failed', attempt.failure.message)
       if (attempt.runId && ownEntry(state.projectExecutions, attempt.runId)) state.projectExecutions[attempt.runId].status = 'interrupted'
       changed = true

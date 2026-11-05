@@ -30,6 +30,11 @@ source fingerprints reflect the host adapter fix. See [Harness](project-harness.
 
 # Persistent source backend entry (#2189)
 
+#2483 interrupted-role facts now reach existing Chief inspection without a manual
+API call. `chief.state` source identifies the claim/policy/allocation fingerprint;
+TaskView reflects the applied recovery, not notification success. Public operations
+and permissions are unchanged; OpenAPI implementation fingerprints are refreshed.
+
 The entry composes the existing DSH host/profile, all five FlyBot packages and the
 original restricted HTTP/SSE gateway. It adds neither a domain service nor a Task
 writer, permission policy, scheduler or executor. The upstream cookie stays in the

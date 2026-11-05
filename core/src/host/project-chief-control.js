@@ -127,6 +127,13 @@ export function createProjectChiefControl(rt) {
     return { runId: run.id, pending: ['queued', 'running', 'correction-pending'].includes(run.status) }
   }
   const scheduledState = ({ row, delivery }) => scheduledInspectionState(rt.state, row, delivery)
+  function interruptedSource(task) {
+    const c = task.collaboration, claim = c?.claim, attempt = rt.state.projectAttempts?.[task.deliveryAttemptId], policy = policyOf(task.projectId)
+    if (terminal.has(task.status) || c?.status !== 'blocked' || !claim || !policy?.enabled || claim.chiefRunId || claim.botId === `${task.projectId}:chief`) return null
+    if (!attempt || attempt.projectId !== task.projectId || attempt.taskId !== task.id || attempt.id !== c.attemptId || claim.attemptId !== attempt.id) return null
+    if (attempt.cancelRequested || attempt.supersededBy || !['running', 'interrupted', 'failed'].includes(attempt.status) || !['interrupted', 'intervened'].includes(claim.status) || attempt.status !== 'interrupted' && claim.status !== 'interrupted') return null
+    return { blockedTaskId: task.id, interruptedClaimId: claim.id, attemptId: attempt.id, claimGeneration: claim.generation, policyRevision: policy.revision, retirementCommitted: Boolean(claim.retirement && rt.projectEffects?.intentCommitted(claim.retirement.effect)), exitConfirmed: claim.workerId ? rt.projectDelivery.exitConfirmed?.(claim.workerId) ?? false : allocationProof(rt.state, task).status === 'not-allocated', allocationSha256: digest(inspectionResources(rt.state, task).resources.filter(row => row.attemptId === attempt.id).map(row => JSON.stringify(row)).sort()) }
+  }
   async function snapshot(run) {
     if (run.source?.mergeEffectId) {
       const source = run.source, attempt = rt.state.projectAttempts?.[source.attemptId], task = rt.state.tasks[run.taskId ?? attempt?.taskId]
@@ -506,7 +513,12 @@ export function createProjectChiefControl(rt) {
         try { await rt.projectPools.retryChief(task.id, { memberId: policy.authorityMemberId }); run.recovery = { status: 'requeued', at: Date.now() }; await rt.save() } catch (error) { run.recovery = { status: 'blocked', reason: error.message, at: Date.now() } }
       }
       for (const task of Object.values(rt.state.tasks)) if (task.collaboration?.status === 'arbitration' && !terminal.has(task.status) && policyOf(task.projectId)?.enabled) await request(task.projectId, 'arbitration', { handoffId: task.collaboration.currentHandoffId }, task.id)
+      for (const task of Object.values(rt.state.tasks)) {
+        const source = interruptedSource(task)
+        if (source) await request(task.projectId, 'inspection', source)
+      }
       for (const run of Object.values(rt.state.projectExecutions ?? {}).filter(row => row.kind === 'chief-control' && row.status === 'queued')) {
+        if (run.source?.interruptedClaimId && digest(interruptedSource(rt.state.tasks[run.source.blockedTaskId] ?? {})) !== digest(run.source)) { run.status = 'cancelled'; run.failure = 'Interrupted execution facts changed before Chief notification'; run.finishedAt = Date.now(); await rt.save(); continue }
         if ([...active.values()].some(job => job.run.projectId === run.projectId) || rt.projectAgents.chiefBusy(run.projectId)) { run.waitingFor = 'chief-busy'; continue }
         if (await inspectionBarrier(run)) { run.waitingFor = 'worker-exit'; continue }
         const policy = policyOf(run.projectId)
