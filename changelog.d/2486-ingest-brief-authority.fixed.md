@@ -1,0 +1,1 @@
+A workflow card whose facts were cleared no longer brings them back when it is re-matched into another lane: the re-match path now passes the card's current brief — its text when it holds facts, an explicit empty one when it does not — so the lane cache can no longer resurrect instructions the author removed ([#2486](https://github.com/ThinkFlowLab/FlyBot/issues/2486)).
