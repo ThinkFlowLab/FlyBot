@@ -155,6 +155,77 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "operationId": "readiness",
+        "summary": "Current backend transport and state-write readiness, not model/provider or full storage integrity verification",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready for backend state writes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ready",
+                      "type": "string"
+                    },
+                    "writable": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "status",
+                    "writable"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Gateway transport rejection; no domain command success is implied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend is read-only or unavailable; no private diagnostics are exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "degraded",
+                        "unavailable"
+                      ]
+                    },
+                    "writable": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "status",
+                    "writable"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bot": {
       "post": {
         "operationId": "dispatchBotOperation",
@@ -38280,7 +38351,7 @@
       "notes": "Anonymous, invalid or revoked credentials return ok=true,value=null. A Bot must verify non-null agentId and personalAgentCredentialId; HTTP200/ok alone is not successful login.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -38357,7 +38428,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -38430,7 +38501,7 @@
       "notes": "Anonymous bootstrap is blocked by the public gateway; use the private operator CLI. Platform identity deployments may disable native invitation.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -38504,7 +38575,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -39751,7 +39822,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -39912,7 +39983,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -39987,7 +40058,7 @@
       "notes": "Prefer v1 tasks/task.detail and summary views for bounded reads.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40386,7 +40457,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40472,7 +40543,7 @@
       "notes": "Expires after 24h; project-join must be called by the actual invited human.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40561,7 +40632,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40715,7 +40786,7 @@
       "notes": "Owner cannot leave/be removed; removing Maintainer requires Owner, removing Member requires invite authority. Existing unknown worker exit is not fabricated.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40793,7 +40864,7 @@
       "notes": "Owner cannot leave/be removed; removing Maintainer requires Owner, removing Member requires invite authority. Existing unknown worker exit is not fabricated.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40869,7 +40940,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -43861,7 +43932,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -43938,7 +44009,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44027,7 +44098,7 @@
       "notes": "Read native history to observe the response; send acknowledgement is not completion.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44106,7 +44177,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44185,7 +44256,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44264,7 +44335,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44343,7 +44414,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44422,7 +44493,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44499,7 +44570,7 @@
       "notes": "Own personal Bot memory only; never exposes another Bot/team private memory.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44581,7 +44652,7 @@
       "notes": "No host path, arbitrary URL or arbitrary attachment ID.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44662,7 +44733,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44743,7 +44814,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44835,7 +44906,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44932,7 +45003,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45029,7 +45100,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45126,7 +45197,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45223,7 +45294,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45331,7 +45402,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45423,7 +45494,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45515,7 +45586,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45612,7 +45683,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45709,7 +45780,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -48901,7 +48972,7 @@
       "core/src/host/browser.js": "5aaccf09cd9b1e65432c7d75fa0ee3cbf823b2b765ebf32f11f1df6c073d2d78",
       "core/src/host/busy-ack.js": "19c5fd411e4a7b0b41e696cc8b602e9da27be6d70668ca9824861d16db3c2d27",
       "core/src/host/capabilities.js": "c1a0a3746573fba088163f668eb6c09c76856f0ee33d1554c916dc47d0b9d90d",
-      "core/src/host/channel.js": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d",
+      "core/src/host/channel.js": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097",
       "core/src/host/chat-index.js": "cda0d84b97dd53132bcc74c5ba9d849a52c8a14bfecbce599dd0788a8306a1fb",
       "core/src/host/connector-access.js": "43962b756d9e632ccd76c80a4557d232943b774585ccc05c8ac9c005fa0d284c",
       "core/src/host/connectors.js": "2f05ffdfeac09227dff31e874de296899e2d8f0878865651fddc8bed90d65dbd",
@@ -48935,7 +49006,7 @@
       "core/src/host/personal-agents.js": "065e9a8bb9b686db1908c8ada67cd899709b28e574fdc74b5a361cad44c69651",
       "core/src/host/platform-identity.js": "551795f4251cc705582560274eccf68a8955a26f51c807a74b8948261508a29e",
       "core/src/host/plugin-model.js": "64477d6900bb6abea40c7ffe0e55d51e61e54bcfbe03e5d5a5e9647b40b69fc8",
-      "core/src/host/project-access.js": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9",
+      "core/src/host/project-access.js": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123",
       "core/src/host/project-agent-context.js": "fea96ce858086e24bf9974099780c1494606289fbca9dab5becde302b86b0b0b",
       "core/src/host/project-agent-inbox.js": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927",
       "core/src/host/project-agent-skills.js": "6545f39aec7bbb8bd812558d37422fae1fa0e4fc7ab2fa02f1c50501d29c8445",
@@ -49013,8 +49084,8 @@
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",
       "core/src/host/project-state-format.js": "4838b344439e585287fdc25ef15cea44d7aff4199c7a380ebbfa8cfcdf24f678",
-      "core/src/host/project-state-migration.js": "128ab1a332ea809c961e20a449bd41d58e6556e37d0f36191be31b0a284d5872",
-      "core/src/host/project-state-sqlite.js": "64320c122c28577c03ce13962be629ede9dd938d4805f5f0b6f352806d559c91",
+      "core/src/host/project-state-migration.js": "26a296f395ce50aa7ce4d11e2ee0c75c586fbc1861ed24b372c5c4ec7ed5dcc8",
+      "core/src/host/project-state-sqlite.js": "5614735582146a95cdbe7247934cd28ef838a4548aef70f41c31f388d03b4376",
       "core/src/host/project-state-storage.js": "94a9932c22f3f8e18f6952acb97b4323612294c6a10b493e1007de7f1b30b53d",
       "core/src/host/project-state.js": "5d6736eeedcfc09a3949a33457a4d4daf3b3745bebe2823d7852fd5c48f1b825",
       "core/src/host/project-task-lifecycle.js": "20940d6eeae321fcb064995990085af1f0e94d0a41fde50dc29a35e1af1a58a3",
@@ -49035,7 +49106,7 @@
       "core/src/host/secrets.js": "5787cd55f8b7f589605955e234a326a5addd64dc74320b6ca00029291405e524",
       "core/src/host/steering-interrupt.js": "f9bcf7df56303c217abedc96f98a98d4e2e668bb17d9510ada7debd3a8ed207d",
       "core/src/host/steward.js": "9a49eb851bf12df9f35fbf4870ca8d2355dbd5338c7e40d8b57bb9bd44d58e88",
-      "core/src/host/store.js": "421d7a745fedff00c9cef2ce1083366bc3169602d24d34583982ee8d0b46cf3b",
+      "core/src/host/store.js": "59bba0c850e301b57011704ba3915cc3aea9a2c54b85c37fd51040b6e0a77971",
       "core/src/host/task-drive.js": "c6e31e5c6277e7088e7ffabf6c0b8accefddf87ae4580e3550b5845efcc97aa3",
       "core/src/host/tasks.js": "c4d1e376b3de2c023d2c3debaa328d56cd2f245fcd2bcb5695f73360b608f130",
       "core/src/host/text.js": "709b3882356fc10d367533634e021b979a18db0e8127ac6cac59efe8e7e06c18",
@@ -49047,7 +49118,7 @@
       "core/src/host/update.js": "8b049ec4e2d5d07d747312e3ff8c1560d7e3681e5b41dd867cd0961c5675a2be",
       "core/src/host/usage.js": "fff9a097cc3ac4b2fe4fd2cebdd1a3b24fbf82b63535d8cf274b0025e0d2b0f3",
       "core/src/host/work-dispatch.js": "bef48285a381a6bbc7e1c162656316c4769cca76fd44da0e4fcfed54fe38d641",
-      "core/src/host/workbench-gateway.js": "6c2beeec490557816d5a82c8992048e43b1ec39e3d40d85bcfc027684f8a65b4",
+      "core/src/host/workbench-gateway.js": "522e09b699f71999fde6ad6d6be6df2b776f1ae6d68118fc87976703a8ba555c",
       "core/src/host/workbench-personal.js": "4282e3983f8f5cba0e61f288bddcba7f8e44eab92fbffbc604acac55defdc301",
       "core/src/host/workbench-state.js": "b95b83fe47a6a155e16fba92284f9df2929ebd95bec635804f186c47b9eb8391",
       "core/src/host/workflow-facts.js": "f2ff8392df1d0f927dd3bc2fb6ed1fde0bb31b5a8d590725963134b73f09fe76",

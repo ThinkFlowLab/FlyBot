@@ -1,5 +1,7 @@
 # FlyBot — Project State
 
+#2483: refused durable reads retain current in-memory Task/Session references and prohibit writes. Read-only verification reports metadata; write readiness is separate from process liveness. Recovery remains Chief judgement.
+
 #2413: provider-confirmed merge and durable Chief handoff use separate existing Effects. Recovery never repeats merge to notify, never accepts a Task; current Chief facts and exact candidate/authority remain required.
 
 

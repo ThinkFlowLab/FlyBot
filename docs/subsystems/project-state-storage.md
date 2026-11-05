@@ -145,3 +145,13 @@ State maps have no semantic insertion order. The probe resolves the previous Att
 ## Compatibility format fence (#2186)
 
 The original Store remains logical version2. Cutover/canonical JSON snapshots use known physical version4; SQLite import backup, export and storage rollback encode that fence and decode it before logical validation. Unknown frames remain read-only. Storage rollback does not authorize an older-code downgrade or receipt replay. See [compatibility](project-compatibility.md).
+
+## Refused reads and private verification (#2483)
+
+A failed durable read retains the current in-memory Task, claim and Session objects; startup with no valid snapshot remains read-only and never writes an empty replacement. Successful reload of verified state uses the original Store adoption path. Storage status distinguishes readable and writable from an opened database connection. The inherited legacy malformed-JSON backup/bootstrap contract is unchanged; refused newer-schema/ownership or SQL reads are never treated as that bootstrap path.
+
+`node core/scripts/state-storage.mjs verify --home /private/backend/bot` verifies a consistent read-only SQLite snapshot alongside the writer, checks the active guard/database migration identity, and returns its verified revision. It does not export content, take over the writer lock, repair hashes, migrate or acknowledge inputs. stdout is one JSON object; success exits0, refusal exits1. Node runtime warnings remain on stderr. Integrity refusals identify namespace/id and available history path/position/storage plus expected/actual digests; malformed JSON is classified without copying its contents. Other unexpected errors are sanitized.
+
+Actual corruption still requires a verified recovery source; this source fix does not prove the cause of reported OpenToday hash failures. No automatic rollback or arbitrary state editing is added.
+
+Retained memory is not current authorization. While a durable read is refused, member-facing operations and Project access fail closed; the existing private operator state/diagnostic gates and safe auth-mode readiness remain available. An ordinary observer with valid readable storage retains normal read access.

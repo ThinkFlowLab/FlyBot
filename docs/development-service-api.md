@@ -282,3 +282,5 @@ Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、
 ### 已合入候选的 Chief 收尾状态
 
 现有 `task`/`task.detail`、Attempt 元数据及 `effects` 查询可共同读取 `merge.chiefHandoff`：`effectId`、`status`、`reason`、`waitingFor`、`runId`、`runStatus`、`runFailure`、`waitingRunId`、`createdAt`、`requestedAt` 和 `candidateSha`。具体结构见 OpenAPI `MergeHandoff`。`status=delivered` 表示 Chief 请求已持久化，不代表 Chief 已执行成功或 Task 已验收。通知重试仍用原 `effect.retry` 权限和请求契约；无需重新 publish/merge。
+
+GET `/ready` 无需成员凭据，只返回后端状态可写性：200 `{"status":"ready","writable":true}`；503 为 degraded/unavailable、writable=false。它与仅表示进程存活的 `/health` 分开，也不代表模型、资源或项目验收成功。

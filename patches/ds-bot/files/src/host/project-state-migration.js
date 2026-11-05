@@ -33,6 +33,19 @@ function snapshot(home, expectedMigrationId) {
     return { text: JSON.stringify(encodeProjectState(state), null, 2), revision: metadata.revision }
   } finally { db.close() }
 }
+// Read-only verification is safe alongside the current writer; it grants no repair authority.
+export function verifySqliteState({ home }) {
+  const guard = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+  guardOf(home, guard.migration?.id)
+  const db = openSqliteState({ path: join(home, 'state.sqlite'), readOnly: true })
+  try {
+    const metadata = db.metadata()
+    if (metadata.migration?.id !== guard.migration.id || metadata.migration?.sha256 !== guard.migration.sha256) throw fail('SQLite and guard identities differ')
+    const verified = db.verify()
+    guardOf(home, guard.migration.id)
+    return { ok: true, backend: 'sqlite', migrationId: guard.migration.id, revision: verified.revision }
+  } finally { db.close() }
+}
 export function exportSqliteState({ home, output, expectedMigrationId }) {
   if (!output) throw fail('Choose a private export output file')
   return exclusively(home, () => {

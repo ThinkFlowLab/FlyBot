@@ -521,3 +521,5 @@ activeSlots measures project execution. They have independent configured limits.
 The original scheduler preserves explicit continuation intent through capacity queueing and revalidates it at actual dispatch. Changed intent on a request replay is rejected. It neither selects a baseline nor discards retained drafts.
 
 Cancelled/failed pool Attempts mark their canonical Run failed too; unknown physical leases/workers continue to count independently, while a confirmed-ended Run cannot leave a phantom queue slot.
+
+#2483 keeps GET /health as gateway liveness and adds GET /ready for current backend transport/state-write readiness. It reuses private auth-mode, returns only status/writable, uses503 for degraded/unavailable state, and never exposes upstream credentials, paths or diagnostics. It does not test model/provider readiness or rescan all storage.

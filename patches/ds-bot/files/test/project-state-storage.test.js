@@ -199,3 +199,75 @@ test('stale readonly takeover cannot overwrite newer SQL state without refresh',
   const recovered = await f.start()
   assert.equal(recovered.rt.state.tasks.task.status, 'blocked')
 })
+
+test('failed SQLite refresh retains existing Task, claim and Session objects while refusing writes', async t => {
+  const f = fixture(t, saved()), first = await f.start('sqlite'); await first.close()
+  writeFileSync(join(f.home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'external-holder' }))
+  const observer = await f.start(), { rt } = observer, task = rt.state.tasks.task, session = rt.state.projectTaskSessions.role
+  const db = new DatabaseSync(f.path)
+  const row = db.prepare("SELECT document FROM state_records WHERE namespace='tasks' AND id='task'").get()
+  db.prepare("UPDATE state_records SET document=? WHERE namespace='tasks' AND id='task'").run(row.document + ' ')
+  db.exec("UPDATE state_meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'")
+  db.close()
+  await rt.refresh()
+  assert.match(rt.readOnly(), /content hash changed/)
+  assert.equal(rt.state.tasks.task, task, 'A refused load cannot invalidate running Task references')
+  assert.equal(rt.state.projectTaskSessions.role, session)
+  assert.equal(task.collaboration.claim.id, 'claim')
+  const before = readFileSync(f.path)
+  await rt.save(); assert.deepEqual(readFileSync(f.path), before)
+})
+
+test('private verification checks a consistent live SQL snapshot and reports bounded hash failures without content', async t => {
+  const { execFileSync } = await import('node:child_process')
+  const script = new URL('../scripts/state-storage.mjs', import.meta.url).pathname
+  for (const kind of ['inline', 'file', 'fingerprint', 'json']) {
+    const source = saved(); if (kind === 'file') source.tasks.task.privateNote = 'private-marker-'.repeat(6000)
+    const f = fixture(t, source), current = await f.start('sqlite')
+    const verify = () => execFileSync(process.execPath, [script, 'verify', '--home', f.home], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    const ok = JSON.parse(verify()); assert.equal(ok.ok, true); assert.ok(ok.revision > 0)
+    assert.equal(JSON.stringify(ok).includes('chief-session'), false)
+    const db = new DatabaseSync(f.path), row = db.prepare("SELECT * FROM state_records WHERE namespace='tasks' AND id='task'").get()
+    if (kind === 'inline') db.prepare("UPDATE state_records SET document=document || ' ' WHERE namespace='tasks' AND id='task'").run()
+    if (kind === 'file') writeFileSync(join(f.home, 'state-payloads', row.digest + '.json'), 'private-marker-broken')
+    if (kind === 'fingerprint') db.prepare("UPDATE state_records SET fingerprint=? WHERE namespace='tasks' AND id='task'").run('0'.repeat(64))
+    if (kind === 'json') { const malformed = 'private-marker-invalid-json'; db.prepare("UPDATE state_records SET document=?,digest=? WHERE namespace='tasks' AND id='task'").run(malformed, createHash('sha256').update(malformed).digest('hex')) }
+    db.close()
+    let issue
+    assert.throws(verify, error => { issue = JSON.parse(error.stdout); return true })
+    assert.equal(issue.ok, false); assert.equal(issue.issue.namespace, 'tasks'); assert.equal(issue.issue.id, 'task')
+    assert.equal(issue.issue.kind, kind === 'fingerprint' ? 'record-fingerprint' : kind === 'json' ? 'payload-json' : 'payload-hash')
+    assert.equal(JSON.stringify(issue).includes('private-marker'), false)
+    assert.equal(JSON.stringify(issue).includes('chief-session'), false)
+    await current.close()
+  }
+})
+
+test('cold corrupt SQL stays read-only and a verified repaired refresh preserves history without empty replacement', async t => {
+  const f = fixture(t, saved()), first = await f.start('sqlite'); await first.close()
+  const db = new DatabaseSync(f.path), row = db.prepare("SELECT fingerprint FROM state_records WHERE namespace='tasks' AND id='task'").get()
+  db.prepare("UPDATE state_records SET fingerprint=? WHERE namespace='tasks' AND id='task'").run('0'.repeat(64)); db.close()
+  const broken = await f.start()
+  assert.equal(broken.rt.stateStorage.status().readable, false)
+  assert.equal(broken.rt.stateStorage.status().writable, false)
+  const originalGuard = readFileSync(f.statePath)
+  await broken.rt.save(); assert.deepEqual(readFileSync(f.statePath), originalGuard)
+  const repair = new DatabaseSync(f.path)
+  repair.prepare("UPDATE state_records SET fingerprint=? WHERE namespace='tasks' AND id='task'").run(row.fingerprint)
+  repair.exec("UPDATE state_meta SET value=CAST(value AS INTEGER)+1 WHERE key='revision'"); repair.close()
+  await broken.rt.refresh()
+  assert.equal(broken.rt.stateStorage.status().readable, true)
+  assert.equal(broken.rt.stateStorage.status().writable, true)
+  assert.equal(broken.rt.state.tasks.task.collaboration.history[0].id, 'offer')
+})
+
+test('refused legacy JSON refresh also preserves current personal Chief and project references', async t => {
+  const f = fixture(t, saved()), initial = await f.start(); await initial.close()
+  writeFileSync(join(f.home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'external-holder' }))
+  const observer = await f.start(), { rt } = observer, chief = rt.state.bots.chief, task = rt.state.tasks.task
+  const refused = JSON.stringify({ ...saved(), version: 999 })
+  writeFileSync(f.statePath, refused)
+  await rt.refresh()
+  assert.ok(rt.readOnly()); assert.equal(rt.state.bots.chief, chief); assert.equal(rt.state.tasks.task, task)
+  await rt.save(); assert.equal(readFileSync(f.statePath, 'utf8'), refused)
+})

@@ -14,6 +14,7 @@ export function install(rt) {
   rt.sharedProjectMode = () => config.projectWorkbench === true || Boolean(config.controlPlane?.origin)
   const projectOf = id => rt.projects.repository.get(String(id ?? ''), { includeDeleted: true })
   rt.projectCan = (actor, projectId, action = 'read', task) => {
+    if (rt.stateStorage?.readable?.() === false) return false
     const project = projectOf(projectId)
     const role = actor?.memberId ? roleOf(project, actor.memberId) : null
     if (!project || !role) return false
