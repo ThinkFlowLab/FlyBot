@@ -33,7 +33,7 @@ for (const field of ['terminal', 'cancelled', 'superseded', 'foreign', 'status',
   if (field === 'superseded') a.supersededBy = 'b'
   if (field === 'foreign') a.projectId = 'other'
   if (field === 'status') a.status = 'failed'
-  if (field === 'requirement') task.criteria = 'Changed'
+  if (field === 'requirement') delete a.requirement
   if (field === 'review') a.evidence.review.sha = 'old'
   if (field === 'tests') a.evidence.tests.passed = false
   if (field === 'kind') task.projectTaskKind = 'release'
@@ -46,7 +46,7 @@ test('scoped fingerprints ignore unrelated history but bind relevant revisions a
   a.evidence.review.summary = 'Changed evidence'
   assert.notEqual(deliveryScope(state, task), scope)
   task.projectTask = { requirements: { revision: 1 } }
-  assert.throws(() => requireAttemptAcceptance(task, a), /requirements/)
+  assert.doesNotThrow(() => requireAttemptAcceptance(task, a))
   assert.throws(() => requireNextAttempt(task, a), /Accept the current/)
 })
 
@@ -83,4 +83,33 @@ test('queued next-admission facts are scoped and ordered, and state changes inva
   assert.deepEqual(choices.admission.map(row => row.id), ['a', 'z'])
   state.projectQueue.a.status = 'blocked'
   assert.notEqual(deliveryScope(state, task), choices.expectedScope)
+})
+
+test('historical Attempt requirements are advisory differences, with bounded facts and the existing disclosure source', () => {
+  const { state, task, a } = fixture()
+  a.requirement.projectTaskRevision = 2; a.requirement.impact = 'Initial impact'; a.requirement.scope = 'Initial scope'
+  task.projectTask = { requirements: { revision: 4, impact: 'Expanded impact', scope: 'Remaining goal' } }
+  task.title = 'Remaining work'; task.criteria = 'New acceptance criteria'
+  const choices = deliveryChoices(state, task, { status: 'observed', merged: true })
+  assert.equal(choices.actions[0].status, 'ready')
+  assert.deepEqual(choices.requirements.changedFields, ['revision', 'title', 'criteria', 'impact', 'scope'])
+  assert.equal(choices.requirements.attemptRevision, 2); assert.equal(choices.requirements.taskRevision, 4)
+  assert.equal(choices.requirements.priorValues.criteria, 'All requirements')
+  assert.equal(choices.requirements.source.query, 'attempt.context')
+  assert.match(choices.requirements.notice, /not.*Task completion/)
+  assert.doesNotThrow(() => requireAttemptAcceptance(task, a))
+})
+
+test('legacy matching requirements keep the advisory compact and absent snapshots stay unknown', () => {
+  const { state, task, a } = fixture()
+  assert.deepEqual(deliveryChoices(state, task).requirements.changedFields, [])
+  assert.deepEqual(deliveryChoices(state, task).requirements.priorValues, {})
+  delete a.requirement
+  assert.equal(deliveryChoices(state, task).requirements, null)
+})
+
+for (const field of ['title', 'criteria']) test('scoped acceptance still requires a valid pinned ' + field, () => {
+  const { task, a } = fixture()
+  delete a.requirement[field]
+  assert.throws(() => requireAttemptAcceptance(task, a), /snapshot is unavailable/)
 })

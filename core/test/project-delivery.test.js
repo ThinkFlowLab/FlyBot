@@ -2447,8 +2447,14 @@ test('protected Chief exit retirement excludes only its exact current coordinati
   assert.equal(lease.status, 'running', 'The current Chief execution was not falsely released')
 })
 
-async function mergedDelivery(t) {
-  const f = await setup(t)
+async function mergedDelivery(t, { modern = false } = {}) {
+  const f = await setup(t, undefined, { modern })
+  if (modern) {
+    f.task = f.rt.state.tasks[f.task.id]
+    const { reviseTask } = await import('../src/host/project-task-lifecycle.js')
+    const decision = { id: 'initial', taskId: f.task.id, projectId: 'p1', executorRole: 'chief', runId: 'fixture-chief', initiatedBy: alice.memberId, reason: 'Confirm first deliverable' }
+    admitTask(f.task, decision); reviseTask(f.task, { scope: 'First delivery' }, { ...decision, id: 'revision-two' })
+  }
   await f.start('merged-delivery'); await complete(f)
   const a = f.attempt()
   git(f.repository, ['merge', '--ff-only', a.candidateSha])
@@ -2499,7 +2505,7 @@ test('scoped Attempt acceptance rolls back a failed or no-op save and remains id
 for (const changed of ['candidate', 'requirements', 'provider', 'authority', 'exit']) test('scoped Attempt acceptance refuses changed ' + changed, async t => {
   const f = await mergedDelivery(t)
   if (changed === 'candidate') f.a.evidence.tests.sha = 'old'
-  if (changed === 'requirements') f.task.criteria += ' new requirement'
+  if (changed === 'requirements') { const read = f.publisher.read; f.publisher.read = async (...args) => { const result = await read(...args); f.task.criteria += ' new requirement'; return result } }
   if (changed === 'provider') f.publisher.read = async pr => ({ sha: pr.sha, state: 'open', merged: false, baseRef: 'main' })
   if (changed === 'authority') f.rt.projectChiefControl.requireJobActor = () => { throw Error('authority revoked') }
   if (changed === 'exit') { f.rt.state.projectResourceLeases.late = { id: 'late', projectId: 'p1', attemptId: f.a.id, resourceId: 'unknown', generation: 1, role: 'developer', worker: { kind: 'sdk', handle: 'late-worker' }, status: 'unreachable' }; (f.rt.state.projectHarnessWorkers ??= {})['late-worker'] = { id: 'late-worker', leaseId: 'late', projectId: 'p1', attemptId: f.a.id, role: 'developer', resourceId: 'unknown', generation: 1, status: 'unreachable' } }
@@ -2554,7 +2560,11 @@ test('pending external write and unknown native exit block scoped acceptance; cu
 })
 
 test('Chief chooses acceptance then a fresh explicit next delivery through its original decision loop', async t => {
-  const f = await mergedDelivery(t), requests = [], rt = f.rt
+  const f = await mergedDelivery(t, { modern: true }), requests = [], rt = f.rt
+  const { reviseTask } = await import('../src/host/project-task-lifecycle.js')
+  const revision = { projectId: 'p1', taskId: f.task.id, executorRole: 'chief', runId: 'fixture-chief', initiatedBy: alice.memberId, reason: 'Record remaining work' }
+  reviseTask(f.task, { scope: 'Remaining MVP' }, { ...revision, id: 'next-scope' })
+  reviseTask(f.task, { criteria: 'Finish remaining MVP' }, { ...revision, id: 'next-criteria' })
   rt.projectChiefControl.requireJobActor = f.originalJobAuthority
   const carrier = { id: 'public-p1', projectId: 'p1', visibility: 'public', botId: 'a', sessionId: 'a', carrierGeneration: 1 }
   rt.state.projectAgents ??= {}; rt.state.projectAgents[carrier.id] = carrier
@@ -2562,9 +2572,15 @@ test('Chief chooses acceptance then a fresh explicit next delivery through its o
   rt.projectAgents.startChiefJob = async args => { requests.push(args); return 'fixture-chief-turn' }
   const waitRequest = async count => { for (let pass = 0; pass < 400 && requests.length < count; ++pass) { await rt.projectChiefControl.pump(); await new Promise(resolve => setTimeout(resolve, 5)) }; assert.ok(requests.length >= count) }
   const reply = (request, decision) => request.onResult({ ok: true, text: JSON.stringify({ summary: 'Chief recommendation based on current facts', decisions: [{ taskId: f.task.id, ...decision }] }), executionEvidence: { kind: 'native-chief', chiefRunId: request.runId, carrierGeneration: 1, botId: 'a', sessionId: 'a' } })
+  const { deliveryScope } = await import('../src/host/project-delivery-options.js')
+  rt.state.projectChiefDecisions = Object.fromEntries(Array.from({ length: 4 }, (_, index) => ['old-refusal-' + index, { id: 'old-refusal-' + index, projectId: 'p1', taskId: f.task.id, status: 'rejected', expectedScope: deliveryScope(rt.state, f.task), action: 'accept-attempt', failure: 'Current requirements changed; inspect fresh delivery facts', at: index }]))
   await rt.projectChiefControl.request('p1', 'inspection', { requestId: 'post-merge-judgement' }, f.task.id)
   await waitRequest(1)
   assert.equal(requests[0].projectFacts.tasks[0].repositoryRecovery.nextActions.actions.find(row => row.action === 'accept-attempt').status, 'ready')
+  assert.equal(requests[0].projectFacts.tasks[0].repositoryRecovery.nextActions.requirements.attemptRevision, 2)
+  assert.equal(requests[0].projectFacts.tasks[0].repositoryRecovery.nextActions.requirements.taskRevision, 4)
+  assert.equal(requests[0].projectFacts.tasks[0].inspection.chiefActionsWithoutProgress, 4)
+  assert.equal(requests[0].projectFacts.tasks[0].repositoryRecovery.nextActions.requirements.priorValues.scope, 'First delivery')
   assert.match(requests[0].prompt, /repositoryRecovery\.nextActions and continuationOptions in projectFacts/)
   assert.match(requests[0].prompt, /Public TaskView\.nextActions lists caller-permitted service commands, not all Chief decision actions/)
   assert.match(requests[0].prompt, /not an instruction or permission to clear publicationBinding/)
@@ -2583,6 +2599,7 @@ test('Chief chooses acceptance then a fresh explicit next delivery through its o
   assert.equal(rt.state.projectExecutions[requests[1].runId].status, 'done', rt.state.projectExecutions[requests[1].runId].failure)
   const next = rt.state.projectAttempts[f.task.deliveryAttemptId]
   assert.notEqual(next.id, f.a.id); assert.equal(next.baseSha, f.a.candidateSha); assert.equal(next.publicationBinding, undefined)
+  assert.equal(next.requirement.projectTaskRevision, 4)
   assert.notEqual(f.task.status, 'accepted'); assert.equal(f.task.chiefQuestion, undefined)
 })
 
@@ -2706,4 +2723,27 @@ test('next delivery pins a distinct provider squash commit and reports missing e
   assert.equal(result.attempt.baseSha, merge)
   assert.equal(git(result.attempt.workspaces.developer.path, ['rev-parse', 'HEAD']), merge)
   assert.equal(result.attempt.publicationBinding, undefined)
+})
+
+test('evolving Task rev4 accepts merged Attempt rev2 and starts the next delivery with current requirements', async t => {
+  const f = await mergedDelivery(t, { modern: true }), original = structuredClone(f.a.requirement)
+  const { reviseTask } = await import('../src/host/project-task-lifecycle.js')
+  const decision = { taskId: f.task.id, projectId: 'p1', executorRole: 'chief', runId: 'fixture-chief', initiatedBy: alice.memberId, reason: 'Record delivered scope and remaining goal' }
+  reviseTask(f.task, { scope: 'Remaining MVP' }, { ...decision, id: 'revision-three' })
+  reviseTask(f.task, { title: 'Complete remaining MVP', criteria: 'Remaining features verified' }, { ...decision, id: 'revision-four' })
+  assert.equal(f.a.requirement.projectTaskRevision, 2); assert.equal(f.task.projectTask.requirements.revision, 4)
+  const choices = await f.rt.projectDelivery.deliveryOptions(f.task, f.actor)
+  assert.equal(choices.actions.find(row => row.action === 'accept-attempt').status, 'ready', JSON.stringify(choices.actions))
+  assert.deepEqual(choices.requirements.changedFields, ['revision', 'title', 'criteria', 'scope'])
+  assert.equal(choices.requirements.source.section, 'requirement')
+  assert.equal(choices.requirements.priorValues.criteria, original.criteria)
+  await f.settle()
+  assert.equal(f.a.settlement.requirementsRevision, 2); assert.equal(f.a.settlement.taskRequirementsRevision, 4)
+  assert.deepEqual(f.a.requirement, original); assert.equal(f.task.status, 'result-ready')
+  await assert.rejects(f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: f.a.candidateSha, decision: { id: 'close-new-goal', action: 'close' } }, f.actor), /requirements version/i)
+  const facts = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: f.a.id }, alice)
+  const next = await f.rt.projectEndpoint('project-task-run', { taskId: f.task.id, requestId: 'next-current-requirements', continuation: { mode: 'next', previousAttemptId: f.a.id, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } }, alice)
+  assert.equal(next.attempt.requirement.projectTaskRevision, 4)
+  assert.equal(next.attempt.requirement.criteria, f.task.criteria)
+  assert.equal(next.attempt.publicationBinding, undefined); assert.equal(f.a.pr.number, 1)
 })

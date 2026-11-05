@@ -405,3 +405,9 @@ even when a board offers only chief.inspect. Rework refusals never authorize cle
 publicationBinding, and Personal Agent prose cannot bypass execution preconditions.
 
 Inspection facts also expose chiefActionsWithoutProgress and up to five refusedChiefActions for the current deliveryScope. The existing configurable no-progress threshold emits a shared task-attention warning; exact errors remain evidence, not a new authorization or fixed recovery plan. A changed deliveryScope excludes old refusals from the current count.
+
+### Historical requirements versus stale judgement (#2526 follow-up)
+
+Scoped acceptance judges the immutable Attempt requirement, never equality with the latest Task revision. repositoryRecovery.nextActions.requirements supplies both revisions, changed field names and only their prior values; the Task snapshot carries current values. Complete pinned requirements use the existing attempt.context requirement page. This is a bounded read projection, not a planner or permission token. The host still verifies current candidate/test/Review/merge, identity, rights, generation and exit; execution rechecks the full local scope after I/O.
+
+Requirements that change after a Chief snapshot use existing protocol correction with stale-snapshot feedback, so Chief can reconsider the original intent. Earlier legitimate Task revisions do not permanently block historical settlement. Neither outcome satisfies new Task criteria or chooses a downstream role/Personal Agent automatically. start-next copies current requirements; whole-Task closure remains independently gated.

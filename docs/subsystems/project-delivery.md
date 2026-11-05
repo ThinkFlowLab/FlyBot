@@ -498,7 +498,7 @@ SDK input preflights fail before inference if required input cannot fit.
 
 New Project Tasks require accepted Chief admission before allocation. New-contract completion rejects human acceptance before changing Attempt state; legacy persisted Tasks retain human acceptance. Parent split waits preserve the active Attempt/workspace and role binding for later integration. Child candidate references are not automatically approved integration sources or evidence that their code was merged.
 
-Attempts pin the complete Project requirements revision, including impact/scope. A scope-only change invalidates old completion evidence even if title and criteria are unchanged. Rework after a revision creates a successor with the new requirements snapshot, retaining the prior version and logical Task-role Session.
+Attempts pin the complete Project requirements revision, including impact/scope. A scope-only change invalidates old whole-Task completion evidence; scoped merged-Attempt settlement still judges its pinned scope. Rework after a revision creates a successor with the new requirements snapshot, retaining the prior version and logical Task-role Session.
 
 A failed Attempt leaves a new Project Task blocked with its source Attempt/reason; it does not close the commitment or erase Chief admission. A later active Attempt clears that execution block. Pre-contract legacy Task failure semantics remain unchanged.
 
@@ -738,9 +738,11 @@ stop is inferred. Ordinary public task.run still refuses active Attempts.
 
 ## Scoped Attempt acceptance and next delivery (#2526)
 
-Chief accept-attempt verifies current code/requirements/candidate, host tests, Review,
+Chief accept-attempt verifies pinned requirements/candidate, host tests, Review,
 policy/SDK evidence, provider-confirmed merge and actual execution exit. Its bounded
-completed/remaining/evidence record belongs to the Attempt. An attempt.accept Effect
+completed/remaining/evidence record belongs to the Attempt. Task revisions are advisory;
+requirementsRevision pins the Attempt and taskRequirementsRevision records the current Task.
+An attempt.accept Effect
 commits status/settlement and canonical Run completion together; failed/no-op commits
 roll back provisional fields. Duplicate content returns the original committed result;
 changed settlement content refuses. Task remains result-ready and unfinished. Unhandled

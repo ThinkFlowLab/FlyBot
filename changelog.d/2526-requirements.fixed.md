@@ -1,0 +1,1 @@
+Chief can accept a merged Attempt under its pinned requirements after the Task goal evolves; current requirement differences are advisory, stale judgements still need a refresh, and the next delivery uses the current goal.
