@@ -37,8 +37,8 @@ export function NewChat({ mode, roster, actions }) {
   const paneLeft = usePaneLeft()
   const wanted = query.trim().toLowerCase()
   const bots = listedChatBots(roster)
-  // A read-only window keeps the group pickers as a preview, offers no create, and sends nothing
-  // from them: the host could only answer `bot/read-only` after the press (P-570).
+  // A read-only window keeps the pickers as a preview, offers no create and no Send, and writes
+  // nothing: the host could only answer `bot/read-only` after the press (P-570, P-571).
   const locked = lockedWindow(roster)
   const choosingAdmin = group && admin === null
   const pool = choosingAdmin ? bots.filter(bot => !bot.remote) : bots
@@ -105,8 +105,11 @@ export function NewChat({ mode, roster, actions }) {
   const openBot = bot => run(async () => {
     if (choosingAdmin) { chooseAdmin(bot); return }
     if (group || picked.length > 0) { pick(bot); return }
-    if (bot.hidden) await actions.setFlags(bot.id, { hidden: false })
-    if (message.trim()) await actions.send(bot.id, message.trim())
+    // Opening the session is a read and stays; unhiding the Bot and sending the typed line are writes.
+    if (!locked) {
+      if (bot.hidden) await actions.setFlags(bot.id, { hidden: false })
+      if (message.trim()) await actions.send(bot.id, message.trim())
+    }
     actions.openSession(bot.id)
     close()
   })
@@ -140,6 +143,7 @@ export function NewChat({ mode, roster, actions }) {
   }
   const createGroup = () => run(makeGroup)
   const sendMessage = () => run(async () => {
+    if (locked) return
     const text = message.trim()
     if (group && admin !== null) { await makeGroup(); return }
     if (text === '' || picked.length === 0) return
@@ -291,5 +295,7 @@ export function NewChat({ mode, roster, actions }) {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
             },
           }),
-          h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
+          locked && !(group && admin !== null)
+            ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+            : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
 }
