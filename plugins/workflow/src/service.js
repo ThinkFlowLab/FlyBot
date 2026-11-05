@@ -1887,7 +1887,11 @@ export function createWorkflowService({
       }
       const title = cleanLine(task.title, 300)
       if (!title) return { ok: false, error: 'A task needs a title' }
-      const assigned = this.assign({ workflowId: decision.id, taskId, title, ...(typeof task.brief === 'string' && task.brief !== '' ? { brief: task.brief } : {}) })
+      // #2486: the card is the authority for its own facts. Omitting `brief` asks
+      // `assign` to keep whatever the lane cached, so a card the author cleared
+      // would bring the old text back; an empty string is the explicit clear
+      // `#2475` defined, and a card that still holds facts passes them verbatim.
+      const assigned = this.assign({ workflowId: decision.id, taskId, title, brief: typeof task.brief === 'string' ? task.brief : '' })
       const finish = (value) => {
         if (value?.ok === false) return value
         logSource()
