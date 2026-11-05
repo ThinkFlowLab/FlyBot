@@ -1447,6 +1447,7 @@ var ZH = {
   "Role unchanged: {reason}": "角色未更改：{reason}",
   refused: "被拒绝",
   "No Project yet — create one.": "还没有项目——新建一个。",
+  "No Project yet.": "还没有项目。",
   "Bind a Bot or group": "绑定 Bot 或群聊",
   "Bind to {name}": "绑定到 {name}",
   "Open board": "打开看板",
@@ -19610,7 +19611,7 @@ function ProjectsList({ projects, roster, call: call4, reload }) {
     (0, import_react42.createElement)(
       SetSection,
       { key: "projects", title: t("Projects · {count}", { count: projects.length }) },
-      projects.length === 0 ? (0, import_react42.createElement)("div", { className: "bt-set-row" }, (0, import_react42.createElement)("div", { className: "bt-set-copy" }, (0, import_react42.createElement)("span", null, t("No Project yet — create one.")))) : projects.map((project) => (0, import_react42.createElement)(
+      projects.length === 0 ? (0, import_react42.createElement)("div", { className: "bt-set-row" }, (0, import_react42.createElement)("div", { className: "bt-set-copy" }, (0, import_react42.createElement)("span", null, t(locked ? "No Project yet." : "No Project yet — create one.")))) : projects.map((project) => (0, import_react42.createElement)(
         SetRow,
         {
           key: project.id,
