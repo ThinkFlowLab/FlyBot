@@ -10939,7 +10939,7 @@ diff --git a/client.js b/client.js
 +function openCard(actions, card) {
 +  actions.closeInbox();
 +  if (card?.kind === "workflow") {
-+    actions.openSettings("workflow");
++    actions.openSettings("workflows");
 +    return;
    }
 -  const parts = [];

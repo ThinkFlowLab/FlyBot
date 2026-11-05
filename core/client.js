@@ -9325,7 +9325,7 @@ function useNow2(ms) {
 function openCard(actions, card) {
   actions.closeInbox();
   if (card?.kind === "workflow") {
-    actions.openSettings("workflow");
+    actions.openSettings("workflows");
     return;
   }
   actions.openSession(card.chat);
