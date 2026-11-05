@@ -153,3 +153,29 @@ test('#1836: no endpoint the channel dispatches answers Unknown endpoint at the 
   assert.equal(stranger.code, 'bot/not-found')
   assert.equal(stranger.message, 'Unknown endpoint no-such-endpoint')
 })
+
+test('#1876: the Owner re-roles another member at the endpoint, and the write lands', async () => {
+  const { callAs, stop, home } = await start()
+  try {
+    const answer = await callAs('project-role', { id: 'project-p1', memberId: 'plain-1', role: 'maintainer' }, 'tok-owner')
+    assert.notEqual(answer.error?.code, 'bot/not-found', `the endpoint is not missing from authz: ${JSON.stringify(answer)}`)
+    assert.equal(answer.ok, true, JSON.stringify(answer))
+    assert.equal(answer.value.changed, true, JSON.stringify(answer))
+    assert.ok(answer.value.roles.maintainers.includes('plain-1'), JSON.stringify(answer.value.roles))
+    // The target's own session sees the new rank: `projects` answers the caller's own role,
+    // so the Owner's token cannot read it for someone else.
+    const read = await callAs('projects', {}, 'tok-plain')
+    assert.equal(read.ok, true, JSON.stringify(read))
+    const listed = read.value.projects.find(project => project.id === 'project-p1')
+    assert.equal(listed.role, 'maintainer', JSON.stringify(listed))
+    // The roles on disk are the ones the reply named, not only the reply.
+    const saved = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    assert.deepEqual(saved.projects['project-p1'].roles, answer.value.roles)
+    // Back down, so the Owner's positive path is pinned in both directions of the switch.
+    const back = await callAs('project-role', { id: 'project-p1', memberId: 'plain-1', role: 'member' }, 'tok-owner')
+    assert.equal(back.ok, true, JSON.stringify(back))
+    assert.equal(back.value.changed, true, JSON.stringify(back))
+    const after = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+    assert.deepEqual(after.projects['project-p1'].roles, { maintainers: ['maint-1'], members: ['plain-1'] })
+  } finally { await stop() }
+})
