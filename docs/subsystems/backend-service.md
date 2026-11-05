@@ -193,3 +193,7 @@ and reuses task.run for selected successors. Public operations/permissions are
 unchanged; OpenAPI source fingerprints reflect the implementation changes.
 
 #2518 adds warnings and warning.action to the existing development envelope and warning metadata to committed events. Shared disclosure is configure-scoped; all raw evidence and stop actions recheck current scope. See [warnings](project-warnings.md).
+
+#2519 updates the generated implementation fingerprints for inline SDK Reviewer
+host-test evidence. Public endpoints, schemas, permissions and prerequisites stay
+unchanged; the complete log is private execution input, not a new API response.
