@@ -67,7 +67,7 @@ const SENTENCE = 'The Bot team in /home/xuke/.flybot is open in another dsh (Web
 const chief = { id: 'chief', name: 'Chief', role: 'Researcher', model: 'mock/m1', workDir: '/work/chief', instructions: 'Run the team.', pinned: true }
 const writer = { id: 'writer', name: 'Writer', role: 'Editor', model: 'mock/m1', workDir: null, instructions: 'Write the copy.' }
 const editor = { id: 'editor', name: 'Editor', role: '', model: 'mock/m1', workDir: null, instructions: '' }
-const room = { id: 'r1', name: 'Ops', admin: 'chief', members: ['chief', 'writer'], mode: 'admin', notice: 'Read this first.', named: true, workDir: '/work/ops', participants: [] }
+const room = { id: 'r1', name: 'Ops', admin: 'chief', members: ['chief', 'writer'], mode: 'admin', notice: 'Read this first.', named: true, workDir: '/work/ops', participants: [{ kind: 'human', id: 'owner-1', displayName: 'Alice', role: 'admin' }] }
 const github = { id: 'github', name: 'GitHub', kind: 'tool', state: 'ready', account: 'xuke' }
 const browser = { name: 'browser', kind: 'mcp', transport: 'stdio', description: 'Open pages' }
 const token = { name: 'GITHUB_TOKEN', purpose: 'Push branches', scope: 'all', createdAt: 0 }
@@ -167,7 +167,7 @@ const PAGES = [
   { key: 'general', id: null, name: 'GeneralPage', facts: ['DeepSeek', 'On'] },
   { key: 'bots', id: null, name: 'BotsPage', facts: ['Main Bot', 'Chief', 'Writer', 'Bot animation', 'Quiet'] },
   { key: 'bots', id: 'chief', name: 'BotSettingsForm', facts: ['Chief', 'Researcher', 'Run the team.'] },
-  { key: 'groups', id: 'r1', name: 'GroupSettingsForm', facts: ['Ops', 'Chief', 'Writer', 'Read this first.'] },
+  { key: 'groups', id: 'r1', name: 'GroupSettingsForm', facts: ['Ops', 'Chief', 'Writer', 'Alice', 'Read this first.'] },
   { key: 'connectors', id: null, name: 'ConnectorsPage', facts: ['GitHub', 'xuke'] },
   { key: 'capabilities', id: null, name: 'CapabilitiesPage', facts: ['browser', 'Open pages'] },
   { key: 'secrets', id: null, name: 'SecretsPage', facts: ['GITHUB_TOKEN', 'Push branches'] },

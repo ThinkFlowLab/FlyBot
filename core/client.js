@@ -15296,7 +15296,8 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
         Card,
         { title: t("Members · {count}", { count: face ? people2.length : members.length + humans.length + remotes.length }) },
         face ? people2.map((person) => (0, import_react31.createElement)(Row, { key: person.key, label: facePersonLabel(person), hint: t("Human") })) : [
-          humans.map((person) => (0, import_react31.createElement)(Row, { key: person.id, label: person.displayName || person.id, hint: t("Human") })),
+          // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
+          humans.map((person) => (0, import_react31.createElement)(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t("Human") })),
           members.map((member) => (0, import_react31.createElement)(Row, {
             key: member.id,
             label: member.name,

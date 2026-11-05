@@ -10,7 +10,7 @@ import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
 import { StandingApprovalsCard } from './standing-approvals.js'
 import { FlyBotRoomMembers } from './flybot-slots.js'
-import { remoteBotTitle } from '../shared/remote-label.js'
+import { remoteBotName, remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
   ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
@@ -195,7 +195,8 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         face
           ? people.map(person => h(Row, { key: person.key, label: facePersonLabel(person), hint: t('Human') }))
           : [
-              humans.map(person => h(Row, { key: person.id, label: person.displayName || person.id, hint: t('Human') })),
+              // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
+              humans.map(person => h(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t('Human') })),
               members.map(member => h(Row, {
                 key: member.id,
                 label: member.name,
