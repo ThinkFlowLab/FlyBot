@@ -58,6 +58,19 @@ function GeneralPage({ roster, actions, run }) {
     clearTimeout(timer.current)
     timer.current = setTimeout(() => run(actions.setPrefs({ accent: value })), 350)
   }
+  // The host refuses `set-prefs` in a read-only window, so the page says what is chosen
+  // instead of drawing the controls that would ask for it (#2474).
+  if (lockedWindow(roster)) {
+    const accent = ACCENT_INKS.find(ink => INKS[ink][0] === prefs.accent)
+    return [
+      h(SetSection, { key: 'look', title: t('Appearance') },
+        h(SetRow, { label: t('Theme'), hint: t(themes[current].label) }),
+        h(SetRow, { label: t('Accent'), hint: accent ? t(capitalize(accent)) : prefs.accent ?? t('Default') })),
+      h(SetSection, { key: 'notify', title: t('Notifications') },
+        h(SetRow, { label: t('In other chats'), hint: prefs.notifications !== false ? t('On') : t('Off') }),
+        NOTIFY_KINDS.map(([kind, label]) => h(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t('On') : t('Off') }))),
+    ]
+  }
   return [
     h(SetSection, { key: 'look', title: t('Appearance') },
       h(SetRow, { label: t('Theme'), hint: t('Colors for the whole team, on every device.') },
@@ -94,6 +107,13 @@ function MainBotsSection({ roster, actions, run }) {
   // Only the user's own Bots can hold the role; a friend's Bot is never offered (#276).
   const own = roster.bots.filter(bot => !bot.remote)
   const candidates = own.filter(bot => !isMainOf(roster, bot.id))
+  // Every control here writes `set-main`, which the host refuses in a read-only window; the
+  // section then names the Bots that hold the role (#2474).
+  if (lockedWindow(roster)) {
+    return h(SetSection, { title: t('Main Bot') },
+      h(SetRow, { label: t('Main Bot'), hint: first ? first.name : undefined }),
+      others.map(bot => h(SetRow, { key: bot.id, label: bot.name, hint: t('Also a Main Bot.') })))
+  }
   return h(SetSection, { title: t('Main Bot') },
     h(SetRow, {
       label: t('Main Bot'),
@@ -116,6 +136,11 @@ function MainBotsSection({ roster, actions, run }) {
 const MOTIONS = [['quiet', 'Quiet'], ['normal', 'Normal'], ['lively', 'Lively']]
 function MotionSection({ roster, actions, run }) {
   const motion = roster.prefs?.motion === 'quiet' || roster.prefs?.motion === 'lively' ? roster.prefs.motion : 'normal'
+  // The three steps write `set-prefs`; a read-only window names the one in use (#2474).
+  if (lockedWindow(roster)) {
+    return h(SetSection, { title: t('Animation') },
+      h(SetRow, { label: t('Bot animation'), hint: t(MOTIONS.find(([id]) => id === motion)?.[1] ?? 'Normal') }))
+  }
   return h(SetSection, { title: t('Animation') },
     h(SetRow, { label: t('Bot animation') },
       h(Segmented, { label: t('Bot animation'), value: motion, className: 'bt-motion-seg' }, MOTIONS.map(([id, label]) => h('button', {

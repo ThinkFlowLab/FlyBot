@@ -8,7 +8,7 @@ import { lookOf, BotMark } from './mark.js'
 import { ModelMenu, modelOf } from './model-menu.js'
 import { ModelTestRow, MODEL_TEST_CSS } from './model-test.js'
 import { FolderMenu } from './folder-menu.js'
-import { BotSchedules } from './schedules.js'
+import { BotSchedules, lockedWindow } from './schedules.js'
 import { BotCapabilitiesCard } from './capability-settings.js'
 import { BotConnectorsCard } from './connector-bots.js'
 import { memoryCountText, useMemoryCount } from './memory-panel.js'
@@ -208,6 +208,24 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
   const isMainBot = isMainOf(roster, bot.id)
   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
   const isTile = roster.mainBotId === bot.id
+  // The host refuses every write of this form in a read-only window, so the page keeps the
+  // Bot's own facts as text and draws no control (#2474).
+  if (lockedWindow(roster)) {
+    return h('div', { className: 'bt-bs' },
+      h('div', { className: 'bt-bs-hero' },
+        h(BotMark, { bot, size: 64, live: false }),
+        h('div', { className: 'bt-bs-who' },
+          h('span', { className: 'bt-bs-name' }, bot.name),
+          h('span', { className: 'bt-bs-sub' }, [bot.role, isMainBot ? t('Main Bot') : ''].filter(Boolean).join(' · ') || t('Bot')))),
+      h(Card, { title: t('Profile') },
+        h(Row, { label: t('Label'), hint: bot.role || t('Bot') })),
+      h(Card, { title: t('Model') },
+        h(Row, { label: t('Model'), hint: modelOf(bot, roster)?.name ?? modelHint(bot, roster) })),
+      h(Card, { title: t('Working folder') },
+        h(Row, { label: t('Folder'), hint: bot.workDir || t('Not set') })),
+      h(Card, { title: t('Instructions') },
+        h(Row, { label: t('What this Bot does'), hint: bot.instructions || t('None'), stack: true })))
+  }
   const save = patch => run(actions.updateBot(bot.id, patch))
   const duplicate = () => run(actions.duplicateBot(bot.id).then(copy => actions.openSession(copy.id)))
   const remove = () => { if (confirming) void run(actions.deleteBot(bot.id)); else setConfirming(true) }

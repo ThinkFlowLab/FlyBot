@@ -80,6 +80,7 @@
     "src/client/context-menu.js",
     "src/client/at-menu.js",
     "src/client/bot-settings.js",
+    "src/client/capability-settings.js",
     "src/client/user-message.js",
     "src/client/styles.js",
     "src/client/icons.js",

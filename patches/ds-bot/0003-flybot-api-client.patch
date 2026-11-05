@@ -371,7 +371,8 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
  import { ModelMenu, modelOf } from './model-menu.js'
 +import { ModelTestRow, MODEL_TEST_CSS } from './model-test.js'
  import { FolderMenu } from './folder-menu.js'
- import { BotSchedules } from './schedules.js'
+-import { BotSchedules } from './schedules.js'
++import { BotSchedules, lockedWindow } from './schedules.js'
  import { BotCapabilitiesCard } from './capability-settings.js'
 -import { useMemoryCount } from './memory-panel.js'
 +import { BotConnectorsCard } from './connector-bots.js'
@@ -406,7 +407,7 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
    return h(Card, { title: t('Memory') },
      h('button', { type: 'button', className: 'bt-set-row bt-bs-row', 'aria-label': t("Manage {name}'s memory", { name: bot.name }), onClick: () => actions.openMemory(bot.id) },
        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, label)),
-@@ -199,6 +199,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
+@@ -199,9 +199,28 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
      const timer = setTimeout(() => setConfirming(false), 4000)
      return () => clearTimeout(timer)
    }, [confirming])
@@ -414,6 +415,27 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
    const isMainBot = isMainOf(roster, bot.id)
    const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1
    const isTile = roster.mainBotId === bot.id
++  // The host refuses every write of this form in a read-only window, so the page keeps the
++  // Bot's own facts as text and draws no control (#2474).
++  if (lockedWindow(roster)) {
++    return h('div', { className: 'bt-bs' },
++      h('div', { className: 'bt-bs-hero' },
++        h(BotMark, { bot, size: 64, live: false }),
++        h('div', { className: 'bt-bs-who' },
++          h('span', { className: 'bt-bs-name' }, bot.name),
++          h('span', { className: 'bt-bs-sub' }, [bot.role, isMainBot ? t('Main Bot') : ''].filter(Boolean).join(' · ') || t('Bot')))),
++      h(Card, { title: t('Profile') },
++        h(Row, { label: t('Label'), hint: bot.role || t('Bot') })),
++      h(Card, { title: t('Model') },
++        h(Row, { label: t('Model'), hint: modelOf(bot, roster)?.name ?? modelHint(bot, roster) })),
++      h(Card, { title: t('Working folder') },
++        h(Row, { label: t('Folder'), hint: bot.workDir || t('Not set') })),
++      h(Card, { title: t('Instructions') },
++        h(Row, { label: t('What this Bot does'), hint: bot.instructions || t('None'), stack: true })))
++  }
+   const save = patch => run(actions.updateBot(bot.id, patch))
+   const duplicate = () => run(actions.duplicateBot(bot.id).then(copy => actions.openSession(copy.id)))
+   const remove = () => { if (confirming) void run(actions.deleteBot(bot.id)); else setConfirming(true) }
 @@ -222,8 +222,9 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
        h(Row, { label: t('Label'), hint: t('Optional. Shown under the name.') }, h(InlineText, { label: t('Label'), value: bot.role, placeholder: t('Research, admin…'), maxLength: 24, onSave: role => save({ role }) }))),
      h(Card, { title: t('Model') },
@@ -487,6 +509,36 @@ diff --git a/src/client/bot-settings.js b/src/client/bot-settings.js
 +  .bt-bs-input{flex:1 1 100%;width:auto;min-width:0;margin:0;text-align:left}
 +}
  `
+diff --git a/src/client/capability-settings.js b/src/client/capability-settings.js
+--- a/src/client/capability-settings.js
++++ b/src/client/capability-settings.js
+@@ -1,4 +1,5 @@
+ import { createElement as h, useEffect, useState } from 'react'
++import { lockedWindow } from './schedules.js'
+ import { t } from './i18n.js'
+ 
+ const blank = () => ({ name: '', kind: 'mcp', description: '', transport: 'stdio', command: '', argsText: '', envText: '{}', url: '', headersText: '{}', content: '', items: [] })
+@@ -133,6 +133,20 @@ export function CapabilitiesPage({ roster, actions, run }) {
+     setConfirming('')
+     void run(actions.deleteCapability(item.name))
+   }
++  // The host refuses saving, deleting and approving a capability in a read-only window, so
++  // the page lists what it holds as text (#2474).
++  if (lockedWindow(roster)) {
++    return h('section', { className: 'bt-set-section' },
++      h('h3', null, t('Shared capabilities')),
++      h('div', { className: 'bt-set-card bt-connectors-card' },
++        items.length === 0 ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No capabilities saved')))
++          : items.map(item => h('div', { key: item.name, className: 'bt-set-row' },
++            h('span', { className: 'bt-set-copy' },
++              h('span', { className: 'bt-bs-label' }, item.name),
++              h('span', { className: 'bt-set-hint' }, item.description || (item.kind === 'pack'
++                ? `${t('Pack')}: ${(item.items ?? []).join(', ') || t('No items')}`
++                : item.kind === 'mcp' ? (item.transport === 'stdio' ? t('Local command') : t('HTTP server')) : t('Skill'))))))))
++  }
+   return h('section', { className: 'bt-set-section' },
+     h('h3', null, t('Shared capabilities')),
+     h('div', { className: 'bt-actions' },
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
