@@ -109,7 +109,13 @@ export function FaceLead({ room, roster, pick }) {
   const seats = faceSeats(room, roster)
   const current = seats.find(seat => isLeadSeat(seat, lead?.handle))
   if (!current) return null
-  const canPick = lead.canPick === true && typeof pick === 'function'
+  // `social/face-lead` is not registered `{ read: true }` (`plugins/social/src/social.js`), so a
+  // read-only window refuses it — and the room's creator still arrives with `canPick: true`, because
+  // the host knows who created the room, not that this window cannot write. The card reads the window
+  // too: the lead's name and its sentence stay, the button and its picker go, and so does the
+  // "only the person who created this room" hint, since nobody in this window can change the lead.
+  const locked = lockedWindow(roster)
+  const canPick = !locked && lead.canPick === true && typeof pick === 'function'
   const choose = async (handle) => {
     setBusy(true)
     setError('')
@@ -133,7 +139,7 @@ export function FaceLead({ room, roster, pick }) {
         ? h('span', { className: 'bt-tag' }, t('Lead'))
         : h('button', { type: 'button', className: 'bt-mini', disabled: busy, onClick: () => void choose(seat.record?.handle) }, t('Make lead')))) : null,
     open && canPick && lead.picked ? h('button', { type: 'button', className: 'bt-more', disabled: busy, onClick: () => void choose(null) }, t('Use the default lead')) : null,
-    canPick || !lead.supported ? null : h('div', { className: 'bt-set-hint' }, t('Only the person who created this room can change it.')),
+    canPick || locked || !lead.supported ? null : h('div', { className: 'bt-set-hint' }, t('Only the person who created this room can change it.')),
     error ? h('div', { className: 'bt-set-hint', role: 'alert' }, error) : null)
 }
 

@@ -15228,7 +15228,8 @@ function FaceLead({ room: room2, roster, pick: pick2 }) {
   const seats = faceSeats(room2, roster);
   const current = seats.find((seat) => isLeadSeat(seat, lead?.handle));
   if (!current) return null;
-  const canPick = lead.canPick === true && typeof pick2 === "function";
+  const locked = lockedWindow(roster);
+  const canPick = !locked && lead.canPick === true && typeof pick2 === "function";
   const choose = async (handle) => {
     setBusy(true);
     setError("");
@@ -15263,7 +15264,7 @@ function FaceLead({ room: room2, roster, pick: pick2 }) {
       seat === current ? (0, import_react31.createElement)("span", { className: "bt-tag" }, t("Lead")) : (0, import_react31.createElement)("button", { type: "button", className: "bt-mini", disabled: busy, onClick: () => void choose(seat.record?.handle) }, t("Make lead"))
     )) : null,
     open && canPick && lead.picked ? (0, import_react31.createElement)("button", { type: "button", className: "bt-more", disabled: busy, onClick: () => void choose(null) }, t("Use the default lead")) : null,
-    canPick || !lead.supported ? null : (0, import_react31.createElement)("div", { className: "bt-set-hint" }, t("Only the person who created this room can change it.")),
+    canPick || locked || !lead.supported ? null : (0, import_react31.createElement)("div", { className: "bt-set-hint" }, t("Only the person who created this room can change it.")),
     error ? (0, import_react31.createElement)("div", { className: "bt-set-hint", role: "alert" }, error) : null
   );
 }
