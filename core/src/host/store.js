@@ -931,10 +931,14 @@ export function install(rt) {
   }
 
   // A name, not its target: `lstat` answers what the path is, and a save is the only place that
-  // turns a link into a regular file.
+  // turns a link into a regular file. A hard link answers `isSymbolicLink() === false` while its
+  // bytes are also a name outside this home, so the rule `plainLeaf` already holds (real-dir.js)
+  // decides here too: a regular file is linked while it carries a second name, and a file of this
+  // host's own (`nlink === 1`) never is.
   const isLink = async path => {
     try {
-      return (await lstat(path)).isSymbolicLink()
+      const info = await lstat(path)
+      return info.isSymbolicLink() || (info.isFile() && info.nlink > 1)
     } catch {
       return false
     }
