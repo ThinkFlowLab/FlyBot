@@ -1815,6 +1815,21 @@ export function createWorkflowService({
       const key = `${decision.kind}:${decision.id}`
       const prev = state.routes[taskId]
       if (prev?.key === key) return { ok: true, matched: true, already: true, decision }
+      // #1668: a card leaving one workflow for another leaves a line in the source graph, so a
+      // person watching it reads where the card went instead of seeing it vanish. Written in the
+      // same mutation as the target's claim below, never by a write() of its own.
+      const reroutedFrom = held?.kind === 'workflow' && decision.kind === 'workflow' && held.id !== decision.id ? held.id : undefined
+      const noteReroute = () => {
+        if (reroutedFrom === undefined) return
+        const taskLabel = summarizeTask(task)
+        const to = workflow(decision.id)?.name ?? decision.id
+        push(reroutedFrom, [{
+          kind: 'system',
+          key: 'Task re-matched · {task} → {to}',
+          params: { task: taskLabel, to },
+          text: `任务已改投 · ${taskLabel} → ${to}`,
+        }], now())
+      }
       if (decision.kind === 'bot') {
         rememberClaim(taskId, decision)
         write()
@@ -1831,6 +1846,7 @@ export function createWorkflowService({
       const finish = (value) => {
         if (value?.ok === false) return value
         rememberClaim(taskId, decision)
+        noteReroute()
         write()
         return { ...present(), matched: true, already: false, decision }
       }
