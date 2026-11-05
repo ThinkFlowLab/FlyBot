@@ -275,6 +275,7 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
     return changed
   }
   async function reconcile() {
+    await rt.projectHarness?.reconcileExits?.()
     let changed = false
     for (const lease of Object.values(leases()).filter(active)) {
       if (lease.processScope?.hostPid === process.pid && (lease.worker?.kind === 'native' && rt.projectDelivery?.nativeSessions?.currentHost(lease.worker.botId) || lease.worker?.kind === 'sdk' && rt.projectHarness?.hasController(lease.worker.handle) || lease.worker?.kind === 'native-turn' && rt.projectAgents?.hasExchange(lease.worker.handle))) continue

@@ -28,9 +28,32 @@ owned_paths:
   - core/test/project-harness.test.js
   - core/test/project-harness-turn.test.js
   - core/test/project-harness-git-sdk.test.js
+  - core/src/host/project-sdk-exit.mjs
+  - core/test/project-sdk-exit.test.js
+  - core/test/project-sdk-exit-sdk.test.js
 ---
 
 # Harness adapters (fork M7.3)
+
+## Controller-loss exit evidence (#2483)
+
+New resource workers register their worker/lease/generation and actual process birth
+in a private `.flybot-sdk-exit` artifact outside SDK workspace/scratch write grants.
+Only after abort/permissions/credential cleanup and settled SDK work do they atomically
+write stopped. EOF, closed output and SIGTERM use that same shutdown path. A missing
+controller can inspect the matching receipt plus actual resource-side process exit;
+neither receipt alone nor a missing PID grants release. Explicit release may signal
+the birth-verified process using Linux pidfd (Python3); there is no PID-only kill fallback.
+Unsupported identity/stop facilities retain unknown exit.
+
+The existing resource reconciliation pass also repairs partial worker/lease release.
+Trusted saved SDK stop/exit proof or hash-matched host stopped event plus saved zero
+exit can reconcile legacy records, including occupied=0 with a stale worker record.
+Without those facts, old unregistered workers remain unknown; evidence is not invented.
+Reuse `sdk-stop-ack-and-process-exit`, original Session release, current binding/generation
+checks and scheduler. No new service, Task store, business workflow or automatic next
+role is added. Confirmed proof persists before receipt cleanup; cleanup debt does not
+reoccupy a released resource. Task results/external writes still need original reconciliation.
 
 ## Isolated resource Git capability (#2483)
 

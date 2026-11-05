@@ -56,6 +56,12 @@ than inferred from configured slot counts. Host process metrics retain their own
 
 ## Admission and lifecycle
 
+#2483 runs the original Harness exit reconciliation in this existing pass, before
+resource admission. Exact SDK stop/process evidence reconciles both worker and lease,
+including partially saved releases. Current controllers retain their original stop path;
+unknown or mismatched generations retain occupancy. Resource-side inspection uses only
+the currently bound resource/runtime/UID; no credential login or resource migration.
+
 Role execution configuration has candidate `resourceIds`, Harness and optional positive
 `maxConcurrent`. Choose the least occupied compatible ready environment and retain the
 single-resource binding for the Session. There is no broadcast or in-flight migration.
