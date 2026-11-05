@@ -919,6 +919,22 @@ export function createWorkflowService({
     state.routes[taskId] = { key: `${decision.kind}:${decision.id}`, kind: decision.kind, id: decision.id, at: now() }
   }
 
+  // #1668/#2480/#2485: the graph that lost a card says once where it went. The
+  // destination is a Bot's roster name when the roster lists it, its id otherwise.
+  function logYield(fromId, decision, taskLike) {
+    const to = decision.kind === 'workflow'
+      ? workflow(decision.id)
+      : (bots() ?? []).find(item => item && item.id === decision.id)
+    const name = to?.name ?? decision.id
+    const label = summarizeTask(taskLike)
+    push(fromId, [{
+      kind: 'system',
+      key: 'Task re-matched · {task} → {to}',
+      params: { task: label, to: name },
+      text: `任务已改投 · ${label} → ${name}`,
+    }], now())
+  }
+
   function routeBot(body) {
     const botId = cleanLine(body.botId, 80)
     const bot = (bots() ?? []).find(item => item && item.id === botId && item.remote !== true)
@@ -926,6 +942,13 @@ export function createWorkflowService({
     const taskId = cleanLine(body.taskId ?? body.id, 80)
     const title = cleanLine(body.title, 300)
     if (!taskId || !title) return { ok: false, error: 'A task needs an id and a title' }
+    // #2485: a card a lane holds can be handed straight to a Bot here, without
+    // passing through `ingest`. The lane that lost it gets the same one line,
+    // in the write that moves the claim.
+    const held = state.claims[taskId]
+    if (held?.kind === 'workflow' && workflow(held.id)) {
+      logYield(held.id, { kind: 'bot', id: bot.id }, { id: taskId, title })
+    }
     rememberClaim(taskId, { kind: 'bot', id: bot.id })
     write()
     return { ok: true, matched: true, decision: { kind: 'bot', id: bot.id }, ownerBotId: bot.id }
