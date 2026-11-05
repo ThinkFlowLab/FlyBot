@@ -2,9 +2,10 @@
 // line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
 // sends its prompt to the Bot's chat when it is due. A row edits its task in the same
 // form that creates one, and pauses or resumes it (#354). Each row says how its last run
-// went, and a failed run has Retry, which runs the task once now (#473). A row also copies
-// its task to another Bot or group chat (#1287): the picker is the create form's target
-// picker, and the copy keeps the source's next run because the host writes it as a row.
+// went; a failed run has Retry and any other runnable task has Run now, both of which run the
+// task once now (#473, #2507). A row also copies its task to another Bot or group chat (#1287):
+// the picker is the create form's target picker, and the copy keeps the source's next run
+// because the host writes it as a row.
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 import { BotAvatar, RoomAvatar } from './mark.js'
 import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
@@ -190,7 +191,11 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locke
     h('span', { className: 'bt-task-next' }, nextText(task)),
     // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
     // disabling: a disabled button still says this window can do it.
-    !locked && failed && task.status !== 'paused' && actions.scheduleRetry ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t('Retry')) : null,
+    // A failed run still reads Retry; any task the host will run on demand reads Run now, and a
+    // paused task or one whose run is in flight offers neither (#2507).
+    !locked && actions.scheduleRetry && task.status !== 'paused' && task.lastRun?.result !== 'running'
+      ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, title: t('Run the task once now'), onClick: retry }, t(failed ? 'Retry' : 'Run now'))
+      : null,
     !locked && onEdit ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Edit'), title: t('Edit'), onClick: () => onEdit(task) }, h(PencilIcon)) : null,
     !locked && onCopy ? h('button', { type: 'button', className: 'bt-mini bt-task-tool', disabled: busy, 'aria-label': t('Copy to another Bot or group chat'), title: t('Copy to…'), onClick: () => onCopy(task) }, h(DuplicateIcon)) : null,
     !locked && stoppable ? h('button', { type: 'button', className: 'bt-mini bt-task-pause', disabled: busy, onClick: toggle }, task.status === 'paused' ? t('Resume') : t('Pause')) : null,

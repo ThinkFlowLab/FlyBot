@@ -1321,6 +1321,7 @@ var ZH = {
   "Runs with {names}": "运行时带上 {names}",
   "Runs with no connectors": "运行时不带任何连接器",
   "Run the task once now": "现在运行一次这个任务",
+  "Run now": "现在运行",
   "DSH could not deliver it": "DSH 没能送达",
   "Resume the task first": "请先继续这个任务",
   "Copy to…": "复制到…",
@@ -3951,7 +3952,9 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locke
     (0, import_react5.createElement)("span", { className: "bt-task-next" }, nextText(task)),
     // A locked window draws none of the writes the host would refuse (#2232). Hiding, not
     // disabling: a disabled button still says this window can do it.
-    !locked && failed && task.status !== "paused" && actions.scheduleRetry ? (0, import_react5.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t("Retry")) : null,
+    // A failed run still reads Retry; any task the host will run on demand reads Run now, and a
+    // paused task or one whose run is in flight offers neither (#2507).
+    !locked && actions.scheduleRetry && task.status !== "paused" && task.lastRun?.result !== "running" ? (0, import_react5.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, title: t("Run the task once now"), onClick: retry }, t(failed ? "Retry" : "Run now")) : null,
     !locked && onEdit ? (0, import_react5.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Edit"), title: t("Edit"), onClick: () => onEdit(task) }, (0, import_react5.createElement)(PencilIcon)) : null,
     !locked && onCopy ? (0, import_react5.createElement)("button", { type: "button", className: "bt-mini bt-task-tool", disabled: busy, "aria-label": t("Copy to another Bot or group chat"), title: t("Copy to…"), onClick: () => onCopy(task) }, (0, import_react5.createElement)(DuplicateIcon)) : null,
     !locked && stoppable ? (0, import_react5.createElement)("button", { type: "button", className: "bt-mini bt-task-pause", disabled: busy, onClick: toggle }, task.status === "paused" ? t("Resume") : t("Pause")) : null,

@@ -653,7 +653,7 @@ test('#2112: the Bot details line says the list is narrowed, not that none exist
 // refusal lines carried no role. The lock is read the way the rest of the client reads it.
 const LOCK = 'Another FlyBot window has this home open; this window is read-only.'
 const LOCKED_ROSTER = { ...ROSTER, readOnly: LOCK }
-const WRITE_LABELS = ['Turn on', 'Turn off', 'Save window', 'New task', 'Edit', 'Copy to another Bot or group chat', 'Pause', 'Resume', 'Delete task', 'Retry']
+const WRITE_LABELS = ['Turn on', 'Turn off', 'Save window', 'New task', 'Edit', 'Copy to another Bot or group chat', 'Pause', 'Resume', 'Delete task', 'Retry', 'Run now']
 const labelOf = node => text(node).join(' ').trim() || String(node.props?.['aria-label'] ?? '')
 const writeControls = tree => all(tree).filter(node => node.type === 'button' && WRITE_LABELS.includes(labelOf(node)))
 const fieldControls = tree => all(tree).filter(node => ['form', 'input', 'select', 'textarea'].includes(node.type))
@@ -687,7 +687,7 @@ test('#2232: a read-only window draws no scheduled-task write control', () => {
   seeded.push(view)
   const writable = render(SchedulesPage({ roster: ROSTER, actions: scheduleActions(), start: null }))
   const drawn = writeControls(writable).map(labelOf).sort()
-  assert.deepEqual(drawn, ['Copy to another Bot or group chat', 'Delete task', 'Edit', 'New task', 'Pause', 'Save window', 'Turn off'], `a writable window keeps every write, saw ${drawn.join(',')}`)
+  assert.deepEqual(drawn, ['Copy to another Bot or group chat', 'Delete task', 'Edit', 'New task', 'Pause', 'Run now', 'Save window', 'Turn off'], `a writable window keeps every write, saw ${drawn.join(',')}`)
   assert.equal(fieldControls(writable).filter(node => node.type === 'input' && node.props.type === 'time').length, 2, 'the quiet-hours window keeps its two inputs')
 })
 
@@ -911,4 +911,46 @@ test('#2354 c: a connector still connecting is not named', () => {
   const lines = reachLines(roster)
   assert.equal(reachOf(lines), 'Runs with GitHub')
   assert.ok(!lines.join('|').includes('Composio'), 'a connecting connector has no tools yet')
+})
+
+// P-590 (#2507): a healthy task had no way to run now — Retry was drawn only for a failed run,
+// while the host's `retrySchedule` already accepts any task and refuses only a paused one. The row
+// now says Run now for a healthy task or one that never ran, keeps Retry for a failed run, and
+// draws neither while a run is in flight or the task is paused. DSH's own times are untouched.
+const RUN_LABELS = ['Run now', 'Retry']
+const runControls = tree => all(tree).filter(node => node.type === 'button' && RUN_LABELS.includes(text(node).join('').trim()))
+
+test('P-590: a healthy or never-run task offers Run now, and one press sends one schedule-retry', async () => {
+  const calls = []
+  const actions = { ...spy(), scheduleRetry: async (...args) => { calls.push(['retry', ...args]); return OFF } }
+  const at = new Date(2030, 0, 2, 9, 0).getTime()
+  const ran = { ...ACTIVE, lastRun: { at, result: 'delivered' } }
+  const never = { ...ACTIVE, id: 's4' }
+  const failed = { ...ACTIVE, id: 's5', lastRun: { at, result: 'failed', reason: 'SERVER 503: upstream busy' } }
+  const inFlight = { ...ACTIVE, id: 's6', lastRun: { at, result: 'running' } }
+  const view = { available: true, tasks: [ran, never, failed, inFlight, PAUSED] }
+  seeded.push(view, null)
+  const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  const seen = runControls(card).map(button => text(button).join('').trim())
+  assert.deepEqual(seen, ['Run now', 'Run now', 'Retry'], `a healthy or never-run task offers Run now, a failed one Retry, an in-flight or paused one neither, saw ${seen.join(',')}`)
+  const nextBefore = text(card).filter(line => /^Next: /.test(line))
+  runControls(card)[0].props.onClick()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['retry', 'chat-b1', 's1']], 'one press sends exactly one schedule-retry for that task')
+  seeded.push(view, null)
+  const again = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
+  assert.deepEqual(text(again).filter(line => /^Next: /.test(line)), nextBefore, "the task's own next run does not move")
+})
+
+test('P-590: a read-only window draws no Run now either', () => {
+  const at = new Date(2030, 0, 2, 9, 0).getTime()
+  const view = { available: true, tasks: [{ ...ACTIVE, lastRun: { at, result: 'delivered' } }, { ...ACTIVE, id: 's4' }] }
+  seeded.push(view)
+  const locked = render(SchedulesPage({ roster: LOCKED_ROSTER, actions: scheduleActions(), start: null }))
+  assert.deepEqual(runControls(locked).map(button => text(button).join('').trim()), [], 'a read-only window offers neither Run now nor Retry')
+  assert.deepEqual(writeControls(locked).map(labelOf), [], 'and still no other scheduled-task write')
+  // The control: the same tasks in a writable window draw the new control on both rows.
+  seeded.push(view)
+  const writable = render(SchedulesPage({ roster: ROSTER, actions: scheduleActions(), start: null }))
+  assert.deepEqual(runControls(writable).map(button => text(button).join('').trim()), ['Run now', 'Run now'], 'a writable window draws Run now on both')
 })

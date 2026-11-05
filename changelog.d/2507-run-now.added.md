@@ -1,0 +1,1 @@
+A scheduled task can be run once from its own row even when its last run went fine: **Run now** joins **Retry**, a run in flight or a paused task offers neither, and running a task now leaves its next DSH run where it was ([#2507](https://github.com/ThinkFlowLab/FlyBot/issues/2507)).

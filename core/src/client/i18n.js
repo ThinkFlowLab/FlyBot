@@ -1275,6 +1275,7 @@ const ZH = {
   'Runs with {names}': '运行时带上 {names}',
   'Runs with no connectors': '运行时不带任何连接器',
   'Run the task once now': '现在运行一次这个任务',
+  'Run now': '现在运行',
   'DSH could not deliver it': 'DSH 没能送达',
   'Resume the task first': '请先继续这个任务',
   'Copy to…': '复制到…',
