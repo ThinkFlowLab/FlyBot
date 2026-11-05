@@ -255,3 +255,87 @@ test('#2480: a reroute from a workflow to a Bot leaves one line on the source, n
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// #2485: the one leg that never reaches `ingest`. A card a lane holds can be
+// handed straight to a Bot with `assign({ botId })`; `routeBot()` attached the
+// claim and returned, so the lane that lost the card wrote no line at all. The
+// contract is the same one #1668 named and #2480 extended: the graph that lost
+// the card says once where it went, in the same write that moves the claim.
+test('#2485: a held card assigned straight to a Bot leaves one line on the source lane', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-bot-assign-'))
+  try {
+    const svc = serviceAt(dir)
+    const alpha = named(svc, 'Alpha')
+    // The lane takes the card first, so it is the side that loses it.
+    await svc.ingest({ id: 't-1', status: 'open', title: 'Ship it', workflowId: alpha.id })
+    const sourceBefore = messagesOf(svc, 'Alpha')
+
+    const moved = svc.assign({ taskId: 't-1', title: 'Ship it', botId: 'main' })
+    assert.equal(moved.ok, true, moved.error)
+    assert.deepEqual(moved.decision, { kind: 'bot', id: 'main' })
+
+    const sourceAfter = messagesOf(svc, 'Alpha')
+    assert.equal(sourceAfter.length, sourceBefore.length + 1, 'the source log gained exactly one entry')
+    assert.deepEqual(sourceAfter.slice(0, sourceBefore.length), sourceBefore, 'the earlier source entries are untouched')
+    const line = sourceAfter.at(-1)
+    assert.equal(line.kind, 'system')
+    assert.equal(line.key, 'Task re-matched · {task} → {to}')
+    assert.equal(line.params.task, 't-1 · Ship it', 'the line names the task')
+    assert.equal(line.params.to, 'Chief', 'the line names the Bot by its roster name, not its id')
+    assert.equal(line.text, '任务已改投 · t-1 · Ship it → Chief')
+    assert.equal(line.at, CLOCK)
+
+    // Claim and line land in one write: a reload sees both, and the claim moved.
+    const store = readStore(dir)
+    assert.deepEqual(store.claims['t-1'], { kind: 'bot', id: 'main' })
+    assert.equal(store.logs[alpha.id].at(-1).params.to, 'Chief')
+    assert.equal(messagesOf(serviceAt(dir), 'Alpha').length, sourceAfter.length, 'the line is stored, not painted from memory')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// No lane ever held the card, so there is no source graph to tell.
+test('#2485: a direct Bot assignment with no lane behind it writes no source line', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-bot-assign-fresh-'))
+  try {
+    const svc = serviceAt(dir)
+    // A lane exists but never held t-9: there is nothing on its side to say.
+    named(svc, 'Alpha')
+    const before = messagesOf(svc, 'Alpha')
+
+    const routed = svc.assign({ taskId: 't-9', title: 'Fresh card', botId: 'main' })
+    assert.equal(routed.ok, true, routed.error)
+    assert.deepEqual(routed.decision, { kind: 'bot', id: 'main' })
+    assert.deepEqual(messagesOf(svc, 'Alpha'), before, 'no lane log moved')
+    const everyLine = Object.values(readStore(dir).logs ?? {}).flat()
+    assert.equal(everyLine.some(entry => String(entry.key ?? '').includes('re-matched')), false, 'no source line was invented')
+    assert.deepEqual(readStore(dir).claims['t-9'], { kind: 'bot', id: 'main' }, 'the claim is still attached')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// The same Bot already holds it: nothing changed, so nothing is written again.
+test('#2485: a card the same Bot already holds is not written again', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-bot-assign-noop-'))
+  try {
+    const svc = serviceAt(dir)
+    const alpha = named(svc, 'Alpha')
+    await svc.ingest({ id: 't-1', status: 'open', title: 'Ship it', workflowId: alpha.id })
+    svc.assign({ taskId: 't-1', title: 'Ship it', botId: 'main' })
+
+    const before = messagesOf(svc, 'Alpha')
+    const bytes = readFileSync(join(dir, 'workflows.json'))
+    const mtimeMs = statSync(join(dir, 'workflows.json')).mtimeMs
+
+    const again = svc.assign({ taskId: 't-1', title: 'Ship it', botId: 'main' })
+    assert.equal(again.ok, true, again.error)
+    assert.equal(again.already, true, 'the same route is a no-op, as it is on the ingest legs')
+    assert.deepEqual(messagesOf(svc, 'Alpha'), before, 'a repeated assignment adds no line')
+    assert.deepEqual(readFileSync(join(dir, 'workflows.json')), bytes, 'the store is byte-identical')
+    assert.equal(statSync(join(dir, 'workflows.json')).mtimeMs, mtimeMs, 'the store was not rewritten')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
