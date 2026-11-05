@@ -229,6 +229,12 @@ export function install(rt) {
       memoryReviews: alone() ? full.memoryReviews : 0,
       connectors: alone() ? full.connectors : [],
       capabilityStatuses: pick(full.capabilityStatuses),
+      // P-556: how many saves of this host replaced a linked `state.json`, with the generation of the
+      // process that counted them. This is a fact about the host, not about one member's data, so it
+      // reaches a signed-in deployment like an unsigned one: absent from this whitelist it reached
+      // nobody at all, and the notice was silently dead wherever anyone had signed in (Security, on
+      // review of #2473).
+      stateFileLinkReplaced: full.stateFileLinkReplaced ?? { gen: '', count: 0 },
     }
   }
 

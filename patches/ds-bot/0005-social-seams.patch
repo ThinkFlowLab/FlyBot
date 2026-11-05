@@ -462,7 +462,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,62 @@ export function install(rt) {
+@@ -65,22 +65,66 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -494,6 +494,10 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      memoryReviews: rt.memoryReviews(),
 +      connectors: rt.connectorsView(),
 +      capabilityStatuses: rt.capabilityStatusesView(),
++      // P-556: a save that replaced a linked `state.json` with a regular file keeps the team
++      // revision, so the count rides the live part of every answer — the `unchanged` one included —
++      // together with the generation of the host process that counted it (a restart starts over).
++      stateFileLinkReplaced: rt.stateLinkReplaced?.() ?? { gen: '', count: 0 },
 +    }
 +    // Plugin tool names change with a plugin reload, not with the team revision, so they ride every
 +    // answer, unchanged or not, and the client re-reads its hidden-row set (#419).

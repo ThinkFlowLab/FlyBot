@@ -483,3 +483,29 @@ inferred from an assignee label.
 ## Project board metrics and the running table (#1829)
 
 `core/src/client/project-board.js` draws the seven cards the host's `project-board` read carries in `metrics`: four day counts and three seven-day medians, each with a one-line caption naming the field and the window. A value the host answered `null` renders `—` (u+2014) and never `0`; an `ok: false` read draws the same cards plus one line naming the host's reason. `metricsView` is pure and takes the host's object as it came. A meeting row also draws the proxy line (#1861): `projectBoardRecord` keeps each meeting's `participants` with their `speaksFor`, and the decided and pending rows render every proxy as `<name> for {user}` in the same `for {user}` words a task row uses for its holder, with the spoken-for ids also on `data-speaks-for`. The running table below renders `metrics.running` — a claimed card's title, status, holder, claim age (from the claim's own start), source and last activity — marks a row whose claim passed `RUNNING_OVERDUE_MS` and sends a click through the same `onOpen` the board rows use; with no rows it draws one empty line. The Waiting / In flight / Blocked numbers stay on the one-line count header beside those groups. A card's title, priority and board come off the row the host sent and fall back to the `tasks` read joined by id — that read keeps open cards only, so a finished card in the `done` half has no record to join and would otherwise draw as `#<id>` with no priority and no board to open; `boardOfRow` prefers the row's `{ kind, id }` and derives it only when the row carries none, and a `workflow` row keeps no board. A row stored or served before the row carried text still reads exactly as it did.
+
+## A save over a linked `state.json` says so once (P-556)
+
+The host never writes through a link at the team file's name: a save replaces the name with a regular
+file of this home's own, so the file the person linked keeps every byte and its last write time. That
+save moves no team revision, so the count of them rides the live part of every `state` answer
+(`stateFileLinkReplaced: { gen, count }`) rather than the revision, and the `unchanged` answer carries
+it too. `gen` is the generation stamp of the host process that counted: a restarted host starts at 0
+again, so a count is only comparable inside one generation.
+`core/src/client/state-link-notice.js` turns one answer into a decision. `stateLinkNotice(value, seen)`
+answers `{ seen, announce }`, where `seen` is what the window now remembers (`{ gen, count }`, or
+`{ gen: '', count: 0 }` until it remembers anything) and `announceStateLink(value, seen, say)` also says
+the sentence; `index.js` keeps that memory across polls and runs the call before the staleness check
+that drops an answer's team, through the same `notify` toast a confirmation uses. Three cases decide it,
+and they are different questions: a window with **no memory** (a page that has just loaded) takes the
+answer's count as its baseline and says nothing, so a refresh never replays an older notice; a window
+whose memory is under **another generation** resets to 0 and says the answer once when its count is
+above 0, which is the save that came with the restart — resetting to the answer's own count instead
+would swallow exactly that save; and under the **same generation** the usual `count > known` applies,
+quiet on a repeated `unchanged` and on a host that replaced no link. Junk is not a count (a bare number,
+a negative or unreadable count, a count with no generation) and leaves the memory alone. The sentence is
+`Saved as a separate file; the file the link pointed at was not changed.`, in `i18n.js` with its zh line
+(已保存为独立文件，原链接指向的内容未改动。). Tests: `core/test/state-link-answer.test.js` (the answer
+carries the pair, `unchanged` included, through the real `ownedLive` whitelist on a signed-in
+deployment) and `core/test/state-link-notice.test.js` (both restart orders, the refresh baseline, said
+once per count, both languages).

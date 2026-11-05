@@ -1581,7 +1581,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,71 @@
+@@ -1,44 +1,72 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
 +import { createElement as h } from 'react'
 +import { registry as flybotSlots } from './flybot-registry.js'
@@ -1635,8 +1635,10 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { STORAGE, migrateStorage } from './storage.js'
 +import { friendLineNews } from './friend-lines.js'
  import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
- import { installLocale, language } from './i18n.js'
+-import { installLocale, language } from './i18n.js'
 -import { noteClientError, quietly } from './diagnostics.js'
++import { installLocale, language, t } from './i18n.js'
++import { announceStateLink } from './state-link-notice.js'
 +import { noteClientError, noteNavigation, quietly } from './diagnostics.js'
  import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
  import { ABOUT_CSS } from './about.js'
@@ -1686,7 +1688,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
    const work = createSource({ bots: {}, approvals: [] })
    let workKey = ''
-@@ -125,18 +125,35 @@ export function apply(ctx) {
+@@ -125,18 +125,40 @@ export function apply(ctx) {
      try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
      return { ...state, unread }
    })
@@ -1706,6 +1708,11 @@ diff --git a/src/client/index.js b/src/client/index.js
    let pulls = 0
    let applied = 0
 -  const pull = async () => {
++  // P-556: the count of saves that replaced a linked `state.json`, as far as this window has told
++  // the person, with the host generation it belongs to: the count moves no revision, so it is read on
++  // every answer, `unchanged` included. `null` until the first answer: a window that has just opened
++  // takes that count as its baseline, so a refresh never replays a notice about an older save.
++  let linkSeen = null
 +  // A Reload in flight makes the poll stand back. Otherwise the loop's `unchanged` answer can take
 +  // the applied slot first and the full answer the press asked for is dropped as the older one.
 +  let reloading = 0
@@ -1724,7 +1731,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      const nextWork = JSON.stringify(value.work ?? null)
      if (nextWork !== workKey) { workKey = nextWork; work.set(value.work ?? { bots: {}, approvals: [] }) }
      noteMemoryNews(value.memoryNews ?? {})
-@@ -145,11 +145,14 @@ export function apply(ctx) {
+@@ -145,11 +145,18 @@ export function apply(ctx) {
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
      if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
@@ -1732,6 +1739,10 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    if (value.pluginTools !== undefined && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) { setPluginTools(value.pluginTools); live.pluginTools = value.pluginTools }
      if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
 -    if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
++    // P-556: a save whose name was a link replaced it with a file of this home's own instead of
++    // writing through the link. The count rides every answer, the `unchanged` one too, so the
++    // window can say it once — before the staleness check, which drops the answer's team, not this.
++    linkSeen = announceStateLink(value, linkSeen, text => actions.notify(t(text)))
 +    if (stateAnswerIsStale(value, current, { fresh })) return
      // On a browser with no visit record yet, everything already there counts as seen.
      if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map(entry => entry.id))

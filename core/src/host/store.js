@@ -3,7 +3,7 @@
 // or group chat it belongs to.
 import { randomUUID } from 'node:crypto'
 import { constants, mkdirSync, statSync } from 'node:fs'
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
@@ -43,6 +43,16 @@ export function install(rt) {
   // Every save this host has accepted since it started — a monotonic watermark, never decremented
   // — and the chain's tail: what `savesQueued` and `savesSettled` answer (#1368).
   let queued = 0
+  // Saves that replaced a linked `state.json` with a regular file (P-556): the host never writes
+  // through the link, so the file the person linked keeps every byte and stays where it is, and the
+  // path they opened is a file of this home's own from that save on. Counted once per save so a
+  // window can say what happened instead of leaving them to wonder.
+  //
+  // The count is answered with the generation of this process (Chief, on review): a restarted host
+  // starts counting at 0 again, and a window holding a larger count from the previous process would
+  // read `1 > 2` as old news and never say the save that came with the restart.
+  const linkGeneration = randomUUID()
+  let linkReplaced = 0
   const { warn } = rt
   // Opt-in (#511): every saved change is also recorded for replay; off by default.
   // Opening the writer is itself a write — it creates `journal/` (0700) and repairs a half-written
@@ -920,6 +930,15 @@ export function install(rt) {
     return true
   }
 
+  // A name, not its target: `lstat` answers what the path is, and a save is the only place that
+  // turns a link into a regular file.
+  const isLink = async path => {
+    try {
+      return (await lstat(path)).isSymbolicLink()
+    } catch {
+      return false
+    }
+  }
   const save = () => {
     if (stopped) return writing
     indexSessions()
@@ -957,7 +976,12 @@ export function install(rt) {
         ensureLock()
         await writeFile(temp, snapshot, 'utf8')
         ensureLock()
+        // The rename replaces the name, link included, so a linked team file is never written
+        // through: its target keeps every byte and its last write time. Ask the name here, before
+        // the rename takes it, and count the save that did it.
+        const wasLink = await isLink(statePath)
         await rename(temp, statePath)
+        if (wasLink) linkReplaced += 1
         seen = stamp()
         await journal?.record(snapshot)
         rt.capabilitiesStateSaved?.()
@@ -1086,6 +1110,7 @@ export function install(rt) {
 
   Object.assign(rt, {
     state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled, journal,
+    stateLinkReplaced: () => ({ gen: linkGeneration, count: linkReplaced }),
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
     groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,

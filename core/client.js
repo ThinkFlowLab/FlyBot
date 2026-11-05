@@ -1014,6 +1014,9 @@ var ZH = {
   "{bot} asked for {name}": "{bot} 请求了 {name}",
   "Allowed {bot} to use {name}": "已允许 {bot} 使用 {name}",
   "Saved {name}": "已保存 {name}",
+  // P-556: the store replaced a linked `state.json` with a file of this home's own and never wrote
+  // through the link, so the file the person linked keeps every byte.
+  "Saved as a separate file; the file the link pointed at was not changed.": "已保存为独立文件，原链接指向的内容未改动。",
   Canceled: "已取消",
   Done: "完成",
   // #1855: the one collapsed group that holds a Project's finished cards.
@@ -21984,6 +21987,39 @@ function writeMode(mode, storage = globalThis.localStorage) {
   }
 }
 
+// src/client/state-link-notice.js
+var LINK_REPLACED_NOTICE = "Saved as a separate file; the file the link pointed at was not changed.";
+var stateLinkCount = (value) => {
+  const field = value?.stateFileLinkReplaced;
+  if (!field || typeof field !== "object") return null;
+  const gen = typeof field.gen === "string" ? field.gen : "";
+  const count = Number(field.count);
+  if (gen === "" || !Number.isFinite(count) || count < 0) return null;
+  return { gen, count: Math.floor(count) };
+};
+var stateLinkMemory = (seen) => {
+  if (!seen || typeof seen !== "object") return null;
+  const gen = typeof seen.gen === "string" ? seen.gen : "";
+  if (gen === "") return null;
+  const count = Number(seen.count);
+  return { gen, count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 0 };
+};
+var stateLinkNotice = (value, seen) => {
+  const known = stateLinkMemory(seen);
+  const answer = stateLinkCount(value);
+  if (answer === null) return { seen: known ?? { gen: "", count: 0 }, announce: false };
+  if (known === null) return { seen: answer, announce: false };
+  if (answer.gen !== known.gen) {
+    return answer.count > 0 ? { seen: answer, announce: true } : { seen: { gen: answer.gen, count: 0 }, announce: false };
+  }
+  return answer.count > known.count ? { seen: answer, announce: true } : { seen: known, announce: false };
+};
+var announceStateLink = (value, seen, say) => {
+  const next = stateLinkNotice(value, seen);
+  if (next.announce) say?.(LINK_REPLACED_NOTICE);
+  return next.seen;
+};
+
 // src/client/user-message.js
 var import_react48 = require("react");
 var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
@@ -22398,6 +22434,7 @@ function apply(ctx) {
   const refreshed = /* @__PURE__ */ new Set();
   let pulls = 0;
   let applied = 0;
+  let linkSeen = null;
   let reloading = 0;
   const pull = async ({ fresh = false } = {}) => {
     const order = ++pulls;
@@ -22430,6 +22467,7 @@ function apply(ctx) {
       live2.pluginTools = value.pluginTools;
     }
     if (Object.keys(live2).length > 0 && current.ready) roster.set({ ...current, ...live2 });
+    linkSeen = announceStateLink(value, linkSeen, (text2) => actions.notify(t(text2)));
     if (stateAnswerIsStale(value, current, { fresh })) return;
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map((entry) => entry.id));
     roster.set(indexRoster(value));
