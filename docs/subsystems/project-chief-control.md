@@ -326,3 +326,9 @@ A merge-to-Chief request is an idempotent scoped inspection, separate from Task 
 A successful current Chief decision resolves its own waiting marker through the existing path; historical correction/failure records remain on the original Run. New merge facts do not erase all pending feedback, rework or criteria failures. Notification delivery, Chief execution outcome and Task acceptance remain separately observable.
 
 A merge-specific inspection remains bound to its source Task/Attempt/candidate and original merge evidence on every snapshot, including correction. Replacement or withdrawn evidence invalidates that Run instead of silently migrating its acceptance authority to a new candidate.
+
+## Explicit input protocol feedback (#2483)
+
+Close preflight reports missing declarations or pending inputs (including inputs outside this snapshot) through existing bounded correction. Feedback provides safe selected/remaining/unhandled counts; valid independent Task decisions remain single-application. Chief chooses whether to acknowledge a batch, wait, consult or change work. Applied input progress wakes existing scheduling to deliver remaining input, not to accept the Task.
+
+`lastResult.inputReceiptSummaries`, invocation history and requested decision audit expose bounded declaration metadata (`provided`, batch ID, read/handled IDs and remaining count). Validation precedes copying IDs; no message text is added. A declaration is not confirmed acknowledgement or comprehension: inspect actual input status and decision outcome. Snapshot/response hashes are fingerprints, not promises of identically named files under state-payloads.

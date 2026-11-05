@@ -284,3 +284,5 @@ Effect对账采纳真实SHA。失败Effect先走effect.retry；不创建新PR、
 现有 `task`/`task.detail`、Attempt 元数据及 `effects` 查询可共同读取 `merge.chiefHandoff`：`effectId`、`status`、`reason`、`waitingFor`、`runId`、`runStatus`、`runFailure`、`waitingRunId`、`createdAt`、`requestedAt` 和 `candidateSha`。具体结构见 OpenAPI `MergeHandoff`。`status=delivered` 表示 Chief 请求已持久化，不代表 Chief 已执行成功或 Task 已验收。通知重试仍用原 `effect.retry` 权限和请求契约；无需重新 publish/merge。
 
 GET `/ready` 无需成员凭据，只返回后端状态可写性：200 `{"status":"ready","writable":true}`；503 为 degraded/unavailable、writable=false。它与仅表示进程存活的 `/health` 分开，也不代表模型、资源或项目验收成功。
+
+TaskView 的 `dispatch` 对应当前 handoff 的 Effect；`committed` 是运行时校验证据，非原始 SQL 列。`chief.state` 的 `lastResult.inputReceiptSummaries` 提供已校验的声明摘要，`provided`、batchId、read/handled ID 与 remaining 均不等于任务验收。存在未处理输入的 close 进入已有纠错；Chief 可明确 continue 处理本批，原通知链继续交付余下输入。具体字段见 DispatchState、ChiefInputReceiptSummary。

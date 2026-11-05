@@ -115,3 +115,11 @@ test('merged candidate handoff separates transport receipt, Chief outcome and Ta
   assert.throws(() => validate({ $ref: '#/components/schemas/MergeHandoff' }, { ...value, status: 'accepted' }, spec), /status:/)
   assert.throws(() => validate({ $ref: '#/components/schemas/MergeHandoff' }, { ...value, candidateSha: 'unverified' }, spec), /candidateSha:/)
 })
+
+test('dispatch gates and Chief input declarations are typed without treating declarations as acceptance', () => {
+  const spec = readSpec()
+  validate({ $ref: '#/components/schemas/DispatchState' }, { effectId: 'e', status: 'pending', generation: 1, committed: true, executions: 89, failures: 0, waitingFor: 'project-capacity', reason: 'Capacity admission is pending', dueAt: 1 }, spec)
+  const receipt = { provided: true, batchId: 'batch', read: ['i'], handled: ['i'], remaining: 2 }
+  validate({ $ref: '#/components/schemas/ChiefInputReceiptSummary' }, receipt, spec)
+  assert.throws(() => validate({ $ref: '#/components/schemas/ChiefInputReceiptSummary' }, { ...receipt, handled: ['a', 'b', 'c'] }, spec), /handled:/)
+})

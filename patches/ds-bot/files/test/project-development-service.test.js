@@ -334,3 +334,15 @@ test('merged candidate exposes handoff and Chief failure independently of Task b
   state.projectExecutions['chief-run'].projectId = 'another-project'
   assert.equal(taskView(state, task).merge.chiefHandoff.runFailure, null)
 })
+
+test('queued Task dispatch projection derives runtime commit proof rather than raw SQL fields', () => {
+  const { state } = fixture(), task = state.tasks.t
+  task.collaboration = { status: 'queued', currentHandoffId: 'current', generation: 3, botId: 'p:developer', history: [] }
+  state.projectEffects = { e: { id: 'e', projectId: 'p', taskId: 't', kind: 'pool.dispatch', payload: { handoffId: 'current' }, generation: 1, status: 'pending', waitingFor: 'execution-resource', error: 'Receiving execution resource is not ready', executions: 89, failures: 0, dueAt: 10 } }
+  const view = taskView(state, task, { isIntentCommitted: token => token.id === 'e' && token.generation === 1 })
+  assert.equal(view.dispatch.committed, true); assert.equal(view.dispatch.executions, 89)
+  assert.equal(view.dispatch.waitingFor, 'execution-resource')
+  assert.equal(view.waitingFor, 'execution-resource'); assert.equal(view.reason, 'Receiving execution resource is not ready')
+  task.collaboration.currentHandoffId = 'replacement'
+  assert.equal(taskView(state, task).dispatch, null)
+})

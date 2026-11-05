@@ -243,3 +243,9 @@ Startup and normal scheduler reconciliation backfill missing handoff intents fro
 ### State integrity versus liveness (#2483)
 
 Use GET /ready to detect read-only/unavailable backend state; GET /health only proves the gateway process is alive. Readiness reflects detected Store/lock state, not full integrity or provider readiness. Run `node core/scripts/state-storage.mjs verify --home /private/backend/bot` from the delivery checkout for a read-only SQLite consistency check without stopping the host. It prints a single safe JSON result on stdout (exit0 valid, exit1 refused), with record identifiers/digests when known and no content. Capture that result rather than full private logs/databases. Keep the database, WAL and payload files intact; recovery needs a verified source, not recomputed hashes or Task edits.
+
+### Queued without a worker, or pending Chief inputs (#2483)
+
+Use TaskView.dispatch/current pool.dispatch via normal queries to distinguish held logical Bot, resource readiness, Project capacity, missing adapter and refused admission. Its executions count is Effect retries, not model calls. Raw SQL lacking committed cannot prove an uncommitted intent; use runtime query proof. Input receipt accepted is not role acceptance; inspect collaboration history/current handoff separately.
+
+For closure, inspect `chief.state` lastResult.inputReceiptSummaries and correction taskFeedback counts. remaining means outside this injected batch. A valid continue decision can commit an explicitly handled batch and persist the next original input notification. Read-only/zero-progress declarations create no continuation loop; unresolved inputs still prevent close. The host never fakes handled status, drops criteria, chooses a role or escalates after a retry count. Diagnostic response/snapshot hashes are not necessarily state-payload file references.

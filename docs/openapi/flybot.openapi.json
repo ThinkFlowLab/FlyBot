@@ -1414,6 +1414,103 @@
                 },
                 "recovery": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "taskFeedback": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "fields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "expected": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true,
+                          "required": [
+                            "field",
+                            "expected"
+                          ]
+                        }
+                      },
+                      "recovery": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "receiptFeedback": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/JsonValue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "inputReceiptFacts": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "provided": {
+                                "type": "boolean"
+                              },
+                              "selected": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 2
+                              },
+                              "remaining": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "unhandled": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "provided",
+                              "selected",
+                              "remaining",
+                              "unhandled"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "maxItems": 100
                 }
               },
               "additionalProperties": true,
@@ -1730,6 +1827,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dispatch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DispatchState"
               },
               {
                 "type": "null"
@@ -5746,6 +5853,59 @@
           "at"
         ]
       },
+      "ChiefInputReceiptSummary": {
+        "type": "object",
+        "properties": {
+          "provided": {
+            "type": "boolean"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Opaque server-issued ID; never infer authority from it."
+            },
+            "maxItems": 2
+          },
+          "handled": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Opaque server-issued ID; never infer authority from it."
+            },
+            "maxItems": 2
+          },
+          "remaining": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "provided",
+          "batchId",
+          "read",
+          "handled",
+          "remaining"
+        ]
+      },
       "ProjectMergePolicy": {
         "type": "object",
         "properties": {
@@ -5848,6 +6008,94 @@
           "enabled",
           "status",
           "policy"
+        ]
+      },
+      "DispatchState": {
+        "type": "object",
+        "properties": {
+          "effectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "committed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waitingFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dueAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "effectId",
+          "status",
+          "generation",
+          "committed",
+          "executions",
+          "failures",
+          "waitingFor",
+          "reason",
+          "dueAt"
         ]
       },
       "MergeHandoff": {
@@ -11123,6 +11371,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -11180,6 +11451,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -17026,6 +17320,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -17083,6 +17400,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -22486,6 +22826,29 @@
                           "at": {
                             "type": "integer",
                             "minimum": 0
+                          },
+                          "inputReceiptSummaries": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "taskId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200,
+                                  "description": "Opaque server-issued ID; never infer authority from it."
+                                },
+                                "declaration": {
+                                  "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "required": [
+                                "taskId",
+                                "declaration"
+                              ]
+                            },
+                            "maxItems": 30
                           }
                         },
                         "additionalProperties": true,
@@ -22543,6 +22906,29 @@
                         "receivedAt": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "inputReceiptSummaries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200,
+                                "description": "Opaque server-issued ID; never infer authority from it."
+                              },
+                              "declaration": {
+                                "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "taskId",
+                              "declaration"
+                            ]
+                          },
+                          "maxItems": 30
                         }
                       },
                       "additionalProperties": false,
@@ -30297,6 +30683,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -30354,6 +30763,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -30684,6 +31116,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -30741,6 +31196,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -32460,7 +32938,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32538,7 +33016,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32616,7 +33094,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32694,7 +33172,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -33094,7 +33572,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "188c1e11973113daa8ee4dfe5d1493002480fe382f8fc6a25aeef051c6b34f71"
       }
     },
     {
@@ -33172,7 +33650,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "188c1e11973113daa8ee4dfe5d1493002480fe382f8fc6a25aeef051c6b34f71"
       }
     },
     {
@@ -33250,7 +33728,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -33328,7 +33806,7 @@
       "notes": "Receipt states distinguish persisted, delivered, model-declared-read and handled; none imply Task completion.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc"
+        "sha256": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3"
       }
     },
     {
@@ -33572,7 +34050,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -33975,7 +34453,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
+        "sha256": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358"
       }
     },
     {
@@ -37070,7 +37548,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
+        "sha256": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358"
       }
     },
     {
@@ -37175,7 +37653,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
+        "sha256": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358"
       }
     },
     {
@@ -37647,7 +38125,7 @@
       "notes": "Host derives source, recipient and claim. Persisted/delivered does not mean read or handled.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc"
+        "sha256": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3"
       }
     },
     {
@@ -46464,7 +46942,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "188c1e11973113daa8ee4dfe5d1493002480fe382f8fc6a25aeef051c6b34f71"
       },
       "aliasOf": "development.query.handoff.get"
     },
@@ -46540,7 +47018,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "188c1e11973113daa8ee4dfe5d1493002480fe382f8fc6a25aeef051c6b34f71"
       },
       "aliasOf": "development.query.handoff.list"
     },
@@ -46820,7 +47298,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -47967,7 +48445,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
+        "sha256": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -48070,7 +48548,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
+        "sha256": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -48146,7 +48624,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4"
+        "sha256": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -48591,7 +49069,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       },
       "aliasOf": "development.query.pools"
     },
@@ -49015,7 +49493,7 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "5f773722efe387af738ae9db0a71daa6965f63265bfcf3e49ce64049d17485a4",
+      "core/src/host/project-chief-control.js": "fc5ace41bfe6d855d13fd2a8216f8c52d4000c5080653015cec884d158d8a358",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
       "core/src/host/project-chief-protocol.js": "416d57a83ae6064f04d13e70ffba63d8732b4cee4598e37fdcbf63ece7181a79",
       "core/src/host/project-chief-recovery.js": "c80a9d791aab06d4b343e8740a25a471ddf93e0af52b59dd9b7e6fc835c0d824",
@@ -49031,7 +49509,7 @@
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
       "core/src/host/project-delivery.js": "959cedecd7aec46cfd5693711c18637af8956bd6aed0701febb9f314a5f4f1ba",
-      "core/src/host/project-development-service.js": "9746c5a2b24c93e611310ae5edf41897a0e5d5f4d1840e6412bee0ea6ed93d28",
+      "core/src/host/project-development-service.js": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
@@ -49051,13 +49529,13 @@
       "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
       "core/src/host/project-harness.js": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
-      "core/src/host/project-inputs.js": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc",
+      "core/src/host/project-inputs.js": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-merge-policy.js": "78b5c4830e5466d102298d5ded6665f65f89537d908e1cf85b0438b868548552",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
       "core/src/host/project-native-sessions.js": "cbc3c32cfd21f4364440a84dbab33fe9ea7018f464959574342029d848def48e",
-      "core/src/host/project-pools.js": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc",
+      "core/src/host/project-pools.js": "188c1e11973113daa8ee4dfe5d1493002480fe382f8fc6a25aeef051c6b34f71",
       "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "d4c7e8b4f0d2dd177c3e02fd0afe62b4c13ca10348d8f1caf43c011cda47388b",
       "core/src/host/project-receipt-correction.js": "7162d771d2e28fb4f55af6d492d9b9dc18c9e96f7fbacf660b84c551281ec167",

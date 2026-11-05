@@ -209,3 +209,9 @@ Tester/Reviewer continuation. No default next role or extra acceptance authority
 ## Confirmed-exit retirement (#2375)
 
 An explicit manager/Chief recovery action uses the existing pool lock and Effects to retire the exact exited claim and fence its generation. Failed/unconfirmed persistence rolls back the staged retirement. Receipt history retains the old claim; late results cannot transfer initiative. No next role is selected.
+
+## Dispatch before allocation (#2483)
+
+A queued handoff is distinct from an allocated worker. Targeted dispatch reports the actual reached gate through the existing Effect: `execution-adapter`, `logical-role`, `execution-resource`, `project-capacity`, or `pool-admission` for an expected refused admission. Unknown programming errors remain failures; a legacy whole-pool pass still proceeds independently. No gate is bypassed, lease released or next role selected. Deferred retries do not count as SDK executions or actual progress.
+
+TaskView/Chief snapshot `dispatch` derives the current handoff's Effect, status, generation, commit proof, counters, next time and wait/reason from existing records. `committed` is runtime proof, not a persisted SQL column. Task-input `accepted` is ingestion, whereas collaboration history records actual role acceptance.

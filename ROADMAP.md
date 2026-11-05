@@ -1,5 +1,7 @@
 # FlyBot — Roadmap
 
+#2483 adds typed dispatch waits and bounded Chief input continuation through existing notifications; source/fixture completion remains distinct from the current OpenToday instance.
+
 #2483 proceeds through storage failure handling, dispatch/input-receipt diagnosis, resource Git capability and explicit baseline/restart recovery. Historical log times are not current health evidence; no live migration or automatic Task acceptance.
 
 #2413: recover saved merge-to-Chief handoff with idempotent requests and bounded backfill; expose delivery separately from Chief outcome and Task acceptance.
