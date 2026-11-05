@@ -110,3 +110,31 @@ test('gateway serves bounded same-origin math font assets without opening filesy
   }
   assert.equal(seen.length, 0)
 })
+
+test('readiness reports writable state separately from liveness and never forwards private runtime details', async t => {
+  let writable = true, unavailable = false, seen
+  const gateway = createWorkbenchGateway({ upstreamOrigin: 'http://127.0.0.1:1234', upstreamCookie: 'private-cookie', request: async (_url, options) => {
+    seen = options
+    if (unavailable) throw Error('private-runtime-path')
+    return new Response(JSON.stringify({ ok: true, value: { writable, secret: 'private-runtime-content' } }), { headers: { 'content-type': 'application/json' } })
+  } })
+  gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening'); t.after(() => new Promise(resolve => { gateway.closeAllConnections(); gateway.close(resolve) }))
+  const url = `http://127.0.0.1:${gateway.address().port}`
+  let response = await fetch(url + '/ready'); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { status: 'ready', writable: true })
+  assert.equal(seen.headers.cookie, 'private-cookie'); assert.equal(JSON.parse(seen.body).endpoint, 'auth-mode')
+  writable = false; response = await fetch(url + '/ready'); assert.equal(response.status, 503); assert.deepEqual(await response.json(), { status: 'degraded', writable: false })
+  assert.deepEqual(await fetch(url + '/health').then(row => row.json()), { status: 'ok' })
+  unavailable = true; response = await fetch(url + '/ready'); assert.equal(response.status, 503); assert.deepEqual(await response.json(), { status: 'unavailable', writable: false })
+})
+
+test('readiness rejects malformed, oversized and failed upstream results rather than guessing ready', async t => {
+  let body = '', status = 200
+  const gateway = createWorkbenchGateway({ upstreamOrigin: 'http://127.0.0.1:1234', upstreamCookie: 'private-cookie', request: async () => new Response(body, { status }) })
+  gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening'); t.after(() => new Promise(resolve => { gateway.closeAllConnections(); gateway.close(resolve) }))
+  const url = `http://127.0.0.1:${gateway.address().port}/ready`
+  for (const example of [['not-json', 200], ['x'.repeat(65537), 200], [JSON.stringify({ ok: true, value: { writable: 'true' } }), 200], [JSON.stringify({ ok: false }), 200], ['private-unavailable', 500]]) {
+    ;[body, status] = example
+    const response = await fetch(url)
+    assert.equal(response.status, 503); assert.deepEqual(await response.json(), { status: 'unavailable', writable: false })
+  }
+})

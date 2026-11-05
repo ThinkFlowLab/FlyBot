@@ -168,3 +168,5 @@ OpenAPI describes Chief lastResult/failureDetail, per-Task correction feedback a
 ## Merge-to-Chief delivery metadata — #2413
 
 Existing Task/Attempt queries expose the OpenAPI `MergeHandoff` projection: durable notification Effect/status, linked Chief Run/outcome, waiting reference and request times. Notification delivery is distinct from provider-confirmed merge and Chief Task acceptance. The existing authorized `effect.retry` command retries notification only; no new endpoint or permission is introduced. Candidate-bound snapshots prevent an old merge request from migrating to replacement work.
+
+#2483 adds the source-matched public GET /ready contract:200 ready/writable,503 degraded or unavailable. GET /health remains liveness only. The private state-storage verify CLI returns safe JSON diagnostics; it grants no remote repair authority.

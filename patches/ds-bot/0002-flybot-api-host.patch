@@ -873,7 +873,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      } catch (error) {
        const backup = `${statePath}.broken-${Date.now()}`
        try {
-@@ -87,13 +87,64 @@ export function install(rt) {
+@@ -87,16 +87,70 @@ export function install(rt) {
        return undefined
      }
      if (parsed?.version === 1) {
@@ -939,6 +939,12 @@ diff --git a/src/host/store.js b/src/host/store.js
    // Fill `state` from the saved file and bring an older team up to date. Returns the
    // groups whose Session titles still need the new name.
    const adopt = (parsed) => {
++    // A refused read is not a fresh empty home; retain current object identities.
++    if (parsed === undefined && stuck !== undefined) return { migrated: false, stale: [] }
++
+     const hadCapabilities = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'capabilities')
+     for (const key of Object.keys(state)) delete state[key]
+     Object.assign(state, JSON.parse(EMPTY), parsed ?? {})
 @@ -104,6 +104,20 @@ export function install(rt) {
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
@@ -1294,7 +1300,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 -    state, load, save, refresh, readOnly,
 +    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled,
 +    committedProjectEvents: { query: (id, options) => committedEvents.query(id, options), snapshot: (id, options) => committedEvents.snapshot(id, options) },
-+    stateStorage: { status: () => storage.status(), changes: options => storage.changes(options) },
++    stateStorage: { status: () => ({ ...storage.status(), readable: stuck === undefined, writable: readOnly() === undefined }), changes: options => storage.changes(options) },
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,

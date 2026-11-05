@@ -155,6 +155,77 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "operationId": "readiness",
+        "summary": "Current backend transport and state-write readiness, not model/provider or full storage integrity verification",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready for backend state writes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ready",
+                      "type": "string"
+                    },
+                    "writable": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "status",
+                    "writable"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Gateway transport rejection; no domain command success is implied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend is read-only or unavailable; no private diagnostics are exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "degraded",
+                        "unavailable"
+                      ]
+                    },
+                    "writable": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "status",
+                    "writable"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bot": {
       "post": {
         "operationId": "dispatchBotOperation",
@@ -49013,8 +49084,8 @@
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",
       "core/src/host/project-state-format.js": "4838b344439e585287fdc25ef15cea44d7aff4199c7a380ebbfa8cfcdf24f678",
-      "core/src/host/project-state-migration.js": "128ab1a332ea809c961e20a449bd41d58e6556e37d0f36191be31b0a284d5872",
-      "core/src/host/project-state-sqlite.js": "64320c122c28577c03ce13962be629ede9dd938d4805f5f0b6f352806d559c91",
+      "core/src/host/project-state-migration.js": "26a296f395ce50aa7ce4d11e2ee0c75c586fbc1861ed24b372c5c4ec7ed5dcc8",
+      "core/src/host/project-state-sqlite.js": "5614735582146a95cdbe7247934cd28ef838a4548aef70f41c31f388d03b4376",
       "core/src/host/project-state-storage.js": "94a9932c22f3f8e18f6952acb97b4323612294c6a10b493e1007de7f1b30b53d",
       "core/src/host/project-state.js": "5d6736eeedcfc09a3949a33457a4d4daf3b3745bebe2823d7852fd5c48f1b825",
       "core/src/host/project-task-lifecycle.js": "20940d6eeae321fcb064995990085af1f0e94d0a41fde50dc29a35e1af1a58a3",
@@ -49035,7 +49106,7 @@
       "core/src/host/secrets.js": "5787cd55f8b7f589605955e234a326a5addd64dc74320b6ca00029291405e524",
       "core/src/host/steering-interrupt.js": "f9bcf7df56303c217abedc96f98a98d4e2e668bb17d9510ada7debd3a8ed207d",
       "core/src/host/steward.js": "9a49eb851bf12df9f35fbf4870ca8d2355dbd5338c7e40d8b57bb9bd44d58e88",
-      "core/src/host/store.js": "421d7a745fedff00c9cef2ce1083366bc3169602d24d34583982ee8d0b46cf3b",
+      "core/src/host/store.js": "465ad84ea3a986d4b2dc2e575f3c278a75e807685f6d07ecb33812334b05ad7c",
       "core/src/host/task-drive.js": "c6e31e5c6277e7088e7ffabf6c0b8accefddf87ae4580e3550b5845efcc97aa3",
       "core/src/host/tasks.js": "c4d1e376b3de2c023d2c3debaa328d56cd2f245fcd2bcb5695f73360b608f130",
       "core/src/host/text.js": "709b3882356fc10d367533634e021b979a18db0e8127ac6cac59efe8e7e06c18",
@@ -49047,7 +49118,7 @@
       "core/src/host/update.js": "8b049ec4e2d5d07d747312e3ff8c1560d7e3681e5b41dd867cd0961c5675a2be",
       "core/src/host/usage.js": "fff9a097cc3ac4b2fe4fd2cebdd1a3b24fbf82b63535d8cf274b0025e0d2b0f3",
       "core/src/host/work-dispatch.js": "bef48285a381a6bbc7e1c162656316c4769cca76fd44da0e4fcfed54fe38d641",
-      "core/src/host/workbench-gateway.js": "6c2beeec490557816d5a82c8992048e43b1ec39e3d40d85bcfc027684f8a65b4",
+      "core/src/host/workbench-gateway.js": "522e09b699f71999fde6ad6d6be6df2b776f1ae6d68118fc87976703a8ba555c",
       "core/src/host/workbench-personal.js": "4282e3983f8f5cba0e61f288bddcba7f8e44eab92fbffbc604acac55defdc301",
       "core/src/host/workbench-state.js": "b95b83fe47a6a155e16fba92284f9df2929ebd95bec635804f186c47b9eb8391",
       "core/src/host/workflow-facts.js": "f2ff8392df1d0f927dd3bc2fb6ed1fde0bb31b5a8d590725963134b73f09fe76",

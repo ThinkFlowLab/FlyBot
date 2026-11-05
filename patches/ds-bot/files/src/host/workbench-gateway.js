@@ -71,6 +71,18 @@ export function createWorkbenchGateway({ upstreamOrigin, upstreamCookie, publicO
     if (req.method === 'GET') {
       if (url.pathname === '/') return respond(200, HTML, 'text/html; charset=utf-8')
       if (url.pathname === '/health') return respond(200, { status: 'ok' })
+      if (url.pathname === '/ready') {
+        try {
+          const response = await request(`${upstream.origin}/api/bot`, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5000), headers: { 'content-type': 'application/json', cookie: upstreamCookie, origin: upstream.origin }, body: JSON.stringify({ endpoint: 'auth-mode', payload: {} }) })
+          if (!response.ok) throw new Error('Runtime is unavailable')
+          const text = await response.text()
+          if (text.length > 65536) throw new Error('Readiness reply exceeded its limit')
+          const value = JSON.parse(text)
+          if (value.ok !== true || typeof value.value?.writable !== 'boolean') throw new Error('Invalid readiness reply')
+          return respond(value.value.writable ? 200 : 503, { status: value.value.writable ? 'ready' : 'degraded', writable: value.value.writable })
+        } catch { return respond(503, { status: 'unavailable', writable: false }) }
+      }
+
       if (url.pathname === '/favicon.ico') { res.writeHead(204); return res.end() }
       if (['/workbench.js', '/workbench.css', '/workbench-native.js', '/workbench-native.css'].includes(url.pathname)) {
         try { return respond(200, await assets(url.pathname.slice(1)), url.pathname.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8') }

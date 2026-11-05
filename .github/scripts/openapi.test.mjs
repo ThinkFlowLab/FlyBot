@@ -10,7 +10,7 @@ test('published OpenAPI artifact matches all allowlisted endpoints and v1 operat
   assert.equal(readFileSync(artifactPath, 'utf8'), renderSpec())
   const spec = readSpec(), inv = inventory(), ops = spec['x-flybot-operations']
   assert.equal(spec.openapi, '3.1.0')
-  assert.deepEqual(Object.keys(spec.paths).sort(), ['/api/bot', '/api/project-events', '/health'])
+  assert.deepEqual(Object.keys(spec.paths).sort(), ['/api/bot', '/api/project-events', '/health', '/ready'])
   assert.deepEqual([...new Set(ops.map(row => row.transport.endpoint))].sort(), inv.endpoints.sort())
   assert.deepEqual(ops.filter(row => row.transport.kind === 'query').map(row => row.transport.name).sort(), inv.queries.sort())
   assert.deepEqual(ops.filter(row => row.transport.kind === 'command').map(row => row.transport.name).sort(), inv.commands.sort())
