@@ -212,3 +212,5 @@ DeliveryChoices/AttemptSettlement projections. Chief accept-attempt and start-ne
 remain authenticated Chief decision actions, not new arbitrary public write routes.
 The original task.accept endpoint retains whole-Task semantics. See the development
 API reference for current prerequisites and fresh target/generation/workspace fields.
+
+#2526 follow-up keeps service commands unchanged. DeliveryChoices.requirements exposes original/current revisions, changed fields and their priorValues, plus the existing attempt.context requirement source; current values remain in Task requirements. Scoped settlement records the pinned requirementsRevision and optional current taskRequirementsRevision. This read-only advisory data does not grant acceptance or waive evidence/permission/exit checks. Whole-Task close and current-goal next delivery remain separate. Old settlement records need no migration.
