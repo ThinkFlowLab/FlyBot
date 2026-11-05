@@ -916,3 +916,44 @@ for (const harnessKind of ['codex', 'claude-agent']) test(harnessKind + ' execut
   assert.equal(await harness.release(id), true)
   assert.equal(harness.observe(id).process, 'exit-confirmed')
 })
+
+for (const oversized of [false, true]) test('Reviewer inline evidence ' + (oversized ? 'respects the configured model budget before dispatch' : 'reaches the worker without scratch access or durable content duplication'), async t => {
+  const { rt, harness, cwd } = await fixture(t), session = rt.projectDelivery.sessionFor()
+  const candidate = 'a'.repeat(40), log = join(rt.home, 'host-tests.log'), content = 'SEALED_HOST_LOG_START\n' + '✓ tests passed\n'.repeat(oversized ? 200 : 1) + 'SEALED_HOST_LOG_END\n'
+  await writeFile(log, content)
+  Object.assign(session, { role: 'reviewer', definition: { role: 'reviewer', instructions: 'Review independently', skills: [] } })
+  rt.state.projectResourceLeases.l.role = 'reviewer'
+  rt.state.projectAttempts = { a: { id: 'a', projectId: 'p', taskId: 't', candidateSha: candidate, roleSessions: { reviewer: session }, evidence: { tests: { sha: candidate, passed: true, log, sha256: createHash('sha256').update(content).digest('hex'), command: ['npm', 'test'] } } } }
+  if (oversized) rt.config.projectContext = { defaults: { windowTokens: 2048 } }
+  const start = rt.projectResources.startProcess, frames = []
+  rt.projectResources.startProcess = (...args) => {
+    const process = start(...args), write = process.stdin.write.bind(process.stdin)
+    process.stdin.write = (...values) => { frames.push(JSON.parse(values[0])); return write(...values) }
+    return process
+  }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Review the current sealed candidate' })
+  const command = rt.projectResources.command
+  rt.projectResources.uploadFile = () => { throw Error('scratch upload denied') }
+  rt.projectResources.command = () => { throw Error('scratch read denied') }
+  const step = { botId: id, taskId: 't', brief: 'Inspect host evidence', outputs: [{ name: 'implementation' }] }
+  if (oversized) {
+    const before = rt.state.projectHarnessWorkers[id].status
+    await assert.rejects(harness.dispatch(step), { code: 'bot/context-budget' })
+    assert.equal(frames.filter(frame => frame.type === 'start').length, 0)
+    assert.equal(rt.state.projectHarnessWorkers[id].status, before)
+  } else {
+    const completed = new Promise(resolve => harness.onResult(resolve))
+    await harness.dispatch(step); assert.equal((await completed).ok, true)
+    const frame = frames.find(frame => frame.type === 'start')
+    assert.ok(frame.prompt.includes(JSON.stringify(content)))
+    assert.match(frame.prompt, /no scratch file read is required/)
+    assert.equal(frame.settings.readOnly, true)
+    assert.equal(frame.settings.writableRoots.length, 0)
+    const metadata = rt.state.projectHarnessWorkers[id].reviewEvidence
+    assert.equal(metadata.sha, candidate); assert.equal(metadata.bytes, Buffer.byteLength(content))
+    assert.equal(Object.hasOwn(metadata, 'content'), false)
+    assert.equal(JSON.stringify(rt.state).includes('SEALED_HOST_LOG_START'), false)
+  }
+  rt.projectResources.command = command
+  await harness.release(id)
+})

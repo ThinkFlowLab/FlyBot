@@ -531,6 +531,27 @@ manager, automatic role choice or change to SDK sandbox policy.
 
 ## Reviewer evidence (#2378)
 
-Command roles with a bound App retain the limited proxy and GitHub API/Git/object hosts. Optional exact operator downloadHosts permits selected GitHub/Azure log storage hosts; no wildcard or general network proxy. Chief/no-tools and receipt correction keep their prior boundaries. SDK Reviewer receives a size/hash-verified current host test log in its existing scratch via resource upload, with source SHA/command/executor. Recheck authority/source after transfer. The candidate remains read-only; scratch logs are reference data and cannot replace the immutable host record. Native context points to the same host artifact contract.
+Command roles with a bound App retain the limited proxy and GitHub API/Git/object hosts. Optional exact operator downloadHosts permits selected GitHub/Azure log storage hosts; no wildcard or general network proxy. Chief/no-tools and receipt correction keep their prior boundaries. SDK Reviewer receives the complete current host test log inline in reviewEvidence, with source SHA/command/executor and SHA256. Host reads remain capped at2MiB; invalid UTF-8 is refused rather than silently changing hash-bound bytes. Recheck current authority, Session, candidate and captured artifact identity after reading. No upload or sandbox file read is required for this log. Only provenance metadata is copied into the durable worker record; content travels in the execution input, subject to the existing exact-prompt context preflight. The candidate remains read-only; inline logs are untrusted output and cannot replace the immutable host record. Native context points to the same host artifact contract.
 
 #2518 removes SDK total wall-clock failure; both SDK adapters expose bounded activity/events to the shared [warning service](project-warnings.md). Connection/events never substitute for process exit proof.
+
+
+## Inline Reviewer host-test evidence (#2519)
+
+The log transfer limit is an artifact bound, not permission to exceed a configured
+model window. Complete inline evidence, mandatory role policy and current Task input
+share the original execution budget; an over-budget prompt refuses before SDK input
+is written. No truncation, raised window, second retrieval service or sandbox grant
+is introduced. Scratch remains available for temporary verification fixtures and
+existing scoped archives, but host-test evidence does not depend on its readability.
+Absent tests remain absent evidence; failed/stale/mutated tests cannot become approval.
+Host tests, independent Reviewer judgement, provider CI and Chief acceptance remain distinct.
+
+Tests reproduce the absent inline channel on the old base and cover denied scratch,
+complete UTF-8/BOM/empty/2MiB logs, invalid bytes, candidate/source/authority changes,
+actual subprocess input, durable metadata without copied log text, and configured
+context refusal before dispatch. The opt-in actual pinned Codex SDK/CLI case uses a
+local deterministic Responses fixture, checks the provider receives the log without
+any receiving log file and retains read-only source denial. This is distinct from
+paid inference or live OpenToday acceptance; the reported onsite sandbox denial
+was not reproduced by the isolated hidden-scratch probe.

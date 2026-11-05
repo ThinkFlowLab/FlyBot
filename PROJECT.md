@@ -191,3 +191,5 @@ consultation uses scoped personal agents; watch grants no host privileges.
 Detailed dated implementation checkpoints are [preserved verbatim](docs/history/2026-11-04-reliability-memory-checkpoints.md); current contracts remain in the owned subsystem docs.
 
 #2518: SDK/inspection/merge elapsed time produces evidence-bearing warnings through one progressive disclosure service. Chief chooses recovery; operational warnings reach existing personal/human inboxes. Unknown exit and current authority remain gates.
+
+#2519: SDK Reviewer receives the complete hash-verified host log inline, without scratch access. Preserve exact candidate/current authority, artifact and execution-context budgets; persist only provenance metadata. Host output is data, never Review or CI approval.

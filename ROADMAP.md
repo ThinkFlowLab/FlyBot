@@ -114,3 +114,5 @@ including links to their original detailed histories; they grant no new rollout,
 privilege or mission scope and complete no outstanding operational acceptance.
 
 #2518 unifies warning summaries/topics/evidence and hourly SDK/two-hour merge notices; verify independent Chief operational delivery and explicit stop without Task cancellation. Legacy DAG unchanged.
+
+#2519 removes the host-log scratch dependency through sealed inline evidence. Verify full input, configured context refusal and read-only SDK behavior separately from live OpenToday acceptance.
