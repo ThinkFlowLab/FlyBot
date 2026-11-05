@@ -38925,7 +38925,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "77e876bc107f36c9023603257cc987e5e5f8d5eceee69be8a2dbcec98da02f5b"
+        "sha256": "fa5757269313af0908a6a69137f8d4dd7561fa3e3d12584a48ceeecc102f13cd"
       }
     },
     {
@@ -49888,7 +49888,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "77e876bc107f36c9023603257cc987e5e5f8d5eceee69be8a2dbcec98da02f5b"
+        "sha256": "fa5757269313af0908a6a69137f8d4dd7561fa3e3d12584a48ceeecc102f13cd"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -50426,7 +50426,7 @@
       "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
       "core/src/host/project-harness-auth.js": "2684b6687433e128197a0cc67b671bbd02c3c71e39428af7393d0c0ca1658ac7",
       "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
-      "core/src/host/project-harness.js": "77e876bc107f36c9023603257cc987e5e5f8d5eceee69be8a2dbcec98da02f5b",
+      "core/src/host/project-harness.js": "fa5757269313af0908a6a69137f8d4dd7561fa3e3d12584a48ceeecc102f13cd",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
@@ -50443,7 +50443,7 @@
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
       "core/src/host/project-resources.js": "1c88bbce4d1cd0b7e3d2950a7882dfe31fdd1ca60858dd95864590cd2d68ae91",
-      "core/src/host/project-review-evidence.js": "da3f72d2cefcf725c19f590e926ce391af36d45df97163b0d4a07699cef5ceb9",
+      "core/src/host/project-review-evidence.js": "85122bc721a57311ebfdf83430774d9320fff030d236a276260bb8597457a11d",
       "core/src/host/project-reviewed-merge.js": "b89a38053f79277e8516e44975123a8056a99fb8c69ac1d4c88889b5a89e738b",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",

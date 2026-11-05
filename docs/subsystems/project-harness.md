@@ -531,6 +531,18 @@ manager, automatic role choice or change to SDK sandbox policy.
 
 ## Reviewer evidence (#2378)
 
-Command roles with a bound App retain the limited proxy and GitHub API/Git/object hosts. Optional exact operator downloadHosts permits selected GitHub/Azure log storage hosts; no wildcard or general network proxy. Chief/no-tools and receipt correction keep their prior boundaries. SDK Reviewer receives a size/hash-verified current host test log in its existing scratch via resource upload, with source SHA/command/executor. Recheck authority/source after transfer. The candidate remains read-only; scratch logs are reference data and cannot replace the immutable host record. Native context points to the same host artifact contract.
+Command roles with a bound App retain the limited proxy and GitHub API/Git/object hosts. Optional exact operator downloadHosts permits selected GitHub/Azure log storage hosts; no wildcard or general network proxy. Chief/no-tools and receipt correction keep their prior boundaries. SDK Reviewer receives the complete current host test log inline in reviewEvidence, with source SHA/command/executor and SHA256. Host reads remain capped at2MiB; invalid UTF-8 is refused rather than silently changing hash-bound bytes. Recheck current authority, Session, candidate and captured artifact identity after reading. No upload or sandbox file read is required for this log. Only provenance metadata is copied into the durable worker record; content travels in the execution input, subject to the existing exact-prompt context preflight. The candidate remains read-only; inline logs are untrusted output and cannot replace the immutable host record. Native context points to the same host artifact contract.
 
 #2518 removes SDK total wall-clock failure; both SDK adapters expose bounded activity/events to the shared [warning service](project-warnings.md). Connection/events never substitute for process exit proof.
+
+
+## Inline Reviewer host-test evidence (#2519)
+
+The2MiB artifact cap does not guarantee a log fits a configured model window.
+Complete log, role policy and Task input share the unchanged execution budget;
+excess refuses before SDK dispatch, without truncating evidence or raising limits.
+Scratch remains for temporary fixtures/archives. Host output never establishes
+independent Review, provider CI or Chief acceptance. Worker metadata retains only
+provenance; vendor thread history may retain the execution input. Tests cover denied
+scratch, exact bytes, stale/revoked evidence, actual input and context refusal;
+the opt-in pinned SDK fixture is distinct from paid or live OpenToday acceptance.

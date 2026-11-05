@@ -78,3 +78,9 @@ OS trust boundary. See [configuration and recovery](../role-github-apps.md).
 ## Reviewer Actions access (#2378)
 
 Reviewer installation grants add actions:read only; workflows cannot be rerun, dispatched or edited through git/gh wrappers. gh run view/list and existing scoped gh api support autonomous evidence reads. Downloads outside the default GitHub hosts require an explicit bounded exact downloadHosts list under roleGithub. Provider/tool/network/permission failures have safe distinct diagnostics, with no personal-token fallback or provider stderr disclosure. Publication status distinguishes blocked-on-binding from the current candidate binding; metadata is not Review evidence.
+
+#2519 changes only SDK host-test evidence transport: the current hash-verified log
+is inline in reviewEvidence, within the artifact/context budgets, rather than a
+scratch-file dependency. App identity, credential helpers, network scope, sealed
+candidate, independent Review and host merge/Chief acceptance gates are unchanged.
+See the [Harness evidence contract](project-harness.md#inline-reviewer-host-test-evidence-2519).
