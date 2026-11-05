@@ -13,7 +13,7 @@ export function dependencyEnvironment(settings) {
   if (spec.npmCachePath !== undefined && !relative(spec.npmCachePath)) invalid()
   if (spec.tools !== undefined && (!Array.isArray(spec.tools) || spec.tools.length > 16 || spec.tools.some(tool => !tool || !argv(tool.argv) || tool.expectedOutput !== undefined && (typeof tool.expectedOutput !== 'string' || tool.expectedOutput.length > 500)))) invalid()
   if (spec.network !== undefined && !['offline', 'operator-preparation'].includes(spec.network)) invalid()
-  if (spec.timeoutMs !== undefined && (!Number.isSafeInteger(spec.timeoutMs) || spec.timeoutMs < 1 || spec.timeoutMs > 120_000)) invalid()
+  if (spec.timeoutMs !== undefined && (!Number.isSafeInteger(spec.timeoutMs) || spec.timeoutMs < 1 || spec.timeoutMs > 1_800_000)) invalid()
   return spec
 }
 

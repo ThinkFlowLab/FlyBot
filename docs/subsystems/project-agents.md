@@ -536,3 +536,5 @@ new Attempts capture the updated conventions and delivery template.
 #2398 Chief inspection receives safe actual worker profile/authentication failure facts.
 The host does not select another role/resource or automatically escalate; Chief judges
 next actions within existing grants. Model login failure is not a Review verdict.
+
+#2518 Chief warningRequests use the existing scoped context roundtrip in the same Session. Watch actions may explicitly stop only the warning-bound execution. Inbox delivery grants no action rights. See [warnings](project-warnings.md).

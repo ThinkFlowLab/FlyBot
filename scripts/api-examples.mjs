@@ -2,6 +2,7 @@
 const native = (endpoint, payload) => ({ endpoint, payload })
 const development = (kind, name, payload, requestId) => native('project-development', { version: 'project-development/v1', kind, name, projectId: 'PROJECT_ID', payload, ...(requestId ? { requestId } : {}) })
 export const integrationExamples = [
+  { id: 'read-warning-summaries', actor: 'project-manager', request: development('query', 'warnings', { offset: 0, limit: 10 }) },
   { id: 'discover-login-mode', actor: 'anonymous', request: native('auth-mode', {}) },
   { id: 'existing-platform-login', actor: 'human', request: native('platform-login', { email: 'user@example.invalid', password: 'REPLACE_PRIVATELY' }), secretHandling: 'Never commit or log the substituted password or response.sessionToken.' },
   { id: 'redeem-native-human-invitation', actor: 'anonymous', request: native('auth-redeem', { token: 'PRIVATE_OPERATOR_INVITATION', displayName: 'Example member' }) },

@@ -323,10 +323,11 @@ export function createProjectResources(rt, { priorExit = priorScopeExited } = {}
       : spawn('docker', ['exec', '-i', '--user', item.user, '--workdir', cwd, item.container, 'env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', ...argv], options)
   }
   async function command(projectId, resourceId, { argv, cwd, timeout = 30_000, input, dependencyOffline = false } = {}) {
+    if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 1_800_000) throw failure('Resource command needs an explicit bounded timeout up to30minutes')
     const item = setting(projectId, resourceId)
     if (!Array.isArray(argv) || !argv.length || argv.some(value => typeof value !== 'string' || value.includes('\0')) || !isAbsolute(cwd ?? '') || !contains(item.root, cwd)) throw failure('Invalid resource command or working directory')
     if (argv[0] === 'node') argv = [item.nodePath ?? (item.type === 'local' ? process.execPath : 'node'), ...argv.slice(1)]
-    const options = { timeout: Math.min(timeout, 120_000), maxBuffer: 2 * 1024 * 1024, env: { ...safeEnv(), ...(dependencyOffline ? { npm_config_offline: 'true' } : {}) } }
+    const options = { timeout, maxBuffer: 2 * 1024 * 1024, env: { ...safeEnv(), ...(dependencyOffline ? { npm_config_offline: 'true' } : {}) } }
     // No shell interpolation. Target paths and credentials never become host shell code.
     if (input !== undefined) throw failure('Resource command input requires a streaming adapter')
     if (item.type === 'local') {

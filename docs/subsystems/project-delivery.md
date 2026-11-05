@@ -594,7 +594,7 @@ current claim expected from the pool, preserving its original capacity-hold asse
 The optional operator `dependencyEnvironment` contract declares packageManager
 (metadata), relative lockFiles/requiredPaths, tools with fixed argv and optional exact
 expectedOutput, a relative warmed npmCachePath, network requirement (`offline` or
-`operator-preparation`) and timeoutMs (1–120000). Unknown fields/escaping paths are
+`operator-preparation`) and timeoutMs (1–1800000). Unknown fields/escaping paths are
 refused. The existing workspacePrepareCommand remains the only preparation hook;
 metadata preflight does not execute it. Required files, actual tool versions and
 lock hashes are observed in each receiving checkout, on its actual local/Docker
@@ -730,3 +730,5 @@ An authenticated Chief may explicitly supersede an exited blocked running Attemp
 the original continuation Effect commits its returned history and successor together.
 An unconfirmed save restores the old status/pointer; no cancellation or live worker
 stop is inferred. Ordinary public task.run still refuses active Attempts.
+
+#2518 merge wait expiration is advisory; actual forge/candidate/check/Review gates remain. Resource/preparation commands honor explicit operation budgets without a shorter transport clamp. See [warnings](project-warnings.md).

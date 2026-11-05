@@ -186,3 +186,5 @@ stay on the host. [Configuration and expiry boundaries](../role-github-apps.md).
 binding and changed profile/container/principal targets require the original runtime
 check; probe leases stay eligible to repair readiness. list/select share this projection.
 Model authRequired is distinct from environment health and does not prove worker exit.
+
+#2518 command timeouts honor explicit positive operation budgets up to30minutes; default30seconds and actual remote-exit uncertainty remain. No second2minute clamp. See [warnings](project-warnings.md).

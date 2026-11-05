@@ -54,7 +54,7 @@ export function createProjectAgentInbox(rt, consultations, { now = Date.now, not
     const task = ownEntry(rt.state.tasks ?? {}, row.linkedTaskId)
     const superseded = row.direction === 'incoming' && state.phase !== 'handled' && !consultationCurrent(rt.state, row, task)
     return { version: 'agent-inbox/v1', id: row.id, projectId: row.projectId, agentId: carrier.personalAgentId, participationId: carrier.participationId,
-      kind: row.direction === 'incoming' ? 'consultation.question' : 'consultation.answer', consultationId: row.id, taskId: row.linkedTaskId ?? null, initiativeTransferred: false, requiresHuman: row.requiresHuman === true,
+      kind: row.kind === 'warning' ? 'project.warning' : row.direction === 'incoming' ? 'consultation.question' : 'consultation.answer', consultationId: row.id, taskId: row.linkedTaskId ?? null, initiativeTransferred: false, requiresHuman: row.requiresHuman === true,
       phase: superseded ? 'superseded' : state.phase, generation: state.generation, messageVersion: version(row), createdAt: row.at, updatedAt: state.updatedAt ?? row.at,
       claim: state.phase === 'processing' && state.claim ? { claimId: state.claim.id, generation: state.generation, expiresAt: state.claim.expiresAt } : null,
       notification: effect ? { status: effect.status, delivery: effect.receipt?.status ?? null, transport: effect.receipt?.transport ?? null, attempts: effect.executions, nextAt: effect.status === 'pending' ? effect.dueAt : null } : { status: 'mailbox-only', delivery: 'private-mailbox', transport: null, attempts: 0, nextAt: null },

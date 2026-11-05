@@ -101,11 +101,7 @@ resource/Harness contracts and authorized acceptance boundaries remain below.
 
 M7.4/M7.5 implementation checkpoints are [archived verbatim](docs/history/2026-11-03-completed-m7-checkpoints.md). Private credentials, revocation, exit proof, same-SHA verification and outstanding mixed-Harness/resource acceptance remain required.
 
-### Historical Codex acceptance
-
-The explicitly authorized 2026-11-01 Codex demonstration and its scope are retained
-in [the dated record](docs/history/2026-11-04-agent-foundation-checkpoints.md).
-It grants no new deployment, App installation or personal credential authority.
+Earlier Codex acceptance is [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md); it grants no new deployment, App or credential authority.
 
 ### Collaboration contract and earlier validation
 
@@ -160,19 +156,11 @@ DSH deterministic single-resource return/context coverage. Historical deployment
 probe details, including their original limitations, remain in
 [execution history](docs/history/2026-11-03-execution-evidence.md#task-scoped-sdk-context-and-resident-chief-memory--2026-11-01).
 
-### Task40 service integration history
+### Service delivery history
 
-Earlier S1 integration evidence is [archived verbatim](docs/history/2026-11-03-service-integration.md). Original frontend Task40/PR48 remains separate work: preserve its original UI/functions and healthy execution; backend source convergence does not authorize merge, deployment or UI takeover.
-
-### Publish the service snapshot in the upstream repository — 2026-11-02
-
-The owner explicitly requested pushing the delivered service to a new branch in
-ThinkFlowLab/FlyBot. `delivery/ai-centric-development-service` retains db749e4eb
-and its verified1811 production baseline; it does not merge or replace current
-upstream main3dde8e14. README checkout targets this repository/branch. This is
-a snapshot handoff, not a new main-targeting implementation PR or an upstream
-compatibility PASS. Runtime/private configuration and the frontend flow are untouched.
-
+Earlier Task40/service publication evidence is [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md).
+Preserve frontend Task40/PR48, original UI and healthy execution. Backend work targets
+only the authorized delivery branch, not main, credentials or deployment.
 
 ### Role, collaboration and context convergence
 
@@ -186,16 +174,7 @@ acceptance; historical fixtures do not establish live-provider or UI completion.
 See [agents](docs/subsystems/project-agents.md), [Harness](docs/subsystems/project-harness.md)
 and the Project memory/context contracts for the current implementation.
 
-### Completed backend convergence checkpoints
-
-Implementation and validation notes for #2179/#2182/#2185/#2186/#2189 are
-[preserved verbatim](docs/history/2026-11-04-project-convergence-checkpoints.md).
-Current contracts remain: Chief admits versioned Tasks; dependencies retain their
-outcome revisions; transactional storage saves facts and Effects together; scoped
-receipts/events do not grant authority. Preserve original Bot/group history ACLs,
-cutover identities, unknown-exit barriers and private-context publication approval.
-Original host/service deployment and real-provider acceptance remain separate.
-See canonical Task, storage, service, compatibility and deployment documentation.
+Earlier backend convergence checkpoints are [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md). Versioned Task/dependency outcomes, transactional facts/Effects, original ACLs and private publication approval remain required; historical deployment is not current acceptance.
 
 ### Current delivery guarantees
 
@@ -210,3 +189,5 @@ forge review, release/deployment and Chief acceptance remain distinct. Operation
 consultation uses scoped personal agents; watch grants no host privileges.
 
 Detailed dated implementation checkpoints are [preserved verbatim](docs/history/2026-11-04-reliability-memory-checkpoints.md); current contracts remain in the owned subsystem docs.
+
+#2518: SDK/inspection/merge elapsed time produces evidence-bearing warnings through one progressive disclosure service. Chief chooses recovery; operational warnings reach existing personal/human inboxes. Unknown exit and current authority remain gates.

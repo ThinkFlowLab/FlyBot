@@ -451,22 +451,20 @@ test('scheduled inspection references settle from durable run status instead of 
   assert.equal(f.control.scheduledState({ row, delivery }).status, 'failed')
 })
 
-test('expired inspections revoke old callbacks, settle delivery and requeue only with confirmed exit', async () => {
-  const f = await controlFixture(), now = Date.now()
-  const run = f.rt.state.projectExecutions[f.request.runId]
-  run.purpose = 'inspection'; run.taskId = undefined
+test('elapsed inspection deadlines retain its active execution and original callback', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  run.purpose = 'inspection'; delete run.taskId
   f.rt.state.projectChiefPolicies.p.inspection.lifecycle = { runTimeoutMs: 1, recoveryDelayMs: 1 }
-  run.startedAt = now - 10000
-  const old = f.request
-  f.rt.projectAgents.stopChiefJob = async () => ({ confirmed: true, kind: 'native-chief-quiescent', runId: run.id })
-  await f.control.pump(); await new Promise(resolve => setImmediate(resolve))
-  assert.equal(run.status, 'interrupted')
-  await old.onResult({ ok: true, text: JSON.stringify({ summary: 'Late', decisions: [{taskId:'t',action:'needs-human',reason:'Late result'}] }), executionEvidence: { kind:'native-chief', botId:'chief',sessionId:'chief',chiefRunId:run.id,carrierGeneration:1 } })
-  assert.equal(f.task.chiefQuestion, undefined)
-  run.recovery.notBefore = Date.now() - 1
-  await f.control.pump(); await new Promise(resolve => setImmediate(resolve))
-  assert.equal(run.status, 'running'); assert.equal(run.recovery.attempts, 1)
-  assert.notEqual(f.request.actor.chiefToken, old.actor.chiefToken)
+  run.startedAt = Date.now() - 10000
+  const original = f.request
+  let stops = 0
+  f.rt.projectAgents.stopChiefJob = async () => { stops++; return { confirmed: true } }
+  await f.control.pump()
+  assert.equal(run.status, 'running'); assert.equal(stops, 0)
+  assert.equal(f.request.actor.chiefToken, original.actor.chiefToken)
+  await original.onResult({ ok: true, text: JSON.stringify({ summary: 'Still valid after a duration warning', decisions: [] }), executionEvidence: { kind: 'native-chief', chiefRunId: run.id, carrierGeneration: 1, botId: 'chief', sessionId: 'chief-session' } })
+  // Execution-evidence validation remains strict even when the duration exceeded its old deadline.
+  assert.notEqual(run.failure, 'Chief inspection execution deadline exceeded')
 })
 
 test('one refused inspection route preserves its gate while an independent Task still receives judgement', async () => {
@@ -604,7 +602,8 @@ test('Chief consultation decisions carry bounded assistance to the selected oper
   assert.equal(f.task.chiefQuestion.assistanceScope.generation, f.task.collaboration.generation)
   assert.equal(f.task.chiefQuestion.recipient.agentId, 'ops')
   assert.match(f.request.prompt, /watch does not grant SSH/)
-  assert.equal(f.request.projectFacts.autonomy.maxRecoveryActions, 4)
+  assert.equal(f.request.projectFacts.autonomy.maxRecoveryActions, undefined)
+  assert.equal(typeof f.request.projectFacts.autonomy.guidance, 'string')
 })
 
 test('Chief transport failure belongs to its Run and preserves business block and approved evidence', async () => {
@@ -807,4 +806,25 @@ test('Chief explicitly handles bounded batches and receives remaining input with
   assert.equal(Object.values(f.rt.state.projectTaskInputs).filter(row => row.status === 'accepted').length, 0)
   const audit = Object.values(f.rt.state.projectChiefDecisions).find(row => row.action === 'continue' && row.status === 'applied')
   assert.equal(audit.inputReceiptSummary.provided, true); assert.equal(audit.inputReceiptSummary.handled.length, 2)
+})
+
+for (const confirmed of [true, false]) test('explicit Chief invocation stop fences late results and retains Task state; exit=' + confirmed, async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId], taskStatus = f.task.status, session = f.rt.state.projectAgents['public-p'].sessionId
+  f.rt.projectAgents.stopChiefJob = async () => ({ confirmed, kind: 'fixture-confirmation' })
+  await assert.rejects(f.control.stop({ projectId: 'p', runId: run.id, invocation: run.invocation + 1 }, { memberId: 'owner' }), /binding changed/)
+  const stopped = await f.control.stop({ projectId: 'p', runId: run.id, invocation: run.invocation }, { memberId: 'owner' })
+  assert.equal(stopped.stopped, confirmed); assert.equal(run.status, 'cancelled')
+  assert.equal(run.recovery.exitConfirmed, confirmed)
+  const late = await f.request.onResult({ ok: true, text: JSON.stringify({ summary: 'Late', decisions: [{ taskId: 't', action: 'close', reason: 'Late completion', criteria: [{ criterion: 'Done', passed: true, evidence: 'Late' }] }] }) })
+  assert.equal(late.ignored, true); assert.equal(f.task.status, taskStatus)
+  assert.equal(f.rt.state.projectAgents['public-p'].sessionId, session)
+})
+
+test('Chief stop-execution and explicit warning read declarations use the same scoped warning service', async () => {
+  const f = await controlFixture(), actions = []
+  f.rt.projectWarnings = { query: async body => { assert.equal(body.projectId, 'p'); return { taskId: 't' } }, action: async (body, actor) => { assert.equal(actor.chiefJobId, f.request.runId); actions.push(body); return { stopped: false, waitingFor: 'worker-exit' } } }
+  await f.request.onResult(f.result({ action: 'stop-execution', warningId: 'warning-fixture', expectedWarningScope: 'scope', warningReceipts: [{ warningId: 'warning-fixture', expectedScope: 'scope' }] }))
+  assert.deepEqual(actions.map(a => a.action), ['acknowledge', 'stop'])
+  assert.equal(actions[1].expectedScope, 'scope'); assert.equal(f.accepted(), 0)
+  assert.equal(f.rt.state.projectChiefDecisions[Object.keys(f.rt.state.projectChiefDecisions)[0]].stop.waitingFor, 'worker-exit')
 })

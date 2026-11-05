@@ -1026,3 +1026,5 @@ views. Authentication errors do not manufacture code/test/Review outcomes. Confi
 and actual login stay in the authorized resource terminal, not a new credential service.
 
 #2483: a refused durable read does not represent a fresh empty home. Store preserves current object identities while remaining read-only, and exposes readable/writable storage status. Successful verified reload retains existing reconciliation semantics.
+
+#2518 installs projectWarnings after Effects and reuses the original scheduler, Inbox and context exchange. No second timer/dispatcher. See [warning contract](project-warnings.md).

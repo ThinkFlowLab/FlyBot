@@ -269,3 +269,8 @@ TaskView.chiefIssue references the current Run fault without replacing business 
 Task and Attempt `merge.chiefHandoff` reports the existing notification Effect, its delivery status/reason, linked Chief Run/status/failure, waiting Run and request times. `delivered` is durable handoff only. It does not change Task acceptance, hide business blocks or grant an API caller new permissions. A Chief transport failure may coexist with a real `merge.status=merged`.
 
 #2483 TaskView.dispatch exposes current handoff Effect/commit proof and specific pre-worker waits. A queued Task uses the reached dispatch cause where available, retaining original lifecycle state and all authority gates. Chief receipt summaries distinguish declared handling from actual accepted inputs and Task acceptance.
+
+#2518 adds configure-scoped warnings and warning.action to the original envelope.
+One [warning service](project-warnings.md) owns progressive reads and exact-scope
+acknowledgement/inspection/execution stop. Existing receipts and authorization apply;
+no Task cancellation is inferred and unknown exit retains capacity.

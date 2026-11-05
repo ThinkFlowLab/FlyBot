@@ -239,24 +239,20 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
     database.write(state)
   } finally { database.close() }
   host = await launch(home, env)
-  let interruptedRun
+  let interruptedRun, warning
   for (let pass = 0; pass < 150; pass++) {
     const chief = await devNext('query', 'chief.state', recoveryProject.id, {})
     interruptedRun = chief.result.runs.find(row => row.source?.occurrenceId === 'fixture-inspection-occurrence')
-    if (interruptedRun?.status === 'interrupted' && releaseInspection) break
+    warning = chief.result.warnings.find(row => row.kind === 'chief-duration' && row.source.runId === interruptedRun?.id)
+    if (warning?.delivery && releaseInspection) break
     await pause(100)
   }
-  assert.equal(interruptedRun?.status, 'interrupted'); assert.ok(inspectionRequests >= 1)
-  holdInspection = false; releaseInspection()
-  let confirmed = false
-  for (let pass = 0; pass < 100; pass++) {
-    const chief = await devNext('query', 'chief.state', recoveryProject.id, {})
-    const run = chief.result.runs.find(row => row.id === interruptedRun.id)
-    if (run?.exitProof?.confirmed) { confirmed = true; break }
-    await pause(50)
-  }
-  assert.equal(confirmed, true, 'Actual native whenIdle/stop must confirm exit before restart recovery')
+  assert.equal(interruptedRun?.status, 'running'); assert.ok(warning); assert.ok(inspectionRequests >= 1)
+  assert.equal(warning.delivery?.kind, 'personal-agent', 'A stalled Chief reaches the original owner agent without another Chief execution')
+  const warningInbox = await devNext('query', 'inbox.list', recoveryProject.id, { agentId: warning.delivery.agentId })
+  assert.ok(warningInbox.result.items.some(row => row.id === warning.id && row.kind === 'project.warning'))
   await host.close(); host = null
+  holdInspection = false; releaseInspection()
   host = await launch(home, env)
   let recovered
   for (let pass = 0; pass < 150; pass++) {
@@ -270,6 +266,23 @@ test('production backend retains canonical Tasks/auth across restart, keeps cons
   assert.equal(recovered.runs.find(row => row.id === interruptedRun.id).invocation, 2)
   assert.ok(recovered.health.lastSuccessAt); assert.equal(recovered.health.lastAppliedDecisionAt, null)
   assert.equal((await devNext('query', 'tasks', recoveryProject.id, {})).result.tasks.length, 0)
+  holdInspection = true; releaseInspection = null
+  await devNext('command', 'chief.inspect', recoveryProject.id, {}, 'held-warning-stop')
+  let stopWarning
+  for (let pass = 0; pass < 150; pass++) {
+    const warnings = await devNext('query', 'warnings', recoveryProject.id, {})
+    stopWarning = warnings.result.items.find(row => !row.historical && row.kind === 'chief-duration')
+    if (stopWarning && releaseInspection) break
+    await pause(100)
+  }
+  assert.ok(stopWarning)
+  const pendingStop = devNext('command', 'warning.action', recoveryProject.id, { warningId: stopWarning.id, expectedScope: stopWarning.expectedScope, action: 'stop' }, 'stop-one-chief-invocation')
+  await pause(100)
+  holdInspection = false; releaseInspection()
+  const stopped = await pendingStop
+  assert.equal(stopped.result.stopped, true, 'Explicit stop confirms actual native execution exit without cancelling Tasks')
+  const afterStop = await devNext('query', 'chief.state', recoveryProject.id, {})
+  assert.equal(afterStop.result.runs.find(row => row.id === stopWarning.source.runId).status, 'cancelled')
   await host.close(); host = null
   const statePath = join(home, 'bot/state.json'), future = JSON.stringify({ version: 99, note: 'Preserve this unsupported guard' })
   writeFileSync(statePath, future)

@@ -523,3 +523,5 @@ The original scheduler preserves explicit continuation intent through capacity q
 Cancelled/failed pool Attempts mark their canonical Run failed too; unknown physical leases/workers continue to count independently, while a confirmed-ended Run cannot leave a phantom queue slot.
 
 #2483 keeps GET /health as gateway liveness and adds GET /ready for current backend transport/state-write readiness. It reuses private auth-mode, returns only status/writable, uses503 for degraded/unavailable state, and never exposes upstream credentials, paths or diagnostics. It does not test model/provider readiness or rescan all storage.
+
+#2518 the original scheduler pass reconciles the shared warning service; it adds no clock or workflow and cannot release an unknown execution. See [warnings](project-warnings.md).

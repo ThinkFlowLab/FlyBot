@@ -37,6 +37,11 @@ function projections(state) {
     const data = { id: row.id, projectId: row.projectId, role: row.role, action: row.action, status: row.status, baseRevision: row.baseRevision, createdAt: row.createdAt ?? null, decisionAt: row.decision?.at ?? null }
     rows.set(`role-proposal:${row.id}`, { projectId: row.projectId, entityType: 'role-proposal', id: row.id, data, fingerprint: hash(data) })
   }
+  for (const row of Object.values(state.projectWarnings ?? {})) {
+    if (!row?.projectId || !own(state.projects, row.projectId)) continue
+    const data = { id: row.id, projectId: row.projectId, taskId: row.taskId ?? null, kind: row.kind, at: row.at, supersededBy: row.supersededBy ?? null, delivery: row.delivery ? { kind: row.delivery.kind, memberId: row.delivery.memberId ?? null } : null }
+    rows.set(`warning:${row.id}`, { projectId: row.projectId, entityType: 'warning', id: row.id, data, fingerprint: hash(data) })
+  }
   for (const [namespace, entityType] of [['projectHarnessWorkers', 'execution'], ['projectNativeWorkers', 'execution'], ['projectResourceLeases', 'resource'], ['projectTaskInputs', 'input']]) {
     for (const row of Object.values(state[namespace] ?? {})) {
       const attempt = own(state.projectAttempts, row.attemptId)
@@ -122,7 +127,7 @@ export function createProjectServiceEvents({ maxPerProject = 1024, maxAgeMs = 24
   }
   function snapshot(projectId, { after, limit = 50, expectedRevision, entityType = 'task' } = {}) {
     const stream = streamOf(projectId)
-    if (!['task', 'attempt', 'execution', 'resource', 'input', 'role-proposal'].includes(entityType)) throw fail('Unknown public Project snapshot entity type')
+    if (!['task', 'attempt', 'execution', 'resource', 'input', 'role-proposal', 'warning'].includes(entityType)) throw fail('Unknown public Project snapshot entity type')
     if (after !== undefined && expectedRevision === undefined) throw fail('Continuing a Project snapshot requires its expectedRevision', 'bot/conflict')
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || expectedRevision !== undefined && expectedRevision !== stream.revision) throw fail('Project snapshot changed or page limit is invalid', 'bot/conflict')
     const rows = [...committed.projections.values()].filter(row => row.projectId === projectId && row.entityType === entityType).sort((a, b) => a.id.localeCompare(b.id))

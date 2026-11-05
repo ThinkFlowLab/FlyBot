@@ -112,3 +112,5 @@ follows the root README, operation guide, v1 reference and OpenAPI. The earlier
 [collaboration checkpoints are archived verbatim](docs/history/2026-11-05-collaboration-memory-checkpoints.md),
 including links to their original detailed histories; they grant no new rollout,
 privilege or mission scope and complete no outstanding operational acceptance.
+
+#2518 unifies warning summaries/topics/evidence and hourly SDK/two-hour merge notices; verify independent Chief operational delivery and explicit stop without Task cancellation. Legacy DAG unchanged.
