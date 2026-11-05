@@ -44,7 +44,7 @@ test('failed schedule configuration does not silently enable autonomous Chief au
   assert.equal(control.template.when.seconds, 1800)
 })
 
-async function controlFixture({ modern = false, dependency = false, withInputs = false } = {}) {
+async function controlFixture({ modern = false, dependency = false, withInputs = false, inputCount = 1 } = {}) {
   const { createProjectPools } = await import('../src/host/project-pools.js')
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
@@ -53,7 +53,7 @@ async function controlFixture({ modern = false, dependency = false, withInputs =
   if (withInputs) {
     const { createProjectEffects } = await import('../src/host/project-effects.js'), { install } = await import('../src/host/project-inputs.js')
     rt.projectEffects = createProjectEffects(rt); rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture()); install(rt)
-    await rt.projectInputs.publish({ projectId: 'p', taskId: 't', requestId: 'receipt-fixture', text: 'Verify the accepted behavior' }, { memberId: 'owner' })
+    for (let index = 0; index < inputCount; ++index) await rt.projectInputs.publish({ projectId: 'p', taskId: 't', requestId: index ? `receipt-fixture-${index}` : 'receipt-fixture', text: 'Verify the accepted behavior' }, { memberId: 'owner' })
   }
   let control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
   if (modern) {
@@ -690,4 +690,37 @@ test('merge-specific Chief correction cannot migrate to a replacement candidate'
   if (run.status === 'running') await f.request.onResult(f.result())
   assert.equal(f.accepted(), 0, 'A notification for the old candidate cannot authorize acceptance of its replacement')
   assert.equal(run.status, 'failed')
+})
+
+test('close without current input declarations corrects Chief before applying business acceptance', async () => {
+  const f = await controlFixture({ withInputs: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0)
+  assert.equal(run.status, 'correction-pending')
+  assert.match(run.correction.feedback.at(-1).message, /inputReceipts/)
+  assert.equal(run.lastResult.inputReceiptSummaries[0].declaration.provided, false)
+})
+
+test('Chief explicitly handles bounded batches and receives remaining input without auto acceptance', async () => {
+  const f = await controlFixture({ withInputs: true, inputCount: 4 }), run = f.rt.state.projectExecutions[f.request.runId]
+  let batch = f.request.projectFacts.tasks[0].taskInbox
+  assert.equal(batch.inputs.length, 2); assert.equal(batch.remaining, 2)
+  const declare = inbox => ({ batchId: inbox.batchId, read: inbox.inputs.map(row => row.id), handled: inbox.inputs.map(row => row.id) })
+  await f.request.onResult(f.result({ inputReceipts: declare(batch) }))
+  assert.equal(run.status, 'correction-pending'); assert.equal(f.accepted(), 0)
+  await f.control.pump(); batch = f.request.projectFacts.tasks[0].taskInbox
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Handle this reviewed batch before reading the next', inputReceipts: declare(batch) }))
+  assert.equal(f.accepted(), 0)
+  assert.equal(Object.values(f.rt.state.projectTaskInputs).filter(row => row.status === 'handled').length, 2)
+  assert.ok(Object.values(f.rt.state.projectEffects).some(row => row.kind === 'input.notify' && row.payload.requestId?.startsWith('chief-input-')))
+  await f.rt.projectEffects.drain()
+  const queued = Object.values(f.rt.state.projectExecutions).filter(row => row.kind === 'chief-control' && row.status === 'queued')
+  assert.equal(queued.length, 1, 'Pending input notifications share one queued scoped Chief inspection')
+  await f.control.pump(); batch = f.request.projectFacts.tasks[0].taskInbox
+  assert.equal(batch.inputs.length, 2); assert.equal(batch.remaining, 0)
+  await f.request.onResult(f.result({ inputReceipts: declare(batch) }))
+  assert.equal(f.accepted(), 1)
+  assert.equal(Object.values(f.rt.state.projectTaskInputs).filter(row => row.status === 'accepted').length, 0)
+  const audit = Object.values(f.rt.state.projectChiefDecisions).find(row => row.action === 'continue' && row.status === 'applied')
+  assert.equal(audit.inputReceiptSummary.provided, true); assert.equal(audit.inputReceiptSummary.handled.length, 2)
 })

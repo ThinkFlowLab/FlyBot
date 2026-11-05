@@ -701,3 +701,31 @@ test('native receipt correction guards business tools in the original Session wi
   claim.inputCorrection.status = 'resolved'
   assert.equal(guard({ agent: { id: 'worker' } }), undefined)
 })
+
+test('targeted dispatch does not disguise a refused admission as resource busy', async () => {
+  const f = setup(); await f.admit()
+  f.adapter.ready = async () => { throw Object.assign(Error('Fixture resource configuration is not ready'), { code: 'bot/resource' }) }
+  await assert.rejects(f.pool.pump('task', f.task.collaboration.currentHandoffId), /Fixture resource configuration/)
+  assert.equal(f.task.collaboration.status, 'queued')
+  assert.equal(f.task.collaboration.claim, undefined)
+})
+
+test('targeted dispatch distinguishes logical role, execution resource and Project capacity waits', async () => {
+  for (const kind of ['logical-role', 'execution-resource', 'project-capacity']) {
+    const f = setup(); await f.admit()
+    if (kind === 'logical-role') f.rt.state.tasks.other = { id: 'other', projectId: 'p', collaboration: { claim: { id: 'held', botId: 'p:developer', status: 'active' } } }
+    if (kind === 'execution-resource') f.adapter.ready = async () => false
+    if (kind === 'project-capacity') f.rt.projectScheduler = { admitPool: async () => false }
+    await assert.rejects(f.pool.pump('task', f.task.collaboration.currentHandoffId), error => error.waitingFor === kind)
+    assert.equal(f.task.collaboration.claim, undefined)
+  }
+})
+
+test('missing execution adapter and unexpected claim errors stay distinguishable', async () => {
+  const f = setup(); await f.admit(); f.pool.connect(null)
+  await assert.rejects(f.pool.pump('task'), error => error.waitingFor === 'execution-adapter')
+  await f.pool.pump()
+  f.pool.connect(f.adapter); f.adapter.ready = async () => { throw TypeError('Fixture programming error') }
+  await assert.rejects(f.pool.pump('task'), TypeError)
+  await f.pool.pump() // Legacy batch mode still lets independent Tasks proceed.
+})

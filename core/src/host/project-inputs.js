@@ -199,14 +199,24 @@ export function createProjectInputs(rt) {
     }
     if (!receipts.handled.every(id => receipts.read.includes(id))) throw feedback('handled-not-read', 'handled', 'Chief acknowledged an input outside its injected snapshot: handled must be read')
     for (const id of receipts.read) { try { verify(selected.get(id).row) } catch { throw feedback('content-changed', 'sha256', 'Task input content changed after acceptance', false) } }
-    return { taskId, projectId: task.projectId, generation: saved.generation, runId: run.id, receipts: clone(receipts), selected, committed: false }
+    return { taskId, projectId: task.projectId, generation: saved.generation, runId: run.id, initiatedBy: run.initiatedBy, receipts: clone(receipts), selected, committed: false }
   }
   function commitChiefPlan(plan) {
     if (!plan || plan.committed) return false
     for (const id of plan.receipts.read) {
-      const { row, delivery } = plan.selected.get(id)
+      const { row } = plan.selected.get(id)
       if (!['accepted', 'handled'].includes(row.status) || !authorized(row, taskOf(plan.taskId))) throw refuse('Chief input source was cancelled or revoked')
-      verify(row); delivery.readAt ??= Date.now(); delivery.readProof = 'current-chief-declaration'
+      verify(row)
+    }
+    const newlyHandled = plan.receipts.handled.filter(id => plan.selected.get(id).row.status === 'accepted')
+    const next = pending(taskOf(plan.taskId)).find(row => row.kind !== 'handoff' && !plan.receipts.handled.includes(row.id))
+    if (newlyHandled.length && next && !ended(taskOf(plan.taskId))) {
+      const requestId = `chief-input-${digest([plan.runId, plan.receipts.batchId, newlyHandled])}`
+      rt.projectEffects.stage({ kind: 'input.notify', key: requestId, projectId: plan.projectId, taskId: plan.taskId, payload: { inputId: next.id, initiatedBy: next.source.memberId ?? plan.initiatedBy, requestId } })
+    }
+    for (const id of plan.receipts.read) {
+      const { delivery } = plan.selected.get(id)
+      delivery.readAt ??= Date.now(); delivery.readProof = 'current-chief-declaration'
     }
     for (const id of plan.receipts.handled) { const { row, delivery } = plan.selected.get(id); row.status = 'handled'; delivery.handledAt ??= Date.now(); delivery.handledProof = 'validated-chief-decision' }
     plan.committed = true
@@ -285,7 +295,11 @@ export function install(rt) {
       if (wake?.woken) return { inputId: row.payload.inputId, batchId: wake.batchId, status: 'safe-idle-turn' }
       if (task.chiefQuestion || ['blocked', 'arbitration', 'chief-working'].includes(task.collaboration?.status) || wake?.waitingFor === 'safe-turn-budget') {
         if (!rt.state.projectChiefPolicies?.[task.projectId]?.enabled) throw new EffectDeferred('Chief recovery is not configured', { waitingFor: 'configuration' })
-        const run = await rt.projectChiefControl.request(task.projectId, 'inspection', { blockedTaskId: task.id, requestId: row.payload.inputId, reason: 'Task input awaits current responsibility' })
+        const scoped = Object.values(rt.state.projectExecutions ?? {}).filter(run => run.kind === 'chief-control' && run.projectId === task.projectId && (run.taskId === task.id || run.source?.blockedTaskId === task.id))
+        const policy = rt.state.projectChiefPolicies[task.projectId]
+        const queued = scoped.find(run => run.status === 'queued' && run.policyRevision === policy.revision && !run.appliedDecisions?.some(decision => decision.taskId === task.id))
+        if (!queued && scoped.some(run => ['running', 'correction-pending', 'interrupted'].includes(run.status))) throw new EffectDeferred('Current Chief judgement must settle before another input batch', { waitingFor: 'chief-current-decision' })
+        const run = queued ?? await rt.projectChiefControl.request(task.projectId, 'inspection', { blockedTaskId: task.id, requestId: row.payload.requestId ?? row.payload.inputId, authorityRevision: policy.revision, reason: 'Task input awaits current responsibility' })
         return { inputId: row.payload.inputId, chiefRunId: run.id, status: 'chief-notified' }
       }
       return { inputId: row.payload.inputId, status: 'queued-for-safe-boundary', waitingFor: wake?.waitingFor ?? 'safe-turn' }

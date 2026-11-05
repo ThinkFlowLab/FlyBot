@@ -267,3 +267,5 @@ TaskView.chiefIssue references the current Run fault without replacing business 
 ## Merge closure observability — #2413
 
 Task and Attempt `merge.chiefHandoff` reports the existing notification Effect, its delivery status/reason, linked Chief Run/status/failure, waiting Run and request times. `delivered` is durable handoff only. It does not change Task acceptance, hide business blocks or grant an API caller new permissions. A Chief transport failure may coexist with a real `merge.status=merged`.
+
+#2483 TaskView.dispatch exposes current handoff Effect/commit proof and specific pre-worker waits. A queued Task uses the reached dispatch cause where available, retaining original lifecycle state and all authority gates. Chief receipt summaries distinguish declared handling from actual accepted inputs and Task acceptance.

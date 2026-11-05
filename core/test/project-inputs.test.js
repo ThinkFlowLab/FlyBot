@@ -288,3 +288,40 @@ test('revocation while a receipt save fails cannot resurrect the old input on ro
   await assert.rejects(f.rt.projectInputs.acknowledge('t', f.claim, receipt), error => error.receiptFeedback.kind === 'source-revoked' && !error.receiptFeedback.correctable)
   assert.equal(f.rt.projectInputs.pending('t').length, 0)
 })
+
+test('explicit Chief batch progress stages one durable continuation while read-only declarations do not', async () => {
+  const f = fixture(), run = { id: 'chief-batches', projectId: 'p', initiatedBy: 'owner' }, snapshot = [{ taskId: 't', generation: 2 }]
+  for (let index = 0; index < 4; ++index) await f.rt.projectInputs.publish(input(`batch-${index}`), actor)
+  await f.rt.projectInputs.prepareChief(snapshot, run)
+  const batch = snapshot[0].taskInbox, ids = batch.inputs.map(row => row.id)
+  let scoped = f.rt.projectInputs.chiefActor({ ...actor, chiefJobId: run.id }, 't', snapshot[0], run, { batchId: batch.batchId, read: ids, handled: [] })
+  f.rt.projectInputs.commitChief(scoped, { afterDecision: true })
+  assert.equal(Object.values(f.rt.state.projectEffects).filter(row => row.payload?.requestId?.startsWith('chief-input-')).length, 0)
+  scoped = f.rt.projectInputs.chiefActor({ ...actor, chiefJobId: run.id }, 't', snapshot[0], run, { batchId: batch.batchId, read: ids, handled: ids })
+  f.rt.projectInputs.commitChief(scoped, { afterDecision: true }); await f.rt.save()
+  const effects = Object.values(f.rt.state.projectEffects).filter(row => row.payload?.requestId?.startsWith('chief-input-'))
+  assert.equal(effects.length, 1)
+  assert.equal(f.rt.projectEffects.intentCommitted({ id: effects[0].id, generation: effects[0].generation }), true)
+  assert.equal(f.rt.projectInputs.pending('t').length, 2)
+  assert.equal(f.rt.projectInputs.commitChief(scoped, { afterDecision: true }), false)
+  assert.equal(Object.values(f.rt.state.projectEffects).filter(row => row.payload?.requestId?.startsWith('chief-input-')).length, 1)
+})
+
+test('input notification waits for active Chief and reuses only current-policy queued judgements', async () => {
+  for (const priorStatus of ['queued', 'running', 'correction-pending', 'interrupted', 'stale-policy']) {
+    const f = fixture(), task = f.rt.state.tasks.t; task.collaboration.status = 'blocked'; task.collaboration.botId = 'p:chief'
+    f.rt.state.projectChiefPolicies = { p: { enabled: true, revision: 2, authorityMemberId: 'owner' } }
+    f.rt.state.projectExecutions = { prior: { id: 'prior', kind: 'chief-control', projectId: 'p', taskId: 't', policyRevision: priorStatus === 'stale-policy' ? 1 : 2, status: priorStatus === 'stale-policy' ? 'queued' : priorStatus } }
+    let requested = 0
+    f.rt.projectChiefControl = { async request(projectId, _kind, source) { ++requested; assert.equal(source.authorityRevision, 2); return { id: 'new-current' } } }
+    await f.rt.projectInputs.publish(input(), actor); await f.rt.projectEffects.drain()
+    const effect = Object.values(f.rt.state.projectEffects).find(row => row.kind === 'input.notify')
+    if (priorStatus === 'queued') { assert.equal(requested, 0); assert.equal(effect.receipt.chiefRunId, 'prior') }
+    else if (priorStatus === 'stale-policy') { assert.equal(requested, 1); assert.equal(effect.receipt.chiefRunId, 'new-current') }
+    else {
+      assert.equal(effect.waitingFor, 'chief-current-decision'); assert.equal(requested, 0)
+      f.rt.state.projectExecutions.prior.status = 'failed'; f.advance(2000); await f.rt.projectEffects.drain()
+      assert.equal(requested, 1); assert.equal(effect.receipt.chiefRunId, 'new-current')
+    }
+  }
+})
