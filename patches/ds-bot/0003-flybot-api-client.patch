@@ -2191,7 +2191,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -1,21 +1,33 @@
+@@ -1,21 +1,34 @@
  import { createElement as h, useRef, useState } from 'react'
 -import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 -import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
@@ -2201,8 +2201,8 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
  import { CreateBot } from './create-bot.js'
 +import { afterCreate } from './bot-draft.js'
  import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
--import { t } from './i18n.js'
-+import { hostText, t } from './i18n.js'
+ import { t } from './i18n.js'
++import { readOnlyLine } from './read-only.js'
 +import { lockedWindow } from './schedules.js'
 +import { newChatActionRows } from './flybot-registry.js'
 +import { SlotIcon } from './flybot-slots.js'
@@ -2443,7 +2443,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 -          title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
 -        }, t('Create group chat')) : null,
 +        group && admin !== null ? (locked
-+          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
++          ? readOnlyLine(h, roster, actions, { key: 'readonly-admin' })
 +          : h('button', {
 +            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
 +            title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
@@ -2493,7 +2493,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +          locked
 +            ? (group && admin !== null
 +              ? null
-+              : h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)))
++              : readOnlyLine(h, roster, actions, { key: 'readonly-compose' }))
 +            : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
  }
 diff --git a/src/client/overlay-hooks.js b/src/client/overlay-hooks.js

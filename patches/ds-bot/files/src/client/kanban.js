@@ -7,7 +7,8 @@ import { taskCard } from '../shared/board-card.js'
 import { BoardCard as BoardCardFrame, TASK_SKIN } from './board-card.js'
 import { CloseIcon } from './icons.js'
 import { useEscape } from './overlay-hooks.js'
-import { hostText, t } from './i18n.js'
+import { t } from './i18n.js'
+import { readOnlyLine } from './read-only.js'
 import { relativeShort } from './text.js'
 
 const POLL_MS = 15_000
@@ -334,7 +335,7 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, a
     : plain.map(task => h(BoardCard, { key: task.id, ...cardProps(task, roster, onMove, onDrag, undefined, locked) })))
 }
 
-export function BoardView({ roster, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull, locked }) {
+export function BoardView({ roster, actions, tasks, rail, scope, counts, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull, locked }) {
   const columns = boardColumns(tasks)
   const lanes = scope?.kind === 'group'
   const selectedBot = scope?.kind === 'bot' ? scope.botId : ''
@@ -367,8 +368,9 @@ export function BoardView({ roster, tasks, rail, scope, counts, dragging, error,
         h('input', { 'aria-label': t('Task title'), placeholder: t('New task'), value: draft ?? '', onChange: (event) => onDraft?.(event.target.value) }),
         h('button', { type: 'submit', className: 'bt-soft bt-soft-sm' }, t('Add task'))) : null,
       // #2273: the board is a 1080px overlay and covers the sidebar banner and the Settings hint,
-      // so the lock's own sentence is drawn here too, from the host, not in a second wording.
-      locked ? h('p', { className: 'bt-board-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+      // so the lock's own sentence is drawn here too, from the host, not in a second wording —
+      // with the shared Reload beside it, since the sidebar's entry is covered by this overlay.
+      locked ? readOnlyLine(h, roster, actions, { key: 'readonly', className: 'bt-board-hint' }) : null,
       h('div', { className: 'bt-board-columns' },
         ['not-started', 'in-progress', 'done'].map(column => h(BoardColumn, {
           key: column, column, tasks: columns[column], roster, lanes, dragging, onMove, onDrag, archiveFull, locked,
@@ -468,7 +470,7 @@ export function KanbanDialog({ roster, actions, leaving = false }) {
         h('span', { className: 'bt-mem-head-gap' }),
         h('button', { type: 'button', className: 'bt-icon-btn', 'aria-label': t('Close board'), autoFocus: true, onClick: close }, h(CloseIcon))),
       h(BoardView, {
-        roster, tasks: boardTasks, rail, scope, counts, dragging, error, draft, archiveFull, locked,
+        roster, actions, tasks: boardTasks, rail, scope, counts, dragging, error, draft, archiveFull, locked,
         onDraft: setDraft, onSelect: setScope, onMove: move, onDrag: setDragging, onCreate: create,
       })))
 }

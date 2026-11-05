@@ -4,6 +4,7 @@
 import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
 import { call } from './api.js'
 import { dateLocale, hostText, t } from './i18n.js'
+import { readOnlyLine } from './read-only.js'
 import { roleText } from './role-labels.js'
 import { lockedWindow } from './schedules.js'
 
@@ -843,7 +844,7 @@ export function ProjectBoardPane({ project, rows, done, canManage, tasks, decisi
 // unbind a member (`project-bind`), the assistant's per-owner controls
 // (`project-assistant-owner`) and the assistant's memory (`project-memory-write`) — and adds no
 // fourth. Fields the host has no write path for are not drawn, so every control here can save.
-export function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved, locked = false, readOnly = '' } = {}) {
+export function ProjectSettingsPanel({ project, assistantMine, actions, call: request, onClose, onSaved, locked = false, readOnly = '' } = {}) {
   const save = request ?? call
   const [kind, setKind] = useState('bot')
   const [memberId, setMemberId] = useState('')
@@ -867,7 +868,7 @@ export function ProjectSettingsPanel({ project, assistantMine, call: request, on
   if (locked) {
     return h('div', { className: 'bt-project-panel', 'data-panel': 'project-settings' },
       h('h3', null, t('Project settings')),
-      h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(readOnly)),
+      readOnlyLine(h, { readOnly }, actions, { key: 'readonly' }),
       h('div', { className: 'bt-project-row-actions' },
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onClose?.() }, t('Back to board'))))
   }
@@ -1141,7 +1142,7 @@ export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) 
             onClose: () => setPanel(null),
             onOpenBot: (id) => { close(); actions?.openSession?.(id) },
           })
-          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) })
+          : panel === 'settings' ? h(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, actions, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) })
           : panel === 'members' ? h(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) })
           : h(ProjectBoardPane, {
             project: state.project, rows: state.rows, done: state.done, canManage: state.canManage, tasks: state.tasks,

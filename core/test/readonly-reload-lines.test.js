@@ -18,6 +18,9 @@ const { outputFiles } = await build({
       "export { DetailsDrawer } from './src/client/details-drawer.js'",
       "export { InboxDialog } from './src/client/inbox.js'",
       "export { MemoryDialog } from './src/client/memory-panel.js'",
+      "export { KanbanDialog } from './src/client/kanban.js'",
+      "export { NewChat } from './src/client/new-chat.js'",
+      "export { ProjectSettingsPanel } from './src/client/project-board.js'",
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
@@ -61,7 +64,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SettingsDialog, DetailsDrawer, InboxDialog, MemoryDialog } = module.exports
+const { SettingsDialog, DetailsDrawer, InboxDialog, MemoryDialog, KanbanDialog, NewChat, ProjectSettingsPanel } = module.exports
 
 const SENTENCE = 'The Bot team in /home/xuke/.flybot is open in another dsh (Web or Desktop, pid 41 on host). Close the other one and reload.'
 
@@ -140,6 +143,38 @@ const mountMemory = (roster, acts = actions()) => {
   index = 0
   return draw(MemoryDialog({ bot: chief, roster, actions: acts }))
 }
+// The three overlay surfaces the host sentence reaches without a way to answer it: the Board, the
+// New chat overlay (which draws its sentence in the To: row once the admin is chosen and in the
+// composer otherwise) and the Project settings panel.
+const mountBoard = (roster, acts = actions()) => {
+  slots = []
+  index = 0
+  return draw(KanbanDialog({ roster, actions: acts }))
+}
+const mountNewChatComposer = (roster, acts = actions()) => {
+  slots = []
+  index = 0
+  return draw(NewChat({ mode: 'group', roster, actions: acts }))
+}
+// A locked group chat without an admin draws the sentence in the composer; with the admin chosen
+// it draws it in the To: row instead. Seed the state that pick leaves behind (group on, admin
+// chosen) so the second draw is the one under test.
+const mountNewChatAdmin = (roster, acts = actions()) => {
+  slots = []
+  index = 0
+  slots[2] = true
+  slots[4] = 'chief'
+  return draw(NewChat({ mode: 'group', roster, actions: acts }))
+}
+const mountProjectSettings = (roster, acts = actions()) => {
+  slots = []
+  index = 0
+  const readOnly = typeof roster?.readOnly === 'string' ? roster.readOnly : ''
+  return draw(ProjectSettingsPanel({
+    project: { id: 'p1', name: 'Ops' }, call: () => Promise.resolve({}),
+    locked: readOnly.trim() !== '', readOnly, actions: acts, onClose() {},
+  }))
+}
 
 const PAGES = ['general', 'bots', 'groups', 'projects', 'connectors', 'capabilities', 'schedules', 'workflows', 'usage', 'secrets', 'feedback', 'about']
 
@@ -152,6 +187,10 @@ const SURFACES = [
   { name: 'drawer: group settings', mount: roster => mountDrawer(roster, 'settings', 'r1') },
   { name: 'Inbox dialog', mount: roster => mountInbox(roster) },
   { name: 'Memory panel', mount: roster => mountMemory(roster) },
+  { name: 'Board dialog', mount: (roster, acts) => mountBoard(roster, acts) },
+  { name: 'New chat: composer', mount: (roster, acts) => mountNewChatComposer(roster, acts) },
+  { name: 'New chat: admin chosen', mount: (roster, acts) => mountNewChatAdmin(roster, acts) },
+  { name: 'Project settings panel', mount: (roster, acts) => mountProjectSettings(roster, acts) },
 ]
 
 test('the Settings header offers one Reload beside the host sentence on every page', () => {
@@ -174,7 +213,7 @@ test('each drawer surface offers exactly one Reload, never two', () => {
   }
 })
 
-test('the Inbox and the Memory panel each offer one Reload — their own way out of the modal', () => {
+test('every surface that is not the header or a drawer offers one Reload — its own way out of the modal', () => {
   for (const surface of SURFACES.filter(entry => !entry.name.startsWith('drawer') && entry.name !== 'Settings header')) {
     const nodes = surface.mount(locked)
     assert.equal(sentenceNodes(nodes).length, 1, `${surface.name}: the sentence stays once`)
@@ -219,6 +258,10 @@ const mountFor = (surface, roster, acts) => {
   if (surface.name === 'Settings header') return mountSettings(roster, 'general', null, acts)
   if (surface.name === 'Inbox dialog') return mountInbox(roster, acts)
   if (surface.name === 'Memory panel') return mountMemory(roster, acts)
+  if (surface.name === 'Board dialog') return mountBoard(roster, acts)
+  if (surface.name === 'New chat: composer') return mountNewChatComposer(roster, acts)
+  if (surface.name === 'New chat: admin chosen') return mountNewChatAdmin(roster, acts)
+  if (surface.name === 'Project settings panel') return mountProjectSettings(roster, acts)
   return mountDrawer(roster, surface.name.includes('settings') ? 'settings' : 'details', surface.name.includes('group') ? 'r1' : 'chief', acts)
 }
 
