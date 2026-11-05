@@ -64,7 +64,7 @@ export function install(rt) {
     }
     const step = ephemeralToolVerdict(bot, String(request.toolName ?? ''), request.reason)
     if (step !== undefined) return step
-    if (standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
+    if (request.toolName !== 'feishu_tool' && standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
     const id = randomUUID()
     const entry = {
       id,
@@ -130,6 +130,7 @@ export function install(rt) {
 
   async function grantStanding(entry, scope) {
     await rt.load()
+    if (entry.tool === 'feishu_tool') throw Object.assign(new Error('Change the per-app Feishu grant to allow writes without asking'), { code: 'bot/forbidden' })
     const bot = rt.botOf(entry.botId)
     const target = scope === 'room' ? rt.roomOf(entry.roomId) : bot
     if (bot === undefined || bot.remote !== undefined) throw Object.assign(new Error('Only your own Bot can be given a standing approval'), { code: 'bot/forbidden' })
@@ -143,7 +144,7 @@ export function install(rt) {
     }
     // Other cards the new grant already covers stop waiting too.
     for (const other of pending.values()) {
-      if (other.id !== entry.id && other.answer !== undefined && standingCovers(other.sessionId, other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
+      if (other.tool !== 'feishu_tool' && other.id !== entry.id && other.answer !== undefined && standingCovers(other.sessionId, other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
     }
   }
   const approvalKindOf = entry => approvalKind(entry.tool, entry.reason)

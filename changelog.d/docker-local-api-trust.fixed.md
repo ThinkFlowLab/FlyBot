@@ -1,0 +1,1 @@
+Require an explicit trusted browser address for the local Docker override so signing in through a published port also permits authenticated API and WebSocket requests, while other hosts and cross-origin requests remain blocked.

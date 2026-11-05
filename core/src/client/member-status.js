@@ -175,7 +175,7 @@ const since = (now, at) => (typeof at === 'number' && now - at >= 60000 ? ` · $
 
 // "Always allow" is the owner's standing grant (#540): only on their own Bot's card,
 // and the group option only when the request comes from a group.
-export const alwaysChoices = (approval, bot) => (bot?.remote ? [] : [
+export const alwaysChoices = (approval, bot) => (bot?.remote || approval.tool === 'feishu_tool' ? [] : [
   ['always-bot', 'Always allow for this Bot'],
   ...(approval.roomId ? [['always-room', 'Always allow for this group']] : []),
 ])

@@ -12,6 +12,9 @@
 export const SDK_PACKAGE = '@larksuiteoapi/node-sdk'
 // A socket that never opens must not hang a start: the row says `error` instead.
 export const READY_TIMEOUT_MS = 15_000
+// The lazy import lets a host without the package start healthy and fail only at the dial, so the
+// failure carries its own type: the owner is told to install it, not to check the network.
+export class FeishuSdkMissing extends Error {}
 
 const within = (promise, ms, message) => {
   let timer
@@ -25,6 +28,7 @@ export function createFeishuTransport({
   credentials,
   importSdk = () => import(SDK_PACKAGE),
   log = () => {},
+  onState = () => {},
   readyTimeoutMs = READY_TIMEOUT_MS,
 } = {}) {
   return {
@@ -38,13 +42,14 @@ export function createFeishuTransport({
         sdk = await importSdk()
       } catch (error) {
         const why = String(error?.message ?? error).split('\n')[0]
-        throw new Error(`The Feishu long connection needs ${SDK_PACKAGE} installed: ${why}`)
+        throw new FeishuSdkMissing(`The Feishu long connection needs ${SDK_PACKAGE} installed: ${why}`)
       }
       const Lark = sdk?.default ?? sdk
       const { WSClient, EventDispatcher } = Lark ?? {}
       if (typeof WSClient !== 'function' || typeof EventDispatcher !== 'function') throw new Error(`${SDK_PACKAGE} does not export the long-connection client`)
 
       const dispatcher = new EventDispatcher({}).register({
+        'card.action.trigger': data => onEvent({ header: { event_id: data?.event_id, event_type: 'card.action.trigger' }, event: data?.event ?? data }),
         'im.message.receive_v1': data => onEvent({
           header: { event_id: data?.event_id, event_type: 'im.message.receive_v1' },
           event: { sender: data?.sender, message: data?.message },
@@ -55,10 +60,12 @@ export function createFeishuTransport({
       const client = new WSClient({
         appId: app.appId,
         appSecret: app.appSecret,
+        logger: { error: () => log('Feishu SDK error'), warn: () => {}, info: () => {}, debug: () => {}, trace: () => {} },
+        onReconnected: () => onState('ready'),
         // `onReady` is the first open; a later reconnect is not a second inbox, so it only logs.
-        onReady: () => settle.resolve(),
-        onError: error => settle.reject(error),
-        onReconnecting: () => log('the Feishu long connection is reconnecting'),
+        onReady: () => { onState('ready'); settle.resolve() },
+        onError: error => { onState('error'); settle.reject(error) },
+        onReconnecting: () => { onState('connecting'); log('the Feishu long connection is reconnecting') },
       })
       try {
         await client.start({ eventDispatcher: dispatcher })

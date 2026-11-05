@@ -61,6 +61,7 @@ import * as images from './src/host/images.js'
 import * as browser from './src/host/browser.js'
 import * as secrets from './src/host/secrets.js'
 import * as connectors from './src/host/connectors.js'
+import * as feishuService from './src/host/feishu-service.js'
 import * as connectorAccess from './src/host/connector-access.js'
 import * as capabilities from './src/host/capabilities.js'
 import * as schedules from './src/host/schedules.js'
@@ -85,7 +86,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, projectEffects, projectWarnings, projectCompatibility, projectTaskLifecycle, projectInputs, harness, memberAuth, platformIdentity, projectAccess, projectDevelopment, projectExecutionBoundary, projectResources, projectHarness, projectRuntimeSetup, projectDelivery, projectDelegations, projectAgents, projectCredentials, projectGithubRead, projectPools, projectScheduledTasks, projectSources, projectChiefControl, projectScheduler, workbenchState, authz, personalAgentAuth, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
+const MODULES = [diagnostics, store, projectEffects, projectWarnings, projectCompatibility, projectTaskLifecycle, projectInputs, harness, memberAuth, platformIdentity, projectAccess, projectDevelopment, projectExecutionBoundary, projectResources, projectHarness, projectRuntimeSetup, projectDelivery, projectDelegations, projectAgents, projectCredentials, projectGithubRead, projectPools, projectScheduledTasks, projectSources, projectChiefControl, projectScheduler, workbenchState, authz, personalAgentAuth, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, feishuService, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, channel]
 
 export function apply(ctx, config = {}) {
   const rt = createRuntime(ctx, config)

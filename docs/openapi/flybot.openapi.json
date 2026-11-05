@@ -20362,6 +20362,187 @@
           "value"
         ]
       },
+      "FeishuPayload": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "list",
+              "save",
+              "identity",
+              "attachment",
+              "test",
+              "scopes",
+              "allow",
+              "configure",
+              "grant",
+              "retry",
+              "card-action",
+              "delete"
+            ]
+          },
+          "appId": {
+            "type": "string",
+            "pattern": "^cli_[0-9a-fA-F]{16}$"
+          },
+          "appSecret": {
+            "type": "string",
+            "maxLength": 8192,
+            "writeOnly": true,
+            "x-sensitive": true
+          },
+          "verificationToken": {
+            "type": "string",
+            "maxLength": 8192,
+            "writeOnly": true,
+            "x-sensitive": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "socket",
+              "http",
+              "disabled",
+              "read",
+              "ask",
+              "write"
+            ]
+          },
+          "publicUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "botId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chatId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "openId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "memberId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "allowBots": {
+            "type": "boolean"
+          },
+          "product": {
+            "type": "string",
+            "enum": [
+              "calendar",
+              "docs",
+              "bitable",
+              "sheets",
+              "meeting",
+              "task"
+            ]
+          },
+          "outboxId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "eventId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "cardId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "fields": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "attachmentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "FeishuRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "const": "feishu",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/FeishuPayload"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "payload"
+        ]
+      },
+      "FeishuResult": {
+        "$ref": "#/components/schemas/JsonValue"
+      },
+      "FeishuSuccess": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/components/schemas/FeishuResult"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "value"
+        ]
+      },
       "AuthModePayload": {
         "type": "object",
         "properties": {},
@@ -32928,6 +33109,9 @@
       "BotRequest": {
         "oneOf": [
           {
+            "$ref": "#/components/schemas/FeishuRequest"
+          },
+          {
             "$ref": "#/components/schemas/AuthModeRequest"
           },
           {
@@ -39863,6 +40047,94 @@
       }
     },
     {
+      "operationId": "feishu",
+      "transport": {
+        "method": "POST",
+        "path": "/api/bot",
+        "endpoint": "feishu"
+      },
+      "requestSchema": {
+        "$ref": "#/components/schemas/FeishuRequest"
+      },
+      "resultSchema": {
+        "$ref": "#/components/schemas/FeishuResult"
+      },
+      "successSchema": {
+        "$ref": "#/components/schemas/FeishuSuccess"
+      },
+      "errorSchema": {
+        "$ref": "#/components/schemas/DomainError"
+      },
+      "security": [
+        {
+          "memberSession": []
+        }
+      ],
+      "permission": "human-self",
+      "humanRoles": [
+        "owner",
+        "maintainer",
+        "member"
+      ],
+      "condition": "human-only-and-own-personal-agent-or-session",
+      "personalAgent": {
+        "safe": false,
+        "watch": false,
+        "checks": [
+          "unexpired-unrevoked-token",
+          "enabled-current-owner-principal",
+          "active-agent",
+          "explicit-token-project-scope",
+          "active-agent-project-participation",
+          "current-owner-project-rights",
+          "all-operation-specific-domain-preconditions"
+        ]
+      },
+      "effective": "intersection-of-current-human-rights-token-scope-participation-delegation-and-domain-fences; never-role-name",
+      "preconditions": [
+        {
+          "code": "human-session",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "connection-owner-for-management-and-attachments",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "self-identity-link-or-platform-owner-link-to-existing-member",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        },
+        {
+          "code": "actual-linked-card-clicker",
+          "enforcedBy": "server",
+          "clientCheckIsAuthority": false
+        }
+      ],
+      "stateChanges": {
+        "effects": [
+          "operation-specific-feishu-configuration-or-identity-grant-or-retry-or-card-submission"
+        ],
+        "effectsAreConditional": true,
+        "transitions": [],
+        "noTaskCreated": false,
+        "acknowledgementIsCompletion": false
+      },
+      "idempotency": {
+        "mechanism": "operation-specific; card-actions-deduplicated; no-unified-command-receipt",
+        "retry": "only-if-domain-contract-explicitly-permits; native-alias-has-no-unified-receipt",
+        "unifiedCommandReceipt": false
+      },
+      "invokesModel": false,
+      "notes": "operation defaults to list. Human-only existing Feishu connection guide; per-app ownership, allow-list, identity and Bot grants remain separate. Credentials are accepted only on save, encrypted on the host, and never returned. Generic cards never approve native tool requests.",
+      "implementation": {
+        "path": "core/src/host/feishu-service.js",
+        "sha256": "68050e9afca2706ddb4895926ac45ed915c5a91b4b23978b260ec240b86cc757"
+      }
+    },
+    {
       "operationId": "auth-mode",
       "transport": {
         "method": "POST",
@@ -40060,7 +40332,7 @@
       "notes": "Anonymous, invalid or revoked credentials return ok=true,value=null. A Bot must verify non-null agentId and personalAgentCredentialId; HTTP200/ok alone is not successful login.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -40137,7 +40409,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -40210,7 +40482,7 @@
       "notes": "Anonymous bootstrap is blocked by the public gateway; use the private operator CLI. Platform identity deployments may disable native invitation.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -40284,7 +40556,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -45641,7 +45913,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -45718,7 +45990,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -45807,7 +46079,7 @@
       "notes": "Read native history to observe the response; send acknowledgement is not completion.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -45886,7 +46158,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -45965,7 +46237,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -46044,7 +46316,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -46123,7 +46395,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -46202,7 +46474,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -46279,7 +46551,7 @@
       "notes": "Own personal Bot memory only; never exposes another Bot/team private memory.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -46361,7 +46633,7 @@
       "notes": "No host path, arbitrary URL or arbitrary attachment ID.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
+        "sha256": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb"
       }
     },
     {
@@ -50410,6 +50682,7 @@
   ],
   "x-flybot-inventory": {
     "endpoints": [
+      "feishu",
       "personal-agent-token-create",
       "personal-agent-token-list",
       "personal-agent-token-revoke",
@@ -50673,32 +50946,39 @@
       "project-close-prepare",
       "project-close-confirm"
     ],
-    "nativeEndpointCount": 104,
+    "nativeEndpointCount": 105,
     "versionedQueryCount": 31,
     "versionedCommandCount": 36,
-    "dispatchVariantCount": 190,
+    "dispatchVariantCount": 191,
     "sources": {
       "core/src/host/agents.js": "79908a1904312d18b8ddac4bde534210eb1bc5f8e92136bbf35a3591042e9692",
-      "core/src/host/approvals.js": "0892ca1bad7c996854d91f56c57068e407b508ba8d42c34868a4eae221e30e2a",
-      "core/src/host/authz.js": "72e2313920028e7621de80201779c69d6406ab4e31e8a8ea73d2c81e4f67f86b",
+      "core/src/host/approvals.js": "3c52f6d35d259584a4c639f3598dd5c0181d8f24efdd594b79e768498fc0ce2b",
+      "core/src/host/authz.js": "6cb91f8969b42f7e382428301db59ad962a27bb3237f2dd96a7f90deb66bba33",
       "core/src/host/automation-default.js": "10eb9aa220983ad9f561f04d5bd88b5316f8d2a336ede511312445a0460e610b",
       "core/src/host/browser.js": "5aaccf09cd9b1e65432c7d75fa0ee3cbf823b2b765ebf32f11f1df6c073d2d78",
       "core/src/host/busy-ack.js": "19c5fd411e4a7b0b41e696cc8b602e9da27be6d70668ca9824861d16db3c2d27",
       "core/src/host/capabilities.js": "c1a0a3746573fba088163f668eb6c09c76856f0ee33d1554c916dc47d0b9d90d",
-      "core/src/host/channel.js": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097",
+      "core/src/host/channel.js": "0d9a4eeecb928e1c203f94455270b2a0b6c6cda220155f4fdd98ef73a613aebb",
       "core/src/host/chat-index.js": "cda0d84b97dd53132bcc74c5ba9d849a52c8a14bfecbce599dd0788a8306a1fb",
       "core/src/host/connector-access.js": "43962b756d9e632ccd76c80a4557d232943b774585ccc05c8ac9c005fa0d284c",
-      "core/src/host/connectors.js": "2f05ffdfeac09227dff31e874de296899e2d8f0878865651fddc8bed90d65dbd",
-      "core/src/host/constants.js": "fdbedc1ca50f67f1b44ab5e553d8d25759e96c059202e32153372ebbf20893d3",
+      "core/src/host/connectors.js": "bf3e2f5de127095ed509ed5b07f156ea715e3a6c3a3a9bfb47f8b9a25fa6270a",
+      "core/src/host/constants.js": "4f93f8ed3fc815aed32e85c24ed0aeeabaeb27b22260455447c0be2036890420",
       "core/src/host/decisions.js": "f1a6a3c2c52ebb71caae466765770e4077a3f38b43dde6aab112ce41a60ed359",
-      "core/src/host/delivery.js": "219d3715466350402991bf608f30c112790f19716d39a922d3ac44bf28ec8b20",
+      "core/src/host/delivery.js": "aa2d0482a0eaf0566140dc0260895aebbd152de0f9490f5c05b3fdf0d4cee0cb",
       "core/src/host/diagnostics.js": "c1f20736776929b3ec1756ef83e11621a42da624993b4557cc8b24610af47aa0",
       "core/src/host/dsh-update.js": "e04b66ad04feee3dea3e609e8128ae0aea751cdfc2d064155205259090fc16f7",
       "core/src/host/experience.js": "a92fe9dfb32ab47b61e9854f9b59cfa1c43d66464debdb3e019884b5c2c26745",
       "core/src/host/face-lead.js": "4f31d13ce86b76ca3d69471c937a6eea6c62054e0eb9f4f86dce0c6f18c46495",
       "core/src/host/face-mentions.js": "3e1441c1909910b10c3752a664733454fdaf8c1a0ac00ce11424ce139a66228e",
+      "core/src/host/feishu-api.js": "68012b0572a656518660c708f8dea4984073a5b9055b38c0877f375e4769759b",
+      "core/src/host/feishu-calendar.js": "ee08388acff8b63f31f2bf74d372857e1dc5ff595b3a3ce36b0f5d870d30e3f8",
+      "core/src/host/feishu-format.js": "798bd881d6237bbdc23360d34c426f4cb971e6bfa73e7f07a431ebc3ed20ab30",
+      "core/src/host/feishu-http.js": "522097ad7958cad0037f80fdf807e9ff8bed770d3979a59a890a4ddbb41f8419",
       "core/src/host/feishu-inbound.js": "fae668fdffd65351f40556b3046293fdf4455a0c4c8c2021be1ddc3175527ef5",
-      "core/src/host/feishu-sdk.js": "9864e69cae2a6b3b3bd59ef3fea8c992175c4433bd61f1df918b58af30fbfea8",
+      "core/src/host/feishu-sdk.js": "181d8cad997b905ade93caadf0d95b81d94cbda44fe52181d83cd37874f38b6a",
+      "core/src/host/feishu-service.js": "68050e9afca2706ddb4895926ac45ed915c5a91b4b23978b260ec240b86cc757",
+      "core/src/host/feishu-tools.js": "39ec31a3d0095c900f13d431124597d435c9e2db09baddf0abbd0a20b9ee64a7",
+      "core/src/host/feishu-vault.js": "3fd1830b4fd7d91df5a3a4b55ce9b66fdfb3ba2ddc761a8cba123022dd95ecbc",
       "core/src/host/flybot-feed.js": "42ea1503cb28e376a4de91bd634af29826588c42b8fb61dfb6b04c1b2e41b6ba",
       "core/src/host/folders.js": "ec80523d0baf133658069ec1a9f45d3af3d0c7082a5c906308b3854093e103e3",
       "core/src/host/groups.js": "d7f0175c8ad67522aca392d7e47f9d2773c02f525bd6f33d564cbec784217bbf",
@@ -50810,15 +51090,15 @@
       "core/src/host/project-warnings.js": "2fc5ae7afec45911c70f6780d02df6d04ebab68eb9da7fc12fd39daebf81dd6d",
       "core/src/host/prompt.js": "919e8c5b28c27af6b9570a7be22609230ea4395d3fd4b7215083f9bc25978d72",
       "core/src/host/reach.js": "0b8f2868b36d99ccf896605685a82bcb20f670e092feec24560ff19a2a20824e",
-      "core/src/host/remote-chat.js": "7b83196031e922af5b44419dde60a66e414a8326bbeb641c69593667442fa81d",
-      "core/src/host/resume.js": "edd0c1d797b6cb22116e7aa29af0aa22c84b08e2b74b6308131ab8582db36631",
+      "core/src/host/remote-chat.js": "6a0e6130da94420516dfe02bbde466f8cce90291972d8782a3a088b1faac228e",
+      "core/src/host/resume.js": "895bf740031cd31c0c674d6ec93a94f41e99fc672481a70a993d3ca5c8aa4e97",
       "core/src/host/room-context.js": "6f63aa06ce07f352b43a6f5552a7aff35531484a52acf3f5c35344a08f546be1",
       "core/src/host/room-membership.js": "5600c76d407543496bc070d41d268524ad0f5579299aa53cb671238b9f29f357",
       "core/src/host/room-participant-external.js": "7524106b32f8fa59922b62798f37a1b2807643e3b52c2d75dd5f4b0b00e23b9c",
       "core/src/host/room-participant.js": "38aaf8a02d1c0faf861aef10d3658e73589b4d2a93024e3bf07ef2a10c459622",
       "core/src/host/roster.js": "9b4bf26bf6de08d0d8483d1ed3f387f6e2bdac0365d3ce015d5a46725fa6cbab",
       "core/src/host/schedules.js": "dec7085301cf6f8bd23c53eb52cdc6e6c643850d2ac66688ea88457d0a37c9ae",
-      "core/src/host/secrets.js": "5787cd55f8b7f589605955e234a326a5addd64dc74320b6ca00029291405e524",
+      "core/src/host/secrets.js": "caea9c0429996fa90dd2969c571f7b5b13417608606c261fab7211da7915e196",
       "core/src/host/steering-interrupt.js": "f9bcf7df56303c217abedc96f98a98d4e2e668bb17d9510ada7debd3a8ed207d",
       "core/src/host/steward.js": "9a49eb851bf12df9f35fbf4870ca8d2355dbd5338c7e40d8b57bb9bd44d58e88",
       "core/src/host/store.js": "59bba0c850e301b57011704ba3915cc3aea9a2c54b85c37fd51040b6e0a77971",
@@ -50827,14 +51107,14 @@
       "core/src/host/text.js": "709b3882356fc10d367533634e021b979a18db0e8127ac6cac59efe8e7e06c18",
       "core/src/host/time-context.js": "b77c7b4d5d3ea5f11600f7658fb269ad573b5735cfc919587d2e1b1b15f12a93",
       "core/src/host/tool-schema.js": "8cd805a047016116a64b9dec481347e0aa63f4826f4e5e005a58ce9f94506f11",
-      "core/src/host/tools.js": "432a23262f9b702acf0d5628c0e7287f58d3eb7f04287d0b11df6695101640e5",
+      "core/src/host/tools.js": "4f6f21c198cd58dcb9e58af2972ba9740ffd887c69d5b339026b73af310a60ab",
       "core/src/host/turn-origin.js": "6a4e852efc1a0774ac6b8848385c9bcd30b8cc4ed78f936b19b4632cf9c4894c",
-      "core/src/host/turns.js": "726d2ccf6d38ae409560742608d2aea55d4bb1ea0bef74f073396a74da687d18",
+      "core/src/host/turns.js": "a3dc262ed04882681f6c16714b9bee6bdeadf04964e980f619a944c3fd7707e4",
       "core/src/host/update.js": "8b049ec4e2d5d07d747312e3ff8c1560d7e3681e5b41dd867cd0961c5675a2be",
       "core/src/host/usage.js": "fff9a097cc3ac4b2fe4fd2cebdd1a3b24fbf82b63535d8cf274b0025e0d2b0f3",
       "core/src/host/work-dispatch.js": "bef48285a381a6bbc7e1c162656316c4769cca76fd44da0e4fcfed54fe38d641",
-      "core/src/host/workbench-gateway.js": "522e09b699f71999fde6ad6d6be6df2b776f1ae6d68118fc87976703a8ba555c",
-      "core/src/host/workbench-personal.js": "4282e3983f8f5cba0e61f288bddcba7f8e44eab92fbffbc604acac55defdc301",
+      "core/src/host/workbench-gateway.js": "e042136a60097f5bb382a899ff97d9b0121bc1a08e1441fec5f357909af7966f",
+      "core/src/host/workbench-personal.js": "1e8a7cd431ffa0e1926a343e6983dd350e4e6265915007742d49f7a3c50938f1",
       "core/src/host/workbench-state.js": "b95b83fe47a6a155e16fba92284f9df2929ebd95bec635804f186c47b9eb8391",
       "core/src/host/workflow-facts.js": "f2ff8392df1d0f927dd3bc2fb6ed1fde0bb31b5a8d590725963134b73f09fe76",
       "core/src/host/workflow-store.js": "917662ab929311d4fbe7937aec42589478a03f4baed3cb010255d8a05ecb1261",

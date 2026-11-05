@@ -1,3 +1,5 @@
+import { FeishuSetup } from '../feishu-setup.js'
+import { installBrowserLocale } from '../i18n.js'
 import { fileSize } from '../flybot-slots.js'
 import { PendingQuestion } from '../questions.js'
 import { ApprovalCard, MemberWork, MEMBER_CSS } from '../member-status.js'
@@ -19,7 +21,8 @@ function Conversation({ source, roster, openBot, onQuote }) {
   const ui = { reactions: {} }
   const reply = (row, key, streaming = false) => {
     const bot = roster.bots.find(bot => bot.id === row.botId || bot.role === row.speaker)
-    return h('article', { key, 'data-native-message': row.kind ?? 'assistant' },
+    return h('article', { key, 'data-native-message': row.kind ?? 'assistant', ...(row.feishu?.messageId ? { id: `feishu-message-${row.feishu.messageId}` } : {}) },
+      row.feishu?.rootId ? h('button', { type: 'button', onClick: () => document.getElementById(`feishu-message-${row.feishu.rootId}`)?.scrollIntoView?.({ block: 'center' }) }, '↪ Reply in thread') : null,
       h('header', null, bot ? h(BotMark, { bot, size: 28 }) : h(PersonMark, { name: row.speaker }), row.speaker ?? (row.kind === 'human' ? 'You' : 'Bot')),
       row.kind === 'human'
         ? h(PersonMessage, { name: row.speaker ?? 'You', texts: [String(row.text ?? '')], roster, selfId: bot?.id, useUi: select => select(ui), actions: { quote: (_id, text) => onQuote?.(text), openSession: id => { if (roster.byId[id]) openBot?.(id) } } })
@@ -123,4 +126,12 @@ function ScopedAttachments({ files, read }) {
       href ? h('a', { href, download: value.name ?? file.name }, 'Download') : null,
       typeof value?.text === 'string' ? h('pre', null, value.text) : null)
   }), failure ? h('p', { role: 'alert' }, failure) : null)
+}
+
+export function mountNativeFeishu(node, options) {
+  const off = installBrowserLocale(options.language ?? navigator.language)
+  const unmount = mountRoot(node, options, props => h(FeishuSetup, props))
+  const dispose = () => { unmount(); off() }
+  dispose.update = unmount.update
+  return dispose
 }

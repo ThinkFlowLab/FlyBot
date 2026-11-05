@@ -289,7 +289,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 
  const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
  // Programming and file system errors are DS Bot's own faults, logged with their stack;
-@@ -18,35 +18,161 @@ export function errorCode(error) {
+@@ -18,35 +18,162 @@ export function errorCode(error) {
 
  export function install(rt) {
    const { ctx, state } = rt
@@ -452,6 +452,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      exchangeTurns: state.exchangeTurns,
 +    // Per Session: turn → the person's name, for friends' lines Bot Social attests they typed themselves.
 +    remoteTypedTurns: state.remoteTypedTurns ?? {},
++    feishuTurns: state.feishuTurns ?? {},
 +    // Per friend chat: when my message left, while its reply has not come back (#443).
 +    remoteAwaiting: state.remoteAwaiting ?? {},
      questions: state.questions,
@@ -532,7 +533,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,204 @@ export function install(rt) {
+@@ -97,28 +97,210 @@ export function install(rt) {
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -583,6 +584,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      const gate = rt.authorize(actor, endpoint, body)
 +      if (!gate.ok) return fail(gate.message, gate.code)
        switch (endpoint) {
++        case 'feishu':
++          return ok(await rt.feishu.endpoint(body, actor))
 +        case 'auth-mode':
 +        case 'workbench-state':
 +        case 'project-resources':
@@ -708,7 +711,11 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +          const hidden = new Set(state.exchangeTurns[sessionId] ?? [])
 +          const messages = page.records.flatMap(({ event }) => {
 +            if (hidden.has(event.data?.turn)) return []
-+            const attachments = personalMessageAttachments(event)
++            const source = event.data?.source
++            const feishu = source?.form === 'remote-chat' ? source.feishu : undefined
++            const attachments = personalMessageAttachments(event).map(file => feishu ? { ...file, feishuAppId: feishu.appId } : file)
++            if (feishu) return [{ attachments, seq: event.seq, id: `${sessionId}:${event.seq}`, botId: null, kind: source.typedBy ? 'human' : 'assistant', speaker: source.typedBy ?? source.senderName, text: source.text, feishu }]
++            if (event.type === 'assistant/message' && state.feishuTurns?.[sessionId]?.[event.data?.turn]) return []
 +            const entry = rt.historyEntry(event, Boolean(rt.roomOf(sessionId))) ?? (event.type === 'assistant/message' && attachments.length ? { answer: true, text: '' } : undefined)
 +            return entry && (entry.text || attachments.length) ? [{ attachments, seq: event.seq, id: `${sessionId}:${event.seq}`, botId: entry.answer ? rt.botOf(sessionId)?.id : null, kind: entry.answer ? 'assistant' : 'human', speaker: entry.answer ? rt.botOf(sessionId)?.name ?? 'Bot' : currentActor.displayName ?? 'You', text: entry.text }] : []
 +          })
@@ -879,7 +886,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
            if (state.questions[body.sessionId] !== undefined) {
              delete state.questions[body.sessionId]
              await rt.save()
-@@ -231,8 +231,14 @@ export function install(rt) {
+@@ -231,21 +231,40 @@ export function install(rt) {
            await rt.load()
            return ok(await rt.secretEndpoint(endpoint, body))
          case 'connector-connect':
@@ -892,9 +899,11 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'connector-retry':
 +        case 'connector-send':
            await rt.load()
-           return ok(await rt.connectorEndpoint(endpoint, body))
+-          return ok(await rt.connectorEndpoint(endpoint, body))
++          return ok(await rt.connectorEndpoint(endpoint, body, actor))
          case 'capability-save':
-@@ -241,11 +241,24 @@ export function install(rt) {
+         case 'capability-delete':
+         case 'capability-approve':
          case 'bot-capability':
            await rt.load()
            return ok(await rt.capabilityEndpoint(endpoint, body))
@@ -1398,7 +1407,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 -  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, resent = false, askedBy, fromRoomId }) {
 +  // from; the reply goes back to that Session (turns.js). `answeredIn`: the group where the user
 +  // answered the Bot's question card about work handed over from there (tools.js, #550).
-+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, rateLimited = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false, projectDelegation }) {
++  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, rateLimited = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false, projectDelegation, feishu, requesterMemberId }) {
      const from = rt.botOf(fromId)
      const to = rt.botOf(toId)
      if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -1419,16 +1428,18 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
      // Session events reject `undefined` members, so optional fields are omitted instead.
      const source = {
        kind: SOURCE_KIND,
-@@ -53,6 +53,8 @@ export function install(rt) {
+@@ -53,6 +53,10 @@ export function install(rt) {
        exchangeId,
        senderName: fromName,
        hop,
 +      // Whose request this is, for the connector tools (turn-origin.js): read by the receiving turn.
 +      origin,
++      ...(feishu ? { feishu } : {}),
++      ...(requesterMemberId ? { requesterMemberId } : {}),
        ...(fromId ? { senderSessionId: fromId } : {}),
        ...(replyTo ? { replyTo } : {}),
        ...(roomId ? { roomId } : {}),
-@@ -60,20 +60,30 @@ export function install(rt) {
+@@ -60,20 +60,31 @@ export function install(rt) {
        ...(deferred ? { deferred: true } : {}),
        ...(resumed ? { resumed: true } : {}),
        ...(retried ? { retried: true } : {}),
@@ -1442,7 +1453,7 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +      // `firstContact`: this sender's first line in the Bot's own chat; the chat names who is talking (#420).
 +      ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}), ...(remote.typedBy ? { typedBy: cleanName(remote.typedBy) } : {}), ...(firstContact ? { firstContact: true } : {}) } } : {}),
 +      // A remote member's files, as references the chat shows as chips (fetched on demand).
-+      ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
++      ...((remote?.handle || feishu) && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.attachmentId ?? file.id ?? ''), name: String(file.name), size: Number(file.bytes ?? file.size), mime: String(file.mediaType ?? file.mime ?? '') })) } : {}),
      }
 -    if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !resent) {
 -      state.exchanges.push({ id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) })
@@ -1457,10 +1468,11 @@ diff --git a/src/host/delivery.js b/src/host/delivery.js
 +    if (projectDelegation && !rt.projectAgents?.isDelegationActive(projectDelegation.agentId, projectDelegation.delegationId)) throw new Error('Project delegation was revoked before delivery')
      // A steered message cuts into a running turn at its next step; a follow-up
      // queues for the next turn (see turns.js for how each is routed).
++    if (feishu && !deferred && !resumed && !retried && !rateLimited && !resent && agent.session?.surface?.nodes?.some(seq => (agent.session.eventAt(seq)?.data?.source ?? agent.session.eventAt(seq)?.data?.message?.source)?.exchangeId === exchangeId)) return exchangeId
 +    const body = fromId ? stripSessionChips(text) : text
      const message = createUserMessage({
 -      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried })}\n${text}` }],
-+      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, rateLimited, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
++      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, rateLimited, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }, ...(feishu ? (attachments ?? []).map(file => ({ type: file.mediaType ? 'image' : 'file', attachment: file })) : [])],
        source,
      })
      if (steer) agent.steer(message)

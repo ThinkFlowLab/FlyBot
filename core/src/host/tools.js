@@ -26,6 +26,7 @@ export const EPHEMERAL_DENIED_TOOLS = Object.freeze([
   'ask_user', 'save_capability', 'delete_capability', 'attach_capability', 'detach_capability',
   'track_tasks', 'group_relay',
   'request_secret', 'list_secrets',
+  'feishu_apps', 'feishu_tool', 'feishu_card', 'feishu_file',
   'send_message', 'schedule_create', 'schedule_update', 'schedule_delete',
   'message_friend_bot', 'get_friend_file', 'list_friend_bots',
   'define_workflow', 'run_workflow',

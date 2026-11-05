@@ -586,6 +586,62 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-connector[data-state=error] .bt-connector-status{color:#e02135;white-space:normal}
 .bt-connector-actions{flex:none;display:flex;gap:6px}
 .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+.bt-feishu-setup{container-type:inline-size;min-width:0;width:100%;max-width:960px;box-sizing:border-box;padding:20px;border:1px solid var(--bt-line);border-radius:14px;background:var(--bt-card);color:var(--bt-ink);font:13px/1.6 ui-sans-serif,system-ui,sans-serif;overflow-wrap:anywhere;animation:bt-veil-in .16s ease-out}
+.bt-feishu-setup *{box-sizing:border-box}
+.bt-feishu-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:18px;border-bottom:1px solid var(--bt-line)}
+.bt-feishu-header h3{padding:0;margin:0 0 4px;font-size:17px;line-height:24px;font-weight:650;letter-spacing:-.02em}
+.bt-feishu-header>.bt-input{width:220px;max-width:45%;flex:none}
+.bt-feishu-setup .bt-set-hint{margin:0;font-size:12px;line-height:1.7;color:var(--bt-ink-2)}
+.bt-feishu-body{display:flex;flex-direction:column;gap:22px;padding-top:18px}
+.bt-feishu-modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bt-feishu-modes button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:11px 14px;border:1px solid var(--bt-line-2);border-radius:10px;background:var(--bt-card);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s,border-color .12s}
+.bt-feishu-modes button:hover{background:var(--bt-hover)}
+.bt-feishu-modes button[aria-pressed=true]{border-color:var(--bt-accent);background:color-mix(in srgb,var(--bt-accent) 6%,var(--bt-card));box-shadow:0 0 0 1px var(--bt-accent)}
+.bt-feishu-modes strong{font-size:13px;font-weight:600}.bt-feishu-modes small{color:var(--bt-ink-2);font-size:11px}
+.bt-feishu-layout{display:grid;grid-template-columns:160px minmax(0,1fr);gap:24px;align-items:start}
+.bt-feishu-progress{min-width:0}.bt-feishu-progress ol{display:flex;flex-direction:column;gap:4px;list-style:none;margin:0;padding:0}
+.bt-feishu-progress li{min-width:0}.bt-feishu-progress button{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-2);font:inherit;font-size:12px;line-height:19px;text-align:left;cursor:pointer}
+.bt-feishu-progress button:hover:not(:disabled){background:var(--bt-hover)}
+.bt-feishu-progress button[aria-current=step]{background:color-mix(in srgb,var(--bt-accent) 7%,var(--bt-card));color:var(--bt-accent);font-weight:600}
+.bt-feishu-progress button:disabled{opacity:.48;cursor:default}
+.bt-feishu-step-number{display:flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border:1px solid var(--bt-line-2);border-radius:50%;font-size:11px;font-variant-numeric:tabular-nums}
+.bt-feishu-progress [aria-current=step] .bt-feishu-step-number{background:var(--bt-accent);border-color:var(--bt-accent);color:white}
+.bt-feishu-progress [data-done=true] .bt-feishu-step-number{border-color:transparent;background:var(--bt-hover);color:var(--bt-ink-2)}
+.bt-feishu-step{min-width:0}.bt-feishu-step-heading{margin-bottom:16px}.bt-feishu-eyebrow{display:block;margin-bottom:4px;color:var(--bt-ink-2);font-size:11px}
+.bt-feishu-step h4{margin:0;font-size:16px;line-height:24px;font-weight:650;letter-spacing:-.02em}
+.bt-feishu-step-content>div{display:flex;flex-direction:column;align-items:stretch;gap:14px}
+.bt-feishu-external{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;align-self:flex-start;border:1px solid var(--bt-line-2);border-radius:8px;padding:7px 11px;color:var(--bt-ink);font-size:12px;font-weight:500;text-decoration:none}
+.bt-feishu-external:hover{background:var(--bt-hover)}.bt-feishu-external span{color:var(--bt-ink-2)}
+.bt-feishu-permissions{display:flex;flex-direction:column;gap:10px;padding-top:5px}.bt-feishu-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.bt-feishu-section-head strong{font-size:13px;font-weight:600}
+.bt-feishu-optional{color:var(--bt-ink-2);font-size:11px}.bt-feishu-permission-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.bt-feishu-permission{display:flex;align-items:center;gap:9px;min-width:0;min-height:42px;margin:0;padding:9px 11px;border:1px solid var(--bt-line);border-radius:9px;background:var(--bt-card);font-size:12px;line-height:20px;cursor:pointer;transition:background-color .12s,border-color .12s}
+.bt-feishu-permission:hover{border-color:var(--bt-line-2);background:var(--bt-hover)}
+.bt-feishu-permission[data-checked=true]{border-color:color-mix(in srgb,var(--bt-accent) 55%,var(--bt-line));background:color-mix(in srgb,var(--bt-accent) 5%,var(--bt-card))}
+.bt-feishu-setup input[type=checkbox]{appearance:auto;flex:none;width:15px;height:15px;min-height:0;margin:0;padding:0;border-radius:4px;accent-color:var(--bt-accent);cursor:pointer}
+.bt-feishu-permission-copy{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px}
+.bt-feishu-setup .bt-feishu-button{display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;gap:6px;flex:none;width:auto;min-height:34px;height:auto;margin:0;padding:6px 12px;border:1px solid var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink);font:inherit;font-size:12px;font-weight:500;cursor:pointer;box-shadow:none}
+.bt-feishu-setup .bt-feishu-button:hover:not(:disabled){background:var(--bt-hover)}.bt-feishu-setup .bt-feishu-button:disabled{opacity:.4;cursor:default}
+.bt-feishu-setup .bt-feishu-primary{background:var(--bt-accent);border-color:var(--bt-accent);color:#fff;padding-inline:18px}
+.bt-feishu-setup .bt-feishu-primary:hover:not(:disabled){background:color-mix(in srgb,var(--bt-accent) 88%,#000)}
+.bt-feishu-setup .bt-feishu-quiet{border-color:transparent;background:transparent;color:var(--bt-ink-2)}
+.bt-feishu-setup :is(button,a,input,select,textarea):focus-visible{outline:2px solid var(--bt-accent);outline-offset:3px}
+.bt-feishu-setup details{min-width:0}.bt-feishu-setup summary{cursor:pointer;font-size:12px;font-weight:500;line-height:20px;padding:8px 0;color:var(--bt-ink-2)}
+.bt-feishu-json{border:0}.bt-feishu-setup .bt-feishu-json summary{padding:2px 0;color:var(--bt-accent);font-weight:400}
+.bt-feishu-setup .bt-feishu-json textarea{width:100%;height:180px;min-height:120px;max-height:320px;margin-top:10px;padding:12px;border:1px solid var(--bt-line);border-radius:8px;background:var(--bt-sidebar);color:var(--bt-ink-2);font:11px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical;white-space:pre;overflow:auto;overflow-wrap:normal}
+.bt-feishu-field,.bt-feishu-setup .bt-q-field{display:flex;flex-direction:column;flex:initial;gap:6px;min-width:0;min-height:0;margin:0;padding:0;border:0;cursor:default;color:var(--bt-ink-2);font-size:12px}
+.bt-feishu-setup .bt-input{min-width:0;height:38px;padding:0 11px;font-size:13px;border-color:var(--bt-line-2);border-radius:8px;background:var(--bt-card);color:var(--bt-ink)}
+.bt-feishu-field+.bt-feishu-field{margin-top:2px}.bt-feishu-setup .bt-input:disabled{opacity:.65;background:var(--bt-sidebar)}
+.bt-feishu-check{display:flex;align-items:flex-start;gap:9px;font-size:12px}.bt-feishu-check input{margin-top:3px!important}
+.bt-feishu-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--bt-line)}
+.bt-feishu-footer>div{display:flex;align-items:center;gap:6px}.bt-feishu-result,.bt-feishu-error{margin:14px 0 0;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.6;background:var(--bt-sidebar);color:var(--bt-ink-2)}
+.bt-feishu-result[data-success=true]{color:var(--bt-ink);border:1px solid var(--bt-line)}.bt-feishu-error{color:#d33e4e;background:color-mix(in srgb,#e5484d 7%,var(--bt-card))}
+.bt-feishu-management{border-top:1px solid var(--bt-line);padding-top:8px}.bt-feishu-management>details+details{border-top:1px solid var(--bt-line)}
+.bt-feishu-management>details>summary{padding:12px 0;color:var(--bt-ink)}.bt-feishu-management>details[open]{display:flex;flex-direction:column;gap:10px;padding-bottom:14px}
+.bt-feishu-management>details>fieldset{min-width:0;margin:4px 0;padding:12px;border:1px solid var(--bt-line);border-radius:10px}.bt-feishu-management legend{font-size:12px;font-weight:600;padding-inline:4px}
+.bt-feishu-management fieldset>.bt-q-field+.bt-q-field{margin-top:10px}.bt-feishu-setup code,.bt-feishu-setup pre{white-space:pre-wrap;overflow-wrap:anywhere}.bt-feishu-setup ul{padding-left:18px;margin:4px 0}
+.bt-feishu-webhook{margin-top:18px;padding-top:10px;border-top:1px solid var(--bt-line)}.bt-feishu-webhook[open]{display:flex;flex-direction:column;gap:12px}.bt-feishu-webhook>summary{color:var(--bt-ink-2)}
+@container (max-width:640px){.bt-feishu-layout{display:flex;flex-direction:column;gap:18px}.bt-feishu-progress{width:100%}.bt-feishu-progress ol{flex-direction:row;gap:5px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}.bt-feishu-progress li{flex:1}.bt-feishu-progress button{justify-content:center;padding:5px;gap:7px}.bt-feishu-step-label{display:none}.bt-feishu-progress [aria-current=step] .bt-feishu-step-label{display:block;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bt-feishu-progress li:has([aria-current=step]){flex:4}.bt-feishu-step{width:100%}.bt-feishu-header{flex-direction:column;gap:10px}.bt-feishu-header>.bt-input{max-width:100%;width:100%}}
+@container (max-width:340px){.bt-feishu-modes{gap:8px}.bt-feishu-modes button{padding:9px 10px}.bt-feishu-modes small{font-size:10px}.bt-feishu-permission{padding:8px}.bt-feishu-footer>div{gap:2px}.bt-feishu-footer .bt-feishu-button{padding-inline:9px}.bt-feishu-progress [aria-current=step] .bt-feishu-step-label{max-width:90px}}
 .bt-connector-form-row{display:flex;align-items:center;gap:6px}
 .bt-connector-apps{display:flex;flex-direction:column;gap:8px}
 .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}

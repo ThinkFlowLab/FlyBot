@@ -94,3 +94,7 @@ members. The private upstream file must never be committed or placed in browser 
 See [Project workbench](project-workbench.md) for the security/deployment boundary.
 
 #2185 retains the same restricted gateway and private upstream-cookie deployment. Optional --event-poll-ms and --event-max-streams configure its authenticated SSE transport; no token appears in an event URL. Shutdown aborts open streams. This adds no autonomous task/Chief inspection registration. Simplified standalone backend packaging remains #2189.
+
+## Local Feishu port publication
+
+`docker/compose.local.yaml` overrides host networking with ordinary Docker port publication and a TCP relay sharing the FlyBot container network. DSH still binds its own loopback port 3080; the relay accepts container port 8080 and publishes the local console on all host interfaces. The separate event-only listener uses port 3082. Neither relay stores credentials nor exposes another process API. The existing named data volume is retained on rebuild/restart. See [Feishu](../feishu.md#local-docker) for invocation and host-port overrides.

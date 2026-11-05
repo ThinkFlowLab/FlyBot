@@ -564,7 +564,7 @@ export function install(rt) {
     if (typeof seam?.onSend !== 'function') return
     if (feishuWire.seam === seam) return
     feishuWire.off?.()
-    feishuWire = { seam, off: seam.onSend(FEISHU, feishuReply({ secretValue: name => rt.secretValue(name), appOf })) }
+    feishuWire = { seam, off: seam.onSend(FEISHU, message => rt.feishu ? rt.feishu.reply(message) : feishuReply({ secretValue: name => rt.secretValue(name), appOf })(message)) }
   }
 
   const feishuInbound = createInbound({
@@ -639,6 +639,11 @@ export function install(rt) {
   async function reconcileChannel(c, force, token) {
     const { def } = c
     const record = saved(c) ?? {}
+    if (record.managed === true) {
+      await feishuInbound.stop()
+      c.status = { state: 'ready' }
+      return
+    }
     const mode = record.mode === 'app' ? 'app' : record.mode === 'webhook' ? 'webhook' : undefined
     const app = mode === 'app' ? appOf() : undefined
     const key = mode === 'app' ? `app\n${app?.appId ?? ''}\n${app?.appSecret ?? ''}` : mode === 'webhook' ? `webhook\n${token ?? ''}` : undefined
@@ -770,6 +775,7 @@ export function install(rt) {
     // here carries a secret: the App ID is not one, and the webhook never comes back.
     ...(c.def.id === FEISHU ? {
       mode: saved(c)?.mode ?? null,
+      ...(saved(c)?.managed === true ? { managed: true } : {}),
       modes: c.def.modes,
       allowed: (saved(c)?.allowed ?? []).map(entry => ({ openId: entry.openId, name: entry.name ?? entry.openId })),
       inbound: { ...feishuInbound.view(), app: appOf() === undefined ? 'missing' : 'set' },
@@ -815,7 +821,7 @@ export function install(rt) {
       c.saving += 1
       try {
         await rt.secretEndpoint('secret-set', { name: FEISHU_SECRET, value: webhook, purpose: c.def.purpose })
-        state.connectors = { ...state.connectors, [FEISHU]: { ...previous, mode: 'webhook', connectedAt: Date.now() } }
+        state.connectors = { ...state.connectors, [FEISHU]: { ...previous, mode: 'webhook', managed: false, connectedAt: Date.now() } }
         await rt.save()
       } finally {
         c.saving -= 1
@@ -955,10 +961,11 @@ export function install(rt) {
     async 'connector-block'(body) {
       return allowedOp(body, false)
     },
-    async 'connector-disconnect'(body) {
+    async 'connector-disconnect'(body, actor) {
       const c = known(body.id)
       await rt.loadSecrets()
       if (c.def.kind === 'channel') {
+        for (const app of Object.values(state.feishu?.apps ?? {})) await rt.feishu?.endpoint({ operation: 'delete', appId: app.id }, actor)
         // Disconnect closes both (#1266): the socket goes down, the webhook and the app secret are
         // deleted (each only if it is there — deleting a key that is not saved is an error), and the
         // record goes with them, so the row is `off` and no turn can start.
@@ -1019,7 +1026,7 @@ export function install(rt) {
     },
   }
 
-  const connectorEndpoint = (endpoint, body) => endpoints[endpoint](body ?? {})
+  const connectorEndpoint = (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor)
 
   // An older version kept the session's address in state.json. Only the id stays; the address is
   // asked for again at mount time (composioSessionFind).
@@ -1048,5 +1055,5 @@ export function install(rt) {
     }
   }, 'ds-bot: connectors')
 
-  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void syncAll() } })
+  Object.assign(rt, { replyLegacyFeishu: feishuReply({ secretValue: name => rt.secretValue(name), appOf }), stopLegacyFeishu: () => feishuInbound.stop(), connectorsView, connectorEndpoint, secretsChanged: () => { void syncAll() } })
 }

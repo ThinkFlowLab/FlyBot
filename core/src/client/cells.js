@@ -209,6 +209,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const closing = useClosingText(node, useTurnData)
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
   const person = typedBy(roster, sessionId, data.turn)
+  const feishu = roster.feishuTurns?.[sessionId]?.[data.turn]
   const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter(text => text.trim() !== '')
   const running = data.status === 'running'
   // A streaming reply stands in for the activity row.
@@ -224,7 +225,9 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const bubbles = texts.length ? (person
     ? h(PersonMessage, { name: person, texts, roster, selfId, actions, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi })
     : h(Bubbles, { texts, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ''}`, useUi, mentions, lead: friendLead(roster.byId[sessionId], texts) })) : null
-  return h(Fragment, null,
+  return h(feishu ? 'div' : Fragment, feishu ? { id: `feishu-message-${feishu.messageId ?? data.turn}`, 'data-feishu-root': feishu.rootId ?? '' } : null,
+    feishu?.rootId ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', title: feishu.rootId, onClick: () => document.getElementById(`feishu-message-${feishu.rootId}`)?.scrollIntoView?.({ block: 'center' }) }, t('Reply in thread')) : null,
+    feishu?.attachments?.length ? h(RemoteFiles, { files: feishu.attachments, appId: feishu.appId, plugin: 'feishu', botId: selfId }) : null,
     relays.map(relay => {
       const source = relay.source
       const sender = roster.byId[source.senderSessionId] ?? { id: source.senderSessionId, name: source.senderName ?? t('a Bot'), color: 'gray' }
@@ -399,7 +402,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       h('span', { className: 'bt-group-name', title: handle }, person,
         carrier ? h('span', { className: 'bt-remote-handle' }, t('via {name}', { name: carrier })) : null),
       h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead: h('span', { className: 'bt-lead', title: person }, h(PersonMark, { name: person })) }),
-      files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
+      files.length ? h(RemoteFiles, { files, appId: source.feishu?.appId, plugin: source.feishu ? 'feishu' : member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
   }
   const mark = h(BotMark, { bot, size: 22 })
   const lead = chatId
@@ -412,7 +415,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
       : h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, name,
         h('span', { className: 'bt-remote-handle', title: source.remote.home ?? handle, 'aria-label': t('Friend\'s Bot') }, h(GlobeMark), handle)),
     h(Bubbles, { texts: [stripTrace(text)], roster, selfId: bot.id, actions, sessionId, msgKey, useUi, lead }),
-    files.length ? h(RemoteFiles, { files, plugin: member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
+    files.length ? h(RemoteFiles, { files, appId: source.feishu?.appId, plugin: source.feishu ? 'feishu' : member?.plugin ?? 'social', botId: roster.byId[sessionId]?.id ?? sessionId }) : null)
 }
 
 // A sender's first line in a Bot's own chat (#420): one quiet line says who is talking to the Bot
@@ -431,14 +434,14 @@ function GlobeMark() {
 
 // A remote member's files as chips; a click fetches the file (the plugin checks its
 // hash) and saves it. Nothing is opened or run.
-function RemoteFiles({ files, plugin, botId }) {
+function RemoteFiles({ files, plugin, botId, appId }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const download = async (file) => {
     setBusy(file.id)
     setError('')
     try {
-      const got = await call(`flybot/${plugin}/attachment`, { id: file.id, botId })
+      const got = plugin === 'feishu' ? await call('feishu', { operation: 'attachment', appId, attachmentId: file.id }) : await call(`flybot/${plugin}/attachment`, { id: file.id, botId })
       const value = got?.value ?? got
       const bytes = Uint8Array.from(atob(value.content_base64), c => c.charCodeAt(0))
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }))
@@ -720,7 +723,7 @@ const SILENT_REGISTRATION_TOOLS = new Set([
   'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot', 'list_models',
   'bot_schedules',
   'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
-  'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
+  'request_secret', 'list_secrets', 'feishu_apps', 'feishu_tool', 'feishu_card', 'feishu_file', 'group_relay', 'read_own_chat',
   'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
   'list_capabilities', 'save_capability', 'delete_capability',
   'attach_capability', 'detach_capability',

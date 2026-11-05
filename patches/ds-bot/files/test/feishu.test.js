@@ -235,15 +235,26 @@ const all = (node, out = []) => { if (node && typeof node === 'object') { if (Ar
 const text = node => (node === null || node === undefined ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.props.children) : String(node))
 
 const actions = { connectorConnect: async () => {}, connectorDisconnect: async () => {}, connectorRetry: async () => {}, connectorSend: async () => {} }
-const renderRow = (connector, given = []) => {
+const renderRow = (connector, given = [], overrides = {}) => {
   states = [...given]
-  const tree = expand(h(ConnectorsPage, { roster: { connectors: [connector], bots: [], self: { memberId: 'me' } }, actions }))
+  const tree = expand(h(ConnectorsPage, { roster: { connectors: [connector], bots: [], self: { memberId: 'me' } }, actions: { ...actions, ...overrides } }))
   states = []
   return tree
 }
 
 const FEISHU_OFF = { id: 'feishu', name: 'Feishu', state: 'off', kind: 'channel', account: null, mode: null, modes: FEISHU_MODES, allowed: [] }
 const FEISHU_APP = { ...FEISHU_OFF, state: 'ready', mode: 'app', allowed: [{ openId: 'ou_owner_1', name: 'Owner' }], inbound: { state: 'ready', refusedSenders: [{ openId: 'ou_stranger_1', name: 'Mallory', at: '2026-10-26T10:00:00.000Z' }] } }
+
+test('guided Feishu uses one Connect entry before and after connecting', () => {
+  for (const connector of [FEISHU_OFF, { ...FEISHU_APP, managed: true }]) {
+    const tree = renderRow(connector, [], { feishu: async () => ({ apps: [] }) })
+    const labels = all(tree).filter(node => node.type === 'button').map(text)
+    assert.equal(labels.filter(label => label === 'Connect').length, 1)
+    assert.ok(!labels.includes('Setup guide'))
+    const entry = all(tree).find(node => node.type === 'button' && text(node) === 'Connect')
+    assert.equal(entry.props['aria-expanded'], false)
+  }
+})
 
 test('#1266: the Feishu row offers both ways to connect, and the webhook one links to Feishu', () => {
   // form open, so the two mode buttons, the field and the link are drawn

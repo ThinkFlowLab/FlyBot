@@ -5,6 +5,7 @@ import { ConnectorIcon } from './icons.js'
 import { SwitchRow } from './bot-settings.js'
 import { ConnectorBots, usageText } from './connector-bots.js'
 import { t } from './i18n.js'
+import { FeishuSetup } from './feishu-setup.js'
 
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
@@ -149,7 +150,7 @@ export function AppStatusList({ apps, statuses }) {
 }
 
 function ConnectorRow({ connector, roster, actions }) {
-  const [form, setForm] = useState(false)
+  const [form, setForm] = useState(() => !!(connector.id === 'feishu' && actions.feishu && typeof window !== 'undefined' && window.location && new URLSearchParams(window.location.search).has('feishu-app')))
   const [bots, setBots] = useState(false)
   const [token, setToken] = useState('')
   const [apps, setApps] = useState(() => connector.apps ?? [])
@@ -169,6 +170,7 @@ function ConnectorRow({ connector, roster, actions }) {
   // behaviour) or a self-built app (the long connection in, answers out). The form is the mode's
   // credential list, rendered field by field.
   const channel = connector.kind === 'channel'
+  const guided = channel && actions.feishu
   const modes = connector.modes ?? []
   const [mode, setMode] = useState(() => connector.mode ?? modes[0]?.id)
   const [values, setValues] = useState({})
@@ -222,19 +224,21 @@ function ConnectorRow({ connector, roster, actions }) {
         connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
         on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
         on && perBot ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': bots, onClick: () => setBots(value => !value) }, bots ? t('Done') : t('Choose Bots')) : null,
+        guided ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': form, onClick: () => setForm(value => !value) }, t('Connect')) : null,
         on
           ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
-          : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
+          : form || guided ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
     on && gateway && !picking ? h(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
     on && perBot ? h('span', { className: 'bt-connector-uses' }, usageText(roster, connector.id)) : null,
     on && bots ? h(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
-    on && channel && connector.mode === 'app' ? h(AllowedSenders, { connector, actions, run, busy }) : null,
+    on && channel && !connector.managed && connector.mode === 'app' ? h(AllowedSenders, { connector, actions, run, busy }) : null,
     on && canPost ? h('div', { className: 'bt-connector-form' },
       h('label', { className: 'bt-q-field' }, h('input', { className: 'bt-input', type: 'text', value: message, 'aria-label': t('Message to send to Feishu'), placeholder: t('Type a message for the Feishu group'), onChange: event => setMessage(event.target.value) })),
       h('div', { className: 'bt-connector-form-row' },
         h('span', { className: 'bt-connector-link' }),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || message.trim() === '' || actions.connectorSend === undefined, onClick: () => void run(actions.connectorSend(connector.id, message), () => setMessage('')) }, t('Send')))) : null,
-    !on && form ? h('div', { className: 'bt-connector-form' },
+    channel && form && actions.feishu ? h(FeishuSetup, { actions, roster, onClose: () => setForm(false) }) : null,
+    !on && form && (!channel || !actions.feishu) ? h('div', { className: 'bt-connector-form' },
       channel ? h('div', { className: 'bt-states', role: 'group', 'aria-label': t('How to connect') }, modes.map(entry =>
         h('button', {
           key: entry.id, type: 'button', className: 'bt-state', 'aria-pressed': entry.id === chosen?.id,

@@ -18,6 +18,19 @@ export function imagePackages(packagesDir) {
 }
 
 /**
+ * The runtime dependencies an image package declares but does not carry in its own
+ * node_modules, as `name -> dependency`. A `link:` in the profile installs none of a linked
+ * package's dependencies, so the image has to; the build fails on any entry here.
+ * @param packages - from imagePackages().
+ */
+export function missingDependencies(packages) {
+  return packages.flatMap(({ name, dir }) => {
+    const declared = Object.keys(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).dependencies ?? {})
+    return declared.filter((dep) => !existsSync(join(dir, 'node_modules', dep, 'package.json'))).map((dep) => `${name} -> ${dep}`)
+  })
+}
+
+/**
  * The profile manifest with every image package linked and listed as a bundle. Other
  * dependencies and bundles are kept as they are; a FlyBot package that is already a bundle
  * keeps its place.

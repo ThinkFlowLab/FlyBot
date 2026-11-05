@@ -179,6 +179,7 @@ export function install(rt) {
     exchangeTurns: state.exchangeTurns,
     // Per Session: turn → the person's name, for friends' lines Bot Social attests they typed themselves.
     remoteTypedTurns: state.remoteTypedTurns ?? {},
+    feishuTurns: state.feishuTurns ?? {},
     // Per friend chat: when my message left, while its reply has not come back (#443).
     remoteAwaiting: state.remoteAwaiting ?? {},
     questions: state.questions,
@@ -308,6 +309,8 @@ export function install(rt) {
       const gate = rt.authorize(actor, endpoint, body)
       if (!gate.ok) return fail(gate.message, gate.code)
       switch (endpoint) {
+        case 'feishu':
+          return ok(await rt.feishu.endpoint(body, actor))
         case 'auth-mode':
         case 'workbench-state':
         case 'project-resources':
@@ -433,7 +436,11 @@ export function install(rt) {
           const hidden = new Set(state.exchangeTurns[sessionId] ?? [])
           const messages = page.records.flatMap(({ event }) => {
             if (hidden.has(event.data?.turn)) return []
-            const attachments = personalMessageAttachments(event)
+            const source = event.data?.source
+            const feishu = source?.form === 'remote-chat' ? source.feishu : undefined
+            const attachments = personalMessageAttachments(event).map(file => feishu ? { ...file, feishuAppId: feishu.appId } : file)
+            if (feishu) return [{ attachments, seq: event.seq, id: `${sessionId}:${event.seq}`, botId: null, kind: source.typedBy ? 'human' : 'assistant', speaker: source.typedBy ?? source.senderName, text: source.text, feishu }]
+            if (event.type === 'assistant/message' && state.feishuTurns?.[sessionId]?.[event.data?.turn]) return []
             const entry = rt.historyEntry(event, Boolean(rt.roomOf(sessionId))) ?? (event.type === 'assistant/message' && attachments.length ? { answer: true, text: '' } : undefined)
             return entry && (entry.text || attachments.length) ? [{ attachments, seq: event.seq, id: `${sessionId}:${event.seq}`, botId: entry.answer ? rt.botOf(sessionId)?.id : null, kind: entry.answer ? 'assistant' : 'human', speaker: entry.answer ? rt.botOf(sessionId)?.name ?? 'Bot' : currentActor.displayName ?? 'You', text: entry.text }] : []
           })
@@ -648,7 +655,7 @@ export function install(rt) {
         case 'connector-retry':
         case 'connector-send':
           await rt.load()
-          return ok(await rt.connectorEndpoint(endpoint, body))
+          return ok(await rt.connectorEndpoint(endpoint, body, actor))
         case 'capability-save':
         case 'capability-delete':
         case 'capability-approve':

@@ -166,7 +166,7 @@ export function install(rt) {
   // group turn (groups.js). `fromRoomId`: the group whose Session the sender wrote
   // from; the reply goes back to that Session (turns.js). `answeredIn`: the group where the user
   // answered the Bot's question card about work handed over from there (tools.js, #550).
-  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, rateLimited = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false, projectDelegation }) {
+  async function deliver({ fromId, toId, sessionId, text, role, hop = 0, replyTo, roomId, audience, note, exchangeId = randomUUID(), steer = false, deferred = false, resumed = false, retried = false, rateLimited = false, resent = false, askedBy, fromRoomId, answeredIn, fromName: givenName, untrusted = false, remote, attachments, origin: givenOrigin, taskDrive = false, projectDelegation, feishu, requesterMemberId }) {
     const from = rt.botOf(fromId)
     const to = rt.botOf(toId)
     if (to === undefined) throw new Error(`Unknown Bot ${toId}`)
@@ -193,6 +193,8 @@ export function install(rt) {
       hop,
       // Whose request this is, for the connector tools (turn-origin.js): read by the receiving turn.
       origin,
+      ...(feishu ? { feishu } : {}),
+      ...(requesterMemberId ? { requesterMemberId } : {}),
       ...(fromId ? { senderSessionId: fromId } : {}),
       ...(replyTo ? { replyTo } : {}),
       ...(roomId ? { roomId } : {}),
@@ -210,7 +212,7 @@ export function install(rt) {
       // `firstContact`: this sender's first line in the Bot's own chat; the chat names who is talking (#420).
       ...(remote?.handle ? { remote: { handle: String(remote.handle), ...(remote.home ? { home: String(remote.home) } : {}), ...(remote.typedBy ? { typedBy: cleanName(remote.typedBy) } : {}), ...(firstContact ? { firstContact: true } : {}) } } : {}),
       // A remote member's files, as references the chat shows as chips (fetched on demand).
-      ...(remote?.handle && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.id ?? ''), name: String(file.name), size: Number(file.size), mime: String(file.mime ?? '') })) } : {}),
+      ...((remote?.handle || feishu) && Array.isArray(attachments) && attachments.length ? { attachments: attachments.map(file => ({ id: String(file.attachmentId ?? file.id ?? ''), name: String(file.name), size: Number(file.bytes ?? file.size), mime: String(file.mediaType ?? file.mime ?? '') })) } : {}),
     }
     if (EXCHANGE_ROLES.has(role) && !deferred && !resumed && !retried && !rateLimited && !resent) {
       const exchange = { id: exchangeId, from: fromId, to: toId, text, role, time: Date.now(), ...(replyTo ? { replyTo } : {}), ...(audience === 'user' ? { audience } : {}) }
@@ -221,9 +223,10 @@ export function install(rt) {
     if (projectDelegation && !rt.projectAgents?.isDelegationActive(projectDelegation.agentId, projectDelegation.delegationId)) throw new Error('Project delegation was revoked before delivery')
     // A steered message cuts into a running turn at its next step; a follow-up
     // queues for the next turn (see turns.js for how each is routed).
+    if (feishu && !deferred && !resumed && !retried && !rateLimited && !resent && agent.session?.surface?.nodes?.some(seq => (agent.session.eventAt(seq)?.data?.source ?? agent.session.eventAt(seq)?.data?.message?.source)?.exchangeId === exchangeId)) return exchangeId
     const body = fromId ? stripSessionChips(text) : text
     const message = createUserMessage({
-      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, rateLimited, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }],
+      content: [{ type: 'text', text: `${headerFor(role, fromName, room?.name, audience, note, deferred, { resumed, retried, rateLimited, answeredIn })}\n${untrusted ? fenceUntrusted(fromName, body) : body}` }, ...(feishu ? (attachments ?? []).map(file => ({ type: file.mediaType ? 'image' : 'file', attachment: file })) : [])],
       source,
     })
     if (steer) agent.steer(message)

@@ -10,6 +10,7 @@ You build the image yourself. FlyBot does not publish an image.
 
 - **One data volume**, `/data`: the DSH home (Bots, Sessions, settings, credentials), the Bots' working folder `/data/workspace` and the pnpm store.
 - **A normal user**, not root (uid 1000).
+- **The core's runtime libraries.** The profile links the FlyBot packages, and a link installs none of a package's own dependencies, so the image carries them: the Feishu long-connection SDK and the Claude and Codex executor SDKs, at the versions in `core/package-lock.json`. The build stops if one is missing.
 - **No keys in the image.** You give the DeepSeek key at run time.
 - **The port on `127.0.0.1` only.** The container shares the host's network (`network_mode: host`) and the web server binds that loopback itself, because DSH 0.2.1 refuses a wildcard host. For access from another machine use your own HTTPS reverse proxy or an SSH tunnel. Never publish the port on a public address: whoever reaches it with the sign-in link controls your Bots, and they can run commands.
 - **A health check**: `docker compose ps` shows `healthy` once the web server answers.
@@ -50,6 +51,14 @@ ssh -N -L 3080:127.0.0.1:3080 you@your-server
 ```
 
 Then open the link from the logs on your own machine. A reverse proxy (Caddy, nginx) on the server works too; give it HTTPS, forward to `127.0.0.1:3080`, and start DSH with that name trusted, for example by adding to `compose.yaml` under `flybot`: `command: ["--trusted-host", "flybot.example.com"]`.
+
+**Local network deployment.** The optional `docker/compose.local.yaml` override publishes the console on all host interfaces through a TCP relay. Set `FLYBOT_TRUSTED_HOST` to the exact hostname or IP and public port used in the browser; replace the example address with this machine's local address:
+
+```sh
+FLYBOT_TRUSTED_HOST=192.168.1.10:3080 docker compose -f compose.yaml -f docker/compose.local.yaml up -d --build
+```
+
+Keep the same Compose project name when updating an existing deployment so it reuses the data volume. `FLYBOT_PUBLIC_PORT` changes the console's published port; `FLYBOT_FEISHU_PUBLIC_PORT` changes the separate Feishu event port (default 3082). Publishing a port alone does not authorize browser API requests: without the trusted host, the sign-in page can open while `/api/bot` and WebSocket requests return HTTP 403. The override requires an explicit trusted host to prevent that incomplete setup. Verify a signed-in API request from the actual browser address, in addition to container health. Cookie authentication and rejection of other hosts and cross-origin requests remain enabled.
 
 **More people on one machine.** One project name, port and volume each:
 

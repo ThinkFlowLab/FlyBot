@@ -1240,10 +1240,11 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
  import { output } from './tools.js'
 
  export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/
-@@ -20,6 +20,17 @@ const MAX_REQUESTS = 20
+@@ -20,7 +20,18 @@ const MAX_REQUESTS = 20
  const USED_SAVE_MS = 5000
 
  export const envName = name => `${ENV_PREFIX}${name}`
+-export const canUse = (secret, botId) => secret !== undefined && botId !== undefined
 +// A shell that cannot use a saved key says so instead of looking empty (#651): names and a reason,
 +// never a value. Owner decision 2026-10-22 (#601): the owner's own Bots get the owner's keys on every
 +// turn, whoever started it, so the only reasons left are the real boundaries: a friend's Bot, a key
@@ -1255,9 +1256,10 @@ diff --git a/src/host/secrets.js b/src/host/secrets.js
 +  NOT_IN_SCOPE: 'not-in-scope',
 +  UNKNOWN_BOT: 'unknown-bot',
 +})
- export const canUse = (secret, botId) => secret !== undefined && botId !== undefined
++export const canUse = (secret, botId) => secret !== undefined && botId !== undefined && !['FEISHU_APP_SECRET', 'FEISHU_WEBHOOK'].includes(secret.name)
    && (secret.scope === 'all' || (Array.isArray(secret.scope) && secret.scope.includes(botId)))
 
+ export function normalizeName(raw) {
 @@ -81,7 +81,9 @@ export function install(rt) {
    const { ctx, home, state } = rt
    const path = join(home, 'secrets.json')

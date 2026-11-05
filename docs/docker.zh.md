@@ -10,6 +10,7 @@
 
 - **一个数据卷** `/data`：DSH 目录（Bot、会话、设置、凭据）、Bot 的工作目录 `/data/workspace` 和 pnpm 缓存。
 - **普通用户运行**，不是 root（uid 1000）。
+- **核心的运行时依赖。** profile 以链接方式引用 FlyBot 的包，链接不会安装包自己的依赖，所以由镜像自带：飞书长连接 SDK，以及 Claude、Codex 执行器的 SDK，版本以 `core/package-lock.json` 为准。缺任何一个，构建都会失败。
 - **镜像里没有密钥。** DeepSeek Key 在运行时提供。
 - **端口只绑定 `127.0.0.1`。** 容器使用宿主机的网络（`network_mode: host`），Web 服务自己绑定这个回环地址，因为 DSH 0.2.1 拒绝通配地址。从别的机器访问请用你自己的 HTTPS 反向代理或 SSH 隧道。不要把端口暴露到公网：拿到登录链接的人就能控制你的 Bot，而 Bot 能执行命令。
 - **健康检查**：Web 服务能响应后，`docker compose ps` 显示 `healthy`。
@@ -50,6 +51,14 @@ ssh -N -L 3080:127.0.0.1:3080 you@your-server
 ```
 
 然后在自己的电脑上打开日志里的链接。也可以在服务器上用反向代理（Caddy、nginx）：配置 HTTPS，转发到 `127.0.0.1:3080`，并让 DSH 信任这个域名，例如在 `compose.yaml` 的 `flybot` 下加上 `command: ["--trusted-host", "flybot.example.com"]`。
+
+**局域网本地部署。** 可选的 `docker/compose.local.yaml` 通过 TCP 转发器把控制台端口发布到宿主机全部网卡。必须将 `FLYBOT_TRUSTED_HOST` 设置为浏览器实际使用的主机名或 IP 加对外端口；把示例地址换成这台机器的局域网地址：
+
+```sh
+FLYBOT_TRUSTED_HOST=192.168.1.10:3080 docker compose -f compose.yaml -f docker/compose.local.yaml up -d --build
+```
+
+更新现有部署时沿用原 Compose 项目名，才能复用已有数据卷。`FLYBOT_PUBLIC_PORT` 可修改控制台对外端口；`FLYBOT_FEISHU_PUBLIC_PORT` 可修改独立的飞书事件端口（默认 3082）。发布端口不会自动允许浏览器 API 请求：缺少可信地址时，登录页面可以打开，`/api/bot` 和 WebSocket 请求却会返回 HTTP 403。此覆盖配置要求显式填写可信地址，避免启动出这样的不完整部署。验收时除了容器健康状态，还要从实际访问地址验证登录后的 API 请求。Cookie 认证及对其他主机、跨来源请求的拒绝仍然生效。
 
 **一台机器上多人使用。** 每人一个项目名、端口和数据卷：
 

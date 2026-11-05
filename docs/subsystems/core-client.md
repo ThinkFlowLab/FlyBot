@@ -471,3 +471,9 @@ Changed scope/source retires them; pending lazy mounts cannot attach after retir
 Ordinary form nodes remain freshly constructed so handler closures reference the
 correct controls. This retains real component state rather than reconstructing a
 textarea and restoring only its value after every poll.
+
+## Feishu setup and connection details
+
+The connector row has one **Connect** action to open or resume setup. The guide uses its own compact checkbox grid and labelled fields rather than question-card field containers. Receiving-mode choices show their selected state, step navigation marks the current step, and the footer distinguishes the primary next action. Permission JSON stays behind an optional preview with a directly available copy action. The same scoped styles adapt to the container width in both the native settings panel and shared workbench.
+
+`feishu-setup.js` renders the existing Feishu channel's six-step long-connection guide or seven-step HTTP guide. It resumes the saved step, polls connection state every three seconds, preserves the application when switching receiving methods, and offers the base/selected-extension permission JSON. `feishu-copy.js` extends the existing i18n dictionary. Saved secrets are never rendered. Connection details contain sender allow-lists, existing-member identity links, actual scope checks, per-Bot/product grants, diagnostics, delivery retries, persistent cards and attachment downloads. Card buttons submit through the scoped `feishu` API and never approve a native tool. The original custom webhook form remains available. Native remote message file chips download through the same app-scoped service.

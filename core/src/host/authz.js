@@ -207,6 +207,7 @@ export function install(rt) {
       questions: Object.fromEntries(Object.entries(bySession(full.questions)).filter(([id, question]) => questionFor(actor, id, question))),
       exchangeTurns: bySession(full.exchangeTurns),
       remoteTypedTurns: bySession(full.remoteTypedTurns),
+      feishuTurns: bySession(full.feishuTurns),
       remoteAwaiting: bySession(full.remoteAwaiting),
       agents: alone() ? full.agents : [],
       secrets: alone() ? full.secrets : [],
@@ -240,6 +241,7 @@ export function install(rt) {
     if (!rt.authzEnforced()) return ALLOW
     const ep = String(endpoint ?? '')
 
+    if (ep === 'feishu') return actor ? ALLOW : deny('bot/unauthorized', 'Sign in first')
     if (ep === 'platform-login') return rt.platformIdentityEnabled ? ALLOW : deny('bot/forbidden', 'Platform identity is not configured')
     if (['project-development', 'project-rooms', 'project-room-create', 'project-room-read', 'project-room-message', 'project-room-attachment', 'project-room-stop', 'project-agent-stop', 'workbench-state', 'project-resources', 'project-resource-environment-check', 'project-execution-input', 'project-runtime-check', 'project-terminal-open', 'project-terminal-poll', 'project-terminal-input', 'project-terminal-resize', 'project-terminal-close', 'project-queue-cancel', 'project-queue-retry', 'project-task-pools', 'project-github-read', 'project-consultation-reply', 'project-consultation-ask', 'project-consultation-get', 'project-consultation-list', 'project-handoff-get', 'project-handoff-list', 'project-chief-question', 'project-agent-mode', 'project-scheduled-task', 'project-chief-configure', 'project-chief-state', 'project-chief-inspect', 'project-attempt-stop', 'project-credential-status', 'project-github-comment', 'project-agents', 'project-agent-message', 'project-agent-history', 'project-agent-memory-write', 'project-role-memory-write', 'project-agent-definition', 'project-roles', 'project-role-proposals', 'project-role-decision', 'project-agent-proposal-apply', 'project-knowledge-write', 'project-task-run', 'project-task-detail', 'project-task-accept', 'project-task-reject', 'project-release-request', 'project-release-reconcile', 'project-release-status', 'project-attempt-log', 'project-attempt-cleanup', 'project-attempt-publication-retry', 'project-members', 'project-invite', 'project-join', 'project-leave', 'project-member-remove', 'project-quota', 'project-workflow'].includes(ep) && !rt.sharedProjectMode?.()) return deny('bot/forbidden', 'Project workbench is not enabled')
     if (rt.platformIdentityEnabled && ['auth-invite', 'auth-redeem', 'auth-remove-member'].includes(ep)) return deny('bot/platform-auth', 'Use control-plane account authentication')
