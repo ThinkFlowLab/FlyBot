@@ -403,3 +403,5 @@ not a Chief decision allowlist; TaskView.deliveryChoices uses the shared prechec
 The actual Chief job prompt and two-turn runtime regression preserve this distinction
 even when a board offers only chief.inspect. Rework refusals never authorize clearing
 publicationBinding, and Personal Agent prose cannot bypass execution preconditions.
+
+Inspection facts also expose chiefActionsWithoutProgress and up to five refusedChiefActions for the current deliveryScope. The existing configurable no-progress threshold emits a shared task-attention warning; exact errors remain evidence, not a new authorization or fixed recovery plan. A changed deliveryScope excludes old refusals from the current count.

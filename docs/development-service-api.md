@@ -323,3 +323,8 @@ Chief 实际推理上下文读取 `projectFacts.tasks[].repositoryRecovery.nextA
 即使只有 `chief.inspect` 也不代表 Chief 只能巡检；`TaskView.deliveryChoices`
 投影决策预检。已合 PR 的 rework 拒绝不是清除 `publicationBinding` 的授权；
 Chief 应读取当前交付选项再判断，Personal Agent 的文字输入也不绕过执行校验。
+
+同一交付事实下多次 Chief 动作被拒会复用 `task-attention` warning，沿用现有可配置
+无进展阈值。Chief 的 inspection facts / warning 摘要带最多五条当前失败动作、
+理由和精确拒因；旧作用域、已成功及尚未判定的动作不计入。事实变化后旧提醒
+标记 historical，不再作为当前阻塞；提醒不会自动派角色、停止 Task 或转人工。

@@ -44,3 +44,6 @@ actual protocol processes and live/provider/deployment acceptance remain separat
 - [Chief](../docs/subsystems/project-chief-control.md)
 
 Written-by: Codex
+
+## Follow-up Owner clarification
+Public board commands are not the Chief decision allowlist. Actual Chief job facts carry legal prechecks; repeated same-fact action refusals must warn rather than loop. Reuse the current shared warning path and configured no-progress threshold, include exact current failures and retire resolved/stale warning reasons. Owner requires noncontradictory current/historical information and keeps Personal Agent escalation as a model-chosen last resort.

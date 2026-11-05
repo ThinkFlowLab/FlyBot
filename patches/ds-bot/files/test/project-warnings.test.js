@@ -1,3 +1,4 @@
+import { deliveryScope } from '../src/host/project-delivery-options.js'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createProjectWarnings } from '../src/host/project-warnings.js'
@@ -181,4 +182,28 @@ test('first-layer warnings carry collection time, Task identity and the Chief in
   assert.equal(chief.chief.scope.taskId, 't')
   assert.equal(chief.chief.eligibleTaskCount, 1)
   assert.equal(chief.chief.eligibleTaskPreview[0].title, 'Repair code')
+})
+
+test('repeated Chief refusals share task warnings, disclose exact failures and become historical after facts change', async () => {
+  const f = fixture(), task = f.state.tasks.t, actor = { memberId: 'owner' }, expectedScope = deliveryScope(f.state, task)
+  f.state.projectChiefDecisions = Object.fromEntries(Array.from({ length: 4 }, (_, i) => ['d' + i, { id: 'd' + i, taskId: 't', projectId: 'p', expectedScope, action: 'return', reason: 'Try old PR again', status: i ? 'rejected' : 'requested', runId: 'r' + i, at: i + 1, failure: i ? 'Merged PR cannot be reworked' : undefined }]))
+  f.state.projectExecutions = { r0: { decisionFailures: [{ taskId: 't', message: 'Merged PR cannot be reworked' }] } }
+  const fourth = f.state.projectChiefDecisions.d3; delete f.state.projectChiefDecisions.d3
+  f.tick(100); await f.rt.projectWarnings.reconcile(); assert.equal(Object.keys(f.state.projectWarnings ?? {}).length, 0)
+  f.state.projectChiefDecisions.d3 = fourth
+  f.state.projectChiefDecisions.foreign = { ...fourth, id: 'foreign', projectId: 'other' }
+  f.state.projectChiefDecisions.stale = { ...fourth, id: 'stale', expectedScope: 'old' }
+  f.state.projectChiefDecisions.applied = { ...fourth, id: 'applied', status: 'applied' }
+  f.state.projectChiefDecisions.pending = { ...fourth, id: 'pending', status: 'requested', runId: 'pending-run' }
+  await f.rt.projectWarnings.reconcile(); await f.rt.projectEffects.drain()
+  const warnings = (await f.rt.projectWarnings.query({ projectId: 'p' }, actor)).items
+  const warning = warnings.find(w => /Repeated Chief actions/.test(w.reason))
+  assert.ok(warning, 'Repeated rejected actions must warn without requiring a handoff or a long timeout')
+  assert.equal(warning.refusedChiefActions.length, 4)
+  assert.ok(warning.refusedChiefActions.every(d => d.failure === 'Merged PR cannot be reworked'))
+  assert.equal(f.notices.length, 1); assert.equal(task.status, 'working'); assert.equal(task.chiefQuestion, undefined)
+  await f.rt.projectWarnings.reconcile(); await f.rt.projectEffects.drain(); assert.equal(f.notices.length, 1)
+  f.state.projectAttempts.a.candidateSha = 'new-candidate'
+  assert.equal((await f.rt.projectWarnings.query({ projectId: 'p', warningId: warning.id }, actor)).historical, true)
+  assert.equal(f.rt.projectWarnings.summaries('p').length, 0)
 })

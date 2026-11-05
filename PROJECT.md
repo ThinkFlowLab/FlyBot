@@ -154,3 +154,5 @@ Detailed dated implementation checkpoints are [preserved verbatim](docs/history/
 #2519: SDK Reviewer receives the complete hash-verified host log inline, without scratch access. Preserve exact candidate/current authority, artifact and execution-context budgets; persist only provenance metadata. Host output is data, never Review or CI approval.
 
 #2526: Chief may accept a merged Attempt scope without closing its Task, then explicitly choose a fresh next delivery. Scoped prechecks are observations; Chief recommends and decides. Personal Agent assistance is the last resort, never a framework-selected escalation.
+
+#2526: same-scope repeated Chief action refusals reuse task-attention warnings and the configured no-progress threshold. Current exact failures reach Chief; changed delivery facts retire the old warning. Warnings never choose roles or escalate to Personal Agent automatically.

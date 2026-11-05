@@ -1,4 +1,4 @@
-import { deliveryScope } from './project-delivery-options.js'
+import { deliveryScope, chiefActionRefusals } from './project-delivery-options.js'
 import { dispatchView } from './project-pools.js'
 import { mergeHandoffView } from './project-reviewed-merge.js'
 import { autonomyPolicy, operationsContact, assistanceRequest, assistanceScope, assistanceFacts, compensationSchedules } from './project-chief-assistance.js'
@@ -36,7 +36,8 @@ export function inspectionFacts(state, task, thresholds, now = Date.now()) {
   const { checkpoint, lastMeaningfulProgressAt, progressEvidence } = progressCheckpoint(c?.history)
   const handoffs = (c?.history.length ?? 0) - checkpoint
   const worker = c?.claim?.workerId ? state.projectHarnessWorkers?.[c.claim.workerId] : null
-  const reasons = []
+  const reasons = [], refusedChiefActions = chiefActionRefusals(state, task)
+  if (refusedChiefActions.length >= thresholds.maxHandoffsWithoutProgress) reasons.push('Repeated Chief actions refused for the same delivery facts; inspect exact failures and current legal choices before repeating an action')
   const recipient = task.chiefQuestion?.recipient
   const participation = recipient?.participationId && ownEntry(state.personalAgentParticipations ?? {}, recipient.participationId)
   const question = participation && ownEntry(state.projectAgentTranscripts ?? {}, participation.carrierId)?.find(row => row.id === recipient.consultationId)
@@ -48,7 +49,7 @@ export function inspectionFacts(state, task, thresholds, now = Date.now()) {
   if (c?.claim?.status === 'active' && now - c.claim.createdAt > thresholds.longExecutionMs) reasons.push('Execution exceeds the configured duration threshold')
   if (worker?.status === 'running' && now - (worker.lastEventAt ?? worker.createdAt) > thresholds.missingHeartbeatMs) reasons.push('Execution heartbeat is missing')
   if (['queued', 'arbitration', 'blocked'].includes(c?.status) && now - (c.history.at(-1)?.createdAt ?? task.updatedAt) > thresholds.longWaitMs) reasons.push('Task wait exceeds the configured duration threshold')
-  return { assistance: assistanceFacts(state, task), taskId: task.id, fingerprint, handoffsWithoutProgress: handoffs, reasons, observedAt: now, checkpoint, lastMeaningfulProgressAt, progressEvidence }
+  return { assistance: assistanceFacts(state, task), taskId: task.id, fingerprint, handoffsWithoutProgress: handoffs, chiefActionsWithoutProgress: refusedChiefActions.length, refusedChiefActions: refusedChiefActions.slice(-5), reasons, observedAt: now, checkpoint, lastMeaningfulProgressAt, progressEvidence }
 }
 export function allocationProof(state, task) {
   const id = task.deliveryAttemptId, attempt = state.projectAttempts?.[id]

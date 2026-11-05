@@ -19,6 +19,10 @@ export function requireNextAttempt(task, a) {
   if (!a || a.taskId !== task.id || a.projectId !== task.projectId || task.deliveryAttemptId !== a.id || ['accepted', 'cancelled'].includes(task.status) || a.cancelRequested || a.supersededBy) throw refuse('Next delivery needs the current unfinished Task')
   if (a.status !== 'accepted' || !a.settlement) throw refuse('Accept the current Attempt before opening a separate delivery')
 }
+export function chiefActionRefusals(state, task) {
+  const scope = deliveryScope(state, task)
+  return Object.values(state.projectChiefDecisions ?? {}).filter(d => d.projectId === task.projectId && d.taskId === task.id && d.expectedScope === scope && (d.status === 'rejected' || state.projectExecutions?.[d.runId]?.decisionFailures?.some(f => f.taskId === task.id))).map(d => ({ decisionId: d.id, action: d.action, reason: d.reason, failure: d.failure ?? state.projectExecutions?.[d.runId]?.decisionFailures?.find(f => f.taskId === task.id)?.message, at: d.at })).sort((a, b) => a.at - b.at)
+}
 export function deliveryChoices(state, task, observation) {
   const a = state.projectAttempts?.[task.deliveryAttemptId], scope = deliveryScope(state, task), previous = state.projectChiefDecisions?.[task.chiefRecommendationId]
   const option = (action, check, note) => {
