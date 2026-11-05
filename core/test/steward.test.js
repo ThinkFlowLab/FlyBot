@@ -128,8 +128,22 @@ test('a long message shortened for the steward cuts on characters, never inside 
     assert.equal(request.isWellFormed(), true, 'a character at the cut stays whole')
   }
   const shown = stewardRequest({ lines: [{ who: 'user', text: head }], midTurn: false, checkpoints: 0, group: false })
-  assert.match(shown, /User: a+\n\[… 300 characters left out of this view …\]\nb+$/)
+  // The emoji is the 1,000th character, so the start keeps it whole: the bounds are characters,
+  // and the 300 characters this view leaves out are the middle of the b's, not the emoji.
+  assert.match(shown, /User: a+🚀\n\[… 300 characters left out of this view …\]\nb+$/)
   // The message that fits in 1,500 characters comes through whole, marker and all.
   const whole = stewardRequest({ lines: [{ who: 'user', text: tail }], midTurn: false, checkpoints: 0, group: false })
   assert.match(whole, /User: a+🚀b+$/)
+
+  // 1,600 characters in 2,400 UTF-16 units: two thirds of the 1,500-character budget is a
+  // character count, so the start keeps 1,000 characters, the end keeps 500, and the marker
+  // reports the other 100. Spending a unit offset as characters took the end of the view away
+  // with the surplus units and made the marker count those units a second time (600).
+  const dense = '🚀'.repeat(800) + 'a'.repeat(800)
+  const denseRequest = stewardRequest({ lines: [{ who: 'user', text: dense }], midTurn: false, checkpoints: 0, group: false })
+  const [, denseHead, denseLeft, denseTail] = /User: ([\s\S]*?)\n\[… (\d+) characters left out of this view …\]\n([\s\S]*)$/.exec(denseRequest)
+  assert.equal([...denseHead].length + [...denseTail].length, 1500, 'the view keeps the whole 1,500-character budget')
+  assert.equal([...denseHead].length, 1000, 'the start is two thirds of the budget in characters')
+  assert.equal([...denseTail].length, 500, 'the end is the rest of the budget in characters')
+  assert.equal(Number(denseLeft), 100, 'the marker counts the characters that are really left out')
 })
