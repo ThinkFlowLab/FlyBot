@@ -2658,3 +2658,25 @@ test('invalid scoped acceptance and wrong expected candidate fail before committ
   await assert.rejects(f.rt.projectDelivery.chiefAccept({ taskId: f.task.id, expectedSha: 'old', decision: { id: 'wrong-sha', action: 'accept-attempt', delivery: { completed: 'done', remaining: 'next', evidence: ['host evidence'] } } }, f.actor), /current candidate/)
   assert.equal(f.a.settlement, undefined)
 })
+
+test('principal revocation during provider evidence read prevents scoped acceptance before commit', async t => {
+  const f = await mergedDelivery(t), read = f.publisher.read
+  let revoked = false
+  f.rt.projectDelegations.background = async () => { if (revoked) throw Error('principal revoked after provider read') }
+  f.publisher.read = async (...args) => { const result = await read(...args); revoked = true; return result }
+  await assert.rejects(f.settle(), /principal revoked/)
+  assert.equal(f.a.settlement, undefined)
+  assert.equal(f.a.status, 'waiting-acceptance')
+})
+
+test('next delivery checks its scope again after asynchronous principal validation', async t => {
+  const f = await mergedDelivery(t)
+  await f.settle()
+  const facts = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { attemptId: f.a.id }, alice)
+  let changed = false
+  f.rt.projectDelegations.background = async () => { changed = true; f.task.criteria += ' changed during validation' }
+  await assert.rejects(f.rt.projectEndpoint('project-task-run', { taskId: f.task.id, requestId: 'authority-race-next', continuation: { mode: 'next', previousAttemptId: f.a.id, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } }, alice), /fresh next-delivery scope/)
+  assert.equal(changed, true)
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, 1)
+  assert.equal(f.a.status, 'accepted')
+})

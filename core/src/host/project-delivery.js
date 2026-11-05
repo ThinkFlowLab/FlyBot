@@ -359,7 +359,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       const facts = await continuationState(previous, actor)
       if (facts.retainedDraft || selected.previousAttemptId !== previous.id || selected.generation !== facts.generation || !isDeepStrictEqual(selected.expectedWorkspace, facts.snapshot) || selected.expectedBaseSha !== facts.latestBaseSha) throw reject('Next delivery snapshot, target baseline or preserved draft changed; read fresh continuation-state')
       if (previous.requirement.repository !== project.repository || !isDeepStrictEqual(previous.repositoryBinding, repositoryBinding)) throw reject('Next delivery repository association changed')
-      return { version: 'project-continuation/v1', mode: 'next', previousAttemptId: previous.id, sourceWorkspaceId: facts.snapshot?.workspaceId ?? null, snapshot: facts.snapshot, generation: facts.generation, latestBaseSha: facts.latestBaseSha, baseSha: facts.latestBaseSha, seedSha: null, retainedDraft: false, admissions: [], by: actor.memberId, at: Date.now() }
+      return { version: 'project-continuation/v1', mode: 'next', sourceScope: facts.expectedScope, previousAttemptId: previous.id, sourceWorkspaceId: facts.snapshot?.workspaceId ?? null, snapshot: facts.snapshot, generation: facts.generation, latestBaseSha: facts.latestBaseSha, baseSha: facts.latestBaseSha, seedSha: null, retainedDraft: false, admissions: [], by: actor.memberId, at: Date.now() }
     }
 
     if (!previous || previous.protocol !== 'project-handoff/v1') {
@@ -414,7 +414,15 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       workflowVersion: DELIVERY_VERSION, status: 'preparing', initiatedBy: actor.memberId, executionOwnerId: project.ownerUserId,
       repositoryBinding, requirement: requirementsOf(task, project.repository), ...(initialTarget ? { initialTarget } : {}),
       ...(feedback ? { feedback } : {}), ...(continuation ? { continuation, continuationRequest: JSON.stringify(body.continuation), ...(['latest', 'next'].includes(continuation.mode) ? { baseSha: continuation.latestBaseSha } : { baseSha: previous.baseSha, seedSha: previous.candidateSha ?? previous.seedSha ?? previous.baseSha, ...(previous.integrationInputs ? { integrationInputs: structuredClone(previous.integrationInputs), integrationAdmissions: structuredClone(previous.integrationAdmissions ?? []) } : {}) }) } : {}), ...(publicationBinding ? { publicationBinding, seedSha: previous.candidateSha ?? previous.seedSha ?? publicationBinding.previousSha, baseSha: continuation?.mode === 'latest' ? continuation.latestBaseSha : previous.baseSha } : {}), workspaces: {}, evidence: {}, createdAt: at, updatedAt: at }
-    if (continuation) { rt.requireProjectAccess(actor, task.projectId, 'configure', task); rt.projects.requireActive(task.projectId) }
+    if (continuation) {
+      if (continuation.mode === 'next') {
+        await rt.projectDelegations?.background(actor.memberId, actor.sessionId)
+        if (actor.chiefJobId) rt.projectChiefControl.requireJobActor(actor, task.projectId)
+        rt.projectTaskLifecycle?.requireExecutable(task); rt.projectInputs?.requireHandled(task.id, actor)
+        if (deliveryScope(state, task) !== continuation.sourceScope) throw chiefProtocolError('snapshot', 'fresh next-delivery scope after authority validation', task.id)
+      }
+      rt.requireProjectAccess(actor, task.projectId, 'configure', task); rt.projects.requireActive(task.projectId)
+    }
     const priorRework = chiefContinuation ? { status: previous.status, returned: previous.returned, supersededBy: previous.supersededBy } : null
     if (priorRework) { previous.status = 'returned'; previous.returned = { at, by: actor.chiefJobId, reason: 'Chief selected an explicit successor baseline' }; previous.supersededBy = attempt.id }
     setEntry(attempts(), attempt.id, attempt)
@@ -987,6 +995,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       requireAttemptAcceptance(task, attempt)
       integrationReleased(attempt, { [chiefInputPermit]: actor.chiefJobId })
       if (Object.values(state.projectEffects ?? {}).some(row => row.payload?.attemptId === attempt.id && ['github.candidate', 'github.publish', 'github.review', 'github.merge'].includes(row.kind) && ['pending', 'running', 'failed'].includes(row.status))) throw reject('Reconcile pending external delivery writes before scoped acceptance')
+      await rt.projectDelegations?.background(actor.memberId)
       const expected = partial.scope
       if (deliveryScope(state, task) !== expected) throw chiefProtocolError('snapshot', 'fresh facts before accepting the Attempt', task.id)
       rt.projectChiefControl.requireJobActor(actor, attempt.projectId)

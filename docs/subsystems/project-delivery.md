@@ -761,3 +761,7 @@ Whole-Task close revalidates every criterion/dependency/input and delivery evide
 a scoped settlement neither closes the Task nor forces another Attempt. Current
 settlement workspaces remain retained until closure or successor admission; historical
 cleanup cannot delete a newer allocation sharing their path.
+
+After provider observations, both new transitions recheck the execution principal
+and current local scope before committing; revocation during I/O cannot authorize
+a settlement or successor. Existing continuation modes retain their prior behavior.

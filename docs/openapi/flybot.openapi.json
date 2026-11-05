@@ -6769,6 +6769,10 @@
             "const": "project-continuation/v1",
             "type": "string"
           },
+          "sourceScope": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
           "mode": {
             "type": "string",
             "enum": [
@@ -35182,7 +35186,7 @@
       "notes": "Read continuation facts even after cancellation. Accepted scoped code delivery exposes only next mode: verify target HEAD contains its merged result and do not inherit its old PR binding. nextActions is advisory, not authorization. task.run selects a successor, never revives the cancelled Attempt.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -35264,7 +35268,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -35342,7 +35346,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -37498,7 +37502,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -37606,7 +37610,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -37713,7 +37717,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -37807,7 +37811,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -37911,7 +37915,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -38021,7 +38025,7 @@
       "notes": "Fetch attempt.integration-state again after retirement; attempt.stop remains cancellation.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -38130,7 +38134,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       }
     },
     {
@@ -48552,7 +48556,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -48645,7 +48649,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -48737,7 +48741,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -48829,7 +48833,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -49218,7 +49222,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -49294,7 +49298,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66"
+        "sha256": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -50670,7 +50674,7 @@
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-options.js": "007a0b1d8e84848511589f21f5fb2498399ded933901aa3042a5950f0a1df356",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
-      "core/src/host/project-delivery.js": "fa30c121923e7fdd38f82f4206b3af3e72b47ea83a16ca2e05f17900b7f92a66",
+      "core/src/host/project-delivery.js": "62bc558885b386272259c9d04d05b7e15e7dd923b1cee26c11fc962ef9cf4c59",
       "core/src/host/project-development-service.js": "99c5e4eab17b5e77ff253d1b7ae9b27d6ac76350202f4a6f699938e2d1d61479",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
