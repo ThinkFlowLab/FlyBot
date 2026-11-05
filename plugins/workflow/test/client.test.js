@@ -2543,6 +2543,74 @@ test('#1457: an empty board keeps Assign disabled, so the click is not a silent 
   }
 })
 
+// #2495: Hand a task to a Workflow is the panel's own way into `workflow/assign`, and it built the
+// body from the card's id and title only. A card that held facts arrived at the new run with no
+// brief; the service falls back to the title, so the work order vanished without a word.
+test('#2495: a card that holds facts hands them to the workflow verbatim', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => (channel !== 'tasks' ? [] : [
+      { id: 'task-facts', title: 'Ship the release notes', status: 'open', priority: 'P1', brief: 'FACTS A\nSecond line.' },
+    ]),
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
+    assign.props.onClick()
+    await settle()
+    const posted = calls.filter(item => item.name === 'workflow/assign')
+    assert.equal(posted.length, 1, 'the click posts one assign')
+    assert.equal(posted[0].body.brief, 'FACTS A\nSecond line.', 'the facts ride with the hand-off, verbatim')
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+// #2495: a card that holds none sends an explicit empty brief. Leaving the key out would let the
+// service keep whatever a much earlier call cached under that task id, and the panel is the caller
+// that knows the card holds nothing now (#2490's non-blocking hole).
+test('#2495: a card with no facts sends an empty brief, so a cached one cannot come back', async () => {
+  const graph = delivery()
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = {
+    host: async (channel) => (channel !== 'tasks' ? [] : [
+      { id: 'task-bare', title: 'Ship the release notes', status: 'open', priority: 'P1' },
+    ]),
+  }
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+    const assign = findAll(view.tree, node => node.type === 'button' && textOf(node).startsWith('Assign'))[0]
+    assign.props.onClick()
+    await settle()
+    const posted = calls.filter(item => item.name === 'workflow/assign')
+    assert.equal(posted.length, 1, 'the click posts one assign')
+    assert.equal(posted[0].body.brief, '', 'an explicit empty brief, not a missing key')
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
 // #1458: a rejected Tasks call used to be rendered as a genuinely empty board,
 // so the owner was told there is nothing to assign instead of that the load failed.
 test('#1458: a failed Tasks load shows the error and a Retry, never the empty-board hint', async () => {
@@ -4278,7 +4346,7 @@ test('#2241: picking a lane still posts the same assign body', async () => {
     await settle()
     const posts = calls.filter(item => item.name === 'workflow/assign')
     assert.equal(posts.length, 1, 'one assign is posted')
-    assert.deepEqual(posts[0].body, { workflowId: 'lane-alpha', taskId: 'task-live-1', title: 'Real board card one' }, 'the submit body is unchanged')
+    assert.deepEqual(posts[0].body, { workflowId: 'lane-alpha', taskId: 'task-live-1', title: 'Real board card one', brief: '' }, 'the submit body is unchanged')
     view.unmount()
   })
 })
@@ -4343,7 +4411,7 @@ test('#2244: expanding the card list offers the twentieth card', async () => {
       assignOf(dialogOf(ui.view)).props.onClick()
       await settle()
       assert.equal(ui.posted().length, 1, 'the click posts one assign')
-      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-20', title: 'Board card 20' })
+      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-20', title: 'Board card 20', brief: '' })
     } finally { ui.view.unmount() }
   })
 })
@@ -4357,7 +4425,7 @@ test('#2244: twelve cards keep today\'s dialog and the assign body', async () =>
       assignOf(dialogOf(ui.view)).props.onClick()
       await settle()
       assert.equal(ui.posted().length, 1)
-      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-1', title: 'Board card 1' })
+      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-1', title: 'Board card 1', brief: '' })
     } finally { ui.view.unmount() }
   })
 })
@@ -4537,7 +4605,7 @@ test('#2254: the named confirm button posts the same assign body', async () => {
     await settle()
     const posts = calls.filter(item => item.name === 'workflow/assign')
     assert.equal(posts.length, 1, 'one assign is posted')
-    assert.deepEqual(posts[0].body, { workflowId: 'lane-beta', taskId: 'task-live-1', title: 'Real board card one' }, 'the submit body is unchanged')
+    assert.deepEqual(posts[0].body, { workflowId: 'lane-beta', taskId: 'task-live-1', title: 'Real board card one', brief: '' }, 'the submit body is unchanged')
     view.unmount()
   })
 })
@@ -4671,7 +4739,7 @@ test('#2257: collapsing the card list keeps the picked card in view', async () =
       assignOf(dialogOf(ui.view)).props.onClick()
       await settle()
       assert.equal(ui.posted().length, 1, 'one assign is posted')
-      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-20', title: 'Board card 20' }, 'the submit body is unchanged')
+      assert.deepEqual(ui.posted()[0].body, { workflowId: 'delivery', taskId: 'task-20', title: 'Board card 20', brief: '' }, 'the submit body is unchanged')
     } finally { ui.view.unmount() }
   })
 })
