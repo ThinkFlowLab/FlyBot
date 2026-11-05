@@ -246,6 +246,15 @@ Use GET /ready to detect read-only/unavailable backend state; GET /health only p
 
 ### Queued without a worker, or pending Chief inputs (#2483)
 
+For controller-lost SDK work, current resource workers preserve a settled stop receipt
+outside model-write roots. The existing reconciliation checks its exact identity and
+resource process exit, then aligns worker and lease. Explicit stop uses birth-verified
+Linux pidfd through Python3; it cannot signal a reused PID. A saved trusted host stop
+event/exit can repair legacy partial releases. Missing acknowledgement, missing birth
+identity or a forcibly killed worker remains unknown. Upgrade the selected resource's
+FlyBot runtime as well as the host to emit new receipts. Do not treat container Up,
+occupied=0, a missing controller or PID disappearance as sufficient exit proof.
+
 After restart, current blocked/interrupted role work now notifies the configured
 Chief through its existing controller. `chief.state` Run.source identifies the
 interrupted claim, policy and allocation fingerprint; repeated scheduler passes

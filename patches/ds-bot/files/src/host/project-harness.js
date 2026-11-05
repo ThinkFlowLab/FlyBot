@@ -5,7 +5,7 @@ import { roleGithubRuntime } from './project-role-github-runtime.mjs'
 // Harness worker lifecycle plugs into the existing Workflow. It never accepts a Task.
 import { randomUUID } from 'node:crypto'
 import { createHash } from 'node:crypto'
-import { mkdir, appendFile, readFile, copyFile, writeFile } from 'node:fs/promises'
+import { mkdir, appendFile, readFile, copyFile, writeFile, realpath, lstat } from 'node:fs/promises'
 import { join, resolve, relative, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import { verifyRolePolicy, roleExecutionPrompt } from './project-role-policy.js'
@@ -13,10 +13,11 @@ import { sdkContinuationArchive } from './project-session-continuation.js'
 import { fileDigest } from './project-resource-workspaces.js'
 import { copyDependencyCacheScript, executionOutcome } from './project-execution-environment.js'
 import { gitWritableRoots } from './project-git-sandbox.js'
+import { SDK_EXIT_VERSION } from './project-sdk-exit.mjs'
 import { ownEntry, setEntry } from './store.js'
 import { checkContextPrompt, resolveContextBudget } from './project-context-budget.js'
 import { requireExecutionAuthority } from './project-execution-authority.js'
-import { taskSession, backendBindingKey, backendContextKey, resumableBinding, roleDefinitionKey } from './project-task-sessions.js'
+import { taskSession, backendBindingKey, backendContextKey, resumableBinding, roleDefinitionKey, confirmedWorkerExit } from './project-task-sessions.js'
 const refuse = message => Object.assign(new Error(message), { code: 'bot/harness' })
 const sha = text => createHash('sha256').update(text).digest('hex')
 const VERSIONS = { codex: '0.166.0', 'claude-agent': '0.3.316' }
@@ -151,7 +152,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
     const row = { id, ...(conversation?.roomId ? { roomId: conversation.roomId } : {}), model: session.execution.model ?? selected.selected.model ?? null, chiefRunId: chief?.runId ?? null, chiefInvocation: chief?.runId ? rt.state.projectExecutions?.[chief.runId]?.invocation ?? null : null, visibility: conversation?.visibility ?? 'project', ...(conversation?.visibility === 'private' ? { memberId: conversation.memberId } : {}), projectId: session.projectId, taskId: session.taskId, attemptId: session.attemptId, role: session.role, policyRole: session.policyRole ?? session.definition?.policyRole ?? session.role, sessionKey: session.id,
       resourceId: session.resourceLease.resourceId, leaseId: session.resourceLease.id, generation: session.resourceLease.generation,
       harness: session.execution.harness, sdkVersion: null, expectedSdkVersion: VERSIONS[session.execution.harness], principalId: selected.principalId, profile: selected.profile,
-      cwd: workspace.path, scratchDirectory, dependencyPreparationId: session.environmentPreparation?.id ?? null, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
+      cwd: workspace.path, scratchDirectory, exitRecovery: { version: SDK_EXIT_VERSION }, dependencyPreparationId: session.environmentPreparation?.id ?? null, spawnPhase: 'registered', status: 'prepared', executionStartedAt: null, createdAt: Date.now(), eventCount: 0 }
     if (logical) Object.assign(row, { logicalSessionId: logical.id, bindingKey, bindingVersion: 'task-role-binding/v3', contextIdentityKey: backendContextKey({ ...identity, definition: definitionKey }), definitionKey, ...(previous ? { ...(previous.restoration?.mode === 'reconstructed' ? {} : { backendSessionId: previous.sessionId }), ...(previous.restoration ? { restoration: previous.restoration } : {}), continuedFrom: previous.workerId, ...(previous.key !== bindingKey ? { migratedBindingKey: previous.key } : {}) } : { rotationReason: 'First Task-role execution' }) })
     else if (chief) Object.assign(row, { logicalSessionId: chief.agentId, bindingKey, ...(chief.resumeSessionId ? { backendSessionId: chief.resumeSessionId, continuedFrom: chief.previousWorkerId } : {}) })
     setEntry(workers(), id, row)
@@ -185,7 +186,8 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
       if (row.restoration) session.restoration = structuredClone(row.restoration)
     }
     await rt.projectResources.fenceSpawn(row.leaseId, row.generation, id)
-    const process = rt.projectResources.startProcess(row.projectId, row.resourceId, { argv: ['node', workerPath], cwd: workspace.path })
+    const exitIdentity = { version: SDK_EXIT_VERSION, root: selected.resource.root, workerId: id, leaseId: row.leaseId, generation: row.generation }
+    const process = rt.projectResources.startProcess(row.projectId, row.resourceId, { argv: ['node', workerPath, JSON.stringify(exitIdentity)], cwd: workspace.path })
     const control = { process, chief, githubScope, contextBudget, resumeSessionId: chief?.resumeSessionId ?? (previous?.restoration?.mode === 'reconstructed' ? undefined : previous?.sessionId), continuedPolicyHash: previous?.policySha256, archivePath, continuationPath, logical, bindingKey, env: selected.env, profile: { ...selected.selected, ...(session.execution.model ? { model: session.execution.model } : {}) }, session, prompt: spec.prompt, outputs: [], closed: false, ready: false }
     row.spawnPhase = 'spawned'
     active.set(id, control)
@@ -204,6 +206,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
       try {
         const signal = JSON.parse(line), lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
         if (signal.type === 'ready' && active.get(id) === control) {
+          row.exitRecovery.supported = signal.exitRecovery === SDK_EXIT_VERSION
           control.receiptCorrectionSupported = signal.receiptCorrection === 'input-correction/v1'
           control.readyObserved = true
           control.observedSdkVersion = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$/.test(signal.sdk?.[row.harness] ?? '') ? signal.sdk[row.harness] : null
@@ -496,12 +499,65 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
     await rt.save()
     return { ok: true }
   }
+  async function exitReceipt(row, action) {
+    const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
+    const resource = rt.projectResources.requireBinding(row.projectId, lease)
+    if (lease.projectId !== row.projectId || lease.attemptId !== row.attemptId || lease.resourceId !== row.resourceId || lease.role !== row.role || lease.generation !== row.generation || lease.worker?.handle !== row.id) throw refuse('SDK exit lease binding changed')
+    const identity = { version: SDK_EXIT_VERSION, root: resource.root, workerId: row.id, leaseId: row.leaseId, generation: row.generation }
+    const helper = join(resource.runtimeDir ?? resolve(import.meta.dirname, '../..'), 'src/host/project-sdk-exit.mjs')
+    const result = await rt.projectResources.command(row.projectId, row.resourceId, { cwd: resource.root, argv: ['node', helper, action, JSON.stringify(identity)], timeout: 10000 })
+    return { lease, identity, result: JSON.parse(result.stdout) }
+  }
+  async function durableHostStop(row) {
+    if (row.exit?.code !== 0 || row.exit.signal || !row.eventLog || !row.lastEventHash) return false
+    try {
+      const root = await realpath(join(rt.home, 'project-artifacts', row.attemptId)), path = await realpath(row.eventLog), info = await lstat(row.eventLog)
+      if (!path.startsWith(root + '/') || path !== row.eventLog || !info.isFile() || info.isSymbolicLink() || info.size > 16 * 1024 * 1024) return false
+      const event = JSON.parse((await readFile(path, 'utf8')).trimEnd().split('\n').at(-1))
+      return event.type === 'stopped' && event.released === true && sha(JSON.stringify(event)) === row.lastEventHash
+    } catch { return false }
+  }
+  async function reconcileExit(id, { stop = false } = {}) {
+    const row = ownEntry(workers(), id)
+    if (!row || active.has(id) && !active.get(id).closed) return false
+    const savedLease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
+    if (row.status === 'released' && savedLease?.status === 'released' && (confirmedWorkerExit(rt.state, row) || row.releaseProof?.kind === 'sdk-worker-spawn-failed' && row.releaseProof.workerId === id && row.releaseProof.generation === row.generation && savedLease.releaseProof?.kind === row.releaseProof.kind)) return true
+    let observed, source = 'resource-stopped-receipt'
+    try {
+      const persisted = row.status === 'released' && row.releaseProof?.kind === 'sdk-stop-ack-and-process-exit' && row.releaseProof.workerId === id && row.releaseProof.generation === row.generation
+      if (persisted || await durableHostStop(row)) {
+        const lease = ownEntry(rt.state.projectResourceLeases ?? {}, row.leaseId)
+        rt.projectResources.requireBinding(row.projectId, lease)
+        if (lease.projectId !== row.projectId || lease.attemptId !== row.attemptId || lease.resourceId !== row.resourceId || lease.role !== row.role || lease.worker?.handle !== id) return false
+        const identity = { version: SDK_EXIT_VERSION, workerId: id, leaseId: row.leaseId, generation: row.generation }
+        observed = { lease, identity, result: { ...identity, status: 'exited' } }; source = persisted ? 'persisted-sdk-exit-proof' : 'durable-host-stop-event'
+      } else if (row.exitRecovery?.version === SDK_EXIT_VERSION) observed = await exitReceipt(row, stop ? 'stop' : 'inspect')
+      else return false
+    } catch { return false }
+    const { lease, identity, result } = observed
+    if (row !== ownEntry(workers(), id) || lease !== ownEntry(rt.state.projectResourceLeases ?? {}, identity.leaseId) || row.leaseId !== identity.leaseId || row.generation !== identity.generation || lease.generation !== identity.generation || lease.worker?.handle !== id || active.has(id) && !active.get(id).closed || Object.entries(identity).some(([key, value]) => key !== 'root' && result[key] !== value) || result.status !== 'exited') return false
+    rt.projectResources.requireBinding(row.projectId, lease)
+    const proof = { kind: 'sdk-stop-ack-and-process-exit', source, workerId: id, generation: row.generation, at: Date.now() }
+    row.status = 'released'; row.releasedAt = proof.at; row.releaseProof = proof
+    if (row.githubAccess) { row.githubAccess.renewing = false; row.githubAccess.status = 'closed' }
+    if (row.scratchDirectory) row.scratchCleanupPending = true
+    clearTimeout(active.get(id)?.timer); active.delete(id)
+    lease.releaseProof = proof
+    await rt.projectResources.release(lease.id, lease.generation, { handle: id, exited: true, proof })
+    await rt.projectDelivery.releaseSession(id)
+    await rt.save()
+    try { await exitReceipt(row, 'forget') } catch { /* Durable exit proof is retained even if artifact cleanup fails. */ }
+    return true
+  }
+  async function reconcileExits() {
+    for (const row of Object.values(workers())) await reconcileExit(row.id)
+  }
   async function release(id) {
     const row = ownEntry(workers(), id)
     if (!row) return false
-    if (row.status === 'released') return true
+    if (row.status === 'released') { await reconcileExit(id); return true }
     const control = active.get(id)
-    if (!control) throw refuse('SDK worker exit cannot be confirmed after restart')
+    if (!control || control.closed && !control.stoppedConfirmed && !control.spawnFailed) { if (await reconcileExit(id, { stop: true })) return true; throw refuse('SDK worker exit cannot be confirmed after restart; inspect its resource-side stop and process evidence') }
     row.status = 'stopping'; if (row.githubAccess) { row.githubAccess.renewing = false; row.githubAccess.status = 'stopping' }; clearTimeout(control.timer)
     if (!control.closed) control.process.stdin.end(JSON.stringify({ type: 'stop' }) + '\n')
     let timer
@@ -521,6 +577,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
       } catch { row.scratchCleanupPending = true } // Preserve cleanup debt without inventing an active worker after confirmed exit.
     }
     await rt.save()
+    if (row.exitRecovery?.supported) { try { await exitReceipt(row, 'forget') } catch { /* Retain cleanup debt without losing confirmed exit. */ } }
     return true
   }
   async function chiefTurn({ agent, delegation, definition, context, text, onResult }) {
@@ -606,7 +663,7 @@ export function createProjectHarness(rt, { roleGithub } = {}) {
     return nativeGithub.get(id)?.runtime.env ?? {}
   }
   return { enableNativeGithubEnv() { nativeEnvReady = true }, roleGithubActive: id => nativeGithub.has(id), bindNativeGithub, closeNativeGithub, nativeGithubEnv, redactGithub: github.redact, profile, spawn, dispatch, correctInput, checkNativeInput, taskInputWake, release, input, chiefTurn, onResult: fn => { listeners.add(fn); return () => listeners.delete(fn) },
-    capabilities: harnessCapabilities, owns: id => Boolean(ownEntry(workers(), id)), hasController: id => active.has(id) && !active.get(id).closed, versions: VERSIONS }
+    capabilities: harnessCapabilities, owns: id => Boolean(ownEntry(workers(), id)), hasController: id => active.has(id) && !active.get(id).closed, reconcileExit, reconcileExits, versions: VERSIONS }
 }
 export function install(rt) {
   rt.projectHarness = createProjectHarness(rt)

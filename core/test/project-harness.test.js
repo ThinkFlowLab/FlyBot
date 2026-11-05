@@ -3,7 +3,10 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, stat, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
+import { once } from 'node:events'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createProjectScheduler } from '../src/host/project-scheduler.js'
 import { createProjectEffects } from '../src/host/project-effects.js'
@@ -68,6 +71,77 @@ test('SDK workers reject unregistered Workspaces and missing explicit profiles',
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: '/foreign' }), /registered/)
   delete rt.config.projectResources.r.profiles
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd }), /explicitly authorized/)
+})
+
+for (const priorState of ['unreachable', 'released-worker', 'released-lease', 'stale-generation', 'legacy-no-proof']) test('controller-lost SDK release reconciles ' + priorState + ' using exact exit evidence', async t => {
+  const { rt, cwd } = await fixture(t)
+  const scope = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `import {captureProcessScope} from ${JSON.stringify(new URL('../src/host/project-process-proof.js', import.meta.url).href)};console.log(JSON.stringify(await captureProcessScope()))`], { encoding: 'utf8', env: { PATH: process.env.PATH } }))
+  const id = 'sdk-controller-lost', root = rt.config.projectResources.r.root
+  for (const name of ['project-sdk-exit.mjs', 'project-process-proof.js']) await writeFile(join(rt.config.projectResources.r.runtimeDir, 'src/host', name), await readFile(new URL('../src/host/' + name, import.meta.url)))
+  await mkdir(join(root, '.flybot-sdk-exit'))
+  await writeFile(join(root, '.flybot-sdk-exit', id + '.json'), JSON.stringify({ version: 'project-sdk-exit/v1', workerId: id, leaseId: 'l', generation: 1, scope, status: 'stopped' }))
+  rt.state.projectHarnessWorkers = { [id]: { id, projectId: 'p', attemptId: 'a', role: 'developer', resourceId: 'r', leaseId: 'l', generation: 1, status: priorState === 'released-worker' ? 'released' : 'unreachable', cwd, exitRecovery: { version: 'project-sdk-exit/v1' } } }
+  if (priorState === 'released-worker') rt.state.projectHarnessWorkers[id].releaseProof = { kind: 'sdk-stop-ack-and-process-exit', workerId: id, generation: 1, at: Date.now() }
+  Object.assign(rt.state.projectResourceLeases.l, { status: priorState === 'released-lease' ? 'released' : 'unreachable', worker: { kind: 'sdk', handle: id } })
+  const restored = createProjectHarness(rt)
+  if (priorState === 'legacy-no-proof') {
+    delete rt.state.projectHarnessWorkers[id].exitRecovery
+    await rm(join(root, '.flybot-sdk-exit', id + '.json'))
+    await assert.rejects(restored.release(id), /exit cannot be confirmed/)
+    assert.equal(rt.state.projectResourceLeases.l.status, 'unreachable')
+    delete rt.state.projectHarnessWorkers[id]
+    return
+  }
+  if (priorState === 'stale-generation') {
+    const command = rt.projectResources.command
+    rt.projectResources.command = async (...args) => { const result = await command(...args); rt.state.projectResourceLeases.l.generation = 2; return result }
+    await assert.rejects(restored.release(id), /exit cannot be confirmed/)
+    assert.equal(rt.state.projectResourceLeases.l.status, 'unreachable')
+    delete rt.state.projectHarnessWorkers[id] // No live process exists in this synthetic stale-binding fixture.
+    return
+  }
+  assert.equal(await restored.release(id), true)
+  assert.equal(rt.state.projectResourceLeases.l.status, 'released')
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+})
+
+for (const recovery of ['release', 'reconcile']) test('controller-lost host ' + recovery + ' waits for the actual resource worker to settle and exit', { timeout: 15000 }, async t => {
+  const { rt, cwd } = await fixture(t), id = 'sdk-live-controller-lost'
+  rt.config.projectResources.r.runtimeDir = resolve(import.meta.dirname, '..')
+  rt.state.projectHarnessWorkers = { [id]: { id, projectId: 'p', attemptId: 'a', role: 'developer', resourceId: 'r', leaseId: 'l', generation: 1, status: 'unreachable', cwd, exitRecovery: { version: 'project-sdk-exit/v1' } } }
+  await rt.projectResources.markStarted('l', 1, { kind: 'sdk', handle: id })
+  const identity = { version: 'project-sdk-exit/v1', root: rt.config.projectResources.r.root, workerId: id, leaseId: 'l', generation: 1 }
+  const child = rt.projectResources.startProcess('p', 'r', { cwd, argv: ['node', resolve(import.meta.dirname, '../src/host/project-harness-worker.mjs'), JSON.stringify(identity)] })
+  child.stderr.resume(); child.stdin.on('error', () => {})
+  const exit = once(child, 'close'), lines = createInterface({ input: child.stdout })
+  t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); await exit; lines.close() })
+  await once(lines, 'line')
+  rt.projectHarness = createProjectHarness(rt)
+  assert.equal(rt.projectResources.occupied('r'), 1)
+  if (recovery === 'release') assert.equal(await rt.projectHarness.release(id), true)
+  else { child.stdin.end(); await exit; await rt.projectResources.reconcile() }
+  await exit
+  assert.equal(rt.projectResources.occupied('r'), 0)
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.source, 'resource-stopped-receipt')
+  assert.equal(rt.state.tasks.t.status, undefined, 'Physical exit does not complete the Task')
+})
+
+for (const previousStatus of ['unreachable', 'released']) test('legacy ' + previousStatus + ' SDK reconciles only its saved stop event and zero process exit', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const start = rt.projectResources.startProcess; let child
+  rt.projectResources.startProcess = (...args) => (child = start(...args))
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Own legacy worker' })
+  const exited = once(child, 'close')
+  child.stdin.end(JSON.stringify({ type: 'stop' }) + '\n'); await exited
+  const row = rt.state.projectHarnessWorkers[id]
+  const stoppedHash = createHash('sha256').update(JSON.stringify({ type: 'stopped', released: true })).digest('hex')
+  for (let n = 0; n < 100 && row.lastEventHash !== stoppedHash; ++n) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(row.lastEventHash, stoppedHash)
+  delete row.exitRecovery; row.status = previousStatus; rt.state.projectResourceLeases.l.status = previousStatus
+  rt.projectHarness = createProjectHarness(rt)
+  await rt.projectResources.reconcile()
+  assert.equal(row.status, 'released'); assert.equal(rt.projectResources.occupied('r'), 0)
+  assert.equal(row.releaseProof.source, 'durable-host-stop-event')
 })
 
 test('non-App Dev receives Git mutation rights only for its bound isolated resource clone', async t => {

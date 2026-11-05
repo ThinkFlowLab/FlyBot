@@ -30,6 +30,10 @@ source fingerprints reflect the host adapter fix. See [Harness](project-harness.
 
 # Persistent source backend entry (#2189)
 
+#2483 controller-loss reconciliation strengthens execution evidence behind the same
+release/reconcile interfaces. No new public operation or privilege; OpenAPI source
+fingerprints reflect the Harness/resource implementation changes.
+
 #2483 interrupted-role facts now reach existing Chief inspection without a manual
 API call. `chief.state` source identifies the claim/policy/allocation fingerprint;
 TaskView reflects the applied recovery, not notification success. Public operations
