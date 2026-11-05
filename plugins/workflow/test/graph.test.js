@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  addNode, chainLabel, cleanLine, completeNode, connectNodes, doneCount, failNode, freshStatus, layerMarks,
-  moveNode, nextDemoOp, normalizeGraph, reconnectEdge, removeEdge, removeNode, retryNode,
+  addNode, chainLabel, cleanLine, cleanPrompt, completeNode, connectNodes, doneCount, failNode, freshStatus, layerMarks,
+  moveNode, nextDemoOp, normalizeGraph, readStepResult, reconnectEdge, removeEdge, removeNode, retryNode,
   rowPreview, startFrontier, summarizeTask, validateGraph,
 } from '../src/graph.js'
 import { deliveryWorkflow, weeklyWorkflow } from '../src/template.js'
@@ -187,4 +187,25 @@ test('a long task label keeps its whole title and never ends in a lone surrogate
   // cleanLine still cuts when it must, but on code points.
   assert.equal(cleanLine('🚀'.repeat(10), 7), '🚀'.repeat(7))
   assert.equal(hasLoneSurrogate(cleanLine('🚀'.repeat(10), 7)), false)
+})
+
+test('a node prompt and a step reply stop on the bound without splitting the character there', () => {
+  // #1588 moved cleanLine's cut onto code points; the prompt and the step body
+  // still counted UTF-16 units, so a cut inside one astral character left a lone
+  // surrogate — the prompt a Bot was told to follow, and its own reply, carried
+  // half a character. The bound counts code points here too, so a character that
+  // fits stays whole instead of being half-kept or dropped.
+  const fitting = `${'a'.repeat(3999)}🚀`
+  const prompt = cleanPrompt(fitting, 4000)
+  assert.equal(prompt, fitting, 'a character that fits the bound is kept whole')
+  assert.equal(hasLoneSurrogate(prompt), false, 'cleanPrompt left a lone surrogate at the bound')
+
+  const over = cleanPrompt(`${'a'.repeat(4000)}🚀`, 4000)
+  assert.equal(over, 'a'.repeat(4000), 'the character past the bound goes whole, never half')
+  assert.equal(hasLoneSurrogate(over), false, 'cleanPrompt left a lone surrogate when it must drop one')
+
+  const reply = `${'a'.repeat(1999)}🚀`
+  const step = readStepResult(reply, { outputs: [] })
+  assert.equal(step.text, reply, 'the step body keeps the whole last character')
+  assert.equal(hasLoneSurrogate(step.text), false, 'readStepResult left a lone surrogate in the body')
 })

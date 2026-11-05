@@ -34,7 +34,9 @@ export function cleanPrompt(value, max = 4000) {
     if (code === 0x0a || code === 0x09) { out += ch; continue }
     out += code <= 0x1f || code === 0x7f ? ' ' : ch
   }
-  return out.replace(/[ \t]+\n/g, '\n').trim().slice(0, max)
+  const text = out.replace(/[ \t]+\n/g, '\n').trim()
+  // Same rule as cleanLine above: a UTF-16 cut can end inside one character.
+  return text.length <= max ? text : Array.from(text).slice(0, max).join('')
 }
 
 export function cleanTools(value) {
@@ -78,7 +80,8 @@ export function readStepResult(text, node) {
     if (!match) { kept.push(line); continue }
     outputs[match[1].toLowerCase()] = cleanLine(match[2], 2000)
   }
-  const body = kept.join('\n').trim().slice(0, 2000)
+  const joined = kept.join('\n').trim()
+  const body = joined.length <= 2000 ? joined : Array.from(joined).slice(0, 2000).join('')
   const declared = node?.outputs ?? []
   if (declared.length === 1 && !outputs[declared[0].name] && body) outputs[declared[0].name] = body
   if (declared.length > 0) {
