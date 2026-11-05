@@ -603,13 +603,25 @@ function useNow(ms) {
 // Open on a card. A failed workflow run has no chat to land in, so it opens the
 // Workflow graphs page in settings instead (#1706); every other card keeps the chat.
 // The page key is `workflows` — Settings falls back to General for any key it does not list.
+// The page also carries the inbox as where closing it returns, so one card read does not cost
+// an Inbox reopened by hand (#2541).
 export function openCard(actions, card) {
   actions.closeInbox()
   if (card?.kind === 'workflow') {
-    actions.openSettings('workflows')
+    actions.openSettings('workflows', null, 'inbox')
     return
   }
   actions.openSession(card.chat)
+}
+
+// Closing Settings goes back to where the page was opened from. A page a card opened says so
+// (`back: 'inbox'`), and the inbox comes back over the conversation instead of the chat under
+// it; any other page closes to the view beneath it (#2541). The shell runs exactly this
+// transition, so what a test asserts here is what the close does.
+export function closedSettings(state) {
+  if (!state.settings && !state.remoteBotSettings) return state
+  const back = state.settings?.back === 'inbox'
+  return { ...state, settings: null, remoteBotSettings: null, ...(back ? { inbox: true } : {}) }
 }
 
 export function InboxDialog({ roster, useWork, useSessions, actions, leaving = false }) {

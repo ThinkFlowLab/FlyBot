@@ -9327,10 +9327,15 @@ function useNow2(ms) {
 function openCard(actions, card) {
   actions.closeInbox();
   if (card?.kind === "workflow") {
-    actions.openSettings("workflows");
+    actions.openSettings("workflows", null, "inbox");
     return;
   }
   actions.openSession(card.chat);
+}
+function closedSettings(state) {
+  if (!state.settings && !state.remoteBotSettings) return state;
+  const back = state.settings?.back === "inbox";
+  return { ...state, settings: null, remoteBotSettings: null, ...back ? { inbox: true } : {} };
 }
 function InboxDialog({ roster, useWork, useSessions, actions, leaving = false }) {
   const work = useWork((value) => value);
@@ -23023,17 +23028,18 @@ function apply(ctx) {
     renameBot: (id) => {
       ui2.set((state) => ({ ...state, details: id, view: "details", renaming: true, tab: null }));
     },
-    // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
-    openSettings: (page = "general", id = null) => {
+    // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
+    // closing the page returns to; a page the inbox opened sends the queue back (#2541).
+    openSettings: (page = "general", id = null, back = null) => {
       const remote = id && roster.getSnapshot().byId[id]?.remote;
       if (page === "bots" && remote) {
         ui2.set((state) => ({ ...state, remoteBotSettings: id, settings: null, menu: null, palette: null, newChat: null }));
         return;
       }
-      ui2.set((state) => ({ ...state, settings: { page, id }, remoteBotSettings: null, menu: null, palette: null, newChat: null }));
+      ui2.set((state) => ({ ...state, settings: back ? { page, id, back } : { page, id }, remoteBotSettings: null, menu: null, palette: null, newChat: null }));
     },
     closeSettings: () => {
-      ui2.set((state) => state.settings || state.remoteBotSettings ? { ...state, settings: null, remoteBotSettings: null } : state);
+      ui2.set(closedSettings);
     },
     openMemory: (botId) => {
       ui2.set((state) => ({ ...state, memory: botId, menu: null, palette: null }));
