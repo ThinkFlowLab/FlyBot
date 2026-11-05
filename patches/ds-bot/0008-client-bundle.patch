@@ -6359,7 +6359,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-typing-in{from{opacity:0;transform:scale(.9)}}
  @keyframes bt-typing-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92);filter:blur(3px)}}
  @keyframes bt-typing-label{from{opacity:0;filter:blur(5px);transform:translateY(3px)}}
-@@ -2676,2833 +2676,6536 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+@@ -2676,2833 +2676,6541 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  [data-bt-enter="new"]{animation:none}
  [data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
  }
@@ -8309,9 +8309,6 @@ diff --git a/client.js b/client.js
 +    label ? (0, import_react11.createElement)("div", { className: "bt-time-sep", role: "separator" }, label) : null,
 +    fresh ? (0, import_react11.createElement)(NewDivider) : null
 +  );
-+}
-+function Shimmer({ children }) {
-+  return (0, import_react11.createElement)("span", { className: "bt-shimmer" }, children);
  }
 -var FRAGMENT_SELECTOR = /\[class\*="(_[\w-]+)"\]/g;
 -var CLASS_TOKEN = /\.((?:\\.|[\w-])+)/g;
@@ -8321,6 +8318,9 @@ diff --git a/client.js b/client.js
 -    for (const rule of rules) {
 -      if (rule.selectorText) for (const match of rule.selectorText.matchAll(CLASS_TOKEN)) names.push(match[1]);
 -      if (rule.cssRules) visit(rule.cssRules);
++function Shimmer({ children }) {
++  return (0, import_react11.createElement)("span", { className: "bt-shimmer" }, children);
++}
 +var PHRASES = {
 +  thinking: ["Thinking about it", "Weighing the options", "Working out a plan", "Sorting out the details"],
 +  working: ["On it", "Busy with it", "Moving ahead", "Taking care of it", "Making headway"]
@@ -9574,7 +9574,10 @@ diff --git a/client.js b/client.js
 -    ),
 -    onClose ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react5.createElement)(CloseIcon)) : null
 -  );
--}
++function busyMembers(room2, work, roster) {
++  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
++  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
+ }
 -function SecretCard({ bot, request, roster, actions }) {
 -  const [value, setValue] = (0, import_react5.useState)("");
 -  const [scope, setScope] = (0, import_react5.useState)("all");
@@ -9633,9 +9636,10 @@ diff --git a/client.js b/client.js
 -      filling ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: !long || busy, onClick: save }, busy ? t("Saving…") : t("Save")) : (0, import_react5.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: allow }, busy ? t("Allowing…") : t("Allow"))
 -    )
 -  );
-+function busyMembers(room2, work, roster) {
-+  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
-+  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
++function splitBusy(busy) {
++  const here = busy.filter((entry) => entry.state === "work" && entry.here);
++  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
++  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
  }
 -function SettledSecret({ bot, request, roster }) {
 -  const canceled = request.status === "canceled";
@@ -9656,19 +9660,24 @@ diff --git a/client.js b/client.js
 -      canceled ? (0, import_react5.createElement)("span", { className: "bt-q-badge" }, t("Canceled")) : (0, import_react5.createElement)("span", { className: "bt-q-check bt-secret-check", title: t("Done") }, (0, import_react5.createElement)(CheckIcon))
 -    )
 -  );
-+function splitBusy(busy) {
-+  const here = busy.filter((entry) => entry.state === "work" && entry.here);
-+  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
-+  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
- }
--function RequestView({ bot, request, roster, actions }) {
--  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
 +function botGroupWork(botId, work, roster) {
 +  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
 +    const entry = entries2.find((item) => item.botId === botId);
 +    const room2 = roster.roomsById[roomId];
 +    return entry && room2 ? [{ room: room2, tool: entry.tool, step: stepIn(work, botId, roomId, entry.tool), since: entry.since }] : [];
 +  });
+ }
+-function RequestView({ bot, request, roster, actions }) {
+-  return request.status === "pending" ? (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions }) : (0, import_react5.createElement)(SettledSecret, { bot, request, roster });
++var moreRooms = (count) => count === 1 ? t("1 more room") : t("{count} more rooms", { count });
++function summaryText(busy) {
++  const asks = busy.filter((entry) => entry.state === "ask");
++  const workers = busy.filter((entry) => entry.state === "work");
++  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
++  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
++  const first = workers[0];
++  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
++  return { waiting, doing };
  }
 -function SecretToolCell({ sessionId, callId, name, done, content, roster, actions }) {
 -  const bot = roster.byId[sessionId];
@@ -9679,15 +9688,12 @@ diff --git a/client.js b/client.js
 -    return (0, import_react5.createElement)("div", { className: "bt-event" }, (0, import_react5.createElement)("span", { className: "bt-secret-event" }, (0, import_react5.createElement)(KeyIcon), t("{bot} is using {name}", { bot: bot.name, name: name ?? t("a saved key") })));
 -  }
 -  return null;
-+var moreRooms = (count) => count === 1 ? t("1 more room") : t("{count} more rooms", { count });
-+function summaryText(busy) {
-+  const asks = busy.filter((entry) => entry.state === "ask");
-+  const workers = busy.filter((entry) => entry.state === "work");
-+  const names = asks.slice(0, 2).map((entry) => entry.bot.name);
-+  const waiting = asks.length === 0 ? "" : asks.length === 1 ? t("{name} is waiting for your approval", { name: names[0] }) : asks.length === 2 ? t("{first} and {second} are waiting for your approval", { first: names[0], second: names[1] }) : t("{first}, {second} and {count} more are waiting for your approval", { first: names[0], second: names[1], count: asks.length - 2, total: asks.length });
-+  const first = workers[0];
-+  const doing = first ? `${first.bot.name} · ${workText(first.doing.tool, first.doing.step)}${workers.length > 1 ? ` +${workers.length - 1}` : ""}` : "";
-+  return { waiting, doing };
++function Face({ entry, size }) {
++  return (0, import_react14.createElement)(
++    "span",
++    { className: "bt-mw-face", "data-ask": entry.state === "ask" || void 0 },
++    (0, import_react14.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
++  );
  }
 -function SecretDock({ sessionId, useRoster, useCards, useSession, actions }) {
 -  const roster = useRoster((value) => value);
@@ -9699,11 +9705,16 @@ diff --git a/client.js b/client.js
 -  const waiting = (roster.secretRequests?.[bot.id] ?? []).filter((entry) => entry.status === "pending" && !drawn(entry));
 -  if (waiting.length === 0) return null;
 -  return (0, import_react5.createElement)("div", { className: "bt-q-dock bt-secret-dock" }, waiting.map((request) => (0, import_react5.createElement)(SecretCard, { key: `${request.id}:${request.kind}`, bot, request, roster, actions })));
-+function Face({ entry, size }) {
++var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
++function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
++  const text2 = `${label} · ${workText(tool, step)}`;
++  const elapsed = elapsedSince(now, at);
 +  return (0, import_react14.createElement)(
-+    "span",
-+    { className: "bt-mw-face", "data-ask": entry.state === "ask" || void 0 },
-+    (0, import_react14.createElement)(BotMark, { bot: entry.bot, size, state: entry.state === "ask" ? "alert" : toolState(entry.doing?.tool ?? "") })
++    "button",
++    { type: "button", className: "bt-mw-row", "aria-label": [text2, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
++    (0, import_react14.createElement)(BotMark, { bot, size: 22, state: toolState(tool ?? ""), live: true }),
++    (0, import_react14.createElement)("span", { className: "bt-mw-row-text" }, (0, import_react14.createElement)(Shimmer, null, text2)),
++    elapsed ? (0, import_react14.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
 +  );
  }
 -function ScopeEditor({ secret, roster, onSave }) {
@@ -9724,7 +9735,20 @@ diff --git a/client.js b/client.js
 -        (0, import_react5.createElement)("input", { type: "radio", name: `scope-${secret.name}`, checked: mode === id, onChange: () => setMode(id) }),
 -        text
 -      ))
--    ),
++function SummaryLine({ busy, now, onOpen }) {
++  const { waiting, doing } = summaryText(busy);
++  const elapsed = doing ? elapsedSince(now, busy.find((entry) => entry.state === "work")?.doing.since) : "";
++  return (0, import_react14.createElement)(
++    "button",
++    { type: "button", className: "bt-mw-row bt-mw-line", "aria-label": [waiting, doing, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
++    (0, import_react14.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react14.createElement)(Face, { key: entry.id, entry, size: 16 }))),
++    (0, import_react14.createElement)(
++      "span",
++      { className: "bt-mw-row-text" },
++      waiting ? (0, import_react14.createElement)("span", { className: "bt-mw-ask" }, waiting) : null,
++      waiting && doing ? " · " : null,
++      doing ? (0, import_react14.createElement)(Shimmer, null, doing) : null
+     ),
 -    mode === "some" ? (0, import_react5.createElement)("div", { className: "bt-secret-bots" }, roster.bots.map((bot) => (0, import_react5.createElement)("button", {
 -      key: bot.id,
 -      type: "button",
@@ -9737,15 +9761,6 @@ diff --git a/client.js b/client.js
 -      { className: "bt-secret-row-actions" },
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: same, onClick: () => onSave(mode === "all" ? "all" : picked) }, t("Save access"))
 -    )
-+var elapsedSince = (now, at) => typeof at === "number" && now - at >= 6e4 ? elapsedLabel(now - at) : "";
-+function WorkRow({ bot, tool, step, label, at, now, onOpen }) {
-+  const text2 = `${label} · ${workText(tool, step)}`;
-+  const elapsed = elapsedSince(now, at);
-+  return (0, import_react14.createElement)(
-+    "button",
-+    { type: "button", className: "bt-mw-row", "aria-label": [text2, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
-+    (0, import_react14.createElement)(BotMark, { bot, size: 22, state: toolState(tool ?? ""), live: true }),
-+    (0, import_react14.createElement)("span", { className: "bt-mw-row-text" }, (0, import_react14.createElement)(Shimmer, null, text2)),
 +    elapsed ? (0, import_react14.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
    );
  }
@@ -9766,41 +9781,6 @@ diff --git a/client.js b/client.js
 -    setValue(next);
 -    setReplaced(false);
 -  };
--  return (0, import_react5.createElement)(
--    "div",
--    { className: "bt-secret-edit-block" },
--    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Replace the value")),
--    (0, import_react5.createElement)(
--      "div",
--      { className: "bt-secret-inline" },
--      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: edit, onEnter: save, label: t("New value of {name}", { name: secret.name }) })),
--      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
-+function SummaryLine({ busy, now, onOpen }) {
-+  const { waiting, doing } = summaryText(busy);
-+  const elapsed = doing ? elapsedSince(now, busy.find((entry) => entry.state === "work")?.doing.since) : "";
-+  return (0, import_react14.createElement)(
-+    "button",
-+    { type: "button", className: "bt-mw-row bt-mw-line", "aria-label": [waiting, doing, elapsed].filter(Boolean).join(" · "), onClick: onOpen },
-+    (0, import_react14.createElement)("span", { className: "bt-mw-stack", "aria-hidden": true }, busy.slice(0, 4).map((entry) => (0, import_react14.createElement)(Face, { key: entry.id, entry, size: 16 }))),
-+    (0, import_react14.createElement)(
-+      "span",
-+      { className: "bt-mw-row-text" },
-+      waiting ? (0, import_react14.createElement)("span", { className: "bt-mw-ask" }, waiting) : null,
-+      waiting && doing ? " · " : null,
-+      doing ? (0, import_react14.createElement)(Shimmer, null, doing) : null
-     ),
--    value !== "" && !long ? (0, import_react5.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react5.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react5.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
-+    elapsed ? (0, import_react14.createElement)("span", { className: "bt-mw-row-time" }, `· ${elapsed}`) : null
-   );
- }
--function SecretRow({ secret, roster, actions, run, open, onToggle }) {
--  const [confirm, setConfirm] = (0, import_react5.useState)(false);
--  (0, import_react5.useEffect)(() => {
--    if (!open) setConfirm(false);
--  }, [open]);
--  const asker = secret.requestedBy ? roster.byId[secret.requestedBy]?.name ?? t("a deleted Bot") : t("you");
--  const allowed = secret.scope === "all" ? [] : secret.scope.map((id) => roster.byId[id]).filter(Boolean);
--  const meta = [t("Asked by {name}", { name: asker }), t("added {time}", { time: when(secret.createdAt) }), secret.lastUsedAt ? t("last used {time}", { time: when(secret.lastUsedAt) }) : t("not used yet")].join(" · ");
 -  return (0, import_react5.createElement)(
 +function MemberDock({ sessionId, useRoster, useWork, actions }) {
 +  const roster = useRoster((value) => value);
@@ -9829,23 +9809,9 @@ diff --git a/client.js b/client.js
 +  const more = groups.length - rows.length;
 +  return (0, import_react14.createElement)(
      "div",
--    { className: "bt-secret-item", "data-open": open ? "" : void 0 },
+-    { className: "bt-secret-edit-block" },
+-    (0, import_react5.createElement)("div", { className: "bt-secret-edit-label" }, t("Replace the value")),
 -    (0, import_react5.createElement)(
--      "button",
--      { type: "button", className: "bt-set-row bt-secret-summary", "aria-expanded": open, onClick: onToggle },
--      (0, import_react5.createElement)(
--        "span",
--        { className: "bt-set-copy" },
--        (0, import_react5.createElement)("span", { className: "bt-secret-title" }, (0, import_react5.createElement)(KeyIcon), (0, import_react5.createElement)("code", { className: "bt-secret-name" }, secret.name), secret.purpose ? (0, import_react5.createElement)("span", { className: "bt-secret-purpose" }, secret.purpose) : null),
--        (0, import_react5.createElement)("span", { className: "bt-set-hint" }, meta)
--      ),
--      (0, import_react5.createElement)(
--        "span",
--        { className: "bt-set-control" },
--        secret.scope === "all" ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("All Bots")) : allowed.length === 0 ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react5.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react5.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
--      )
--    ),
--    open ? (0, import_react5.createElement)(
 +    { ref, className: "bt-mw-dock-stack" },
 +    rows.map((item) => (0, import_react14.createElement)(WorkRow, {
 +      key: item.room.id,
@@ -9859,36 +9825,25 @@ diff --git a/client.js b/client.js
 +    })),
 +    more > 0 ? (0, import_react14.createElement)(
        "div",
--      { className: "bt-secret-edit" },
--      (0, import_react5.createElement)(ScopeEditor, { key: JSON.stringify(secret.scope), secret, roster, onSave: (scope) => run(actions.secretUpdate(secret.name, scope)) }),
--      (0, import_react5.createElement)(ValueEditor, { secret, onSave: (value) => run(actions.secretSet({ name: secret.name, value })) }),
--      (0, import_react5.createElement)(
--        "div",
--        { className: "bt-secret-row-actions" },
--        confirm ? [
--          (0, import_react5.createElement)("span", { key: "q", className: "bt-set-hint" }, t("Delete {name}? Bots lose it at once.", { name: secret.name })),
--          (0, import_react5.createElement)("button", { key: "no", type: "button", className: "bt-soft bt-soft-sm", onClick: () => setConfirm(false) }, t("Keep")),
--          (0, import_react5.createElement)("button", { key: "yes", type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => run(actions.secretDelete(secret.name)) }, t("Delete"))
--        ] : (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => setConfirm(true) }, (0, import_react5.createElement)(TrashIcon), t("Delete"))
--      )
+-      { className: "bt-secret-inline" },
+-      (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: edit, onEnter: save, label: t("New value of {name}", { name: secret.name }) })),
+-      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !long, onClick: save }, t("Replace"))
+-    ),
+-    value !== "" && !long ? (0, import_react5.createElement)("div", { className: "bt-set-hint" }, t("At least {count} characters.", { count: MIN_VALUE })) : replaced ? (0, import_react5.createElement)("div", { className: "bt-set-hint bt-secret-ok", role: "status" }, (0, import_react5.createElement)(CheckIcon), t("Replaced. Bots get the new value from their next command.")) : null
 +      { className: "bt-mw-row bt-mw-line bt-mw-static" },
 +      (0, import_react14.createElement)("span", { className: "bt-mw-row-text" }, moreRooms(more))
-     ) : null
++    ) : null
    );
  }
--function AddSecret({ actions, run, onDone }) {
--  const [name, setName] = (0, import_react5.useState)("");
--  const [purpose, setPurpose] = (0, import_react5.useState)("");
--  const [value, setValue] = (0, import_react5.useState)("");
--  const ready = /^[A-Za-z][\w-]{0,63}$/.test(name.trim()) && value.trim().length >= MIN_VALUE;
--  const save = () => {
--    if (!ready) return;
--    void run(actions.secretSet({ name, purpose, value, scope: "all" })).then((ok) => {
--      if (ok) {
--        setValue("");
--        onDone();
--      }
--    });
+-function SecretRow({ secret, roster, actions, run, open, onToggle }) {
+-  const [confirm, setConfirm] = (0, import_react5.useState)(false);
+-  (0, import_react5.useEffect)(() => {
+-    if (!open) setConfirm(false);
+-  }, [open]);
+-  const asker = secret.requestedBy ? roster.byId[secret.requestedBy]?.name ?? t("a deleted Bot") : t("you");
+-  const allowed = secret.scope === "all" ? [] : secret.scope.map((id) => roster.byId[id]).filter(Boolean);
+-  const meta = [t("Asked by {name}", { name: asker }), t("added {time}", { time: when(secret.createdAt) }), secret.lastUsedAt ? t("last used {time}", { time: when(secret.lastUsedAt) }) : t("not used yet")].join(" · ");
+-  return (0, import_react5.createElement)(
 +function useFlowColumn(ref, active, key) {
 +  (0, import_react14.useLayoutEffect)(() => {
 +    const node = ref.current;
@@ -9925,6 +9880,84 @@ diff --git a/client.js b/client.js
 +  const answer = (choice) => {
 +    setBusy(true);
 +    void Promise.resolve(actions.answerApproval(approval.id, choice)).catch((error) => actions.reportError(error, "approval")).finally(() => setBusy(false));
++  };
++  return (0, import_react14.createElement)(
+     "div",
+-    { className: "bt-secret-item", "data-open": open ? "" : void 0 },
+-    (0, import_react5.createElement)(
+-      "button",
+-      { type: "button", className: "bt-set-row bt-secret-summary", "aria-expanded": open, onClick: onToggle },
+-      (0, import_react5.createElement)(
+-        "span",
+-        { className: "bt-set-copy" },
+-        (0, import_react5.createElement)("span", { className: "bt-secret-title" }, (0, import_react5.createElement)(KeyIcon), (0, import_react5.createElement)("code", { className: "bt-secret-name" }, secret.name), secret.purpose ? (0, import_react5.createElement)("span", { className: "bt-secret-purpose" }, secret.purpose) : null),
+-        (0, import_react5.createElement)("span", { className: "bt-set-hint" }, meta)
+-      ),
+-      (0, import_react5.createElement)(
+-        "span",
+-        { className: "bt-set-control" },
+-        secret.scope === "all" ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("All Bots")) : allowed.length === 0 ? (0, import_react5.createElement)("span", { className: "bt-tag" }, t("No Bot")) : (0, import_react5.createElement)("span", { className: "bt-secret-faces", title: allowed.map((bot) => bot.name).join(", ") }, allowed.slice(0, 5).map((bot) => (0, import_react5.createElement)(BotAvatar, { key: bot.id, bot, size: 20, badge: false, live: false })))
+-      )
+-    ),
+-    open ? (0, import_react5.createElement)(
++    { className: "bt-mw-card", role: "group", "aria-label": t("{name} is waiting for your approval", { name: bot.name }) },
++    (0, import_react14.createElement)("div", { className: "bt-mw-tool" }, approval.tool),
++    approval.detail?.text ? (0, import_react14.createElement)("div", { className: "bt-mw-text" }, approval.detail.text) : null,
++    approval.reason ? (0, import_react14.createElement)("div", { className: "bt-mw-reason" }, approval.reason) : null,
++    approval.detail?.code ? (0, import_react14.createElement)("code", { className: "bt-mw-code", title: approval.detail.code }, approval.detail.code) : null,
++    approval.answerable ? (0, import_react14.createElement)(
+       "div",
+-      { className: "bt-secret-edit" },
+-      (0, import_react5.createElement)(ScopeEditor, { key: JSON.stringify(secret.scope), secret, roster, onSave: (scope) => run(actions.secretUpdate(secret.name, scope)) }),
+-      (0, import_react5.createElement)(ValueEditor, { secret, onSave: (value) => run(actions.secretSet({ name: secret.name, value })) }),
+-      (0, import_react5.createElement)(
+-        "div",
+-        { className: "bt-secret-row-actions" },
+-        confirm ? [
+-          (0, import_react5.createElement)("span", { key: "q", className: "bt-set-hint" }, t("Delete {name}? Bots lose it at once.", { name: secret.name })),
+-          (0, import_react5.createElement)("button", { key: "no", type: "button", className: "bt-soft bt-soft-sm", onClick: () => setConfirm(false) }, t("Keep")),
+-          (0, import_react5.createElement)("button", { key: "yes", type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => run(actions.secretDelete(secret.name)) }, t("Delete"))
+-        ] : (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm bt-secret-danger", onClick: () => setConfirm(true) }, (0, import_react5.createElement)(TrashIcon), t("Delete"))
+-      )
+-    ) : null
++      { className: "bt-mw-actions" },
++      (0, import_react14.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: () => answer("reject") }, t("Reject")),
++      (0, import_react14.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: () => answer("allow") }, t("Allow once")),
++      ...alwaysChoices(approval, bot).map(([choice, label]) => (0, import_react14.createElement)("button", { key: choice, type: "button", className: "bt-q-btn", "data-choice": choice, disabled: busy, onClick: () => answer(choice) }, t(label)))
++    ) : (0, import_react14.createElement)(
++      "div",
++      { className: "bt-mw-actions" },
++      (0, import_react14.createElement)("button", { type: "button", className: "bt-q-btn", onClick: () => actions.openSession(bot.id) }, t("Open {name}'s chat", { name: bot.name }))
++    )
+   );
+ }
+-function AddSecret({ actions, run, onDone }) {
+-  const [name, setName] = (0, import_react5.useState)("");
+-  const [purpose, setPurpose] = (0, import_react5.useState)("");
+-  const [value, setValue] = (0, import_react5.useState)("");
+-  const ready = /^[A-Za-z][\w-]{0,63}$/.test(name.trim()) && value.trim().length >= MIN_VALUE;
+-  const save = () => {
+-    if (!ready) return;
+-    void run(actions.secretSet({ name, purpose, value, scope: "all" })).then((ok) => {
+-      if (ok) {
+-        setValue("");
+-        onDone();
+-      }
+-    });
++function MemberWork({ entry, bot, room: room2, actions, now }) {
++  const [stopping, setStopping] = (0, import_react14.useState)(false);
++  if (entry.state === "ask") {
++    return (0, import_react14.createElement)(
++      "div",
++      { className: "bt-mw-member" },
++      (0, import_react14.createElement)("div", { className: "bt-mw-state bt-mw-ask" }, `${t("Waiting for your approval")}${since(now, entry.approvals[0].at)}`),
++      entry.approvals.map((approval) => (0, import_react14.createElement)(ApprovalCard, { key: approval.id, approval, bot, actions }))
++    );
++  }
++  if (entry.state !== "work") return null;
++  const stop = () => {
++    setStopping(true);
++    void Promise.resolve(actions.stopMemberWork(room2.id, bot.id)).catch((error) => actions.reportError(error, "stop")).finally(() => setStopping(false));
    };
 -  return (0, import_react5.createElement)(
 +  return (0, import_react14.createElement)(
@@ -9934,25 +9967,16 @@ diff --git a/client.js b/client.js
 -    (0, import_react5.createElement)("input", { className: "bt-input", "aria-label": t("What it is for"), placeholder: t("What it is for"), value: purpose, autoComplete: "off", onChange: (event) => setPurpose(event.target.value) }),
 -    (0, import_react5.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react5.createElement)(MaskedInput, { value, onChange: setValue, onEnter: save, label: t("Value") })),
 -    (0, import_react5.createElement)(
-+    { className: "bt-mw-card", role: "group", "aria-label": t("{name} is waiting for your approval", { name: bot.name }) },
-+    (0, import_react14.createElement)("div", { className: "bt-mw-tool" }, approval.tool),
-+    approval.detail?.text ? (0, import_react14.createElement)("div", { className: "bt-mw-text" }, approval.detail.text) : null,
-+    approval.reason ? (0, import_react14.createElement)("div", { className: "bt-mw-reason" }, approval.reason) : null,
-+    approval.detail?.code ? (0, import_react14.createElement)("code", { className: "bt-mw-code", title: approval.detail.code }, approval.detail.code) : null,
-+    approval.answerable ? (0, import_react14.createElement)(
++    { className: "bt-mw-member" },
++    (0, import_react14.createElement)(
        "div",
 -      { className: "bt-secret-row-actions" },
 -      (0, import_react5.createElement)("span", { className: "bt-set-hint" }, t("New keys are for all Bots; narrow it down afterwards.")),
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: onDone }, t("Cancel")),
 -      (0, import_react5.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: !ready, onClick: save }, t("Save key"))
-+      { className: "bt-mw-actions" },
-+      (0, import_react14.createElement)("button", { type: "button", className: "bt-q-btn", disabled: busy, onClick: () => answer("reject") }, t("Reject")),
-+      (0, import_react14.createElement)("button", { type: "button", className: "bt-q-submit", disabled: busy, onClick: () => answer("allow") }, t("Allow once")),
-+      ...alwaysChoices(approval, bot).map(([choice, label]) => (0, import_react14.createElement)("button", { key: choice, type: "button", className: "bt-q-btn", "data-choice": choice, disabled: busy, onClick: () => answer(choice) }, t(label)))
-+    ) : (0, import_react14.createElement)(
-+      "div",
-+      { className: "bt-mw-actions" },
-+      (0, import_react14.createElement)("button", { type: "button", className: "bt-q-btn", onClick: () => actions.openSession(bot.id) }, t("Open {name}'s chat", { name: bot.name }))
++      { className: "bt-mw-state bt-mw-work" },
++      (0, import_react14.createElement)("span", null, (0, import_react14.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), since(now, entry.doing.since)),
++      entry.here && entry.doing.handed !== true ? (0, import_react14.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
      )
    );
  }
@@ -10049,7 +10073,12 @@ diff --git a/client.js b/client.js
 -  const members = steps.length ? steps : [current];
 -  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
 -  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
--}
++function useMemberWork(room2, useWork) {
++  const work = useWork?.((value) => value) ?? NO_WORK;
++  const entries2 = room2 ? memberWork(room2, work) : [];
++  const now = useNow(entries2.some((entry) => entry.state !== "idle"));
++  return { entries: entries2, now };
+ }
 -var texts = (step) => step.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "");
 -var thinkingLive = (step) => step.status === "running" && texts(step).length === 0 && step.blocks.some((block) => block.kind === "reasoning");
 -var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reasoning").map((block) => block.text).join("\n").trim();
@@ -10066,25 +10095,10 @@ diff --git a/client.js b/client.js
 -    event.preventDefault();
 -    event.stopPropagation();
 -    actions.openSession(target);
-+function MemberWork({ entry, bot, room: room2, actions, now }) {
-+  const [stopping, setStopping] = (0, import_react14.useState)(false);
-+  if (entry.state === "ask") {
-+    return (0, import_react14.createElement)(
-+      "div",
-+      { className: "bt-mw-member" },
-+      (0, import_react14.createElement)("div", { className: "bt-mw-state bt-mw-ask" }, `${t("Waiting for your approval")}${since(now, entry.approvals[0].at)}`),
-+      entry.approvals.map((approval) => (0, import_react14.createElement)(ApprovalCard, { key: approval.id, approval, bot, actions }))
-+    );
-+  }
-+  if (entry.state !== "work") return null;
-+  const stop = () => {
-+    setStopping(true);
-+    void Promise.resolve(actions.stopMemberWork(room2.id, bot.id)).catch((error) => actions.reportError(error, "stop")).finally(() => setStopping(false));
-   };
+-  };
 -  const reactions = useUi ? useUi((state) => msgKey ? state.reactions?.[msgKey] ?? null : null) : null;
 -  return (0, import_react6.createElement)(
-+  return (0, import_react14.createElement)(
-     "div",
+-    "div",
 -    { className: "bt-astack", "data-lead": lead ? "" : void 0, onClickCapture: onClick },
 -    texts2.map((text, index) => {
 -      const key = msgKey ? `${msgKey}:${index}` : void 0;
@@ -10114,21 +10128,6 @@ diff --git a/client.js b/client.js
 -        }, emoji))) : null
 -      );
 -    })
-+    { className: "bt-mw-member" },
-+    (0, import_react14.createElement)(
-+      "div",
-+      { className: "bt-mw-state bt-mw-work" },
-+      (0, import_react14.createElement)("span", null, (0, import_react14.createElement)(Shimmer, null, workText(entry.doing.tool, entry.doing.step)), since(now, entry.doing.since)),
-+      entry.here && entry.doing.handed !== true ? (0, import_react14.createElement)("button", { type: "button", className: "bt-mw-stop", disabled: stopping, onClick: stop }, t("Stop")) : null
-+    )
-+  );
-+}
-+function useMemberWork(room2, useWork) {
-+  const work = useWork?.((value) => value) ?? NO_WORK;
-+  const entries2 = room2 ? memberWork(room2, work) : [];
-+  const now = useNow(entries2.some((entry) => entry.state !== "idle"));
-+  return { entries: entries2, now };
-+}
 +var MEMBER_CSS = `
 +.bt-mw-dock-stack{box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto 6px;pointer-events:none}
 +.bt-mw-row{pointer-events:auto;display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% + 6px);height:32px;margin-inline-start:-6px;padding:0 12px 0 6px;border:0;border-radius:16px;background:none;color:var(--bt-ink-2);font:inherit;font-size:14px;cursor:pointer;animation:bt-mw-in .32s cubic-bezier(.23,1,.32,1) backwards;transition:background-color .16s ease-out}
@@ -10940,7 +10939,7 @@ diff --git a/client.js b/client.js
 +function openCard(actions, card) {
 +  actions.closeInbox();
 +  if (card?.kind === "workflow") {
-+    actions.openSettings("workflows");
++    actions.openSettings("workflows", null, "inbox");
 +    return;
    }
 -  const parts = [];
@@ -10962,6 +10961,11 @@ diff --git a/client.js b/client.js
 -    "button",
 -    { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
 -    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
++function closedSettings(state) {
++  if (!state.settings && !state.remoteBotSettings) return state;
++  const back = state.settings?.back === "inbox";
++  return { ...state, settings: null, remoteBotSettings: null, ...back ? { inbox: true } : {} };
++}
 +function InboxDialog({ roster, useWork, useSessions, actions, leaving = false }) {
 +  const work = useWork((value) => value);
 +  const sessions = useSessions((value) => value);
@@ -26823,21 +26827,26 @@ diff --git a/client.js b/client.js
      openNewChat: (mode) => {
        ui2.set((state) => ({ ...state, newChat: mode, menu: null, palette: null }));
      },
-@@ -13708,10 +13708,15 @@ function apply(ctx) {
+@@ -13706,12 +13706,18 @@ function apply(ctx) {
+     renameBot: (id) => {
+       ui2.set((state) => ({ ...state, details: id, view: "details", renaming: true, tab: null }));
      },
-     // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
-     openSettings: (page = "general", id = null) => {
+-    // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
+-    openSettings: (page = "general", id = null) => {
 -      ui2.set((state) => ({ ...state, settings: { page, id }, menu: null, palette: null, newChat: null }));
++    // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
++    // closing the page returns to; a page the inbox opened sends the queue back (#2541).
++    openSettings: (page = "general", id = null, back = null) => {
 +      const remote = id && roster.getSnapshot().byId[id]?.remote;
 +      if (page === "bots" && remote) {
 +        ui2.set((state) => ({ ...state, remoteBotSettings: id, settings: null, menu: null, palette: null, newChat: null }));
 +        return;
 +      }
-+      ui2.set((state) => ({ ...state, settings: { page, id }, remoteBotSettings: null, menu: null, palette: null, newChat: null }));
++      ui2.set((state) => ({ ...state, settings: back ? { page, id, back } : { page, id }, remoteBotSettings: null, menu: null, palette: null, newChat: null }));
      },
      closeSettings: () => {
 -      ui2.set((state) => state.settings ? { ...state, settings: null } : state);
-+      ui2.set((state) => state.settings || state.remoteBotSettings ? { ...state, settings: null, remoteBotSettings: null } : state);
++      ui2.set(closedSettings);
      },
      openMemory: (botId) => {
        ui2.set((state) => ({ ...state, memory: botId, menu: null, palette: null }));

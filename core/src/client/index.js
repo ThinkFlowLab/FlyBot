@@ -32,7 +32,7 @@ import { GROUP_SETTINGS_CSS } from './group-settings.js'
 import { FOLDER_CSS } from './folder-menu.js'
 import { USAGE_CSS } from './usage-page.js'
 import { SCHEDULE_CSS } from './schedules.js'
-import { INBOX_CSS } from './inbox.js'
+import { INBOX_CSS, closedSettings } from './inbox.js'
 import { readWorkflows } from './workflows.js'
 import { KANBAN_CSS } from './kanban.js'
 import { MOBILE_CSS } from './mobile.js'
@@ -506,16 +506,17 @@ export function apply(ctx) {
     showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: false, tab })) },
     // Opening the conversation would move focus to its composer and blur the name field.
     renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
-    // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
-    openSettings: (page = 'general', id = null) => {
+    // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
+    // closing the page returns to; a page the inbox opened sends the queue back (#2541).
+    openSettings: (page = 'general', id = null, back = null) => {
       const remote = id && roster.getSnapshot().byId[id]?.remote
       if (page === 'bots' && remote) {
         ui.set(state => ({ ...state, remoteBotSettings: id, settings: null, menu: null, palette: null, newChat: null }))
         return
       }
-      ui.set(state => ({ ...state, settings: { page, id }, remoteBotSettings: null, menu: null, palette: null, newChat: null }))
+      ui.set(state => ({ ...state, settings: back ? { page, id, back } : { page, id }, remoteBotSettings: null, menu: null, palette: null, newChat: null }))
     },
-    closeSettings: () => { ui.set(state => (state.settings || state.remoteBotSettings ? { ...state, settings: null, remoteBotSettings: null } : state)) },
+    closeSettings: () => { ui.set(closedSettings) },
     openMemory: (botId) => { ui.set(state => ({ ...state, memory: botId, menu: null, palette: null })) },
     closeMemory: () => { ui.set(state => (state.memory ? { ...state, memory: null } : state)) },
     // The Agent inbox (#349) opens over the conversation; Open on a card closes it first.

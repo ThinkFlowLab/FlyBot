@@ -1,0 +1,1 @@
+Closing the Workflow graphs page that an Inbox card opened now brings the Inbox back, instead of leaving you in the chat under it; a Settings page opened anywhere else still closes to the view beneath it ([#2541](https://github.com/ThinkFlowLab/FlyBot/issues/2541)).
