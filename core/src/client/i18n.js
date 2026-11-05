@@ -963,6 +963,10 @@ const ZH = {
   '{bot} asked for {name}': '{bot} 请求了 {name}',
   'Allowed {bot} to use {name}': '已允许 {bot} 使用 {name}',
   'Saved {name}': '已保存 {name}',
+  // P-556: the store replaced a linked `state.json` with a file of this home's own and never wrote
+  // through the link, so the file the person linked keeps every byte.
+  'Saved as a separate file; the file the link pointed at was not changed.':
+    '已保存为独立文件，原链接指向的内容未改动。',
   Canceled: '已取消',
   Done: '完成',
   // #1855: the one collapsed group that holds a Project's finished cards.

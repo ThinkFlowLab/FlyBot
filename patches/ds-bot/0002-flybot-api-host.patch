@@ -784,14 +784,15 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,66 @@
+@@ -1,21 +1,76 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
 -import { mkdirSync, statSync } from 'node:fs'
+-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 +import { randomUUID } from 'node:crypto'
 +import { constants, mkdirSync, statSync } from 'node:fs'
- import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
++import { copyFile, lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
  import { join } from 'node:path'
 -import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 +import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
@@ -836,6 +837,16 @@ diff --git a/src/host/store.js b/src/host/store.js
 +  // Every save this host has accepted since it started — a monotonic watermark, never decremented
 +  // — and the chain's tail: what `savesQueued` and `savesSettled` answer (#1368).
 +  let queued = 0
++  // Saves that replaced a linked `state.json` with a regular file (P-556): the host never writes
++  // through the link, so the file the person linked keeps every byte and stays where it is, and the
++  // path they opened is a file of this home's own from that save on. Counted once per save so a
++  // window can say what happened instead of leaving them to wonder.
++  //
++  // The count is answered with the generation of this process (Chief, on review): a restarted host
++  // starts counting at 0 again, and a window holding a larger count from the previous process would
++  // read `1 > 2` as old news and never say the save that came with the restart.
++  const linkGeneration = randomUUID()
++  let linkReplaced = 0
    const { warn } = rt
 +  // Opt-in (#511): every saved change is also recorded for replay; off by default.
 +  // Opening the writer is itself a write — it creates `journal/` (0700) and repairs a half-written
@@ -963,9 +974,10 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: unreadable state %s: %s', statePath, backupProblem)
 +        return undefined
 +      }
-+      stuck = undefined
-+      return parsed
-+    }
+       stuck = undefined
+       return parsed
+     }
+-    stuck = 'saved by a newer DS Bot; update DS Bot'
 +    if (parsed?.version === STATE_VERSION) {
 +      const problem = ownershipProblem(parsed)
 +      if (problem !== undefined) {
@@ -973,10 +985,9 @@ diff --git a/src/host/store.js b/src/host/store.js
 +        warn('ds-bot: state %s was refused: %s', statePath, problem)
 +        return undefined
 +      }
-       stuck = undefined
-       return parsed
-     }
--    stuck = 'saved by a newer DS Bot; update DS Bot'
++      stuck = undefined
++      return parsed
++    }
 +    stuck = 'saved by a newer FlyBot; update FlyBot'
      return undefined
    }
@@ -1564,7 +1575,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,16 +235,45 @@ export function install(rt) {
+@@ -235,16 +235,54 @@ export function install(rt) {
      return warnReadOnly()
    }
  
@@ -1583,6 +1594,15 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    return true
 +  }
 +
++  // A name, not its target: `lstat` answers what the path is, and a save is the only place that
++  // turns a link into a regular file.
++  const isLink = async path => {
++    try {
++      return (await lstat(path)).isSymbolicLink()
++    } catch {
++      return false
++    }
++  }
    const save = () => {
      if (stopped) return writing
      indexSessions()
@@ -1610,9 +1630,16 @@ diff --git a/src/host/store.js b/src/host/store.js
        try {
          await mkdir(home, { recursive: true })
          const ensureLock = () => {
-@@ -260,9 +260,10 @@ export function install(rt) {
+@@ -258,11 +258,17 @@ export function install(rt) {
          ensureLock()
+         await writeFile(temp, snapshot, 'utf8')
+         ensureLock()
++        // The rename replaces the name, link included, so a linked team file is never written
++        // through: its target keeps every byte and its last write time. Ask the name here, before
++        // the rename takes it, and count the save that did it.
++        const wasLink = await isLink(statePath)
          await rename(temp, statePath)
++        if (wasLink) linkReplaced += 1
          seen = stamp()
 +        await journal?.record(snapshot)
          rt.capabilitiesStateSaved?.()
@@ -1685,7 +1712,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      rt.cancelApprovals?.(sessionId)
      // A plain archive refuses a running Session, which would go on working for a group
      // that no longer has it.
-@@ -335,23 +335,29 @@ export function install(rt) {
+@@ -335,23 +335,30 @@ export function install(rt) {
    }
    const findBot = (ref) => {
      if (ref === undefined) return undefined
@@ -1711,6 +1738,7 @@ diff --git a/src/host/store.js b/src/host/store.js
    Object.assign(rt, {
 -    state, load, save, refresh, readOnly,
 +    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled, journal,
++    stateLinkReplaced: () => ({ gen: linkGeneration, count: linkReplaced }),
      botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
      chatOwners, groupOwners, pastOwners,
      groupSessionsOf, dropGroupSession, findBot, findRooms, isAdminOf,

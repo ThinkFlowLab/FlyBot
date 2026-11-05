@@ -42,7 +42,8 @@ import { PROJECTS_NAV_CSS } from './projects-nav.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
-import { installLocale, language } from './i18n.js'
+import { installLocale, language, t } from './i18n.js'
+import { announceStateLink } from './state-link-notice.js'
 import { noteClientError, noteNavigation, quietly } from './diagnostics.js'
 import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
 import { ABOUT_CSS } from './about.js'
@@ -172,6 +173,11 @@ export function apply(ctx) {
   // Pulls can overlap (the poll and a navigation); an older answer never wins.
   let pulls = 0
   let applied = 0
+  // P-556: the count of saves that replaced a linked `state.json`, as far as this window has told
+  // the person, with the host generation it belongs to: the count moves no revision, so it is read on
+  // every answer, `unchanged` included. `null` until the first answer: a window that has just opened
+  // takes that count as its baseline, so a refresh never replays a notice about an older save.
+  let linkSeen = null
   // A Reload in flight makes the poll stand back. Otherwise the loop's `unchanged` answer can take
   // the applied slot first and the full answer the press asked for is dropped as the older one.
   let reloading = 0
@@ -197,6 +203,10 @@ export function apply(ctx) {
     // Plugin tool names come with a plugin reload, not a revision; context rows re-read them (#419).
     if (value.pluginTools !== undefined && JSON.stringify(value.pluginTools) !== JSON.stringify(current.pluginTools ?? [])) { setPluginTools(value.pluginTools); live.pluginTools = value.pluginTools }
     if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
+    // P-556: a save whose name was a link replaced it with a file of this home's own instead of
+    // writing through the link. The count rides every answer, the `unchanged` one too, so the
+    // window can say it once — before the staleness check, which drops the answer's team, not this.
+    linkSeen = announceStateLink(value, linkSeen, text => actions.notify(t(text)))
     if (stateAnswerIsStale(value, current, { fresh })) return
     // On a browser with no visit record yet, everything already there counts as seen.
     if (Object.keys(seenAt).length === 0) leaveVisits([...value.bots, ...value.rooms].map(entry => entry.id))

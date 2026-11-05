@@ -2154,6 +2154,82 @@ diff --git a/test/store.test.js b/test/store.test.js
      autoRoomName: () => 'Room',
      retitleRoom: async () => {},
      warn: (...args) => warnings.push(args),
+@@ -61,6 +61,75 @@ function runtime(t, saved) {
+   return { rt, home, statePath, warnings, dispose }
+ }
+ 
++// P-556 (Chief's ruling: no write-through): the store never writes through a link. The rename
++// replaces the name, link included, so the target keeps every byte and its last write time, and the
++// path a person opened is a regular file of this home's own from that save on.
++test('a save over a linked state.json replaces the link and leaves its target alone', async (t) => {
++  const elsewhere = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-target-'))
++  t.after(() => fs.rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
++  const target = join(elsewhere, 'shared-team.json')
++
++  // A team file this host wrote itself: a hand-written `state.json` is refused at load (member
++  // records missing), and a store in `stuck` never saves, so the link would survive untouched.
++  const { rt, statePath } = runtime(t)
++  await rt.load()
++  await rt.save()
++  fs.renameSync(statePath, target)
++  const kept = fs.readFileSync(target)
++  const before = fs.lstatSync(target)
++  fs.symlinkSync(target, statePath)
++  await rt.save()
++
++  assert.equal(fs.lstatSync(statePath).isSymbolicLink(), false, 'the save replaced the link with a regular file')
++  const after = fs.lstatSync(target)
++  assert.deepEqual(fs.readFileSync(target), kept, 'not one byte was written through the link')
++  assert.equal(after.mtimeMs, before.mtimeMs, 'the target was not touched')
++  assert.equal(fs.existsSync(`${statePath}.${process.pid}.tmp`), false, 'no temp name is left behind')
++  assert.match(fs.readFileSync(statePath, 'utf8'), /"version": 2/, 'the regular file is the team the save wrote')
++})
++
++// P-556: the window can only say "saved as a file of its own, the link's target unchanged" if the
++// host counts that save, so the count is the state face's token: it starts at 0, goes up by one for
++// the save that replaced a link, and stays put for the saves over the regular file that followed.
++// The count is answered with the generation of the process that made it (Chief, on review): a
++// restarted host starts counting at 0 again, and a bare 0 would read to a window as an older, smaller
++// count, so the save that came with the restart would never be said.
++test('a save that replaced a link is counted once, with the generation it belongs to', async (t) => {
++  const elsewhere = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-target-'))
++  t.after(() => fs.rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
++  const target = join(elsewhere, 'shared-team.json')
++  fs.writeFileSync(target, '{"version":2,"bots":{}}\n')
++
++  const home = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
++  const statePath = join(home, 'state.json')
++  const first = runtime(t, undefined, { home })
++  await first.rt.load()
++  await first.rt.save()
++  const start = first.rt.stateLinkReplaced()
++  assert.equal(start.count, 0, 'a save that replaced no link counts nothing')
++  assert.equal(typeof start.gen, 'string', 'the count names the process that made it')
++  assert.ok(start.gen.length >= 8, 'the generation is a stamp of this process, not an empty string')
++
++  fs.renameSync(statePath, target)
++  fs.rmSync(target, { force: true })
++  fs.writeFileSync(target, '{"version":2,"bots":{}}\n')
++  fs.symlinkSync(target, statePath)
++  await first.rt.save()
++  const counted = first.rt.stateLinkReplaced()
++  assert.equal(counted.count, 1, 'the save that replaced a link is counted')
++  assert.equal(counted.gen, start.gen, 'the same process keeps the generation it started with')
++  await first.rt.save()
++  assert.equal(first.rt.stateLinkReplaced().count, 1, 'a later save over the regular file is not counted again')
++
++  // Another install is another process: its count starts over at 0 under a generation of its own,
++  // which is what lets a window tell "this host has replaced nothing yet" from "an older count".
++  const other = runtime(t)
++  await other.rt.load()
++  const restarted = other.rt.stateLinkReplaced()
++  assert.equal(restarted.count, 0)
++  assert.notEqual(restarted.gen, start.gen, 'each host process answers its own generation')
++})
++
+ test('a failed state write rejects and leaves the saved file unchanged', async (t) => {
+   const { rt, statePath } = runtime(t)
+   await rt.load()
 @@ -68,7 +68,7 @@ test('a failed state write rejects and leaves the saved file unchanged', async (
    const original = fs.readFileSync(statePath)
    fs.mkdirSync(`${statePath}.${process.pid}.tmp`)

@@ -216,6 +216,10 @@ export function install(rt) {
       memoryReviews: rt.memoryReviews(),
       connectors: rt.connectorsView(),
       capabilityStatuses: rt.capabilityStatusesView(),
+      // P-556: a save that replaced a linked `state.json` with a regular file keeps the team
+      // revision, so the count rides the live part of every answer — the `unchanged` one included —
+      // together with the generation of the host process that counted it (a restart starts over).
+      stateFileLinkReplaced: rt.stateLinkReplaced?.() ?? { gen: '', count: 0 },
     }
     // Plugin tool names change with a plugin reload, not with the team revision, so they ride every
     // answer, unchanged or not, and the client re-reads its hidden-row set (#419).
