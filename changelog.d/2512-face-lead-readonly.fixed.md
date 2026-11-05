@@ -1,0 +1,1 @@
+A read-only window's face-to-face room lead card no longer offers **Change**: `social/face-lead` is a write the host answers `bot/read-only`, so the card draws the lead's name and its own sentence only — no picker, no **Use the default lead**, and not the "Only the person who created this room can change it." hint — while a writable window keeps all of them.
