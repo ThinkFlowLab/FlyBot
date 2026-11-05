@@ -6,7 +6,8 @@
 //
 // Every line follows the model. Its declared window, less the room its reply
 // needs, is the usable context; the check line is a share of that.
-import { cut, estimateTokens } from './text.js'
+import { codePoints, cut, estimateTokens } from './text.js'
+import { codePointEnd, codePointStart, fits } from '../shared/text-boundary.js'
 
 // For a model that declares no window.
 export const DEFAULT_WINDOW = 500_000
@@ -44,11 +45,15 @@ export const STEWARD_SYSTEM = [
 
 // A long message keeps its start (what was asked) and its end (how the reply ended and
 // what it promised). The marker says the cut is this view's, so that a whole reply does
-// not read as one that stopped halfway.
+// not read as one that stopped halfway. Counted in characters and cut on a character
+// boundary (#2321, #1912/#1916): `slice` counts UTF-16 units, so a unit offset splits a
+// surrogate pair and the steward reads half of it as U+FFFD.
 function shorten(text) {
-  if (text.length <= STEWARD_LINE_MAX) return text
-  const head = Math.ceil((STEWARD_LINE_MAX * 2) / 3)
-  return `${text.slice(0, head)}\n[… ${text.length - STEWARD_LINE_MAX} characters left out of this view …]\n${text.slice(head - STEWARD_LINE_MAX)}`
+  if (fits(text, STEWARD_LINE_MAX)) return text
+  const head = codePointEnd(text, Math.ceil((STEWARD_LINE_MAX * 2) / 3))
+  const tail = codePointStart(text, text.length - (STEWARD_LINE_MAX - head))
+  const left = codePoints(text) - codePoints(text.slice(0, head)) - codePoints(text.slice(tail))
+  return `${text.slice(0, head)}\n[… ${left} characters left out of this view …]\n${text.slice(tail)}`
 }
 
 // The latest messages, newest first, as { who, text } with who 'user', 'bot' (another

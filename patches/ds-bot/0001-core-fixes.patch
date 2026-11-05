@@ -7601,12 +7601,13 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 diff --git a/src/host/steward.js b/src/host/steward.js
 --- a/src/host/steward.js
 +++ b/src/host/steward.js
-@@ -6,11 +6,13 @@
+@@ -6,11 +6,14 @@
  //
  // Every line follows the model. Its declared window, less the room its reply
  // needs, is the usable context; the check line is a share of that.
 -import { estimateTokens } from './text.js'
-+import { cut, estimateTokens } from './text.js'
++import { codePoints, cut, estimateTokens } from './text.js'
++import { codePointEnd, codePointStart, fits } from '../shared/text-boundary.js'
  
  // For a model that declares no window.
  export const DEFAULT_WINDOW = 500_000
@@ -7617,6 +7618,26 @@ diff --git a/src/host/steward.js b/src/host/steward.js
  // Context sizes between requests are estimates, so the hard line stays a little
  // below what the model can actually take.
  const HARD_SHARE = 0.95
+@@ -42,11 +42,15 @@ export const STEWARD_SYSTEM = [
+ 
+ // A long message keeps its start (what was asked) and its end (how the reply ended and
+ // what it promised). The marker says the cut is this view's, so that a whole reply does
+-// not read as one that stopped halfway.
++// not read as one that stopped halfway. Counted in characters and cut on a character
++// boundary (#2321, #1912/#1916): `slice` counts UTF-16 units, so a unit offset splits a
++// surrogate pair and the steward reads half of it as U+FFFD.
+ function shorten(text) {
+-  if (text.length <= STEWARD_LINE_MAX) return text
+-  const head = Math.ceil((STEWARD_LINE_MAX * 2) / 3)
+-  return `${text.slice(0, head)}\n[… ${text.length - STEWARD_LINE_MAX} characters left out of this view …]\n${text.slice(head - STEWARD_LINE_MAX)}`
++  if (fits(text, STEWARD_LINE_MAX)) return text
++  const head = codePointEnd(text, Math.ceil((STEWARD_LINE_MAX * 2) / 3))
++  const tail = codePointStart(text, text.length - (STEWARD_LINE_MAX - head))
++  const left = codePoints(text) - codePoints(text.slice(0, head)) - codePoints(text.slice(tail))
++  return `${text.slice(0, head)}\n[… ${left} characters left out of this view …]\n${text.slice(tail)}`
+ }
+ 
+ // The latest messages, newest first, as { who, text } with who 'user', 'bot' (another
 @@ -143,7 +143,7 @@ export function checkpointTailNote(tail) {
    const first = tail[0]
    const text = (Array.isArray(first?.content) ? first.content : [])
@@ -14637,7 +14658,7 @@ diff --git a/test/steward.test.js b/test/steward.test.js
    }
    // The check line never passes the hard line.
    assert.equal(linesFor({ window: 100_000, reserve: 0, checkRatio: 0.99 }).check, 95_000)
-@@ -101,6 +101,17 @@ test('the checkpoint also reads the messages the backend keeps after it', () =>
+@@ -101,7 +101,35 @@ test('the checkpoint also reads the messages the backend keeps after it', () =>
    assert.ok(checkpointTailNote([say('user', '长'.repeat(300))]).includes(`"${'长'.repeat(80)}"`))
  })
  
@@ -14655,6 +14676,24 @@ diff --git a/test/steward.test.js b/test/steward.test.js
  test('the checkpoint records unanswered requests as remaining, and does not answer them', () => {
    assert.match(CHECKPOINT_PROMPT, /every request not yet answered in your replies above/)
    assert.match(CHECKPOINT_PROMPT, /The user never sees this summary, so do not do any of the remaining work in it/)
+ })
++
++test('a long message shortened for the steward cuts on characters, never inside one', () => {
++  // 1,500 characters is this view's budget, and the head cut is two thirds of it. An emoji
++  // straddling either cut used to leave half of it behind — U+FFFD where the steward reads it —
++  // and a message that fits in characters was shortened because its UTF-16 units ran over.
++  const head = 'a'.repeat(999) + '🚀' + 'b'.repeat(800)
++  const tail = 'a'.repeat(1000) + '🚀' + 'b'.repeat(499)
++  for (const text of [head, tail]) {
++    const request = stewardRequest({ lines: [{ who: 'user', text }], midTurn: false, checkpoints: 0, group: false })
++    assert.equal(request.isWellFormed(), true, 'a character at the cut stays whole')
++  }
++  const shown = stewardRequest({ lines: [{ who: 'user', text: head }], midTurn: false, checkpoints: 0, group: false })
++  assert.match(shown, /User: a+\n\[… 300 characters left out of this view …\]\nb+$/)
++  // The message that fits in 1,500 characters comes through whole, marker and all.
++  const whole = stewardRequest({ lines: [{ who: 'user', text: tail }], midTurn: false, checkpoints: 0, group: false })
++  assert.match(whole, /User: a+🚀b+$/)
++})
 diff --git a/test/text.test.js b/test/text.test.js
 --- a/test/text.test.js
 +++ b/test/text.test.js

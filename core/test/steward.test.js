@@ -116,3 +116,20 @@ test('the checkpoint records unanswered requests as remaining, and does not answ
   assert.match(CHECKPOINT_PROMPT, /every request not yet answered in your replies above/)
   assert.match(CHECKPOINT_PROMPT, /The user never sees this summary, so do not do any of the remaining work in it/)
 })
+
+test('a long message shortened for the steward cuts on characters, never inside one', () => {
+  // 1,500 characters is this view's budget, and the head cut is two thirds of it. An emoji
+  // straddling either cut used to leave half of it behind — U+FFFD where the steward reads it —
+  // and a message that fits in characters was shortened because its UTF-16 units ran over.
+  const head = 'a'.repeat(999) + '🚀' + 'b'.repeat(800)
+  const tail = 'a'.repeat(1000) + '🚀' + 'b'.repeat(499)
+  for (const text of [head, tail]) {
+    const request = stewardRequest({ lines: [{ who: 'user', text }], midTurn: false, checkpoints: 0, group: false })
+    assert.equal(request.isWellFormed(), true, 'a character at the cut stays whole')
+  }
+  const shown = stewardRequest({ lines: [{ who: 'user', text: head }], midTurn: false, checkpoints: 0, group: false })
+  assert.match(shown, /User: a+\n\[… 300 characters left out of this view …\]\nb+$/)
+  // The message that fits in 1,500 characters comes through whole, marker and all.
+  const whole = stewardRequest({ lines: [{ who: 'user', text: tail }], midTurn: false, checkpoints: 0, group: false })
+  assert.match(whole, /User: a+🚀b+$/)
+})
