@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildDigest, formatCount, formatMs } from '../src/digest.js'
 import { createTimeline, DIGEST_ENDPOINT } from '../src/timeline.js'
+import { buildHealth } from '../src/health.js'
 import { mockAdapter } from './mock-adapter.js'
 
 const make = (extra = {}) => ({
@@ -255,4 +256,25 @@ test('#1787: a range inside one local day reads exactly as before', () => {
   const from = new Date(2026, 9, 30, 9, 0).getTime()
   const to = new Date(2026, 9, 30, 9, 15).getTime()
   assert.equal(buildDigest(make({ from, to }), { now: to }).range, '09:00–09:15')
+})
+
+// Invariant 5 (docs/subsystems/timeline.md): "busy" is a share of the window busy, not a count of
+// turns, so a Bot in one long turn that began before the window is busy, not idle. The report gated
+// its busy line on `turns > 0` — the count of turns that BEGAN in the window — and printed
+// "- no turns in the window" for exactly that Bot, the one case the invariant names, while
+// `timeline/health` over the same window said `busy 100% of the window`. Two views, one window.
+test('#2543: a Bot busy the whole window reads as busy, not as a turn-less Bot', () => {
+  const window = make({
+    utilization: [{ lane: 'a', windowMs: 100_000, busyMs: 100_000, turns: 0, errors: 0, running: true }],
+    usage: [], toolUse: [], edges: [], stuck: [], exchanges: [],
+  })
+  const digest = buildDigest(window, { now: 100_000 })
+  const chief = digest.bots.find(bot => bot.id === 'a')
+  assert.deepEqual(chief.flags.filter(flag => flag !== 'no turns'), ['busy 100% of the window'])
+  assert.match(digest.markdown, /## Chief \(main\) · running\n- busy 100% of the window/)
+  assert.doesNotMatch(digest.markdown, /- no turns in the window/)
+  // The same window through the health view already said busy: one window, one answer.
+  assert.ok(buildHealth(window).bots.find(bot => bot.id === 'a').flags.some(flag => flag.code === 'busy'))
+  // Control: a Bot with no turn and no busy time still reads as idle, exactly as before.
+  assert.match(buildDigest(make(), { now: 100_000 }).markdown, /## Writer\n- no turns in the window/)
 })

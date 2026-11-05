@@ -1,0 +1,1 @@
+A Bot that was busy across the whole window is no longer left out of the team report as if it had done nothing: a turn that began before the window now reports the share of the window it worked, instead of reading as a Bot with no turns.
