@@ -30,6 +30,12 @@ const bool = value => ({ boolValue: Boolean(value) })
 
 const nameOf = (names, group, id) => (id && names?.[group]?.[id]) || undefined
 
+// A tool call's id is unique inside its turn, not across turns: the recorder writes `id` and `tid`
+// together and the window folds the pair as `${tid}/${id}` (src/window.js). Two turns of one trace
+// can both call a tool `call_0` — two Bots, or a provider that numbers its calls per request — so
+// the exporter pairs the two records by that same pair, never by `id` alone.
+const toolKey = record => `${record.tid ?? ''}/${record.id}`
+
 const partyAttrs = (prefix, party) => {
   if (!party || typeof party !== 'object') return []
   const out = []
@@ -52,8 +58,8 @@ export function spansFrom(records, { names = {} } = {}) {
     if (!record || typeof record !== 'object') continue
     if (record.r === 'ts') starts.set(record.id, record)
     else if (record.r === 'te') ends.set(record.id, record)
-    else if (record.r === 'ks') toolStarts.set(record.id, record)
-    else if (record.r === 'ke') toolEnds.set(record.id, record)
+    else if (record.r === 'ks') toolStarts.set(toolKey(record), record)
+    else if (record.r === 'ke') toolEnds.set(toolKey(record), record)
   }
   const spans = []
   for (const [id, te] of ends) {
@@ -81,12 +87,12 @@ export function spansFrom(records, { names = {} } = {}) {
       status: { code: te.o === 'error' || te.o === 'aborted' ? STATUS_ERROR : STATUS_OK, ...(te.ec ? { message: te.ec } : {}) },
     })
   }
-  for (const [id, ke] of toolEnds) {
-    const ks = toolStarts.get(id)
+  for (const [key, ke] of toolEnds) {
+    const ks = toolStarts.get(key)
     if (!ks) continue
     spans.push({
       traceId: hexId(`turn:${ks.tid}`, 16),
-      spanId: hexId(`tool-span:${ks.id}`, 8),
+      spanId: hexId(`tool-span:${key}`, 8),
       parentSpanId: hexId(`turn-span:${ks.tid}`, 8),
       name: `execute_tool ${ks.nm}`,
       kind: KIND_INTERNAL,
@@ -135,8 +141,8 @@ export function pendingRecords(records) {
   for (const record of records) {
     if (record?.r === 'ts') openTurns.set(record.id, record)
     else if (record?.r === 'te') openTurns.delete(record.id)
-    else if (record?.r === 'ks') openTools.set(record.id, record)
-    else if (record?.r === 'ke') openTools.delete(record.id)
+    else if (record?.r === 'ks') openTools.set(toolKey(record), record)
+    else if (record?.r === 'ke') openTools.delete(toolKey(record))
   }
   return [...openTurns.values(), ...openTools.values()]
 }
