@@ -341,3 +341,24 @@ test('#1706: failed workflow rows share the one Needs you list', async () => {
   assert.deepEqual(plain(heads), plain(GROUPS.map(group => group.title)))
   assert.equal(all(tree).filter(node => node.type === 'section').length, GROUPS.length)
 })
+
+// P-599: a run that failed and was then re-run to a green finish kept its Failed card for the
+// whole 7-day window, and the sidebar's Need-you count with it, because the card was chosen
+// from the failed runs alone. The success is in the same per-graph history under the same
+// `task.id`, and later than the failure.
+test('P-599: a later successful run of the same task retires its failed card', () => {
+  const task = { id: 'issue-2447-run', title: 'issue #2447: a room-share envelope', callerBotId: 'b1' }
+  const failed = { ...failedRun, id: 'run-failed', task, finishedAt: NOW - 2 * 60 * MIN, updatedAt: NOW - 2 * 60 * MIN }
+  const done = { ...failedRun, id: 'run-done', task, status: 'done', failure: undefined, finishedAt: NOW - 30 * MIN, updatedAt: NOW - 30 * MIN }
+  const graph = { id: 'delivery', name: 'Delivery pipeline', runs: [], history: [{ ...failed, at: failed.finishedAt }, { ...done, at: done.finishedAt }] }
+  const model = inboxModel({ roster, work, tasks: [], workflows: [graph], now: NOW })
+  const listed = [...model.needs, ...model.progress, ...model.done].filter(card => card.kind === 'workflow')
+  assert.deepEqual(listed.map(card => card.run.id), [], 'the run that finished green answers the failure')
+  assert.equal(needsCount(roster, work, [], NOW, [graph]), model.needs.length, 'the badge counts the same cards')
+  // Control: another task's failure on the same graph still lists, so the graph itself did not
+  // simply stop reporting failures.
+  const other = { ...failed, id: 'run-other', task: { ...task, id: 'issue-2400-run' } }
+  const still = inboxModel({ roster, work, tasks: [], workflows: [{ ...graph, history: [{ ...other, at: other.finishedAt }, { ...done, at: done.finishedAt }] }], now: NOW })
+  const cardsStill = [...still.needs, ...still.progress, ...still.done].filter(card => card.kind === 'workflow')
+  assert.deepEqual(cardsStill.map(card => card.run.id), ['run-other'])
+})
