@@ -31,7 +31,7 @@ export const WITHHELD_REASONS = Object.freeze({
   NOT_IN_SCOPE: 'not-in-scope',
   UNKNOWN_BOT: 'unknown-bot',
 })
-export const canUse = (secret, botId) => secret !== undefined && botId !== undefined
+export const canUse = (secret, botId) => secret !== undefined && botId !== undefined && !['FEISHU_APP_SECRET', 'FEISHU_WEBHOOK'].includes(secret.name)
   && (secret.scope === 'all' || (Array.isArray(secret.scope) && secret.scope.includes(botId)))
 
 export function normalizeName(raw) {

@@ -14,6 +14,15 @@ RUN node .github/scripts/check-pack.mjs /pkgs \
  && for tgz in /pkgs/*.tgz; do \
       dir="/out/$(basename "$tgz" .tgz)"; mkdir -p "$dir" && tar -xzf "$tgz" -C "$dir" --strip-components=1; \
     done
+# The profile links these packages, and a `link:` installs none of a linked package's own
+# dependencies. So ds-bot's runtime ones (the Feishu long-connection SDK, the Claude and Codex
+# executor SDKs) go into its node_modules here, at the versions core/package-lock.json pins;
+# core/.npmrc keeps the @deepseek-ai peers out, DSH provides those. The build stops if any
+# image package still lacks a declared dependency.
+RUN cd core \
+ && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+ && mv node_modules "$(echo /out/ds-bot-*)/node_modules" \
+ && node --input-type=module -e "import { imagePackages, missingDependencies } from '/src/docker/profile.mjs'; const missing = missingDependencies(imagePackages('/out')); if (missing.length) { console.error('runtime dependencies missing from the image: ' + missing.join(', ')); process.exit(1) }"
 
 # Stage 2: the runtime.
 FROM ${NODE_IMAGE}

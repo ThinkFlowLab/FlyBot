@@ -213,7 +213,10 @@
           async readAttachment(file) {
             if (disposed || !selected || captured !== generation) throw new Error("Conversation handle is retired");
             let value;
-            if (selected.personalId) value = await api.call("personal-space", { operation: "attachment-read", id: selected.personalId, ...selected.personalPart ? { partId: selected.personalPart } : {}, seq: file.seq, attachmentId: file.id });
+            if (selected.personalId && file.feishuAppId) {
+              const result = await api.call("feishu", { operation: "attachment", appId: file.feishuAppId, attachmentId: file.id });
+              value = { ...file, data: result.content_base64 };
+            } else if (selected.personalId) value = await api.call("personal-space", { operation: "attachment-read", id: selected.personalId, ...selected.personalPart ? { partId: selected.personalPart } : {}, seq: file.seq, attachmentId: file.id });
             else if (selected.roomId) value = await api.call("project-room-attachment", { projectId: selected.projectId, roomId: selected.roomId, attachmentId: file.id });
             else throw new Error("Attachment is unavailable in this conversation");
             if (disposed || captured !== generation) throw new Error("Conversation handle is retired");
@@ -276,6 +279,7 @@
       else await conversationSource.open(binding);
       return conversationSource.getSnapshot();
     }
+    const feishuActions = { feishu: (payload) => api.call("feishu", payload), connectorConnect: (_id, body) => api.call("feishu", { operation: "webhook", ...body.credentials }) };
     const drafts = /* @__PURE__ */ new Map(), expanded = /* @__PURE__ */ new Map();
     let runtimeTerminal, terminalTimer, terminalPolling = false, rooms, roomView, pools;
     async function closeTerminal() {
@@ -422,6 +426,11 @@
       const revoke = api.call("auth-revoke");
       api.setToken("");
       void closeTerminal();
+      if (win.location.hash === "#/connections" || new URLSearchParams(win.location.search).has("feishu-app") && !win.location.hash) {
+        selected = "";
+        tab = "connections";
+        taskId = "";
+      }
       personal = personalMemory = null;
       drafts.clear();
       notice = "";
@@ -476,6 +485,12 @@
         const state = await api.call("workbench-state", {}, controller.signal);
         if (current !== epoch || disposed) return;
         bootstrap = state;
+        if (section === "connections") {
+          personal = await api.call("personal-space", { operation: "list" }, controller.signal);
+          if (current !== epoch || disposed) return;
+          render();
+          return;
+        }
         if (section === "personal") {
           const roster = await api.call("personal-space", { operation: "list" }, controller.signal);
           if (current !== epoch || disposed) return;
@@ -944,17 +959,27 @@ ${result.text}`;
           for (const room of rooms?.rooms ?? []) roomNav.append(button(room.name, () => route(selected, "rooms", room.id)));
           sidebar.append(roomNav);
         }
+        sidebar.append(button("Connections", () => {
+          win.location.hash = "/connections";
+        }));
         sidebar.append(button("All Projects", () => {
           win.location.hash = "";
         }), button("Sign out", () => {
           void signOut();
         }));
-        if (tab === "personal") {
+        if (tab === "connections") {
+          main.append(el("h1", "Connections"));
+          const node = el("div", null, "native-feishu-setup");
+          main.append(node);
+          nativeIslands.register(node, nativeKey("feishu"), conversationSource, (target, options) => win.FlyBotNativeConversation.mountNativeFeishu(target, options), { actions: feishuActions, roster: { ...personal, self: bootstrap.self }, onClose: () => {
+            win.location.hash = "/personal";
+          } });
+        } else if (tab === "personal") {
           const chatList = el("div", null, "native-personal-list");
           sidebar.append(chatList);
           mountPersonalList(chatList);
           main.append(el("h1", "Personal space"), el("p", "Your original Chief, Bots and internal group conversations. Project agents remain separate."));
-          for (const bot of personal?.bots ?? []) {
+          for (const bot of (personal?.bots ?? []).filter((bot2) => !bot2.remote)) {
             const card = box(`${personal.mainBotIds.includes(bot.id) ? "Chief · " : ""}${bot.name}`, button("Open conversation", () => {
               win.location.hash = `/personal/${encodeURIComponent(bot.id)}`;
             }));

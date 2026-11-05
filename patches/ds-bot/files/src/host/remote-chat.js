@@ -286,17 +286,18 @@ export function install(rt) {
   // from outside the team) that the chat's route writes back as the reply.
   // `human` + `ownerName`: the plugin has Bot Social's attestation that the friend typed this line
   // themselves (never derived from the text). The reply is then drawn as the person, not the Bot.
-  async function deliver({ handle, text, name, home, plugin, human, ownerName }) {
+  async function deliver({ handle, text, name, home, plugin, human, ownerName, sourceId, feishu, attachments }) {
     const id = chatOfHandle(handle)?.id ?? await open({ handle, name: name ?? handle, home, plugin })
     const bot = rt.botOf(id)
     const agent = await rt.resolveAgent(rt.chatOf(id))
+    if (sourceId && agent.session?.surface?.nodes?.some(seq => (agent.session.eventAt(seq)?.data?.source ?? agent.session.eventAt(seq)?.data?.message?.source)?.sourceId === sourceId)) return
     const shownName = cleanName(bot?.name ?? name ?? handle)
     // The reply is here: the thinking row goes before the reply is drawn, not a beat after it (#443).
     if (markAwaiting(id)) await rt.save().catch(error => warn('ds-bot: saving a friend chat wait failed: %s', error))
     const typedBy = human === true && typeof ownerName === 'string' && ownerName.trim() ? cleanName(ownerName) : ''
     agent.followup(createUserMessage({
-      content: [{ type: 'text', text: `[Message from ${shownName} (${cleanName(handle)})]\n${fenceUntrusted(shownName, text)}` }],
-      source: { kind: SOURCE_KIND, form: REMOTE_FORM, role: 'remote', exchangeId: randomUUID(), senderName: shownName, hop: 0, remote: { handle, ...(home ? { home } : {}) }, ...(typedBy ? { typedBy } : {}), text: String(text) },
+      content: [{ type: 'text', text: `[Message from ${shownName} (${cleanName(handle)})]\n${fenceUntrusted(shownName, text)}` }, ...(attachments ?? []).map(file => ({ type: file.mediaType ? 'image' : 'file', attachment: file }))],
+      source: { kind: SOURCE_KIND, form: REMOTE_FORM, role: 'remote', ...(sourceId ? { sourceId } : {}), ...(feishu ? { feishu } : {}), ...(attachments?.length ? { attachments: attachments.map(ref => ({ id: ref.attachmentId, name: ref.name, size: ref.bytes, mime: ref.mediaType ?? '' })) } : {}), exchangeId: randomUUID(), senderName: shownName, hop: 0, remote: { handle, ...(home ? { home } : {}) }, ...(typedBy ? { typedBy } : {}), text: String(text) },
     }))
     await ctx.sessions.flush(agent.session)
     await rt.ingestRemoteRoomLine?.({ handle, text, name: shownName }).catch(error => warn('ds-bot: room ingest for %s failed: %s', handle, error))

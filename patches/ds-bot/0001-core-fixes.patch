@@ -229,7 +229,7 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
-@@ -1,41 +1,217 @@
+@@ -1,41 +1,219 @@
 -import { createElement as h, useRef, useState } from 'react'
 +import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
  import { useMorph } from './motion.js'
@@ -238,6 +238,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +import { SwitchRow } from './bot-settings.js'
 +import { ConnectorBots, usageText } from './connector-bots.js'
  import { t } from './i18n.js'
++import { FeishuSetup } from './feishu-setup.js'
 
  const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 +const COMPOSIO_KEY_URL = 'https://platform.composio.dev/'
@@ -285,6 +286,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
  }
 
 -function ConnectorRow({ connector, actions }) {
+-  const [form, setForm] = useState(false)
 +// One credential of the form (#1266): the definition says which fields a mode needs and whether a
 +// field is masked. A masked one is the same field the Secrets page uses, so it never comes back.
 +function CredentialField({ credential, value, onChange, onEnter, autoFocus }) {
@@ -385,7 +387,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +}
 +
 +function ConnectorRow({ connector, roster, actions }) {
-   const [form, setForm] = useState(false)
++  const [form, setForm] = useState(() => !!(connector.id === 'feishu' && actions.feishu && typeof window !== 'undefined' && window.location && new URLSearchParams(window.location.search).has('feishu-app')))
 +  const [bots, setBots] = useState(false)
    const [token, setToken] = useState('')
 +  const [apps, setApps] = useState(() => connector.apps ?? [])
@@ -405,6 +407,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +  // behaviour) or a self-built app (the long connection in, answers out). The form is the mode's
 +  // credential list, rendered field by field.
 +  const channel = connector.kind === 'channel'
++  const guided = channel && actions.feishu
 +  const modes = connector.modes ?? []
 +  const [mode, setMode] = useState(() => connector.mode ?? modes[0]?.id)
 +  const [values, setValues] = useState({})
@@ -454,26 +457,30 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
      h('div', { className: 'bt-connector-head' },
        h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
-@@ -44,15 +44,44 @@ function ConnectorRow({ connector, actions }) {
+@@ -44,15 +44,46 @@ function ConnectorRow({ connector, actions }) {
          h('span', { className: 'bt-connector-status' }, statusText(connector))),
        h('span', { className: 'bt-connector-actions' },
          connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
 +        on && gateway && !picking ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setApps(connector.apps ?? []); setPicking(true) } }, t('Choose apps')) : null,
 +        on && perBot ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': bots, onClick: () => setBots(value => !value) }, bots ? t('Done') : t('Choose Bots')) : null,
++        guided ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'aria-expanded': form, onClick: () => setForm(value => !value) }, t('Connect')) : null,
          on
            ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorDisconnect(connector.id)) }, t('Disconnect'))
-           : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
+-          : form ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
+-    !on && form ? h('div', { className: 'bt-connector-form' },
+-      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t('GitHub token'), autoFocus: true })),
++          : form || guided ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setForm(true) }, t('Connect')))),
 +    on && gateway && !picking ? h(AppStatusList, { apps: connector.apps ?? [], statuses }) : null,
 +    on && perBot ? h('span', { className: 'bt-connector-uses' }, usageText(roster, connector.id)) : null,
 +    on && bots ? h(ConnectorBots, { connector, roster, actions, run, SwitchRow }) : null,
-+    on && channel && connector.mode === 'app' ? h(AllowedSenders, { connector, actions, run, busy }) : null,
++    on && channel && !connector.managed && connector.mode === 'app' ? h(AllowedSenders, { connector, actions, run, busy }) : null,
 +    on && canPost ? h('div', { className: 'bt-connector-form' },
 +      h('label', { className: 'bt-q-field' }, h('input', { className: 'bt-input', type: 'text', value: message, 'aria-label': t('Message to send to Feishu'), placeholder: t('Type a message for the Feishu group'), onChange: event => setMessage(event.target.value) })),
 +      h('div', { className: 'bt-connector-form-row' },
 +        h('span', { className: 'bt-connector-link' }),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || message.trim() === '' || actions.connectorSend === undefined, onClick: () => void run(actions.connectorSend(connector.id, message), () => setMessage('')) }, t('Send')))) : null,
-     !on && form ? h('div', { className: 'bt-connector-form' },
--      h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t('GitHub token'), autoFocus: true })),
++    channel && form && actions.feishu ? h(FeishuSetup, { actions, roster, onClose: () => setForm(false) }) : null,
++    !on && form && (!channel || !actions.feishu) ? h('div', { className: 'bt-connector-form' },
 +      channel ? h('div', { className: 'bt-states', role: 'group', 'aria-label': t('How to connect') }, modes.map(entry =>
 +        h('button', {
 +          key: entry.id, type: 'button', className: 'bt-state', 'aria-pressed': entry.id === chosen?.id,
@@ -578,10 +585,16 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
-@@ -5,6 +5,61 @@
+@@ -2,9 +2,67 @@
+ // Copy is looked up at render time and every slot outlet re-renders on a language
+ // switch, so nothing caches a translated string.
+
++import { FEISHU_ZH } from './feishu-copy.js'
++
  export const NAMESPACE = 'ds-bot'
 
  const ZH = {
++  ...FEISHU_ZH,
 +
 +  // Workflows settings (#1364). The page lists factory pipelines and your own graphs.
 +  Workflows: '工作流',
@@ -1594,6 +1607,22 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  }
  Object.assign(ZH, HOST_ZH)
 
+@@ -927,6 +927,15 @@ export function installLocale(locale) {
+   }
+ }
+
++// Standalone workbench islands use the same copy without a Harness locale service.
++export function installBrowserLocale(tag) {
++  const active = typeof tag === 'string' ? tag : 'en'
++  return installLocale({
++    getLocale: () => ({ active }), register: () => () => {},
++    bind: () => (key, params) => fill(active.startsWith('zh') ? ZH[key] ?? key : key, params),
++  })
++}
++
+ export function t(key, params) {
+   return bound ? bound(key, params) : fill(key, params)
+ }
 diff --git a/src/client/member-status.js b/src/client/member-status.js
 --- a/src/client/member-status.js
 +++ b/src/client/member-status.js
@@ -1752,7 +1781,7 @@ diff --git a/src/client/member-status.js b/src/client/member-status.js
 -function ApprovalCard({ approval, bot, actions }) {
 +// "Always allow" is the owner's standing grant (#540): only on their own Bot's card,
 +// and the group option only when the request comes from a group.
-+export const alwaysChoices = (approval, bot) => (bot?.remote ? [] : [
++export const alwaysChoices = (approval, bot) => (bot?.remote || approval.tool === 'feishu_tool' ? [] : [
 +  ['always-bot', 'Always allow for this Bot'],
 +  ...(approval.roomId ? [['always-room', 'Always allow for this group']] : []),
 +])
@@ -3039,11 +3068,11 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +    }
 +    const step = ephemeralToolVerdict(bot, String(request.toolName ?? ''), request.reason)
 +    if (step !== undefined) return step
-+    if (standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
++    if (request.toolName !== 'feishu_tool' && standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
      const id = randomUUID()
      const entry = {
        id,
-@@ -47,14 +47,82 @@ export function install(rt) {
+@@ -47,14 +47,83 @@ export function install(rt) {
      })
    }, { prepend: true })
 
@@ -3082,6 +3111,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +
 +  async function grantStanding(entry, scope) {
 +    await rt.load()
++    if (entry.tool === 'feishu_tool') throw Object.assign(new Error('Change the per-app Feishu grant to allow writes without asking'), { code: 'bot/forbidden' })
 +    const bot = rt.botOf(entry.botId)
 +    const target = scope === 'room' ? rt.roomOf(entry.roomId) : bot
 +    if (bot === undefined || bot.remote !== undefined) throw Object.assign(new Error('Only your own Bot can be given a standing approval'), { code: 'bot/forbidden' })
@@ -3095,7 +3125,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +    }
 +    // Other cards the new grant already covers stop waiting too.
 +    for (const other of pending.values()) {
-+      if (other.id !== entry.id && other.answer !== undefined && standingCovers(other.sessionId, other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
++      if (other.tool !== 'feishu_tool' && other.id !== entry.id && other.answer !== undefined && standingCovers(other.sessionId, other.botId, other.roomId, approvalKindOf(other))) other.answer('allowed-once')
 +    }
 +  }
 +  const approvalKindOf = entry => approvalKind(entry.tool, entry.reason)
@@ -3289,7 +3319,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    let response
    try {
      response = await request(`${api.replace(/\/$/, '')}/user`, {
-@@ -38,132 +38,985 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
+@@ -38,132 +38,992 @@ export async function signIn(token, { api = DEFAULTS.api, fetch: request = fetch
    return { login: user.login }
  }
 
@@ -3799,7 +3829,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    if (typeof seam?.onSend !== 'function') return
 +    if (feishuWire.seam === seam) return
 +    feishuWire.off?.()
-+    feishuWire = { seam, off: seam.onSend(FEISHU, feishuReply({ secretValue: name => rt.secretValue(name), appOf })) }
++    feishuWire = { seam, off: seam.onSend(FEISHU, message => rt.feishu ? rt.feishu.reply(message) : feishuReply({ secretValue: name => rt.secretValue(name), appOf })(message)) }
 +  }
 +
 +  const feishuInbound = createInbound({
@@ -3880,6 +3910,11 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +  async function reconcileChannel(c, force, token) {
 +    const { def } = c
 +    const record = saved(c) ?? {}
++    if (record.managed === true) {
++      await feishuInbound.stop()
++      c.status = { state: 'ready' }
++      return
++    }
 +    const mode = record.mode === 'app' ? 'app' : record.mode === 'webhook' ? 'webhook' : undefined
 +    const app = mode === 'app' ? appOf() : undefined
 +    const key = mode === 'app' ? `app\n${app?.appId ?? ''}\n${app?.appSecret ?? ''}` : mode === 'webhook' ? `webhook\n${token ?? ''}` : undefined
@@ -4039,6 +4074,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    // here carries a secret: the App ID is not one, and the webhook never comes back.
 +    ...(c.def.id === FEISHU ? {
 +      mode: saved(c)?.mode ?? null,
++      ...(saved(c)?.managed === true ? { managed: true } : {}),
 +      modes: c.def.modes,
 +      allowed: (saved(c)?.allowed ?? []).map(entry => ({ openId: entry.openId, name: entry.name ?? entry.openId })),
 +      inbound: { ...feishuInbound.view(), app: appOf() === undefined ? 'missing' : 'set' },
@@ -4085,7 +4121,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      c.saving += 1
 +      try {
 +        await rt.secretEndpoint('secret-set', { name: FEISHU_SECRET, value: webhook, purpose: c.def.purpose })
-+        state.connectors = { ...state.connectors, [FEISHU]: { ...previous, mode: 'webhook', connectedAt: Date.now() } }
++        state.connectors = { ...state.connectors, [FEISHU]: { ...previous, mode: 'webhook', managed: false, connectedAt: Date.now() } }
 +        await rt.save()
 +      } finally {
 +        c.saving -= 1
@@ -4175,8 +4211,8 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [oldToken, token] })
 +      await sync(c)
-       return connectorsView()
-     },
++      return connectorsView()
++    },
 +    // Changes which apps a connected gateway offers, without asking for the key again.
 +    async 'connector-apps'(body) {
 +      const c = known(body.id)
@@ -4195,8 +4231,10 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      }
 +      await retire(c, { gone: previous?.session, kept: record.session, keys: [token] })
 +      await sync(c)
-+      return connectorsView()
-+    },
+       return connectorsView()
+     },
+-    async 'connector-disconnect'(body) {
+-      known(body.id)
 +    // Searches Composio's app list: with the saved key, or before connecting with the key being pasted
 +    // (sent only to Composio, never saved by this call).
 +    async 'connector-app-search'(body) {
@@ -4218,7 +4256,10 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +      const c = known(body.id)
 +      if (c.def.id !== COMPOSIO) throw new Error('This connector has no apps to pick')
 +      if (c.insecure) throw new Error(INSECURE(c.def.name))
-+      await rt.loadSecrets()
+       await rt.loadSecrets()
+-      if (rt.secretValue(GITHUB_SECRET) !== undefined) await rt.secretEndpoint('secret-delete', { name: GITHUB_SECRET })
+-      if (state.connectors?.[GITHUB] !== undefined) {
+-        delete state.connectors[GITHUB]
 +      const token = rt.secretValue(c.def.secret)
 +      const record = saved(c)
 +      if (token === undefined || record?.session?.id === undefined) throw new Error('Connect Composio first')
@@ -4234,14 +4275,11 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    async 'connector-block'(body) {
 +      return allowedOp(body, false)
 +    },
-     async 'connector-disconnect'(body) {
--      known(body.id)
++    async 'connector-disconnect'(body, actor) {
 +      const c = known(body.id)
-       await rt.loadSecrets()
--      if (rt.secretValue(GITHUB_SECRET) !== undefined) await rt.secretEndpoint('secret-delete', { name: GITHUB_SECRET })
--      if (state.connectors?.[GITHUB] !== undefined) {
--        delete state.connectors[GITHUB]
++      await rt.loadSecrets()
 +      if (c.def.kind === 'channel') {
++        for (const app of Object.values(state.feishu?.apps ?? {})) await rt.feishu?.endpoint({ operation: 'delete', appId: app.id }, actor)
 +        // Disconnect closes both (#1266): the socket goes down, the webhook and the app secret are
 +        // deleted (each only if it is there — deleting a key that is not saved is an error), and the
 +        // record goes with them, so the row is `off` and no turn can start.
@@ -4305,8 +4343,9 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
      },
    }
 
-   const connectorEndpoint = (endpoint, body) => endpoints[endpoint](body ?? {})
-
+-  const connectorEndpoint = (endpoint, body) => endpoints[endpoint](body ?? {})
++  const connectorEndpoint = (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor)
++
 +  // An older version kept the session's address in state.json. Only the id stays; the address is
 +  // asked for again at mount time (composioSessionFind).
 +  const scrubAddresses = async () => {
@@ -4316,7 +4355,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
 +    state.connectors[COMPOSIO] = { ...state.connectors[COMPOSIO], session: kept(session) }
 +    await rt.save()
 +  }
-+
+
    ctx.effect(() => {
      stopped = false
 -    void rt.loadSecrets().then(() => sync())
@@ -4337,7 +4376,7 @@ diff --git a/src/host/connectors.js b/src/host/connectors.js
    }, 'ds-bot: connectors')
 
 -  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void sync() } })
-+  Object.assign(rt, { connectorsView, connectorEndpoint, secretsChanged: () => { void syncAll() } })
++  Object.assign(rt, { replyLegacyFeishu: feishuReply({ secretValue: name => rt.secretValue(name), appOf }), stopLegacyFeishu: () => feishuInbound.stop(), connectorsView, connectorEndpoint, secretsChanged: () => { void syncAll() } })
  }
 diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 --- a/src/host/diagnostics.js
@@ -5196,6 +5235,14 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 
  // Long enough for DSH to finish opening its workspaces after a start.
  const RESUME_DELAY_MS = 3000
+@@ -25,6 +25,7 @@ export const resumeText = record => [
+ // The trigger fields a resumed turn needs to answer the same sender.
+ const triggerOf = info => ({
+   role: info.role,
++  ...(info.feishu ? { feishu: info.feishu } : {}),
+   ...(info.exchangeId ? { exchangeId: info.exchangeId } : {}),
+   ...(info.senderSessionId ? { senderSessionId: info.senderSessionId } : {}),
+   ...(info.roomId ? { roomId: info.roomId } : {}),
 @@ -51,7 +51,7 @@ export function install(rt) {
    // What the last run left; read before this run notes anything.
    let interrupted = readNotes(file)
@@ -5261,7 +5308,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      try {
        return await deliver(noted)
      } catch (error) {
-@@ -137,10 +137,13 @@ export function install(rt) {
+@@ -137,10 +137,15 @@ export function install(rt) {
        case 'turn/start': {
          const owner = rt.groupOwners.get(id)
          const botId = owner?.botId ?? rt.chatOwners.get(id)
@@ -5273,6 +5320,8 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 +        // Whose request the turn answers, so a resumed turn keeps its connector tools only when it was the owner's.
 +        const note = originNote(id)
 +        update(id, record => (record === undefined || record.origin === note.origin ? record : (({ origin: _, ...rest }) => ({ ...rest, ...note }))(record)))
++        const requester = rt.live.get(id)?.requesterMemberId
++        if (requester) update(id, record => record && record.requesterMemberId !== requester ? { ...record, requesterMemberId: requester } : record)
          if (event.data?.source?.kind !== SOURCE_KIND) break
          // turns.js, installed earlier, has already claimed the turn's trigger.
          const info = rt.live.get(id)?.info
@@ -5298,7 +5347,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      const text = resumeText(record)
      if (record.roomId !== undefined) {
        const room = rt.roomOf(record.roomId)
-@@ -173,17 +173,17 @@ export function install(rt) {
+@@ -173,17 +173,23 @@ export function install(rt) {
        // A turn already picked up once and cut off again stays stopped: a restart loop
        // must not run it forever.
        if (record.resumed) return
@@ -5308,6 +5357,12 @@ diff --git a/src/host/resume.js b/src/host/resume.js
      }
      if (record.resumed) return
      const trigger = record.trigger
++    if (trigger?.role === 'feishu' && trigger.feishu) {
++      const meta = trigger.feishu, pending = rt.state.feishu?.events?.[meta.eventId]
++      if (!rt.state.feishu?.apps?.[meta.appId] || pending?.botId !== bot.id || ['sent', 'cancelled'].includes(pending.status)) return
++      await rt.deliver({ toId: bot.id, role: 'feishu', feishu: meta, exchangeId: trigger.exchangeId ?? meta.eventId, resumed: true, origin: record.origin ?? OTHER, text })
++      return
++    }
      if ((trigger?.role === 'request' || trigger?.role === 'stopped') && trigger.senderSessionId && trigger.audience !== 'user' && rt.botOf(trigger.senderSessionId)) {
        // The sender still waits for this turn's answer, so it goes on under the same exchange.
 -      await rt.deliver({ fromId: trigger.senderSessionId, toId: bot.id, role: trigger.role, hop: trigger.hop ?? 0, ...(trigger.exchangeId ? { exchangeId: trigger.exchangeId } : {}), ...(trigger.senderRoomId ? { fromRoomId: trigger.senderRoomId } : {}), resumed: true, text })
@@ -5315,7 +5370,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
        return
      }
 -    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, text })
-+    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, origin: record.origin ?? OTHER, text })
++    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, origin: record.origin ?? OTHER, text, ...(record.requesterMemberId ? { requesterMemberId: record.requesterMemberId } : {}) })
    }
 
    // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH
@@ -6305,7 +6360,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    if (post === undefined || text === '') return
    const labels = (Array.isArray(source?.references) ? source.references : [])
      .map(reference => reference?.label).filter(label => typeof label === 'string' && label !== '')
-@@ -48,12 +48,20 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
+@@ -48,12 +48,22 @@ const RETRY_TEXT = 'Your last reply wrote a tool call as plain text (<tool_call>
 
  export function install(rt) {
    const { ctx, state } = rt
@@ -6324,10 +6379,12 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
      return rt.deliver({
 +      origin,
++      ...(rt.live.get(id)?.requesterMemberId ? { requesterMemberId: rt.live.get(id).requesterMemberId } : {}),
++      ...(keeps && info.feishu ? { feishu: info.feishu } : {}),
        ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
        toId: rt.selfOf(id),
        sessionId: id,
-@@ -70,13 +70,60 @@ export function install(rt) {
+@@ -70,13 +70,62 @@ export function install(rt) {
      })
    }
 
@@ -6363,6 +6420,8 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
 +    return rt.deliver({
 +      origin,
++      ...(rt.live.get(id)?.requesterMemberId ? { requesterMemberId: rt.live.get(id).requesterMemberId } : {}),
++      ...(keeps && info.feishu ? { feishu: info.feishu } : {}),
 +      ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
 +      toId: rt.selfOf(id),
 +      sessionId: id,
@@ -6404,10 +6463,12 @@ diff --git a/src/host/turns.js b/src/host/turns.js
      }
    }
 
-@@ -162,17 +162,31 @@ export function install(rt) {
+@@ -161,18 +161,39 @@ export function install(rt) {
+   const answersUser = info => info.role === 'request' && info.audience === 'user'
    // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
    // acknowledge, exactly like a request.
-   const expectsReply = info => info.role === 'request' || info.role === 'stopped'
+-  const expectsReply = info => info.role === 'request' || info.role === 'stopped'
++  const expectsReply = info => info.role === 'request' || info.role === 'stopped' || info.role === 'feishu'
 +  // A friend's Bot asking (FlyBot remote, Bot Social): the turn stays in the Bot's own
 +  // chat, where the user sees it, and its answer goes back to the friend's Bot.
 +  const fromRemote = info => info.role === 'request' && typeof info.remote?.handle === 'string'
@@ -6426,6 +6487,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    const claimTrigger = (sessionId, entry, info) => {
 +    if (info.form === 'remote-chat' && typeof info.typedBy === 'string' && info.typedBy && entry.turn !== undefined) markTypedTurn(sessionId, entry.turn, info.typedBy)
      entry.info = info
++    if (info.requesterMemberId) entry.requesterMemberId = info.requesterMemberId
++    if (info.form === 'remote-chat' && info.feishu && entry.turn !== undefined) {
++      const turns = (state.feishuTurns ??= {})[sessionId] ??= {}
++      turns[entry.turn] = { ...info.feishu, attachments: info.attachments ?? [] }
++      for (const key of Object.keys(turns).slice(0, -400)) delete turns[key]
++      void rt.save().catch(() => {})
++    }
 +    rt.noteTaskDriveTrigger?.(sessionId, info)
      // A turn that was stopped for a part switch brings its joined requests along.
      if (Array.isArray(info.joined) && info.joined.length > 0) {
@@ -6565,10 +6633,11 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          break
        case 'turn/start':
          setActivity(id, 'thinking')
-@@ -288,11 +288,17 @@ export function install(rt) {
+@@ -288,11 +288,18 @@ export function install(rt) {
          entry.since = event.time ?? Date.now()
          entry.texts = []
          entry.info = undefined
++        entry.requesterMemberId = undefined
 +        // The turn's tool-call count for the inbox (#471), one per tool/call event, the same
 +        // events the activity feed folds. A program's sub-calls are not tool/call events.
 +        entry.toolCalls = 0
@@ -6598,6 +6667,14 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          // A message that shares a step with a bare handoff package is what the turn
          // answers, so the turn is not a hidden acknowledgement.
          const bare = info => info?.handoff === true && info.resume !== true
+@@ -307,6 +307,7 @@ export function install(rt) {
+         // Bot relay that lands inside it may claim: the first message of a turn
+         // still claims it as today, a later one only joins it.
+         const opened = entry.opened === true
++        if (!opened && source?.kind === 'user' && source.authorKind === 'human' && typeof source.authorId === 'string') entry.requesterMemberId = source.authorId
+         if (entry.turn !== undefined && !bare(source)
+           && (source?.kind === 'user' || source?.kind === REPLY_KIND || source?.kind === 'schedule' || source?.kind === SOURCE_KIND)) {
+           entry.opened = true
 @@ -331,15 +331,27 @@ export function install(rt) {
              hop: source.hop ?? 0,
              ...(source.late ? { late: true } : {}),
@@ -6727,10 +6804,14 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          const replyText = () => {
            const reply = (wroteCall ? texts.map(stripWrittenCalls) : texts).join('\n\n').trim()
            return wroteCall && reply === '' ? 'Tried to run a tool but wrote the call as text, so it did not run.' : reply
-@@ -419,6 +419,24 @@ export function install(rt) {
+@@ -419,6 +419,28 @@ export function install(rt) {
          // Whoever the turn answers gets the same three-way rule: a failure notice,
          // the turn's text (or a stopped-before-answer line), or nothing.
          const answer = (source, reply) => {
++          if (source.feishu) {
++            void rt.feishu?.complete(source.feishu, reply, failure ?? (reason?.kind === 'aborted' ? true : undefined)).catch(error => rt.warn('ds-bot: Feishu reply failed: %s', error.code ?? 'error'))
++            return
++          }
 +          if (fromRemote(source)) {
 +            // A hard failure owes the sender a sentence (#1068). Without it their DM stays on
 +            // "Weighing the options…" until the wait expires, and a missing credential never expires
@@ -6785,7 +6866,13 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            } else {
              answer(info, replyText())
            }
-@@ -488,13 +488,32 @@ export function install(rt) {
+@@ -484,17 +484,37 @@ export function install(rt) {
+             toId: rt.selfOf(id),
+             sessionId: id,
+             text: request.text,
+-            role: 'request',
++            role: request.info.feishu ? 'feishu' : 'request',
++            ...(request.info.feishu ? { feishu: request.info.feishu, untrusted: true } : {}),
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,
              ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
@@ -9785,7 +9872,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on agent/status',
      'on llm/stream',
      'on llm/stream',
-@@ -91,12 +91,24 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,30 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -9798,6 +9885,12 @@ diff --git a/test/install.test.js b/test/install.test.js
 +    'tool bot_schedules',
 +    'tool project_digest',
 +    'effect ds-bot: automation tasks default',
++    'on tools/pre-execute',
++    'tool feishu_apps',
++    'tool feishu_tool',
++    'tool feishu_card',
++    'tool feishu_file',
++    'effect ds-bot: Feishu apps',
      'effect ds-bot: usage ledger',
      'on llm/stream',
      'effect ds-bot: update check',

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { imagePackages, linkPackages, prepareProfile } from '../../docker/profile.mjs'
+import { imagePackages, linkPackages, missingDependencies, prepareProfile } from '../../docker/profile.mjs'
 
 const root = new URL('../../', import.meta.url)
 const read = (path) => readFileSync(new URL(path, root), 'utf8')
@@ -25,6 +25,30 @@ test('imagePackages lists the unpacked packages by name', () => {
     assert.deepEqual(imagePackages(dir).map((p) => p.name), ['@flybot/social', '@flybot/tree', 'ds-bot'])
     assert.equal(imagePackages(dir).find((p) => p.name === 'ds-bot').dir, join(dir, 'ds-bot-0.2.1'))
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('missingDependencies names each declared runtime dependency a package does not carry', () => {
+  const dir = packagesDir()
+  try {
+    const core = join(dir, 'ds-bot-0.2.1')
+    writeFileSync(join(core, 'package.json'), JSON.stringify({ name: 'ds-bot', dependencies: { '@larksuiteoapi/node-sdk': '1.0.0', ws: '8.0.0' }, peerDependencies: { '@deepseek-ai/dsh-llm': '*' } }))
+    assert.deepEqual(missingDependencies(imagePackages(dir)), ['ds-bot -> @larksuiteoapi/node-sdk', 'ds-bot -> ws'], 'a linked package brings none of its dependencies')
+    for (const dep of ['@larksuiteoapi/node-sdk', 'ws']) {
+      mkdirSync(join(core, 'node_modules', dep), { recursive: true })
+      writeFileSync(join(core, 'node_modules', dep, 'package.json'), '{}')
+    }
+    assert.deepEqual(missingDependencies(imagePackages(dir)), [], 'peers are not checked: the DSH profile provides them')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('the image installs ds-bot runtime dependencies from the lockfile and checks them', () => {
+  // Without this the Feishu long connection fails in the container: the SDK import is lazy, so
+  // the image starts healthy and only the connection reports an error.
+  const dockerfile = read('Dockerfile')
+  assert.match(dockerfile, /cd core \\\n && npm ci --omit=dev --ignore-scripts/, 'the pinned runtime dependencies, without build tools or install scripts')
+  assert.match(dockerfile, /mv node_modules "\$\(echo \/out\/ds-bot-\*\)\/node_modules"/, 'next to the linked package, where its imports resolve')
+  assert.match(dockerfile, /missingDependencies\(imagePackages\('\/out'\)\)/, 'the build stops on a missing dependency')
+  assert.match(read('core/.npmrc'), /^legacy-peer-deps=true$/m, 'the @deepseek-ai peers stay out of the image package')
 })
 
 test('a new profile gets the web bundles plus every image package, linked', () => {

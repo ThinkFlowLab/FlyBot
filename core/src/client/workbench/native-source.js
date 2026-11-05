@@ -55,7 +55,8 @@ export function createScopedConversation(api) {
         async readAttachment(file) {
           if (disposed || !selected || captured !== generation) throw new Error('Conversation handle is retired')
           let value
-          if (selected.personalId) value = await api.call('personal-space', { operation: 'attachment-read', id: selected.personalId, ...(selected.personalPart ? { partId: selected.personalPart } : {}), seq: file.seq, attachmentId: file.id })
+          if (selected.personalId && file.feishuAppId) { const result = await api.call('feishu', { operation: 'attachment', appId: file.feishuAppId, attachmentId: file.id }); value = { ...file, data: result.content_base64 } }
+          else if (selected.personalId) value = await api.call('personal-space', { operation: 'attachment-read', id: selected.personalId, ...(selected.personalPart ? { partId: selected.personalPart } : {}), seq: file.seq, attachmentId: file.id })
           else if (selected.roomId) value = await api.call('project-room-attachment', { projectId: selected.projectId, roomId: selected.roomId, attachmentId: file.id })
           else throw new Error('Attachment is unavailable in this conversation')
           if (disposed || captured !== generation) throw new Error('Conversation handle is retired')

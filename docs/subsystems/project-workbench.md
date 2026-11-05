@@ -525,3 +525,11 @@ Cancelled/failed pool Attempts mark their canonical Run failed too; unknown phys
 #2483 keeps GET /health as gateway liveness and adds GET /ready for current backend transport/state-write readiness. It reuses private auth-mode, returns only status/writable, uses503 for degraded/unavailable state, and never exposes upstream credentials, paths or diagnostics. It does not test model/provider readiness or rescan all storage.
 
 #2518 the original scheduler pass reconciles the shared warning service; it adds no clock or workflow and cannot release an unknown execution. See [warnings](project-warnings.md).
+
+## Existing Feishu channel in the shared entry
+
+The Connections route (`#/connections`) mounts the same native `FeishuSetup` component used by the original connector row through `mountNativeFeishu`; no second integration or conversation model exists. It obtains selectable Bots from the actor-scoped `personal-space` projection and calls only the authenticated `feishu` endpoint. The restricted gateway admits this endpoint while the service enforces app-owner configuration, self/Owner identity association and app-scoped attachment reads. It does not expose the global connector/Secrets endpoints. The native island retains its root across polling so credential drafts and focus are preserved. Public app/file query links select this route after the existing login.
+
+This standalone guide installs the existing translation dictionary for the browser's language (or an explicit mount language), disposing the adapter with its native root. Chinese and English copy stay shared with the original connector guide; the original Harness locale service and language switch remain authoritative in the native client.
+
+Owner-scoped Feishu remote conversations also appear in personal history through their existing native Sessions. The shared projection suppresses relay/echo duplicates, retains the external person's display name and thread references, and uses the authenticated Feishu attachment endpoint for native references beyond the normal small Project download limit. Other remote integrations remain outside this personal projection.

@@ -1,0 +1,22 @@
+# Local deployment: publish the console while the Harness keeps its loopback-only bind.
+services:
+  flybot:
+    network_mode: !reset null
+    # Publishing TCP does not grant browser API trust. Admit only the address people use.
+    command: ["--trusted-host", "${FLYBOT_TRUSTED_HOST:?Set FLYBOT_TRUSTED_HOST to the Web host:port}"]
+    ports:
+      - "0.0.0.0:${FLYBOT_PUBLIC_PORT:-3080}:8080"
+      - "0.0.0.0:${FLYBOT_FEISHU_PUBLIC_PORT:-3082}:3082"
+    environment:
+      FLYBOT_PORT: "3080"
+      FLYBOT_FEISHU_EVENTS_PORT: "3082"
+  relay:
+    image: flybot:${FLYBOT_TAG:-local}
+    restart: unless-stopped
+    network_mode: service:flybot
+    depends_on:
+      - flybot
+    entrypoint:
+      - node
+      - -e
+      - "const net=require('node:net');net.createServer(client=>{const upstream=net.connect(3080,'127.0.0.1');client.pipe(upstream).pipe(client);client.on('error',()=>upstream.destroy());upstream.on('error',()=>client.destroy());client.on('close',()=>upstream.destroy());upstream.on('close',()=>client.destroy())}).listen(8080,'0.0.0.0')"

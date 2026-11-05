@@ -15,6 +15,7 @@ export function mountWorkbench(root, api, { pollMs = 4000 } = {}) {
     else await conversationSource.open(binding)
     return conversationSource.getSnapshot()
   }
+  const feishuActions = { feishu: payload => api.call('feishu', payload), connectorConnect: (_id, body) => api.call('feishu', { operation: 'webhook', ...body.credentials }) }
   const drafts = new Map(), expanded = new Map()
   let runtimeTerminal, terminalTimer, terminalPolling = false, rooms, roomView, pools
   async function closeTerminal() {
@@ -83,6 +84,7 @@ export function mountWorkbench(root, api, { pollMs = 4000 } = {}) {
     ++epoch; controller?.abort(); loading = null; clearConversation()
     const revoke = api.call('auth-revoke')
     api.setToken(''); void closeTerminal()
+    if (win.location.hash === '#/connections' || new URLSearchParams(win.location.search).has('feishu-app') && !win.location.hash) { selected = ''; tab = 'connections'; taskId = '' }
     personal = personalMemory = null; drafts.clear(); notice = ''; error = ''
     bootstrap = null; selected = ''; busy = false
     detail = resources = agents = members = history = taskDetail = workflowState = rooms = roomView = pools = null
@@ -118,6 +120,11 @@ export function mountWorkbench(root, api, { pollMs = 4000 } = {}) {
       const state = await api.call('workbench-state', {}, controller.signal)
       if (current !== epoch || disposed) return
       bootstrap = state
+      if (section === 'connections') {
+        personal = await api.call('personal-space', { operation: 'list' }, controller.signal)
+        if (current !== epoch || disposed) return
+        render(); return
+      }
       if (section === 'personal') {
         const roster = await api.call('personal-space', { operation: 'list' }, controller.signal)
         if (current !== epoch || disposed) return
@@ -473,11 +480,16 @@ export function mountWorkbench(root, api, { pollMs = 4000 } = {}) {
         for (const room of rooms?.rooms ?? []) roomNav.append(button(room.name, () => route(selected, 'rooms', room.id)))
         sidebar.append(roomNav)
       }
+      sidebar.append(button('Connections', () => { win.location.hash = '/connections' }))
       sidebar.append(button('All Projects', () => { win.location.hash = '' }), button('Sign out', () => { void signOut() }))
-      if (tab === 'personal') {
+      if (tab === 'connections') {
+        main.append(el('h1', 'Connections'))
+        const node = el('div', null, 'native-feishu-setup'); main.append(node)
+        nativeIslands.register(node, nativeKey('feishu'), conversationSource, (target, options) => win.FlyBotNativeConversation.mountNativeFeishu(target, options), { actions: feishuActions, roster: { ...personal, self: bootstrap.self }, onClose: () => { win.location.hash = '/personal' } })
+      } else if (tab === 'personal') {
         const chatList = el('div', null, 'native-personal-list'); sidebar.append(chatList); mountPersonalList(chatList)
         main.append(el('h1', 'Personal space'), el('p', 'Your original Chief, Bots and internal group conversations. Project agents remain separate.'))
-        for (const bot of personal?.bots ?? []) {
+        for (const bot of (personal?.bots ?? []).filter(bot => !bot.remote)) {
           const card = box(`${personal.mainBotIds.includes(bot.id) ? 'Chief · ' : ''}${bot.name}`, button('Open conversation', () => { win.location.hash = `/personal/${encodeURIComponent(bot.id)}` }))
           const persona = el('details'); persona.dataset.personaId = bot.id; persona.append(el('summary', 'Persona'), el('p', bot.instructions ?? 'No persona')); card.append(persona); card.append(button('Own long-term memory', () => act(async () => { const captured = epoch; const memory = await api.call('personal-space', { operation: 'memory', id: bot.id }); if (captured === epoch && !disposed) personalMemory = { botId: bot.id, ...memory } }))); main.append(card)
         }

@@ -27,6 +27,7 @@ export const resumeText = record => [
 // The trigger fields a resumed turn needs to answer the same sender.
 const triggerOf = info => ({
   role: info.role,
+  ...(info.feishu ? { feishu: info.feishu } : {}),
   ...(info.exchangeId ? { exchangeId: info.exchangeId } : {}),
   ...(info.senderSessionId ? { senderSessionId: info.senderSessionId } : {}),
   ...(info.roomId ? { roomId: info.roomId } : {}),
@@ -157,6 +158,8 @@ export function install(rt) {
         // Whose request the turn answers, so a resumed turn keeps its connector tools only when it was the owner's.
         const note = originNote(id)
         update(id, record => (record === undefined || record.origin === note.origin ? record : (({ origin: _, ...rest }) => ({ ...rest, ...note }))(record)))
+        const requester = rt.live.get(id)?.requesterMemberId
+        if (requester) update(id, record => record && record.requesterMemberId !== requester ? { ...record, requesterMemberId: requester } : record)
         if (event.data?.source?.kind !== SOURCE_KIND) break
         // turns.js, installed earlier, has already claimed the turn's trigger.
         const info = rt.live.get(id)?.info
@@ -198,12 +201,18 @@ export function install(rt) {
     }
     if (record.resumed) return
     const trigger = record.trigger
+    if (trigger?.role === 'feishu' && trigger.feishu) {
+      const meta = trigger.feishu, pending = rt.state.feishu?.events?.[meta.eventId]
+      if (!rt.state.feishu?.apps?.[meta.appId] || pending?.botId !== bot.id || ['sent', 'cancelled'].includes(pending.status)) return
+      await rt.deliver({ toId: bot.id, role: 'feishu', feishu: meta, exchangeId: trigger.exchangeId ?? meta.eventId, resumed: true, origin: record.origin ?? OTHER, text })
+      return
+    }
     if ((trigger?.role === 'request' || trigger?.role === 'stopped') && trigger.senderSessionId && trigger.audience !== 'user' && rt.botOf(trigger.senderSessionId)) {
       // The sender still waits for this turn's answer, so it goes on under the same exchange.
       await rt.deliver({ fromId: trigger.senderSessionId, toId: bot.id, role: trigger.role, hop: trigger.hop ?? 0, ...(trigger.exchangeId ? { exchangeId: trigger.exchangeId } : {}), ...(trigger.senderRoomId ? { fromRoomId: trigger.senderRoomId } : {}), resumed: true, origin: record.origin ?? OTHER, text })
       return
     }
-    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, origin: record.origin ?? OTHER, text })
+    await rt.deliver({ toId: bot.id, role: 'resume', resumed: true, origin: record.origin ?? OTHER, text, ...(record.requesterMemberId ? { requesterMemberId: record.requesterMemberId } : {}) })
   }
 
   // A hard stop keeps the inbox, which the Session runs once it wakes; only what DSH

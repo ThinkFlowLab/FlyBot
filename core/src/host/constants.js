@@ -57,7 +57,7 @@ export const TEAM_TOOLS = [
   'list_bots', 'message_bot', 'stop_bot', 'create_bot', 'update_bot', 'archive_bot', 'list_models',
   'bot_schedules', 'project_state', 'project_digest', 'meeting',
   'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'track_tasks',
-  'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
+  'request_secret', 'list_secrets', 'feishu_apps', 'feishu_tool', 'feishu_card', 'feishu_file', 'group_relay', 'read_own_chat',
   'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
   'list_capabilities', 'save_capability', 'delete_capability',
   'attach_capability', 'detach_capability',

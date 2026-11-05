@@ -93,6 +93,14 @@ production rollout, remote HTTPS deployment or browser/desktop acceptance.
 
 ## Public machine contract (#2300)
 
+The Feishu connection endpoint adds one human-only native dispatch to the same
+gateway: 105 native endpoints and 187 dispatch variants, with 29 v1 queries and
+34 v1 commands. Its source-matched contract accepts write-only setup credentials
+and keeps connection ownership, sender allow-lists, identity associations and Bot
+capability grants distinct. Safe and watch agent credentials cannot call it.
+Feishu server callbacks use the separate event-only listener described in
+[the Feishu guide](../feishu.md), not this authenticated management endpoint.
+
 #2308 extends that contract to28queries/33commands and184dispatch variants, with
 signed receiver-side Webhook schemas. The production-entry test now drives real
 native DSH Sessions and a separate authenticated external receiver from Chief

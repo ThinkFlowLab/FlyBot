@@ -2,9 +2,12 @@
 // Copy is looked up at render time and every slot outlet re-renders on a language
 // switch, so nothing caches a translated string.
 
+import { FEISHU_ZH } from './feishu-copy.js'
+
 export const NAMESPACE = 'ds-bot'
 
 const ZH = {
+  ...FEISHU_ZH,
 
   // Workflows settings (#1364). The page lists factory pipelines and your own graphs.
   Workflows: '工作流',
@@ -1531,6 +1534,15 @@ export function installLocale(locale) {
     if (service === locale) { service = null; bound = null }
     if (typeof off === 'function') off()
   }
+}
+
+// Standalone workbench islands use the same copy without a Harness locale service.
+export function installBrowserLocale(tag) {
+  const active = typeof tag === 'string' ? tag : 'en'
+  return installLocale({
+    getLocale: () => ({ active }), register: () => () => {},
+    bind: () => (key, params) => fill(active.startsWith('zh') ? ZH[key] ?? key : key, params),
+  })
 }
 
 export function t(key, params) {

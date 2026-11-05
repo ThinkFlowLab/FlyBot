@@ -85,6 +85,8 @@ export function install(rt) {
     const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
     return rt.deliver({
       origin,
+      ...(rt.live.get(id)?.requesterMemberId ? { requesterMemberId: rt.live.get(id).requesterMemberId } : {}),
+      ...(keeps && info.feishu ? { feishu: info.feishu } : {}),
       ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
       toId: rt.selfOf(id),
       sessionId: id,
@@ -132,6 +134,8 @@ export function install(rt) {
     const keeps = info !== undefined && (info.role === 'room' || expectsReply(info))
     return rt.deliver({
       origin,
+      ...(rt.live.get(id)?.requesterMemberId ? { requesterMemberId: rt.live.get(id).requesterMemberId } : {}),
+      ...(keeps && info.feishu ? { feishu: info.feishu } : {}),
       ...(keeps && info.senderSessionId ? { fromId: info.senderSessionId } : {}),
       toId: rt.selfOf(id),
       sessionId: id,
@@ -243,7 +247,7 @@ export function install(rt) {
   const answersUser = info => info.role === 'request' && info.audience === 'user'
   // Roles whose turn owes the sender a reply: a 'stopped' notice asks the Bot to
   // acknowledge, exactly like a request.
-  const expectsReply = info => info.role === 'request' || info.role === 'stopped'
+  const expectsReply = info => info.role === 'request' || info.role === 'stopped' || info.role === 'feishu'
   // A friend's Bot asking (FlyBot remote, Bot Social): the turn stays in the Bot's own
   // chat, where the user sees it, and its answer goes back to the friend's Bot.
   const fromRemote = info => info.role === 'request' && typeof info.remote?.handle === 'string'
@@ -262,6 +266,13 @@ export function install(rt) {
   const claimTrigger = (sessionId, entry, info) => {
     if (info.form === 'remote-chat' && typeof info.typedBy === 'string' && info.typedBy && entry.turn !== undefined) markTypedTurn(sessionId, entry.turn, info.typedBy)
     entry.info = info
+    if (info.requesterMemberId) entry.requesterMemberId = info.requesterMemberId
+    if (info.form === 'remote-chat' && info.feishu && entry.turn !== undefined) {
+      const turns = (state.feishuTurns ??= {})[sessionId] ??= {}
+      turns[entry.turn] = { ...info.feishu, attachments: info.attachments ?? [] }
+      for (const key of Object.keys(turns).slice(0, -400)) delete turns[key]
+      void rt.save().catch(() => {})
+    }
     rt.noteTaskDriveTrigger?.(sessionId, info)
     // A turn that was stopped for a part switch brings its joined requests along.
     if (Array.isArray(info.joined) && info.joined.length > 0) {
@@ -464,6 +475,7 @@ export function install(rt) {
         entry.since = event.time ?? Date.now()
         entry.texts = []
         entry.info = undefined
+        entry.requesterMemberId = undefined
         // The turn's tool-call count for the inbox (#471), one per tool/call event, the same
         // events the activity feed folds. A program's sub-calls are not tool/call events.
         entry.toolCalls = 0
@@ -497,6 +509,7 @@ export function install(rt) {
         // Bot relay that lands inside it may claim: the first message of a turn
         // still claims it as today, a later one only joins it.
         const opened = entry.opened === true
+        if (!opened && source?.kind === 'user' && source.authorKind === 'human' && typeof source.authorId === 'string') entry.requesterMemberId = source.authorId
         if (entry.turn !== undefined && !bare(source)
           && (source?.kind === 'user' || source?.kind === REPLY_KIND || source?.kind === 'schedule' || source?.kind === SOURCE_KIND)) {
           entry.opened = true
@@ -669,6 +682,10 @@ export function install(rt) {
         // Whoever the turn answers gets the same three-way rule: a failure notice,
         // the turn's text (or a stopped-before-answer line), or nothing.
         const answer = (source, reply) => {
+          if (source.feishu) {
+            void rt.feishu?.complete(source.feishu, reply, failure ?? (reason?.kind === 'aborted' ? true : undefined)).catch(error => rt.warn('ds-bot: Feishu reply failed: %s', error.code ?? 'error'))
+            return
+          }
           if (fromRemote(source)) {
             // A hard failure owes the sender a sentence (#1068). Without it their DM stays on
             // "Weighing the options…" until the wait expires, and a missing credential never expires
@@ -754,7 +771,8 @@ export function install(rt) {
             toId: rt.selfOf(id),
             sessionId: id,
             text: request.text,
-            role: 'request',
+            role: request.info.feishu ? 'feishu' : 'request',
+            ...(request.info.feishu ? { feishu: request.info.feishu, untrusted: true } : {}),
             hop: request.info.hop ?? 0,
             exchangeId: request.info.exchangeId,
             ...(request.info.senderRoomId ? { fromRoomId: request.info.senderRoomId } : {}),
