@@ -89,17 +89,11 @@ Changes to this page, to `ROADMAP.md`, to `docs/governance.md` or to `AGENTS.md`
 decisions, concluded as [docs/governance.md](docs/governance.md) requires and recorded in
 [`decisions/`](decisions/README.md).
 
-M5/M6 implementation and dated live-acceptance evidence are
-[preserved verbatim](docs/history/2026-11-04-m5-m6-implementation-evidence.md).
-Those snapshots do not establish current-source or current-UI acceptance. Keep
-explicit credentials private, unchanged Control Plane reuse, current authorization,
-independent same-SHA verification and separate real-provider/deployment boundaries.
-
-Earlier M7.2/M7.3 implementation-status checkpoints are retained verbatim in
-[the historical record](docs/history/2026-11-03-completed-m7-checkpoints.md). Current
-resource/Harness contracts and authorized acceptance boundaries remain below.
-
-M7.4/M7.5 implementation checkpoints are [archived verbatim](docs/history/2026-11-03-completed-m7-checkpoints.md). Private credentials, revocation, exit proof, same-SHA verification and outstanding mixed-Harness/resource acceptance remain required.
+M5/M6 and M7 implementation references are [preserved verbatim](docs/history/2026-11-05-review-evidence-memory-checkpoints.md#earlier-project-implementation-references).
+Historical acceptance is not current acceptance. Preserve private credentials,
+current authority/revocation, actual exit proof, independent same-SHA verification
+and unchanged Control Plane reuse; live provider, mixed-resource and deployment
+acceptance remain separate.
 
 Earlier Codex acceptance is [preserved verbatim](docs/history/2026-11-05-warning-memory-checkpoints.md); it grants no new deployment, App or credential authority.
 

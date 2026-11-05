@@ -538,20 +538,11 @@ Command roles with a bound App retain the limited proxy and GitHub API/Git/objec
 
 ## Inline Reviewer host-test evidence (#2519)
 
-The log transfer limit is an artifact bound, not permission to exceed a configured
-model window. Complete inline evidence, mandatory role policy and current Task input
-share the original execution budget; an over-budget prompt refuses before SDK input
-is written. No truncation, raised window, second retrieval service or sandbox grant
-is introduced. Scratch remains available for temporary verification fixtures and
-existing scoped archives, but host-test evidence does not depend on its readability.
-Absent tests remain absent evidence; failed/stale/mutated tests cannot become approval.
-Host tests, independent Reviewer judgement, provider CI and Chief acceptance remain distinct.
-
-Tests reproduce the absent inline channel on the old base and cover denied scratch,
-complete UTF-8/BOM/empty/2MiB logs, invalid bytes, candidate/source/authority changes,
-actual subprocess input, durable metadata without copied log text, and configured
-context refusal before dispatch. The opt-in actual pinned Codex SDK/CLI case uses a
-local deterministic Responses fixture, checks the provider receives the log without
-any receiving log file and retains read-only source denial. This is distinct from
-paid inference or live OpenToday acceptance; the reported onsite sandbox denial
-was not reproduced by the isolated hidden-scratch probe.
+The2MiB artifact cap does not guarantee a log fits a configured model window.
+Complete log, role policy and Task input share the unchanged execution budget;
+excess refuses before SDK dispatch, without truncating evidence or raising limits.
+Scratch remains for temporary fixtures/archives. Host output never establishes
+independent Review, provider CI or Chief acceptance. Worker metadata retains only
+provenance; vendor thread history may retain the execution input. Tests cover denied
+scratch, exact bytes, stale/revoked evidence, actual input and context refusal;
+the opt-in pinned SDK fixture is distinct from paid or live OpenToday acceptance.
