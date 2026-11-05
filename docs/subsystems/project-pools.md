@@ -215,3 +215,9 @@ An explicit manager/Chief recovery action uses the existing pool lock and Effect
 A queued handoff is distinct from an allocated worker. Targeted dispatch reports the actual reached gate through the existing Effect: `execution-adapter`, `logical-role`, `execution-resource`, `project-capacity`, or `pool-admission` for an expected refused admission. Unknown programming errors remain failures; a legacy whole-pool pass still proceeds independently. No gate is bypassed, lease released or next role selected. Deferred retries do not count as SDK executions or actual progress.
 
 TaskView/Chief snapshot `dispatch` derives the current handoff's Effect, status, generation, commit proof, counters, next time and wait/reason from existing records. `committed` is runtime proof, not a persisted SQL column. Task-input `accepted` is ingestion, whereas collaboration history records actual role acceptance.
+
+
+#2483 successor admission allows only the authenticated current Chief claim to
+hand off its own coordination to the selected role. It retains that claim in
+the original sourceExecution receipt. Other active execution claims still refuse
+admission; no fixed downstream or second queue/allocator is introduced.

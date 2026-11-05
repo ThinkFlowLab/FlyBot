@@ -709,3 +709,24 @@ The normal scheduler reconciliation discovers up to32 missing handoffs per pass,
 Queued/running/correcting/interrupted Chief work is reconciled first. A persisted matching merge request is reused even if its response was lost. Otherwise the host requests one scoped inspection; it supplies facts, not an acceptance or a selected next role. The resident Chief retains its normal Session and current evidence/authority gates. A changed merge observation invalidates an old Chief snapshot through the existing correction path. Applied decisions are not replayed.
 
 `merge.chiefHandoff` in Task/Attempt metadata distinguishes notification pending/running/delivered/failed/cancelled, the Effect and linked Run, current waiting Run, last request time and Chief failure. Delivered means a durable request, not a successful Chief execution or a completed Task. Genuine pending inputs, rework, exit uncertainty and missing criteria remain. Old correction markers clear only after a valid Chief decision; their Run audit remains. Superseded/cancelled Tasks or candidates cannot receive a closing handoff.
+
+
+## Chief successor baseline choice — #2483
+
+For an interrupted/failed or exited blocked pool Attempt, authenticated Chief recovery facts include
+`continuationOptions` from the original continuation-state port: attemptId, generation,
+workspace snapshot, latestBaseSha, base/seed, retainedDraft and input admissions.
+Unavailable authority/exit facts stay unavailable. Only the current authenticated
+Chief run/invocation is excluded from execution occupancy, as for input admission.
+
+An explicit Developer route/return with continuation reuses `project-task-run` and
+its durable `attempt.continue` intent, request replay fence and repository/workspace
+CAS checks. Continue retains seed/inputs; latest uses the observed host HEAD.
+Dirty drafts still need explicit integration and bound PRs retain their ancestry.
+Old Attempt history stays intact; no test or approval evidence is inherited.
+This does not treat an arbitrary integration input as the checkout baseline.
+
+An authenticated Chief may explicitly supersede an exited blocked running Attempt;
+the original continuation Effect commits its returned history and successor together.
+An unconfirmed save restores the old status/pointer; no cancellation or live worker
+stop is inferred. Ordinary public task.run still refuses active Attempts.

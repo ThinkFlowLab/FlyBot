@@ -206,11 +206,13 @@ export function createProjectPools(rt) {
     if (!target || !['code', 'decision', 'release'].includes(kind)) throw refuse('Unsupported Task target or kind')
     task.collaboration ??= { version: POOL_PROTOCOL, initiatedBy: actor.memberId, generation: 0, history: [] }
     const c = task.collaboration
-    if (c.claim?.status === 'active') throw refuse('Task still has an active execution claim')
+    const ownChief = actor.chiefJobId && c.claim?.chiefRunId === actor.chiefJobId && c.claim.botId === `${task.projectId}:chief`
+    if (ownChief) rt.projectChiefControl.requireJobActor(actor, task.projectId)
+    if (c.claim?.status === 'active' && !ownChief) throw refuse('Task still has an active execution claim')
     c.sourceSessionId = actor.sessionId ?? null
     c.initiatedBy = actor.memberId
     c.attemptId = attempt.id; c.kind = kind
-    return offer(task, { from: null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id, initialTarget: selected })
+    return offer(task, { from: ownChief ? `${task.projectId}:chief` : null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id, initialTarget: selected })
   }
   async function claim(taskId, botId, handoffId, requestId, waiting) {
     const task = taskOf(taskId), c = task.collaboration
