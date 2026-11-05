@@ -257,9 +257,21 @@ export function parseRoomShare(text) {
   if (start < 0) return undefined
   let depth = 0
   let end = -1
+  // #2447: a brace inside a string literal is a message's own text, not structure. `encodeRoomShare`
+  // writes `text` with `JSON.stringify`, which leaves braces raw, so counting them dropped the whole
+  // envelope over one `{` in a chat line — the same scan the client's `envelopeTail` does (#855).
+  let inString = false
+  let escaped = false
   for (let i = start; i < raw.length; i += 1) {
     const ch = raw[i]
-    if (ch === '{') depth += 1
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth += 1
     else if (ch === '}') {
       depth -= 1
       if (depth === 0) { end = i; break }
