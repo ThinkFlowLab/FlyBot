@@ -9872,7 +9872,7 @@ function BoardColumn({ column, tasks, roster, lanes, dragging, onMove, onDrag, a
     )) : plain.map((task) => (0, import_react17.createElement)(BoardCard2, { key: task.id, ...cardProps(task, roster, onMove, onDrag, void 0, locked) }))
   );
 }
-function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull, locked }) {
+function BoardView({ roster, actions, tasks, rail, scope, counts: counts2, dragging, error, draft, onDraft, onSelect, onMove, onDrag, onCreate, archiveFull, locked }) {
   const columns = boardColumns(tasks);
   const lanes = scope?.kind === "group";
   const selectedBot = scope?.kind === "bot" ? scope.botId : "";
@@ -9914,8 +9914,9 @@ function BoardView({ roster, tasks, rail, scope, counts: counts2, dragging, erro
         (0, import_react17.createElement)("button", { type: "submit", className: "bt-soft bt-soft-sm" }, t("Add task"))
       ) : null,
       // #2273: the board is a 1080px overlay and covers the sidebar banner and the Settings hint,
-      // so the lock's own sentence is drawn here too, from the host, not in a second wording.
-      locked ? (0, import_react17.createElement)("p", { className: "bt-board-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : null,
+      // so the lock's own sentence is drawn here too, from the host, not in a second wording —
+      // with the shared Reload beside it, since the sidebar's entry is covered by this overlay.
+      locked ? readOnlyLine(import_react17.createElement, roster, actions, { key: "readonly", className: "bt-board-hint" }) : null,
       (0, import_react17.createElement)(
         "div",
         { className: "bt-board-columns" },
@@ -10030,6 +10031,7 @@ function KanbanDialog({ roster, actions, leaving = false }) {
       ),
       (0, import_react17.createElement)(BoardView, {
         roster,
+        actions,
         tasks: boardTasks,
         rail,
         scope,
@@ -12129,7 +12131,7 @@ function ProjectBoardPane({ project, rows, done, canManage, tasks, decisions, me
     (0, import_react21.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
   );
 }
-function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, onSaved, locked = false, readOnly = "" } = {}) {
+function ProjectSettingsPanel({ project, assistantMine, actions, call: request, onClose, onSaved, locked = false, readOnly = "" } = {}) {
   const save = request ?? call;
   const [kind, setKind] = (0, import_react21.useState)("bot");
   const [memberId, setMemberId] = (0, import_react21.useState)("");
@@ -12145,7 +12147,7 @@ function ProjectSettingsPanel({ project, assistantMine, call: request, onClose, 
       "div",
       { className: "bt-project-panel", "data-panel": "project-settings" },
       (0, import_react21.createElement)("h3", null, t("Project settings")),
-      (0, import_react21.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(readOnly)),
+      readOnlyLine(import_react21.createElement, { readOnly }, actions, { key: "readonly" }),
       (0, import_react21.createElement)(
         "div",
         { className: "bt-project-row-actions" },
@@ -12432,7 +12434,7 @@ function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) {
             close();
             actions?.openSession?.(id);
           }
-        }) : panel === "settings" ? (0, import_react21.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react21.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react21.createElement)(ProjectBoardPane, {
+        }) : panel === "settings" ? (0, import_react21.createElement)(ProjectSettingsPanel, { project: state.project, assistantMine: state.assistantMine, actions, call: read, locked, readOnly: roster?.readOnly, onClose: () => setPanel(null) }) : panel === "members" ? (0, import_react21.createElement)(ProjectMembersPanel, { project: state.project, rows: state.rows, onClose: () => setPanel(null) }) : (0, import_react21.createElement)(ProjectBoardPane, {
           project: state.project,
           rows: state.rows,
           done: state.done,
@@ -16293,7 +16295,7 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
             } else if (event.key === "Backspace" && query === "") unpick();
           }
         }),
-        group && admin !== null ? locked ? (0, import_react34.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react34.createElement)("button", {
+        group && admin !== null ? locked ? readOnlyLine(import_react34.createElement, roster, actions, { key: "readonly-admin" }) : (0, import_react34.createElement)("button", {
           type: "button",
           className: "bt-send bt-to-create",
           disabled: busy || picked.length === 0,
@@ -16360,7 +16362,7 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
               }
             }
           }),
-          locked ? group && admin !== null ? null : (0, import_react34.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react34.createElement)("button", { type: "button", className: "bt-nc-send", "aria-label": t("Send message"), disabled: busy || message.trim() === "" || picked.length === 0, onClick: sendMessage }, (0, import_react34.createElement)(ArrowUpIcon))
+          locked ? group && admin !== null ? null : readOnlyLine(import_react34.createElement, roster, actions, { key: "readonly-compose" }) : (0, import_react34.createElement)("button", { type: "button", className: "bt-nc-send", "aria-label": t("Send message"), disabled: busy || message.trim() === "" || picked.length === 0, onClick: sendMessage }, (0, import_react34.createElement)(ArrowUpIcon))
         )
       )
     )

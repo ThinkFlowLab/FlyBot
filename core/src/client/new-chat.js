@@ -5,7 +5,8 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
 import { CreateBot } from './create-bot.js'
 import { afterCreate } from './bot-draft.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
-import { hostText, t } from './i18n.js'
+import { t } from './i18n.js'
+import { readOnlyLine } from './read-only.js'
 import { lockedWindow } from './schedules.js'
 import { newChatActionRows } from './flybot-registry.js'
 import { SlotIcon } from './flybot-slots.js'
@@ -251,7 +252,7 @@ export function NewChat({ mode, roster, actions }) {
           },
         }),
         group && admin !== null ? (locked
-          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+          ? readOnlyLine(h, roster, actions, { key: 'readonly-admin' })
           : h('button', {
             type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
             title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
@@ -299,6 +300,6 @@ export function NewChat({ mode, roster, actions }) {
           locked
             ? (group && admin !== null
               ? null
-              : h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)))
+              : readOnlyLine(h, roster, actions, { key: 'readonly-compose' }))
             : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
 }
