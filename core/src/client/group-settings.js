@@ -5,11 +5,12 @@ import { AdminStar, BotAvatar, BotMark, PersonMark, RoomAvatar, lookAvoidingLoca
 import { setLocalBots } from './characters.js'
 import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
 import { Segmented } from './motion.js'
+import { lockedWindow } from './schedules.js'
 import { FolderMenu } from './folder-menu.js'
 import { t } from './i18n.js'
 import { StandingApprovalsCard } from './standing-approvals.js'
 import { FlyBotRoomMembers } from './flybot-slots.js'
-import { remoteBotTitle } from '../shared/remote-label.js'
+import { remoteBotName, remoteBotTitle } from '../shared/remote-label.js'
 
 export const ROOM_MODES = [
   ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
@@ -181,6 +182,30 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
   const admin = roster.byId[room.admin]
   const mode = shownMode(room, roster)
   const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? ''
+  // Every control here writes `update-room` or `delete-room`, which the host refuses in a
+  // read-only window; the form then keeps the group's facts as text (#2474).
+  if (lockedWindow(roster)) {
+    return h('div', { className: 'bt-bs' },
+      h('div', { className: 'bt-bs-hero' },
+        h(RoomAvatar, { room, roster, size: 64 }),
+        h('div', { className: 'bt-bs-who' },
+          h('span', { className: 'bt-bs-name' }, room.name),
+          h('span', { className: 'bt-bs-sub' }, roomSubtitle(room, roster)))),
+      h(Card, { title: t('Members · {count}', { count: face ? people.length : members.length + humans.length + remotes.length }) },
+        face
+          ? people.map(person => h(Row, { key: person.key, label: facePersonLabel(person), hint: t('Human') }))
+          : [
+              // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
+              humans.map(person => h(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t('Human') })),
+              members.map(member => h(Row, {
+                key: member.id,
+                label: member.name,
+                hint: [room.admin === member.id ? t('Admin') : '', room.taskLead === member.id ? t('Task lead') : ''].filter(Boolean).join(' · ') || t('Bot'),
+              })),
+              remotes.map(person => h(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") })),
+            ]),
+      room.notice ? h(Card, { title: t('Notice') }, h(Row, { label: t('Group notice'), hint: room.notice, stack: true })) : null)
+  }
   const update = patch => run(actions.updateRoom(room.id, patch))
   const openBot = (id) => { actions.closeSettings(); actions.openSession(id) }
   const remove = () => {

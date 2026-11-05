@@ -694,6 +694,8 @@ var ZH = {
   "Unread marks, badges, and the brand mark.": "未读标记、徽标和品牌标志。",
   "Theme accent": "主题强调色",
   "Custom accent": "自定义强调色",
+  On: "开",
+  None: "无",
   "Bots · {count}": "Bot · {count}",
   "First in the sidebar. Pick another Bot to hand it the role; {name} then stops being a Main Bot.": "排在侧栏最上面。选另一个 Bot 就会把主 Bot 交给它，{name} 随之不再是主 Bot。",
   "Choose a Bot…": "选择一个 Bot…",
@@ -6682,6 +6684,33 @@ function SecretsPage({ roster, actions, run, Section }) {
   const [open, setOpen] = (0, import_react9.useState)(null);
   const [adding, setAdding] = (0, import_react9.useState)(false);
   const secrets = roster.secrets ?? [];
+  if (lockedWindow(roster)) {
+    return [
+      (0, import_react9.createElement)(
+        "p",
+        { key: "about", className: "bt-secret-about" },
+        t("Keys your Bots asked for. Bots never see the values: they use them as "),
+        (0, import_react9.createElement)("code", null, "$DSH_SECRET_NAME"),
+        t(" in their shell, and every value is replaced by "),
+        (0, import_react9.createElement)("code", null, "[secret:NAME]"),
+        t(" before anything goes to a model.")
+      ),
+      (0, import_react9.createElement)(
+        Section,
+        { key: "list", title: t("Secrets · {count}", { count: secrets.length }) },
+        secrets.length === 0 ? (0, import_react9.createElement)("div", { className: "bt-set-row" }, (0, import_react9.createElement)("span", { className: "bt-set-hint" }, t("No keys yet. When a Bot needs one, it shows a card in its chat."))) : secrets.map((secret) => (0, import_react9.createElement)(
+          "div",
+          { key: secret.name, className: "bt-set-row" },
+          (0, import_react9.createElement)(
+            "span",
+            { className: "bt-set-copy" },
+            (0, import_react9.createElement)("span", { className: "bt-secret-title" }, (0, import_react9.createElement)(KeyIcon), (0, import_react9.createElement)("code", { className: "bt-secret-name" }, secret.name), secret.purpose ? (0, import_react9.createElement)("span", { className: "bt-secret-purpose" }, secret.purpose) : null),
+            (0, import_react9.createElement)("span", { className: "bt-set-hint" }, scopeLabel(secret.scope, roster))
+          )
+        ))
+      )
+    ];
+  }
   return [
     (0, import_react9.createElement)(
       "p",
@@ -14113,6 +14142,27 @@ function CapabilitiesPage({ roster, actions, run }) {
     setConfirming("");
     void run(actions.deleteCapability(item.name));
   };
+  if (lockedWindow(roster)) {
+    return (0, import_react27.createElement)(
+      "section",
+      { className: "bt-set-section" },
+      (0, import_react27.createElement)("h3", null, t("Shared capabilities")),
+      (0, import_react27.createElement)(
+        "div",
+        { className: "bt-set-card bt-connectors-card" },
+        items.length === 0 ? (0, import_react27.createElement)("div", { className: "bt-set-row" }, (0, import_react27.createElement)("span", { className: "bt-set-hint" }, t("No capabilities saved"))) : items.map((item) => (0, import_react27.createElement)(
+          "div",
+          { key: item.name, className: "bt-set-row" },
+          (0, import_react27.createElement)(
+            "span",
+            { className: "bt-set-copy" },
+            (0, import_react27.createElement)("span", { className: "bt-bs-label" }, item.name),
+            (0, import_react27.createElement)("span", { className: "bt-set-hint" }, item.description || (item.kind === "pack" ? `${t("Pack")}: ${(item.items ?? []).join(", ") || t("No items")}` : item.kind === "mcp" ? item.transport === "stdio" ? t("Local command") : t("HTTP server") : t("Skill")))
+          )
+        ))
+      )
+    );
+  }
   return (0, import_react27.createElement)(
     "section",
     { className: "bt-set-section" },
@@ -14862,18 +14912,55 @@ function BotSettingsForm({ bot, roster, actions, run }) {
     return () => clearTimeout(timer);
   }, [confirming]);
   if (bot.remote) return null;
+  (0, import_react30.useEffect)(() => {
+    void actions.refreshModels?.();
+  }, [bot.id]);
   const isMainBot = isMainOf(roster, bot.id);
   const onlyMain = isMainBot && (roster.mainBotIds ?? []).length === 1;
   const isTile = roster.mainBotId === bot.id;
+  if (lockedWindow(roster)) {
+    return (0, import_react30.createElement)(
+      "div",
+      { className: "bt-bs" },
+      (0, import_react30.createElement)(
+        "div",
+        { className: "bt-bs-hero" },
+        (0, import_react30.createElement)(BotMark, { bot, size: 64, live: false }),
+        (0, import_react30.createElement)(
+          "div",
+          { className: "bt-bs-who" },
+          (0, import_react30.createElement)("span", { className: "bt-bs-name" }, bot.name),
+          (0, import_react30.createElement)("span", { className: "bt-bs-sub" }, [bot.role, isMainBot ? t("Main Bot") : ""].filter(Boolean).join(" · ") || t("Bot"))
+        )
+      ),
+      (0, import_react30.createElement)(
+        Card,
+        { title: t("Profile") },
+        (0, import_react30.createElement)(Row, { label: t("Label"), hint: bot.role || t("Bot") })
+      ),
+      (0, import_react30.createElement)(
+        Card,
+        { title: t("Model") },
+        (0, import_react30.createElement)(Row, { label: t("Model"), hint: modelOf(bot, roster)?.name ?? modelHint(bot, roster) })
+      ),
+      (0, import_react30.createElement)(
+        Card,
+        { title: t("Working folder") },
+        (0, import_react30.createElement)(Row, { label: t("Folder"), hint: bot.workDir || t("Not set") })
+      ),
+      (0, import_react30.createElement)(
+        Card,
+        { title: t("Instructions") },
+        (0, import_react30.createElement)(Row, { label: t("What this Bot does"), hint: bot.instructions || t("None"), stack: true })
+      )
+    );
+  }
   const save = (patch) => run(actions.updateBot(bot.id, patch));
   const duplicate = () => run(actions.duplicateBot(bot.id).then((copy2) => actions.openSession(copy2.id)));
   const remove = () => {
     if (confirming) void run(actions.deleteBot(bot.id));
     else setConfirming(true);
   };
-  (0, import_react30.useEffect)(() => {
-    void actions.refreshModels?.();
-  }, [bot.id]);
   return (0, import_react30.createElement)(
     "div",
     { className: "bt-bs" },
@@ -15190,6 +15277,38 @@ function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
   const admin = roster.byId[room2.admin];
   const mode = shownMode(room2, roster);
   const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? "";
+  if (lockedWindow(roster)) {
+    return (0, import_react31.createElement)(
+      "div",
+      { className: "bt-bs" },
+      (0, import_react31.createElement)(
+        "div",
+        { className: "bt-bs-hero" },
+        (0, import_react31.createElement)(RoomAvatar, { room: room2, roster, size: 64 }),
+        (0, import_react31.createElement)(
+          "div",
+          { className: "bt-bs-who" },
+          (0, import_react31.createElement)("span", { className: "bt-bs-name" }, room2.name),
+          (0, import_react31.createElement)("span", { className: "bt-bs-sub" }, roomSubtitle(room2, roster))
+        )
+      ),
+      (0, import_react31.createElement)(
+        Card,
+        { title: t("Members · {count}", { count: face ? people2.length : members.length + humans.length + remotes.length }) },
+        face ? people2.map((person) => (0, import_react31.createElement)(Row, { key: person.key, label: facePersonLabel(person), hint: t("Human") })) : [
+          // The stored name, cleaned by the same reader the friend's-Bot rows use (#2474).
+          humans.map((person) => (0, import_react31.createElement)(Row, { key: person.id, label: remoteBotName(person, person.id), hint: t("Human") })),
+          members.map((member) => (0, import_react31.createElement)(Row, {
+            key: member.id,
+            label: member.name,
+            hint: [room2.admin === member.id ? t("Admin") : "", room2.taskLead === member.id ? t("Task lead") : ""].filter(Boolean).join(" · ") || t("Bot")
+          })),
+          remotes.map((person) => (0, import_react31.createElement)(Row, { key: person.handle || person.id, label: person.label || remoteBotTitle(person), hint: t("Friend's Bot") }))
+        ]
+      ),
+      room2.notice ? (0, import_react31.createElement)(Card, { title: t("Notice") }, (0, import_react31.createElement)(Row, { label: t("Group notice"), hint: room2.notice, stack: true })) : null
+    );
+  }
   const update = (patch) => run(actions.updateRoom(room2.id, patch));
   const openBot = (id) => {
     actions.closeSettings();
@@ -18743,6 +18862,22 @@ function ConnectorRow({ connector, roster, actions }) {
 }
 function ConnectorsPage({ roster, actions }) {
   const list = roster?.connectors ?? [];
+  if (lockedWindow(roster)) {
+    return (0, import_react39.createElement)(
+      "section",
+      { className: "bt-set-section" },
+      (0, import_react39.createElement)("div", { className: "bt-set-card bt-connectors-card" }, list.length === 0 ? (0, import_react39.createElement)("div", { className: "bt-set-row" }, (0, import_react39.createElement)("span", { className: "bt-set-hint" }, t("No connectors"))) : list.map((connector) => (0, import_react39.createElement)(
+        "div",
+        { key: connector.id, className: "bt-set-row" },
+        (0, import_react39.createElement)(
+          "span",
+          { className: "bt-set-copy" },
+          (0, import_react39.createElement)("span", { className: "bt-bs-label" }, connector.name),
+          (0, import_react39.createElement)("span", { className: "bt-set-hint" }, statusText2(connector))
+        )
+      )))
+    );
+  }
   return (0, import_react39.createElement)(
     "section",
     { className: "bt-set-section" },
@@ -19131,6 +19266,23 @@ function GeneralPage({ roster, actions, run }) {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => run(actions.setPrefs({ accent: value })), 350);
   };
+  if (lockedWindow(roster)) {
+    const accent = ACCENT_INKS.find((ink) => INKS[ink][0] === prefs.accent);
+    return [
+      (0, import_react42.createElement)(
+        SetSection,
+        { key: "look", title: t("Appearance") },
+        (0, import_react42.createElement)(SetRow, { label: t("Theme"), hint: t(themes[current].label) }),
+        (0, import_react42.createElement)(SetRow, { label: t("Accent"), hint: accent ? t(capitalize2(accent)) : prefs.accent ?? t("Default") })
+      ),
+      (0, import_react42.createElement)(
+        SetSection,
+        { key: "notify", title: t("Notifications") },
+        (0, import_react42.createElement)(SetRow, { label: t("In other chats"), hint: prefs.notifications !== false ? t("On") : t("Off") }),
+        NOTIFY_KINDS.map(([kind, label]) => (0, import_react42.createElement)(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t("On") : t("Off") }))
+      )
+    ];
+  }
   return [
     (0, import_react42.createElement)(
       SetSection,
@@ -19195,6 +19347,14 @@ function MainBotsSection({ roster, actions, run }) {
   const [first, ...others] = mains;
   const own = roster.bots.filter((bot) => !bot.remote);
   const candidates = own.filter((bot) => !isMainOf(roster, bot.id));
+  if (lockedWindow(roster)) {
+    return (0, import_react42.createElement)(
+      SetSection,
+      { title: t("Main Bot") },
+      (0, import_react42.createElement)(SetRow, { label: t("Main Bot"), hint: first ? first.name : void 0 }),
+      others.map((bot) => (0, import_react42.createElement)(SetRow, { key: bot.id, label: bot.name, hint: t("Also a Main Bot.") }))
+    );
+  }
   return (0, import_react42.createElement)(
     SetSection,
     { title: t("Main Bot") },
@@ -19234,6 +19394,13 @@ function MainBotsSection({ roster, actions, run }) {
 var MOTIONS = [["quiet", "Quiet"], ["normal", "Normal"], ["lively", "Lively"]];
 function MotionSection({ roster, actions, run }) {
   const motion = roster.prefs?.motion === "quiet" || roster.prefs?.motion === "lively" ? roster.prefs.motion : "normal";
+  if (lockedWindow(roster)) {
+    return (0, import_react42.createElement)(
+      SetSection,
+      { title: t("Animation") },
+      (0, import_react42.createElement)(SetRow, { label: t("Bot animation"), hint: t(MOTIONS.find(([id]) => id === motion)?.[1] ?? "Normal") })
+    );
+  }
   return (0, import_react42.createElement)(
     SetSection,
     { title: t("Animation") },

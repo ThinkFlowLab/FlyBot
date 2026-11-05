@@ -1,4 +1,5 @@
 import { createElement as h, useEffect, useState } from 'react'
+import { lockedWindow } from './schedules.js'
 import { t } from './i18n.js'
 
 const blank = () => ({ name: '', kind: 'mcp', description: '', transport: 'stdio', command: '', argsText: '', envText: '{}', url: '', headersText: '{}', content: '', items: [] })
@@ -132,6 +133,20 @@ export function CapabilitiesPage({ roster, actions, run }) {
     if (confirming !== item.name) { setConfirming(item.name); return }
     setConfirming('')
     void run(actions.deleteCapability(item.name))
+  }
+  // The host refuses saving, deleting and approving a capability in a read-only window, so
+  // the page lists what it holds as text (#2474).
+  if (lockedWindow(roster)) {
+    return h('section', { className: 'bt-set-section' },
+      h('h3', null, t('Shared capabilities')),
+      h('div', { className: 'bt-set-card bt-connectors-card' },
+        items.length === 0 ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No capabilities saved')))
+          : items.map(item => h('div', { key: item.name, className: 'bt-set-row' },
+            h('span', { className: 'bt-set-copy' },
+              h('span', { className: 'bt-bs-label' }, item.name),
+              h('span', { className: 'bt-set-hint' }, item.description || (item.kind === 'pack'
+                ? `${t('Pack')}: ${(item.items ?? []).join(', ') || t('No items')}`
+                : item.kind === 'mcp' ? (item.transport === 'stdio' ? t('Local command') : t('HTTP server')) : t('Skill'))))))))
   }
   return h('section', { className: 'bt-set-section' },
     h('h3', null, t('Shared capabilities')),

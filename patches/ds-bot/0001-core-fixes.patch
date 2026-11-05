@@ -229,13 +229,14 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
-@@ -1,41 +1,229 @@
+@@ -1,41 +1,230 @@
 -import { createElement as h, useRef, useState } from 'react'
 +import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
  import { useMorph } from './motion.js'
  import { MaskedInput } from './secret-card.js'
 +import { ConnectorIcon } from './icons.js'
 +import { SwitchRow } from './bot-settings.js'
++import { lockedWindow } from './schedules.js'
 +import { ConnectorBots, usageText } from './connector-bots.js'
  import { t } from './i18n.js'
 +import { copiedToClipboard } from '../shared/remote-label.js'
@@ -466,7 +467,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
    return h('div', { ref: row, className: 'bt-connector', 'data-state': connector.state },
      h('div', { className: 'bt-connector-head' },
        h('span', { className: 'bt-connector-mark' }, Mark ? h(Mark) : null),
-@@ -44,15 +44,45 @@ function ConnectorRow({ connector, actions }) {
+@@ -44,23 +44,64 @@ function ConnectorRow({ connector, actions }) {
          h('span', { className: 'bt-connector-status' }, statusText(connector))),
        h('span', { className: 'bt-connector-actions' },
          connector.state === 'error' ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.connectorRetry(connector.id)) }, t('Try again')) : null,
@@ -498,7 +499,10 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +        }))
 +        : h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: gateway ? t('Composio API key') : t('GitHub token'), autoFocus: true })),
 +      gateway ? h(AppPicker, { apps, onChange: setApps, search: token.trim() === '' ? undefined : search }) : null,
-+      h('div', { className: 'bt-connector-form-row' },
+       h('div', { className: 'bt-connector-form-row' },
+-        h('a', { className: 'bt-connector-link', href: TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, t('Create a token on GitHub')),
+-        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setError(null) } }, t('Cancel')),
+-        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || token.trim() === '', onClick: connect }, busy ? t('Connecting…') : t('Connect')))) : null,
 +        h('a', { className: 'bt-connector-link', href: channel ? (chosen?.link ?? FEISHU_WEBHOOK_URL) : gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' },
 +          channel ? t(chosen?.linkLabel ?? 'Get a webhook URL in Feishu') : gateway ? t('Get a Composio API key') : t('Create a token on GitHub')),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setValues({}); setError(null) } }, t('Cancel')),
@@ -506,17 +510,27 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +    on && gateway && picking ? h('div', { className: 'bt-connector-form' },
 +      h(AppPicker, { apps, onChange: setApps, search, statuses }),
 +      h('span', { className: 'bt-set-hint' }, t('The first time a Bot uses an app, it shows a sign-in link in the chat.')),
-       h('div', { className: 'bt-connector-form-row' },
--        h('a', { className: 'bt-connector-link', href: TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, t('Create a token on GitHub')),
--        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setError(null) } }, t('Cancel')),
--        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || token.trim() === '', onClick: connect }, busy ? t('Connecting…') : t('Connect')))) : null,
++      h('div', { className: 'bt-connector-form-row' },
 +        h('span', { className: 'bt-connector-link' }),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setPicking(false); setError(null) } }, t('Cancel')),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || apps.length === 0, onClick: saveApps }, busy ? t('Connecting…') : t('Save')))) : null,
      error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
  }
  
-@@ -62,5 +62,5 @@ export function ConnectorsPage({ roster, actions }) {
+ // Settings → Connectors: one row per connector.
+ export function ConnectorsPage({ roster, actions }) {
+   const list = roster?.connectors ?? []
++  // Every connect, disconnect and send is refused in a read-only window, so the page says
++  // what each connector is doing instead of drawing its row (#2474).
++  if (lockedWindow(roster)) {
++    return h('section', { className: 'bt-set-section' },
++      h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
++        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
++        : list.map(connector => h('div', { key: connector.id, className: 'bt-set-row' },
++          h('span', { className: 'bt-set-copy' },
++            h('span', { className: 'bt-bs-label' }, connector.name),
++            h('span', { className: 'bt-set-hint' }, statusText(connector)))))))
++  }
    return h('section', { className: 'bt-set-section' },
      h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
@@ -1125,6 +1139,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
+@@ -301,6 +301,8 @@ const ZH = {
+   'Unread marks, badges, and the brand mark.': '未读标记、徽标和品牌标志。',
+   'Theme accent': '主题强调色',
+   'Custom accent': '自定义强调色',
++  On: '开',
++  None: '无',
+   'Bots · {count}': 'Bot · {count}',
+   'First in the sidebar. Pick another Bot to hand it the role; {name} then stops being a Main Bot.': '排在侧栏最上面。选另一个 Bot 就会把主 Bot 交给它，{name} 随之不再是主 Bot。',
+   'Choose a Bot…': '选择一个 Bot…',
 @@ -312,9 +312,10 @@ const ZH = {
    'No group chats yet.': '还没有群聊。',
    'A group chat lets several Bots work on one thing with you.': '在群聊里，几个 Bot 和你一起做一件事。',

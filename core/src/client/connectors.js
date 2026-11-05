@@ -3,6 +3,7 @@ import { useMorph } from './motion.js'
 import { MaskedInput } from './secret-card.js'
 import { ConnectorIcon } from './icons.js'
 import { SwitchRow } from './bot-settings.js'
+import { lockedWindow } from './schedules.js'
 import { ConnectorBots, usageText } from './connector-bots.js'
 import { t } from './i18n.js'
 import { copiedToClipboard } from '../shared/remote-label.js'
@@ -277,6 +278,17 @@ function ConnectorRow({ connector, roster, actions }) {
 // Settings → Connectors: one row per connector.
 export function ConnectorsPage({ roster, actions }) {
   const list = roster?.connectors ?? []
+  // Every connect, disconnect and send is refused in a read-only window, so the page says
+  // what each connector is doing instead of drawing its row (#2474).
+  if (lockedWindow(roster)) {
+    return h('section', { className: 'bt-set-section' },
+      h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
+        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
+        : list.map(connector => h('div', { key: connector.id, className: 'bt-set-row' },
+          h('span', { className: 'bt-set-copy' },
+            h('span', { className: 'bt-bs-label' }, connector.name),
+            h('span', { className: 'bt-set-hint' }, statusText(connector)))))))
+  }
   return h('section', { className: 'bt-set-section' },
     h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
       ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))

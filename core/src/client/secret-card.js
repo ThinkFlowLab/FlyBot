@@ -7,6 +7,7 @@ import { CheckIcon, CloseIcon, TrashIcon } from './icons.js'
 import { BotAvatar, BotMark } from './mark.js'
 import { contentText, currentPart, historyLoading } from './text.js'
 import { dateLocale, t } from './i18n.js'
+import { lockedWindow } from './schedules.js'
 import { SPRING_POP, SPRING_SHAPE, spring } from './motion.js'
 
 const MIN_VALUE = 4
@@ -260,6 +261,22 @@ export function SecretsPage({ roster, actions, run, Section }) {
   const [open, setOpen] = useState(null)
   const [adding, setAdding] = useState(false)
   const secrets = roster.secrets ?? []
+  // The host refuses saving, replacing and deleting a key in a read-only window, so the
+  // page lists the stored names and who may use them as text (#2474).
+  if (lockedWindow(roster)) {
+    return [
+      h('p', { key: 'about', className: 'bt-secret-about' },
+        t('Keys your Bots asked for. Bots never see the values: they use them as '), h('code', null, '$DSH_SECRET_NAME'),
+        t(' in their shell, and every value is replaced by '), h('code', null, '[secret:NAME]'), t(' before anything goes to a model.')),
+      h(Section, { key: 'list', title: t('Secrets · {count}', { count: secrets.length }) },
+        secrets.length === 0
+          ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No keys yet. When a Bot needs one, it shows a card in its chat.')))
+          : secrets.map(secret => h('div', { key: secret.name, className: 'bt-set-row' },
+            h('span', { className: 'bt-set-copy' },
+              h('span', { className: 'bt-secret-title' }, h(KeyIcon), h('code', { className: 'bt-secret-name' }, secret.name), secret.purpose ? h('span', { className: 'bt-secret-purpose' }, secret.purpose) : null),
+              h('span', { className: 'bt-set-hint' }, scopeLabel(secret.scope, roster)))))),
+    ]
+  }
   return [
     h('p', { key: 'about', className: 'bt-secret-about' },
       t('Keys your Bots asked for. Bots never see the values: they use them as '), h('code', null, '$DSH_SECRET_NAME'),
