@@ -2234,8 +2234,8 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    const wanted = query.trim().toLowerCase()
 -  const matches = roster.bots.filter(bot => !picked.includes(bot.id) && bot.id !== admin && (wanted === '' || bot.name.toLowerCase().includes(wanted) || (bot.role ?? '').toLowerCase().includes(wanted)))
 +  const bots = listedChatBots(roster)
-+  // A read-only window keeps the group pickers as a preview, offers no create, and sends nothing
-+  // from them: the host could only answer `bot/read-only` after the press (P-570).
++  // A read-only window keeps the pickers as a preview, offers no create and no Send, and writes
++  // nothing: the host could only answer `bot/read-only` after the press (P-570, P-571).
 +  const locked = lockedWindow(roster)
    const choosingAdmin = group && admin === null
 -  const exact = roster.bots.some(bot => bot.name.toLowerCase() === wanted)
@@ -2291,7 +2291,21 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
    }
    const pick = (bot) => {
      setPicked(current => [...current, bot.id])
-@@ -59,19 +59,25 @@ export function NewChat({ mode, roster, actions }) {
+@@ -49,8 +49,11 @@ export function NewChat({ mode, roster, actions }) {
+   const openBot = bot => run(async () => {
+     if (choosingAdmin) { chooseAdmin(bot); return }
+     if (group || picked.length > 0) { pick(bot); return }
+-    if (bot.hidden) await actions.setFlags(bot.id, { hidden: false })
+-    if (message.trim()) await actions.send(bot.id, message.trim())
++    // Opening the session is a read and stays; unhiding the Bot and sending the typed line are writes.
++    if (!locked) {
++      if (bot.hidden) await actions.setFlags(bot.id, { hidden: false })
++      if (message.trim()) await actions.send(bot.id, message.trim())
++    }
+     actions.openSession(bot.id)
+     close()
+   })
+@@ -59,25 +59,32 @@ export function NewChat({ mode, roster, actions }) {
      setError('')
      setDraft({ name: query.trim() !== '' && !exact ? query.trim() : '', fromList: true })
    }
@@ -2322,6 +2336,13 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
      if (text) await actions.send(room.id, text)
      actions.openSession(room.id)
      close()
+   }
+   const createGroup = () => run(makeGroup)
+   const sendMessage = () => run(async () => {
++    if (locked) return
+     const text = message.trim()
+     if (group && admin !== null) { await makeGroup(); return }
+     if (text === '' || picked.length === 0) return
 @@ -87,24 +87,51 @@ export function NewChat({ mode, roster, actions }) {
        close()
        return
@@ -2462,6 +2483,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('div', { className: 'bt-nc-card' },
            h('span', { className: 'bt-nc-plus', 'aria-hidden': true }, h(PlusIcon)),
            h('textarea', {
+@@ -176,5 +176,7 @@ export function NewChat({ mode, roster, actions }) {
+               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
+             },
+           }),
+-          h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
++          locked && !(group && admin !== null)
++            ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
++            : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
+ }
 diff --git a/src/client/overlay-hooks.js b/src/client/overlay-hooks.js
 --- a/src/client/overlay-hooks.js
 +++ b/src/client/overlay-hooks.js

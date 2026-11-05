@@ -16070,8 +16070,10 @@ function NewChat({ mode, roster, actions }) {
       pick2(bot);
       return;
     }
-    if (bot.hidden) await actions.setFlags(bot.id, { hidden: false });
-    if (message.trim()) await actions.send(bot.id, message.trim());
+    if (!locked) {
+      if (bot.hidden) await actions.setFlags(bot.id, { hidden: false });
+      if (message.trim()) await actions.send(bot.id, message.trim());
+    }
     actions.openSession(bot.id);
     close();
   });
@@ -16099,6 +16101,7 @@ function NewChat({ mode, roster, actions }) {
   };
   const createGroup = () => run(makeGroup);
   const sendMessage = () => run(async () => {
+    if (locked) return;
     const text2 = message.trim();
     if (group && admin !== null) {
       await makeGroup();
@@ -16321,7 +16324,7 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
               }
             }
           }),
-          (0, import_react34.createElement)("button", { type: "button", className: "bt-nc-send", "aria-label": t("Send message"), disabled: busy || message.trim() === "" || picked.length === 0, onClick: sendMessage }, (0, import_react34.createElement)(ArrowUpIcon))
+          locked && !(group && admin !== null) ? (0, import_react34.createElement)("div", { className: "bt-hint bt-read-only", role: "status" }, hostText(roster.readOnly)) : (0, import_react34.createElement)("button", { type: "button", className: "bt-nc-send", "aria-label": t("Send message"), disabled: busy || message.trim() === "" || picked.length === 0, onClick: sendMessage }, (0, import_react34.createElement)(ArrowUpIcon))
         )
       )
     )
