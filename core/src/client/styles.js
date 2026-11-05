@@ -309,6 +309,13 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-option-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);white-space:normal;overflow-wrap:anywhere}
 .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
 .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
+/* #2502: the host sentence and its Reload entry share one row; the sidebar's own rule sizes
+   the button, this only places it beside the sentence instead of under it. */
+.bt-readonly-line{display:flex;align-items:center;gap:8px}
+.bt-readonly-line>.bt-hint{flex:1 1 auto;min-width:0}
+.bt-readonly-line>.bt-read-only-reload{flex:none;margin:0}
+.bt-readonly-line-head{padding:0 20px 8px}
+.bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
 .bt-nc-spacer{flex:1}
 .bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
 .bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}

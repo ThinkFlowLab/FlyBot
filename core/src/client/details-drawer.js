@@ -13,10 +13,11 @@ import { MemoryRow } from './memory-panel.js'
 import { RoomSchedules, ScheduleSummary, lockedWindow } from './schedules.js'
 import { Segmented, useGlide, useMorph } from './motion.js'
 import { MemberWork, useMemberWork } from './member-status.js'
-import { hostText, t } from './i18n.js'
+import { t } from './i18n.js'
 import { remoteBotTitle, roomTitle, copiedToClipboard } from '../shared/remote-label.js'
 import { FlyBotRoomOverview, FlyBotDetails } from './flybot-slots.js'
 import { call } from './api.js'
+import { readOnlyLine } from './read-only.js'
 
 const TAB_LABELS = { details: 'Details', browser: 'Browser' }
 
@@ -221,7 +222,7 @@ function GroupOverview({ room, roster, actions, usage, useWork, openSettings }) 
     // P-544: the group overview's writes are gone in a locked window, so it says why once, above
     // the reads it still draws. The approval card used to carry its own copy (#2381); one page,
     // one sentence.
-    locked ? h('div', { key: 'read-only', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+    readOnlyLine(h, roster, actions, { key: 'read-only' }),
     h(FlyBotRoomOverview, { key: 'plugin-overview', room, roster, actions }),
     invited && room.sharedFrom && !face
       ? h('div', { key: 'from', className: 'bt-shared-from' },
@@ -330,7 +331,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         // #2387: the lock is the window's, not the Bot's — a read-only window draws the host's sentence
         // in place of a group's form too, exactly as it already did for a Bot's.
         lockedWindow(roster)
-          ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
+          ? readOnlyLine(h, roster, actions)
           : bot ? h(BotSettingsForm, { bot, roster, actions, run }) : h(GroupSettingsForm, { room, roster, actions, run, onDeleted: close })),
     ]
   }
@@ -411,7 +412,7 @@ export function DetailsDrawer({ sessionId, startRenaming, startTab, hasStrip, ro
         // locked window refuses every one of them. Say so once at the top and draw the read half only,
         // which is the values themselves (P-547) — the name above is already text, and the settings
         // gear still opens the page that explains the window.
-        lockedWindow(roster) ? h('div', { key: 'read-only', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
+        lockedWindow(roster) ? readOnlyLine(h, roster, actions, { key: 'read-only' }) : null,
         lockedWindow(roster) ? h(ReadOnlyOverview, { key: 'read', bot, roster }) : null,
         lockedWindow(roster) ? null : h('div', { key: 'model', className: 'bt-drawer-model' },
           h('div', { className: 'bt-section-title' }, t('Model')),

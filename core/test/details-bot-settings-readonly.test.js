@@ -102,7 +102,10 @@ const ownText = (node) => {
 const bodyOf = (nodes) => nodes.find(node => node.props?.className === 'bt-drawer-body bt-set-body')
 // A write entry is anything in the Bot settings body a person can change something with: a text
 // field or a button. The drawer's own Back/Close buttons live in the head, outside this body.
-const writes = (nodes) => nodes.filter(node => ['input', 'textarea', 'select', 'button'].includes(node.type))
+// The read-only Reload (#2502) is the one button in this body that is not a write: it asks the
+// client to read the team again, and the issue gives it to the sentence it sits beside.
+const writes = (nodes) => nodes.filter(node => ['input', 'textarea', 'select', 'button'].includes(node.type)
+  && !String(node.props?.className ?? '').split(' ').includes('bt-read-only-reload'))
 
 test('a read-only window draws no Bot-settings write entry and says why in the host\'s words', () => {
   const nodes = tree(rosterWith(SENTENCE))

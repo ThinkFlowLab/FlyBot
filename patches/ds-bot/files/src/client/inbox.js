@@ -19,6 +19,7 @@ import { hostText, t } from './i18n.js'
 import { failureSentence } from '../shared/failure-copy.js'
 import { columnOf } from '../shared/task-board.js'
 import { lockedWindow } from './schedules.js'
+import { readOnlyLine } from './read-only.js'
 
 // Done (and a failed task) ages out after 7 days.
 export const KEEP_MS = 7 * 86_400_000
@@ -661,7 +662,7 @@ export function InboxDialog({ roster, useWork, useSessions, actions, leaving = f
       h('div', { className: 'bt-mem-body bt-inbox-body' },
         // #2284: one sentence at the top of the dialog, in the host's own words, so a window that
         // draws no write says why instead of leaving the reads silent about it.
-        ...(locked ? [h('p', { key: 'readonly', className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))] : []),
+        ...(locked ? [readOnlyLine(h, roster, actions, { key: 'readonly' })] : []),
         h('div', { className: 'bt-inbox-feedback', role: 'status', 'aria-live': 'polite' }, feedback),
         GROUPS.map(group => {
           // #2050: the model keeps every finished row, so the group can draw the page's remainder
