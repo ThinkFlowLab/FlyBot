@@ -1601,7 +1601,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -838,6 +838,86 @@ const ZH = {
+@@ -838,6 +838,87 @@ const ZH = {
    'Up one level': '上一级',
    'No folders inside.': '里面没有文件夹。',
    'Some folders are not shown.': '还有一些文件夹没有显示。',
@@ -1643,6 +1643,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Role unchanged: {reason}': '角色未更改：{reason}',
 +  refused: '被拒绝',
 +  'No Project yet — create one.': '还没有项目——新建一个。',
++  'No Project yet.': '还没有项目。',
 +  'Bind a Bot or group': '绑定 Bot 或群聊',
 +  'Bind to {name}': '绑定到 {name}',
 +  'Open board': '打开看板',

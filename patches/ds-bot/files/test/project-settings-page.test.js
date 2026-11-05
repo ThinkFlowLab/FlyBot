@@ -206,3 +206,51 @@ test('a writable window keeps every Projects write control', async () => {
   assert.equal(nodes.filter(node => node.type === 'select').length, 1)
   assert.equal(nodes.filter(node => node.type === 'button' && text(node) === 'Unbind').length, 1)
 })
+
+// #2489: in a window that holds the team read-only the page draws no way to create a Project
+// (#2305), but the empty state still read "No Project yet — create one." — the one sentence that
+// sends the reader to the control the page had just removed and the host would refuse. The empty
+// branch gets its own sentence; a writable page keeps the shared one, and a non-empty list is not
+// touched at all.
+const textOf = (page) => {
+  if (Array.isArray(page)) return page.map(textOf).join('')
+  if (typeof page === 'string') return page
+  if (page && typeof page === 'object') return textOf(page.props?.children)
+  return ''
+}
+
+test('a read-only window does not invite creating the first Project', async () => {
+  const call = async () => ({ projects: [] })
+  const draw = async (r) => {
+    slots = []
+    effects = []
+    render(ProjectsPage, { roster: r, actions, run: fn => fn, call })
+    await flush()
+    return render(ProjectsPage, { roster: r, actions, run: fn => fn, call })
+  }
+
+  const locked = await draw(lockedRoster)
+  assert.match(textOf(locked), /No Project yet\./, 'the read-only empty state says there is none')
+  assert.doesNotMatch(textOf(locked), /create one/, 'a read-only window does not ask for what it cannot create')
+  assert.ok(!all(locked).some(node => node.type === 'input' && node.props['aria-label'] === 'Project name'), 'and draws no create form')
+
+  const writable = await draw(roster)
+  assert.match(textOf(writable), /No Project yet — create one\./, 'a writable window keeps the shared sentence')
+  assert.ok(all(writable).some(node => node.type === 'input' && node.props['aria-label'] === 'Project name'), 'and its create form')
+  assert.ok(all(writable).some(node => node.type === 'button' && text(node) === 'New Project'), 'with New Project')
+})
+
+test('a read-only window with a Project never reaches the empty branch', async () => {
+  const project = { id: 'project-1', name: 'Site', workDir: '/work/site' }
+  const call = async () => ({ projects: [project] })
+  slots = []
+  effects = []
+  render(ProjectsPage, { roster: lockedRoster, actions, run: fn => fn, call })
+  await flush()
+  const nodes = all(render(ProjectsPage, { roster: lockedRoster, actions, run: fn => fn, call }))
+  assert.doesNotMatch(textOf(nodes), /No Project yet/, 'the list is drawn, not the empty state')
+  assert.equal(nodes.filter(node => node.props?.label === 'Site').length, 1, 'the row is the same one row')
+  assert.equal(nodes.filter(node => node.props?.hint === '/work/site').length, 1, 'with its facts')
+  assert.equal(nodes.filter(node => node.type === 'button' && text(node) === 'Open board').length, 1, 'and Open board')
+  assert.equal(nodes.filter(node => node.props?.label === 'Ops').length, 1, 'a bound member is still listed')
+})

@@ -315,7 +315,10 @@ export function ProjectsList({ projects, roster, call, reload }) {
   return [
     h(SetSection, { key: 'projects', title: t('Projects · {count}', { count: projects.length }) },
       projects.length === 0
-        ? h('div', { className: 'bt-set-row' }, h('div', { className: 'bt-set-copy' }, h('span', null, t('No Project yet — create one.'))))
+        // The read-only page draws no create section above this sentence, and the host refuses
+        // `project-create`, so it says only that there is none rather than pointing at the
+        // control it just removed. The shared key stays for the board's own empty state (#2489).
+        ? h('div', { className: 'bt-set-row' }, h('div', { className: 'bt-set-copy' }, h('span', null, t(locked ? 'No Project yet.' : 'No Project yet — create one.'))))
         : projects.map(project => h(SetRow, {
           key: project.id, label: project.name,
           hint: project.workDir === null || project.workDir === undefined ? undefined : project.workDir,
