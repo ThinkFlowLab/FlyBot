@@ -2747,3 +2747,30 @@ test('evolving Task rev4 accepts merged Attempt rev2 and starts the next deliver
   assert.equal(next.attempt.requirement.criteria, f.task.criteria)
   assert.equal(next.attempt.publicationBinding, undefined); assert.equal(f.a.pr.number, 1)
 })
+
+test('historical parent settlement retains the original durable child admission revision', async t => {
+  const f = await childIntegrationFixture(t), a = f.attempt, task = f.task
+  await f.rt.projectDelivery.admitChildInputs(task.id, f.claim)
+  git(f.path, ['merge', '--no-commit', '--no-ff', ...f.sources.map(row => row.sha)])
+  await f.rt.projectDelivery.completePoolRole({ task, claim: f.claim, role: 'developer', outputs: {} })
+  const roles = f.rt.projectAgents.deliveryDefinitions('p1').roles
+  await prepareRole(f.rt, task, { id: 'test-parent', attemptId: a.id, generation: 2 }, roles.find(r => r.role === 'tester'))
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: a.id }, role: 'tester', outputs: {} })
+  await prepareRole(f.rt, task, { id: 'review-parent', attemptId: a.id, generation: 3 }, roles.find(r => r.role === 'reviewer'))
+  await f.rt.projectDelivery.completePoolRole({ task, claim: { attemptId: a.id }, role: 'reviewer', outputs: { review: JSON.stringify({ commit: a.candidateSha, verdict: 'approve', summary: 'Original parent and child results verified' }) } })
+  git(f.repository, ['merge', '--ff-only', a.candidateSha])
+  f.publisher.read = async pr => ({ sha: pr.sha, state: 'closed', merged: true, mergeCommitSha: a.candidateSha, baseRef: 'main', baseSha: a.candidateSha })
+  task.collaboration.claim.status = 'completed'; task.collaboration.claim.exitConfirmed = true
+  const { reviseTask } = await import('../src/host/project-task-lifecycle.js')
+  reviseTask(task, { scope: 'Additional parent goal' }, { id: 'parent-next-goal', projectId: 'p1', taskId: task.id, executorRole: 'chief', runId: 'parent-chief', initiatedBy: alice.memberId, reason: 'Plan remaining goal after merged child integration' })
+  const accepted = () => f.rt.projectDelivery.chiefAccept({ taskId: task.id, expectedSha: a.candidateSha, decision: { id: 'settle-parent', action: 'accept-attempt', delivery: { completed: 'Parent integrated the original accepted children', remaining: 'Additional parent goal', evidence: ['original durable child admission, tested candidate and merged PR'] } } }, { ...alice, chiefJobId: 'parent-chief' })
+  f.rt.projectChiefControl.requireJobActor = actor => { assert.equal(actor.chiefJobId, 'parent-chief') }
+  const admission = a.integrationAdmissions.find(row => row.origin === 'project-child-results'), originalFingerprint = admission.sourcesFingerprint
+  const effect = f.rt.state.projectEffects[admission.effect.id], beforeEffect = structuredClone(effect)
+  delete f.rt.state.projectEffects[admission.effect.id]
+  await assert.rejects(accepted(), /durable source admission/)
+  f.rt.state.projectEffects[admission.effect.id] = beforeEffect
+  await accepted()
+  assert.equal(a.status, 'accepted'); assert.equal(a.settlement.requirementsRevision, 1); assert.equal(a.settlement.taskRequirementsRevision, 2)
+  assert.equal(admission.sourcesFingerprint, originalFingerprint); assert.notEqual(task.status, 'accepted')
+})

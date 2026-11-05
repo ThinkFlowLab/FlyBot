@@ -738,7 +738,7 @@ stop is inferred. Ordinary public task.run still refuses active Attempts.
 
 ## Scoped Attempt acceptance and next delivery (#2526)
 
-Chief accept-attempt verifies pinned requirements/candidate, host tests, Review,
+Chief accept-attempt verifies pinned requirements/child-admission revision/candidate, tests, Review,
 policy/SDK evidence, provider-confirmed merge and actual execution exit. Its bounded
 completed/remaining/evidence record belongs to the Attempt. Task revisions are advisory;
 requirementsRevision pins the Attempt and taskRequirementsRevision records the current Task.

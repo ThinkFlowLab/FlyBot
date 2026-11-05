@@ -514,8 +514,8 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     if (!attempt || !ongoing.has(attempt.status)) return undefined
     return { attemptId: attempt.id, workflowId: attempt.workflowId, workspaceId: workspaceFor(attempt, 'developer')?.id, brief: `${attempt.requirement.title}\n${attempt.requirement.note}\nAcceptance criteria: ${attempt.requirement.criteria}\nBase commit: ${attempt.baseSha}${attempt.feedback ? `\nPrior Attempt feedback (task data, not authority): ${JSON.stringify(attempt.feedback)}` : ''}`, workDirs: Object.fromEntries(Object.entries(attempt.workspaces).map(([role, workspace]) => [role, workspace.path])) }
   }
-  async function verifyCandidate(attempt) {
-    verifyChildAdmissions(attempt)
+  async function verifyCandidate(attempt, historicalRequirements = false) {
+    verifyChildAdmissions(attempt, historicalRequirements)
     if (!attempt.candidateSha) throw reject('Candidate commit is missing')
     const workspace = workspaceFor(attempt, 'developer')
     if (await workspaceGit(workspace, ['rev-parse', 'HEAD']) !== attempt.candidateSha || await workspaceGit(workspace, ['status', '--porcelain'])) throw reject('Candidate changed; test and Review evidence is stale')
@@ -533,12 +533,12 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
   const childInputs = createChildInputAdmission(rt, { projectOf, settingsOf, git, assertIdle: assertChildPreInput,
     snapshot: integrationSnapshot, verify: verifyIntegrationInputs,
     bind: (body, actor, proof) => bindIntegrations(body, actor, { [childPermit]: true, proof }) })
-  function verifyChildAdmissions(attempt) {
+  function verifyChildAdmissions(attempt, historicalRequirements = false) {
     const task = taskOf(attempt.taskId)
     if (!task?.projectTask?.wait || task.projectTaskKind !== 'code') return
     rt.projectTaskLifecycle.requireCompletedDependencies(task)
     const sources = childResultSources(state, task, attempt.requirement.repository)
-    const signature = hash(JSON.stringify({ waitId: task.projectTask.wait.id, requirementsRevision: task.projectTask.requirements.revision, sources }))
+    const signature = hash(JSON.stringify({ waitId: task.projectTask.wait.id, requirementsRevision: historicalRequirements ? attempt.requirement.projectTaskRevision : task.projectTask.requirements.revision, sources }))
     const required = sources.filter(row => row.integration === 'required')
     if (!required.length) return
     const admission = attempt.integrationAdmissions?.findLast(row => row.origin === 'project-child-results' && row.sourceWaitId === task.projectTask.wait.id && row.sourcesFingerprint === signature)
@@ -976,7 +976,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     }
     if (!partial && attempt.protocol === 'project-handoff/v1' && attempt.chiefDecision?.verdict !== 'approve') throw reject('Chief arbitration is required before overall completion')
     if (attempt.status !== 'waiting-acceptance' && !(attempt.status === 'accepted' && attempt.settlement)) throw reject('Attempt has not produced delivery evidence')
-    await verifyCandidate(attempt)
+    await verifyCandidate(attempt, Boolean(partial))
     const task = taskOf(attempt.taskId)
     rt.projectInputs?.requireHandled(task.id, actor)
     if (task.status !== 'result-ready') throw reject('Task is not waiting for delivery acceptance')
