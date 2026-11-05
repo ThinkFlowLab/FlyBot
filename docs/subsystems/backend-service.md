@@ -1,4 +1,5 @@
 ---
+
 subsystem: backend-service
 owned_paths:
   - scripts/backend.mjs
@@ -22,6 +23,10 @@ owned_paths:
   - README.native.md
   - README.native.zh.md
 ---
+
+#2483 resource-clone Git capability follows the bound Developer workspace, not
+App identity. No service operation or permission changes; regenerated OpenAPI
+source fingerprints reflect the host adapter fix. See [Harness](project-harness.md).
 
 # Persistent source backend entry (#2189)
 

@@ -27,9 +27,23 @@ owned_paths:
   - core/src/host/project-harness-deny-tool.mjs
   - core/test/project-harness.test.js
   - core/test/project-harness-turn.test.js
+  - core/test/project-harness-git-sdk.test.js
 ---
 
 # Harness adapters (fork M7.3)
+
+## Isolated resource Git capability (#2483)
+
+An active Developer's registered `resource-clone` receives write access to its own
+`.git` regardless of GitHub App configuration. Before dispatch, verify the current
+Project/Attempt/resource/path binding and resource-side Git directory, common
+directory and physical path. A symlink or shared common directory is refused.
+This enables checkout, staging and commits inside the private clone; it grants no
+remote access or credentials. Local shared worktrees retain their narrower own
+index/object-store grants; Tester/Reviewer and Chief remain read-only. Configuration
+parsing alone is insufficient: opt-in actual SDK fixtures exercise mutations and
+read-only denial using disposable profiles, including a separate Docker run. Model
+and GitHub provider replies in those fixtures are not actual model acceptance.
 
 The existing Workflow retains dispatch/result/deadline/release behavior. Its host seam
 `projects.execution` delegates configured SDK workers; native roles continue through the

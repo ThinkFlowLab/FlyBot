@@ -1,5 +1,7 @@
 # FlyBot — Project State
 
+#2483: Developer Git mutation rights follow its bound isolated resource clone, independently of App credentials. Shared host Git metadata and read-only role policies keep their existing boundaries.
+
 #2483 dispatch/input follow-up keeps waits attributable and declarations explicit: no acceptance across unhandled batches, no stale notification/decision replay, no automatic role or human escalation.
 
 #2483: refused durable reads retain current in-memory Task/Session references and prohibit writes. Read-only verification reports metadata; write readiness is separate from process liveness. Recovery remains Chief judgement.

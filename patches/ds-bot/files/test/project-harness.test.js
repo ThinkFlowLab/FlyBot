@@ -1,7 +1,7 @@
 import { harnessProfile } from '../src/host/project-harness-auth.js'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -24,7 +24,7 @@ lines.on('line',line=>{const m=JSON.parse(line);
  if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);}
  if(m.type==='start') {
   write({type:'sdk-event',event:{type:'thread.started',thread_id:'bound-thread'}});
-  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,resumeSessionId:m.settings.sessionId??null,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
+  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,writableRoots:m.settings.writableRoots,resumeSessionId:m.settings.sessionId??null,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
   write({type:'completed',sessionId:'bound-thread',text:'OUTPUT implementation: actual contract worker output',usage:{input_tokens:1}});
  }
 });`)
@@ -68,6 +68,52 @@ test('SDK workers reject unregistered Workspaces and missing explicit profiles',
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: '/foreign' }), /registered/)
   delete rt.config.projectResources.r.profiles
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd }), /explicitly authorized/)
+})
+
+test('non-App Dev receives Git mutation rights only for its bound isolated resource clone', async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  execFileSync('git', ['init', '-q', cwd])
+  const workspace = rt.projectDelivery.ownsWorkspace('p', cwd)
+  Object.assign(workspace, { kind: 'resource-clone', resourceId: 'r', repository: cwd })
+  rt.state.projectAttempts = { a: { workspaces: { developer: workspace } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Non-App development' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Stage and commit owned work', outputs: [{ name: 'implementation' }] })
+  await result
+  const events = (await readFile(rt.state.projectHarnessWorkers[id].eventLog, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  assert.deepEqual(events.find(row => row.event?.type === 'debug').event.writableRoots, [join(cwd, '.git')])
+})
+
+for (const changed of ['binding', 'symlink', 'common-dir']) test('isolated Dev Git grant refuses changed ' + changed, async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  execFileSync('git', ['init', '-q', cwd])
+  const workspace = rt.projectDelivery.ownsWorkspace('p', cwd)
+  Object.assign(workspace, { kind: 'resource-clone', resourceId: 'r', repository: cwd })
+  rt.state.projectAttempts = { a: { workspaces: { developer: workspace } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Owned development' })
+  if (changed === 'binding') workspace.resourceId = 'foreign'
+  else {
+    const foreign = join(cwd, '..', 'foreign-git')
+    if (changed === 'symlink') { await rename(join(cwd, '.git'), foreign); await symlink(foreign, join(cwd, '.git')) }
+    else { execFileSync('git', ['init', '--bare', '-q', foreign]); await writeFile(join(cwd, '.git', 'commondir'), foreign + '\n') }
+  }
+  await assert.rejects(harness.dispatch({ botId: id, taskId: 't', brief: 'Work', outputs: [{ name: 'implementation' }] }), /binding changed|does not belong/)
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'idle')
+})
+
+test('non-App read-only policy role never gains isolated clone Git writes', async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  const workspace = rt.projectDelivery.ownsWorkspace('p', cwd), session = rt.projectDelivery.sessionFor()
+  Object.assign(workspace, { kind: 'resource-clone', resourceId: 'r', repository: cwd })
+  session.definition.policyRole = 'reviewer'
+  rt.state.projectAttempts = { a: { workspaces: { developer: workspace } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Review only' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Review', outputs: [{ name: 'implementation' }] })
+  await result
+  const events = (await readFile(rt.state.projectHarnessWorkers[id].eventLog, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  const settings = events.find(row => row.event?.type === 'debug').event
+  assert.deepEqual(settings.writableRoots, []); assert.equal(settings.readOnly, true)
 })
 
 test('resource-side configuration failure remains environment evidence and releases only after worker exit', async t => {
