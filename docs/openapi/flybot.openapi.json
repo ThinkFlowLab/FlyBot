@@ -38030,7 +38030,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b"
+        "sha256": "2010cf0edef08137cf55d3abffdd7780764219824aec1b76cbc8661a8df39dd9"
       }
     },
     {
@@ -48993,7 +48993,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b"
+        "sha256": "2010cf0edef08137cf55d3abffdd7780764219824aec1b76cbc8661a8df39dd9"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -49527,7 +49527,7 @@
       "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
       "core/src/host/project-harness-auth.js": "2684b6687433e128197a0cc67b671bbd02c3c71e39428af7393d0c0ca1658ac7",
       "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
-      "core/src/host/project-harness.js": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b",
+      "core/src/host/project-harness.js": "2010cf0edef08137cf55d3abffdd7780764219824aec1b76cbc8661a8df39dd9",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
       "core/src/host/project-inputs.js": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",

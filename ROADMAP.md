@@ -1,5 +1,7 @@
 # FlyBot — Roadmap
 
+#2483 resource Git parity: verify current Project/Attempt/resource/cwd and private Git metadata before granting Dev its clone `.git`; validate actual SDK mutations and read-only denial separately from live resource acceptance.
+
 #2483 adds typed dispatch waits and bounded Chief input continuation through existing notifications; source/fixture completion remains distinct from the current OpenToday instance.
 
 #2483 proceeds through storage failure handling, dispatch/input-receipt diagnosis, resource Git capability and explicit baseline/restart recovery. Historical log times are not current health evidence; no live migration or automatic Task acceptance.
