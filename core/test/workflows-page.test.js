@@ -1389,13 +1389,15 @@ test('a forward edge into the next row turns above the tallest CJK named card (#
 // the layout — and then the state is discarded with one technical line.
 const READ_ONLY = 'another dsh holds the team, so this window is read-only'
 
-test('#2176: a read-only window renders the host sentence instead of Edit and offers no rename or delete', () => {
+// The host's standing sentence belongs to the Settings header, once per page: this edit bar
+// used to draw a second copy of it where Edit would be, and a second live region is read out
+// twice. The header keeps the sentence and its one Reload; the graph keeps Back.
+test('#2176: a read-only graph draws no editing control and leaves the host sentence to the header', () => {
   const view = renderView({ phase: 'ready', pack, opened: { source: 'own', id: 'wf-mine' }, error: '', roster: { bots: [], readOnly: READ_ONLY } })
   const editingControl = all(view).filter((entry) => entry.type === 'button' && (text(entry) === 'Edit' || text(entry) === 'Finish editing'))
   assert.deepEqual(editingControl.map(text), [], 'a read-only window offers no editing control')
-  const sentence = all(view).find((entry) => entry.props?.className === 'bt-wf-status' && text(entry) === READ_ONLY)
-  assert.ok(sentence, 'the host sentence is rendered on the page')
-  assert.equal(text(sentence), READ_ONLY, 'the page repeats the host wording, it does not invent one')
+  assert.equal(all(view).some((entry) => text(entry) === READ_ONLY), false, 'the edit bar adds no second copy of the host sentence')
+  assert.equal(all(view).some((entry) => entry.props?.role === 'status' && text(entry) === READ_ONLY), false, 'and no second live region carrying it')
   assert.equal(all(view).some((entry) => entry.props?.['data-port']), false, 'no port handles to drag')
   // The read side is untouched: the graph, its cards and the run chips still render.
   assert.ok(all(view).some((entry) => entry.props?.['data-node'] === 'coder'), 'the opened graph still renders')

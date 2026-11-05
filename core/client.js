@@ -17297,7 +17297,7 @@ function WorkflowsView({ phase = "loading", pack = null, error = "", opened = nu
         { className: "bt-wf-actions" },
         (0, import_react37.createElement)("button", { type: "button", onClick: () => onBack?.() }, t("Back")),
         showUse ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onUse?.(opened.source === "factory" ? opened.id : opened.fromFactory) }, t("Use this")) : null,
-        locked ? (0, import_react37.createElement)("span", { className: "bt-wf-status", role: "status" }, hostText(readOnly)) : opened?.source === "own" ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
+        locked ? null : opened?.source === "own" ? (0, import_react37.createElement)("button", { type: "button", onClick: () => onEditing?.(!editing) }, editing ? t("Finish editing") : t("Edit")) : null
       ),
       (0, import_react37.createElement)("h3", { className: "bt-wf-title" }, graph.name),
       graph.description ? (0, import_react37.createElement)("p", { className: "bt-wf-hint" }, graph.description) : null,
