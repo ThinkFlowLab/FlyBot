@@ -1,9 +1,12 @@
 import { harnessProfile } from '../src/host/project-harness-auth.js'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
+import { once } from 'node:events'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createProjectScheduler } from '../src/host/project-scheduler.js'
 import { createProjectEffects } from '../src/host/project-effects.js'
@@ -24,7 +27,7 @@ lines.on('line',line=>{const m=JSON.parse(line);
  if(m.type==='stop'){write({type:'stopped',released:true});setTimeout(()=>process.exit(0),20);}
  if(m.type==='start') {
   write({type:'sdk-event',event:{type:'thread.started',thread_id:'bound-thread'}});
-  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,resumeSessionId:m.settings.sessionId??null,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
+  write({type:'sdk-event',event:{type:'debug',noTools:m.settings.noTools,readOnly:m.settings.readOnly,writableRoots:m.settings.writableRoots,resumeSessionId:m.settings.sessionId??null,value:m.settings.env.OPENAI_API_KEY,taskId:'task-1234567890abcdef',unknownCredential:'sk-unitsecret123456789012345'}});
   write({type:'completed',sessionId:'bound-thread',text:'OUTPUT implementation: actual contract worker output',usage:{input_tokens:1}});
  }
 });`)
@@ -68,6 +71,123 @@ test('SDK workers reject unregistered Workspaces and missing explicit profiles',
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: '/foreign' }), /registered/)
   delete rt.config.projectResources.r.profiles
   await assert.rejects(harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd }), /explicitly authorized/)
+})
+
+for (const priorState of ['unreachable', 'released-worker', 'released-lease', 'stale-generation', 'legacy-no-proof']) test('controller-lost SDK release reconciles ' + priorState + ' using exact exit evidence', async t => {
+  const { rt, cwd } = await fixture(t)
+  const scope = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `import {captureProcessScope} from ${JSON.stringify(new URL('../src/host/project-process-proof.js', import.meta.url).href)};console.log(JSON.stringify(await captureProcessScope()))`], { encoding: 'utf8', env: { PATH: process.env.PATH } }))
+  const id = 'sdk-controller-lost', root = rt.config.projectResources.r.root
+  for (const name of ['project-sdk-exit.mjs', 'project-process-proof.js']) await writeFile(join(rt.config.projectResources.r.runtimeDir, 'src/host', name), await readFile(new URL('../src/host/' + name, import.meta.url)))
+  await mkdir(join(root, '.flybot-sdk-exit'))
+  await writeFile(join(root, '.flybot-sdk-exit', id + '.json'), JSON.stringify({ version: 'project-sdk-exit/v1', workerId: id, leaseId: 'l', generation: 1, scope, status: 'stopped' }))
+  rt.state.projectHarnessWorkers = { [id]: { id, projectId: 'p', attemptId: 'a', role: 'developer', resourceId: 'r', leaseId: 'l', generation: 1, status: priorState === 'released-worker' ? 'released' : 'unreachable', cwd, exitRecovery: { version: 'project-sdk-exit/v1' } } }
+  if (priorState === 'released-worker') rt.state.projectHarnessWorkers[id].releaseProof = { kind: 'sdk-stop-ack-and-process-exit', workerId: id, generation: 1, at: Date.now() }
+  Object.assign(rt.state.projectResourceLeases.l, { status: priorState === 'released-lease' ? 'released' : 'unreachable', worker: { kind: 'sdk', handle: id } })
+  const restored = createProjectHarness(rt)
+  if (priorState === 'legacy-no-proof') {
+    delete rt.state.projectHarnessWorkers[id].exitRecovery
+    await rm(join(root, '.flybot-sdk-exit', id + '.json'))
+    await assert.rejects(restored.release(id), /exit cannot be confirmed/)
+    assert.equal(rt.state.projectResourceLeases.l.status, 'unreachable')
+    delete rt.state.projectHarnessWorkers[id]
+    return
+  }
+  if (priorState === 'stale-generation') {
+    const command = rt.projectResources.command
+    rt.projectResources.command = async (...args) => { const result = await command(...args); rt.state.projectResourceLeases.l.generation = 2; return result }
+    await assert.rejects(restored.release(id), /exit cannot be confirmed/)
+    assert.equal(rt.state.projectResourceLeases.l.status, 'unreachable')
+    delete rt.state.projectHarnessWorkers[id] // No live process exists in this synthetic stale-binding fixture.
+    return
+  }
+  assert.equal(await restored.release(id), true)
+  assert.equal(rt.state.projectResourceLeases.l.status, 'released')
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.kind, 'sdk-stop-ack-and-process-exit')
+})
+
+for (const recovery of ['release', 'reconcile']) test('controller-lost host ' + recovery + ' waits for the actual resource worker to settle and exit', { timeout: 15000 }, async t => {
+  const { rt, cwd } = await fixture(t), id = 'sdk-live-controller-lost'
+  rt.config.projectResources.r.runtimeDir = resolve(import.meta.dirname, '..')
+  rt.state.projectHarnessWorkers = { [id]: { id, projectId: 'p', attemptId: 'a', role: 'developer', resourceId: 'r', leaseId: 'l', generation: 1, status: 'unreachable', cwd, exitRecovery: { version: 'project-sdk-exit/v1' } } }
+  await rt.projectResources.markStarted('l', 1, { kind: 'sdk', handle: id })
+  const identity = { version: 'project-sdk-exit/v1', root: rt.config.projectResources.r.root, workerId: id, leaseId: 'l', generation: 1 }
+  const child = rt.projectResources.startProcess('p', 'r', { cwd, argv: ['node', resolve(import.meta.dirname, '../src/host/project-harness-worker.mjs'), JSON.stringify(identity)] })
+  child.stderr.resume(); child.stdin.on('error', () => {})
+  const exit = once(child, 'close'), lines = createInterface({ input: child.stdout })
+  t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); await exit; lines.close() })
+  await once(lines, 'line')
+  rt.projectHarness = createProjectHarness(rt)
+  assert.equal(rt.projectResources.occupied('r'), 1)
+  if (recovery === 'release') assert.equal(await rt.projectHarness.release(id), true)
+  else { child.stdin.end(); await exit; await rt.projectResources.reconcile() }
+  await exit
+  assert.equal(rt.projectResources.occupied('r'), 0)
+  assert.equal(rt.state.projectHarnessWorkers[id].releaseProof.source, 'resource-stopped-receipt')
+  assert.equal(rt.state.tasks.t.status, undefined, 'Physical exit does not complete the Task')
+})
+
+for (const previousStatus of ['unreachable', 'released']) test('legacy ' + previousStatus + ' SDK reconciles only its saved stop event and zero process exit', async t => {
+  const { rt, harness, cwd } = await fixture(t)
+  const start = rt.projectResources.startProcess; let child
+  rt.projectResources.startProcess = (...args) => (child = start(...args))
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Own legacy worker' })
+  const exited = once(child, 'close')
+  child.stdin.end(JSON.stringify({ type: 'stop' }) + '\n'); await exited
+  const row = rt.state.projectHarnessWorkers[id]
+  const stoppedHash = createHash('sha256').update(JSON.stringify({ type: 'stopped', released: true })).digest('hex')
+  for (let n = 0; n < 100 && row.lastEventHash !== stoppedHash; ++n) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(row.lastEventHash, stoppedHash)
+  delete row.exitRecovery; row.status = previousStatus; rt.state.projectResourceLeases.l.status = previousStatus
+  rt.projectHarness = createProjectHarness(rt)
+  await rt.projectResources.reconcile()
+  assert.equal(row.status, 'released'); assert.equal(rt.projectResources.occupied('r'), 0)
+  assert.equal(row.releaseProof.source, 'durable-host-stop-event')
+})
+
+test('non-App Dev receives Git mutation rights only for its bound isolated resource clone', async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  execFileSync('git', ['init', '-q', cwd])
+  const workspace = rt.projectDelivery.ownsWorkspace('p', cwd)
+  Object.assign(workspace, { kind: 'resource-clone', resourceId: 'r', repository: cwd })
+  rt.state.projectAttempts = { a: { workspaces: { developer: workspace } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Non-App development' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Stage and commit owned work', outputs: [{ name: 'implementation' }] })
+  await result
+  const events = (await readFile(rt.state.projectHarnessWorkers[id].eventLog, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  assert.deepEqual(events.find(row => row.event?.type === 'debug').event.writableRoots, [join(cwd, '.git')])
+})
+
+for (const changed of ['binding', 'symlink', 'common-dir']) test('isolated Dev Git grant refuses changed ' + changed, async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  execFileSync('git', ['init', '-q', cwd])
+  const workspace = rt.projectDelivery.ownsWorkspace('p', cwd)
+  Object.assign(workspace, { kind: 'resource-clone', resourceId: 'r', repository: cwd })
+  rt.state.projectAttempts = { a: { workspaces: { developer: workspace } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Owned development' })
+  if (changed === 'binding') workspace.resourceId = 'foreign'
+  else {
+    const foreign = join(cwd, '..', 'foreign-git')
+    if (changed === 'symlink') { await rename(join(cwd, '.git'), foreign); await symlink(foreign, join(cwd, '.git')) }
+    else { execFileSync('git', ['init', '--bare', '-q', foreign]); await writeFile(join(cwd, '.git', 'commondir'), foreign + '\n') }
+  }
+  await assert.rejects(harness.dispatch({ botId: id, taskId: 't', brief: 'Work', outputs: [{ name: 'implementation' }] }), /binding changed|does not belong/)
+  assert.equal(rt.state.projectHarnessWorkers[id].status, 'idle')
+})
+
+test('non-App read-only policy role never gains isolated clone Git writes', async t => {
+  const { harness, rt, cwd } = await fixture(t)
+  const workspace = rt.projectDelivery.ownsWorkspace('p', cwd), session = rt.projectDelivery.sessionFor()
+  Object.assign(workspace, { kind: 'resource-clone', resourceId: 'r', repository: cwd })
+  session.definition.policyRole = 'reviewer'
+  rt.state.projectAttempts = { a: { workspaces: { developer: workspace } } }
+  const id = await harness.spawn({ executionProjectId: 'p', executionWorkDir: cwd, prompt: 'Review only' })
+  const result = new Promise(resolve => harness.onResult(resolve))
+  await harness.dispatch({ botId: id, taskId: 't', brief: 'Review', outputs: [{ name: 'implementation' }] })
+  await result
+  const events = (await readFile(rt.state.projectHarnessWorkers[id].eventLog, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  const settings = events.find(row => row.event?.type === 'debug').event
+  assert.deepEqual(settings.writableRoots, []); assert.equal(settings.readOnly, true)
 })
 
 test('resource-side configuration failure remains environment evidence and releases only after worker exit', async t => {

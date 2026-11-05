@@ -268,3 +268,16 @@ test('Project execution principal is server-derived rather than the caller sessi
   assert.equal(rt.state.tasks[task.id].projectTask.executionRequester.memberId, bob.memberId)
   assert.equal(rt.state.tasks[task.id].projectTask.executionRequester.sessionId, 'authenticated-session')
 })
+
+test('retained memory after refused storage reads cannot authorize members or running project roles', async t => {
+  const rt = await setup(t)
+  rt.stateStorage.readable = () => false
+  rt.readOnly = () => 'Fixture durable read was refused'
+  assert.equal(rt.projectCan(bob, 'p1'), false)
+  assert.throws(() => rt.requireProjectAccess(alice, 'p1'), /access denied/)
+  rt.authenticate = async () => bob
+  const refused = await rt.testHttp('workbench-state', {})
+  assert.equal(refused.ok, false); assert.equal(refused.error.code, 'bot/read-only')
+  const status = await rt.testHttp('auth-mode', {})
+  assert.equal(status.ok, true); assert.equal(status.value.writable, false)
+})

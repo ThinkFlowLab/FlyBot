@@ -1024,3 +1024,5 @@ redacted tools/model inputs and safe execution projections implement the explici
 #2398 adds safe profile/authentication facts through original worker/health/Task/Chief
 views. Authentication errors do not manufacture code/test/Review outcomes. Configuration
 and actual login stay in the authorized resource terminal, not a new credential service.
+
+#2483: a refused durable read does not represent a fresh empty home. Store preserves current object identities while remaining read-only, and exposes readable/writable storage status. Successful verified reload retains existing reconciliation semantics.

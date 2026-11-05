@@ -297,6 +297,7 @@ export function install(rt) {
       const body = payload ?? {}
       await rt.refresh()
       const readOnly = rt.readOnly()
+      if (rt.stateStorage?.readable?.() === false && !['auth-mode', 'state', 'diagnostics', 'diagnostics-log'].includes(endpoint)) return fail('Durable state is unreadable; current authority cannot be verified', 'bot/read-only')
       const flybotRead = endpoint.startsWith('flybot/') && rt.flybotIsRead?.(endpoint.slice('flybot/'.length)) === true
       const projectRead = endpoint === 'project-workflow' && ['state', 'templates'].includes(body.operation ?? 'state')
         || endpoint === 'project-development' && rt.projectDevelopment.isQuery(body)

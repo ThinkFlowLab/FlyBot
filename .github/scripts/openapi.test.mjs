@@ -10,7 +10,7 @@ test('published OpenAPI artifact matches all allowlisted endpoints and v1 operat
   assert.equal(readFileSync(artifactPath, 'utf8'), renderSpec())
   const spec = readSpec(), inv = inventory(), ops = spec['x-flybot-operations']
   assert.equal(spec.openapi, '3.1.0')
-  assert.deepEqual(Object.keys(spec.paths).sort(), ['/api/bot', '/api/project-events', '/health'])
+  assert.deepEqual(Object.keys(spec.paths).sort(), ['/api/bot', '/api/project-events', '/health', '/ready'])
   assert.deepEqual([...new Set(ops.map(row => row.transport.endpoint))].sort(), inv.endpoints.sort())
   assert.deepEqual(ops.filter(row => row.transport.kind === 'query').map(row => row.transport.name).sort(), inv.queries.sort())
   assert.deepEqual(ops.filter(row => row.transport.kind === 'command').map(row => row.transport.name).sort(), inv.commands.sort())
@@ -107,4 +107,19 @@ test('Chief source/acceptance failures and incomplete correction transport remai
   const value = { compensation: [], health: { enabled: true, status: 'degraded', lastSuccessAt: null, lastAppliedDecisionAt: null, active: [] }, policy: { enabled: true }, template: {}, schedule: null, runs: [{ id: 'run', projectId: 'project', status: 'failed', recoveryIssue: recovery, correction: { version: 'chief-correction/v1', round: 1, limit: 2, status: 'transport-incomplete', feedback: [] }, lastResult: { ok: false, invocation: 2, source: 'host-dispatch', responseSha256: null, diagnosticSha256: 'b'.repeat(64), receivedAt: 2 }, failureDetail: { invocation: 2, stage: 'dispatch', code: 'bot/chief', responseSha256: null, diagnosticSha256: 'b'.repeat(64), recoveryKind: 'source-changed', criteriaIssues: [], at: 2 } }] }
   validate(query.resultSchema, value, spec)
   for (const kind of ['input-protocol', 'acceptance-evidence-missing']) { value.runs[0].recoveryIssue.kind = kind; validate(query.resultSchema, value, spec) }
+})
+
+test('merged candidate handoff separates transport receipt, Chief outcome and Task acceptance', () => {
+  const spec = readSpec(), value = { effectId: 'handoff-effect', candidateSha: 'a'.repeat(40), status: 'delivered', reason: null, waitingFor: null, runId: 'chief-run', runStatus: 'failed', runFailure: 'Execution transport unavailable', waitingRunId: null, createdAt: 1, requestedAt: 2 }
+  validate({ $ref: '#/components/schemas/MergeHandoff' }, value, spec)
+  assert.throws(() => validate({ $ref: '#/components/schemas/MergeHandoff' }, { ...value, status: 'accepted' }, spec), /status:/)
+  assert.throws(() => validate({ $ref: '#/components/schemas/MergeHandoff' }, { ...value, candidateSha: 'unverified' }, spec), /candidateSha:/)
+})
+
+test('dispatch gates and Chief input declarations are typed without treating declarations as acceptance', () => {
+  const spec = readSpec()
+  validate({ $ref: '#/components/schemas/DispatchState' }, { effectId: 'e', status: 'pending', generation: 1, committed: true, executions: 89, failures: 0, waitingFor: 'project-capacity', reason: 'Capacity admission is pending', dueAt: 1 }, spec)
+  const receipt = { provided: true, batchId: 'batch', read: ['i'], handled: ['i'], remaining: 2 }
+  validate({ $ref: '#/components/schemas/ChiefInputReceiptSummary' }, receipt, spec)
+  assert.throws(() => validate({ $ref: '#/components/schemas/ChiefInputReceiptSummary' }, { ...receipt, handled: ['a', 'b', 'c'] }, spec), /handled:/)
 })

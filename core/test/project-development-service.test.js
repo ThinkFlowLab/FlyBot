@@ -317,3 +317,32 @@ test('GitHub connection operations use the v1 facade with current manager author
   const result = await service.endpoint('project-development', { ...envelope, kind: 'query', name: 'github.connection' }, { memberId: 'bob' })
   assert.equal(result.result.connection.configured, false); assert.equal(calls.length, 2)
 })
+
+test('merged candidate exposes handoff and Chief failure independently of Task business blocking', async () => {
+  const { state } = fixture(), task = state.tasks.t
+  task.deliveryAttemptId = 'a'; task.collaboration = { generation: 2, status: 'blocked', block: { reason: 'Acceptance evidence still missing' }, history: [] }
+  const attempt = state.projectAttempts.a = { id: 'a', taskId: 't', projectId: 'p', candidateSha: 'a'.repeat(40), status: 'waiting-acceptance', merge: { status: 'merged', candidateSha: 'a'.repeat(40), reason: 'provider-confirmed', chiefHandoff: { effect: { id: 'h', generation: 1 }, candidateSha: 'a'.repeat(40), runId: 'chief-run', createdAt: 10, requestedAt: 20 } } }
+  state.projectEffects = { h: { projectId: 'p', taskId: 't', status: 'done' } }
+  state.projectExecutions['chief-run'] = { projectId: 'p', status: 'failed', failure: 'Execution transport unavailable', source: { attemptId: 'a', candidateSha: attempt.candidateSha } }
+  const view = taskView(state, task)
+  assert.equal(view.merge.status, 'merged')
+  assert.equal(view.merge.chiefHandoff.status, 'delivered')
+  assert.equal(view.merge.chiefHandoff.runStatus, 'failed')
+  assert.equal(view.reason, 'Acceptance evidence still missing')
+  const { attemptMetadataView } = await import('../src/host/project-service-views.js')
+  assert.deepEqual(attemptMetadataView(attempt, state).merge.chiefHandoff, view.merge.chiefHandoff)
+  state.projectExecutions['chief-run'].projectId = 'another-project'
+  assert.equal(taskView(state, task).merge.chiefHandoff.runFailure, null)
+})
+
+test('queued Task dispatch projection derives runtime commit proof rather than raw SQL fields', () => {
+  const { state } = fixture(), task = state.tasks.t
+  task.collaboration = { status: 'queued', currentHandoffId: 'current', generation: 3, botId: 'p:developer', history: [] }
+  state.projectEffects = { e: { id: 'e', projectId: 'p', taskId: 't', kind: 'pool.dispatch', payload: { handoffId: 'current' }, generation: 1, status: 'pending', waitingFor: 'execution-resource', error: 'Receiving execution resource is not ready', executions: 89, failures: 0, dueAt: 10 } }
+  const view = taskView(state, task, { isIntentCommitted: token => token.id === 'e' && token.generation === 1 })
+  assert.equal(view.dispatch.committed, true); assert.equal(view.dispatch.executions, 89)
+  assert.equal(view.dispatch.waitingFor, 'execution-resource')
+  assert.equal(view.waitingFor, 'execution-resource'); assert.equal(view.reason, 'Receiving execution resource is not ready')
+  task.collaboration.currentHandoffId = 'replacement'
+  assert.equal(taskView(state, task).dispatch, null)
+})

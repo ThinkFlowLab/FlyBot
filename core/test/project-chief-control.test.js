@@ -44,7 +44,7 @@ test('failed schedule configuration does not silently enable autonomous Chief au
   assert.equal(control.template.when.seconds, 1800)
 })
 
-async function controlFixture({ modern = false, dependency = false, withInputs = false } = {}) {
+async function controlFixture({ modern = false, dependency = false, withInputs = false, inputCount = 1 } = {}) {
   const { createProjectPools } = await import('../src/host/project-pools.js')
   const task = { id: 't', projectId: 'p', title: 'Fix code', criteria: 'Exact candidate passes', status: 'result-ready', deliveryAttemptId: 'a', collaboration: { initiatedBy: 'owner', kind: 'code', generation: 1, status: 'arbitration', botId: 'p:chief', attemptId: 'a', currentHandoffId: 'receipt', history: [{ id: 'receipt', status: 'pending', to: 'p:chief', createdAt: 1, evidence: [] }] } }
   let request, accepted = 0, permitted = true
@@ -53,7 +53,7 @@ async function controlFixture({ modern = false, dependency = false, withInputs =
   if (withInputs) {
     const { createProjectEffects } = await import('../src/host/project-effects.js'), { install } = await import('../src/host/project-inputs.js')
     rt.projectEffects = createProjectEffects(rt); rt.save = async () => rt.projectEffects.saved(rt.projectEffects.capture()); install(rt)
-    await rt.projectInputs.publish({ projectId: 'p', taskId: 't', requestId: 'receipt-fixture', text: 'Verify the accepted behavior' }, { memberId: 'owner' })
+    for (let index = 0; index < inputCount; ++index) await rt.projectInputs.publish({ projectId: 'p', taskId: 't', requestId: index ? `receipt-fixture-${index}` : 'receipt-fixture', text: 'Verify the accepted behavior' }, { memberId: 'owner' })
   }
   let control = createProjectChiefControl(rt); rt.projectChiefControl = control; rt.projectPools = createProjectPools(rt)
   if (modern) {
@@ -100,6 +100,90 @@ test('a new Chief request wakes execution and duplicate receipts do not create a
   const repeated = await f.control.request('p', 'inspection', { requestId: 'host-recovery' })
   assert.equal(first.id, repeated.id)
   assert.equal(wakes, 1)
+})
+
+test('a persisted interrupted role claim reaches Chief without a manual or scheduled inspect', async () => {
+  const f = await controlFixture()
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Finish the original judgement' }))
+  const before = f.request.runId, c = f.task.collaboration
+  c.botId = 'p:developer'; c.status = 'claimed'; c.claim = { id: 'old-dev-claim', botId: c.botId, attemptId: 'a', status: 'active', workerId: 'old-worker', generation: c.generation, createdAt: Date.now() }
+  f.rt.state.projectAttempts.a.status = 'interrupted'
+  assert.equal(f.rt.projectPools.recover(), true)
+  const restored = createProjectChiefControl(f.rt); f.rt.projectChiefControl = restored
+  await restored.pump()
+  for (let pass = 0; pass < 100 && f.request.runId === before; ++pass) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.notEqual(f.request.runId, before, 'Host-restart block must notify the resident Chief through its existing controller')
+  const run = f.rt.state.projectExecutions[f.request.runId]
+  assert.equal(run.purpose, 'inspection'); assert.equal(run.source.blockedTaskId, 't')
+  assert.equal(f.request.projectFacts.tasks.length, 1)
+  assert.equal(f.request.projectFacts.tasks[0].execution.claimId, 'old-dev-claim')
+  assert.equal(c.status, 'blocked', 'Notification never selects a role or clears the block')
+  const count = Object.keys(f.rt.state.projectExecutions).length
+  await restored.pump(); await restored.pump()
+  assert.equal(Object.keys(f.rt.state.projectExecutions).length, count, 'Repeated pump must not create duplicate restart judgements')
+})
+
+async function interruptedRoleFixture() {
+  const f = await controlFixture()
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Finish the original judgement' }))
+  const c = f.task.collaboration
+  c.botId = 'p:developer'; c.status = 'claimed'; c.claim = { id: 'old-dev', botId: c.botId, attemptId: 'a', generation: c.generation, status: 'active', workerId: 'old-worker', createdAt: Date.now() }
+  f.rt.state.projectAttempts.a.status = 'interrupted'; f.rt.projectPools.recover()
+  return f
+}
+
+test('interrupted notifications deduplicate across controller restart and wake again only for new exit evidence', async () => {
+  const f = await interruptedRoleFixture(); let exited = false
+  const first = { attemptId: 'a', role: 'developer', status: 'released', releasedAt: 1 }, second = { attemptId: 'a', role: 'tester', status: 'released', releasedAt: 2 }
+  f.rt.state.projectResourceLeases = { first, second }
+  f.rt.projectDelivery.exitConfirmed = () => exited
+  await f.control.pump()
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].source.exitConfirmed, false)
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Keep waiting for actual allocation exit evidence' }))
+  const count = Object.keys(f.rt.state.projectExecutions).length
+  f.rt.state.projectResourceLeases = { second, first }
+  const restored = createProjectChiefControl(f.rt); f.rt.projectChiefControl = restored
+  f.task.collaboration.claim.status = 'intervened'; ++f.task.collaboration.generation
+  await restored.pump(); await restored.pump()
+  assert.equal(Object.keys(f.rt.state.projectExecutions).length, count, 'Failed routing or process recreation alone is not new allocation evidence')
+  exited = true
+  await restored.pump()
+  assert.equal(Object.keys(f.rt.state.projectExecutions).length, count + 1)
+  assert.equal(Object.values(f.rt.state.projectExecutions).at(-1).source.exitConfirmed, true)
+  assert.equal(f.task.collaboration.status, 'blocked', 'Exit evidence delivers a fact, not an automatic routing decision')
+})
+
+test('interrupted notifications respect disabled policy, terminal Task and current claim binding', async () => {
+  for (const condition of ['disabled', 'accepted', 'cancelled', 'foreign-attempt', 'chief-claim', 'waiting-human', 'attempt-cancelled', 'superseded', 'read-only']) {
+    const f = await interruptedRoleFixture(), count = Object.keys(f.rt.state.projectExecutions).length
+    if (condition === 'disabled') f.rt.state.projectChiefPolicies.p.enabled = false
+    else if (['accepted', 'cancelled'].includes(condition)) f.task.status = condition
+    else if (condition === 'foreign-attempt') f.task.collaboration.claim.attemptId = 'other'
+    else if (condition === 'chief-claim') f.task.collaboration.claim.chiefRunId = 'other-chief'
+    else if (condition === 'attempt-cancelled') f.rt.state.projectAttempts.a.cancelRequested = true
+    else if (condition === 'superseded') f.rt.state.projectAttempts.a.supersededBy = 'other'
+    else if (condition === 'read-only') f.rt.readOnly = () => true
+    else f.task.collaboration.claim.status = 'waiting-human'
+    await f.control.pump()
+    assert.equal(Object.keys(f.rt.state.projectExecutions).length, count, condition)
+  }
+  const f = await interruptedRoleFixture(); f.revokeRole()
+  await f.control.pump()
+  const run = Object.values(f.rt.state.projectExecutions).at(-1)
+  assert.equal(run.status, 'failed'); assert.match(run.dispatchFailure, /denied/)
+  assert.equal(f.task.collaboration.status, 'blocked')
+})
+
+test('queued interrupted notification is cancelled after responsibility progresses', async () => {
+  const f = await interruptedRoleFixture()
+  f.rt.projectAgents.chiefBusy = () => true
+  await f.control.pump()
+  const notification = Object.values(f.rt.state.projectExecutions).at(-1)
+  assert.equal(notification.status, 'queued')
+  f.task.collaboration.status = 'queued'; delete f.task.collaboration.claim
+  f.rt.projectAgents.chiefBusy = () => false
+  await f.control.pump()
+  assert.equal(notification.status, 'cancelled'); assert.match(notification.failure, /facts changed/)
 })
 test('Chief results cannot close a Task that progressed during reasoning or whose actor lost permission', async () => {
   const f = await controlFixture(); ++f.task.collaboration.generation
@@ -659,4 +743,68 @@ test('corrupt input during correction dispatch is a source failure, not a model 
   assert.deepEqual(f.task.collaboration.block, originalBlock)
   assert.equal(input.status, 'accepted')
   await f.rt.projectEffects.close()
+})
+
+test('a merge arriving during Chief execution corrects the original judgement before accepting it', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  const originalGeneration = f.task.collaboration.generation
+  f.rt.state.projectAttempts.a.evidence.merge = { sha: f.rt.state.projectAttempts.a.candidateSha, mergeCommitSha: 'b'.repeat(40), scope: 'provider-confirmed-merge-observation' }
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0)
+  assert.equal(run.status, 'correction-pending')
+  assert.equal(f.task.collaboration.generation, originalGeneration)
+  assert.ok(run.correction.feedback.at(-1).taskFeedback[0].recovery.changedFields.includes('merge evidence'))
+  await f.control.pump()
+  assert.equal(f.request.projectFacts.tasks[0].evidence.merge.mergeCommitSha, 'b'.repeat(40))
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 1)
+  assert.equal(run.status, 'done')
+  assert.equal(f.task.chiefDecisionIssue, undefined)
+  assert.equal(run.correction.status, 'resolved', 'Original correction history remains on its Run')
+})
+
+test('merge-specific Chief correction cannot migrate to a replacement candidate', async () => {
+  const f = await controlFixture(), run = f.rt.state.projectExecutions[f.request.runId]
+  run.source = { mergeEffectId: 'original-merge', attemptId: 'a', candidateSha: f.rt.state.projectAttempts.a.candidateSha }
+  f.rt.state.projectAttempts.a.evidence.merge = { effectId: 'original-merge', sha: run.source.candidateSha, mergeCommitSha: 'b'.repeat(40) }
+  f.rt.state.projectAttempts.a.candidateSha = 'replacement-candidate'
+  await f.request.onResult(f.result())
+  assert.equal(run.status, 'correction-pending')
+  await f.control.pump()
+  if (run.status === 'running') await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0, 'A notification for the old candidate cannot authorize acceptance of its replacement')
+  assert.equal(run.status, 'failed')
+})
+
+test('close without current input declarations corrects Chief before applying business acceptance', async () => {
+  const f = await controlFixture({ withInputs: true }), run = f.rt.state.projectExecutions[f.request.runId]
+  await f.request.onResult(f.result())
+  assert.equal(f.accepted(), 0)
+  assert.equal(run.status, 'correction-pending')
+  assert.match(run.correction.feedback.at(-1).message, /inputReceipts/)
+  assert.equal(run.lastResult.inputReceiptSummaries[0].declaration.provided, false)
+})
+
+test('Chief explicitly handles bounded batches and receives remaining input without auto acceptance', async () => {
+  const f = await controlFixture({ withInputs: true, inputCount: 4 }), run = f.rt.state.projectExecutions[f.request.runId]
+  let batch = f.request.projectFacts.tasks[0].taskInbox
+  assert.equal(batch.inputs.length, 2); assert.equal(batch.remaining, 2)
+  const declare = inbox => ({ batchId: inbox.batchId, read: inbox.inputs.map(row => row.id), handled: inbox.inputs.map(row => row.id) })
+  await f.request.onResult(f.result({ inputReceipts: declare(batch) }))
+  assert.equal(run.status, 'correction-pending'); assert.equal(f.accepted(), 0)
+  await f.control.pump(); batch = f.request.projectFacts.tasks[0].taskInbox
+  await f.request.onResult(f.result({ action: 'continue', reason: 'Handle this reviewed batch before reading the next', inputReceipts: declare(batch) }))
+  assert.equal(f.accepted(), 0)
+  assert.equal(Object.values(f.rt.state.projectTaskInputs).filter(row => row.status === 'handled').length, 2)
+  assert.ok(Object.values(f.rt.state.projectEffects).some(row => row.kind === 'input.notify' && row.payload.requestId?.startsWith('chief-input-')))
+  await f.rt.projectEffects.drain()
+  const queued = Object.values(f.rt.state.projectExecutions).filter(row => row.kind === 'chief-control' && row.status === 'queued')
+  assert.equal(queued.length, 1, 'Pending input notifications share one queued scoped Chief inspection')
+  await f.control.pump(); batch = f.request.projectFacts.tasks[0].taskInbox
+  assert.equal(batch.inputs.length, 2); assert.equal(batch.remaining, 0)
+  await f.request.onResult(f.result({ inputReceipts: declare(batch) }))
+  assert.equal(f.accepted(), 1)
+  assert.equal(Object.values(f.rt.state.projectTaskInputs).filter(row => row.status === 'accepted').length, 0)
+  const audit = Object.values(f.rt.state.projectChiefDecisions).find(row => row.action === 'continue' && row.status === 'applied')
+  assert.equal(audit.inputReceiptSummary.provided, true); assert.equal(audit.inputReceiptSummary.handled.length, 2)
 })

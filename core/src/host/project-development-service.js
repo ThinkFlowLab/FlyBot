@@ -1,3 +1,5 @@
+import { dispatchView } from './project-pools.js'
+import { mergeHandoffView } from './project-reviewed-merge.js'
 // One application boundary over existing Project services; no second executor/store.
 import { ownEntry } from './store.js'
 import { createCommandReceipts } from './project-command-receipts.js'
@@ -42,6 +44,7 @@ export const developmentQuery = body => record(body) && body.version === DEVELOP
 
 export function taskView(state, task, { activity = {}, roleCatalog, isIntentCommitted = () => false } = {}) {
   const c = task.collaboration
+  const dispatch = dispatchView(state, task, isIntentCommitted)
   const decisionIssue = task.chiefDecisionIssue?.generation === (c?.generation ?? 0) ? task.chiefDecisionIssue : null
   const actionIssue = task.chiefActionIssue?.generation === (c?.generation ?? 0) ? task.chiefActionIssue : null
   const candidate = ownEntry(state.projectAttempts ?? {}, task.deliveryAttemptId)
@@ -76,7 +79,7 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   else if (['arbitration', 'chief-working'].includes(c?.status)) { phase = 'awaiting-chief'; waitingFor = 'chief' }
   else if (c?.status === 'blocked' || queue?.status === 'blocked') { phase = 'blocked'; reason = c?.block?.reason ?? queue?.reason ?? null }
   else if (queue) { phase = queue.status === 'starting' ? 'starting' : 'queued'; waitingFor = queue.reason ? 'resource' : 'capacity'; reason = queue.reason ?? null }
-  else if (c?.status === 'queued') { phase = 'queued'; waitingFor = 'role' }
+  else if (c?.status === 'queued') { phase = 'queued'; waitingFor = dispatch?.waitingFor ?? 'role'; reason = dispatch?.reason ?? null }
   else if (c?.status === 'claimed' && executionView?.exitConfirmed) { phase = 'stopping'; waitingFor = 'handoff' }
   else if (c?.status === 'claimed') {
     if (sdk?.status === 'waiting-input') { phase = 'awaiting-input'; waitingFor = 'owner' }
@@ -99,8 +102,8 @@ export function taskView(state, task, { activity = {}, roleCatalog, isIntentComm
   const tests = attempt?.evidence?.tests, review = attempt?.evidence?.review
   const progress = inspectionFacts(state, { ...task, collaboration: c ? { ...c, history: c.history ?? [] } : undefined, ...(attempt ? {} : { deliveryAttemptId: null }) }, { maxHandoffsWithoutProgress: Infinity, longExecutionMs: Infinity, missingHeartbeatMs: Infinity, longWaitMs: Infinity })
   return { version: DEVELOPMENT_PROTOCOL, projectId: task.projectId, taskId: task.id, title: typeof task.title === 'string' ? task.title.slice(0, 1000) : '', source: taskProvenance(task), publication: 'published', phase, waitingFor, reason, outcome: taskOutcome(state, task),
-    merge: merge ? { status: merge.status, reason: merge.reason, candidateSha: merge.candidateSha, mergeCommitSha: merge.mergeCommitSha ?? null, nextCheckAt: merge.nextCheckAt ?? null } : null, botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 1, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
-    contract: taskContractView(task),
+    merge: merge ? { status: merge.status, reason: merge.reason, candidateSha: merge.candidateSha, mergeCommitSha: merge.mergeCommitSha ?? null, nextCheckAt: merge.nextCheckAt ?? null, chiefHandoff: mergeHandoffView(state, attempt) } : null, botId: c?.botId ?? null, currentRole, roleDefinitionRevision: catalog?.revision ?? 1, execution: executionView, generation: c?.generation ?? null, attemptId: attempt?.id ?? null,
+    dispatch, contract: taskContractView(task),
     executionId: claim?.id ?? run?.id ?? null, workerId: claim?.workerId ?? null, queueId: queue?.id ?? null, candidateSha: sha,
     executionGeneration: sdk?.generation ?? nativeWorker?.generation ?? null, inputRequestId: sdk?.pending?.id ?? null,
     lastMeaningfulProgress: progress.lastMeaningfulProgressAt === null ? null : { at: progress.lastMeaningfulProgressAt, evidence: progress.progressEvidence },
@@ -152,7 +155,7 @@ export function createDevelopmentService(rt) {
         policy: policy(rules), context: context ? { version: context.version, sha256: context.sha256, archiveSha256: context.archiveSha256, ...(context.budget ? { budget: context.budget, usage: context.usage } : {}) } : null }
     }
     const { roleSessions, roleSessionHistory, rolePolicies } = attempt
-    return structuredClone({ ...attemptMetadataView(attempt),
+    return structuredClone({ ...attemptMetadataView(attempt, rt.state),
       ...(roleSessions ? { roleSessions: Object.fromEntries(Object.entries(roleSessions).slice(0, 32).map(([key, row]) => [key, session(row)])) } : {}),
       ...(roleSessionHistory ? { roleSessionHistory: roleSessionHistory.slice(-3).map(row => session(row, 'roleSessionHistory')), roleSessionHistoryPage: { total: roleSessionHistory.length, shown: Math.min(3, roleSessionHistory.length), source: { query: 'attempt.context', attemptId: attempt.id, section: 'roleSessionHistory' } } } : {}),
       ...(rolePolicies ? { rolePolicies: Object.fromEntries(Object.entries(rolePolicies).slice(0, 32).map(([key, row]) => [key, policy(row)])) } : {}),

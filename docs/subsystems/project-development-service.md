@@ -263,3 +263,9 @@ exit/requirements/authorization. Public role/App status never returns credential
 ## Chief diagnostics (#2393)
 
 TaskView.chiefIssue references the current Run fault without replacing business phase or evidence. chief.state distinguishes last received response hash from dispatch/executor diagnostic hash and records the actual failure stage/criteria. Current generation and scope govern Task markers; older failures remain audit history.
+
+## Merge closure observability — #2413
+
+Task and Attempt `merge.chiefHandoff` reports the existing notification Effect, its delivery status/reason, linked Chief Run/status/failure, waiting Run and request times. `delivered` is durable handoff only. It does not change Task acceptance, hide business blocks or grant an API caller new permissions. A Chief transport failure may coexist with a real `merge.status=merged`.
+
+#2483 TaskView.dispatch exposes current handoff Effect/commit proof and specific pre-worker waits. A queued Task uses the reached dispatch cause where available, retaining original lifecycle state and all authority gates. Chief receipt summaries distinguish declared handling from actual accepted inputs and Task acceptance.

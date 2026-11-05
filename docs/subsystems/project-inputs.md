@@ -175,3 +175,9 @@ silently translated. Candidate-stage evidence already produced by an SDK stays
 immutable and is not re-recorded as a second execution during receipt correction.
 
 #2393 reports pre-dispatch input integrity failures as typed source-changed facts; corrupted text is never injected or acknowledged. A correction transport failure remains incomplete on its original Run rather than a phantom pending invocation.
+
+## Chief batches and existing notification continuation (#2483)
+
+`taskInbox.remaining` counts authorized pending inputs outside the injected batch, not rows with a divergent status. `accepted` means ingested, never read/handled. Closure requires explicit declarations and all pending inputs addressed; missing declarations and pending later batches enter the existing Chief correction before business acceptance. Chief can choose `continue` with a deliberate read/handled declaration for the current batch.
+
+Only newly handled progress stages a follow-up `input.notify` intent, atomically with the acknowledgement. Read-only declarations or replays stage none. The original notifier reuses a current-policy queued scoped judgement, defers active/correcting/interrupted Chief turns, and uses a unique continuation request identity. It follows current responsibility through the existing safe-turn/Chief delivery path, retaining source authority and cancellation checks. No new Effect kind, store, timer or fixed workflow is introduced; unread inputs are never automatically handled.

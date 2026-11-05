@@ -233,3 +233,46 @@ block and exact candidate/tests/Review/merge records remain. Inspect actual merg
 policy/checks separately from Reviewer approve. Explicit reconcile-exit retires
 only a proven-exited old claim; inspect unknown SDK/Docker/native/preparation exit
 through their original contracts. Chief chooses subsequent actions or consultation.
+
+### Merged candidate awaiting Chief closure (#2413)
+
+Read Task/Attempt `merge.status` and `merge.chiefHandoff` together. A delivered handoff only confirms a persisted Chief request; inspect its `runId`, `runStatus`, `runFailure` and original acceptance evidence. A pending handoff names its `effectId` and `waitingFor` (`chief-authority` or `chief-current-decision` where applicable). Existing current inspection/correction keeps its own exit/recovery budget.
+
+Startup and normal scheduler reconciliation backfill missing handoff intents from trusted saved merge evidence, without publishing or merging again. An exhausted notification Effect may be retried only through the existing authorized `effect.retry` command. Do not clear pending inputs or fake acceptance criteria to remove a wait. Candidate replacement, cancellation, missing formal binding and revoked access retain their gates. This source behavior is distinct from an unverified live OpenToday timeline.
+
+### State integrity versus liveness (#2483)
+
+Use GET /ready to detect read-only/unavailable backend state; GET /health only proves the gateway process is alive. Readiness reflects detected Store/lock state, not full integrity or provider readiness. Run `node core/scripts/state-storage.mjs verify --home /private/backend/bot` from the delivery checkout for a read-only SQLite consistency check without stopping the host. It prints a single safe JSON result on stdout (exit0 valid, exit1 refused), with record identifiers/digests when known and no content. Capture that result rather than full private logs/databases. Keep the database, WAL and payload files intact; recovery needs a verified source, not recomputed hashes or Task edits.
+
+### Queued without a worker, or pending Chief inputs (#2483)
+
+For controller-lost SDK work, current resource workers preserve a settled stop receipt
+outside model-write roots. The existing reconciliation checks its exact identity and
+resource process exit, then aligns worker and lease. Explicit stop uses birth-verified
+Linux pidfd through Python3; it cannot signal a reused PID. A saved trusted host stop
+event/exit can repair legacy partial releases. Missing acknowledgement, missing birth
+identity or a forcibly killed worker remains unknown. Upgrade the selected resource's
+FlyBot runtime as well as the host to emit new receipts. Do not treat container Up,
+occupied=0, a missing controller or PID disappearance as sufficient exit proof.
+
+After restart, current blocked/interrupted role work now notifies the configured
+Chief through its existing controller. `chief.state` Run.source identifies the
+interrupted claim, policy and allocation fingerprint; repeated scheduler passes
+reuse the request. New exit evidence or committed `pool.retire` can cause a fresh
+judgement. Inspect actual applied decisions and TaskView phase: notification or
+an enabled schedule is not recovery. Unknown worker exit remains held. No manual
+SQL edit, blanket block clearing or forced Developer routing is required by this
+path; genuine missing exit/authority evidence still needs to be established.
+
+Stored SDK `ready` without a matching current `profile.id` is not current Harness
+readiness. With resource health ready and occupied=0, check `project-resources`
+`harnessStatus` before blaming Project capacity or restart. An authorized Owner or
+Maintainer can call existing `project-runtime-check` with Project/resource/Harness
+to perform a new selected-profile probe; it may invoke paid minimal inference.
+Success saves matching profile health and wakes the existing scheduler, without a
+backend restart. Do not copy the computed ID into old ready state or bypass the
+identity check. Readiness refresh and interrupted-Task recovery are distinct gates.
+
+Use TaskView.dispatch/current pool.dispatch via normal queries to distinguish held logical Bot, resource readiness, Project capacity, missing adapter and refused admission. Its executions count is Effect retries, not model calls. Raw SQL lacking committed cannot prove an uncommitted intent; use runtime query proof. Input receipt accepted is not role acceptance; inspect collaboration history/current handoff separately.
+
+For closure, inspect `chief.state` lastResult.inputReceiptSummaries and correction taskFeedback counts. remaining means outside this injected batch. A valid continue decision can commit an explicitly handled batch and persist the next original input notification. Read-only/zero-progress declarations create no continuation loop; unresolved inputs still prevent close. The host never fakes handled status, drops criteria, chooses a role or escalates after a retry count. Diagnostic response/snapshot hashes are not necessarily state-payload file references.

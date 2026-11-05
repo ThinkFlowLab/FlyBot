@@ -1,3 +1,4 @@
+import { mergeHandoffView } from './project-reviewed-merge.js'
 import { nativeExitConfirmed } from './project-native-sessions.js'
 import { confirmedWorkerExit } from './project-task-sessions.js'
 // Public projections retain references to exact scoped sources; never copy an
@@ -51,7 +52,7 @@ export function sourcePage(value, body, identity) {
   return { sha256, offset, text: text.slice(offset, next), totalChars: text.length, nextOffset: next < text.length ? next : null }
 }
 
-export function attemptMetadataView(attempt) {
+export function attemptMetadataView(attempt, state = {}) {
   const result = pick(attempt, ['id', 'protocol', 'projectId', 'taskId', 'workflowId', 'workflowVersion', 'runId', 'status', 'initiatedBy', 'baseSha', 'seedSha', 'candidateSha', 'branch', 'createdAt', 'updatedAt', 'acceptedAt', 'acceptedBy', 'acceptedViaChief', 'cancelRequested', 'supersededBy', 'roleAssignments'])
   if (attempt.requirement) result.requirement = { ...pick(attempt.requirement, ['repository', 'projectTaskRevision']), ...Object.fromEntries(['title', 'criteria', 'impact', 'scope', 'note'].filter(key => attempt.requirement[key] !== undefined).map(key => [key, short(attempt.requirement[key])])) }
   if (attempt.failure) result.failure = { ...pick(attempt.failure, ['at']), message: short(attempt.failure.message) }
@@ -59,6 +60,7 @@ export function attemptMetadataView(attempt) {
   if (attempt.feedback) result.feedback = { ...pick(attempt.feedback, ['previousAttemptId', 'kind', 'candidateSha']), reason: short(attempt.feedback.reason) }
   if (attempt.release) result.release = { ...pick(attempt.release, ['id', 'status', 'observedAt']), ...pick(attempt.release.spec, ['repository', 'tag', 'sha', 'mode']), sourceRef: { query: 'release.status', attemptId: attempt.id } }
   if (attempt.merge) result.merge = pick(attempt.merge, ['version', 'status', 'reason', 'effectId', 'candidateSha', 'mergeCommitSha', 'baseBranch', 'method', 'createdAt', 'observedAt', 'nextCheckAt', 'deadlineAt'])
+  if (result.merge) result.merge.chiefHandoff = mergeHandoffView(state, attempt)
   if (attempt.pr) result.pr = pick(attempt.pr, ['number', 'sha', 'url', 'repository', 'credentialScope', 'executionRole', 'operation', 'identity', 'mergeIdentity', 'roleScopeSha256', 'observedAt'])
   if (attempt.sdkPublication) result.sdkPublication = pick(attempt.sdkPublication, ['version', 'effectId', 'roleScopeSha256', 'sha', 'number', 'at'])
   if (attempt.sdkCandidateEffect) result.sdkCandidateEffect = pick(attempt.sdkCandidateEffect, ['id', 'kind'])

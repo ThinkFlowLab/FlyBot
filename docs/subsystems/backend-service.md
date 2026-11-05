@@ -1,4 +1,5 @@
 ---
+
 subsystem: backend-service
 owned_paths:
   - scripts/backend.mjs
@@ -23,7 +24,20 @@ owned_paths:
   - README.native.zh.md
 ---
 
+#2483 resource-clone Git capability follows the bound Developer workspace, not
+App identity. No service operation or permission changes; regenerated OpenAPI
+source fingerprints reflect the host adapter fix. See [Harness](project-harness.md).
+
 # Persistent source backend entry (#2189)
+
+#2483 controller-loss reconciliation strengthens execution evidence behind the same
+release/reconcile interfaces. No new public operation or privilege; OpenAPI source
+fingerprints reflect the Harness/resource implementation changes.
+
+#2483 interrupted-role facts now reach existing Chief inspection without a manual
+API call. `chief.state` source identifies the claim/policy/allocation fingerprint;
+TaskView reflects the applied recovery, not notification success. Public operations
+and permissions are unchanged; OpenAPI implementation fingerprints are refreshed.
 
 The entry composes the existing DSH host/profile, all five FlyBot packages and the
 original restricted HTTP/SSE gateway. It adds neither a domain service nor a Task
@@ -164,3 +178,16 @@ The GitHub read contract adds page/includeStatuses and independent completeness/
 ## Chief feedback contract (#2393)
 
 OpenAPI describes Chief lastResult/failureDetail, per-Task correction feedback and safe TaskView.chiefIssue. No new transport endpoint or automatic routing rule is introduced; fresh snapshots retain original receipt authorization and content gates.
+
+## Merge-to-Chief delivery metadata — #2413
+
+Existing Task/Attempt queries expose the OpenAPI `MergeHandoff` projection: durable notification Effect/status, linked Chief Run/outcome, waiting reference and request times. Notification delivery is distinct from provider-confirmed merge and Chief Task acceptance. The existing authorized `effect.retry` command retries notification only; no new endpoint or permission is introduced. Candidate-bound snapshots prevent an old merge request from migrating to replacement work.
+
+#2483 adds the source-matched public GET /ready contract:200 ready/writable,503 degraded or unavailable. GET /health remains liveness only. The private state-storage verify CLI returns safe JSON diagnostics; it grants no remote repair authority.
+
+#2483 OpenAPI defines DispatchState and ChiefInputReceiptSummary, including runtime-derived commit proof and bounded declarations on chief.state results/history. No new domain endpoint or execution permission is added.
+
+
+#2483 exposes existing continuation-state facts to authenticated Chief judgement
+and reuses task.run for selected successors. Public operations/permissions are
+unchanged; OpenAPI source fingerprints reflect the implementation changes.

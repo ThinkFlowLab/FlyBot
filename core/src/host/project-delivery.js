@@ -1,7 +1,7 @@
 import { roleGithubSelection, roleGithubStatus } from './project-role-github.js'
 import { createGithubRoleArtifacts } from './project-github-role-artifacts.js'
 import { projectMergePolicyStatus } from './project-merge-policy.js'
-import { createReviewedMerge } from './project-reviewed-merge.js'
+import { createReviewedMerge, mergeHandoffView } from './project-reviewed-merge.js'
 import { chiefRecoveryError } from './project-chief-recovery.js'
 import { chiefProtocolError } from './project-chief-protocol.js'
 // Delivery coordinates artifacts/worktrees around the existing Workflow service.
@@ -225,7 +225,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     await rt.save()
   }
   const current = taskId => Object.values(attempts()).reverse().find(attempt => attempt.taskId === taskId)
-  const view = attempt => structuredClone(attempt)
+  const view = attempt => { const result = structuredClone(attempt); if (result.merge) result.merge.chiefHandoff = mergeHandoffView(state, attempt); return result }
   async function fail(attempt, error, status = 'failed') {
     attempt.status = status
     attempt.failure = { message: String(error?.message ?? error).slice(0, 1000), at: Date.now() }
@@ -319,7 +319,8 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
   async function continuationState(attempt, actor, permission = 'configure') {
     const task = taskOf(attempt.taskId)
     rt.requireProjectAccess(actor, task.projectId, permission, task)
-    integrationReleased(attempt)
+    if (actor.chiefJobId) rt.projectChiefControl.requireJobActor(actor, task.projectId)
+    integrationReleased(attempt, actor.chiefJobId ? { [chiefInputPermit]: actor.chiefJobId } : undefined)
     const snapshot = await integrationSnapshot(attempt), workspace = workspaceFor(attempt, 'developer')
     const latestBaseSha = await git(settingsOf(projectOf(attempt.projectId, attempt)).path, ['rev-parse', 'HEAD'])
     rt.requireProjectAccess(actor, task.projectId, permission, task)
@@ -360,12 +361,14 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       if (body.continuation !== undefined && !isDeepStrictEqual(body.continuation, prior.continuationRequest ? JSON.parse(prior.continuationRequest) : undefined) || body.repository !== undefined && body.repository !== prior.requirement?.repository || body.targetRole !== undefined && prior.initialTarget && body.targetRole !== prior.initialTarget.role) throw reject('Execution request content changed on replay')
       return { attempt: view(prior), already: true }
     }
-    if (Object.values(attempts()).some(attempt => attempt.taskId === task.id && (ongoing.has(attempt.status) || attempt.status === 'waiting-acceptance'))) throw reject('Task already has an active Attempt')
+    const previous = current(task.id)
+    const chiefContinuation = body.continuation !== undefined && actor.chiefJobId && previous?.status === 'running' && ['blocked', 'chief-working'].includes(task.collaboration?.status)
+    if (chiefContinuation) rt.projectChiefControl.requireJobActor(actor, task.projectId)
+    if (Object.values(attempts()).some(attempt => attempt.taskId === task.id && (ongoing.has(attempt.status) || attempt.status === 'waiting-acceptance') && !(chiefContinuation && attempt === previous))) throw reject('Task already has an active Attempt')
     if (task.status === 'accepted' || task.status === 'cancelled') throw reject('Terminal Task cannot start a delivery')
     const initialTarget = initialRoleTarget(rt, task, body)
     const settings = await preflightRepository(rt, project)
     if (initialTarget) initialRoleTarget(rt, task, { initialTarget })
-    const previous = current(task.id)
     const continuation = await continuationOf(body, actor, task, previous, project, repositoryBinding)
     const publicationBinding = await publicationOf(previous, project)
     if (continuation) {
@@ -379,6 +382,8 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       repositoryBinding, requirement: requirementsOf(task, project.repository), ...(initialTarget ? { initialTarget } : {}),
       ...(feedback ? { feedback } : {}), ...(continuation ? { continuation, continuationRequest: JSON.stringify(body.continuation), ...(continuation.mode === 'latest' ? { baseSha: continuation.latestBaseSha } : { baseSha: previous.baseSha, seedSha: previous.candidateSha ?? previous.seedSha ?? previous.baseSha, ...(previous.integrationInputs ? { integrationInputs: structuredClone(previous.integrationInputs), integrationAdmissions: structuredClone(previous.integrationAdmissions ?? []) } : {}) }) } : {}), ...(publicationBinding ? { publicationBinding, seedSha: previous.candidateSha ?? previous.seedSha ?? publicationBinding.previousSha, baseSha: continuation?.mode === 'latest' ? continuation.latestBaseSha : previous.baseSha } : {}), workspaces: {}, evidence: {}, createdAt: at, updatedAt: at }
     if (continuation) { rt.requireProjectAccess(actor, task.projectId, 'configure', task); rt.projects.requireActive(task.projectId) }
+    const priorRework = chiefContinuation ? { status: previous.status, returned: previous.returned, supersededBy: previous.supersededBy } : null
+    if (priorRework) { previous.status = 'returned'; previous.returned = { at, by: actor.chiefJobId, reason: 'Chief selected an explicit successor baseline' }; previous.supersededBy = attempt.id }
     setEntry(attempts(), attempt.id, attempt)
     task.deliveryAttemptId = attempt.id
     if (continuation) {
@@ -387,10 +392,11 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       attempt.continuation.effect = token
       try { await rt.projectEffects.persist(token) }
       catch (error) {
-        if (rt.projectEffects.discardUncommitted(token) && task.deliveryAttemptId === attempt.id) { delete attempts()[attempt.id]; task.deliveryAttemptId = previous.id }
+        if (rt.projectEffects.discardUncommitted(token) && task.deliveryAttemptId === attempt.id) { delete attempts()[attempt.id]; task.deliveryAttemptId = previous.id; if (priorRework) Object.assign(previous, priorRework) }
         throw error
       }
     } else await rt.save() // Reserve ownership before filesystem effects.
+    if (priorRework) rt.bindProject({ kind: 'run', id: previous.runId, projectId: project.id, taskId: task.id, attemptId: previous.id, status: 'failed' })
 
     try {
       const definitions = rt.projectAgents?.deliveryDefinitions(project.id)
@@ -628,12 +634,17 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
       return { repository: project.repository, ref, sha }
     }).filter(row => /^refs\/remotes\/operator\/[A-Za-z0-9][A-Za-z0-9._/-]{0,120}$/.test(row.ref) && !row.ref.includes('..') && /^[a-f0-9]{40}$/.test(row.sha))
   }
-  async function recoveryFacts(task) {
+  async function recoveryFacts(task, actor) {
     const attempt = ownEntry(attempts(), task.deliveryAttemptId)
     if (!attempt || attempt.taskId !== task.id || attempt.projectId !== task.projectId) return null
     try {
       const project = projectOf(task.projectId, attempt)
-      return { continuation: structuredClone(attempt.continuation ?? null), baselineIssue: attempt.preparationFailures?.findLast(row => row.code === 'bot/workspace-baseline') ?? null, executionCheckpoint: { generation: task.collaboration?.generation ?? 0, claimId: task.collaboration?.claim?.id ?? null, blockers: integrationBlockers(attempt) }, baseSha: attempt.baseSha ?? null, checkoutSha: attempt.candidateSha ?? attempt.seedSha ?? attempt.baseSha ?? null,
+      let continuationOptions = null
+      if (actor && (['interrupted', 'failed'].includes(attempt.status) || actor.chiefJobId && attempt.status === 'running' && ['blocked', 'chief-working'].includes(task.collaboration?.status)) && attempt.protocol === 'project-handoff/v1') {
+        try { continuationOptions = await continuationState(attempt, actor) }
+        catch { continuationOptions = { status: 'unavailable', reason: 'Current authority or confirmed execution exit is required before choosing a successor baseline' } }
+      }
+      return { continuationOptions, continuation: structuredClone(attempt.continuation ?? null), baselineIssue: attempt.preparationFailures?.findLast(row => row.code === 'bot/workspace-baseline') ?? null, executionCheckpoint: { generation: task.collaboration?.generation ?? 0, claimId: task.collaboration?.claim?.id ?? null, blockers: integrationBlockers(attempt) }, baseSha: attempt.baseSha ?? null, checkoutSha: attempt.candidateSha ?? attempt.seedSha ?? attempt.baseSha ?? null,
         availableInputs: await approvedRepositoryInputs(project), snapshot: await integrationSnapshot(attempt),
         preparationFailure: attempt.preparationFailures?.at(-1) ?? null,
         materialization: workspaceFor(attempt, 'developer')?.materialization ?? null, verificationRecovery: { attemptStatus: attempt.status, sealedCandidate: Boolean(attempt.candidateSha && attempt.evidence.implementation?.sha === attempt.candidateSha), testsPassedForCandidate: Boolean(attempt.evidence.tests?.passed && attempt.evidence.tests.sha === attempt.candidateSha), requires: ['current requirements and repository binding', 'clean sealed candidate', 'all old allocation exits confirmed', 'normal Task-role context admission'], reviewerRequires: 'matching passing host test command and immutable log' } }
@@ -1058,7 +1069,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
         changed = true; continue
       }
       attempt.status = 'interrupted'
-      attempt.failure = { message: 'Host restarted before delivery completed; start a new Attempt', at: Date.now() }
+      attempt.failure = { message: 'Host restarted before delivery completed; preserve the checkpoint for Chief recovery judgement', at: Date.now() }
       rt.taskDeliveryState?.(attempt.taskId, attempt.id, 'failed', attempt.failure.message)
       if (attempt.runId && ownEntry(state.projectExecutions, attempt.runId)) state.projectExecutions[attempt.runId].status = 'interrupted'
       changed = true
@@ -1332,7 +1343,7 @@ export function createProjectDelivery(rt, { publisher, releaseProvider, roleArti
     }
   }
   const ownsWorkspace = (projectId, path) => Object.values(state.projectWorkspaces ?? {}).find(workspace => workspace.projectId === projectId && workspace.path === path && DELIVERY_ROLES.includes(workspace.policyRole ?? workspace.role) && ['worktree', 'resource-clone', 'decision-directory'].includes(workspace.kind) && workspace.status === 'allocated' && ongoing.has(ownEntry(attempts(), workspace.attemptId)?.status))
-  return { reconcileExit, releases, recoveryFacts, admitChiefInputs, reconcileExecutions: () => reconcileExecutionAuthority(rt), exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
+  return { reconcileExit, releases, recoveryFacts, admitChiefInputs, reconcileExecutions: async () => { await reconcileExecutionAuthority(rt); await reviewedMerge.reconcileHandoffs() }, exitConfirmed: workerId => executionExitConfirmed(rt, workerId), nativeSessions, endpoint, context, admitChildInputs: (taskId, claim) => serialAttempt(claim.attemptId, () => childInputs.admit(taskId, claim)), preparePoolRole, validateRecovery, resumeVerification, abortPoolAdmission, completePoolRole, chiefAccept, reworkPool, recordExecution, repositoryContext, repositoryRolePolicy, bindSession, releaseSession, sessionFor, recover, runReported, ownsWorkspace, gate: input => serialAttempt(current(input.taskId)?.id ?? input.taskId, () => gate(input)) }
 }
 
 export function install(rt) {

@@ -270,3 +270,5 @@ New-contract Tasks cannot bypass Chief admission through legacy Project Workflow
 Public Workflow assign cannot take canonical Project Task initiative. An internal current-Attempt port preserves explicit Workflow execution through the same membership/quota service; old persisted Workflow Tasks retain their prior path. Scoped development query compatibility reports the committed legacy baseline and current diagnostic counts. See [compatibility](project-compatibility.md).
 
 #2292 queue HTTP authorization regression uses a repository-free decision Task for its no-repository fixture; manager/requester identity checks and denied forged-body assertions remain unchanged.
+
+#2483: retained state after a refused durable read cannot authorize Project members or roles. Project authorization returns false until storage is readable again; valid read-only observer hosts retain normal access. The channel restricts unreadable-state requests to safe readiness and existing private operator diagnostics.

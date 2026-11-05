@@ -676,6 +676,14 @@ an App Attempt refuses personal/sealing fallback. [Contract](../role-github-apps
 
 ## Exit reconciliation (#2375)
 
+#2483 restart recovery now reaches Chief through the original inspection controller
+without requiring an operator inspect call. The restart failure message preserves
+the checkpoint for judgement instead of prescribing a new Attempt. Persist/reload
+tests cover draft/cwd/logical Session continuity, already persisted blocks, released
+SDK evidence, explicit retirement followed by a separate Chief routing decision,
+and retained unknown occupancy. The existing rework/resume gates clear only the
+current block and retain its audit; notification itself changes no business state.
+
 `attempt.reconcile-exit` requires current configure authority, attemptId, claimId, generation and reason. It rechecks exact worker/Session/allocation exit, preparation and Chief occupancy, pending results/correction and unknown publication effects before committing pool retirement. It preserves drafts/candidates and does not cancel or revive the Attempt. Fetch a fresh `attempt.integration-state` before `attempt.integration-bind`; inputs are not candidate/PR evidence.
 
 ## Explicit successor continuation (#2377)
@@ -691,3 +699,34 @@ Role context labels exact host test SHA/hash/command and native log source separ
 Existing candidate/tests/Review/merge evidence survives a Chief execution fault. Closure refusals identify actual criteria/evidence fields. Explicit Chief reconcile-exit reuses the same #2375 verifier/retirement and excludes only its authenticated current inspection; it does not retire its own live claim or select a downstream role. Existing sealed-candidate resumeVerification remains authoritative.
 
 The authenticated Chief exclusion matches Project, role, run and invocation on both worker and lease. It never discharges an old invocation, another Chief or the current coordinator itself.
+
+## Durable merge-to-Chief handoff — #2413
+
+A provider-confirmed merge saves its evidence and stages `chief.merge-handoff` in the existing Effects store. `github.merge` completes once that intent is durable; notification failure cannot turn a completed merge into a failed business result. The handoff uses the original merge Effect, Attempt, candidate and merge commit as its stable identity. It has the existing configurable Effect retry budget, independent of the completed merge wait budget.
+
+The normal scheduler reconciliation discovers up to32 missing handoffs per pass, including historical saved merge evidence after a crash. It requires the trusted provider observation and matching original merge Effect/PR/candidate, not text saying MERGED or a PR URL. A historical exhausted merge Effect remains audit history; its trusted merge observation can restore the factual merged projection and stage notification without another provider call. Uncommitted handoffs cannot execute.
+
+Queued/running/correcting/interrupted Chief work is reconciled first. A persisted matching merge request is reused even if its response was lost. Otherwise the host requests one scoped inspection; it supplies facts, not an acceptance or a selected next role. The resident Chief retains its normal Session and current evidence/authority gates. A changed merge observation invalidates an old Chief snapshot through the existing correction path. Applied decisions are not replayed.
+
+`merge.chiefHandoff` in Task/Attempt metadata distinguishes notification pending/running/delivered/failed/cancelled, the Effect and linked Run, current waiting Run, last request time and Chief failure. Delivered means a durable request, not a successful Chief execution or a completed Task. Genuine pending inputs, rework, exit uncertainty and missing criteria remain. Old correction markers clear only after a valid Chief decision; their Run audit remains. Superseded/cancelled Tasks or candidates cannot receive a closing handoff.
+
+
+## Chief successor baseline choice — #2483
+
+For an interrupted/failed or exited blocked pool Attempt, authenticated Chief recovery facts include
+`continuationOptions` from the original continuation-state port: attemptId, generation,
+workspace snapshot, latestBaseSha, base/seed, retainedDraft and input admissions.
+Unavailable authority/exit facts stay unavailable. Only the current authenticated
+Chief run/invocation is excluded from execution occupancy, as for input admission.
+
+An explicit Developer route/return with continuation reuses `project-task-run` and
+its durable `attempt.continue` intent, request replay fence and repository/workspace
+CAS checks. Continue retains seed/inputs; latest uses the observed host HEAD.
+Dirty drafts still need explicit integration and bound PRs retain their ancestry.
+Old Attempt history stays intact; no test or approval evidence is inherited.
+This does not treat an arbitrary integration input as the checkout baseline.
+
+An authenticated Chief may explicitly supersede an exited blocked running Attempt;
+the original continuation Effect commits its returned history and successor together.
+An unconfirmed save restores the old status/pointer; no cancellation or live worker
+stop is inferred. Ordinary public task.run still refuses active Attempts.

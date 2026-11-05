@@ -7,6 +7,12 @@ import { taskSessionId } from './project-task-sessions.js'
 import { stageRoleSummary, rollbackRoleSummary, stageExecutionMemory, rollbackExecutionMemory, roleMemoryView } from './project-context-memory.js'
 import { EffectDeferred, EffectCancelled } from './project-effects.js'
 export const POOL_PROTOCOL = 'project-handoff/v1'
+export function dispatchView(state, task, committed) {
+  const effect = Object.values(state.projectEffects ?? {}).find(row => row.kind === 'pool.dispatch' && row.projectId === task.projectId && row.taskId === task.id && row.payload?.handoffId === task.collaboration?.currentHandoffId)
+  if (!effect) return null
+  return { effectId: effect.id, status: effect.status, generation: effect.generation, committed: committed ? committed({ id: effect.id, generation: effect.generation }) : null, executions: effect.executions ?? 0, failures: effect.failures ?? 0, waitingFor: effect.waitingFor ?? null, reason: effect.error ?? null, dueAt: effect.dueAt ?? null }
+}
+
 const refuse = message => Object.assign(new Error(message), { code: 'bot/handoff' })
 const clone = value => structuredClone(value)
 const intentHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -200,13 +206,15 @@ export function createProjectPools(rt) {
     if (!target || !['code', 'decision', 'release'].includes(kind)) throw refuse('Unsupported Task target or kind')
     task.collaboration ??= { version: POOL_PROTOCOL, initiatedBy: actor.memberId, generation: 0, history: [] }
     const c = task.collaboration
-    if (c.claim?.status === 'active') throw refuse('Task still has an active execution claim')
+    const ownChief = actor.chiefJobId && c.claim?.chiefRunId === actor.chiefJobId && c.claim.botId === `${task.projectId}:chief`
+    if (ownChief) rt.projectChiefControl.requireJobActor(actor, task.projectId)
+    if (c.claim?.status === 'active' && !ownChief) throw refuse('Task still has an active execution claim')
     c.sourceSessionId = actor.sessionId ?? null
     c.initiatedBy = actor.memberId
     c.attemptId = attempt.id; c.kind = kind
-    return offer(task, { from: null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id, initialTarget: selected })
+    return offer(task, { from: ownChief ? `${task.projectId}:chief` : null, to: target.id, reason: 'Authorized Task execution request', requestId: attempt.id, attemptId: attempt.id, initialTarget: selected })
   }
-  async function claim(taskId, botId, handoffId, requestId) {
+  async function claim(taskId, botId, handoffId, requestId, waiting) {
     const task = taskOf(taskId), c = task.collaboration
     if (requestId !== undefined) {
       if (!/^[A-Za-z0-9_-]{1,100}$/.test(requestId) || typeof requestId !== 'string' || !handoffId) throw refuse('Accept needs a stable requestId and handoffId')
@@ -240,9 +248,10 @@ export function createProjectPools(rt) {
     }
     definition = definitions(task.projectId).roles.find(row => row.id === botId)
     if (!definition) { c.status = 'blocked'; c.block = { reason: 'Target role is retired; Chief must explicitly select an active role', at: Date.now() }; await rt.save(); return null }
-    if (Object.values(rt.state.tasks).some(row => row.collaboration?.claim?.botId === botId && row.collaboration.claim.status === 'active')) return null
-    if (adapter.ready && !await adapter.ready({ task, definition })) return null
-    if (rt.projectScheduler?.admitPool && !await rt.projectScheduler.admitPool(task, definition)) return null
+    const holder = Object.values(rt.state.tasks).find(row => row.collaboration?.claim?.botId === botId && row.collaboration.claim.status === 'active')
+    if (holder) { waiting?.('logical-role', `Logical Bot is held by Task ${holder.id}, claim ${holder.collaboration.claim.id}`); return null }
+    if (adapter.ready && !await adapter.ready({ task, definition })) { waiting?.('execution-resource', 'Receiving execution resource is not ready'); return null }
+    if (rt.projectScheduler?.admitPool && !await rt.projectScheduler.admitPool(task, definition)) { waiting?.('project-capacity', 'Project execution admission is waiting for capacity'); return null }
     await authority(task)
     if (c.generation !== expectedGeneration || c.status !== 'queued' || c.botId !== botId) return null
     const receipt = c.history.find(row => row.id === c.currentHandoffId)
@@ -446,13 +455,18 @@ export function createProjectPools(rt) {
     return true
   }
   async function pump(taskId, handoffId) {
+    if (!adapter && taskId) throw new EffectDeferred('Pool execution adapter is unavailable', { waitingFor: 'execution-adapter' })
     if (!adapter || rt.readOnly?.()) return
     const offered = Object.values(rt.state.tasks).filter(task => (!taskId || task.id === taskId) && (!handoffId || task.collaboration?.currentHandoffId === handoffId) && task.collaboration?.status === 'queued')
     for (const task of offered) {
-      let token
-      try { token = await serial(() => claim(task.id, task.collaboration.botId, handoffId)) }
-      catch (error) { rt.warn?.('Bot pool claim refused: %s', error.message); continue }
-      if (!token) continue
+      let token, wait
+      try { token = await serial(() => claim(task.id, task.collaboration.botId, handoffId, undefined, (kind, reason) => { wait = { kind, reason } })) }
+      catch (error) {
+        rt.warn?.('Bot pool claim refused: %s', error.message)
+        if (taskId) { if (error.code?.startsWith('bot/')) throw new EffectDeferred(error.message.slice(0, 500), { waitingFor: 'pool-admission' }); throw error }
+        continue
+      }
+      if (!token) { if (taskId && wait) throw new EffectDeferred(wait.reason, { waitingFor: wait.kind }); continue }
       try {
         const workerId = await adapter.execute({ task, claim: token, definition: targetOf(task.projectId, token.botId) })
         await serial(async () => {

@@ -74,6 +74,23 @@ actual execution still requires physical resource capacity.
 
 ## Restart and process proof
 
+#2483 adds missing interrupted-role notification to the existing controller pump.
+A current recoverable Attempt with a blocked interrupted/intervened role claim
+requests one scoped inspection under the configured policy. Existing durable Run
+source identity binds Project/Task/Attempt/claim, original claim generation, policy
+revision, current allocation evidence and committed exit retirement. Failed routing
+alone cannot generate another notice; changed exit/retirement facts can. Disabled
+authority, cancelled/superseded work, terminal Tasks and Chief's separate arbitration
+claims are excluded. A queued notice is cancelled if its responsibility/facts change.
+
+This is event delivery, not a selected recovery workflow. The resident Chief sees
+current checkpoint/exit evidence and chooses its next action. Existing exit, context,
+input, permission and acceptance gates remain. Unknown exit retains occupancy;
+confirmed retirement can notify Chief again without choosing the next role. No new
+timer, Effect kind, Task store or implicit human escalation is introduced. Integration
+tests persist state, dispose the old Runtime, reload and verify actual re-dispatch;
+their Chief/worker replies are fixtures, distinct from live provider acceptance.
+
 Interrupted work is never assumed successful or automatically freed on missing PID.
 Local workers record the actual systemd invocation and control group only when
 supervisor metadata matches the running process and KillMode=control-group.
@@ -318,3 +335,30 @@ text is audit data, not a current routing constraint. No JSON boolean repair,
 fixed DAG, generic recovery scheduler or new state store is added.
 
 A failed correction dispatch is transport-incomplete, not a pending model turn. Machine-readable recovery kinds distinguish changed sources, input protocol and missing acceptance evidence; candidate references remain full40-character Git SHAs.
+
+## Merged-candidate facts — #2413
+
+A merge-to-Chief request is an idempotent scoped inspection, separate from Task acceptance. The delivery Effects adapter waits for existing Chief work rather than starting concurrent judgements for the same Project. A running judgement that predates merge evidence receives `stale-snapshot` correction with the changed merge field and a fresh snapshot in the same Run/Session. No old input receipt is rebased and no next role is selected by the host.
+
+A successful current Chief decision resolves its own waiting marker through the existing path; historical correction/failure records remain on the original Run. New merge facts do not erase all pending feedback, rework or criteria failures. Notification delivery, Chief execution outcome and Task acceptance remain separately observable.
+
+A merge-specific inspection remains bound to its source Task/Attempt/candidate and original merge evidence on every snapshot, including correction. Replacement or withdrawn evidence invalidates that Run instead of silently migrating its acceptance authority to a new candidate.
+
+## Explicit input protocol feedback (#2483)
+
+Close preflight reports missing declarations or pending inputs (including inputs outside this snapshot) through existing bounded correction. Feedback provides safe selected/remaining/unhandled counts; valid independent Task decisions remain single-application. Chief chooses whether to acknowledge a batch, wait, consult or change work. Applied input progress wakes existing scheduling to deliver remaining input, not to accept the Task.
+
+`lastResult.inputReceiptSummaries`, invocation history and requested decision audit expose bounded declaration metadata (`provided`, batch ID, read/handled IDs and remaining count). Validation precedes copying IDs; no message text is added. A declaration is not confirmed acknowledgement or comprehension: inspect actual input status and decision outcome. Snapshot/response hashes are fingerprints, not promises of identically named files under state-payloads.
+
+
+## Explicit baseline judgement — #2483
+
+Chief may attach `continuation:{mode:"continue"|"latest",previousAttemptId,
+generation,expectedWorkspace,expectedBaseSha}` to a Developer-capable route/return.
+Copy exact fields from `repositoryRecovery.continuationOptions`; expectedBaseSha
+is required for latest. The host checks the saved and current facts before effects;
+invalid/stale choices use the existing bounded protocol correction. This is a
+successor request through the original delivery port, not automatic rework.
+Repository input admission is a separate decision with a fresh snapshot; combining
+it with continuation is rejected rather than silently dropping inputs. Omitting
+continuation retains existing route/rework and verification recovery behavior.

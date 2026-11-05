@@ -81,8 +81,8 @@ export function openSqliteState({ path, payloadRoot = join(dirname(path), 'state
         text = buffer.subarray(0, size).toString('utf8')
       } finally { closeSync(fd) }
     } else if (row.storage !== 'inline' || typeof text !== 'string') throw fail('Invalid state payload storage')
-    if (Buffer.byteLength(text) > MAX_PAYLOAD || hash(text) !== row.digest) throw fail('State payload content hash changed')
-    return JSON.parse(text)
+    if (Buffer.byteLength(text) > MAX_PAYLOAD || hash(text) !== row.digest) throw Object.assign(fail('State payload content hash changed'), { stateIssue: { kind: 'payload-hash', namespace: row.namespace ?? null, id: row.id ?? null, path: row.path ?? null, position: row.position ?? null, storage: row.storage, expectedSha256: row.digest, actualSha256: hash(text) } })
+    try { return JSON.parse(text) } catch { throw Object.assign(fail('State payload JSON is malformed'), { stateIssue: { kind: 'payload-json', namespace: row.namespace ?? null, id: row.id ?? null, storage: row.storage, expectedSha256: row.digest } }) }
   }
   function payload(text) {
     const digest = hash(text), size = Buffer.byteLength(text)
@@ -206,12 +206,15 @@ export function openSqliteState({ path, payloadRoot = join(dirname(path), 'state
         if (!Array.isArray(target) || target.length !== row.position) throw fail('SQLite history sequence is malformed')
         target.push(readPayload(row))
       }
-      for (const row of db.prepare('SELECT namespace,id,fingerprint FROM state_records').all()) if (hash(JSON.stringify(values.get(JSON.stringify([row.namespace, row.id])))) !== row.fingerprint) throw fail('SQLite record/history fingerprint changed')
+      for (const row of db.prepare('SELECT namespace,id,fingerprint FROM state_records').all()) {
+        const actual = hash(JSON.stringify(values.get(JSON.stringify([row.namespace, row.id]))))
+        if (actual !== row.fingerprint) throw Object.assign(fail('SQLite record/history fingerprint changed'), { stateIssue: { kind: 'record-fingerprint', namespace: row.namespace, id: row.id, expectedSha256: row.fingerprint, actualSha256: actual } })
+      }
       db.exec('COMMIT'); expectedRevision = revision
       return state
     } catch (error) { rollback(); throw error }
   }
-  return { read, write, stamp: () => String(meta('revision')),
+  return { read, write, verify() { read(); return { revision: expectedRevision } }, stamp: () => String(meta('revision')),
     metadata: () => ({ schema: SCHEMA, revision: Number(meta('revision')), migration: JSON.parse(meta('migration')), journalMode: scalar('PRAGMA journal_mode'), synchronous: Number(scalar('PRAGMA synchronous')) }),
     changes({ after = 0, limit = 50 } = {}) {
       if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw fail('Invalid SQLite change cursor or limit')

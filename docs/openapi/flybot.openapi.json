@@ -155,6 +155,77 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "operationId": "readiness",
+        "summary": "Current backend transport and state-write readiness, not model/provider or full storage integrity verification",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready for backend state writes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ready",
+                      "type": "string"
+                    },
+                    "writable": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "status",
+                    "writable"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Gateway transport rejection; no domain command success is implied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend is read-only or unavailable; no private diagnostics are exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "degraded",
+                        "unavailable"
+                      ]
+                    },
+                    "writable": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "required": [
+                    "status",
+                    "writable"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bot": {
       "post": {
         "operationId": "dispatchBotOperation",
@@ -1343,6 +1414,103 @@
                 },
                 "recovery": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "taskFeedback": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "fields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "expected": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true,
+                          "required": [
+                            "field",
+                            "expected"
+                          ]
+                        }
+                      },
+                      "recovery": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "receiptFeedback": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/JsonValue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "inputReceiptFacts": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "provided": {
+                                "type": "boolean"
+                              },
+                              "selected": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 2
+                              },
+                              "remaining": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "unhandled": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "provided",
+                              "selected",
+                              "remaining",
+                              "unhandled"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "maxItems": 100
                 }
               },
               "additionalProperties": true,
@@ -1659,6 +1827,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dispatch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DispatchState"
               },
               {
                 "type": "null"
@@ -5675,6 +5853,59 @@
           "at"
         ]
       },
+      "ChiefInputReceiptSummary": {
+        "type": "object",
+        "properties": {
+          "provided": {
+            "type": "boolean"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Opaque server-issued ID; never infer authority from it."
+            },
+            "maxItems": 2
+          },
+          "handled": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Opaque server-issued ID; never infer authority from it."
+            },
+            "maxItems": 2
+          },
+          "remaining": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "provided",
+          "batchId",
+          "read",
+          "handled",
+          "remaining"
+        ]
+      },
       "ProjectMergePolicy": {
         "type": "object",
         "properties": {
@@ -5779,6 +6010,226 @@
           "policy"
         ]
       },
+      "DispatchState": {
+        "type": "object",
+        "properties": {
+          "effectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "committed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waitingFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dueAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "effectId",
+          "status",
+          "generation",
+          "committed",
+          "executions",
+          "failures",
+          "waitingFor",
+          "reason",
+          "dueAt"
+        ]
+      },
+      "MergeHandoff": {
+        "type": "object",
+        "properties": {
+          "effectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidateSha": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "delivered",
+              "failed",
+              "cancelled",
+              "uncommitted"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waitingFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runFailure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waitingRunId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requestedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "effectId",
+          "candidateSha",
+          "status",
+          "reason",
+          "waitingFor",
+          "runId",
+          "runStatus",
+          "runFailure",
+          "waitingRunId",
+          "createdAt",
+          "requestedAt"
+        ]
+      },
       "MergeState": {
         "type": "object",
         "properties": {
@@ -5856,6 +6307,16 @@
           "deadlineAt": {
             "type": "integer",
             "minimum": 0
+          },
+          "chiefHandoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MergeHandoff"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -10910,6 +11371,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -10967,6 +11451,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -16813,6 +17320,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -16870,6 +17400,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -22273,6 +22826,29 @@
                           "at": {
                             "type": "integer",
                             "minimum": 0
+                          },
+                          "inputReceiptSummaries": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "taskId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200,
+                                  "description": "Opaque server-issued ID; never infer authority from it."
+                                },
+                                "declaration": {
+                                  "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                                }
+                              },
+                              "additionalProperties": false,
+                              "required": [
+                                "taskId",
+                                "declaration"
+                              ]
+                            },
+                            "maxItems": 30
                           }
                         },
                         "additionalProperties": true,
@@ -22330,6 +22906,29 @@
                         "receivedAt": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "inputReceiptSummaries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200,
+                                "description": "Opaque server-issued ID; never infer authority from it."
+                              },
+                              "declaration": {
+                                "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "taskId",
+                              "declaration"
+                            ]
+                          },
+                          "maxItems": 30
                         }
                       },
                       "additionalProperties": false,
@@ -30084,6 +30683,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -30141,6 +30763,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -30471,6 +31116,29 @@
                       "at": {
                         "type": "integer",
                         "minimum": 0
+                      },
+                      "inputReceiptSummaries": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "description": "Opaque server-issued ID; never infer authority from it."
+                            },
+                            "declaration": {
+                              "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "taskId",
+                            "declaration"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "additionalProperties": true,
@@ -30528,6 +31196,29 @@
                     "receivedAt": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "inputReceiptSummaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "declaration": {
+                            "$ref": "#/components/schemas/ChiefInputReceiptSummary"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "declaration"
+                        ]
+                      },
+                      "maxItems": 30
                     }
                   },
                   "additionalProperties": false,
@@ -32247,7 +32938,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32325,7 +33016,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32403,7 +33094,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32481,7 +33172,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -32881,7 +33572,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "677a041627e95a7068e4cb795187fa5c385fe86ccd5dbf8c5c71655843b90d8e"
       }
     },
     {
@@ -32959,7 +33650,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "677a041627e95a7068e4cb795187fa5c385fe86ccd5dbf8c5c71655843b90d8e"
       }
     },
     {
@@ -33037,7 +33728,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -33115,7 +33806,7 @@
       "notes": "Receipt states distinguish persisted, delivered, model-declared-read and handled; none imply Task completion.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc"
+        "sha256": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3"
       }
     },
     {
@@ -33359,7 +34050,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       }
     },
     {
@@ -33441,7 +34132,7 @@
       "notes": "Read continuation facts even after cancellation. task.run selects a successor, never revives the cancelled Attempt.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -33523,7 +34214,7 @@
       "notes": "Although a query, the downstream integration checkpoint gate requires manager authority and confirmed release.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -33601,7 +34292,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -33762,7 +34453,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf"
+        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
       }
     },
     {
@@ -35650,7 +36341,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -35758,7 +36449,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -35865,7 +36556,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -35959,7 +36650,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -36063,7 +36754,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -36173,7 +36864,7 @@
       "notes": "Fetch attempt.integration-state again after retirement; attempt.stop remains cancellation.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -36282,7 +36973,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       }
     },
     {
@@ -36857,7 +37548,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf"
+        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
       }
     },
     {
@@ -36962,7 +37653,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf"
+        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
       }
     },
     {
@@ -37339,7 +38030,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b"
+        "sha256": "fddda86a073dab3e2de4ee517f190841b3a1f339e895b5050ecf175e27ee6551"
       }
     },
     {
@@ -37434,7 +38125,7 @@
       "notes": "Host derives source, recipient and claim. Persisted/delivered does not mean read or handled.",
       "implementation": {
         "path": "core/src/host/project-inputs.js",
-        "sha256": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc"
+        "sha256": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3"
       }
     },
     {
@@ -38138,7 +38829,7 @@
       "notes": "Anonymous, invalid or revoked credentials return ok=true,value=null. A Bot must verify non-null agentId and personalAgentCredentialId; HTTP200/ok alone is not successful login.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -38215,7 +38906,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -38288,7 +38979,7 @@
       "notes": "Anonymous bootstrap is blocked by the public gateway; use the private operator CLI. Platform identity deployments may disable native invitation.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -38362,7 +39053,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -39609,7 +40300,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -39770,7 +40461,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -39845,7 +40536,7 @@
       "notes": "Prefer v1 tasks/task.detail and summary views for bounded reads.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40244,7 +40935,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40330,7 +41021,7 @@
       "notes": "Expires after 24h; project-join must be called by the actual invited human.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40419,7 +41110,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40573,7 +41264,7 @@
       "notes": "Owner cannot leave/be removed; removing Maintainer requires Owner, removing Member requires invite authority. Existing unknown worker exit is not fabricated.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40651,7 +41342,7 @@
       "notes": "Owner cannot leave/be removed; removing Maintainer requires Owner, removing Member requires invite authority. Existing unknown worker exit is not fabricated.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -40727,7 +41418,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -42659,7 +43350,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-resources.js",
-        "sha256": "9a267001af697abdcdd9d3dd3e06e97d9e3042b77e6e31cb781ca57a4ada5920"
+        "sha256": "49a680e91c703f514ff1b8d80aa77ab07860dcc61c81d6ae80fb8e62fd9d24d4"
       }
     },
     {
@@ -43719,7 +44410,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -43796,7 +44487,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -43885,7 +44576,7 @@
       "notes": "Read native history to observe the response; send acknowledgement is not completion.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -43964,7 +44655,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44043,7 +44734,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44122,7 +44813,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44201,7 +44892,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44280,7 +44971,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44357,7 +45048,7 @@
       "notes": "Own personal Bot memory only; never exposes another Bot/team private memory.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44439,7 +45130,7 @@
       "notes": "No host path, arbitrary URL or arbitrary attachment ID.",
       "implementation": {
         "path": "core/src/host/channel.js",
-        "sha256": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d"
+        "sha256": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097"
       }
     },
     {
@@ -44520,7 +45211,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44601,7 +45292,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44693,7 +45384,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44790,7 +45481,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44887,7 +45578,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -44984,7 +45675,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45081,7 +45772,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45189,7 +45880,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45281,7 +45972,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45373,7 +46064,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45470,7 +46161,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -45567,7 +46258,7 @@
       "notes": "Compatibility surface. New Project Tasks use task.run + durable role Handoff, not an externally authored fixed DAG.",
       "implementation": {
         "path": "core/src/host/project-access.js",
-        "sha256": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9"
+        "sha256": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123"
       }
     },
     {
@@ -46251,7 +46942,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "677a041627e95a7068e4cb795187fa5c385fe86ccd5dbf8c5c71655843b90d8e"
       },
       "aliasOf": "development.query.handoff.get"
     },
@@ -46327,7 +47018,7 @@
       "notes": "Read-only transport/initiative history; it is not role claim acceptance.",
       "implementation": {
         "path": "core/src/host/project-pools.js",
-        "sha256": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc"
+        "sha256": "677a041627e95a7068e4cb795187fa5c385fe86ccd5dbf8c5c71655843b90d8e"
       },
       "aliasOf": "development.query.handoff.list"
     },
@@ -46607,7 +47298,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       },
       "aliasOf": "development.query.task.detail"
     },
@@ -46704,7 +47395,7 @@
       "notes": "New Project Task contracts require actual Chief adjudication; third-party clients cannot forge Chief credentials.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       },
       "aliasOf": "development.command.task.accept"
     },
@@ -46797,7 +47488,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       },
       "aliasOf": "development.command.task.reject"
     },
@@ -46889,7 +47580,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       },
       "aliasOf": "development.command.attempt.stop"
     },
@@ -46981,7 +47672,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       },
       "aliasOf": "development.command.attempt.cleanup"
     },
@@ -47370,7 +48061,7 @@
       "notes": "phase=candidate observes and adopts an already SDK-published PR before host tests; it never creates a PR, rewrites SHA, grants a Review PASS or closes a Task. Original github.candidate Effect is durable; a failed Effect must first be explicitly retried through effect.retry. Without phase, retain existing reviewed publication reconciliation semantics.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       },
       "aliasOf": "development.command.attempt.publication-retry"
     },
@@ -47446,7 +48137,7 @@
       "notes": "UTF-8 byte offsets, not character offsets; nextOffset preserves character boundaries. Rechecks rights after source I/O. No caller path. environmentRole selects that role workspace latest preparation log and is mutually exclusive with SDK execution role. Preparation is not tests or inference.",
       "implementation": {
         "path": "core/src/host/project-delivery.js",
-        "sha256": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240"
+        "sha256": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d"
       },
       "aliasOf": "development.query.attempt.log"
     },
@@ -47754,7 +48445,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf"
+        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -47857,7 +48548,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf"
+        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -47933,7 +48624,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf"
+        "sha256": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -48302,7 +48993,7 @@
       "notes": "payload.requestId identifies the original SDK permission question; outer requestId is the independent command receipt ID. A role string never grants execution identity.",
       "implementation": {
         "path": "core/src/host/project-harness.js",
-        "sha256": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b"
+        "sha256": "fddda86a073dab3e2de4ee517f190841b3a1f339e895b5050ecf175e27ee6551"
       },
       "aliasOf": "development.command.execution.input"
     },
@@ -48378,7 +49069,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-development-service.js",
-        "sha256": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987"
+        "sha256": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71"
       },
       "aliasOf": "development.query.pools"
     },
@@ -48759,7 +49450,7 @@
       "core/src/host/browser.js": "5aaccf09cd9b1e65432c7d75fa0ee3cbf823b2b765ebf32f11f1df6c073d2d78",
       "core/src/host/busy-ack.js": "19c5fd411e4a7b0b41e696cc8b602e9da27be6d70668ca9824861d16db3c2d27",
       "core/src/host/capabilities.js": "c1a0a3746573fba088163f668eb6c09c76856f0ee33d1554c916dc47d0b9d90d",
-      "core/src/host/channel.js": "eb978b56b0fa016bc46c0dd16db76f76d43e33d58c12c2bb6ab727279f960c0d",
+      "core/src/host/channel.js": "ddf3655183525311abbb65c50c3c7a800f6de7d5f73535094d2c7c7fef6f7097",
       "core/src/host/chat-index.js": "cda0d84b97dd53132bcc74c5ba9d849a52c8a14bfecbce599dd0788a8306a1fb",
       "core/src/host/connector-access.js": "43962b756d9e632ccd76c80a4557d232943b774585ccc05c8ac9c005fa0d284c",
       "core/src/host/connectors.js": "2f05ffdfeac09227dff31e874de296899e2d8f0878865651fddc8bed90d65dbd",
@@ -48793,7 +49484,7 @@
       "core/src/host/personal-agents.js": "065e9a8bb9b686db1908c8ada67cd899709b28e574fdc74b5a361cad44c69651",
       "core/src/host/platform-identity.js": "551795f4251cc705582560274eccf68a8955a26f51c807a74b8948261508a29e",
       "core/src/host/plugin-model.js": "64477d6900bb6abea40c7ffe0e55d51e61e54bcfbe03e5d5a5e9647b40b69fc8",
-      "core/src/host/project-access.js": "24c368013b718205b75aaa62ba2eb8b315aad4d539d533e829b02a6ee53e5fa9",
+      "core/src/host/project-access.js": "d21123c7c4cf49ef5a85f3cb0335ff19471424b50040d359bf845eff88919123",
       "core/src/host/project-agent-context.js": "fea96ce858086e24bf9974099780c1494606289fbca9dab5becde302b86b0b0b",
       "core/src/host/project-agent-inbox.js": "96ed70b4a241946ce2112ebef76052ec98654cbf5d64871e56936bfb8d7bf927",
       "core/src/host/project-agent-skills.js": "6545f39aec7bbb8bd812558d37422fae1fa0e4fc7ab2fa02f1c50501d29c8445",
@@ -48802,9 +49493,9 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "45a60c17facdeb082bdc49b1ee1bb1308a602a919fa74d6e5b706ec75cdb4ecf",
+      "core/src/host/project-chief-control.js": "46fa5fe480c33449d71609f01ddbaec7c84beef6fb21a27c149cb20567fc34b5",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
-      "core/src/host/project-chief-protocol.js": "416d57a83ae6064f04d13e70ffba63d8732b4cee4598e37fdcbf63ece7181a79",
+      "core/src/host/project-chief-protocol.js": "324bb2fe60caf5ad53019ad1a7e6622b04f378e1639bdb7c8e3e6afe644429d6",
       "core/src/host/project-chief-recovery.js": "c80a9d791aab06d4b343e8740a25a471ddf93e0af52b59dd9b7e6fc835c0d824",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
@@ -48817,8 +49508,8 @@
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
-      "core/src/host/project-delivery.js": "724913d3bcaed1536da0186116155c176be661710e58765ac00e260b1965c240",
-      "core/src/host/project-development-service.js": "f93d6b901dc0ba04e965dd5f26d7fb1d179bbaf2f39feb49c3501166026db987",
+      "core/src/host/project-delivery.js": "0c7f6a47b2bfee3da5455f1c76d1e02f64837d6fde4ce3c26adc036668da4c6d",
+      "core/src/host/project-development-service.js": "6d5fcbc4fead594a4951b0ac8e2fb04f74089d7d8792f0df50dc38b2f94e6c71",
       "core/src/host/project-domain.js": "6d6a20727905005f7a8de0247a429a10ffbd1436773ee96a5d7615b2fb763e82",
       "core/src/host/project-effects.js": "dc02f89eb221d543805d115e48a9534882a344d233bf089299e43b1a1a4ede63",
       "core/src/host/project-execution-authority.js": "9c5ffb4bc9153d8f9d9e7901f7aef2aee90cacc19f19d8a0726ac0adb93e3e36",
@@ -48836,15 +49527,15 @@
       "core/src/host/project-github.js": "29c81ebad0d3cb094bb8c549f8ee89c674cb1685c2f73f79095b53a121a97c52",
       "core/src/host/project-harness-auth.js": "2684b6687433e128197a0cc67b671bbd02c3c71e39428af7393d0c0ca1658ac7",
       "core/src/host/project-harness-turn.js": "7a08f8d0e9c7ac6812a55714bde9505640f245783aa28dde3a6d9a2de161c6e6",
-      "core/src/host/project-harness.js": "74dc4ac6bf8a3de4749b0094711503dcd11489165ea5ee08f0cabd30d8e2e96b",
+      "core/src/host/project-harness.js": "fddda86a073dab3e2de4ee517f190841b3a1f339e895b5050ecf175e27ee6551",
       "core/src/host/project-history-pages.js": "38958623f0aa98099e570559c55a207285fd0349689ffdcec47b965c40f4e1bc",
-      "core/src/host/project-inputs.js": "2f0ad464983506fa0f4d1500ca509e2602438fa3ac12f9ed83bd65059ebf1dbc",
+      "core/src/host/project-inputs.js": "dc64abe3e3af9b0456cc75f83ae8a22fd1ff587248a33d0b4df4416082eeccf3",
       "core/src/host/project-lifecycle.js": "055784e0a1cbf2a9e465e990c60fbd6df4b8844052db43bbcb7cae5de9282936",
       "core/src/host/project-merge-heads.js": "9e5e39b8aaa191c2175feaafcf6524b8a16dbafdfa573f94222b9f71d8482074",
       "core/src/host/project-merge-policy.js": "78b5c4830e5466d102298d5ded6665f65f89537d908e1cf85b0438b868548552",
       "core/src/host/project-metrics.js": "80f209d76955e5a3058fa66757543059fded1030625e5e155be5254494ce5264",
       "core/src/host/project-native-sessions.js": "cbc3c32cfd21f4364440a84dbab33fe9ea7018f464959574342029d848def48e",
-      "core/src/host/project-pools.js": "8464b135daf648f743491bcd4ec33b8ee0630f92f8ea9f397d96a6ea2ca815bc",
+      "core/src/host/project-pools.js": "677a041627e95a7068e4cb795187fa5c385fe86ccd5dbf8c5c71655843b90d8e",
       "core/src/host/project-private-file.js": "e8b51d8da7bcd72658eb6eb953dbf9d0054ea0ee519b0229785e8ea0aacef6df",
       "core/src/host/project-process-proof.js": "d4c7e8b4f0d2dd177c3e02fd0afe62b4c13ca10348d8f1caf43c011cda47388b",
       "core/src/host/project-receipt-correction.js": "7162d771d2e28fb4f55af6d492d9b9dc18c9e96f7fbacf660b84c551281ec167",
@@ -48852,9 +49543,9 @@
       "core/src/host/project-releases.js": "ac588064b036f2273c7b61cf3389c1da720e6f2166c37d269afd9d9095eb6885",
       "core/src/host/project-repository-policy.js": "c16f469f3275f61e817bcad0bc8c753f01b034db6562c4e3d197f0349174823a",
       "core/src/host/project-resource-workspaces.js": "cc9525aab5ea9ea09d4fb2c557a1048fa034d638c0b80dbebea9cc8eba0ede8b",
-      "core/src/host/project-resources.js": "9a267001af697abdcdd9d3dd3e06e97d9e3042b77e6e31cb781ca57a4ada5920",
+      "core/src/host/project-resources.js": "49a680e91c703f514ff1b8d80aa77ab07860dcc61c81d6ae80fb8e62fd9d24d4",
       "core/src/host/project-review-evidence.js": "da3f72d2cefcf725c19f590e926ce391af36d45df97163b0d4a07699cef5ceb9",
-      "core/src/host/project-reviewed-merge.js": "f34db330ee71cf9459bf88c26ce38aba57b46974225566a62253309dcc3dca2a",
+      "core/src/host/project-reviewed-merge.js": "f178310efb224fa9bd51042e4a1b14122fc4fd9a155a7e43da17a5e668a29aa8",
       "core/src/host/project-role-admission.js": "ccd5f3ac4a5d1f0010a3e533e6809b20a4f88551fc55e6c775d8289d8f9e100f",
       "core/src/host/project-role-context.js": "e032b6c4e8b7a902c1dedc114782025d73c630d2419f912e10cbd103c8d7f69c",
       "core/src/host/project-role-github.js": "3f66e09f5995b8b8a1542f75f0a988b331a3a6867525e38820aea1a68e2d85d1",
@@ -48866,13 +49557,13 @@
       "core/src/host/project-scheduler.js": "461d26576faeb5017ddcfc7b0d9b1ef8748e3a9aaab2eda9af9a2eef37706aef",
       "core/src/host/project-service-events.js": "71917d1ab367a9db8bef8c1d1003228255a57528e84a57e76de3a39d08ac28ec",
       "core/src/host/project-service-sse.js": "df97d6b11156da885a6a47d50a4a77c8c99b6af5eb0066de14312cc512762297",
-      "core/src/host/project-service-views.js": "c4923c2717779d22d6995aec64186ae17eb2ef6b914904a7daee0e1246dad43c",
+      "core/src/host/project-service-views.js": "5aa29281a97fb24eea9413bc3eef83447b2e164ef5b249053da7e6aec5b466fd",
       "core/src/host/project-service.js": "8ba30c1d7c066867eae06a6612d5bbba3bc2278f34fcf7f1c2242876565dba8f",
       "core/src/host/project-session-continuation.js": "8d1312bfbe1b69abbaefd8d55dc351bfe19aaa6ae85f16e83a9dd7ff148dfa4d",
       "core/src/host/project-sources.js": "cf4c11c8e853f3091c4d159b850d06fe7e8bf291fdc616d251eb23d071d63403",
       "core/src/host/project-state-format.js": "4838b344439e585287fdc25ef15cea44d7aff4199c7a380ebbfa8cfcdf24f678",
-      "core/src/host/project-state-migration.js": "128ab1a332ea809c961e20a449bd41d58e6556e37d0f36191be31b0a284d5872",
-      "core/src/host/project-state-sqlite.js": "64320c122c28577c03ce13962be629ede9dd938d4805f5f0b6f352806d559c91",
+      "core/src/host/project-state-migration.js": "26a296f395ce50aa7ce4d11e2ee0c75c586fbc1861ed24b372c5c4ec7ed5dcc8",
+      "core/src/host/project-state-sqlite.js": "5614735582146a95cdbe7247934cd28ef838a4548aef70f41c31f388d03b4376",
       "core/src/host/project-state-storage.js": "94a9932c22f3f8e18f6952acb97b4323612294c6a10b493e1007de7f1b30b53d",
       "core/src/host/project-state.js": "5d6736eeedcfc09a3949a33457a4d4daf3b3745bebe2823d7852fd5c48f1b825",
       "core/src/host/project-task-lifecycle.js": "20940d6eeae321fcb064995990085af1f0e94d0a41fde50dc29a35e1af1a58a3",
@@ -48893,7 +49584,7 @@
       "core/src/host/secrets.js": "5787cd55f8b7f589605955e234a326a5addd64dc74320b6ca00029291405e524",
       "core/src/host/steering-interrupt.js": "f9bcf7df56303c217abedc96f98a98d4e2e668bb17d9510ada7debd3a8ed207d",
       "core/src/host/steward.js": "9a49eb851bf12df9f35fbf4870ca8d2355dbd5338c7e40d8b57bb9bd44d58e88",
-      "core/src/host/store.js": "421d7a745fedff00c9cef2ce1083366bc3169602d24d34583982ee8d0b46cf3b",
+      "core/src/host/store.js": "59bba0c850e301b57011704ba3915cc3aea9a2c54b85c37fd51040b6e0a77971",
       "core/src/host/task-drive.js": "c6e31e5c6277e7088e7ffabf6c0b8accefddf87ae4580e3550b5845efcc97aa3",
       "core/src/host/tasks.js": "c4d1e376b3de2c023d2c3debaa328d56cd2f245fcd2bcb5695f73360b608f130",
       "core/src/host/text.js": "709b3882356fc10d367533634e021b979a18db0e8127ac6cac59efe8e7e06c18",
@@ -48905,7 +49596,7 @@
       "core/src/host/update.js": "8b049ec4e2d5d07d747312e3ff8c1560d7e3681e5b41dd867cd0961c5675a2be",
       "core/src/host/usage.js": "fff9a097cc3ac4b2fe4fd2cebdd1a3b24fbf82b63535d8cf274b0025e0d2b0f3",
       "core/src/host/work-dispatch.js": "bef48285a381a6bbc7e1c162656316c4769cca76fd44da0e4fcfed54fe38d641",
-      "core/src/host/workbench-gateway.js": "6c2beeec490557816d5a82c8992048e43b1ec39e3d40d85bcfc027684f8a65b4",
+      "core/src/host/workbench-gateway.js": "522e09b699f71999fde6ad6d6be6df2b776f1ae6d68118fc87976703a8ba555c",
       "core/src/host/workbench-personal.js": "4282e3983f8f5cba0e61f288bddcba7f8e44eab92fbffbc604acac55defdc301",
       "core/src/host/workbench-state.js": "b95b83fe47a6a155e16fba92284f9df2929ebd95bec635804f186c47b9eb8391",
       "core/src/host/workflow-facts.js": "f2ff8392df1d0f927dd3bc2fb6ed1fde0bb31b5a8d590725963134b73f09fe76",

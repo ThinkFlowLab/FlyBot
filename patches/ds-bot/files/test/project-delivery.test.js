@@ -10,6 +10,7 @@ import { createRuntime } from '../index.js'
 import { roleExecutionPrompt } from '../src/host/project-role-policy.js'
 import { githubCredentialBinding } from '../src/host/project-github-app.js'
 import { createProjectDelivery } from '../src/host/project-delivery.js'
+import { taskView } from '../src/host/project-development-service.js'
 import { createTaskContract, admitTask, addTaskDependencies } from '../src/host/project-task-lifecycle.js'
 import { childResultSources } from '../src/host/project-child-inputs.js'
 import { fakeContext } from './fake-ctx.js'
@@ -171,6 +172,82 @@ test('restart explicitly interrupts an unfinished Attempt and preserves its work
   assert.equal(restarted.state.projectExecutions[recovered.runId].status, 'interrupted')
   assert.equal(restarted.projectDelivery.recover(), false)
   await ctx.dispose()
+})
+
+for (const allocation of ['no-worker', 'already-blocked', 'released-worker', 'retire-then-route', 'unknown-worker']) test('persisted host restart reaches Chief and respects ' + allocation + ' when resuming the draft', async t => {
+  const f = await setup(t, undefined, { pool: true })
+  f.rt.projectPools.connect({ validate: () => ({ ok: true }) })
+  await f.start('before-restart')
+  const previous = f.attempt(), task = f.rt.state.tasks[f.task.id]
+  const claim = await f.rt.projectPools.claim(task.id, 'p1:developer')
+  const definition = f.rt.projectAgents.deliveryDefinitions('p1').roles.find(row => row.role === 'developer')
+  await prepareRole(f.rt, task, claim, definition)
+  const workspace = previous.workspaces.developer, sessionId = previous.roleSessions.developer.logicalSessionId
+  writeFileSync(join(workspace.path, 'code.mjs'), 'export const add = (a,b) => a+b;\n')
+  if (['released-worker', 'retire-then-route', 'unknown-worker'].includes(allocation)) {
+    const exited = allocation !== 'unknown-worker', proof = { kind: 'sdk-stop-ack-and-process-exit', workerId: 'prior-sdk', generation: 1, at: Date.now() }
+    f.rt.state.projectHarnessWorkers ??= {}; f.rt.state.projectResourceLeases ??= {}
+    task.collaboration.claim.workerId = 'prior-sdk'
+    f.rt.state.projectHarnessWorkers['prior-sdk'] = { id: 'prior-sdk', projectId: 'p1', taskId: task.id, attemptId: previous.id, role: 'developer', sessionKey: previous.roleSessions.developer.id, resourceId: 'prior-resource', leaseId: 'prior-lease', generation: 1, status: exited ? 'released' : 'unreachable', ...(exited ? { releaseProof: proof } : {}) }
+    f.rt.state.projectResourceLeases['prior-lease'] = { id: 'prior-lease', projectId: 'p1', attemptId: previous.id, role: 'developer', resourceId: 'prior-resource', generation: 1, status: exited ? 'released' : 'unreachable', worker: { kind: 'sdk', handle: 'prior-sdk' }, ...(exited ? { releaseProof: proof } : {}) }
+  }
+  f.rt.state.projectAgents ??= {}; f.rt.state.projectChiefPolicies ??= {}
+  f.rt.state.projectAgents['public-p1'] = { id: 'public-p1', projectId: 'p1', visibility: 'public', botId: 'a', sessionId: 'a', carrierGeneration: 1 }
+  f.rt.state.projectChiefPolicies.p1 = { projectId: 'p1', enabled: true, authorityMemberId: alice.memberId, revision: 1, inspection: { thresholds: { maxHandoffsWithoutProgress: 3, longExecutionMs: 10000, missingHeartbeatMs: 5000, longWaitMs: 8000 }, prompt: 'Inspect interrupted work' } }
+  if (allocation === 'already-blocked') { f.rt.projectDelivery.recover(); f.rt.projectPools.recover() }
+  await f.rt.save(); await f.rt.ctx.dispose()
+
+  const ctx = fakeContext()
+  Object.assign(ctx, { llm: { listProviders: () => [], listModels: async () => [] }, workspaceRegistry: { get: () => undefined, archiveSession: async () => {} }, sessionController: { resolveAgent: async () => ({ agent: undefined }) }, sessions: { flush: async () => {} } })
+  const rt = createRuntime(ctx, { ...f.rt.config })
+  rt.projectDelivery = createProjectDelivery(rt, { publisher: f.publisher })
+  let chief, dispatched
+  rt.projectAgents.startChiefJob = async args => { chief = args; return 'fixture-chief' }
+  rt.projectPools.connect({ validate: () => ({ ok: true }), ready: () => true, rework: args => rt.projectDelivery.reworkPool(args), validateRecovery: args => rt.projectDelivery.validateRecovery(args),
+    execute: async ({ task, claim, definition }) => { await rt.projectDelivery.preparePoolRole(task, claim, definition); return 'fixture-resumed-dev' }, dispatch: async args => { dispatched = args }, release: async id => rt.projectDelivery.exitConfirmed(id) })
+  try {
+    await rt.load()
+    const resumedTask = rt.state.tasks[task.id]
+    assert.equal(resumedTask.collaboration.status, 'blocked'); assert.match(resumedTask.collaboration.block.reason, /Host restarted/)
+    assert.equal(rt.state.projectAttempts[previous.id].status, 'interrupted')
+    await rt.projectScheduler.wake()
+    for (let pass = 0; pass < 200 && !chief; ++pass) await new Promise(resolve => setTimeout(resolve, 5))
+    assert.ok(chief, 'No manual inspect or schedule delivery is needed')
+    assert.equal(chief.projectFacts.tasks[0].execution.claimId, claim.id)
+    if (allocation === 'retire-then-route') {
+      const retiring = chief
+      await retiring.onResult({ ok: true, text: JSON.stringify({ summary: 'Reconcile the exact old responsibility first', decisions: [{ taskId: task.id, action: 'reconcile-exit', reason: 'Matching SDK stop and lease release prove exit' }] }), executionEvidence: { kind: 'native-chief', chiefRunId: retiring.runId, carrierGeneration: 1, botId: 'a', sessionId: 'a' } })
+      await rt.projectScheduler.wake()
+      for (let pass = 0; pass < 200 && chief.runId === retiring.runId; ++pass) await new Promise(resolve => setTimeout(resolve, 5))
+      assert.notEqual(chief.runId, retiring.runId, JSON.stringify(rt.state.projectExecutions[retiring.runId]))
+      assert.equal(rt.state.projectEffects[resumedTask.collaboration.claim.retirement.effect.id].kind, 'pool.retire')
+      assert.equal(resumedTask.collaboration.status, 'blocked', 'Confirmed retirement still leaves the next role to Chief')
+    }
+    await chief.onResult({ ok: true, text: JSON.stringify({ summary: 'Assess the original allocation and resume the checkpoint', decisions: [{ taskId: task.id, action: 'route', targetBotId: 'p1:developer', reason: 'Continue the preserved draft when actual exit proof permits it' }] }), executionEvidence: { kind: 'native-chief', chiefRunId: chief.runId, carrierGeneration: 1, botId: 'a', sessionId: 'a' } })
+    await rt.projectScheduler.wake()
+    if (allocation === 'unknown-worker') {
+      assert.equal(dispatched, undefined); assert.equal(resumedTask.collaboration.status, 'blocked')
+      assert.match(resumedTask.collaboration.block.reason, /confirmed worker exit/)
+      assert.equal(rt.state.projectResourceLeases['prior-lease'].status, 'unreachable')
+      const count = Object.keys(rt.state.projectExecutions).length
+      await rt.projectScheduler.wake(); await rt.projectScheduler.wake()
+      assert.equal(Object.keys(rt.state.projectExecutions).length, count, 'Unknown exit must not create a Chief notification hot loop')
+      assert.equal(readFileSync(join(workspace.path, 'code.mjs'), 'utf8'), 'export const add = (a,b) => a+b;\n')
+      return
+    }
+    assert.ok(dispatched, JSON.stringify(rt.state.projectExecutions[chief.runId]))
+    assert.equal(dispatched.task.id, task.id); assert.equal(dispatched.claim.attemptId, previous.id)
+    assert.equal(resumedTask.collaboration.status, 'claimed'); assert.equal(resumedTask.collaboration.block, undefined)
+    assert.equal(taskView(rt.state, resumedTask).reason, null)
+    assert.ok(['running', 'starting'].includes(taskView(rt.state, resumedTask).phase))
+    assert.equal(resumedTask.collaboration.history.at(-1).resolvedBlock.reason.startsWith('Host restarted'), true)
+    const resumed = rt.state.projectAttempts[previous.id]
+    assert.equal(resumed.status, 'running'); assert.equal(resumed.workspaces.developer.path, workspace.path)
+    assert.equal(resumed.roleSessions.developer.logicalSessionId, sessionId)
+    assert.equal(readFileSync(join(workspace.path, 'code.mjs'), 'utf8'), 'export const add = (a,b) => a+b;\n')
+    assert.equal(Object.keys(rt.state.projectAttempts).length, 1)
+    assert.equal(resumedTask.status === 'accepted', false)
+  } finally { await ctx.dispose() }
 })
 
 test('a code Task cannot be accepted through generic transitions before it has delivery evidence', async t => {
@@ -1908,6 +1985,161 @@ test('actual Chief route admits a pinned inspect input and Dev receives the PR o
   assert.equal(attempt.candidateSha, undefined)
 })
 
+
+async function chiefBaselineFixture(t, kind = 'local', prepare) {
+  const f = await baselineResourceFixture(t, kind)
+  f.previous.seedSha = f.previous.baseSha
+  if (prepare) await prepare(f)
+  const carrier = { id: 'public-p1', projectId: 'p1', visibility: 'public', botId: 'a', sessionId: 'a', carrierGeneration: 1 }
+  f.rt.state.projectAgents ??= {}; f.rt.state.projectAgents[carrier.id] = carrier
+  f.rt.state.projectChiefPolicies = { p1: { enabled: true, authorityMemberId: alice.memberId, revision: 1, inspection: { correctionBudget: 1, thresholds: { maxHandoffsWithoutProgress: 3, longExecutionMs: 10000, missingHeartbeatMs: 5000, longWaitMs: 8000 }, prompt: 'Inspect' } } }
+  let chief
+  f.rt.projectAgents.startChiefJob = async args => { chief = args; return 'deterministic-chief' }
+  const run = await f.rt.projectChiefControl.request('p1', f.task.collaboration.status === 'arbitration' ? 'arbitration' : 'inspection', { requestId: 'choose-baseline' }, f.task.id)
+  await f.rt.projectChiefControl.pump()
+  for (let pass = 0; pass < 200 && !chief; ++pass) await new Promise(resolve => setTimeout(resolve, 5))
+  assert(chief)
+  const facts = chief.projectFacts.tasks.find(row => row.taskId === f.task.id)
+  const respond = decision => chief.onResult({ ok: true, text: JSON.stringify({ summary: 'Choose the verified baseline', decisions: [decision] }), executionEvidence: { kind: 'native-chief', chiefRunId: run.id, carrierGeneration: carrier.carrierGeneration, botId: carrier.botId, sessionId: carrier.sessionId } })
+  return { ...f, chief, run, facts, respond }
+}
+for (const mode of ['latest', 'continue']) test('Chief explicitly chooses ' + mode + ' and the actual resource checkout matches', async t => {
+  const f = await chiefBaselineFixture(t, 'docker'), options = f.facts.repositoryRecovery.continuationOptions
+  assert(options, 'Chief needs the existing continuation snapshot instead of guessing the baseline')
+  assert.equal(options.latestBaseSha, f.latest)
+  const continuation = { mode, previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, ...(mode === 'latest' ? { expectedBaseSha: options.latestBaseSha } : {}) }
+  await f.respond({ taskId: f.task.id, action: 'return', targetBotId: 'p1:developer', reason: 'Explicit baseline judgement', continuation })
+  assert.equal(f.run.status, 'done', f.run.failure)
+  const next = f.rt.state.projectAttempts[f.task.deliveryAttemptId]
+  assert.notEqual(next.id, f.previous.id)
+  assert.equal(next.continuation.mode, mode)
+  assert.equal(next.continuation.previousAttemptId, f.previous.id)
+  assert.equal(f.task.collaboration.botId, 'p1:developer')
+  assert.equal(f.previous.status, 'interrupted')
+  await prepareRole(f.rt, f.task, { id: 'chief-baseline-prepare', attemptId: next.id, generation: f.task.collaboration.generation }, f.definition)
+  assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), mode === 'latest' ? f.latest : f.previous.seedSha)
+  assert.equal(next.workspaces.developer.materialization.actualCheckout, mode === 'latest' ? f.latest : f.previous.seedSha)
+  assert.equal(next.evidence.tests, undefined)
+})
+
+for (const mutation of ['old-head', 'bad-workspace', 'bad-generation', 'wrong-attempt', 'unknown-mode', 'wrong-role', 'wrong-action', 'mixed-inputs', 'host-advanced', 'workspace-changed']) test('Chief baseline rejects ' + mutation + ' through bounded correction without creating an Attempt', async t => {
+  const f = await chiefBaselineFixture(t), options = f.facts.repositoryRecovery.continuationOptions
+  const decision = { taskId: f.task.id, action: 'return', targetBotId: 'p1:developer', reason: 'Select a baseline', continuation: { mode: 'latest', previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, expectedBaseSha: options.latestBaseSha } }
+  if (mutation === 'old-head') decision.continuation.expectedBaseSha = f.previous.baseSha
+  if (mutation === 'bad-workspace') decision.continuation.expectedWorkspace = null
+  if (mutation === 'bad-generation') --decision.continuation.generation
+  if (mutation === 'wrong-attempt') decision.continuation.previousAttemptId = 'foreign-attempt'
+  if (mutation === 'unknown-mode') decision.continuation.mode = 'reset'
+  if (mutation === 'wrong-role') decision.targetBotId = 'p1:reviewer'
+  if (mutation === 'wrong-action') decision.action = 'continue'
+  if (mutation === 'mixed-inputs') decision.repositoryInputs = []
+  if (mutation === 'host-advanced') { writeFileSync(join(f.repository, 'another.txt'), 'Advance after snapshot'); git(f.repository, ['add', '.']); git(f.repository, ['commit', '-m', 'Advance after snapshot']) }
+  if (mutation === 'workspace-changed') writeFileSync(join(f.workspace.path, 'draft.txt'), 'Draft after snapshot')
+  const count = Object.keys(f.rt.state.projectAttempts).length
+  await f.respond(decision)
+  assert.equal(f.run.status, 'correction-pending', f.run.failure)
+  assert.equal(f.task.deliveryAttemptId, f.previous.id)
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, count)
+  assert.equal(git(f.workspace.path, ['rev-parse', 'HEAD']), f.previous.seedSha)
+})
+
+test('Chief latest preserves a dirty draft and the ordinary checkout guard refuses silent reset', async t => {
+  const f = await chiefBaselineFixture(t, 'local', f => writeFileSync(join(f.workspace.path, 'draft.txt'), 'Keep this work'))
+  const options = f.facts.repositoryRecovery.continuationOptions
+  assert.equal(options.retainedDraft, true)
+  await f.respond({ taskId: f.task.id, action: 'return', targetBotId: 'p1:developer', reason: 'Choose latest without losing the retained draft', continuation: { mode: 'latest', previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, expectedBaseSha: options.latestBaseSha } })
+  assert.equal(f.run.status, 'done', f.run.failure)
+  const next = f.rt.state.projectAttempts[f.task.deliveryAttemptId]
+  await assert.rejects(prepareRole(f.rt, f.task, { id: 'dirty-latest', attemptId: next.id, generation: f.task.collaboration.generation }, f.definition), error => error.code === 'bot/workspace-baseline')
+  assert.equal(readFileSync(join(f.workspace.path, 'draft.txt'), 'utf8'), 'Keep this work')
+  assert.equal(git(f.workspace.path, ['rev-parse', 'HEAD']), f.previous.seedSha)
+})
+
+test('Chief arbitration can use existing successor admission without mistaking its own claim for a live Developer', async t => {
+  const f = await chiefBaselineFixture(t, 'local', f => {
+    const c = f.task.collaboration
+    delete c.claim; c.status = 'arbitration'; c.botId = 'p1:chief'
+    c.history.push({ id: 'chief-baseline-handoff', status: 'pending', from: 'p1:developer', to: 'p1:chief', attemptId: f.previous.id, purpose: 'arbitrate', reason: 'Baseline selection needed', generation: c.generation })
+    c.currentHandoffId = 'chief-baseline-handoff'
+  })
+  const options = f.facts.repositoryRecovery.continuationOptions, claim = structuredClone(f.task.collaboration.claim)
+  assert.equal(claim.status, 'active'); assert.equal(claim.chiefRunId, f.run.id)
+  await f.respond({ taskId: f.task.id, action: 'route', targetBotId: 'p1:developer', reason: 'Use current observed base', continuation: { mode: 'latest', previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, expectedBaseSha: options.latestBaseSha } })
+  assert.equal(f.run.status, 'done', f.run.failure)
+  assert.equal(f.task.collaboration.status, 'queued')
+  const handoff = f.task.collaboration.history.at(-1)
+  assert.equal(handoff.from, 'p1:chief')
+  assert.equal(handoff.sourceExecution.id, claim.id)
+  assert.equal(handoff.sourceExecution.chiefRunId, f.run.id)
+  assert.notEqual(f.task.deliveryAttemptId, f.previous.id)
+})
+
+test('Chief baseline options retain unavailable execution and permission boundaries', async t => {
+  const f = await baselineResourceFixture(t)
+  assert.equal((await f.rt.projectDelivery.recoveryFacts(f.task, bob)).continuationOptions.status, 'unavailable')
+  f.task.collaboration.claim.status = 'active'
+  const facts = await f.rt.projectDelivery.recoveryFacts(f.task, alice)
+  assert.equal(facts.continuationOptions.status, 'unavailable')
+  assert.equal(facts.baseSha, f.previous.baseSha)
+  assert(facts.executionCheckpoint.blockers.some(row => row.kind === 'claim-active'))
+  f.previous.status = 'running'
+  assert.equal((await f.rt.projectDelivery.recoveryFacts(f.task, alice)).continuationOptions, null)
+})
+
+test('Chief latest keeps an existing PR seed even when its requested base is newer', async t => {
+  const f = await chiefBaselineFixture(t, 'local', f => { f.previous.publicationBinding = { number: 7, repository: 'example/demo', branch: 'existing-pr', previousSha: f.previous.seedSha } })
+  const options = f.facts.repositoryRecovery.continuationOptions
+  await f.respond({ taskId: f.task.id, action: 'return', targetBotId: 'p1:developer', reason: 'Retain published ancestry while selecting updated upstream', continuation: { mode: 'latest', previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, expectedBaseSha: options.latestBaseSha } })
+  assert.equal(f.run.status, 'done', f.run.failure)
+  const next = f.rt.state.projectAttempts[f.task.deliveryAttemptId]
+  assert.equal(next.baseSha, f.latest)
+  assert.equal(next.seedSha, f.previous.seedSha)
+  assert.equal(next.publicationBinding.number, 7)
+  await prepareRole(f.rt, f.task, { id: 'bound-pr-latest', attemptId: next.id, generation: f.task.collaboration.generation }, f.definition)
+  assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), f.previous.seedSha)
+})
+
+for (const status of ['interrupted', 'running']) test(status + ' Chief continuation refuses an unconfirmed durable save without creating a successor', async t => {
+  const f = await chiefBaselineFixture(t, 'local', f => { f.previous.status = status }), options = f.facts.repositoryRecovery.continuationOptions
+  const count = Object.keys(f.rt.state.projectAttempts).length, save = f.rt.save
+  f.rt.save = async () => {}
+  await f.respond({ taskId: f.task.id, action: 'return', targetBotId: 'p1:developer', reason: 'Choose observed latest', continuation: { mode: 'latest', previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, expectedBaseSha: options.latestBaseSha } })
+  f.rt.save = save
+  assert.equal(f.run.status, 'partial')
+  assert.match(f.run.decisionFailures[0].message, /commit was not confirmed/)
+  assert.equal(f.previous.status, status)
+  assert.equal(f.previous.supersededBy, undefined)
+  assert.equal(f.task.deliveryAttemptId, f.previous.id)
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, count)
+  assert.equal(git(f.workspace.path, ['rev-parse', 'HEAD']), f.previous.seedSha)
+})
+
+test('Chief chooses latest for an exited but still running blocked Attempt without cancelling it', async t => {
+  const f = await chiefBaselineFixture(t, 'local', f => { f.previous.status = 'running' })
+  const options = f.facts.repositoryRecovery.continuationOptions
+  assert(options, 'An idle blocked Attempt also needs an explicit baseline choice')
+  await f.respond({ taskId: f.task.id, action: 'return', targetBotId: 'p1:developer', reason: 'The old execution exited; use the updated base', continuation: { mode: 'latest', previousAttemptId: options.attemptId, generation: options.generation, expectedWorkspace: options.snapshot, expectedBaseSha: options.latestBaseSha } })
+  assert.equal(f.run.status, 'done', f.run.failure)
+  const next = f.rt.state.projectAttempts[f.task.deliveryAttemptId]
+  assert.equal(f.previous.status, 'returned')
+  assert.equal(f.previous.supersededBy, next.id)
+  assert.equal(f.previous.cancelRequested, undefined)
+  assert.equal(f.rt.projectEffects.intentCommitted(next.continuation.effect), true)
+  await prepareRole(f.rt, f.task, { id: 'idle-running-latest', attemptId: next.id, generation: f.task.collaboration.generation }, f.definition)
+  assert.equal(git(next.workspaces.developer.path, ['rev-parse', 'HEAD']), f.latest)
+})
+
+test('public continuation cannot supersede running work or forge current Chief authority', async t => {
+  const f = await baselineResourceFixture(t)
+  f.previous.status = 'running'
+  const facts = await f.rt.projectDelivery.endpoint('project-attempt-continuation-state', { projectId: 'p1', attemptId: f.previous.id }, alice)
+  const body = { taskId: f.task.id, requestId: 'forged-chief-choice', continuation: { mode: 'latest', previousAttemptId: facts.attemptId, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } }
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', body, alice), /active Attempt/)
+  await assert.rejects(f.rt.projectDelivery.endpoint('project-task-run', body, { ...alice, chiefJobId: 'invented-run' }), /Chief job authority/)
+  assert.equal(f.task.deliveryAttemptId, f.previous.id)
+  assert.equal(f.previous.status, 'running')
+  assert.equal(Object.keys(f.rt.state.projectAttempts).length, 1)
+})
 
 test('a newly created unsealed successor after failure pins current host HEAD even for non-forced routing', async t => {
   const f = await baselineResourceFixture(t)

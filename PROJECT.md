@@ -1,14 +1,14 @@
 # FlyBot — Project State
 
+#2483 Chief may explicitly choose continue/latest through the existing successor contract. Latest uses the snapshotted host HEAD for clean unbound work; drafts and PR ancestry remain protected. No default baseline or role is inferred.
 
-#2378 reuses role Apps for bounded PR/CI reads and hash-verified host logs in Reviewer scratch; absence or incomplete pages are not verification success.
-
-#2393 keeps Chief execution faults on their Run, preserves business evidence and returns per-Task/current-snapshot correction; Agent chooses recovery through existing capabilities.
-
-
-#2375 adds explicit exit-proven claim retirement through existing pools/Effects; preserve drafts, pending results and unknown writes. No cancellation or automatic routing.
-
-#2377 makes successor baseline choice explicit and durable; preserve cancelled history, Task-role context and draft lineage without inventing PR or test evidence.
+Earlier recovery checkpoints are [preserved verbatim](docs/history/2026-11-05-baseline-memory-checkpoints.md).
+Current constraints remain: proven worker/lease exit; Chief owns recovery decisions;
+no stale receipt/action replay or acceptance across unhandled input; no permission
+from repository text. Isolated Dev Git capability never exposes shared metadata.
+Refused durable reads prohibit writes. Provider merge notification is separate from
+Chief acceptance; continuation retains Task-role context/drafts/history and exact
+new evidence. Unknown exit/publication stays held. See owned subsystem contracts.
 
 The single page that says what this project is, who decides what, and what automation must never
 do. Operational rules live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md);
@@ -18,46 +18,17 @@ architecture lives in [docs/architecture.md](docs/architecture.md) and
 Current stage and priorities: [ROADMAP.md](ROADMAP.md). How decisions are made:
 [docs/governance.md](docs/governance.md). Dated decisions: [decisions/](decisions/README.md).
 
-## SDK authentication — 2026-11-04
+## Runtime and recovery contracts
 
-#2398 binds readiness and setup to the existing resource profile, preserving its
-paths and Task-role context. Known SDK authentication failures reach authRequired
-without becoming code verdicts. No OAuth broker, credential copying or live login.
-
-## Role App delivery — 2026-11-04
-
-#2365 opts Project roles into explicit App connections and dedicated short-lived
-credential helpers. Original candidate Effects observe SDK commits/PRs without
-resealing; actual App Review and host merge/Chief acceptance stay separate.
-No Owner fallback or live migration. [Decision](decisions/2026-11-04-role-github-apps.md)
-and [operator contract](docs/role-github-apps.md); live App acceptance requires authorized installations.
-
-## Follow-up reliability delivery — 2026-11-04
-
-Owner authorizes sequential #2336/#2337/#2334/#2346/#2338/#2347/#2331/#2342
-implementation, one PR each, tests/memory/docs and validated merge to the delivery
-branch. #2336 establishes owned reservation rollback and a durable pre-spawn fence;
-unknown execution, workspace/context and current authority remain protected.
-#2337 validates the actual SDK-resolved CLI and role profile before inference;
-configuration readiness is separate from model/test/exit evidence.
-#2334 separates executor dependency readiness from host test outcomes and preserves
-same-candidate retry evidence; remote unknown exit retains preparation occupancy.
-#2346 admits cwd-only Task-role restoration with current binding/exit proof and
-explicit resumed/reconstructed identity; clearing bindings never resets context.
-No live task/configuration/credential mutation or deployment is implied.
-
-## Execution recovery — 2026-11-04
-
-#2325 aligns actual reused SDK/resource checkouts with pinned baseline/seed facts,
-preserves drafts and admits explicit inspect/integrate inputs through existing
-Effects. Chief selects only approved repository sources. #2327 adds bounded, durable Chief protocol correction in the resident Session;
-exhaustion retains incomplete judgement without automatic escalation. Follow-ups:
-#2328 adds confirmed-idle wait suspension and FIFO continuation re-admission
-through the original queue; exit-unknown capacity remains held. #2330 adds durable scheduled inspection reconciliation, configured deadlines,
-exit-proven bounded recovery and health visibility; independent Task refusals do not
-abort other decisions. No automatic business escalation or live rollout. See
-[delivery contract](docs/subsystems/project-delivery.md). Live Task mutation and
-deployment remain separate from source/test delivery.
+Earlier implementation checkpoints are [preserved verbatim](docs/history/2026-11-05-controller-exit-memory-checkpoints.md).
+Current resource profile identity, Task-role context, CLI/configuration validation and
+owned pre-spawn reservations remain binding. Unknown worker/preparation exit keeps
+occupancy; dependency readiness and exact-candidate test evidence remain separate.
+Apps require explicit installations and scoped credentials with no Owner fallback;
+SDK candidate/PR adoption, App Review, host merge and Chief acceptance remain distinct.
+Recovery/correction reuses original queues and schedules, preserves drafts and current
+rights, and never chooses automatic business escalation. All canonical subsystem
+contracts remain active. No live task/config/credential change or deployment is implied.
 
 ## Established backend foundations
 

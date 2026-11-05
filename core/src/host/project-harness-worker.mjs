@@ -6,9 +6,14 @@ import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runHarnessTurn } from './project-harness-turn.js'
+import { registerSdkExit, acknowledgeSdkStop, SDK_EXIT_VERSION } from './project-sdk-exit.mjs'
+const exitIdentity = process.argv[2] ? JSON.parse(process.argv[2]) : null
+if (exitIdentity) await registerSdkExit(exitIdentity)
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
 let githubRuntime
-const write = value => process.stdout.write(JSON.stringify(githubRuntime ? githubRuntime.redact(value) : value) + '\n')
+let outputClosed = false
+const write = value => { if (!outputClosed) process.stdout.write(JSON.stringify(githubRuntime ? githubRuntime.redact(value) : value) + '\n') }
+process.stdout.on('error', () => { outputClosed = true; void shutdown() })
 const answers = new Map(), credentials = new Map()
 let controller, sessionId, settings, busy = false, shuttingDown = false
 const completedTurns = new Map()
@@ -16,6 +21,7 @@ const permission = request => new Promise(resolve => {
   const id = randomUUID(); answers.set(id, resolve); write({ type: 'permission', id, request })
 })
 async function turn(message) {
+  if (shuttingDown) return
   if (message.turnId && completedTurns.has(message.turnId)) { write(completedTurns.get(message.turnId)); return }
   if (busy) { write({ type: 'failure', reason: 'SDK Session is already answering' }); return }
   busy = true; controller = new AbortController()
@@ -58,10 +64,12 @@ async function shutdown() {
   for (const resolve of answers.values()) resolve({ allow: false })
   for (let n = 0; busy && n < 100; n++) await new Promise(resolve => setTimeout(resolve, 50))
   if (busy) return // No exit claim while the SDK has not settled; host retains capacity.
+  if (exitIdentity) await acknowledgeSdkStop(exitIdentity)
   write({ type: 'stopped', released: true })
   input.close(); process.stdin.pause(); setTimeout(() => process.exit(0), 50)
 }
 input.on('close', () => { void shutdown() })
+process.on('SIGTERM', () => { void shutdown() })
 function sdkVersion(name) {
   try {
     let directory = dirname(fileURLToPath(import.meta.resolve(name)))
@@ -73,4 +81,4 @@ function sdkVersion(name) {
   } catch { /* Missing SDK is an explicit failed handshake, not a simulated version. */ }
   return null
 }
-write({ type: 'ready', roleGithub: 'role-github/v1', receiptCorrection: 'input-correction/v1', pid: process.pid, sdk: { codex: sdkVersion('@openai/codex-sdk'), 'claude-agent': sdkVersion('@anthropic-ai/claude-agent-sdk') } })
+write({ type: 'ready', roleGithub: 'role-github/v1', receiptCorrection: 'input-correction/v1', exitRecovery: exitIdentity ? SDK_EXIT_VERSION : null, pid: process.pid, sdk: { codex: sdkVersion('@openai/codex-sdk'), 'claude-agent': sdkVersion('@anthropic-ai/claude-agent-sdk') } })
