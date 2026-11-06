@@ -2559,7 +2559,7 @@ test('pending external write and unknown native exit block scoped acceptance; cu
   await assert.rejects(f.rt.projectEndpoint('project-attempt-cleanup', { attemptId: f.a.id }, alice), /unsettled Task/)
 })
 
-test('Chief chooses acceptance then a fresh explicit next delivery through its original decision loop', async t => {
+for (const form of ['explicit', 'snapshot', 'snapshot-with-target', 'reference-token']) test('Chief chooses acceptance then a fresh next delivery through its original decision loop: ' + form, async t => {
   const f = await mergedDelivery(t, { modern: true }), requests = [], rt = f.rt
   const { reviseTask } = await import('../src/host/project-task-lifecycle.js')
   const revision = { projectId: 'p1', taskId: f.task.id, executorRole: 'chief', runId: 'fixture-chief', initiatedBy: alice.memberId, reason: 'Record remaining work' }
@@ -2584,6 +2584,7 @@ test('Chief chooses acceptance then a fresh explicit next delivery through its o
   assert.match(requests[0].prompt, /repositoryRecovery\.nextActions and continuationOptions in projectFacts/)
   assert.match(requests[0].prompt, /Public TaskView\.nextActions lists caller-permitted service commands, not all Chief decision actions/)
   assert.match(requests[0].prompt, /not an instruction or permission to clear publicationBinding/)
+  assert.match(requests[0].prompt, /Minimal start-next decision:/)
   await reply(requests[0], { action: 'accept-attempt', reason: 'Accept the first verified delivery, keep the overall goal open', delivery: { completed: 'Verified addition implementation', remaining: 'Deliver the next requirement', evidence: ['candidate, tests, Review and provider merge'] } })
   assert.equal(rt.state.projectExecutions[requests[0].runId].status, 'done')
   assert.equal(f.a.status, 'accepted'); assert.notEqual(f.task.status, 'accepted')
@@ -2595,11 +2596,17 @@ test('Chief chooses acceptance then a fresh explicit next delivery through its o
   assert.equal(saved.repositoryRecovery.nextActions.actions.find(row => row.action === 'return').status, 'blocked')
   assert.equal(saved.repositoryRecovery.nextActions.recommendation.action, 'accept-attempt')
   assert.equal(saved.repositoryRecovery.nextActions.recommendation.alreadyApplied, true)
-  await reply(requests[1], { action: 'start-next', targetBotId: 'p1:developer', reason: 'Choose the next independent delivery from verified target HEAD', continuation: { mode: 'next', previousAttemptId: facts.attemptId, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha } })
+  const selection = form === 'explicit' ? { targetBotId: 'p1:developer', continuation: { mode: 'next', previousAttemptId: facts.attemptId, generation: facts.generation, expectedWorkspace: facts.snapshot, expectedBaseSha: facts.latestBaseSha, clientNote: 'not an execution field' } } : form === 'snapshot-with-target' ? { targetBotId: 'p1:developer' } : form === 'reference-token' ? { continuationRef: facts.expectedScope } : {}
+  await reply(requests[1], { action: 'start-next', reason: 'Choose the next independent delivery from verified target HEAD', ...selection })
   assert.equal(rt.state.projectExecutions[requests[1].runId].status, 'done', rt.state.projectExecutions[requests[1].runId].failure)
   const next = rt.state.projectAttempts[f.task.deliveryAttemptId]
   assert.notEqual(next.id, f.a.id); assert.equal(next.baseSha, f.a.candidateSha); assert.equal(next.publicationBinding, undefined)
   assert.equal(next.requirement.projectTaskRevision, 4)
+  const audit = Object.values(rt.state.projectChiefDecisions).find(row => row.action === 'start-next' && row.status === 'applied')
+  assert.equal(audit.continuationBinding.targetBotId, 'p1:developer')
+  assert.equal(audit.continuationBinding.continuation.expectedBaseSha, facts.latestBaseSha)
+  assert.deepEqual(audit.continuationBinding.continuation.expectedWorkspace, facts.snapshot)
+  assert.equal(audit.continuationBinding.continuation.clientNote, undefined)
   assert.notEqual(f.task.status, 'accepted'); assert.equal(f.task.chiefQuestion, undefined)
 })
 

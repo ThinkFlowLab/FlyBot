@@ -750,9 +750,9 @@ inputs, unknown native/SDK exit and unresolved external writes retain their gate
 The Effect notifies the original Chief inspection queue for a fresh decision; it never
 selects a downstream role. Old merge handoff backfill stops at this settlement.
 
-The original continuation-state/task.run contract adds explicit mode next. It requires
-a committed settlement, fresh generation/workspace and expectedBaseSha, live configure
-rights and normal scheduler quota/resource admission. Read the actual provider target
+Chief start-next may reference its observed snapshot when next/implementation are unique.
+The existing task.run still requires committed settlement, pinned generation/workspace/base
+SHA, current configure rights and normal scheduler quota/resource admission. Read the actual provider target
 HEAD and verify its local Git objects include the accepted merge. Missing objects and
 non-containing target histories have distinct diagnostics. A moved target, dirty draft,
 new input or repository mismatch refuses, preserving history. The successor has a new

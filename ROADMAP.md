@@ -103,4 +103,4 @@ privilege or mission scope and complete no outstanding operational acceptance.
 
 #2519 removes the host-log scratch dependency through sealed inline evidence. Verify full input, configured context refusal and read-only SDK behavior separately from live OpenToday acceptance.
 
-#2526 separates pinned-scope settlement, current-goal next delivery and whole-Task closure. Verify commit failure/replay, stale facts, unknown exit, quota admission and Task-role continuity; no automatic Developer or human route.
+#2526 separates pinned-scope settlement, current-goal next delivery via validated references (#2560), and whole-Task closure. Verify commit failure/replay, stale facts, unknown exit, quota admission and Task-role continuity; no automatic Developer or human route.

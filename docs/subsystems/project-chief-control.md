@@ -381,9 +381,9 @@ completion. The normal Chief decision action/reason/criteria supplies its recomm
 The read view may reference that already-applied decision, explicitly marked as history;
 no recommendation is selected by the host or executed from that read projection.
 accept-attempt additionally supplies delivery:{completed,remaining,evidence:[references]}.
-After committed acceptance a new scoped inspection lets Chief choose start-next with
-an explicit active implementation Bot and fresh continuation:{mode:'next',...}. Other
-lawful choices remain available. close still needs every overall criterion satisfied.
+After committed acceptance a new scoped inspection lets Chief choose start-next by
+validated snapshot reference (#2560), or an explicit active implementation Bot/full
+continuation. Other lawful choices remain; close still needs every overall criterion.
 
 Chief must first query facts, correct or change its approach autonomously. The addressed
 Personal Agent, then its human if necessary, is the last resort for genuinely missing
@@ -413,3 +413,13 @@ Scoped acceptance judges the immutable Attempt requirement, never equality with 
 Requirements that change after a Chief snapshot use existing protocol correction with stale-snapshot feedback, so Chief can reconsider the original intent. Earlier legitimate Task revisions do not permanently block historical settlement. Neither outcome satisfies new Task criteria or chooses a downstream role/Personal Agent automatically. start-next copies current requirements; whole-Task closure remains independently gated.
 
 Scoped parent settlement uses the pinned parent requirement revision to locate its original child-input admission. Actual child evidence, committed admission Effects, accepted sources and parent integration remain required; whole-Task verification/admission still uses current requirements.
+
+## Next delivery by snapshot reference (#2560)
+
+A Chief decision {taskId,action:'start-next',reason} references that invocation's observed continuationOptions when only next is available and the active approved implementation role is unique. This is semantic intent, not repair of invalid model fields; route/return still require explicit logical targets. With multiple implementation roles Chief must select targetBotId. Optional mode must be next. Optional continuationRef equals the observed expectedScope and can disambiguate a mode set containing next. A complete explicit continuation remains supported; any supplied malformed/conflicting snapshot fields are refused, never filled in silently.
+
+The host derives machine fields from the saved immutable snapshot, reads the original continuation-state endpoint, compares it to those saved facts, then revalidates current actor, role catalog and Task scope. It never binds to a newer target/workspace implicitly. Original settlement, confirmed exit, target ancestry, quota and publication identity checks remain in the existing scheduler/delivery boundary. No new planner, draft store, timer, tool executor or generic field repair is added. Existing read queries support inspection after feedback.
+
+Audit.continuationBinding records actual target, source, expectedScope and continuation. The raw model decision is not mutated; existing intent hashes/replay keys remain stable. chief.state decorates appliedDecisions with matching project/run/task audit bindings, read-only and detached from Store. No independent authority is conveyed. Native and SDK Chief use the same parser/apply path and actual job prompt. No live deployment or new paid model validation follows from these source contracts.
+
+Continuation proof changes and post-read Task/catalog changes reuse the same structured stale-snapshot feedback helper as ordinary preflight. No dispatch/inbox recovery policy is changed.

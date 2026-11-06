@@ -19,9 +19,11 @@ export function parseChiefResponse(text, roles, { onInvalid } = {}) {
       seen.add(taskId)
       if (!actions.has(decision.action)) throw chiefProtocolError('action', 'a supported Chief action', taskId)
       if (typeof decision.reason !== 'string' || !decision.reason.trim() || decision.reason.length > 4000) throw chiefProtocolError('reason', 'bounded nonempty text up to4000 characters', taskId)
-      if (['route', 'return', 'start-next'].includes(decision.action)) {
+      if (['route', 'return'].includes(decision.action) || decision.action === 'start-next' && decision.targetBotId !== undefined) {
         if (typeof decision.targetBotId !== 'string' || !decision.targetBotId.trim() || !roles.some(row => row.id === decision.targetBotId && row.role !== 'chief')) throw chiefProtocolError('targetBotId', 'one exact active logical Bot ID from logicalBots, excluding Chief', taskId)
       }
+      if (decision.mode !== undefined && (decision.action !== 'start-next' || decision.mode !== 'next')) throw chiefProtocolError('mode', 'next only for start-next', taskId)
+      if (decision.continuationRef !== undefined && (decision.action !== 'start-next' || typeof decision.continuationRef !== 'string' || !decision.continuationRef)) throw chiefProtocolError('continuationRef', 'a nonempty scoped reference only for start-next', taskId)
       if (decision.criteria !== undefined) {
         if (!Array.isArray(decision.criteria)) throw chiefProtocolError('criteria', 'an evidence array, separate from requirements.criteria text', taskId)
         for (const [index, item] of decision.criteria.entries()) {
