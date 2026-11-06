@@ -29,14 +29,22 @@ export function budgetsFrom(env) {
   }
 }
 
+// The two ways to drive the same bench: a real key against the real endpoint, or the
+// scripted mock on loopback with no key at all (#2565). The mode is explicit because the
+// two must never look like each other — a live run that reaches a loopback endpoint, or a
+// mock run that needs a secret, is a configuration mistake, not a variant.
+export const MODES = ['live', 'mock']
+export const readMode = value => (value === undefined || value === '' ? 'live' : value)
+
 // Fail-closed checks on the run's inputs. A loopback base URL is the mock bench (or the
 // usage tap, which names the real upstream in LIVE_E2E_TAP_UPSTREAM); anything else
 // without a usable key (dev/live-e2e/key.mjs, the reading the preflight and the bench start share)
-// is refused rather than run.
-export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoot, evidence, cwd }) {
+// is refused rather than run. Mock mode swaps both halves: it needs the loopback endpoint
+// and refuses to be the live mode's accident, since it measures a scripted model, not a key.
+export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoot, evidence, cwd, mode = 'live' }) {
   const problems = []
-  const key = keyReading(apiKey)
-  if (!key.usable) problems.push(`DEEPSEEK_API_KEY ${keyProblem(key.reason)}`)
+  const mock = mode === 'mock'
+  if (!MODES.includes(mode)) problems.push(`LIVE_E2E_MODE is ${mode}; use ${MODES.join(' or ')}`)
   let host = 'api.deepseek.com'
   let origin = 'default official endpoint'
   if (baseUrl) {
@@ -46,7 +54,10 @@ export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoo
     } catch { problems.push(`DEEPSEEK_BASE_URL is not a URL: ${baseUrl}`) }
   }
   const loopback = /^(localhost|127\.|0\.0\.0\.0|\[::1\]|::1)/.test(host)
-  if (loopback) {
+  if (mock) {
+    if (!baseUrl) problems.push('mock mode needs DEEPSEEK_BASE_URL pointing at the scripted mock')
+    else if (!loopback) problems.push(`mock mode only drives a loopback endpoint; ${host} is not loopback`)
+  } else if (loopback) {
     if (tapUpstream) {
       try {
         const upstream = new URL(tapUpstream).host
@@ -55,6 +66,10 @@ export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoo
     } else {
       problems.push(`DEEPSEEK_BASE_URL is loopback (${host}); the live suite never runs against the mock`)
     }
+  }
+  if (!mock) {
+    const key = keyReading(apiKey)
+    if (!key.usable) problems.push(`DEEPSEEK_API_KEY ${keyProblem(key.reason)}`)
   }
   // Both path guards compare canonical paths: a relative `--home`, a symlinked `$HOME` or a
   // differently-cased existing segment must not make a directory read as somewhere it is not.
@@ -74,7 +89,7 @@ export function guardRun({ apiKey, baseUrl, tapUpstream, home, userHome, repoRoo
   if (evidence && repoRoot && isInside(evidence, join(repoRoot, 'dev/live-e2e'), cwd)) {
     problems.push(`the evidence directory ${evidence} is inside the grader ${join(repoRoot, 'dev/live-e2e')}: the run would record its own writes as tampering`)
   }
-  return { problems, endpoint: { host, origin, viaTap: loopback } }
+  return { problems, endpoint: { host, origin, viaTap: loopback && !mock, mock } }
 }
 
 // The run's last word (#398). Whatever the checks and the evidence scanner said, a grader that
@@ -152,8 +167,10 @@ export function buildReport({ runId, revision, config, endpoint, budgets, checks
 }
 
 export function summaryLines(report) {
+  const mode = report.config.mode ?? 'live'
   const lines = [
     `run ${report.runId} (${report.revision})`,
+    `mode ${mode}${mode === 'mock' ? ' (scripted model, no key)' : ''}`,
     `model ${report.config.model} via ${report.endpoint.viaTap ? `tap ${report.endpoint.origin} -> ${report.endpoint.host}` : report.endpoint.origin}`,
     `started ${report.startedAt.iso} (UTC${report.startedAt.offset}) / ${report.humanTimes.startedAt} ${report.humanTimes.zone}`,
     `ended ${report.endedAt.iso} (UTC${report.endedAt.offset}) / ${report.humanTimes.endedAt} ${report.humanTimes.zone}`,

@@ -14,7 +14,9 @@ const paidJson = rows => {
 }
 
 export class FakeAdapter {
-  constructor({ breakIds, mutateSummary, stalePreview, neverSettle } = {}) {
+  // chatOnly serves the keyless smoke (#2565): a message and a reply, no files. noReply and
+  // forgetOnReload break exactly the two things the smoke asserts.
+  constructor({ breakIds, mutateSummary, stalePreview, neverSettle, chatOnly, noReply, forgetOnReload } = {}) {
     this.files = new Map([['orders.csv', fixtureCsv()]])
     this.conversation = []
     this.delivered = []
@@ -22,12 +24,19 @@ export class FakeAdapter {
     this.mutateSummary = mutateSummary
     this.stalePreview = stalePreview
     this.neverSettle = neverSettle
+    this.chatOnly = chatOnly
+    this.noReply = noReply
+    this.forgetOnReload = forgetOnReload
   }
 
   async uploadFile(name, bytes) { this.files.set(name, bytes) }
 
   async sendTask(text) {
     this.conversation.push({ who: 'user', text })
+    if (this.chatOnly) {
+      if (!this.noReply) this.conversation.push({ who: 'app', text: '想了一下，建议分三步走：先定目标，再看约束，最后定下一步。' })
+      return
+    }
     this.conversation.push({ who: 'app', text: '好的，我来处理。' })
     if (this.neverSettle) return
     const rows = this.files.get('orders.csv').toString('utf8').split('\n').slice(1).filter(Boolean)
@@ -55,7 +64,7 @@ export class FakeAdapter {
 
   async openPreview(name) { return this.stalePreview && name === 'summary.json' ? '{"orders": [], "count": 0, "total": 0}' : this.files.get(name)?.toString('utf8') ?? '' }
 
-  async reload() { this.reloaded = true }
+  async reload() { this.reloaded = true; if (this.forgetOnReload) this.conversation = [] }
 
   async conversationLines() { return this.conversation.map(line => ({ ...line })) }
 

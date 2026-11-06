@@ -1,7 +1,8 @@
-// Real-model test bench for the live E2E suite (#204): a dsh web whose profile links
-// this checkout, talking to the real DeepSeek endpoint with DEEPSEEK_API_KEY from the
-// caller's environment. The mock bench stays core/dev/bench.sh; this one never starts a
-// mock and refuses to run without a real key, so the two suites cannot mix.
+// Test bench for the E2E suites: a dsh web whose profile links this checkout, talking to
+// whatever DEEPSEEK_BASE_URL names. LIVE_E2E_MODE=live (#204) is the real DeepSeek endpoint
+// with a real key from the caller's environment; LIVE_E2E_MODE=mock (#2565) is the scripted
+// mock already listening on loopback and reads no key at all. This bench never starts a
+// mock itself, and each mode refuses the other's configuration, so the two cannot mix.
 //
 //   node dev/live-e2e/bench.mjs <name> <web-port> [start|stop|reset|status]
 //
@@ -10,14 +11,16 @@
 // checkout is refused: that workspace would hold the grader (#398). Environment: DEEPSEEK_API_KEY
 // (required; fails loudly when the suite's own reading refuses it — see key.mjs),
 // DEEPSEEK_BASE_URL (optional; defaults to the official endpoint — point it at
-// dev/llm-tap.mjs to record per-call usage), DSH_HARNESS (a deepseek-harness checkout with
-// its dependencies installed).
+// dev/llm-tap.mjs to record per-call usage, or at core/dev/mock-llm.mjs in mock mode),
+// DSH_HARNESS (a deepseek-harness checkout with its dependencies installed), LIVE_E2E_MODE
+// (live, the default, or mock).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { benchHome } from './integrity.mjs'
-import { keyProblem, keyReading } from './key.mjs'
+import { keyProblem, keyReading, MOCK_KEY } from './key.mjs'
+import { readMode } from './report.mjs'
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const [NAME, PORT_TEXT, ACTION = 'start'] = process.argv.slice(2)
@@ -30,9 +33,18 @@ if (WEB_PORT === 3080) die('port 3080 belongs to the real service')
 const { home: HOME_DIR, problem: homeProblem } = benchHome({ name: NAME, root: ROOT })
 if (homeProblem) die(`${homeProblem}\n(the bench home must be outside ${ROOT}; export LIVE_E2E_HOME to choose it)`)
 
+const MODE = readMode(process.env.LIVE_E2E_MODE)
+if (MODE !== 'live' && MODE !== 'mock') die(`LIVE_E2E_MODE is ${MODE}; use live or mock`)
+const loopbackEndpoint = () => {
+  try { return /^(localhost|127\.|0\.0\.0\.0|\[::1\]|::1)/.test(new URL(process.env.DEEPSEEK_BASE_URL ?? '').host) } catch { return false }
+}
 const apiKey = process.env.DEEPSEEK_API_KEY ?? ''
-const key = keyReading(apiKey)
-if (!key.usable) die(`DEEPSEEK_API_KEY ${keyProblem(key.reason)}; a real key is required (never printed)`)
+if (MODE === 'live') {
+  const key = keyReading(apiKey)
+  if (!key.usable) die(`DEEPSEEK_API_KEY ${keyProblem(key.reason)}; a real key is required (never printed)`)
+} else if (!loopbackEndpoint()) {
+  die('mock mode needs DEEPSEEK_BASE_URL on loopback, where the scripted mock listens; nothing was started')
+}
 
 const harness = process.env.DSH_HARNESS ?? join(ROOT, 'deepseek-harness')
 if (!existsSync(join(harness, 'package.json'))) die(`no deepseek-harness checkout at ${harness}; set DSH_HARNESS (see CONTRIBUTING.md)`)
@@ -87,14 +99,21 @@ async function start() {
   // anything is uploaded. Detached, the child is its own process group: the pid file
   // names the group, and a later stop reaches the whole tree.
   const out = openSync(logFile, 'a')
-  const child = spawn('pnpm', ['-s', 'dsh', '--profile', 'web', '--patch', 'apps/web/tests/pin-browse-picker.overlay.yml', '--patch', join(HOME_DIR, 'bench.patch.yml'), '--no-open', '--port', String(WEB_PORT)], {
+  // The overlay pins the in-browser directory picker. A source checkout carries it; the
+  // published runtime the mock job installs has no apps/ tree, and the smoke opens no
+  // picker, so its absence is not a failure.
+  const overlay = join(harness, 'apps/web/tests/pin-browse-picker.overlay.yml')
+  const patches = [...(existsSync(overlay) ? ['--patch', 'apps/web/tests/pin-browse-picker.overlay.yml'] : []), '--patch', join(HOME_DIR, 'bench.patch.yml')]
+  const child = spawn('pnpm', ['-s', 'dsh', '--profile', 'web', ...patches, '--no-open', '--port', String(WEB_PORT)], {
     cwd: harness,
     detached: true,
     stdio: ['ignore', out, out],
     env: {
       ...process.env,
       DSH_HOME: HOME_DIR,
-      DEEPSEEK_API_KEY: apiKey,
+      // In mock mode the bench never sees a key from this environment: the scripted mock
+      // ignores auth, and a real key has no business in a run that measures no model.
+      DEEPSEEK_API_KEY: MODE === 'mock' ? MOCK_KEY : apiKey,
       ...(process.env.DEEPSEEK_BASE_URL ? { DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL } : {}),
     },
   })
@@ -120,7 +139,7 @@ function tailSanitized() {
 function status() {
   const running = existsSync(webPidFile) && alive(Number(readFileSync(webPidFile, 'utf8')))
   console.log(`web: ${running ? `running (pid ${readFileSync(webPidFile, 'utf8').trim()})` : 'stopped'}`)
-  console.log(`home: ${HOME_DIR}  web: http://127.0.0.1:${WEB_PORT}  model: real (key from the environment)`)
+  console.log(`home: ${HOME_DIR}  web: http://127.0.0.1:${WEB_PORT}  model: ${MODE === 'mock' ? 'scripted mock (no key)' : 'real (key from the environment)'}`)
 }
 
 switch (ACTION) {

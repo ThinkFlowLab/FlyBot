@@ -13,14 +13,27 @@ name: Live E2E
 # (#794). So a missing key warns, skips the six steps that need it, and leaves the run
 # green while the step summary says plainly that nothing ran and nothing was measured. A
 # real failure of the suite still fails the run: the skip is never a pass.
+#
+# The `mock` job below is the keyless half (#2565): the same bench, adapter and evidence
+# path, with DEEPSEEK_BASE_URL pointed at the scripted mock (core/dev/mock-llm.mjs). It
+# reads no secret, so it runs on every pull request that touches core/ or plugins/, not only
+# on main — and its step summary names each check it ran, so its green is visibly different
+# from the live job's skip. The `live` job is unchanged.
 
 on:
   schedule:
     - cron: "30 16 * * *" # 00:30 Asia/Shanghai daily; clear of compat's 16:00Z
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "core/**"
+      - "plugins/**"
+      - "dev/live-e2e/**"
+      - ".github/workflows/live-e2e.yml"
 
+# Per ref: a pull request's mock run must not sit in the nightly's queue (or start one).
 concurrency:
-  group: live-e2e
+  group: live-e2e-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -29,6 +42,7 @@ permissions:
 jobs:
   window:
     name: window check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -173,6 +187,117 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: live-e2e-evidence
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The keyless browser suite (#2565). Same bench, web adapter and evidence path as the live
+  # job, with DEEPSEEK_BASE_URL on the scripted mock and no secret in the environment at all:
+  # the two #204 task checks cannot run here (a scripted model answers a task prompt with a
+  # canned acknowledgement and writes no files), so this job measures the class of regression
+  # the repository had no browser-level check for — a message goes in through the composer, a
+  # reply comes out, and both survive a reload.
+  mock:
+    name: mock · ubuntu · Node 24 · scripted model
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEB_PORT: '3197'
+      MOCK_PORT: '8765'
+      BENCH: live-e2e-mock
+      MODEL: deepseek-official/deepseek-flash
+      LIVE_E2E_MODE: mock
+      DEEPSEEK_BASE_URL: http://127.0.0.1:8765
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: core/package-lock.json
+      - name: npm ci (core)
+        working-directory: core
+        run: npm ci --no-fund --no-audit
+        timeout-minutes: 5
+      # The runtime is the published package, not a source checkout: a checkout has no built
+      # client artifacts (dsh web exits with ENOENT on packages/client/*/lib/client.js), and
+      # this job must not spend ten minutes building DSH to prove a reply still renders. pnpm
+      # keeps the node_modules/.pnpm layout the adapter resolves playwright-core from.
+      - name: Install the pinned DSH runtime
+        run: |
+          DSH=$(node -p "require('./core/dev/harness/package.json').dependencies['@deepseek-ai/dsh']")
+          RUNTIME="$RUNNER_TEMP/dsh-runtime"
+          mkdir -p "$RUNTIME"
+          cd "$RUNTIME"
+          printf '{"name":"dsh-live-e2e-runtime","private":true}\n' > package.json
+          corepack enable
+          corepack pnpm add "@deepseek-ai/dsh@$DSH" playwright-core@1.61.1
+          echo "DSH_HARNESS=$RUNTIME" >> "$GITHUB_ENV"
+        timeout-minutes: 8
+      - name: Chromium for the browser
+        run: node "$DSH_HARNESS/node_modules/playwright-core/cli.js" install --with-deps chromium
+        timeout-minutes: 8
+      - name: Start the scripted mock
+        run: |
+          # The bench home lives outside the checkout (#398), exactly as in the live job.
+          LIVE_E2E_HOME="$HOME/.cache/flybot-live-e2e/$BENCH"
+          echo "LIVE_E2E_HOME=$LIVE_E2E_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$LIVE_E2E_HOME"
+          MOCK_LOG="$LIVE_E2E_HOME/mock.jsonl" setsid node core/dev/mock-llm.mjs \
+            </dev/null >"$LIVE_E2E_HOME/mock.out" 2>&1 & echo $! >"$LIVE_E2E_HOME/mock.pid"
+          i=0
+          until (exec 3<>"/dev/tcp/127.0.0.1/$MOCK_PORT") 2>/dev/null; do
+            i=$((i + 1))
+            [ $i -ge 30 ] && { echo "::error::the scripted mock did not start"; cat "$LIVE_E2E_HOME/mock.out"; exit 1; }
+            sleep 1
+          done
+        timeout-minutes: 2
+      - name: Start the mock bench
+        run: node dev/live-e2e/bench.mjs "$BENCH" "$WEB_PORT" reset
+        timeout-minutes: 8
+      # The summary carries the runner's own lines: one `ok`/`FAIL` per check it ran, the
+      # mode, and the outcome — so a green that measured nothing cannot look like this one.
+      - name: Run the keyless checks
+        id: run
+        run: |
+          set -o pipefail
+          {
+            echo "### Live E2E (mock, no key)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The fence closes and the step still fails on the runner's exit code: a summary
+          # that ends in a stray `echo` would make a red run look green.
+          status=0
+          node dev/live-e2e/run.mjs "$LIVE_E2E_HOME" "$WEB_PORT" \
+            --model "$MODEL" --harness "$DSH_HARNESS" --evidence evidence --tz Asia/Shanghai \
+            | tee -a "$GITHUB_STEP_SUMMARY" || status=$?
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+      - name: Stop the bench and the mock
+        if: always()
+        run: |
+          node dev/live-e2e/bench.mjs "$BENCH" "$WEB_PORT" stop || true
+          if [ -f "$LIVE_E2E_HOME/mock.pid" ]; then
+            kill -TERM "-$(cat "$LIVE_E2E_HOME/mock.pid")" 2>/dev/null || true
+          fi
+      - name: Sanitized web log (diagnostics only, never uploaded raw)
+        if: failure()
+        run: tail -80 "$LIVE_E2E_HOME/web.log" | grep -v 'token=' || true
+      - name: Evidence gate
+        id: evidence-gate
+        if: always() && steps.run.outcome != 'skipped'
+        run: |
+          if [ ! -f evidence/sanitized.txt ]; then
+            echo "::error::no sanitizer-cleared evidence bundle (the run failed before the scan, or the scan found something); nothing is uploaded"
+            exit 1
+          fi
+      - name: Upload evidence (allow-list, sanitizer-stamped)
+        if: always() && steps.evidence-gate.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: live-e2e-mock-evidence
           path: evidence/
           if-no-files-found: ignore
           retention-days: 14
