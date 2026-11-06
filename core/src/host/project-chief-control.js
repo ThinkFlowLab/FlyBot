@@ -197,7 +197,7 @@ export function createProjectChiefControl(rt) {
     if (!facts || facts.status === 'unavailable' || !(next ? ['next'] : ['continue', 'latest']).includes(choice?.mode) || choice.previousAttemptId !== facts.attemptId || choice.generation !== facts.generation || !isDeepStrictEqual(choice.expectedWorkspace, facts.snapshot) || ['latest', 'next'].includes(choice.mode) && choice.expectedBaseSha !== facts.latestBaseSha) throw chiefProtocolError('continuation', 'the exact current continuationOptions snapshot, generation and selected latestBaseSha', decision.taskId)
     const response = await rt.projectDelivery.endpoint('project-attempt-continuation-state', { projectId, attemptId: facts.attemptId }, actor)
     const { nextActions: _nextActions, ...current } = response
-    if (!isDeepStrictEqual(current, facts)) throw chiefProtocolError('continuation', 'fresh facts after the repository baseline or workspace changed', decision.taskId)
+    if (!isDeepStrictEqual(current, facts)) throw chiefProtocolError('continuation', 'fresh facts after snapshot changed in the repository baseline or workspace', decision.taskId)
     const continuation = { mode: choice.mode, previousAttemptId: choice.previousAttemptId, generation: choice.generation, expectedWorkspace: structuredClone(choice.expectedWorkspace) }
     if (['latest', 'next'].includes(choice.mode)) continuation.expectedBaseSha = choice.expectedBaseSha
     return { target, continuation, source }
@@ -214,8 +214,8 @@ export function createProjectChiefControl(rt) {
     if (digest(rt.state.projectAttempts?.[task.deliveryAttemptId]?.evidence?.merge ?? null) !== digest(saved.evidence?.merge ?? null)) throw chiefProtocolError('snapshot', 'fresh facts after merge evidence changed', task.id)
     const continuationBinding = await continuationChoice(decision, saved, rt.projectAgents.deliveryDefinitions(run.projectId).roles, actor, run.projectId)
     if (continuationBinding) await validateActor(actor)
-    if (continuationBinding && (rt.projectAgents.deliveryDefinitions(run.projectId).revision ?? null) !== (job.roleRevision ?? null)) throw chiefProtocolError('targetBotId', 'fresh role catalog after continuation validation', task.id)
-    if (continuationBinding && saved.deliverySnapshot && saved.deliverySnapshot.expectedScope !== deliveryScope(rt.state, task)) throw chiefProtocolError('snapshot', 'fresh Task facts after continuation validation', task.id)
+    if (continuationBinding && (rt.projectAgents.deliveryDefinitions(run.projectId).revision ?? null) !== (job.roleRevision ?? null)) throw chiefProtocolError('targetBotId', 'fresh role catalog after snapshot changed during continuation validation', task.id)
+    if (continuationBinding && saved.deliverySnapshot && saved.deliverySnapshot.expectedScope !== deliveryScope(rt.state, task)) throw chiefProtocolError('snapshot', 'fresh Task facts after scope changed during continuation validation', task.id)
     const reason = typeof decision.reason === 'string' ? decision.reason.trim() : ''
     if (!reason || reason.length > 4000 || !['close', 'route', 'return', 'request-tests', 'needs-human', 'continue', 'admit', 'revise', 'cancel', 'reopen', 'resolve-dependency', 'retry-notification', 'reconcile-exit', 'stop-execution', 'accept-attempt', 'start-next'].includes(decision.action)) throw refuse('Chief decision needs a supported action and bounded reason')
     if (decision.action === 'needs-human') { assistanceRequest(decision); if (decision.recipient === 'operations' && !operationsContact(rt, task.projectId, policyOf(task.projectId).operationsContact)) throw refuse('No operations contact is configured') }

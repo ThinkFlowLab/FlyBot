@@ -941,6 +941,7 @@ for (const kind of ['ambiguous-target', 'no-target', 'ambiguous-mode', 'unavaila
   assert.notEqual(run.status, 'done')
   const expected = kind === 'roles-changed' ? /fresh role catalog/ : kind === 'rights-revoked' ? /Current role denied/ : kind === 'local-changed' ? /fresh Task facts/ : ['target-changed', 'workspace-changed'].includes(kind) ? /fresh facts after/ : kind === 'wrong-ref' ? /expectedScope/ : kind === 'bad-mode' ? /next only/ : kind.includes('target') ? /active implementation role/ : /continuation/
   assert.match(run.failure, expected)
+  if (['target-changed', 'workspace-changed', 'local-changed', 'roles-changed'].includes(kind)) assert.equal(run.correction.feedback.at(-1).recovery.kind, 'stale-snapshot')
 })
 
 test('explicit target resolves multiple implementation roles, and explicit scope reference resolves multiple modes', async () => {
