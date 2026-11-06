@@ -318,7 +318,7 @@ const liveSteps = stepsOf(live)
 const KEYED = [
   'npm ci (core)',
   'Install the pinned DSH runtime',
-  'Clone DeepSeek Harness at the pinned tag',
+  'Chromium for the browser',
   'Start the usage tap',
   'Start the real-model bench',
   'Run the four checks',

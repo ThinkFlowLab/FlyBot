@@ -117,7 +117,7 @@ jobs:
       # playwright-core and node_modules/.pnpm layout as the mock job below: `pnpm dsh`
       # starts the bench and core/dev/desktop-linux/lib.mjs resolves playwright-core from
       # .pnpm/node_modules.
-      - name: Install the pinned DSH runtime (published package)
+      - name: Install the pinned DSH runtime
         if: steps.preflight.outputs.key == 'true'
         run: |
           DSH=$(node -p "require('./core/dev/harness/package.json').dependencies['@deepseek-ai/dsh']")
