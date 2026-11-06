@@ -150,6 +150,12 @@ FlyBot 是上游 [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) 的核心，�
 里，加上一组简短的补丁（`patches/` → `core/`）和 `plugins/` 下的插件。开发和测试针对 DeepSeek Harness
 `0.2.1-rc.2`，也就是上面命令钉住的版本。npm 包名沿用上游的 `ds-bot`，而你在界面里看到的都是 FlyBot。
 
+## 社区
+
+FlyBot 的微信交流群：问题、想法和反馈都可以在这里聊。二维码约 7 天过期，过期后可以在 [Issues](https://github.com/ThinkFlowLab/FlyBot/issues) 里要一张新的。
+
+![FlyBot 微信社区群二维码](docs/assets/wechat-group.png)
+
 ## 许可
 
 [Apache License 2.0](LICENSE)。第三方声明见 [NOTICE](NOTICE)。
