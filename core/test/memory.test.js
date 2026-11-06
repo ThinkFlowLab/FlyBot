@@ -806,18 +806,17 @@ test('an answer that is no list of changes keeps the review\'s place, and the ne
   assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
 })
 
-test('an answer with a malformed change, an unlisted entry, an entry too long, or a bad topic changes nothing and keeps the review\'s place', async (t) => {
+test('an answer with a malformed change, an unlisted entry, or a bad topic changes nothing and keeps the review\'s place', async (t) => {
   const replies = [
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add' }] }),
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'remove', entry: 7 }] }),
-    JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: `The user tells ${'a long story '.repeat(30)}` }] }),
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'The user writes C++', topic: 'C++' }] }),
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'I use hunter2 as my password' }] }),
   ]
   const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
   t.after(() => stop())
   await call('state', {})
-  for (let tries = 0; tries < 4; tries += 1) {
+  for (let tries = 0; tries < 3; tries += 1) {
     ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
     await reviewed(call)
     assert.throws(() => read('bots', 'b2', 'MEMORY.md'), { code: 'ENOENT' })
@@ -826,8 +825,36 @@ test('an answer with a malformed change, an unlisted entry, an entry too long, o
   ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
   await reviewed(call)
   // A password is only left out: the rest is written and the place moves on.
-  assert.equal(requests.length, 5)
+  assert.equal(requests.length, 4)
   assert.deepEqual(parseMemory(read('bots', 'b2', 'MEMORY.md')).entries.map(entry => entry.text), ['The user likes tea'])
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
+})
+
+test('an entry memory cannot keep is left out, the rest of the answer lands, and the review moves on', async (t) => {
+  const tooLong = `The user tells ${'a long story '.repeat(25)}and more`
+  assert.equal(tooLong.length, 348)
+  const warned = []
+  const original = console.error
+  console.error = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const replies = [JSON.stringify({ changes: [{ op: 'add', text: tooLong }, { op: 'remove', entry: 1 }] })]
+  const { tool, ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  await tool('remember', { text: 'Likes tea' }, 'b2')
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  assert.equal(requests.length, 1)
+  // The remove landed even though the entry beside it was one memory cannot keep.
+  assert.doesNotMatch(read('bots', 'b2', 'MEMORY.md'), /Likes tea/)
+  assert.doesNotMatch(read('bots', 'b2', 'MEMORY.md'), /a long story/)
+  // Left out once, and said so once: the answer was not failed as a whole.
+  assert.equal(warned.filter(line => /memory review of .* cannot keep/.test(line)).length, 1, warned.join('\n'))
+  assert.equal(warned.filter(line => /memory review of .* failed/.test(line)).length, 0, warned.join('\n'))
+  // The cursor moved past the line it read, so the next review calls no model at all.
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  assert.equal(requests.length, 1)
   assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
 })
 
