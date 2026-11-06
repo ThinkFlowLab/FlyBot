@@ -1,1 +1,0 @@
-A workflow card re-matched into another workflow now leaves one `Task re-matched · <task> → <destination>` line on the source graph's own log, so the graph that lost the card says where it went instead of the card silently vanishing ([#1668](https://github.com/ThinkFlowLab/FlyBot/issues/1668)).

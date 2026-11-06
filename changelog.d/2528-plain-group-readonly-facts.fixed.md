@@ -1,1 +1,0 @@
-A read-only window's plain-group Settings page states who answers and the group's working folder as text, the way a face-to-face room's page already did ([#2528](https://github.com/ThinkFlowLab/FlyBot/issues/2528)).

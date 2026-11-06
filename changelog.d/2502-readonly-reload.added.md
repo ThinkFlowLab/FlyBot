@@ -1,1 +1,0 @@
-The Settings header, the details drawer, the Inbox and the Memory panel now draw a **Reload** beside the host's read-only sentence, so a window that was told to reload can do it where it stands instead of closing the panel and reaching for the sidebar ([#2502](https://github.com/ThinkFlowLab/FlyBot/issues/2502)).

@@ -1,1 +1,0 @@
-A workflow's read-only run flowchart now names each wire for a reader and gives every route a 10px hit target of its own: pointing at one wire marks it and dims the rest, and the plane still writes nothing ([#2431](https://github.com/ThinkFlowLab/FlyBot/issues/2431)).

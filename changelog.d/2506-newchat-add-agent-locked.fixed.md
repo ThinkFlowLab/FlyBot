@@ -1,1 +1,0 @@
-A read-only window's New… menu no longer offers **Add coding agent**: `addAgent` is a write the host answers `bot/read-only`, so the row is not drawn at all while the other rows stay as a preview, and a writable window keeps the row ([#2506](https://github.com/ThinkFlowLab/FlyBot/issues/2506)).

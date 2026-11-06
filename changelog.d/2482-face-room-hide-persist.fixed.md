@@ -1,1 +1,0 @@
-A face-to-face room's **Hide from sidebar** switch now holds: the hide a person chose survives the poll that re-reads the room every few seconds (and turning it back off survives too), while a `hidden` an older state left behind is still cleared by the room's open snapshot, as #1605 asked ([#2482](https://github.com/ThinkFlowLab/FlyBot/issues/2482)).
