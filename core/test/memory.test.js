@@ -806,6 +806,92 @@ test('an answer that is no list of changes keeps the review\'s place, and the ne
   assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
 })
 
+// P-601: a review that failed at the same lines used to ask the model again on every
+// turn end, with nothing bounding the repeats — one session kept rereading the same
+// user lines. Two failures at one cursor back it off, and it says so once.
+test('a review that keeps failing at the same lines gives up after two tries and warns once', async (t) => {
+  const replies = Array.from({ length: 4 }, () => 'Nothing worth keeping here.')
+  const warned = []
+  const original = console.error
+  console.error = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  for (let tries = 0; tries < 4; tries += 1) {
+    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+    await reviewed(call)
+  }
+  // Two attempts, then none: the third and fourth turn ends ask the model nothing.
+  assert.equal(requests.length, 2)
+  // The cursor stays where it was, so the user's lines are never passed unseen.
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 9 })
+  // One warning when the review gives up, one for the failure that led there, and
+  // nothing on the turns after it.
+  assert.equal(warned.filter(line => /memory review of .* failed/.test(line)).length, 1, warned.join('\n'))
+  assert.equal(warned.filter(line => /memory review of .* stops retrying/.test(line)).length, 1, warned.join('\n'))
+  // The panel can say the last review failed, and why.
+  const view = (await call('memory-view', { botId: 'b2' })).value
+  assert.equal(view.lastReview.ok, false)
+  assert.equal(typeof view.lastReview.at, 'number')
+  assert.match(view.lastReview.reason, /not a list of changes/)
+})
+
+// The backoff is not a latch: a success clears it, so a later failure still gets its
+// tries. Without the reset, the second failure after a success would park the review.
+test('a success clears the backoff, so a later failure still gets its two tries', async (t) => {
+  const history = { b2: [...ownChat] }
+  const replies = [
+    'Nothing worth keeping here.',
+    JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }] }),
+    'Nothing worth keeping here.',
+    JSON.stringify({ changes: [{ op: 'add', text: 'The user lives in Hangzhou' }] }),
+  ]
+  const { ctx, call, read, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  const idle = async () => {
+    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+    await reviewed(call)
+  }
+  await idle()
+  await idle()
+  assert.equal(requests.length, 2)
+  assert.match(read('bots', 'b2', 'MEMORY.md'), /- The user likes tea /)
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
+  // The user writes again: one failure at the new cursor, and the retry still runs.
+  history.b2.push({ event: { seq: 12, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And I live in Hangzhou' }] } } })
+  await idle()
+  await idle()
+  assert.equal(requests.length, 4, 'the failure after the success was tried again')
+  assert.match(read('bots', 'b2', 'MEMORY.md'), /- The user lives in Hangzhou /)
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 12 })
+  const view = (await call('memory-view', { botId: 'b2' })).value
+  assert.equal(view.lastReview.ok, true)
+  assert.equal(view.lastReview.reason, null)
+})
+
+// A new turn from the user is a reason to try again: those lines were never read, so
+// the backoff starts over instead of blocking the Session for good.
+test('a new user turn clears the backoff, so those lines are read again', async (t) => {
+  const history = { b2: [...ownChat] }
+  const replies = ['Nothing worth keeping here.', 'Nothing worth keeping here.', 'Nothing worth keeping here.']
+  const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  const idle = async () => {
+    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+    await reviewed(call)
+  }
+  await idle()
+  await idle()
+  assert.equal(requests.length, 2)
+  history.b2.push({ event: { seq: 12, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And keep this too' }] } } })
+  await idle()
+  assert.equal(requests.length, 3, 'a new user line is read even though the older attempt was backed off')
+  assert.match(requests[2].messages[0].content[0].text, /And keep this too/)
+})
+
 test('an answer with a malformed change, an unlisted entry, or a bad topic changes nothing and keeps the review\'s place', async (t) => {
   const replies = [
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add' }] }),
@@ -813,21 +899,26 @@ test('an answer with a malformed change, an unlisted entry, or a bad topic chang
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'The user writes C++', topic: 'C++' }] }),
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'I use hunter2 as my password' }] }),
   ]
-  const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
+  const history = { b2: [...ownChat] }
+  const { ctx, call, read, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
   t.after(() => stop())
   await call('state', {})
+  // Each bad answer is its own review: two failures at one cursor now back off
+  // (#P-601), so a new user line starts the next one.
   for (let tries = 0; tries < 3; tries += 1) {
+    if (tries > 0) history.b2.push({ event: { seq: 10 + tries, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: `Again ${tries}` }] } } })
     ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
     await reviewed(call)
     assert.throws(() => read('bots', 'b2', 'MEMORY.md'), { code: 'ENOENT' })
     assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 9 })
   }
+  history.b2.push({ event: { seq: 13, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And I use hunter2 as my password' }] } } })
   ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
   await reviewed(call)
   // A password is only left out: the rest is written and the place moves on.
   assert.equal(requests.length, 4)
   assert.deepEqual(parseMemory(read('bots', 'b2', 'MEMORY.md')).entries.map(entry => entry.text), ['The user likes tea'])
-  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 13 })
 })
 
 test('an entry memory cannot keep is left out, the rest of the answer lands, and the review moves on', async (t) => {

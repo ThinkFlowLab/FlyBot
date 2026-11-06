@@ -65,6 +65,9 @@ const REVIEW_USER_LINE_MAX = 3_000
 const REVIEW_OTHER_LINE_MAX = 800
 const REVIEW_CHANGES_MAX = 8
 const REVIEW_PASSES_MAX = 4
+// Two failures at one cursor are enough: further turn ends ask no model for those
+// lines until a success, or lines that arrived since, start the review over (#P-601).
+const REVIEW_FAILURES_MAX = 2
 // A change whose entry is gone; any other failure keeps the review's place.
 const NO_MATCH = 'memory/no-match'
 const GONE = 'memory/bot-gone'
@@ -1194,6 +1197,8 @@ export function install(rt) {
       blocked: blockedScopes([ownScope(bot.id), TEAM]),
       summarizing: summarizing.has(bot.id),
       error: failed !== undefined && !summarizing.has(bot.id) ? failed.message : null,
+      // The last memory review, so the panel can say it failed and why (#P-601).
+      lastReview: lastReview.get(bot.id) ?? null,
     }
   }
 
@@ -1461,6 +1466,14 @@ export function install(rt) {
     const more = fresh.count < batch.fresh.length
     let through = more ? read.at(-1).seq : batch.through
     let again = more
+    // The line this review starts from, for the backoff below: the cursor, or the
+    // one a first review begins at, which its cursor is fixed to just under here.
+    const start = since ?? (read.length > 0 ? read[0].seq - 1 : batch.through)
+    const lastFailure = reviewFailures.get(key)
+    const paused = lastFailure !== undefined && lastFailure.start === start && lastFailure.through === batch.through ? lastFailure : undefined
+    // A review that failed twice at the same lines asks no more: the cursor stays
+    // put, so those lines are read again once something about them changes.
+    if (paused !== undefined && paused.count >= REVIEW_FAILURES_MAX) return
     // A first review fixes where it starts before the model call, so a failure
     // leaves a cursor that the next review, or another member's, goes on from.
     if (since === undefined && read.length > 0) {
@@ -1468,7 +1481,9 @@ export function install(rt) {
       await saveCursors()
     }
     // Only the user's words are kept, so lines without any need no model call.
-    if (read.some(line => line.who === 'user')) {
+    const userLines = read.some(line => line.who === 'user')
+    if (userLines) attempts.set(sessionId, { key, botId: bot.id, start, through: batch.through, count: paused?.count ?? 0 })
+    if (userLines) {
       const ownFiles = loadScope(ownScope(bot.id))
       const teamFiles = loadScope(TEAM)
       const said = read.filter(line => line.who === 'user').map(line => line.text).join('\n')
@@ -1509,6 +1524,11 @@ export function install(rt) {
         overflowed.delete(key)
       }
     }
+    if (userLines) {
+      attempts.delete(sessionId)
+      reviewFailures.delete(key)
+      lastReview.set(bot.id, { at: Date.now(), ok: true, reason: null })
+    }
     const now = cursorsNow()[key]
     if (through !== undefined && (now === undefined || through > now)) {
       cursorsNow()[key] = through
@@ -1518,6 +1538,17 @@ export function install(rt) {
   }
   /** @type {Map<string, {since: number | undefined, passes: number}>} */
   const overflowed = new Map()
+  // Two failures at the same cursor, then no more model calls for those lines. The
+  // record holds where the review started and how far its lines reached, so a success
+  // or a new line starts it over.
+  /** @type {Map<string, {start: number, through: number | undefined, count: number}>} */
+  const reviewFailures = new Map()
+  // The review now running, per Session, so its failure can be counted and explained.
+  /** @type {Map<string, {key: string, botId: string, start: number, through: number | undefined, count: number}>} */
+  const attempts = new Map()
+  // What the panel shows of a Bot's last review, whichever Session it was for.
+  /** @type {Map<string, {at: number, ok: boolean, reason: string | null}>} */
+  const lastReview = new Map()
 
   // A member that nobody addresses goes on without turns, so its own reviews stop;
   // the others' turns bring it along before the log drops what it has not read. Its
@@ -1556,6 +1587,20 @@ export function install(rt) {
       try {
         await reviewSession(sessionId, owner)
       } catch (error) {
+        const attempt = attempts.get(sessionId)
+        attempts.delete(sessionId)
+        if (attempt !== undefined) {
+          const count = attempt.count + 1
+          const reason = error?.message ?? String(error)
+          reviewFailures.set(attempt.key, { start: attempt.start, through: attempt.through, count })
+          lastReview.set(attempt.botId, { at: Date.now(), ok: false, reason })
+          // The first failure keeps the warning below; the second is the one that stops
+          // the retries, and it is said once rather than on every turn.
+          if (count >= REVIEW_FAILURES_MAX) {
+            rt.warn('ds-bot: memory review of %s stops retrying the same lines after %d failures: %s', attempt.botId, count, reason)
+            return
+          }
+        }
         rt.warn('ds-bot: memory review of %s failed: %s', sessionId, error?.message ?? error)
       } finally {
         reviewsRunning -= 1
