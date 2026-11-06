@@ -231,7 +231,10 @@ jobs:
           RUNTIME="$RUNNER_TEMP/dsh-runtime"
           mkdir -p "$RUNTIME"
           cd "$RUNTIME"
-          printf '{"name":"dsh-live-e2e-runtime","private":true}\n' > package.json
+          printf '{"name":"dsh-live-e2e-runtime","private":true,"packageManager":"pnpm@12.16.1"}\n' > package.json
+          # pnpm 12 refuses dependency build scripts by default; the pinned runtime's native
+          # helpers (subprocess spawn, pty, protobuf) are the same packages the live job runs.
+          printf 'dangerouslyAllowAllBuilds: true\n' > pnpm-workspace.yaml
           corepack enable
           corepack pnpm add "@deepseek-ai/dsh@$DSH" playwright-core@1.61.1
           echo "DSH_HARNESS=$RUNTIME" >> "$GITHUB_ENV"
