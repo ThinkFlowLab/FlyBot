@@ -33,10 +33,13 @@ node dev/perf-baseline.mjs perf 3097 --out /tmp/perf.json
 dev/bench.sh perf 3097 8797 stop
 ```
 
-Requirements: the bench must stay up (see `docs/sandbox.md`), Node 22+, and a `deepseek-harness`
-checkout for `bench.sh` (`DSH_HARNESS` or `../deepseek-harness`). The script exits non-zero when
-the bench is down, when a turn times out, or when no turn produced a tool call, and it starts no
-process of its own; it only reads the bench and writes the `--out` file.
+Requirements: the bench must stay up (see `docs/sandbox.md`), Node 24 (the version the spec and CI
+use; Node 22+ also runs it), and a `deepseek-harness` checkout for `bench.sh` (`DSH_HARNESS` or
+`../deepseek-harness`). The script exits non-zero when
+the bench is down, when a turn times out, when no turn produced a tool call, or when it cannot
+name the commit (`.git` absent and `PERF_COMMIT` unset) — a baseline with a placeholder commit is
+refused, not recorded. It starts no process of its own; it only reads the bench and writes the
+`--out` file.
 
 `--turns` (default 20), `--warmup` (3), `--timeout` (120000 ms) and `--message` (the prompt that
 the scripted model answers with one tool call) are overridable. `PERF_COMMIT=<sha>` pins the

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
+  benchCommit,
   buildReport,
   markdownTable,
   nearestRank,
@@ -127,4 +128,11 @@ test('arguments: bench name, port and --out are required; flags parse by name', 
 
 test('plugin load time is null when the bench never logged a ready line', () => {
   assert.equal(pluginLoadMs('/nonexistent-bench-home'), null)
+})
+
+test('a report never records a placeholder commit', () => {
+  const sha = 'b'.repeat(40)
+  assert.equal(benchCommit('/nonexistent-checkout', { PERF_COMMIT: sha }), sha)
+  assert.throws(() => benchCommit('/nonexistent-checkout', {}), /PERF_COMMIT=<40-character sha> is required/)
+  assert.throws(() => benchCommit('/nonexistent-checkout', { PERF_COMMIT: 'abc123' }), /must be a 40-character sha/)
 })

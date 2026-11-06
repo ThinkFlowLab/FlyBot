@@ -305,7 +305,7 @@ async function main(argv) {
   const load = pluginLoadMs(HOME)
   const report = buildReport({
     machine: machineLine(),
-    commit: process.env.PERF_COMMIT ?? benchCommit(ROOT),
+    commit: benchCommit(ROOT),
     node: process.version,
     date: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
     scenarios: [
@@ -324,10 +324,14 @@ async function main(argv) {
 }
 
 // The commit of the checkout the bench links. The bench runs without git on this host, so the
-// caller may pass PERF_COMMIT instead of asking the file system.
-function benchCommit(root) {
-  const fromEnv = process.env.PERF_COMMIT
-  if (fromEnv && /^[0-9a-f]{40}$/.test(fromEnv)) return fromEnv
+// caller may pass PERF_COMMIT instead of asking the file system. A baseline that cannot name its
+// commit is not a baseline: refuse rather than record a placeholder nobody can diff against.
+export function benchCommit(root, env = process.env) {
+  const fromEnv = env.PERF_COMMIT
+  if (fromEnv !== undefined) {
+    if (/^[0-9a-f]{40}$/.test(fromEnv)) return fromEnv
+    throw new Error(`PERF_COMMIT must be a 40-character sha, got ${JSON.stringify(fromEnv)}`)
+  }
   try {
     const head = readFileSync(join(root, '.git', 'HEAD'), 'utf8').trim()
     if (/^[0-9a-f]{40}$/.test(head)) return head
@@ -337,9 +341,9 @@ function benchCommit(root) {
       if (/^[0-9a-f]{40}$/.test(sha)) return sha
     }
   } catch {
-    // no git metadata next to the checkout: a baseline still records that it cannot name one.
+    throw new Error('PERF_COMMIT=<40-character sha> is required on a checkout without .git')
   }
-  return '0'.repeat(40)
+  throw new Error('PERF_COMMIT=<40-character sha> is required when .git holds no commit')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
