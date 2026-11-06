@@ -11,7 +11,7 @@
 //
 // The Session events are read through dev/turn-split.mjs, which already decodes the zstd
 // `.jsonl.zstd` frames, so a measurement here means the same events the feed folds.
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { cpus, totalmem, type as osType, release as osRelease } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -254,7 +254,6 @@ async function main(argv) {
 
   const turnSamples = []
   const toolSamples = []
-  const seen = new Set()
   const turnText = flags.message
   const total = flags.warmup + flags.turns
 
@@ -296,7 +295,6 @@ async function main(argv) {
     }
     if (index >= flags.warmup) {
       turnSamples.push(round1(elapsed))
-      seen.add(toolsThisTurn)
     }
     if (toolsThisTurn === 0) console.error(`warning: turn ${index + 1}/${total} carried no tool call; the mock prompt did not trigger one`)
   }
