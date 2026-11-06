@@ -7,7 +7,7 @@
 // Every line follows the model. Its declared window, less the room its reply
 // needs, is the usable context; the check line is a share of that.
 import { codePoints, cut, estimateTokens } from './text.js'
-import { codePointEnd, codePointStart, fits } from '../shared/text-boundary.js'
+import { fits } from '../shared/text-boundary.js'
 
 // For a model that declares no window.
 export const DEFAULT_WINDOW = 500_000
@@ -43,16 +43,26 @@ export const STEWARD_SYSTEM = [
   'Answer with JSON only, on one line: {"action":"switch"|"compact","reason":"one short sentence"}',
 ].join('\n')
 
+// The UTF-16 index the nth character starts at. The budget is counted in characters while
+// `slice` takes units, so a cut needs the index of a character, not a character count spent
+// as one. Stepping whole code points makes every index a boundary by construction (#2321,
+// #1912/#1916): a slice there never splits a surrogate pair.
+const charIndex = (text, chars) => {
+  let index = 0
+  for (let n = 0; n < chars && index < text.length; n += 1) index += text.codePointAt(index) > 0xffff ? 2 : 1
+  return index
+}
+
 // A long message keeps its start (what was asked) and its end (how the reply ended and
 // what it promised). The marker says the cut is this view's, so that a whole reply does
-// not read as one that stopped halfway. Counted in characters and cut on a character
-// boundary (#2321, #1912/#1916): `slice` counts UTF-16 units, so a unit offset splits a
-// surrogate pair and the steward reads half of it as U+FFFD.
+// not read as one that stopped halfway. Both bounds and the marker are characters.
 function shorten(text) {
   if (fits(text, STEWARD_LINE_MAX)) return text
-  const head = codePointEnd(text, Math.ceil((STEWARD_LINE_MAX * 2) / 3))
-  const tail = codePointStart(text, text.length - (STEWARD_LINE_MAX - head))
-  const left = codePoints(text) - codePoints(text.slice(0, head)) - codePoints(text.slice(tail))
+  const chars = codePoints(text)
+  const headChars = Math.ceil((STEWARD_LINE_MAX * 2) / 3)
+  const head = charIndex(text, headChars)
+  const tail = charIndex(text, chars - (STEWARD_LINE_MAX - headChars))
+  const left = chars - codePoints(text.slice(0, head)) - codePoints(text.slice(tail))
   return `${text.slice(0, head)}\n[… ${left} characters left out of this view …]\n${text.slice(tail)}`
 }
 
