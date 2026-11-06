@@ -56,6 +56,6 @@ test('a page whose plugin is gone falls back to General, and without plugins the
   const nodes = all(tree)
   assert.equal(text(nodes.find(node => node.type === 'h2')), 'General')
   const items = nodes.filter(node => node.type === 'button' && node.props.className === 'bt-settings-item').map(text)
-  assert.deepEqual(items.slice(0, 7), ['General', 'Bots', 'Group chats', 'Projects', 'Connectors', 'Capabilities', 'Scheduled tasks'])
+  assert.deepEqual(items.slice(0, 7), ['General', 'Bots', 'Group chats', 'Projects', 'Connectors', 'Capabilities', 'Plugins'])
   assert.equal(nodes.some(node => node.props?.entry !== undefined), false)
 })
