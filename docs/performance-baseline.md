@@ -66,10 +66,7 @@ Scenario rows are `turn end-to-end` (ms), `tool-call latency` (ms), `resident RS
 
 ## First baseline on the maintenance box
 
-**Not measured yet.** The delivery workflow that wrote this page runs on a host with neither a
-`deepseek-harness` checkout nor `pnpm`, so `core/dev/bench.sh` cannot boot a bench there and the
-four rows would be invented rather than measured. Recording invented numbers would be worse than
-an empty table: the point of this page is that a later run can be compared with it.
+**Not measured — this host cannot build the deepseek-harness checkout (no `git`, no C compiler); tracked in #2571.** The checkout present here is pristine source, and building it needs `git` for its version step and a C compiler for the `native/system` addon, so `core/dev/bench.sh` cannot boot a bench and the four rows would be invented rather than measured. Recording invented numbers would be worse than an empty table: the point of this page is that a later run can be compared with it.
 
 The command above is the run to do, and the commit to record is the one that added
 `core/dev/perf-baseline.mjs`. The table to fill is:
