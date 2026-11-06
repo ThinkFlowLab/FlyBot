@@ -1,1 +1,0 @@
-A workflow card a lane is holding can now be handed straight to a Bot from the panel, and the lane that lost it writes the same `Task re-matched · <task> → <destination>` line a hand-over to another lane already wrote — the source graph no longer drops the card silently when the destination is a Bot ([#2485](https://github.com/ThinkFlowLab/FlyBot/issues/2485)).

@@ -1,1 +1,0 @@
-A failed workflow run's Open in the Inbox now lands on Settings → Workflows: the row asked for a page named `workflow`, which is not a Settings key, so the dialog quietly fell back to General. The test renders the Settings dialog and reads the page it shows instead of trusting the name the call carried.

@@ -1,1 +1,0 @@
-A workflow's tool calls are exported one span each even when two turns number a call the same way: the OTLP export pairs a call with its own turn, so no tool span goes missing and none hangs under another turn.

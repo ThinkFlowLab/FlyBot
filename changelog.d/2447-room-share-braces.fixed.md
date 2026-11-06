@@ -1,1 +1,0 @@
-Fixed a room-share envelope being dropped when a chat line's own text carried one unbalanced brace, which lost the sent line and the join history copied into a `join` envelope ([#2447](https://github.com/ThinkFlowLab/FlyBot/issues/2447)).

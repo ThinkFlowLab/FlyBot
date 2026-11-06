@@ -1,1 +1,0 @@
-A workflow task that failed and was then run again to a green finish no longer keeps its **Failed** card in the Inbox, or its place in the sidebar's *Needs you* count, for the whole seven-day window: the success retires the card ([#2534](https://github.com/ThinkFlowLab/FlyBot/issues/2534)).
