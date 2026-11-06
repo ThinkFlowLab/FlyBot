@@ -21,6 +21,9 @@ Decisions by the maintainer, and what follows from them:
    mergeable and it conforms to the design rules, with no PASS. **T2 and T3** need a PASS at the tip from the Reviewer Bot and green CI, and then the agent that gated the PR enqueues it itself — **T2 and T3 need no maintainer approve** (user decision 2026-10-22; [`AGENTS.md` → Merge gates](../AGENTS.md#merge-gates)). A self-PASS counts only across Bots: the account is shared, and the implementer never reviews its own pull request. The gate is the review: green `tests-ok` at the tip, a PASS at that same tip, and a test that fails when the change is reverted. Work that meets neither the defect nor the routine-need bar gets no PR at all (AGENTS.md). An issue that already has a
    pull request keeps it: update that branch (re-base, `update-branch`, or a commit on its head) rather than opening a
    second PR; a branch that cannot be pushed is the only exception, and the reason goes on the issue.
+   A second open pull request on that issue whose branch is a fork and which has no card on our board is an **external**
+   pull request: shepherded, never counted as our implementation, and never a reason to stop our own work there
+   ([`AGENTS.md` → One PR per issue](../AGENTS.md#owner-decision-the-bot-gates-and-merges-its-own-prs-2026-10-21-owner-authorized)).
 5. Budget is not set. Every cost cap will live in one config file (open PRs, attempts per PR,
    PRs per day, minutes per attempt) so it can be changed without code.
 
