@@ -239,8 +239,17 @@ jobs:
           corepack pnpm add "@deepseek-ai/dsh@$DSH" playwright-core@1.61.1
           echo "DSH_HARNESS=$RUNTIME" >> "$GITHUB_ENV"
         timeout-minutes: 8
+      # The headless shell is what the adapter launches. No --with-deps: the runner image
+      # already carries Chrome's system libraries, and an apt-get round there is the slow,
+      # flaky half (a run timed out on it); one retry covers the download itself.
       - name: Chromium for the browser
-        run: node "$DSH_HARNESS/node_modules/playwright-core/cli.js" install --with-deps chromium
+        run: |
+          for attempt in 1 2; do
+            node "$DSH_HARNESS/node_modules/playwright-core/cli.js" install chromium --only-shell && exit 0
+            echo "::warning::chromium install attempt $attempt failed; retrying"
+            sleep 5
+          done
+          exit 1
         timeout-minutes: 8
       - name: Start the scripted mock
         run: |
