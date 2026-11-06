@@ -6,6 +6,22 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-11-07
+
+### Added
+
+- The instance now answers `GET /api/health` without a session: a JSON object holding exactly `ok`, `version`, `commit` and `startedAt`, so a person or a monitor can ask which build is running instead of counting startup banners. It is served ahead of the sign-in wall as an exact route, keeps the wall's Host/Origin fence (loopback or a trusted authority only), answers `GET` only, and reports `commit: null` when the install has no git checkout of its own ([#2128](https://github.com/ThinkFlowLab/FlyBot/issues/2128)).
+- Settings → Plugins can turn the Bot Social, Tree, Timeline and Workflow plugins off and back on ([#2564](https://github.com/ThinkFlowLab/FlyBot/issues/2564)). The switch is kept in FlyBot's own `state.json` and applies at the next start: a plugin that is off registers no tools, panels or endpoints, and the packages stay installed so nothing has to be reinstalled.
+- A keyless browser suite now runs in CI: the scripted mock drives the same bench and web adapter as the real-model suite, so the web UI's message-and-reply path is measured on every pull request that touches `core/` or `plugins/` instead of only existing as a nightly that skips without a secret. The job reads no secret, its step summary names each check it ran, and the real-model `live` job is unchanged. ([#2565](https://github.com/ThinkFlowLab/FlyBot/issues/2565))
+
+### Fixed
+
+- A long message the context steward reads now spends its 1,500-character budget in characters at both ends: the start keeps 1,000 characters and the end keeps 500, so a message dense in emoji shows the whole budget instead of only its first 1,000 characters, and the marker reports the 100 characters really left out instead of counting the surplus UTF-16 units a second time. ([#2552](https://github.com/ThinkFlowLab/FlyBot/issues/2552))
+- The memory review's two-ended cut of the user's own line now spends its 3,000-character budget in characters at both ends: a line of 3,500 emoji keeps 3,000 characters (2,000 head, 1,000 tail) instead of 1,503, so the review no longer drops half of a long message written with characters outside the BMP. ([#2553](https://github.com/ThinkFlowLab/FlyBot/issues/2553))
+- A memory review line that carried an unpaired surrogate now reaches the prompt as one whole character instead of half a pair: both of the review's render paths flatten the text first ([#2556](https://github.com/ThinkFlowLab/FlyBot/issues/2556)).
+- The memory review now leaves out only the one entry it cannot keep and lands the rest of the answer: an over-long entry beside a valid remove or edit used to discard the whole answer and read the same lines again next turn, without a bound on the repeats. The review warns once about what it left out, applies the changes it can, and moves its cursor past those lines. ([#2558](https://github.com/ThinkFlowLab/FlyBot/issues/2558))
+- The memory review no longer asks the model over and over for the same lines it cannot change. Two failures at one cursor stop the retries with a single warning instead of one per turn, and the review resumes once a review succeeds or the user writes again, so a Session whose review keeps failing stops rereading the same messages forever. ([#2561](https://github.com/ThinkFlowLab/FlyBot/issues/2561))
+
 ## [0.2.24] - 2026-11-06
 
 ### Added
@@ -1240,7 +1256,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.24...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.25...HEAD
+[0.2.25]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.24...v0.2.25
 [0.2.24]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.23...v0.2.24
 [0.2.23]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.22...v0.2.23
 [0.2.22]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.21...v0.2.22
