@@ -1,0 +1,1 @@
+The memory review's two-ended cut of the user's own line now spends its 3,000-character budget in characters at both ends: a line of 3,500 emoji keeps 3,000 characters (2,000 head, 1,000 tail) instead of 1,503, so the review no longer drops half of a long message written with characters outside the BMP. ([#2553](https://github.com/ThinkFlowLab/FlyBot/issues/2553))

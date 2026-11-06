@@ -5655,7 +5655,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +import { currentParticipants } from './room-membership.js'
 +import { defineTool } from './tool-schema.js'
 +import { clip, codePoints, splitRef, unquote } from './text.js'
-+import { codePointStart, cut, fits } from '../shared/text-boundary.js'
++import { cut, fits } from '../shared/text-boundary.js'
  import { output } from './tools.js'
 +import { retiredBot } from './store.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -6155,7 +6155,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      if (text === '') throw new Error('Type a question or a change first')
      const numbered = [
        ...allEntries(loadScope(ownScope(bot.id))).map(entry => ({ ...entry, scope: 'own' })),
-@@ -1074,18 +1074,27 @@ export function install(rt) {
+@@ -1074,18 +1074,40 @@ export function install(rt) {
    let cursors
    const cursorsNow = () => {
      if (cursors === undefined) {
@@ -6178,14 +6178,27 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    }
 -  const clip = (text, max) => (text.length > max ? `${text.slice(0, max)} …(cut)` : text)
 +  const saveCursors = () => (writeFolder(root) ? writeText(cursorsPath, JSON.stringify(cursors)) : Promise.resolve())
++  // The UTF-16 index of the n-th character: a budget spent in characters needs an index, and
++  // `text.length` counts units, so a character outside the BMP would spend two of it.
++  // Stepping whole code points makes the index a boundary by construction, so no cut lands
++  // between the halves of a surrogate pair.
++  const charIndex = (text, chars) => {
++    let index = 0
++    for (let n = 0; n < chars && index < text.length; n += 1) index += text.codePointAt(index) > 0xffff ? 2 : 1
++    return index
++  }
++
    // A long message often ends with what the user wants of it, so both ends stay.
 -  const ends = (text, max) => (text.length > max ? `${text.slice(0, Math.ceil(max * 2 / 3))} …(middle cut)… ${text.slice(-Math.floor(max / 3))}` : text)
 +  const ends = (text, max) => {
 +    if (fits(text, max)) return text
-+    const tail = text.slice(codePointStart(text, text.length - Math.floor(max / 3)))
-+    // Stepping back onto a boundary can keep one more unit at the tail; the head gives it back.
-+    const head = cut(text, Math.min(Math.ceil(max * 2 / 3), max - tail.length))
-+    return `${head.text} …(middle cut)… ${tail}`
++    // Flattened first, as `cut` did: text that arrives with an unpaired surrogate is stored
++    // as U+FFFD rather than half a character.
++    const flat = text.toWellFormed()
++    const tailChars = Math.floor(max / 3)
++    const tail = flat.slice(charIndex(flat, codePoints(flat) - tailChars))
++    const head = flat.slice(0, charIndex(flat, max - tailChars))
++    return `${head} …(middle cut)… ${tail}`
 +  }
  
    // Lines say who spoke. The user's lines are kept longest: what they say is what
@@ -12174,7 +12187,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.error], ['## Overview\nYou like tea.', null])
    assert.deepEqual(routes(requests).slice(2), ['deepseek/flash@2048'])
-@@ -519,12 +519,86 @@ test('a host that only reads the team shows memory but changes none of it', asyn
+@@ -519,12 +519,110 @@ test('a host that only reads the team shows memory but changes none of it', asyn
  // Until no review waits or runs.
  async function reviewed(call) {
    for (let tries = 0; tries < 200; tries += 1) {
@@ -12256,6 +12269,30 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +    assert.ok(keptHead.length + keptTail.length > MAX - 10, `short: ${keptHead.length} + ${keptTail.length}`)
 +    assert.deepEqual(Buffer.from(keptHead, 'utf8'), Buffer.from(text.slice(0, keptHead.length), 'utf8'))
 +    assert.deepEqual(Buffer.from(keptTail, 'utf8'), Buffer.from(text.slice(-keptTail.length), 'utf8'))
++  }
++  // The two ends spend the budget in characters too, not in UTF-16 units: 3,500 emoji are 7,000
++  // units, so unit arithmetic kept 1,516 characters of the 3,000-character budget, a
++  // 1,000-character head and a 500-character tail. The whole line is `MAX` characters plus the
++  // marker, the head is the rendered line's first 2,000 characters (the `User: ` label included)
++  // and the tail its last 1,000. ASCII of the same length is the control: it spent the budget
++  // correctly before the change too.
++  for (const [text, sample] of [['🚀'.repeat(3500), 'User: 🚀'], ['a'.repeat(3500), 'User: a']]) {
++    const prompt = await render(text)
++    const line = prompt.split('\n').find(one => one.startsWith(sample))
++    assert.ok(line !== undefined, `the user line is in the review context:\n${prompt}`)
++    assert.equal(line.isWellFormed(), true)
++    assert.equal(line.includes('\ufffd'), false)
++    const mark = ' …(middle cut)… '
++    const at = line.indexOf(mark)
++    assert.ok(at > 0, line.slice(0, 40))
++    const head = [...line.slice(0, at)]
++    const tail = [...line.slice(at + mark.length)]
++    assert.equal(head.length + tail.length, MAX, 'the view keeps the whole 3,000-character budget')
++    assert.equal(head.length, Math.ceil((MAX * 2) / 3), 'the head keeps its 2,000 characters')
++    assert.equal(tail.length, Math.floor(MAX / 3), 'the tail keeps its 1,000 characters')
++    const message = [...text]
++    assert.equal(head.slice('User: '.length).join(''), message.slice(0, head.length - 'User: '.length).join(''))
++    assert.equal(tail.join(''), message.slice(-tail.length).join(''))
 +  }
 +})
 +
