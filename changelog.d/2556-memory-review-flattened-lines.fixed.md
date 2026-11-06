@@ -1,1 +1,0 @@
-A memory review line that carried an unpaired surrogate now reaches the prompt as one whole character instead of half a pair: both of the review's render paths flatten the text first ([#2556](https://github.com/ThinkFlowLab/FlyBot/issues/2556)).
