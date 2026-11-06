@@ -1735,7 +1735,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    migrateStorage()
    const UNREAD_KEY = STORAGE.unread
    let savedUnread = {}
-@@ -50,9 +87,12 @@
+@@ -50,9 +50,12 @@ export function apply(ctx) {
    const SEEN_KEY = STORAGE.seen
    let seenAt = {}
    try { seenAt = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') ?? {} } catch { seenAt = {} }
@@ -1749,7 +1749,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
-@@ -90,6 +130,8 @@
+@@ -90,6 +90,8 @@ export function apply(ctx) {
      return () => window.removeEventListener('pagehide', onPageHide)
    }, 'ds-bot: remember visits on page hide')
    const activity = createSource({})
@@ -1758,7 +1758,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Per Bot, the turn it runs and its tool; and the approvals waiting for the user.
    const work = createSource({ bots: {}, approvals: [] })
    let workKey = ''
-@@ -125,18 +167,40 @@
+@@ -125,18 +125,40 @@ export function apply(ctx) {
      try { localStorage.setItem(UNREAD_KEY, JSON.stringify(unread)) } catch { /* storage unavailable */ }
      return { ...state, unread }
    })
@@ -1801,7 +1801,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      const nextWork = JSON.stringify(value.work ?? null)
      if (nextWork !== workKey) { workKey = nextWork; work.set(value.work ?? { bots: {}, approvals: [] }) }
      noteMemoryNews(value.memoryNews ?? {})
-@@ -145,11 +209,18 @@
+@@ -145,11 +145,18 @@ export function apply(ctx) {
      const live = {}
      if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
      if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
@@ -1821,7 +1821,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      try {
        const ids = (value.agents ?? []).flatMap(agent => agent.sessions ?? [])
        localStorage.setItem(STORAGE.agentSessions, JSON.stringify(ids))
-@@ -174,6 +245,7 @@
+@@ -174,6 +174,7 @@ export function apply(ctx) {
      const loop = async () => {
        clearTimeout(timer)
        if (running || stopped) return
@@ -1829,7 +1829,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        running = true
        try { await pull() } catch (error) { if (!stopped) console.warn('[ds-bot] state', error) } finally { running = false }
        if (!stopped) timer = setTimeout(loop, document.hidden ? 10000 : 1500)
-@@ -252,17 +324,7 @@
+@@ -252,17 +252,7 @@ export function apply(ctx) {
      const style = installStyles('', 'mentions')
      let last = ''
      const render = () => {
@@ -1848,7 +1848,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        if (next !== last) style.textContent = last = next
      }
      render()
-@@ -325,7 +387,7 @@
+@@ -325,7 +325,7 @@ export function apply(ctx) {
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
  
@@ -1857,7 +1857,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    // A Bot id, or any part of its chat, opens the Bot's current part.
    const partFor = (id) => {
      const bot = roster.getSnapshot().byId[id]
-@@ -342,6 +404,7 @@
+@@ -342,6 +342,7 @@ export function apply(ctx) {
      // or the click appears to do nothing.
      isAgentSession: id => isAgentSessionId(id),
      openSession: (id) => {
@@ -1865,7 +1865,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -409,15 +472,24 @@
+@@ -409,15 +409,24 @@ export function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -1894,7 +1894,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      openNewChat: (mode) => { ui.set(state => ({ ...state, newChat: mode, menu: null, palette: null })) },
      openPalette: (query = '') => { ui.set(state => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null })) },
      // The token keeps a late exit timer from closing a palette opened again since.
-@@ -443,11 +515,24 @@
+@@ -443,11 +443,24 @@ export function apply(ctx) {
      showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: false, tab })) },
      // Opening the conversation would move focus to its composer and blur the name field.
      renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
@@ -1922,7 +1922,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      openConnectors: () => { ui.set(state => ({ ...state, settings: { page: 'connectors', id: null }, menu: null, palette: null, newChat: null })) },
      // Agent mode hands the surface back to the shell; everything open on the Bot
      // surface closes first so nothing stale reopens on the way back.
-@@ -455,7 +540,7 @@
+@@ -455,7 +455,7 @@ export function apply(ctx) {
        if (mode !== 'bot' && mode !== 'agent') return
        if (surface.getSnapshot().mode === mode) return
        if (mode === 'agent') {
@@ -1931,7 +1931,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
-@@ -487,6 +572,12 @@
+@@ -487,6 +487,12 @@ export function apply(ctx) {
        const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null)
        ui.set(state => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }))
      },
@@ -1944,7 +1944,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {
-@@ -530,8 +621,14 @@
+@@ -530,8 +530,14 @@ export function apply(ctx) {
      updateRoom: (id, patch) => after(call('update-room', { id, ...patch })),
      send: (sessionId, text) => after(call('send', { sessionId: partFor(sessionId), text })),
      answerQuestion: (sessionId, questionId, answer) => after(call('answer-question', { sessionId: partFor(sessionId), questionId, answer })),
@@ -1959,7 +1959,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      stopMemberWork: (roomId, botId) => after(call('stop-member-work', { roomId, botId })),
      // Values go out in these requests and never come back in a response.
      secretSet: payload => after(call('secret-set', payload)),
-@@ -539,15 +636,33 @@
+@@ -539,15 +539,33 @@ export function apply(ctx) {
      secretCancel: requestId => after(call('secret-cancel', { requestId })),
      secretUpdate: (name, scope) => after(call('secret-update', { name, scope })),
      secretDelete: name => after(call('secret-delete', { name })),
@@ -1994,7 +1994,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      scheduleDelete: (sessionId, id) => call('schedule-delete', { sessionId, id }),
      exchange: (a, b) => call('exchange', { a, b }).catch(() => []),
      roomProgress: roomId => call('room-progress', { roomId }).catch(() => []),
-@@ -564,8 +679,13 @@
+@@ -564,8 +564,13 @@ export function apply(ctx) {
      // A failed action away from any form (a menu, the palette) shows as a toast.
      reportError: (error, where = 'action') => {
        noteClientError(where, error)
@@ -2009,7 +2009,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      dismissToast: token => ui.set(state => (state.toast && (token === undefined || state.toast.token === token) ? { ...state, toast: null } : state)),
    }
    // Without the Desktop bridge these stay undefined, and no browser control renders.
-@@ -610,6 +730,7 @@
+@@ -610,6 +610,7 @@ export function apply(ctx) {
    }
    actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
    // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
@@ -2017,7 +2017,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
    actions.canSignIn = () => Boolean(actions.signInEntry())
    actions.signIn = () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 }))
-@@ -647,6 +768,13 @@
+@@ -647,6 +647,13 @@ export function apply(ctx) {
      wakeUpdate()
    }
    actions.repoStars = () => call('repo-stars')
@@ -2031,7 +2031,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.noteTurnTime = (sessionId, turn, key, time) => {
      if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
      turnClock.set((state) => {
-@@ -689,7 +817,18 @@
+@@ -689,7 +689,18 @@ export function apply(ctx) {
    })
    const browserPages = browsers?.pages ?? createSource({})
    const browserTabs = browsers?.tabs ?? createSource({})
@@ -2051,7 +2051,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ctx.effect(() => noticeApprovals({
      work,
      roster,
-@@ -715,10 +854,23 @@
+@@ -715,10 +715,23 @@ export function apply(ctx) {
    }
  
    const shadow = (name, options, component) => ctx.slots.inject(name, () => ctx.slots.register({ name, ...options }, component))
@@ -2075,7 +2075,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    const installAtMenu = () => {
      const fiber = ctx.inject(['inputTriggers'], (scope) => {
        scope.effect(() => {
-@@ -730,7 +882,12 @@
+@@ -730,7 +730,12 @@ export function apply(ctx) {
          const launched = sessionId => controllerOf(sessionId)?.launcher.getSnapshot() === CHATS_SOURCE
          const offs = atSources({ roster, sessions: ctx.sessions, launched, iconFor: menuIcons(roster) }).map(source => triggers.registerSource(source))
          atMenu = { controllerOf }
@@ -2088,7 +2088,7 @@ diff --git a/src/client/index.js b/src/client/index.js
            atMenu = null
            for (const off of offs) off()
          }
-@@ -739,6 +896,14 @@
+@@ -739,6 +739,14 @@ export function apply(ctx) {
      return () => fiber.dispose()
    }
    actions.canReferenceChat = () => atMenu !== null
@@ -2103,7 +2103,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +917,50 @@
+@@ -752,33 +752,50 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -2157,7 +2157,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.chat.node', { key: 'assistant-step', priority: -10, locale: 'chat', inject: assistantFace }, AssistantCell),
      shadow('conversation.chat.node', { key: 'turn-trigger', priority: -10, locale: 'chat', inject: face }, TriggerCell),
      shadow('conversation.chat.node', { key: 'tool-call', priority: -10, locale: 'chat', inject: face }, ToolCell),
-@@ -790,15 +972,24 @@
+@@ -790,15 +790,24 @@ export function apply(ctx) {
      // every message.
      shadow('conversation.chat.node', { key: 'question-reply', priority: -10, locale: 'chat' }, AnsweredCell),
      shadow('conversation.chat.node', { key: 'compaction', priority: -10, locale: 'chat' }, Nothing),
@@ -2185,7 +2185,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),
      shadow('conversation.composer', {
        priority: -10,
-@@ -808,7 +999,14 @@
+@@ -808,7 +808,14 @@ export function apply(ctx) {
      shadow('conversation.input.dock', { id: 'bot-model', order: -110, inject: face }, ModelChoiceDock),
      shadow('conversation.input.dock', { id: 'bot-question', order: -100, inject: face }, QuestionDock),
      shadow('conversation.input.dock', { id: 'bot-secret', order: -90, inject: face }, SecretDock),
