@@ -1481,15 +1481,21 @@ export function install(rt) {
       if (changes === undefined) throw new Error(`the model's answer is not a list of changes: ${clip(reply.replace(/\s+/g, ' '), 120)}`)
       const unknown = changes.find(change => change.op !== 'add' && numbered[Number(change.entry) - 1] === undefined)
       if (unknown !== undefined) throw new Error(`the model's answer names entry ${unknown.entry}, which is not listed`)
-      // A secret is left out for good; any other entry memory cannot keep (one too
-      // long, say) fails the answer, so the next review reads the lines again.
+      // A secret is left out for good and without a word; any other entry memory
+      // cannot keep (one too long, say) is left out too, so the rest of the answer
+      // lands and the next review moves on. One warning, not one per entry.
       const applied = changes.slice(0, REVIEW_CHANGES_MAX)
-      const unfit = applied.filter(change => change.op !== 'remove').map(change => cleanEntry(change.text)).find(text => !secretEntry(text) && entryProblem(text) !== undefined)
-      if (unfit !== undefined) throw new Error(`the model's answer holds an entry memory cannot keep: ${entryProblem(unfit)}`)
+      const problemOf = change => change.op === 'remove' ? undefined : entryProblem(cleanEntry(change.text))
+      const unfit = applied.filter(change => {
+        const problem = problemOf(change)
+        return problem !== undefined && !secretEntry(cleanEntry(change.text))
+      })
+      if (unfit.length > 0) rt.warn('ds-bot: memory review of %s left out an entry memory cannot keep: %s', bot.name, problemOf(unfit[0]))
+      const landed = applied.filter(change => !unfit.includes(change))
       const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
       if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
       if (rt.botOf(bot.id) === undefined) return
-      const changed = await applyReview(bot, sessionId, numbered, applied, batch.source(read), { teamAllowed: teamAllowedFrom(live, bot) })
+      const changed = await applyReview(bot, sessionId, numbered, landed, batch.source(read), { teamAllowed: teamAllowedFrom(live, bot) })
       if (rt.botOf(bot.id) === undefined) return
       // An answer at the limit may have left some out, so the same lines are read
       // again, a few times at most, while each pass still changes something.
