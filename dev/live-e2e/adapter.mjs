@@ -151,9 +151,16 @@ export async function openFlyBotWeb({ harness, home, port, model, outDir, quietM
       await page.waitForTimeout(1200)
     },
     // Who said what is app-specific to render; for the scenarios it is enough that the
-    // task texts are still visible and that some reply beside them is.
+    // task texts are still visible and that some reply beside them is. The reading is
+    // scoped to the conversation flow, never the whole page: the sidebar's own text (Bot
+    // names, previews, group lines) would otherwise count as "a reply", and a chat that
+    // rendered nothing would still look non-empty (#2565).
     async conversationLines() {
-      const text = await page.evaluate(() => document.body.innerText)
+      const text = await page.evaluate(() => {
+        const flow = document.querySelector('[data-conversation-scroll] [data-chat-flow]')
+          ?? document.querySelector('[data-conversation-scroll]')
+        return (flow ?? document.body).innerText
+      })
       const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
       return lines.map(line => ({ who: sent.some(task => task.slice(0, 24) && line.includes(task.slice(0, 24))) ? 'user' : 'app', text: line }))
     },
