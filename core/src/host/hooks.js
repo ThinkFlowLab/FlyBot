@@ -23,6 +23,7 @@ import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
+import { pluginEnabledAtStart, pluginSwitches, setPluginSwitch } from './plugins.js'
 import { codePoints } from './text.js'
 import { cut } from '../shared/text-boundary.js'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
@@ -1102,6 +1103,17 @@ export function install(rt) {
     },
   }
   const isReadEndpoint = name => READ_ENDPOINTS.has(name) || readHandlers.has(name)
+
+  // The owner's plugin switches (#2564). A flip only writes state.json: the plugins
+  // already loaded keep running until the next start, and `pendingRestart` says so.
+  api.handle('plugins/list', async () => ({ plugins: pluginSwitches(state), pendingRestart: rt.pluginSwitchPending === true }), { read: true })
+  api.handle('plugins/set', async (body = {}) => {
+    const before = pluginSwitches(state).find(plugin => plugin.id === body.id)
+    const plugins = setPluginSwitch(state, body.id, body.enabled)
+    if (before !== undefined && before.enabled !== body.enabled) rt.pluginSwitchPending = true
+    await rt.save()
+    return { plugins, pendingRestart: rt.pluginSwitchPending === true }
+  })
   async function endpoint(name, payload, { actor } = {}) {
     await rt.load()
     const body = payload ?? {}
@@ -1143,6 +1155,10 @@ export function install(rt) {
     const fields = fieldsFor(plugin)
     return {
     version: FLYBOT_API_VERSION,
+    // The owner's switch for a feature plugin (#2564): a plugin asks once, in its own
+    // apply(), and registers nothing when this answers false. Read from the state file
+    // the last run wrote, because plugins load before the team is loaded.
+    pluginEnabled: id => pluginEnabledAtStart(rt.statePath, id),
     plugin,
     scope: build,
     bot: {

@@ -1496,7 +1496,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Model call': '模型调用',
    'This window': '这个窗口',
    'Error log': '错误日志',
-@@ -771,12 +771,22 @@ const ZH = {
+@@ -771,12 +771,28 @@ const ZH = {
    'Add at least one more Bot': '再至少添加一个 Bot',
    Members: '成员',
    // Connectors and scheduled tasks
@@ -1509,6 +1509,12 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'On by default for each of your Bots, on every turn: in its own chat, in groups, on schedules and when a friend uses it. A friend\'s own Bot never gets it.': '默认对你的每个 Bot 开启，每一轮都可用：它自己的聊天、群聊、定时任务，以及好友使用它时。好友自己的 Bot 永远拿不到。',
 +  'No Bots': '没有 Bot',
    'Scheduled tasks': '定时任务',
++  'A switch takes effect the next time FlyBot starts.': '开关在下次启动 FlyBot 时生效。',
++  'Restart FlyBot to apply the switches you changed.': '重启 FlyBot 后，你改动的开关才会生效。',
++  'Chat with a friend\'s Bots on a Bot Social server.': '在 Bot Social 服务器上与朋友的 Bot 聊天。',
++  'Run Bots as a tree under a coordinator.': '把 Bot 组织成树，由协调者带队。',
++  'Read the team activity as a timeline.': '用时间线查看团队活动。',
++  'Run workflow graphs across several Bots.': '跨多个 Bot 运行工作流图。',
 +  'Scheduled tasks · {count}': '定时任务 · {count}',
    'Every day': '每天',
    'Every {count} days': '每 {count} 天',

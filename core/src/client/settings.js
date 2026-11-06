@@ -28,8 +28,8 @@ const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
 // Settings dialog: a 198px page list beside the page. Bots and group chats each list
 // their members, and one opens on its own settings form. Usage widens the dialog.
-const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
-const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['plugins', 'Plugins'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
+const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, plugins: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
 
 function SetSection({ title, children }) {
   return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
@@ -46,6 +46,41 @@ const NOTIFY_KINDS = [
   ['finished', 'Finished'],
   ['failed', 'Failed'],
 ]
+// Settings → Plugins (#2564): the four feature plugins, each with one switch. The
+// switch writes FlyBot's state.json; the packages stay installed and the next start
+// reads the answer, so nothing unloads from the session that flipped it.
+function PluginsPage({ call }) {
+  const [answer, setAnswer] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let live = true
+    call('plugins/list')
+      .then(value => { if (live) setAnswer(value ?? { plugins: [] }) })
+      .catch(failure => { if (live) setError(failure?.message ?? String(failure)) })
+    return () => { live = false }
+  }, [])
+  const flip = (id, enabled) => {
+    call('plugins/set', { id, enabled })
+      .then(value => { setAnswer(value ?? null); setError('') })
+      .catch(failure => setError(failure?.message ?? String(failure)))
+  }
+  const plugins = answer?.plugins ?? []
+  return h('div', null,
+    h(SetSection, { title: t('Plugins') },
+      error ? h('p', { className: 'bt-set-hint', role: 'alert' }, error) : null,
+      answer === null && !error ? h('p', { className: 'bt-set-hint' }, t('Loading…')) : null,
+      plugins.map(plugin => h(SwitchRow, {
+        key: plugin.id,
+        label: plugin.name,
+        hint: `${plugin.package} — ${t(plugin.purpose)}`,
+        on: plugin.enabled !== false,
+        onChange: enabled => flip(plugin.id, enabled),
+      })),
+      h('p', { className: 'bt-set-hint' }, answer?.pendingRestart === true
+        ? t('Restart FlyBot to apply the switches you changed.')
+        : t('A switch takes effect the next time FlyBot starts.'))))
+}
+
 // General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {}
@@ -272,6 +307,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           shown === 'workflows' ? h(WorkflowsPage, { call, roster }) : null,
           pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
+          shown === 'plugins' ? h(PluginsPage, { call }) : null,
           shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,
           shown === 'secrets' ? h(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
           shown === 'feedback' ? h(FeedbackPage, { roster, actions, run, Section: SetSection, Row: SetRow }) : null,

@@ -18,6 +18,10 @@ export const name = 'flybot-workflow'
 export const inject = ['flybot']
 
 export function apply(ctx, config = {}) {
+
+  // Owner switch (#2564): off means this process registers none of the plugin's tools,
+  // slots or endpoints. Read at start, so it applies next launch.
+  if (ctx.flybot?.pluginEnabled?.('workflow') === false) return { enabled: false, dispose() {} }
   if (config?.enabled === false) return { enabled: false, dispose() {} }
   if (!ctx?.flybot || typeof ctx.flybot.scope !== 'function') {
     throw new Error('@flybot/workflow needs ctx.flybot.scope (flybot API v1)')

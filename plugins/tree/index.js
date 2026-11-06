@@ -11,6 +11,10 @@ export const name = 'flybot-tree'
 export const inject = ['flybot']
 
 export function apply(ctx, config = {}) {
+
+  // Owner switch (#2564): off means this process registers none of the plugin's tools,
+  // slots, prompt text or middleware. Read at start, so it applies next launch.
+  if (ctx.flybot?.pluginEnabled?.('tree') === false) return { tree: undefined, dispose() {} }
   const fb = createAdapter(ctx.flybot)
   // Cordis gives ctx.logger as a factory; a host may give a ready logger object instead.
   const logger = typeof ctx.logger === 'function' ? ctx.logger('flybot-tree') : ctx.logger

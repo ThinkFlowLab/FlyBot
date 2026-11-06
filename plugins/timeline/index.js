@@ -89,6 +89,10 @@ function makeExporter(config, dir, warn) {
 }
 
 export function apply(ctx, config = {}) {
+
+  // Owner switch (#2564): off means this process registers none of the plugin's tools,
+  // slots or endpoints. Read at start, so it applies next launch.
+  if (ctx.flybot?.pluginEnabled?.('timeline') === false) return { timeline: undefined, enabled: false, dispose() {} }
   if (config?.enabled !== true) return { timeline: undefined, enabled: false, dispose() {} }
   const adapter = createAdapter(ctx.flybot)
   const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')

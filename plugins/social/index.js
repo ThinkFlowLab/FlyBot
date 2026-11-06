@@ -22,6 +22,10 @@ export const name = 'flybot-social'
 export const inject = ['flybot']
 
 export function apply(ctx, config = {}) {
+
+  // Owner switch (#2564): off means this process registers none of the plugin's tools,
+  // slots or endpoints. Read from FlyBot's state.json at start, so it applies next launch.
+  if (ctx.flybot?.pluginEnabled?.('social') === false) return
   const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')
   const base = { inboxPollMs: 15_000, facePollMs: 4_000, credentialsPath: join(dshHome, 'bot', 'flybot-social.json'), ...config }
   const flybot = typeof ctx.flybot.scope === 'function' ? ctx.flybot.scope(NS) : ctx.flybot
