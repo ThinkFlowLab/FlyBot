@@ -280,7 +280,7 @@ diff --git a/src/client/secret-card.js b/src/client/secret-card.js
 diff --git a/src/client/settings.js b/src/client/settings.js
 --- a/src/client/settings.js
 +++ b/src/client/settings.js
-@@ -2,29 +2,34 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
+@@ -2,29 +2,34 @@
  import { ACCENT_INKS, INKS } from './inks.js'
  import { isMainOf } from './sources.js'
  import { allThemes } from './themes.js'
@@ -317,12 +317,12 @@ diff --git a/src/client/settings.js b/src/client/settings.js
  // their members, and one opens on its own settings form. Usage widens the dialog.
 -const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About DS Bot']]
 -const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
-+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
-+const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
++const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['plugins', 'Plugins'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
++const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, plugins: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
  
  function SetSection({ title, children }) {
    return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
-@@ -35,6 +35,13 @@ function SetRow({ label, hint, children }) {
+@@ -35,6 +40,48 @@
      children ? h('div', { className: 'bt-set-control' }, children) : null)
  }
  
@@ -332,11 +332,46 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +  ['finished', 'Finished'],
 +  ['failed', 'Failed'],
 +]
++// Settings → Plugins (#2564): the four feature plugins, each with one switch. The
++// switch writes FlyBot's state.json; the packages stay installed and the next start
++// reads the answer, so nothing unloads from the session that flipped it.
++function PluginsPage({ call }) {
++  const [answer, setAnswer] = useState(null)
++  const [error, setError] = useState('')
++  useEffect(() => {
++    let live = true
++    call('plugins/list')
++      .then(value => { if (live) setAnswer(value ?? { plugins: [] }) })
++      .catch(failure => { if (live) setError(failure?.message ?? String(failure)) })
++    return () => { live = false }
++  }, [])
++  const flip = (id, enabled) => {
++    call('plugins/set', { id, enabled })
++      .then(value => { setAnswer(value ?? null); setError('') })
++      .catch(failure => setError(failure?.message ?? String(failure)))
++  }
++  const plugins = answer?.plugins ?? []
++  return h('div', null,
++    h(SetSection, { title: t('Plugins') },
++      error ? h('p', { className: 'bt-set-hint', role: 'alert' }, error) : null,
++      answer === null && !error ? h('p', { className: 'bt-set-hint' }, t('Loading…')) : null,
++      plugins.map(plugin => h(SwitchRow, {
++        key: plugin.id,
++        label: plugin.name,
++        hint: `${plugin.package} — ${t(plugin.purpose)}`,
++        on: plugin.enabled !== false,
++        onChange: enabled => flip(plugin.id, enabled),
++      })),
++      h('p', { className: 'bt-set-hint' }, answer?.pendingRestart === true
++        ? t('Restart FlyBot to apply the switches you changed.')
++        : t('A switch takes effect the next time FlyBot starts.'))))
++}
++
 +// General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
  function GeneralPage({ roster, actions, run }) {
    const prefs = roster.prefs ?? {}
    const themes = allThemes()
-@@ -47,6 +47,19 @@ function GeneralPage({ roster, actions, run }) {
+@@ -47,6 +94,19 @@
      clearTimeout(timer.current)
      timer.current = setTimeout(() => run(actions.setPrefs({ accent: value })), 350)
    }
@@ -356,7 +391,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    return [
      h(SetSection, { key: 'look', title: t('Appearance') },
        h(SetRow, { label: t('Theme'), hint: t('Colors for the whole team, on every device.') },
-@@ -61,9 +61,17 @@ function GeneralPage({ roster, actions, run }) {
+@@ -61,9 +121,17 @@
            })),
            h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
              h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
@@ -377,7 +412,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    ]
  }
  
-@@ -72,7 +72,16 @@ function GeneralPage({ roster, actions, run }) {
+@@ -72,7 +140,16 @@
  function MainBotsSection({ roster, actions, run }) {
    const mains = (roster.mainBotIds ?? []).map(id => roster.byId[id]).filter(Boolean)
    const [first, ...others] = mains
@@ -395,7 +430,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    return h(SetSection, { title: t('Main Bot') },
      h(SetRow, {
        label: t('Main Bot'),
-@@ -81,7 +81,7 @@ function MainBotsSection({ roster, actions, run }) {
+@@ -81,7 +158,7 @@
      h('select', {
        className: 'bt-select', 'aria-label': t('Main Bot'), value: first?.id ?? '',
        onChange: event => run(actions.setMain(event.target.value, true, first ? { replace: first.id } : {})),
@@ -404,7 +439,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
      others.map(bot => h(SetRow, { key: bot.id, label: bot.name, hint: t('Also a Main Bot.') },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setMain(bot.id, true, { primary: true })) }, t('Move to first')),
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setMain(bot.id, false)) }, t('Remove Main Bot role')))),
-@@ -95,6 +95,11 @@ function MainBotsSection({ roster, actions, run }) {
+@@ -95,6 +172,11 @@
  const MOTIONS = [['quiet', 'Quiet'], ['normal', 'Normal'], ['lively', 'Lively']]
  function MotionSection({ roster, actions, run }) {
    const motion = roster.prefs?.motion === 'quiet' || roster.prefs?.motion === 'lively' ? roster.prefs.motion : 'normal'
@@ -416,7 +451,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    return h(SetSection, { title: t('Animation') },
      h(SetRow, { label: t('Bot animation') },
        h(Segmented, { label: t('Bot animation'), value: motion, className: 'bt-motion-seg' }, MOTIONS.map(([id, label]) => h('button', {
-@@ -112,8 +112,8 @@ function BotsPage({ roster, actions, run }) {
+@@ -112,8 +194,8 @@
        ? h(CreateBot, { key: 'create', roster, actions, inline: true, onBack: () => setCreating(false), onCreated: bot => actions.openSettings('bots', bot.id) })
        : h('div', { key: 'new', className: 'bt-actions' },
            h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', onClick: () => setCreating(true) }, h(PlusIcon), t('New Bot'))),
@@ -427,7 +462,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
          h('span', { className: 'bt-set-bot' },
            h(BotAvatar, { bot, size: 28, badge: false, live: false }),
            h('span', { className: 'bt-row-title' }, bot.name),
-@@ -140,7 +140,7 @@ function GroupsPage({ roster, actions, run }) {
+@@ -140,7 +222,7 @@
                h('span', { className: 'bt-set-bot' },
                  h(RoomAvatar, { room, roster, size: 28 }),
                  h('span', { className: 'bt-row-title' }, room.name),
@@ -436,7 +471,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
                  admin ? h('span', { className: 'bt-tag bt-tag-admin' }, h(AdminStar), admin.name) : null,
                  room.hidden ? h('span', { className: 'bt-tag' }, t('Hidden')) : null),
                h('span', { className: 'bt-chevron' }, h(ChevronRightIcon)))
-@@ -153,15 +153,23 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -153,15 +235,23 @@
    const [error, setError] = useState('')
    const close = useCallback(() => actions.closeSettings(), [])
    useEscape(close)
@@ -462,7 +497,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
    const nav = useGlide(shown, { axis: 'y' })
    // A page enters from the right when it is one level in, from the left when it comes
-@@ -178,38 +178,160 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -178,38 +268,161 @@
    // rendered state off screen (content-visibility).
    const [usageOpened, setUsageOpened] = useState(shown === 'usage')
    if (shown === 'usage' && !usageOpened) setUsageOpened(true)
@@ -512,6 +547,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +          shown === 'workflows' ? h(WorkflowsPage, { call, roster }) : null,
 +          pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
            shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
++          shown === 'plugins' ? h(PluginsPage, { call }) : null,
            shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,
            shown === 'secrets' ? h(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
 -          shown === 'feedback' ? h(FeedbackPage, { actions, run, Section: SetSection, Row: SetRow }) : null,

@@ -1,0 +1,1 @@
+Settings → Plugins can turn the Bot Social, Tree, Timeline and Workflow plugins off and back on ([#2564](https://github.com/ThinkFlowLab/FlyBot/issues/2564)). The switch is kept in FlyBot's own `state.json` and applies at the next start: a plugin that is off registers no tools, panels or endpoints, and the packages stay installed so nothing has to be reinstalled.

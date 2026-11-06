@@ -3,10 +3,25 @@
 import { remoteMentionLabel } from '../shared/remote-label.js'
 export const SLOTS = ['flybot.sidebar.section', 'flybot.sidebar.structure', 'flybot.composer.mention', 'flybot.bot.details', 'flybot.approvals', 'flybot.room.overview', 'flybot.room.members', 'flybot.session.dock', 'flybot.new-chat.action', 'flybot.account.header', 'flybot.settings.page']
 
+// Which feature plugin a slot entry belongs to (#2564), read from the ids the four
+// plugin bundles register under. It lives here because a disabled plugin's bundle still
+// loads — the switch only stops its apply() on the host — so core is what hides the
+// panels it would have drawn, and one list is easier to keep true than five call sites.
+const SLOT_OWNERS = [
+  ['social', /^social(?:$|-)/],
+  ['tree', /^flybot-tree(?:$|-)/],
+  ['timeline', /^timeline$/],
+  ['workflow', /^workflow$/],
+]
+const ownerOf = id => SLOT_OWNERS.find(([, pattern]) => pattern.test(String(id ?? '')))?.[0]
+
 export function createRegistry() {
   const entries = new Map(SLOTS.map(name => [name, []]))
   const listeners = new Set()
   let version = 0
+  // Feature plugins the owner switched off (#2564): their entries stay registered but
+  // are never handed out, so every surface that reads a slot drops them together.
+  let disabled = new Set()
   const changed = () => {
     version += 1
     for (const fn of [...listeners]) fn()
@@ -26,7 +41,11 @@ export function createRegistry() {
         changed()
       }
     },
-    entries: name => entries.get(name) ?? [],
+    entries: name => (entries.get(name) ?? []).filter(entry => !disabled.has(ownerOf(entry.id))),
+    setDisabledPlugins(ids = []) {
+      disabled = new Set([...ids])
+      changed()
+    },
     subscribe(fn) {
       listeners.add(fn)
       return () => listeners.delete(fn)
@@ -40,6 +59,13 @@ export function registry() {
   root.__flybot__ ??= { slots: createRegistry() }
   return root.__flybot__.slots
 }
+
+// The live registry's switches, set from the host's answer at start and from Settings.
+export function setDisabledPlugins(ids = []) {
+  registry().setDisabledPlugins(ids)
+}
+
+export const pluginOfSlot = ownerOf
 
 // Extra "@" rows from plugins (remote Bots and the like), after the team's own Bots.
 // Extra rows in the sidebar '+' new-chat menu (after New Bot / New group chat).

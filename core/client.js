@@ -1959,10 +1959,18 @@ function faceAliases(participant, name) {
 
 // src/client/flybot-registry.js
 var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.room.members", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header", "flybot.settings.page"];
+var SLOT_OWNERS = [
+  ["social", /^social(?:$|-)/],
+  ["tree", /^flybot-tree(?:$|-)/],
+  ["timeline", /^timeline$/],
+  ["workflow", /^workflow$/]
+];
+var ownerOf = (id) => SLOT_OWNERS.find(([, pattern]) => pattern.test(String(id ?? "")))?.[0];
 function createRegistry() {
   const entries2 = new Map(SLOTS.map((name) => [name, []]));
   const listeners2 = /* @__PURE__ */ new Set();
   let version = 0;
+  let disabled = /* @__PURE__ */ new Set();
   const changed2 = () => {
     version += 1;
     for (const fn of [...listeners2]) fn();
@@ -1982,7 +1990,11 @@ function createRegistry() {
         changed2();
       };
     },
-    entries: (name) => entries2.get(name) ?? [],
+    entries: (name) => (entries2.get(name) ?? []).filter((entry) => !disabled.has(ownerOf(entry.id))),
+    setDisabledPlugins(ids = []) {
+      disabled = /* @__PURE__ */ new Set([...ids]);
+      changed2();
+    },
     subscribe(fn) {
       listeners2.add(fn);
       return () => listeners2.delete(fn);
@@ -1995,6 +2007,10 @@ function registry() {
   root.__flybot__ ??= { slots: createRegistry() };
   return root.__flybot__.slots;
 }
+function setDisabledPlugins(ids = []) {
+  registry().setDisabledPlugins(ids);
+}
+var pluginOfSlot = ownerOf;
 function newChatActionRows(context = {}) {
   const rows = [];
   for (const entry of registry().entries("flybot.new-chat.action")) {
@@ -19285,8 +19301,8 @@ var ABOUT_CSS = `
 // src/client/settings.js
 var import_react42 = require("react");
 var capitalize2 = (word) => word[0].toUpperCase() + word.slice(1);
-var SETTINGS_PAGES = [["general", "General"], ["bots", "Bots"], ["groups", "Group chats"], ["projects", "Projects"], ["connectors", "Connectors"], ["capabilities", "Capabilities"], ["schedules", "Scheduled tasks"], ["workflows", "Workflows"], ["usage", "Usage"], ["secrets", "Secrets"], ["feedback", "Feedback"], ["about", "About FlyBot"]];
-var PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon };
+var SETTINGS_PAGES = [["general", "General"], ["bots", "Bots"], ["groups", "Group chats"], ["projects", "Projects"], ["connectors", "Connectors"], ["capabilities", "Capabilities"], ["plugins", "Plugins"], ["schedules", "Scheduled tasks"], ["workflows", "Workflows"], ["usage", "Usage"], ["secrets", "Secrets"], ["feedback", "Feedback"], ["about", "About FlyBot"]];
+var PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, plugins: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon };
 function SetSection({ title, children }) {
   return (0, import_react42.createElement)("section", { className: "bt-set-section" }, (0, import_react42.createElement)("h3", null, title), (0, import_react42.createElement)("div", { className: "bt-set-card" }, children));
 }
@@ -19303,6 +19319,46 @@ var NOTIFY_KINDS = [
   ["finished", "Finished"],
   ["failed", "Failed"]
 ];
+function PluginsPage({ call: call4 }) {
+  const [answer, setAnswer] = (0, import_react42.useState)(null);
+  const [error, setError] = (0, import_react42.useState)("");
+  (0, import_react42.useEffect)(() => {
+    let live = true;
+    call4("plugins/list").then((value) => {
+      if (live) setAnswer(value ?? { plugins: [] });
+    }).catch((failure) => {
+      if (live) setError(failure?.message ?? String(failure));
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const flip = (id, enabled) => {
+    call4("plugins/set", { id, enabled }).then((value) => {
+      setAnswer(value ?? null);
+      setError("");
+    }).catch((failure) => setError(failure?.message ?? String(failure)));
+  };
+  const plugins = answer?.plugins ?? [];
+  return (0, import_react42.createElement)(
+    "div",
+    null,
+    (0, import_react42.createElement)(
+      SetSection,
+      { title: t("Plugins") },
+      error ? (0, import_react42.createElement)("p", { className: "bt-set-hint", role: "alert" }, error) : null,
+      answer === null && !error ? (0, import_react42.createElement)("p", { className: "bt-set-hint" }, t("Loading…")) : null,
+      plugins.map((plugin) => (0, import_react42.createElement)(SwitchRow, {
+        key: plugin.id,
+        label: plugin.name,
+        hint: `${plugin.package} — ${t(plugin.purpose)}`,
+        on: plugin.enabled !== false,
+        onChange: (enabled) => flip(plugin.id, enabled)
+      })),
+      (0, import_react42.createElement)("p", { className: "bt-set-hint" }, answer?.pendingRestart === true ? t("Restart FlyBot to apply the switches you changed.") : t("A switch takes effect the next time FlyBot starts."))
+    )
+  );
+}
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {};
   const themes = allThemes();
@@ -19618,6 +19674,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           shown === "workflows" ? (0, import_react42.createElement)(WorkflowsPage, { call: call2, roster }) : null,
           pluginPage ? (0, import_react42.createElement)(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call: call2, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === "capabilities" ? (0, import_react42.createElement)(CapabilitiesPage, { roster, actions, run }) : null,
+          shown === "plugins" ? (0, import_react42.createElement)(PluginsPage, { call: call2 }) : null,
           shown === "schedules" ? (0, import_react42.createElement)(SchedulesPage, { roster, actions, start: id ?? void 0 }) : null,
           shown === "secrets" ? (0, import_react42.createElement)(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
           shown === "feedback" ? (0, import_react42.createElement)(FeedbackPage, { roster, actions, run, Section: SetSection, Row: SetRow }) : null,
@@ -22533,6 +22590,16 @@ function apply(ctx) {
   }
   ctx.effect(() => installLocale(ctx.get("locale")), "ds-bot: interface copy");
   ctx.effect(() => installBrandChrome(), "ds-bot: brand chrome");
+  ctx.effect(() => {
+    let live2 = true;
+    call2("plugins/list").then((answer) => {
+      if (live2) setDisabledPlugins((answer?.plugins ?? []).filter((plugin) => plugin.enabled === false).map((plugin) => plugin.id));
+    }).catch(() => {
+    });
+    return () => {
+      live2 = false;
+    };
+  }, "ds-bot: plugin switches");
   const roster = createSource(EMPTY_ROSTER);
   ctx.effect(() => installTabTitle(ctx.sessions.list, roster, typeof document === "undefined" ? void 0 : document), "ds-bot: tab title");
   migrateStorage();
