@@ -12,5 +12,10 @@
     "demo:interop": "node --import ./dev/interop/no-network.mjs dev/interop/demo.mjs",
     "lint:live-e2e": "node scripts/lint-live-e2e.mjs",
     "test:live-e2e": "node --test \"dev/live-e2e/test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "jpeg-js": "^0.4.4",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0"
   }
 }

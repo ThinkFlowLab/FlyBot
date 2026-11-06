@@ -166,6 +166,12 @@ FlyBot is the upstream [DS Bot](https://github.com/Fei2411/DeepSeek-Bot) core, k
 and tested against DeepSeek Harness `0.2.1-rc.2`, the version the commands above pin. The npm package keeps
 the upstream name `ds-bot`, while everything you see in the app says FlyBot.
 
+## Community
+
+Questions, ideas and bug reports are welcome in the FlyBot WeChat group. The code expires every few days — ask for a fresh one in [Issues](https://github.com/ThinkFlowLab/FlyBot/issues) if it no longer works.
+
+![WeChat group QR code for FlyBot](docs/assets/wechat-group.png)
+
 ## License
 
 [Apache License 2.0](LICENSE). Third-party notices in [NOTICE](NOTICE).
