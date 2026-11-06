@@ -18,7 +18,9 @@ name: Live E2E
 # path, with DEEPSEEK_BASE_URL pointed at the scripted mock (core/dev/mock-llm.mjs). It
 # reads no secret, so it runs on every pull request that touches core/ or plugins/, not only
 # on main — and its step summary names each check it ran, so its green is visibly different
-# from the live job's skip. The `live` job is unchanged.
+# from the live job's skip. The `live` job runs the same published runtime as the mock job;
+# it differs in the key, the usage tap and the four real-model checks (it used to clone the
+# harness at the pinned tag and never build it, so `dsh web` died at startup with ENOENT).
 
 on:
   schedule:
@@ -109,21 +111,40 @@ jobs:
         working-directory: core
         run: npm ci --no-fund --no-audit
         timeout-minutes: 5
-      - name: Install the pinned DSH runtime
-        if: steps.preflight.outputs.key == 'true'
-        working-directory: core
-        run: |
-          DSH=$(node -p "require('./dev/harness/package.json').dependencies['@deepseek-ai/dsh']")
-          npm run harness -- --no-save "@deepseek-ai/dsh@$DSH"
-          echo "DSH=$DSH" >> "$GITHUB_ENV"
-        timeout-minutes: 5
-      - name: Clone DeepSeek Harness at the pinned tag
+      # The runtime is the published package, not a source checkout: a checkout has no built
+      # client artifacts (dsh web exits with ENOENT on packages/client/*/lib/client.js), and
+      # this job must not spend ten minutes building DSH to run four checks. Same runtime,
+      # playwright-core and node_modules/.pnpm layout as the mock job below: `pnpm dsh`
+      # starts the bench and core/dev/desktop-linux/lib.mjs resolves playwright-core from
+      # .pnpm/node_modules.
+      - name: Install the pinned DSH runtime (published package)
         if: steps.preflight.outputs.key == 'true'
         run: |
-          git clone --depth 1 --branch "dsh-v$DSH" https://github.com/deepseek-ai/deepseek-harness.git deepseek-harness
+          DSH=$(node -p "require('./core/dev/harness/package.json').dependencies['@deepseek-ai/dsh']")
+          RUNTIME="$RUNNER_TEMP/dsh-runtime"
+          mkdir -p "$RUNTIME"
+          cd "$RUNTIME"
+          printf '{"name":"dsh-live-e2e-runtime","private":true,"packageManager":"pnpm@12.16.1"}\n' > package.json
+          # pnpm 12 refuses dependency build scripts by default; the pinned runtime's native
+          # helpers (subprocess spawn, pty, protobuf) are the same packages the mock job runs.
+          printf 'dangerouslyAllowAllBuilds: true\n' > pnpm-workspace.yaml
           corepack enable
-          pnpm install --dir deepseek-harness
-        timeout-minutes: 10
+          corepack pnpm add "@deepseek-ai/dsh@$DSH" playwright-core@1.61.1
+          echo "DSH_HARNESS=$RUNTIME" >> "$GITHUB_ENV"
+        timeout-minutes: 8
+      # The headless shell is what the adapter launches. No --with-deps: the runner image
+      # already carries Chrome's system libraries, so no apt-get round; one retry covers the
+      # download itself.
+      - name: Chromium for the browser
+        if: steps.preflight.outputs.key == 'true'
+        run: |
+          for attempt in 1 2; do
+            node "$DSH_HARNESS/node_modules/playwright-core/cli.js" install chromium --only-shell && exit 0
+            echo "::warning::chromium install attempt $attempt failed; retrying"
+            sleep 5
+          done
+          exit 1
+        timeout-minutes: 8
       - name: Start the usage tap
         if: steps.preflight.outputs.key == 'true'
         run: |
@@ -157,7 +178,7 @@ jobs:
           LIVE_E2E_TAP_UPSTREAM: https://api.deepseek.com
         run: |
           node dev/live-e2e/run.mjs "$LIVE_E2E_HOME" "$WEB_PORT" \
-            --model "$MODEL" --harness deepseek-harness \
+            --model "$MODEL" --harness "$DSH_HARNESS" \
             --tap "$LIVE_E2E_HOME/tap.jsonl" --evidence evidence --tz Asia/Shanghai
       - name: Stop the bench and the tap
         if: always() && steps.preflight.outputs.key == 'true'

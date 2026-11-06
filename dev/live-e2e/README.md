@@ -101,8 +101,9 @@ adapter `playwright-core` from `node_modules/.pnpm/node_modules`.
 
 `.github/workflows/live-e2e.yml` runs the same flow nightly at 00:30 Asia/Shanghai (and
 on dispatch) on `main` only, with a window gate so a quiet `main` spends no tokens: it
-clones the harness at the tag pinned in `core/dev/harness/package.json`, starts the tap,
-resets the bench, runs the four checks and uploads the sanitizer-cleared allow-list.
+installs the published `@deepseek-ai/dsh` the pin in `core/dev/harness/package.json` names,
+starts the tap, resets the bench, runs the four checks and uploads the sanitizer-cleared
+allow-list.
 The keyless `mock` job runs the two checks above on every pull request that touches `core/`
 or `plugins/` and on the same nightly schedule, with no `secrets.*` in its environment and
 the runner's summary appended to the job's step summary ([#2565](https://github.com/ThinkFlowLab/FlyBot/issues/2565)).
