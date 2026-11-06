@@ -14,8 +14,9 @@ only `adapter.mjs` knows FlyBot. Nothing here ships in a package or runs in
 | --- | --- |
 | `fixtures/orders.csv` | The fixed 5-row fixture the expected totals derive from. |
 | `scenarios.mjs` | The four checks, task texts, pure assertions (parsed JSON, SHA-256 immutability). |
+| `smoke.mjs` | The keyless checks (#2565): a message sent through the composer gets a reply, and both survive a reload. Run by `LIVE_E2E_MODE=mock`; no files, no model wording asserted. |
 | `adapter.mjs` | The FlyBot web adapter: playwright-core from the harness checkout, UI task steps, read-only observation. |
-| `bench.mjs` | A dsh web bench on this checkout with the real endpoint; refuses missing/mock keys, keeps its home outside the checkout, never touches `~/.dsh`. |
+| `bench.mjs` | A dsh web bench on this checkout. `LIVE_E2E_MODE=live` refuses a missing/mock key, `LIVE_E2E_MODE=mock` needs the loopback mock and reads no key; both keep the home outside the checkout and never touch `~/.dsh`. |
 | `run.mjs` | The runner: guards, budgets, classification, report, evidence sanitizer. |
 | `report.mjs` | Outcome contract, guard logic, the tamper rule (`integrityOutcome`), usage/classification, report assembly (pure, tested keyless). |
 | `integrity.mjs` | The grader's own hash: `treeManifest` / `changedPaths` for the tamper check, and the path test the guards use (#398). |
@@ -76,12 +77,35 @@ A run costs real tokens (the pilot used ~116K); budgets default to 180 s per che
 250K tokens per run (`LIVE_E2E_CHECK_MS`, `LIVE_E2E_QUIET_MS`, `LIVE_E2E_MAX_TOKENS`),
 with zero retries.
 
+## Run the keyless mock suite
+
+No key, no network to a model endpoint: the same bench and adapter, with the scripted mock
+from `core/dev/mock-llm.mjs` answering (`LIVE_E2E_MODE=mock` also allows the loopback base
+URL the live mode refuses). The checks are the two in `smoke.mjs`, not the four #204 task
+checks — a scripted model does not write `summary.json`.
+
+```sh
+export LIVE_E2E_MODE=mock
+export DEEPSEEK_BASE_URL=http://127.0.0.1:8765
+MOCK_PORT=8765 node core/dev/mock-llm.mjs &          # the scripted model
+node dev/live-e2e/bench.mjs live-e2e 3197 reset
+node dev/live-e2e/run.mjs "$LIVE_E2E_HOME" 3197 --model deepseek-official/deepseek-flash
+node dev/live-e2e/bench.mjs live-e2e 3197 stop
+```
+
+The runtime can be a published `@deepseek-ai/dsh` install instead of a source checkout: the
+bench only needs the `dsh` command (a source tree has no built `lib/client.js`) and the
+adapter `playwright-core` from `node_modules/.pnpm/node_modules`.
+
 ## In CI
 
 `.github/workflows/live-e2e.yml` runs the same flow nightly at 00:30 Asia/Shanghai (and
 on dispatch) on `main` only, with a window gate so a quiet `main` spends no tokens: it
 clones the harness at the tag pinned in `core/dev/harness/package.json`, starts the tap,
 resets the bench, runs the four checks and uploads the sanitizer-cleared allow-list.
+The keyless `mock` job runs the two checks above on every pull request that touches `core/`
+or `plugins/` and on the same nightly schedule, with no `secrets.*` in its environment and
+the runner's summary appended to the job's step summary ([#2565](https://github.com/ThinkFlowLab/FlyBot/issues/2565)).
 The four decisions behind this setup are recorded in
 [#204](https://github.com/ThinkFlowLab/issues/204). "Stable" means five consecutive
 scheduled runs green at one recorded configuration; until then the suite is evidence,

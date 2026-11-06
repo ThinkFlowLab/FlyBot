@@ -22,7 +22,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { runScenarios } from './scenarios.mjs'
-import { budgetsFrom, buildReport, guardRun, integrityOutcome, OUTCOMES, providerFailures, summaryLines, usageOf } from './report.mjs'
+import { runSmoke } from './smoke.mjs'
+import { budgetsFrom, buildReport, guardRun, integrityOutcome, OUTCOMES, providerFailures, readMode, summaryLines, usageOf } from './report.mjs'
 import { changedPaths, canonicalPath, treeManifest } from './integrity.mjs'
 import { scanTree } from './sanitize.mjs'
 import { openFlyBotWeb } from './adapter.mjs'
@@ -38,6 +39,9 @@ const { values: args, positionals } = parseArgs({
     tz: { type: 'string', default: process.env.TZ || 'Asia/Shanghai' },
   },
 })
+// live: a real key against the real endpoint. mock: the scripted mock on loopback, no key
+// (#2565). One variable, so the bench, the guard and this report cannot disagree.
+const MODE = readMode(process.env.LIVE_E2E_MODE)
 const [HOME_TEXT, PORT] = positionals
 if (!HOME_TEXT || !PORT) {
   console.error('usage: node dev/live-e2e/run.mjs <bench-home> <web-port> [--model ref] [--harness dir] [--tap file] [--evidence dir] [--tz zone]')
@@ -67,7 +71,7 @@ const conclude = (report) => {
 const stoppedEarly = (outcome, problems) => {
   const report = buildReport({
     runId, revision,
-    config: { node: process.version, dsh: dshVersion, model: args.model },
+    config: { node: process.version, dsh: dshVersion, model: args.model, mode: MODE },
     endpoint: { host: 'not reached', origin: 'not reached', viaTap: false },
     budgets, checks: [], usage: usageOf(tapLines()), providerFailures: providerFailures(tapLines()),
     startedAt, endedAt: new Date(), tz: args.tz,
@@ -80,7 +84,7 @@ const stoppedEarly = (outcome, problems) => {
 
 // Guards first: never open a browser — or write anything — against a bench that should
 // not exist, so a guard failure prints and exits without touching the passed home.
-const guard = guardRun({ apiKey: process.env.DEEPSEEK_API_KEY, baseUrl: process.env.DEEPSEEK_BASE_URL, tapUpstream: process.env.LIVE_E2E_TAP_UPSTREAM, home: HOME, userHome: homedir(), repoRoot: ROOT, evidence })
+const guard = guardRun({ apiKey: process.env.DEEPSEEK_API_KEY, baseUrl: process.env.DEEPSEEK_BASE_URL, tapUpstream: process.env.LIVE_E2E_TAP_UPSTREAM, home: HOME, userHome: homedir(), repoRoot: ROOT, evidence, mode: MODE })
 if (guard.problems.length > 0) {
   console.error(guard.problems.join('\n'))
   console.error(`outcome infra_failed (exit ${OUTCOMES.infra_failed})`)
@@ -105,7 +109,8 @@ try {
 let checks = []
 let override
 try {
-  const { results, stopped } = await runScenarios(adapter, {
+  const runChecks = MODE === 'mock' ? runSmoke : runScenarios
+  const { results, stopped } = await runChecks(adapter, {
     checkMs: budgets.checkMs,
     betweenChecks: () => {
       const usage = usageOf(tapLines())
@@ -127,7 +132,7 @@ try {
 
 const report = buildReport({
   runId, revision,
-  config: { node: process.version, dsh: dshVersion, model: adapter.modelId ?? args.model },
+  config: { node: process.version, dsh: dshVersion, model: adapter.modelId ?? args.model, mode: MODE },
   endpoint: guard.endpoint,
   budgets, checks, usage: usageOf(tapLines()),
   providerFailures: providerFailures(tapLines()),

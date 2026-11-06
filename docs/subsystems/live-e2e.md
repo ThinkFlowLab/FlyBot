@@ -13,6 +13,13 @@ DeepSeek endpoint. Commands, budgets and the evidence rules are in
 [the suite README](../../dev/live-e2e/README.md); the adapter contract is in
 [docs/interop/live-e2e-adapter.md](../interop/live-e2e-adapter.md).
 
+Its keyless sibling (#2565) runs the same bench, adapter and evidence path with
+`LIVE_E2E_MODE=mock`, against `core/dev/mock-llm.mjs` and no key at all. A scripted model
+cannot do the #204 tasks (it answers a task prompt with a canned acknowledgement and writes
+no files), so that mode runs the two `smoke.mjs` checks — a message gets a reply, and both
+survive a reload — in a `mock` job that reads no `secrets.*` and runs on pull requests
+touching `core/` or `plugins/`, not only on `main`.
+
 Which user journeys this suite is meant to cover, and what covers each one today, is the
 [user-scenario matrix](../testing/user-scenarios.md) (#358). The matrix is the map; this
 suite is one of its columns, not the map's owner.
@@ -20,8 +27,8 @@ suite is one of its columns, not the map's owner.
 ## Owns
 
 - `dev/live-e2e/`: the fixture and scenario/assertion modules, the FlyBot web adapter,
-  the real-model bench launcher, the runner (guards, budgets, report, evidence
-  sanitizer, grader hash) and the keyless fake-adapter tests.
+  the bench launcher (real-model and mock modes), the runner (guards, budgets, report,
+  evidence sanitizer, grader hash), the keyless smoke checks and their fake-adapter tests.
 - `scripts/lint-live-e2e.mjs`: lint using core's installed harness tooling.
 
 ## Invariants
@@ -43,8 +50,11 @@ suite is one of its columns, not the map's owner.
   bench start and the run guard (`dev/live-e2e/key.mjs`): a key under 16 characters or the
   mock's is skipped with its own warning, never passed to a bench that refuses it. A key
   long enough but not real is not detected here; only the endpoint can say that (#2214).
-- The mock suites stay separate: this bench never starts the mock model, and the mock
-  benches never gain a real key.
+- The two modes never mix: `LIVE_E2E_MODE=live` requires a real key and refuses a loopback
+  endpoint (except the usage tap with a real upstream); `LIVE_E2E_MODE=mock` requires the
+  loopback scripted mock, reads no key (a key in the environment is replaced with the mock's
+  own before the bench starts) and refuses an endpoint that is not loopback. The bench never
+  starts the mock model itself, and mock mode never gains a real key.
 - Evidence is an explicit allow-list that passed the sanitizer (no `token=` URLs, no
   key material, no cookies); a sanitizer finding is an infra failure, never a pass.
 - The grader is hashed before the first turn and again before the report (#398): a change
