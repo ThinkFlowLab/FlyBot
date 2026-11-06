@@ -1,6 +1,6 @@
-import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, createClientApi as createFlyBotClient } from './flybot-slots.js'
+import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, call as flybotCall, createClientApi as createFlyBotClient } from './flybot-slots.js'
 import { createElement as h } from 'react'
-import { registry as flybotSlots } from './flybot-registry.js'
+import { registry as flybotSlots, setDisabledPlugins } from './flybot-registry.js'
 import { TURN_FAILURES_CSS, TurnFailures } from './turn-failures.js'
 import { call } from './api.js'
 import { isHex } from './inks.js'
@@ -65,6 +65,15 @@ export function apply(ctx) {
   } catch { /* every provide form refused: __flybot__.api above still serves plugins */ }
   ctx.effect(() => installLocale(ctx.get('locale')), 'ds-bot: interface copy')
   ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
+  // A plugin the owner switched off (#2564) still loads its browser bundle, so the
+  // switch is read once and its slot entries are dropped before anything draws them.
+  ctx.effect(() => {
+    let live = true
+    flybotCall('plugins/list')
+      .then(answer => { if (live) setDisabledPlugins((answer?.plugins ?? []).filter(plugin => plugin.enabled === false).map(plugin => plugin.id)) })
+      .catch(() => { /* an older host has no switch: every plugin stays visible */ })
+    return () => { live = false }
+  }, 'ds-bot: plugin switches')
   const roster = createSource(EMPTY_ROSTER)
   ctx.effect(() => installTabTitle(ctx.sessions.list, roster, typeof document === 'undefined' ? undefined : document), 'ds-bot: tab title')
   migrateStorage()
