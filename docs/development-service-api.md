@@ -301,8 +301,8 @@ settlement；原 Task 不关闭。`task.accept` 的公开语义仍是完整 Task
 字段绕过 Chief 裁决。若整个目标已完成，Chief 仍可选择 `close`。
 
 提交后通过原队列通知 Chief 重新观察；不自动启动 Dev。Chief 可选 `start-next`，
-显式给出实现角色 `targetBotId` 及新快照中的 next continuation。配置授权的调用方
-也可沿原接口查询/请求：
+按当前快照引用选择（#2560），有歧义时显式选择角色/continuation。配置授权的
+外部调用方也可沿原显式接口查询/请求：
 
 1. `attempt.continuation-state {attemptId}` 返回 `modes:["next"]`、generation、snapshot、
    latestBaseSha、target 和 nextActions。target SHA 来自获准 provider 的实际目标分支，
@@ -334,3 +334,17 @@ Chief 应读取当前交付选项再判断，Personal Agent 的文字输入也�
 Task 需求修订号与 Attempt 领取时的修订号允许不同。`accept-attempt` 验收原承诺的已合成果，保留 `delivery.completed/remaining/evidence`，不自动认可当前新需求完成。`deliveryChoices.requirements` / Chief 的 `repositoryRecovery.nextActions.requirements` 返回 `attemptRevision`、`taskRevision`、`changedFields` 和这些字段的 `priorValues`；当前值在 Task requirements 中。原始完整快照由已有 `attempt.context` 的 `section=requirement` 分页读取，不把整段历史反复加入上下文。
 
 Settlement 的 `requirementsRevision` 是 Attempt 原版本；可选 `taskRequirementsRevision` 是验收时当前 Task 版本。旧 settlement 无需迁移。下一轮 Attempt 复制当前 Task 需求。Chief 读后需求再变化时，宿主通过既有 stale-snapshot 纠正反馈要求重新判断；候选/测试/Review/PR SHA、权限、代次、退出与幂等校验保持严格，整单 close 仍独立验证当前需求。
+
+### Chief 下一轮交付引用（#2560）
+
+在当前 Chief 调用中，若 `continuationOptions.modes=["next"]`、`start-next` 预检 ready 且只有一个当前获准实施角色，可输出：
+
+```json
+{"summary":"本轮已验收，继续剩余目标","decisions":[{"taskId":"当前快照中的 Task ID","action":"start-next","reason":"开始下一轮独立交付"}]}
+```
+
+不必复述 workspace、generation、SHA。宿主绑定的是 **Chief 看过的那份快照**，再通过现有 `attempt.continuation-state` 和当前权限/角色/Task 闸复验；变化就反馈刷新，不静默换成新基线。多个实施角色须显式给 `targetBotId`；可选 `mode` 只能是 `next`，可选 `continuationRef` 是该份 facts 的 `expectedScope`，供显式引用。多 mode 时必须有明确引用或完整选择；不是让宿主代替 Chief 决定路线。
+
+旧的完整 `continuation` 仍支持；一旦提供，其字段就必须完整且准确，宿主不会修正错误字段或替你补半个 JSON。`route/return` 的显式目标约定不变。外部程序直接调用 `task.run` 仍沿用原显式 continuation 参数，可先读 `attempt.continuation-state`；本次不新增准备记录或公共写接口。
+
+`chief.state.runs[].appliedDecisions[].continuationBinding` 返回实际绑定的目标、来源、scope 与 continuation，便于审计。引用不是凭证，不绕过 settlement、配额、退出或 provider target 校验，也不自动关闭 Task、重用已合 PR 或升级人工。

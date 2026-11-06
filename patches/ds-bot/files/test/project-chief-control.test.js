@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { createProjectChiefControl, inspectionFacts, allocationProof, inspectionResources } from '../src/host/project-chief-control.js'
+const createHashForTest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const thresholds = { maxHandoffsWithoutProgress: 3, longExecutionMs: 10000, missingHeartbeatMs: 5000, longWaitMs: 8000 }
 test('Chief inspection counts verified artifact progress rather than message or transfer churn', () => {
   const task = { id: 't', updatedAt: 1, deliveryAttemptId: 'a', collaboration: { status: 'queued', generation: 7, history: Array.from({ length: 5 }, (_, index) => ({ evidence: [], reason: 'Progress message ' + index, createdAt: index + 1 })) } }
@@ -878,4 +880,96 @@ test('requirement changes after scoped acceptance judgement request fresh facts 
   await f.request.onResult(f.result({ action: 'continue', reason: 'Inspect the changed requirement before selecting an action' }))
   assert.equal(run.status, 'done'); assert.equal(f.accepted(), 0)
   await f.rt.projectEffects.close()
+})
+
+async function referenceFixture({ modes = ['next'], targetCount = 1, policyRole = 'developer', read } = {}) {
+  const { deliveryScope } = await import('../src/host/project-delivery-options.js')
+  let facts, calls = [], catalog, reads = 0
+  const f = await controlFixture({ prepare(rt, task) {
+    const role = policyRole === 'developer' ? 'developer' : 'implementer'
+    catalog = { revision: 1, roles: [{ id: 'p:chief', role: 'chief' }, ...Array.from({ length: targetCount }, (_, index) => ({ id: 'p:' + role + (index ? index : ''), role: role + (index ? index : ''), policyRole: 'developer' }))] }
+    rt.projectAgents.deliveryDefinitions = () => catalog
+    const scope = deliveryScope(rt.state, task)
+    facts = { attemptId: 'a', generation: 1, snapshot: { workspaceId: 'w', sha256: 'workspace' }, latestBaseSha: 'a'.repeat(40), modes, expectedScope: scope }
+    rt.projectDelivery.recoveryFacts = async () => { facts.expectedScope = deliveryScope(rt.state, task); return { continuationOptions: structuredClone(facts), nextActions: { actions: [{ action: 'start-next', status: 'ready' }] } } }
+    rt.projectDelivery.endpoint = async () => { ++reads; return read ? read(facts, rt, task, catalog, reads) : structuredClone(facts) }
+    rt.projectScheduler = { wake() {}, request: async (args) => { calls.push(structuredClone(args)); return { queue: { id: 'queue-reference' } } } }
+  } })
+  return { ...f, facts, calls, catalog }
+}
+
+test('next snapshot reference binds current fields and the unique custom implementation role without mutating the decision', async () => {
+  const f = await referenceFixture({ policyRole: 'custom' })
+  const decision = { action: 'start-next', mode: 'next', continuationRef: f.facts.expectedScope }
+  const original = structuredClone(decision), result = f.result(decision)
+  await f.request.onResult(result); await f.request.onResult(result)
+  assert.deepEqual(decision, original); assert.equal(f.calls.length, 1, JSON.stringify(f.rt.state.projectExecutions))
+  assert.equal(f.calls[0].targetRole, 'implementer')
+  const audit = Object.values(f.rt.state.projectChiefDecisions).find(row => row.status === 'applied')
+  assert.equal(audit.continuationBinding.source, 'continuation-ref')
+  assert.equal(audit.continuationBinding.targetBotId, 'p:implementer')
+  assert.equal(audit.queueId, 'queue-reference'); assert.equal(audit.successorAttemptId, null)
+  assert.equal(f.calls[0].continuation.expectedBaseSha, f.facts.latestBaseSha)
+  assert.deepEqual(f.calls[0].continuation.expectedWorkspace, f.facts.snapshot)
+  const intent = createHashForTest(JSON.parse(result.text).decisions[0])
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].appliedDecisions[0].intent, intent)
+  const visible = f.control.view('p', { memberId: 'owner' }).runs.find(run => run.id === f.request.runId).appliedDecisions[0].continuationBinding
+  assert.deepEqual(visible, audit.continuationBinding)
+  visible.continuation.expectedBaseSha = 'changed-view-only'; assert.equal(audit.continuationBinding.continuation.expectedBaseSha, f.facts.latestBaseSha)
+  audit.projectId = 'foreign'
+  assert.equal(f.control.view('p', { memberId: 'owner' }).runs.find(run => run.id === f.request.runId).appliedDecisions[0].continuationBinding, undefined)
+})
+
+for (const kind of ['ambiguous-target', 'no-target', 'ambiguous-mode', 'unavailable', 'wrong-ref', 'bad-fields', 'bad-mode', 'not-ready', 'foreign-attempt', 'target-changed', 'workspace-changed', 'local-changed', 'roles-changed', 'rights-revoked']) test('next reference refuses ' + kind + ' without dispatch or inferred recovery', async () => {
+  const f = await referenceFixture({ targetCount: kind === 'ambiguous-target' ? 2 : kind === 'no-target' ? 0 : 1, modes: kind === 'ambiguous-mode' ? ['next', 'latest'] : ['next'], read: async (facts, rt, task, catalog, reads) => {
+    if (kind === 'target-changed') return { ...structuredClone(facts), latestBaseSha: 'b'.repeat(40) }
+    if (kind === 'workspace-changed') return { ...structuredClone(facts), snapshot: { workspaceId: 'other' } }
+    if (kind === 'local-changed' && reads === 2) task.criteria = 'Changed during validation'
+    if (kind === 'roles-changed' && reads === 2) catalog.revision++
+    if (kind === 'rights-revoked' && reads === 2) rt.requireProjectAccess = () => { throw Error('Current role denied') }
+    return structuredClone(facts)
+  } })
+  const saved = f.request.projectFacts.tasks[0]
+  if (kind === 'unavailable') saved.repositoryRecovery.continuationOptions.status = 'unavailable'
+  if (kind === 'not-ready') saved.repositoryRecovery.nextActions.actions[0].status = 'blocked'
+  if (kind === 'foreign-attempt') saved.repositoryRecovery.continuationOptions.attemptId = 'other'
+  const selection = kind === 'wrong-ref' ? { continuationRef: 'wrong' } : kind === 'bad-fields' ? { continuation: { mode: 'next', previousAttemptId: 'a', generation: 1, expectedWorkspace: {}, expectedBaseSha: f.facts.latestBaseSha } } : kind === 'bad-mode' ? { mode: 'latest' } : {}
+  await f.request.onResult(f.result({ action: 'start-next', ...selection }))
+  assert.equal(f.calls.length, 0)
+  assert.equal(f.task.chiefQuestion, undefined)
+  const run = f.rt.state.projectExecutions[f.request.runId]
+  assert.notEqual(run.status, 'done')
+  const expected = kind === 'roles-changed' ? /fresh role catalog/ : kind === 'rights-revoked' ? /Current role denied/ : kind === 'local-changed' ? /fresh Task facts/ : ['target-changed', 'workspace-changed'].includes(kind) ? /fresh facts after/ : kind === 'wrong-ref' ? /expectedScope/ : kind === 'bad-mode' ? /next only/ : kind.includes('target') ? /active implementation role/ : /continuation/
+  assert.match(run.failure, expected)
+})
+
+test('explicit target resolves multiple implementation roles, and explicit scope reference resolves multiple modes', async () => {
+  const f = await referenceFixture({ targetCount: 2, modes: ['next', 'latest'] })
+  await f.request.onResult(f.result({ action: 'start-next', targetBotId: 'p:developer1', continuationRef: f.facts.expectedScope }))
+  assert.equal(f.calls.length, 1, JSON.stringify(f.rt.state.projectExecutions)); assert.equal(f.calls[0].targetRole, 'developer1')
+})
+
+for (const targetBotId of [null, '', 'p:unknown', 'p:chief', 3]) test('explicit invalid next target remains a protocol error: ' + JSON.stringify(targetBotId), async () => {
+  const f = await referenceFixture()
+  await f.request.onResult(f.result({ action: 'start-next', targetBotId }))
+  assert.equal(f.calls.length, 0)
+  assert.match(f.rt.state.projectExecutions[f.request.runId].failure, /targetBotId/)
+})
+test('an incomplete explicit continuation is refused rather than silently filled from the snapshot', async () => {
+  const f = await referenceFixture()
+  await f.request.onResult(f.result({ action: 'start-next', continuation: { mode: 'next' } }))
+  assert.equal(f.calls.length, 0); assert.match(f.rt.state.projectExecutions[f.request.runId].failure, /exact current continuationOptions/)
+})
+for (const ref of [null, {}, '']) test('invalid reference type is not treated as omission: ' + JSON.stringify(ref), async () => {
+  const f = await referenceFixture()
+  await f.request.onResult(f.result({ action: 'start-next', continuationRef: ref }))
+  assert.equal(f.calls.length, 0); assert.match(f.rt.state.projectExecutions[f.request.runId].failure, /continuationRef/)
+})
+
+for (const [field, value] of [['mode', 'next'], ['continuationRef', 'scope']]) test('next-only reference field cannot be silently used on another action: ' + field, async () => {
+  const f = await referenceFixture()
+  await f.request.onResult(f.result({ action: 'continue', [field]: value }))
+  assert.equal(f.calls.length, 0)
+  assert.equal(f.rt.state.projectExecutions[f.request.runId].status, 'correction-pending')
+  assert.match(f.rt.state.projectExecutions[f.request.runId].failure, new RegExp(field))
 })

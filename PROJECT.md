@@ -143,6 +143,6 @@ Detailed dated implementation checkpoints are [preserved verbatim](docs/history/
 
 #2519: SDK Reviewer receives the complete hash-verified host log inline, without scratch access. Preserve exact candidate/current authority, artifact and execution-context budgets; persist only provenance metadata. Host output is data, never Review or CI approval.
 
-#2526: Chief may settle a merged Attempt under its pinned requirements after Task revisions; retain both versions and keep Task open. Re-read changes during judgement. Next delivery uses current requirements. Chief decides; Personal Agent help is the last resort.
+#2526/#2560: Settle pinned Attempt scope after Task revisions; Task stays open. Chief chooses current-goal next delivery with a validated snapshot reference. Evidence/identity/rights/exit remain gates; human help is Chief's last resort.
 
 #2526: same-scope repeated Chief action refusals reuse task-attention warnings and the configured no-progress threshold. Current exact failures reach Chief; changed delivery facts retire the old warning. Warnings never choose roles or escalate to Personal Agent automatically.

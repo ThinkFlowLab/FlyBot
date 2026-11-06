@@ -6584,6 +6584,102 @@
           "reauthenticationRequired"
         ]
       },
+      "ChiefContinuationBinding": {
+        "type": "object",
+        "properties": {
+          "targetBotId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Opaque server-issued ID; never infer authority from it."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "chief-snapshot",
+              "continuation-ref",
+              "explicit"
+            ]
+          },
+          "expectedScope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "continuation": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "continue",
+                  "latest",
+                  "next"
+                ]
+              },
+              "expectedBaseSha": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              "previousAttemptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Opaque server-issued ID; never infer authority from it."
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "expectedWorkspace": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "previousAttemptId",
+              "generation",
+              "expectedWorkspace"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "latest",
+                        "next"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "expectedBaseSha"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "targetBotId",
+          "source",
+          "expectedScope",
+          "continuation"
+        ]
+      },
       "DeliveryChoices": {
         "type": "object",
         "properties": {
@@ -12257,6 +12353,40 @@
                 },
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "appliedDecisions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "intent": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "continuationBinding": {
+                        "$ref": "#/components/schemas/ChiefContinuationBinding"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "taskId",
+                      "id",
+                      "intent"
+                    ]
+                  },
+                  "maxItems": 30
                 },
                 "lastResult": {
                   "type": "object",
@@ -18483,6 +18613,40 @@
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
                 },
+                "appliedDecisions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "intent": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "continuationBinding": {
+                        "$ref": "#/components/schemas/ChiefContinuationBinding"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "taskId",
+                      "id",
+                      "intent"
+                    ]
+                  },
+                  "maxItems": 30
+                },
                 "lastResult": {
                   "type": "object",
                   "properties": {
@@ -24169,6 +24333,40 @@
                     },
                     "recoveryIssue": {
                       "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                    },
+                    "appliedDecisions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "description": "Opaque server-issued ID; never infer authority from it."
+                          },
+                          "intent": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "continuationBinding": {
+                            "$ref": "#/components/schemas/ChiefContinuationBinding"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "taskId",
+                          "id",
+                          "intent"
+                        ]
+                      },
+                      "maxItems": 30
                     },
                     "lastResult": {
                       "type": "object",
@@ -32050,6 +32248,40 @@
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
                 },
+                "appliedDecisions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "intent": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "continuationBinding": {
+                        "$ref": "#/components/schemas/ChiefContinuationBinding"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "taskId",
+                      "id",
+                      "intent"
+                    ]
+                  },
+                  "maxItems": 30
+                },
                 "lastResult": {
                   "type": "object",
                   "properties": {
@@ -32482,6 +32714,40 @@
                 },
                 "recoveryIssue": {
                   "$ref": "#/components/schemas/ChiefRecoveryIssue"
+                },
+                "appliedDecisions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Opaque server-issued ID; never infer authority from it."
+                      },
+                      "intent": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      },
+                      "continuationBinding": {
+                        "$ref": "#/components/schemas/ChiefContinuationBinding"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "taskId",
+                      "id",
+                      "intent"
+                    ]
+                  },
+                  "maxItems": 30
                 },
                 "lastResult": {
                   "type": "object",
@@ -35865,10 +36131,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": false,
-      "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
+      "notes": "undefined Applied continuation decisions disclose the actually bound target/snapshot under appliedDecisions[].continuationBinding; it is audit data, not an authorization token. Chief start-next can reference its own ready snapshot instead of echoing machine fields. External task.run keeps its explicit continuation request contract.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1"
+        "sha256": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78"
       }
     },
     {
@@ -39070,7 +39336,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1"
+        "sha256": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78"
       }
     },
     {
@@ -39175,7 +39441,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1"
+        "sha256": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78"
       }
     },
     {
@@ -50055,7 +50321,7 @@
       "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1"
+        "sha256": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78"
       },
       "aliasOf": "development.command.chief.inspect"
     },
@@ -50158,7 +50424,7 @@
       "notes": "operationsContact selects an explicit assistance recipient, never host privileges; null clears it, omission retains it. autonomy budgets/guidance inform Chief judgement, not a fixed escalation workflow. Use existing schedule.configure targeting project-chief for hourly compensation; chief.state.compensation reports original nextCheckAt. 30-minute inspection is a configurable schedule default, not a framework deadline. correctionBudget defaults to 2 (0–4); protocol correction reuses the Chief Session. Exhaustion is incomplete judgement, never automatic consultation or default routing. inspection.lifecycle configures queue/execution deadlines, bounded recovery delay/count and health overdue threshold; timeout is not exit proof.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1"
+        "sha256": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78"
       },
       "aliasOf": "development.command.chief.configure"
     },
@@ -50231,10 +50497,10 @@
         "unifiedCommandReceipt": false
       },
       "invokesModel": false,
-      "notes": "All current authorization, Project/Task bindings and domain fences are rechecked server-side.",
+      "notes": "undefined Applied continuation decisions disclose the actually bound target/snapshot under appliedDecisions[].continuationBinding; it is audit data, not an authorization token. Chief start-next can reference its own ready snapshot instead of echoing machine fields. External task.run keeps its explicit continuation request contract.",
       "implementation": {
         "path": "core/src/host/project-chief-control.js",
-        "sha256": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1"
+        "sha256": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78"
       },
       "aliasOf": "development.query.chief.state"
     },
@@ -51115,9 +51381,9 @@
       "core/src/host/project-assistant.js": "4fa4309d4aa7abf78b6ba4e55ba754f320384f931e0e4a5c6620c859e1b50676",
       "core/src/host/project-board.js": "dfb0b4bc05ae42335632e3edbba883a03c5da2fb17899b23e8226320ea08aec4",
       "core/src/host/project-chief-assistance.js": "261f3767cf7fd4466f057c625b32e74b9c0a90c53c0fca3fcc835ac0f11c567b",
-      "core/src/host/project-chief-control.js": "7fdff3f88afff250f3c3588d587d2ea2b3c4db4267383101a462397d1fcbe8d1",
+      "core/src/host/project-chief-control.js": "ee797c7e85be6c48db958077b48d11511c5a52994e4c8a059abf69f515f8be78",
       "core/src/host/project-chief-lifecycle.js": "ed85bb1be90198910b20ffd605895812dfa848fce1049f7bd27b32dbfae3a328",
-      "core/src/host/project-chief-protocol.js": "75d97be3ff530e8cbd5bdf9c9a70b9c671cc7db9bd7ee2f926143a7d8f801ee9",
+      "core/src/host/project-chief-protocol.js": "8e0ad56f025e08dac5318ce48c17c39754f001d5aa40b0beddbee0d66c9a179f",
       "core/src/host/project-chief-recovery.js": "c80a9d791aab06d4b343e8740a25a471ddf93e0af52b59dd9b7e6fc835c0d824",
       "core/src/host/project-chief.js": "a3f01a053177fd8f10d4b778d79ac98c25aee70aa3c4d967dc7e1da2aea2cf6e",
       "core/src/host/project-child-inputs.js": "db1f534c4222dba1b500d308b1cd07f0df50a02eb228f520b150a3b79d6f126d",
@@ -51129,7 +51395,7 @@
       "core/src/host/project-context-memory.js": "933893b3d6b7b2c7a79365991c1303fb03a665d9529f16ccf57429a753ad4cd0",
       "core/src/host/project-credentials.js": "18fe61057fb920664fc5077d81eee0957f7eaf64821dd10d2d2a3cd463f5fdea",
       "core/src/host/project-delegations.js": "d4d86192551994a3419e0d2ca0f64bc4d50a75960970d2b79ed9f97b82940903",
-      "core/src/host/project-delivery-options.js": "591aff7f7a8f6b6938b0fcb02592444c5398d960be5f824cf80c31a76d4d38e4",
+      "core/src/host/project-delivery-options.js": "026d37e7d1a86b60667a702b6b02d4f79df060b4035942c45559c3fd716c73bb",
       "core/src/host/project-delivery-template.js": "f149d09786ac6db41a7ebeccb7620cce62b57f334d3ddd5e3c66ee673e5b66a8",
       "core/src/host/project-delivery.js": "17d976ca26336000ebed6dbf328aed4a016754b87be410a1c5aa8f5bf34ea500",
       "core/src/host/project-development-service.js": "8d3ee6533b55c52fd5989a49db1d575effac9622f92070c32b39aa25c3e89691",
