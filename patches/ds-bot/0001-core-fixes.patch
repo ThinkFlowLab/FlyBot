@@ -5663,6 +5663,16 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
  // Fixed sizes, in characters. Both MEMORY.md files ride in every request of every
  // part, so together they stay near 8,000 characters, a few thousand tokens. A topic is
+@@ -60,6 +60,9 @@ const REVIEW_USER_LINE_MAX = 3_000
+ const REVIEW_OTHER_LINE_MAX = 800
+ const REVIEW_CHANGES_MAX = 8
+ const REVIEW_PASSES_MAX = 4
++// Two failures at one cursor are enough: further turn ends ask no model for those
++// lines until a success, or lines that arrived since, start the review over (#P-601).
++const REVIEW_FAILURES_MAX = 2
+ // A change whose entry is gone; any other failure keeps the review's place.
+ const NO_MATCH = 'memory/no-match'
+ const GONE = 'memory/bot-gone'
 @@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
@@ -6128,7 +6138,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      })().catch((error) => {
        summaryFailures.set(bot.id, { hash, model, message: error?.message ?? String(error) })
        rt.warn('ds-bot: memory summary for %s failed: %s', bot.name, error)
-@@ -1004,14 +1004,15 @@ export function install(rt) {
+@@ -1004,23 +1004,26 @@ export function install(rt) {
      const prior = summaryFailures.get(bot.id)
      const failed = prior?.hash === hash && prior.model === bot.model ? prior : undefined
      const wanted = body.regenerate === true || (body.summarize === true && saved?.hash !== hash && failed === undefined)
@@ -6145,8 +6155,11 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +      blocked: blockedScopes([ownScope(bot.id), TEAM]),
        summarizing: summarizing.has(bot.id),
        error: failed !== undefined && !summarizing.has(bot.id) ? failed.message : null,
++      // The last memory review, so the panel can say it failed and why (#P-601).
++      lastReview: lastReview.get(bot.id) ?? null,
      }
-@@ -1020,7 +1020,7 @@ export function install(rt) {
+   }
+ 
    async function memoryAsk(body) {
      const bot = rt.botOf(String(body.botId ?? ''))
      if (bot === undefined) throw new Error('Unknown Bot')
@@ -6272,7 +6285,19 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      const live = owner.roomId === undefined ? undefined : rt.roomOf(owner.roomId)
      const kept = seen?.roomId === owner.roomId ? seen?.room : undefined
      const member = live?.members?.includes(bot.id) === true
-@@ -1248,7 +1248,7 @@ export function install(rt) {
+@@ -1244,19 +1244,29 @@ export function install(rt) {
+     const more = fresh.count < batch.fresh.length
+     let through = more ? read.at(-1).seq : batch.through
+     let again = more
++    // The line this review starts from, for the backoff below: the cursor, or the
++    // one a first review begins at, which its cursor is fixed to just under here.
++    const start = since ?? (read.length > 0 ? read[0].seq - 1 : batch.through)
++    const lastFailure = reviewFailures.get(key)
++    const paused = lastFailure !== undefined && lastFailure.start === start && lastFailure.through === batch.through ? lastFailure : undefined
++    // A review that failed twice at the same lines asks no more: the cursor stays
++    // put, so those lines are read again once something about them changes.
++    if (paused !== undefined && paused.count >= REVIEW_FAILURES_MAX) return
+     // A first review fixes where it starts before the model call, so a failure
      // leaves a cursor that the next review, or another member's, goes on from.
      if (since === undefined && read.length > 0) {
        cursorsNow()[key] = read[0].seq - 1
@@ -6280,8 +6305,11 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +      await saveCursors()
      }
      // Only the user's words are kept, so lines without any need no model call.
-     if (read.some(line => line.who === 'user')) {
-@@ -1256,7 +1256,7 @@ export function install(rt) {
+-    if (read.some(line => line.who === 'user')) {
++    const userLines = read.some(line => line.who === 'user')
++    if (userLines) attempts.set(sessionId, { key, botId: bot.id, start, through: batch.through, count: paused?.count ?? 0 })
++    if (userLines) {
+       const ownFiles = loadScope(ownScope(bot.id))
        const teamFiles = loadScope(TEAM)
        const said = read.filter(line => line.who === 'user').map(line => line.text).join('\n')
        const { numbered, left } = reviewEntries(ownFiles, teamFiles, REVIEW_MEMORY_MAX, said)
@@ -6317,7 +6345,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
        if (rt.botOf(bot.id) === undefined) return
        // An answer at the limit may have left some out, so the same lines are read
        // again, a few times at most, while each pass still changes something.
-@@ -1289,7 +1289,7 @@ export function install(rt) {
+@@ -1286,15 +1286,31 @@ export function install(rt) {
+         overflowed.delete(key)
+       }
+     }
++    if (userLines) {
++      attempts.delete(sessionId)
++      reviewFailures.delete(key)
++      lastReview.set(bot.id, { at: Date.now(), ok: true, reason: null })
++    }
      const now = cursorsNow()[key]
      if (through !== undefined && (now === undefined || through > now)) {
        cursorsNow()[key] = through
@@ -6326,6 +6362,22 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      }
      if (again) queueReview(sessionId, room === undefined ? owner : { botId: bot.id, roomId: room.id, room })
    }
+   /** @type {Map<string, {since: number | undefined, passes: number}>} */
+   const overflowed = new Map()
++  // Two failures at the same cursor, then no more model calls for those lines. The
++  // record holds where the review started and how far its lines reached, so a success
++  // or a new line starts it over.
++  /** @type {Map<string, {start: number, through: number | undefined, count: number}>} */
++  const reviewFailures = new Map()
++  // The review now running, per Session, so its failure can be counted and explained.
++  /** @type {Map<string, {key: string, botId: string, start: number, through: number | undefined, count: number}>} */
++  const attempts = new Map()
++  // What the panel shows of a Bot's last review, whichever Session it was for.
++  /** @type {Map<string, {at: number, ok: boolean, reason: string | null}>} */
++  const lastReview = new Map()
+ 
+   // A member that nobody addresses goes on without turns, so its own reviews stop;
+   // the others' turns bring it along before the log drops what it has not read. Its
 @@ -1304,7 +1304,11 @@ export function install(rt) {
        const sessionId = room.sessions?.[member]
        // A member never reviewed here is behind from the oldest line of the log.
@@ -6339,6 +6391,27 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      }
    }
  
+@@ -1329,6 +1329,20 @@ export function install(rt) {
+       try {
+         await reviewSession(sessionId, owner)
+       } catch (error) {
++        const attempt = attempts.get(sessionId)
++        attempts.delete(sessionId)
++        if (attempt !== undefined) {
++          const count = attempt.count + 1
++          const reason = error?.message ?? String(error)
++          reviewFailures.set(attempt.key, { start: attempt.start, through: attempt.through, count })
++          lastReview.set(attempt.botId, { at: Date.now(), ok: false, reason })
++          // The first failure keeps the warning below; the second is the one that stops
++          // the retries, and it is said once rather than on every turn.
++          if (count >= REVIEW_FAILURES_MAX) {
++            rt.warn('ds-bot: memory review of %s stops retrying the same lines after %d failures: %s', attempt.botId, count, reason)
++            return
++          }
++        }
+         rt.warn('ds-bot: memory review of %s failed: %s', sessionId, error?.message ?? error)
+       } finally {
+         reviewsRunning -= 1
 @@ -1378,8 +1378,44 @@ export function install(rt) {
      throw new Error(`Unknown endpoint ${endpoint}`)
    }
@@ -12384,11 +12457,97 @@ diff --git a/test/memory.test.js b/test/memory.test.js
  test('when a turn ends, the memory review keeps what the user said, through the same rules', async (t) => {
    const history = {
      b2: [
-@@ -652,18 +652,17 @@ test('an answer that is no list of changes keeps the review\'s place, and the ne
+@@ -652,28 +652,146 @@ test('an answer that is no list of changes keeps the review\'s place, and the ne
    assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
  })
  
 -test('an answer with a malformed change, an unlisted entry, an entry too long, or a bad topic changes nothing and keeps the review\'s place', async (t) => {
++// P-601: a review that failed at the same lines used to ask the model again on every
++// turn end, with nothing bounding the repeats — one session kept rereading the same
++// user lines. Two failures at one cursor back it off, and it says so once.
++test('a review that keeps failing at the same lines gives up after two tries and warns once', async (t) => {
++  const replies = Array.from({ length: 4 }, () => 'Nothing worth keeping here.')
++  const warned = []
++  const original = console.error
++  console.error = (...args) => { warned.push(args.join(' ')) }
++  t.after(() => { console.error = original })
++  const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
++  t.after(() => stop())
++  await call('state', {})
++  for (let tries = 0; tries < 4; tries += 1) {
++    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
++    await reviewed(call)
++  }
++  // Two attempts, then none: the third and fourth turn ends ask the model nothing.
++  assert.equal(requests.length, 2)
++  // The cursor stays where it was, so the user's lines are never passed unseen.
++  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 9 })
++  // One warning when the review gives up, one for the failure that led there, and
++  // nothing on the turns after it.
++  assert.equal(warned.filter(line => /memory review of .* failed/.test(line)).length, 1, warned.join('\n'))
++  assert.equal(warned.filter(line => /memory review of .* stops retrying/.test(line)).length, 1, warned.join('\n'))
++  // The panel can say the last review failed, and why.
++  const view = (await call('memory-view', { botId: 'b2' })).value
++  assert.equal(view.lastReview.ok, false)
++  assert.equal(typeof view.lastReview.at, 'number')
++  assert.match(view.lastReview.reason, /not a list of changes/)
++})
++
++// The backoff is not a latch: a success clears it, so a later failure still gets its
++// tries. Without the reset, the second failure after a success would park the review.
++test('a success clears the backoff, so a later failure still gets its two tries', async (t) => {
++  const history = { b2: [...ownChat] }
++  const replies = [
++    'Nothing worth keeping here.',
++    JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }] }),
++    'Nothing worth keeping here.',
++    JSON.stringify({ changes: [{ op: 'add', text: 'The user lives in Hangzhou' }] }),
++  ]
++  const { ctx, call, read, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
++  t.after(() => stop())
++  await call('state', {})
++  const idle = async () => {
++    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
++    await reviewed(call)
++  }
++  await idle()
++  await idle()
++  assert.equal(requests.length, 2)
++  assert.match(read('bots', 'b2', 'MEMORY.md'), /- The user likes tea /)
++  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
++  // The user writes again: one failure at the new cursor, and the retry still runs.
++  history.b2.push({ event: { seq: 12, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And I live in Hangzhou' }] } } })
++  await idle()
++  await idle()
++  assert.equal(requests.length, 4, 'the failure after the success was tried again')
++  assert.match(read('bots', 'b2', 'MEMORY.md'), /- The user lives in Hangzhou /)
++  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 12 })
++  const view = (await call('memory-view', { botId: 'b2' })).value
++  assert.equal(view.lastReview.ok, true)
++  assert.equal(view.lastReview.reason, null)
++})
++
++// A new turn from the user is a reason to try again: those lines were never read, so
++// the backoff starts over instead of blocking the Session for good.
++test('a new user turn clears the backoff, so those lines are read again', async (t) => {
++  const history = { b2: [...ownChat] }
++  const replies = ['Nothing worth keeping here.', 'Nothing worth keeping here.', 'Nothing worth keeping here.']
++  const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
++  t.after(() => stop())
++  await call('state', {})
++  const idle = async () => {
++    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
++    await reviewed(call)
++  }
++  await idle()
++  await idle()
++  assert.equal(requests.length, 2)
++  history.b2.push({ event: { seq: 12, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And keep this too' }] } } })
++  await idle()
++  assert.equal(requests.length, 3, 'a new user line is read even though the older attempt was backed off')
++  assert.match(requests[2].messages[0].content[0].text, /And keep this too/)
++})
++
 +test('an answer with a malformed change, an unlisted entry, or a bad topic changes nothing and keeps the review\'s place', async (t) => {
    const replies = [
      JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add' }] }),
@@ -12397,24 +12556,31 @@ diff --git a/test/memory.test.js b/test/memory.test.js
      JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'The user writes C++', topic: 'C++' }] }),
      JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'I use hunter2 as my password' }] }),
    ]
-   const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
+-  const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
++  const history = { b2: [...ownChat] }
++  const { ctx, call, read, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
    t.after(() => stop())
    await call('state', {})
 -  for (let tries = 0; tries < 4; tries += 1) {
++  // Each bad answer is its own review: two failures at one cursor now back off
++  // (#P-601), so a new user line starts the next one.
 +  for (let tries = 0; tries < 3; tries += 1) {
++    if (tries > 0) history.b2.push({ event: { seq: 10 + tries, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: `Again ${tries}` }] } } })
      ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
      await reviewed(call)
      assert.throws(() => read('bots', 'b2', 'MEMORY.md'), { code: 'ENOENT' })
-@@ -672,11 +672,39 @@ test('an answer with a malformed change, an unlisted entry, an entry too long, o
+     assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 9 })
+   }
++  history.b2.push({ event: { seq: 13, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And I use hunter2 as my password' }] } } })
    ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
    await reviewed(call)
    // A password is only left out: the rest is written and the place moves on.
 -  assert.equal(requests.length, 5)
 +  assert.equal(requests.length, 4)
    assert.deepEqual(parseMemory(read('bots', 'b2', 'MEMORY.md')).entries.map(entry => entry.text), ['The user likes tea'])
-   assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
- })
- 
++  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 13 })
++})
++
 +test('an entry memory cannot keep is left out, the rest of the answer lands, and the review moves on', async (t) => {
 +  const tooLong = `The user tells ${'a long story '.repeat(25)}and more`
 +  assert.equal(tooLong.length, 348)
@@ -12440,12 +12606,9 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
 +  await reviewed(call)
 +  assert.equal(requests.length, 1)
-+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
-+})
-+
- test('a backlog past the text limit is reviewed in passes, oldest first', async (t) => {
-   const home = mkdtempSync(join(tmpdir(), 'ds-bot-memory-'))
-   mkdirSync(join(home, 'memory'), { recursive: true })
+   assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
+ })
+ 
 @@ -994,7 +994,7 @@ test('a turn whose Session moves to a fresh part before its review is still revi
  test('config.memoryReview false leaves memory to the Bots\' own remember calls', async (t) => {
    const { ctx, call, section, requests, stop } = start({ config: { memoryReview: false, memoryReviewDelayMs: 0 } })
