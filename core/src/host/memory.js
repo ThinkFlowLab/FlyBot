@@ -1279,10 +1279,11 @@ export function install(rt) {
 
   // A long message often ends with what the user wants of it, so both ends stay.
   const ends = (text, max) => {
-    if (fits(text, max)) return text
-    // Flattened first, as `cut` did: text that arrives with an unpaired surrogate is stored
-    // as U+FFFD rather than half a character.
+    // Flattened on both paths, as `cut` did: text that arrives with an unpaired surrogate is
+    // stored as U+FFFD rather than half a character. A line that fits is the likelier carrier —
+    // it is the one this branch used to answer untouched.
     const flat = text.toWellFormed()
+    if (fits(flat, max)) return flat
     const tailChars = Math.floor(max / 3)
     const tail = flat.slice(charIndex(flat, codePoints(flat) - tailChars))
     const head = flat.slice(0, charIndex(flat, max - tailChars))
@@ -1293,7 +1294,7 @@ export function install(rt) {
   // the review keeps; the rest is there to make it understood.
   const reviewLine = (who, text, bot) => (who === 'user'
     ? ends(text, REVIEW_USER_LINE_MAX)
-    : clip(who === 'you' ? `${bot.name}: ${text.replace(/^You: /, '')}` : text, REVIEW_OTHER_LINE_MAX))
+    : clip((who === 'you' ? `${bot.name}: ${text.replace(/^You: /, '')}` : text).toWellFormed(), REVIEW_OTHER_LINE_MAX))
 
   // What is new in a Bot's own chat, read newest first from the Session.
   async function chatBatch(sessionId, bot, since) {

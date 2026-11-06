@@ -6155,7 +6155,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      if (text === '') throw new Error('Type a question or a change first')
      const numbered = [
        ...allEntries(loadScope(ownScope(bot.id))).map(entry => ({ ...entry, scope: 'own' })),
-@@ -1074,18 +1074,40 @@ export function install(rt) {
+@@ -1074,24 +1074,47 @@ export function install(rt) {
    let cursors
    const cursorsNow = () => {
      if (cursors === undefined) {
@@ -6191,10 +6191,11 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    // A long message often ends with what the user wants of it, so both ends stay.
 -  const ends = (text, max) => (text.length > max ? `${text.slice(0, Math.ceil(max * 2 / 3))} …(middle cut)… ${text.slice(-Math.floor(max / 3))}` : text)
 +  const ends = (text, max) => {
-+    if (fits(text, max)) return text
-+    // Flattened first, as `cut` did: text that arrives with an unpaired surrogate is stored
-+    // as U+FFFD rather than half a character.
++    // Flattened on both paths, as `cut` did: text that arrives with an unpaired surrogate is
++    // stored as U+FFFD rather than half a character. A line that fits is the likelier carrier —
++    // it is the one this branch used to answer untouched.
 +    const flat = text.toWellFormed()
++    if (fits(flat, max)) return flat
 +    const tailChars = Math.floor(max / 3)
 +    const tail = flat.slice(charIndex(flat, codePoints(flat) - tailChars))
 +    const head = flat.slice(0, charIndex(flat, max - tailChars))
@@ -6203,6 +6204,13 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  
    // Lines say who spoke. The user's lines are kept longest: what they say is what
    // the review keeps; the rest is there to make it understood.
+   const reviewLine = (who, text, bot) => (who === 'user'
+     ? ends(text, REVIEW_USER_LINE_MAX)
+-    : clip(who === 'you' ? `${bot.name}: ${text.replace(/^You: /, '')}` : text, REVIEW_OTHER_LINE_MAX))
++    : clip((who === 'you' ? `${bot.name}: ${text.replace(/^You: /, '')}` : text).toWellFormed(), REVIEW_OTHER_LINE_MAX))
+ 
+   // What is new in a Bot's own chat, read newest first from the Session.
+   async function chatBatch(sessionId, bot, since) {
 @@ -1123,17 +1123,28 @@ export function install(rt) {
  
    // What is new in a group, from its log: the member's Session holds the same
@@ -12187,7 +12195,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
    const done = (await call('memory-view', { botId: 'b2' })).value
    assert.deepEqual([done.summary?.text, done.error], ['## Overview\nYou like tea.', null])
    assert.deepEqual(routes(requests).slice(2), ['deepseek/flash@2048'])
-@@ -519,12 +519,110 @@ test('a host that only reads the team shows memory but changes none of it', asyn
+@@ -519,12 +519,157 @@ test('a host that only reads the team shows memory but changes none of it', asyn
  // Until no review waits or runs.
  async function reviewed(call) {
    for (let tries = 0; tries < 200; tries += 1) {
@@ -12271,11 +12279,12 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +    assert.deepEqual(Buffer.from(keptTail, 'utf8'), Buffer.from(text.slice(-keptTail.length), 'utf8'))
 +  }
 +  // The two ends spend the budget in characters too, not in UTF-16 units: 3,500 emoji are 7,000
-+  // units, so unit arithmetic kept 1,516 characters of the 3,000-character budget, a
-+  // 1,000-character head and a 500-character tail. The whole line is `MAX` characters plus the
-+  // marker, the head is the rendered line's first 2,000 characters (the `User: ` label included)
-+  // and the tail its last 1,000. ASCII of the same length is the control: it spent the budget
-+  // correctly before the change too.
++  // units, so unit arithmetic kept 1,503 characters of the 3,000-character budget — a
++  // 1,003-character head (`User: ` included, the rendered line's first 2,000 units) and a
++  // 500-character tail. After the fix the whole line is `MAX` characters plus the marker, the
++  // head is the rendered line's first 2,000 characters (the `User: ` label included) and the
++  // tail its last 1,000. ASCII of the same length is the control: it spent the budget correctly
++  // before the change too.
 +  for (const [text, sample] of [['🚀'.repeat(3500), 'User: 🚀'], ['a'.repeat(3500), 'User: a']]) {
 +    const prompt = await render(text)
 +    const line = prompt.split('\n').find(one => one.startsWith(sample))
@@ -12294,6 +12303,52 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +    assert.equal(head.slice('User: '.length).join(''), message.slice(0, head.length - 'User: '.length).join(''))
 +    assert.equal(tail.join(''), message.slice(-tail.length).join(''))
 +  }
++})
++
++// A line can arrive carrying an unpaired surrogate: a stream that ended mid-character, a fixture
++// written by hand. The review's render path handed it straight through — the `fits()` branch of
++// `ends` answered the line itself, and `clip` only ever flattened what it cut. Both ends flatten
++// first now, so the prompt holds U+FFFD where the half pair was, never the half pair itself.
++test('an unpaired surrogate in a reviewed line reaches the prompt as one whole character', async (t) => {
++  const userText = `${'x'.repeat(100)}\ud800${'y'.repeat(100)}`
++  const botText = `${'z'.repeat(80)}\ud800${'w'.repeat(80)}`
++  const history = {
++    b2: [
++      { event: { seq: 20, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Start here.' }] } } },
++      { event: { seq: 21, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: botText }] } } } },
++      { event: { seq: 22, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: userText }] } } },
++    ],
++  }
++  const replies = [JSON.stringify({ changes: [] })]
++  const { ctx, call, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
++  t.after(() => stop())
++  await call('state', {})
++  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
++  await reviewed(call)
++  const prompt = requests[0].messages[0].content[0].text
++  const replacements = (text) => [...text].filter(ch => ch === '\ufffd').length
++
++  // The user's line is 201 characters — 207 rendered — so it takes the fits branch of `ends`
++  // instead of its cut, and that branch used to answer the line untouched.
++  const userLine = prompt.split('\n').find(one => one.startsWith('User: x'))
++  assert.ok(userLine !== undefined, `the user line is in the review context:\n${prompt}`)
++  assert.equal(userLine.isWellFormed(), true)
++  assert.equal(replacements(userLine), 1)
++  assert.equal(userLine.indexOf('\ufffd'), 'User: '.length + 100)
++  assert.equal(userLine.slice('User: '.length, 'User: '.length + 100), 'x'.repeat(100))
++  assert.equal(userLine.slice('User: '.length + 101, 'User: '.length + 201), 'y'.repeat(100))
++
++  // The Bot's line is 160 characters under the 800 limit and carries its label, so it takes the
++  // other branch of `reviewLine`, which handed it to `clip` without flattening it first.
++  const botLine = prompt.split('\n').find(one => one.startsWith('Writer: z'))
++  assert.ok(botLine !== undefined, `the Bot line is in the review context:\n${prompt}`)
++  const label = botLine.slice(0, botLine.indexOf('z'))
++  assert.equal(botLine.isWellFormed(), true)
++  assert.equal(replacements(botLine), 1)
++  assert.equal(botLine.indexOf('\ufffd'), label.length + 80)
++  assert.equal(botLine.slice(label.length, label.length + 80), 'z'.repeat(80))
++  assert.equal(botLine.slice(label.length + 81, label.length + 161), 'w'.repeat(80))
++  assert.equal(prompt.isWellFormed(), true, 'the prompt holds no half pair')
 +})
 +
  test('when a turn ends, the memory review keeps what the user said, through the same rules', async (t) => {
