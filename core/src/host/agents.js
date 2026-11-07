@@ -185,12 +185,27 @@ export function install(rt) {
       }
     }
     // What could not be archived stays with the Agent, so it keeps its tool
-    // restriction and the removal can be retried from the same place.
+    // restriction and the removal can be retried from the same place. The record is
+    // read again inside the change: a Session added while an archive was awaited is
+    // not in the snapshot and has to survive.
     if (kept.length > 0) {
-      await rt.mutate(() => { record(agentId).sessions = kept })
+      const archived = new Set(sessions.filter(id => !kept.includes(id)))
+      await rt.mutate(() => {
+        const agent = record(agentId)
+        agent.sessions = agent.sessions.filter(id => !archived.has(id))
+      })
       throw failure
     }
-    await rt.mutate(() => { delete state.agents[agentId] })
+    let late = []
+    await rt.mutate(() => {
+      const agent = record(agentId)
+      late = agent.sessions.filter(id => !sessions.includes(id))
+      agent.sessions = late
+      if (late.length === 0) delete state.agents[agentId]
+    })
+    // The change landed first, so the Agent keeps the Session that arrived during the
+    // removal and the retry archives it; removing it outright would orphan that Session.
+    if (late.length > 0) throw new Error('a Session was added while the Agent was being removed, so the Agent stays; remove it again')
   }
 
   Object.assign(rt, { agentOf, addAgent, createAgentSession, adoptAgentSession, archiveAgentSession, renameAgentSession, removeAgent })

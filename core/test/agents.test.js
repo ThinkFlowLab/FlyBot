@@ -9,6 +9,12 @@ import { fakeContext } from './fake-ctx.js'
 
 const flush = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve() }
 
+const deferred = () => {
+  let resolve
+  const promise = new Promise((settle) => { resolve = settle })
+  return { promise, resolve }
+}
+
 // Enough of the dsh services for the roster and the agents module; tool restrict
 // calls and archived Sessions are recorded for the assertions.
 function start(team, { config = {} } = {}) {
@@ -19,6 +25,17 @@ function start(team, { config = {} } = {}) {
   const created = []
   const archived = []
   const failArchive = { on: false }
+  // One archive can be made to wait, so a test can add a Session while a removal
+  // sits between two archives; every other archive settles at once.
+  const gate = { failOn: undefined, holdOn: undefined, started: undefined, waiting: undefined }
+  const hold = (sessionId) => {
+    const started = deferred()
+    const waiting = deferred()
+    gate.holdOn = sessionId
+    gate.started = started
+    gate.waiting = waiting
+    return { started: started.promise, release: () => waiting.resolve() }
+  }
   const restricted = []
   const renamed = []
   let sessions = 0
@@ -33,7 +50,15 @@ function start(team, { config = {} } = {}) {
         return workspace
       },
       archiveSession: async (sessionId) => {
-        if (failArchive.on) throw new Error('session is running')
+        if (failArchive.on || gate.failOn === sessionId) throw new Error('session is running')
+        if (gate.holdOn === sessionId) {
+          const { started, waiting } = gate
+          gate.holdOn = undefined
+          gate.started = undefined
+          gate.waiting = undefined
+          started.resolve()
+          await waiting.promise
+        }
         archived.push(sessionId)
       },
     },
@@ -74,7 +99,7 @@ function start(team, { config = {} } = {}) {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { call, stop, home, created, archived, failArchive, restricted, renamed, createdAgents, ctx }
+  return { call, stop, home, created, archived, failArchive, gate, hold, restricted, renamed, createdAgents, ctx }
 }
 
 const TEAM = {
@@ -193,6 +218,55 @@ test('remove-agent archives every Session and drops the record', async (t) => {
   assert.equal((await call('remove-agent', { agentId: agent.id })).ok, true)
   assert.deepEqual((await call('state', {})).value.agents, [])
   assert.deepEqual([...archived].sort(), [agent.sessions[0], second.sessionId].sort())
+})
+
+test('remove-agent drops only the Sessions it archived and keeps one added while it waited', async (t) => {
+  const { call, stop, archived, gate, hold } = start(TEAM)
+  t.after(stop)
+  await call('state', {})
+  const agent = (await call('add-agent')).value
+  const first = agent.sessions[0]
+  const second = (await call('agent-session', { agentId: agent.id })).value
+  // s2 refuses to archive, so the removal keeps it; s1's archive is still in flight
+  // when a second window adds s3 to the same Agent.
+  gate.failOn = second.sessionId
+  const waiting = hold(first)
+  const removing = call('remove-agent', { agentId: agent.id })
+  await waiting.started
+  const third = (await call('agent-session', { agentId: agent.id })).value
+  assert.deepEqual((await call('state', {})).value.agents[0].sessions, [first, second.sessionId, third.sessionId])
+  waiting.release()
+  const result = await removing
+  assert.equal(result.ok, false)
+  assert.equal(result.error.message, 'session is running')
+  // The archived Session goes; the kept one and the one added meanwhile stay.
+  assert.deepEqual((await call('state', {})).value.agents[0].sessions, [second.sessionId, third.sessionId])
+  assert.deepEqual(archived, [first])
+})
+
+test('remove-agent keeps the Agent and answers the retry error when a Session joins during the removal', async (t) => {
+  const { call, stop, archived, hold } = start(TEAM)
+  t.after(stop)
+  await call('state', {})
+  const agent = (await call('add-agent')).value
+  const first = agent.sessions[0]
+  const second = (await call('agent-session', { agentId: agent.id })).value
+  // Every archive succeeds, but the last one is still in flight when s3 is added.
+  const waiting = hold(second.sessionId)
+  const removing = call('remove-agent', { agentId: agent.id })
+  await waiting.started
+  const third = (await call('agent-session', { agentId: agent.id })).value
+  waiting.release()
+  const result = await removing
+  assert.equal(result.ok, false)
+  assert.equal(result.error.message, 'a Session was added while the Agent was being removed, so the Agent stays; remove it again')
+  // The Agent stays with the Session the removal never saw, so nothing is orphaned
+  // and the retry archives it.
+  assert.deepEqual((await call('state', {})).value.agents.map(entry => entry.sessions), [[third.sessionId]])
+  assert.deepEqual(archived, [first, second.sessionId])
+  assert.equal((await call('remove-agent', { agentId: agent.id })).ok, true)
+  assert.deepEqual((await call('state', {})).value.agents, [])
+  assert.deepEqual(archived, [first, second.sessionId, third.sessionId])
 })
 
 test('agents survive a state reload', async (t) => {
