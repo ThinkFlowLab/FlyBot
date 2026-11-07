@@ -65,6 +65,9 @@ export function spansFrom(records, { names = {} } = {}) {
   for (const [id, te] of ends) {
     const ts = starts.get(id)
     if (!ts) continue
+    // An old or hand-edited record can lack a time (src/store.js keeps it, src/window.js skips it):
+    // build no span for a turn whose clock cannot be read, rather than failing the whole export.
+    if (!Number.isFinite(ts.t) || !Number.isFinite(te.t)) continue
     const attrs = [
       { key: 'gen_ai.operation.name', value: str('invoke_agent') },
       { key: 'gen_ai.system', value: str('flybot') },
@@ -90,6 +93,7 @@ export function spansFrom(records, { names = {} } = {}) {
   for (const [key, ke] of toolEnds) {
     const ks = toolStarts.get(key)
     if (!ks) continue
+    if (!Number.isFinite(ks.t) || !Number.isFinite(ke.t)) continue
     spans.push({
       traceId: hexId(`turn:${ks.tid}`, 16),
       spanId: hexId(`tool-span:${key}`, 8),
