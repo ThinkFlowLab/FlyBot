@@ -76,14 +76,14 @@ test('a directory at the credentials file is refused, and stays a directory', (t
   assert.deepEqual(readdirSync(path), [], 'and nothing lands inside it')
 })
 
-test('a missing credentials file is created, mode 600, and a plain one is rewritten in place', (t) => {
+test('a missing credentials file is created, mode 600, and a plain one is replaced', (t) => {
   const home = homeOf(t)
   const path = join(home, 'bot', 'flybot-social.json')
   writeCredentials(path, { token: 'first' })
   assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { token: 'first' }, 'a missing leaf is ours to create')
   if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o777, 0o600)
   writeCredentials(path, { token: 'second' })
-  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { token: 'second' }, 'a plain leaf is written in place')
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { token: 'second' }, 'a plain leaf is replaced')
   if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o777, 0o600, 'the rewrite keeps mode 600')
 })
 
@@ -154,7 +154,7 @@ test('a linked credentials path is refused before onboarding: no server call, an
       expected = ['flybot-social.json']
     } else {
       const outside = join(home, 'notes.txt')
-      writeFileSync(outside, 'not a credentials file')
+      writeFileSync(outside, CREDENTIALS)
       symlinkSync(outside, path)
       expected = ['flybot-social.json', 'notes.txt']
     }
@@ -224,26 +224,26 @@ test('a free .bak name still onboards once, and the old credentials are kept und
   assert.match(String(failure?.message ?? 'no failure: the start went on'), /plugin scope is not built in this test/, 'the start gets past the write')
 })
 
-test('an absent or plain credentials path still onboards exactly once and writes the file', async (t) => {
-  for (const shape of ['absent', 'plain']) {
-    const home = homeOf(t)
-    const path = join(home, 'flybot-social.json')
-    if (shape === 'plain') writeFileSync(path, 'not a credentials file')
-    quiet(t)
-    const asked = []
-    const onboarded = async (url) => {
-      asked.push(String(url))
-      return new Response(JSON.stringify({ connector: { token: 'new-token' }, home: { bot_id: 'h9', handle: '@me.home' }, owner_id: 'owner-9' }), { status: 200, headers: { 'content-type': 'application/json' } })
-    }
-    // The layer below `startSocial` is not built here: the write happens before it, so this stub
-    // stops the start there and leaves the two facts under test intact.
-    const service = { scope() { throw new Error('the plugin scope is not built in this test') } }
-    const { failure } = await settle(() => startSocial(service, { server: 'https://social.test', credentialsPath: path, onboard: true, fetch: onboarded }))
-    assert.equal(asked.length, 1, `${shape}: exactly one home is asked for`)
-    assert.match(String(failure?.message ?? 'no failure: the start went on'), /plugin scope is not built in this test/, `${shape}: the start gets past the write`)
-    assert.equal(JSON.parse(readFileSync(path, 'utf8')).token, 'new-token', `${shape}: the token that was just minted is kept`)
-    assert.equal(lstatSync(path).isFile() && lstatSync(path).isSymbolicLink() === false, true, `${shape}: the credentials file is a plain file of its own`)
+// A file that exists but does not parse is no longer "not configured" (#2631): it refuses the start
+// instead of onboarding over it, and `credentials-atomic.test.js` covers that side. A missing file is
+// still a first start, which this test pins down.
+test('an absent credentials path still onboards exactly once and writes the file', async (t) => {
+  const home = homeOf(t)
+  const path = join(home, 'flybot-social.json')
+  quiet(t)
+  const asked = []
+  const onboarded = async (url) => {
+    asked.push(String(url))
+    return new Response(JSON.stringify({ connector: { token: 'new-token' }, home: { bot_id: 'h9', handle: '@me.home' }, owner_id: 'owner-9' }), { status: 200, headers: { 'content-type': 'application/json' } })
   }
+  // The layer below `startSocial` is not built here: the write happens before it, so this stub
+  // stops the start there and leaves the two facts under test intact.
+  const service = { scope() { throw new Error('the plugin scope is not built in this test') } }
+  const { failure } = await settle(() => startSocial(service, { server: 'https://social.test', credentialsPath: path, onboard: true, fetch: onboarded }))
+  assert.equal(asked.length, 1, 'exactly one home is asked for')
+  assert.match(String(failure?.message ?? 'no failure: the start went on'), /plugin scope is not built in this test/, 'the start gets past the write')
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).token, 'new-token', 'the token that was just minted is kept')
+  assert.equal(lstatSync(path).isFile() && lstatSync(path).isSymbolicLink() === false, true, 'the credentials file is a plain file of its own')
 })
 
 test('the settings file goes through the same leaf check, and the credentials beside it stay readable', (t) => {
