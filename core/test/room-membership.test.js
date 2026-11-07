@@ -11,6 +11,7 @@ import { install as installAuthz } from '../src/host/authz.js'
 import { install as installReach } from '../src/host/reach.js'
 import { install as installRooms, currentParticipants, isCrossOwnerRoom, linesVisibleTo, roomVisibleTo } from '../src/host/room-membership.js'
 import { compactStatus, fitRoomLines, prepareRoomLine } from '../src/host/room-context.js'
+import { encodeRoomShare } from '../src/shared/room-share.js'
 // Room membership (#50): humans and Chiefs share a room with distinct authorship.
 // Team mode stays disabled — these tests cover the membership surface only.
 
@@ -511,4 +512,110 @@ test('P-305: the stored status stub survives the store round trip well formed', 
   assert.match(stored, /^\[status on the board, \d+ chars\] a{99}…$/, 'the pair on the bound is dropped whole, never stored in half')
   const turn = fitRoomLines(reloaded.rt.state.rooms.shared.log, { render: item => `${item.who}: ${item.text}`, prepare: prepareRoomLine })
   assert.equal(turn.text.isWellFormed(), true, `the turn built from the reloaded log is not well formed: ${JSON.stringify(turn.text.slice(0, 160))}`)
+})
+
+// #2612: a guest numbers its own mirrored log from 1, so the chat line numbers on the wire belong to the
+// host's counter and are not a membership floor here. The join used to copy `data.seq` into
+// `sharedFrom.joinedSeq`, which hid the very history the join carried.
+// A mirrored line is stored fenced as stranger text, so visibility is asked by substring.
+const visible = (lines, text) => lines.filter(line => typeof line.text === 'string' && line.text.includes(text)).length
+
+test('#2612: a joined Bot sees the history the share carried, not the host seq as its floor', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  // A room at the host's seq 202 whose join carries only its last two lines, the way `shareHistory`
+  // trims it: the counter and the count of lines on the wire have nothing to do with each other.
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq: 202,
+    history: [
+      { who: 'Alice', text: 'the plan is ready', seq: 201, authorKind: 'human' },
+      { who: 'Alice', text: 'Friday works', seq: 202, authorKind: 'human' },
+    ],
+  })
+  const first = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(first.handled, true)
+  assert.equal(first.room.seq, 2, 'the guest keeps its own line numbers, one per mirrored line')
+  const shown = rt.roomHistory(first.room.id, actorB)
+  assert.equal(shown.filter(line => line.text).length, 2, `the join's two lines are the whole history: ${JSON.stringify(shown.map(line => line.text))}`)
+  assert.equal(visible(shown, 'the plan is ready'), 1, `the first carried line is visible: ${JSON.stringify(shown.map(line => line.text))}`)
+  assert.equal(visible(shown, 'Friday works'), 1, `the last carried line is visible: ${JSON.stringify(shown.map(line => line.text))}`)
+})
+
+// #2612: the same floor used to swallow every line that arrived after the join, because the guest's next
+// local seq (3) is far below the host's counter (202). The room stayed empty until 202 messages arrived.
+test('#2612: a line that arrives after the join is visible in the joined Bot every time', async (t) => {
+  const { rt } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const join = encodeRoomShare({
+    op: 'join', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq: 202,
+    history: [
+      { who: 'Alice', text: 'the plan is ready', seq: 201, authorKind: 'human' },
+      { who: 'Alice', text: 'Friday works', seq: 202, authorKind: 'human' },
+    ],
+  })
+  const first = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: join, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(first.handled, true)
+  const line = encodeRoomShare({
+    op: 'line', roomId: 'alice-war', name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq: 203, who: 'Alice', authorKind: 'human', authorId: 'alice', text: 'a new line after the join',
+  })
+  const posted = await rt.applyInboundRoomShare({
+    fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: line, localBotId: 'spec-b',
+  }, actorB)
+  assert.equal(posted.handled, true)
+  assert.equal(posted.room.seq, 3, 'the guest numbers the new line itself')
+  const shown = rt.roomHistory(first.room.id, actorB)
+  assert.equal(visible(shown, 'a new line after the join'), 1, `the new line is visible: ${JSON.stringify(shown.map(entry => entry.text))}`)
+})
+
+// #2612: the floor came from the peer's envelope verbatim, so `"abc"`, `{}` or `[1,2]` was written to
+// `state.json` and compared against every line forever. The guest's own log holds numbers; the wire value
+// must not reach the store.
+test('#2612: a junk wire seq never lands in state.json and never empties the room', async (t) => {
+  const { rt, statePath } = host(t, TEAM)
+  await rt.load()
+  const { bob } = await signAliceAndBob(rt)
+  const actorB = await rt.authenticate(bob.sessionToken)
+  const rawJoin = (roomId, seq) => `FLYBOT-ROOM-SHARE\n${JSON.stringify({
+    v: 1, op: 'join', roomId, name: 'War room', inviterName: 'Alice',
+    inviterHome: '@alice.home', inviterHandle: '@chief.alice.home', invitedHandle: '@coder.bob.home',
+    seq,
+    history: [{ who: 'Alice', text: 'before the junk', seq: 1 }, { who: 'Alice', text: 'still here', seq: 2 }],
+  })}`
+  const floors = (node, out = []) => {
+    if (Array.isArray(node)) node.forEach(item => floors(item, out))
+    else if (node && typeof node === 'object') {
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'joinedSeq') out.push(value)
+        else floors(value, out)
+      }
+    }
+    return out
+  }
+  for (const [index, junk] of ['abc', {}, [1, 2]].entries()) {
+    const roomId = `alice-junk-${index}`
+    const out = await rt.applyInboundRoomShare({
+      fromHandle: '@chief.alice.home', fromHome: '@alice.home', fromName: 'Chief', text: rawJoin(roomId, junk), localBotId: 'spec-b',
+    }, actorB)
+    assert.equal(out.handled, true, `the junk join ${JSON.stringify(junk)} was accepted`)
+    const shown = rt.roomHistory(out.room.id, actorB)
+    assert.equal(visible(shown, 'still here'), 1, `the room is not empty for ${JSON.stringify(junk)}: ${JSON.stringify(shown.map(line => line.text))}`)
+    await rt.save()
+    const stored = JSON.parse(readFileSync(statePath, 'utf8'))
+    assert.equal(stored.rooms[out.room.id].sharedFrom.joinedSeq, 0, `the wire value ${JSON.stringify(junk)} is not the guest's floor`)
+    assert.deepEqual(floors(stored).filter(value => typeof value !== 'number'), [], `every stored member floor is a local number, saw ${JSON.stringify(floors(stored))}`)
+  }
 })
