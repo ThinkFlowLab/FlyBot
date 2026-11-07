@@ -325,7 +325,7 @@ export const FACE_HUMAN_MARK = 'FLYBOT-FACE-HUMAN'
 
 export function encodeFaceHuman(payload = {}) {
   const who = cleanFaceName(payload.who, 'Someone')
-  const text = String(payload.text ?? '').slice(0, 18_000)
+  const text = cutCodePoints(String(payload.text ?? ''), 18_000)
   return `${FACE_HUMAN_MARK}\n${JSON.stringify({ v: 1, who, text })}`
 }
 

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cleanFaceName, cleanFaceRole, mapFaceError, mapRegisterError, viewFaceEvent } from '../src/face-rooms.js'
+import {
+  cleanFaceName,
+  cleanFaceRole,
+  encodeFaceHuman,
+  mapFaceError,
+  mapRegisterError,
+  parseFaceHuman,
+  viewFaceEvent,
+} from '../src/face-rooms.js'
 
 // Peer-supplied face-room text is capped (#2438). A cap that lands between the halves of a surrogate
 // pair stores a lone high surrogate, which every encoder reads as U+FFFD, so each cut must land
@@ -57,4 +65,32 @@ test('an unmapped join error message lands on a code point boundary, not inside 
   const error = mapFaceError({ error: { code: 'odd_room_failure', message: `${'a'.repeat(199)}${ROCKET}rest` } }, 400)
   const stored = shapes(error.message)
   assert.equal(stored, `${'a'.repeat(199)}${ROCKET}`)
+})
+
+// The person's own face-room line is 18 000 code points, not 18 000 UTF-16 units (#2641): an
+// emoji straddling that bound was kept as half a pair in the FLYBOT-FACE-HUMAN JSON, which still
+// parses, and the next UTF-8 write of the parsed text became U+FFFD.
+test('the face-room human line cut lands on a code point boundary, not inside an emoji', () => {
+  const text = `${'a'.repeat(17_999)}${ROCKET}`
+  const stored = shapes(parseFaceHuman(encodeFaceHuman({ who: 'Tester', text })).text)
+  assert.equal(stored, text)
+})
+
+test('the face-room human line cap counts code points, so whole emoji are never cut in half', () => {
+  const parsed = parseFaceHuman(encodeFaceHuman({ who: 'Tester', text: ROCKET.repeat(18_000) }))
+  const stored = shapes(parsed.text)
+  assert.equal(Array.from(stored).length, 18_000)
+  assert.equal(stored, ROCKET.repeat(18_000))
+})
+
+test('a face-room human line under the cap keeps its emoji unchanged', () => {
+  const text = `hello ${ROCKET} there`
+  assert.equal(parseFaceHuman(encodeFaceHuman({ who: 'Tester', text })).text, text)
+})
+
+test('a cut face-room human line has no replacement character once its text is written as UTF-8', () => {
+  const text = `${'a'.repeat(17_999)}${ROCKET}`
+  const parsed = parseFaceHuman(encodeFaceHuman({ who: 'Tester', text }))
+  const bytes = Buffer.from(parsed.text, 'utf8')
+  assert.equal(bytes.includes(Buffer.from([0xef, 0xbf, 0xbd])), false)
 })
