@@ -285,6 +285,9 @@ export function createExternalRoomParticipant(rt) {
         finish(null)
       }
       timer = setTimeout(() => {
+        // The child is ended, not left working: the protocol carries no turn id, so its late line
+        // would settle whichever turn is open then — the next one (#2634).
+        endChild(entry)
         // A slow process is 'no answer', exactly what the DSH driver reports for the same case:
         // the room's round maps { missed: true } to silence, not to a model failure (#198).
         entry.state = 'timeout'
