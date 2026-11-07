@@ -8,6 +8,8 @@ owned_paths:
 
 Where time goes across the local Bot team (#241). The plugin records Bot turns, tool calls and Bot-to-Bot deliveries from the core's activity feed, keeps a capped trace on disk, and answers the panel's poll on `flybot/timeline/window`. It lives entirely under `plugins/timeline/`.
 
+`$DSH_HOME` is resolved the way the core resolves it — a blank value counts as unset, `~` expands, and the root is absolute — so `bot/flybot-timeline` does not move with the process's working directory (#2643).
+
 ## Owns
 
 Everything in `plugins/timeline/`: the recorder, the trace file, the read model behind the endpoint and the browser entry (`client.js`: data layer and the panel).

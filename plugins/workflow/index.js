@@ -2,6 +2,7 @@
 // $DSH_HOME/bot/flybot-workflow and answers the chat surface on workflow/*.
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
+import { dshHomeOf } from './src/dsh-home.js'
 import { permissionFor } from './src/ephemeral.js'
 import { createWorkflowService } from './src/service.js'
 
@@ -27,7 +28,7 @@ export function apply(ctx, config = {}) {
     throw new Error('@flybot/workflow needs ctx.flybot.scope (flybot API v1)')
   }
   const fb = ctx.flybot.scope('flybot-workflow')
-  const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')
+  const dshHome = dshHomeOf()
   const persist = config.persist !== false
   // The runner names held by the ephemeral Bots this plugin spawned, keyed by
   // Bot id, so a release gives its name back instead of keeping it for the

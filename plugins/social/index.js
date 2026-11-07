@@ -15,6 +15,7 @@
 //   presence         false turns off "Name is thinking…" for friends' Bots (Bot Social presence signal, #297; default on)
 //   token / botId    legacy per-bot identity (no home): owner connector token + bot id
 import { join } from 'node:path'
+import { dshHomeOf } from './src/dsh-home.js'
 import { NS, registerUnavailable, startFailureReason, startSocial } from './src/social.js'
 import { createServerController } from './src/server-config.js'
 
@@ -26,7 +27,7 @@ export function apply(ctx, config = {}) {
   // Owner switch (#2564): off means this process registers none of the plugin's tools,
   // slots or endpoints. Read from FlyBot's state.json at start, so it applies next launch.
   if (ctx.flybot?.pluginEnabled?.('social') === false) return
-  const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')
+  const dshHome = dshHomeOf()
   const base = { inboxPollMs: 15_000, facePollMs: 4_000, credentialsPath: join(dshHome, 'bot', 'flybot-social.json'), ...config }
   const flybot = typeof ctx.flybot.scope === 'function' ? ctx.flybot.scope(NS) : ctx.flybot
   const warn = (...args) => console.warn('flybot-social:', ...args)
