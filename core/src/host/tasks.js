@@ -726,27 +726,36 @@ export function install(rt) {
     return true
   }
 
-  function applyFields(task, body) {
+  // #2596: read every field before the first assignment, so a request refused for one of them
+  // leaves the card exactly as it was. `readFields` is the pure half, `writeFields` the write.
+  function readFields(body) {
     const title = body.title !== undefined ? readTitle(body.title) : undefined
-    if (title !== undefined) {
-      if (title === '') throw invalid('A task needs a title')
-      task.title = title
+    if (title === '') throw invalid('A task needs a title')
+    return {
+      title,
+      priority: readPriority(body.priority),
+      progress: readProgress(body.progress),
+      note: body.note !== undefined ? { value: readNote(body.note) } : undefined,
+      target: body.target !== undefined ? { value: readTarget(body.target) } : undefined,
     }
-    const priority = readPriority(body.priority)
+  }
+  function writeFields(task, fields) {
+    const { title, priority, progress, note, target } = fields
+    if (title !== undefined) task.title = title
     if (priority !== undefined) task.priority = priority
-    const progress = readProgress(body.progress)
     if (progress !== undefined) task.progress = progress
-    if (body.note !== undefined) {
-      const note = readNote(body.note)
-      if (note) task.note = note
+    if (note !== undefined) {
+      if (note.value) task.note = note.value
       else delete task.note
     }
-    if (body.target !== undefined) {
-      const target = readTarget(body.target)
-      if (target === undefined) delete task.target
-      else task.target = target
+    if (target !== undefined) {
+      if (target.value === undefined) delete task.target
+      else task.target = target.value
     }
     return { priority, progress }
+  }
+  function applyFields(task, body) {
+    return writeFields(task, readFields(body))
   }
 
   const roomByName = (botId, name) => {
@@ -1462,9 +1471,12 @@ export function install(rt) {
         const task = find(body.id)
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         if (!mayUpdate(task, actor)) throw forbidden('Only the requester or the Bot\'s owner may update this task')
-        writeContract(task, body)
-        const { progress } = applyFields(task, body)
+        // #2596: read the whole request before the card is touched, so a refusal leaves it as it
+        // was. `writeFields` cannot throw once `readFields` accepted every value.
         const column = readColumn(body.column)
+        const fields = readFields(body)
+        writeContract(task, body)
+        const { progress } = writeFields(task, fields)
         const before = task.updatedAt
         const moved = applyColumn(task, column, actor)
         if (column === 'done' && progress === undefined) task.progress = 100
