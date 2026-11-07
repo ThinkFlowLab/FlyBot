@@ -38,6 +38,22 @@ Written-by: Reviewer`
   assert.equal(verdictOf(conclusion('PASS', head, 'Stranger'), { writers, association: 'MEMBER' }), null, 'the name must be in writers')
 })
 
+// The gates compare `Written-by:` with the policy's names case-insensitively: `review-gate` lowercases
+// both sides before `writers.has(...)`, and `strangerPassOf` here does the same. `verdictOf` compared with
+// `writers.includes(report.writer)`, so a PASS written as `reviewer` or `dev4` counted for the gate and was
+// silently neither labelled nor noted — the record #739 exists for went missing exactly where the gate
+// had accepted it, and the `pass` job reported nothing at all.
+test('#739: a writer matches the way the gates match it, whatever its case', () => {
+  for (const writer of ['reviewer', 'REVIEWER', 'dev4']) {
+    const body = conclusion('PASS', head, writer)
+    assert.ok(verdictOf(body, { writers, association: 'MEMBER' }), `${writer} is a listed name in another case`)
+    assert.equal(planComment({ pr: 7, body, association: 'MEMBER', writers }).add, true, `${writer} labels the pull request`)
+  }
+  // Not a widening: a name the policy does not list is not a conclusion in any case.
+  assert.equal(verdictOf(conclusion('PASS', head, 'reviewer3'), { writers, association: 'MEMBER' }), null)
+  assert.equal(verdictOf(conclusion('PASS', head, 'Reviewer Extra'), { writers, association: 'MEMBER' }), null)
+})
+
 test('#739: a replacement PASS labels like a normal PASS, and a second run adds nothing', () => {
   const replacement = `Verdict: PASS at ${head}
 Written-by: Reviewer
