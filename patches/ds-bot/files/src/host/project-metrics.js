@@ -12,6 +12,25 @@ export const METRIC_KEYS = [
 ]
 const DAY_MS = 24 * 60 * 60 * 1000
 const RECENT_MS = 7 * DAY_MS
+// #2650: the lists are followed page by page, and a `next` that never ends must not hang the board.
+// Reaching the cap keeps the rows read so far and answers `truncated`, never a window claimed whole.
+const MAX_PAGES = 30
+const API_ORIGIN = 'https://api.github.com'
+const apiUrl = path => (path.startsWith('/') ? `${API_ORIGIN}${path}` : path)
+
+// The next page lives in the `Link` header, not in the body, so the reader has to see the response
+// and not only `response.json()`. A foreign host is never followed with the token.
+const nextPage = response => {
+  const link = typeof response.headers?.get === 'function' ? text(response.headers.get('link')) : ''
+  for (const part of link.split(',')) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="?next"?/i)
+    if (!match) continue
+    const href = match[1].trim()
+    if (href.startsWith(`${API_ORIGIN}/`)) return href
+    if (href.startsWith('/')) return `${API_ORIGIN}${href}`
+  }
+  return null
+}
 const text = value => (typeof value === 'string' ? value.trim() : '')
 const timeOf = value => {
   const ms = Date.parse(text(value))
@@ -179,17 +198,38 @@ export async function readMetrics({ repo, token, fetchImpl, timeZone = 'UTC', no
   const since = new Date(now - RECENT_MS).toISOString()
   const headers = { Authorization: `Bearer ${bearer}`, Accept: 'application/vnd.github+json', 'User-Agent': 'flybot-project-metrics' }
   const get = async (path) => {
-    const response = await fetchImpl(`https://api.github.com${path}`, { headers })
+    const response = await fetchImpl(apiUrl(path), { headers })
     if (!response.ok) throw new Error(`${path} answered ${response.status}`)
-    return response.json()
+    return { rows: await response.json(), next: nextPage(response) }
+  }
+  // #2650: both lists are longer than one page in a seven-day window, and `/pulls` does not accept
+  // `since` at all, so a one-page read was the newest 100 rows rather than the window. Follow
+  // `Link: rel="next"` until it ends; MAX_PAGES bounds a repository that keeps advertising one.
+  const readAll = async (path) => {
+    const rows = []
+    let next = path
+    let pages = 0
+    while (next !== null && pages < MAX_PAGES) {
+      const page = await get(next)
+      if (!Array.isArray(page.rows)) throw new Error(`${next} answered a non-list`)
+      rows.push(...page.rows)
+      next = page.next
+      pages += 1
+    }
+    return { rows, truncated: next !== null }
   }
   let source
   try {
     const [pullRequests, issues] = await Promise.all([
-      get(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=100&since=${since}`),
-      get(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=${since}`),
+      readAll(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=100`),
+      readAll(`/repos/${repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=${since}`),
     ])
-    source = { ok: true, pullRequests, issues: issues.filter(item => item.pull_request === undefined) }
+    source = {
+      ok: true,
+      pullRequests: pullRequests.rows,
+      issues: issues.rows.filter(item => item.pull_request === undefined),
+      truncated: pullRequests.truncated || issues.truncated,
+    }
   } catch (error) {
     return { ...summarizeMetrics({ now, timeZone: zone, tasks, source: { ok: false, reason: `read-failed: ${error.message}` } }), cache: 'miss' }
   }
@@ -204,5 +244,5 @@ export async function readMetrics({ repo, token, fetchImpl, timeZone = 'UTC', no
     metrics: { prsOpenedToday, prsMergedToday, issuesOpenedToday, issuesClosedToday, prMergeMedianMs, issueCloseMedianMs },
   }
   cacheStore.set(key, { expiresAt: now + ttlMs, value: repositoryValue })
-  return { ...withLive(value), cache: 'miss' }
+  return { ...withLive(value), cache: 'miss', ...(source.truncated ? { truncated: true } : {}) }
 }
