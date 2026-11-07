@@ -2520,7 +2520,8 @@ export function install(rt) {
         localBotId,
         ownerId,
         remoteRoomId: data.roomId,
-        joinedSeq: data.seq,
+        // #2612: `data.seq` is the host's counter. This guest numbers its own mirrored log from 1, so the
+        // wire value is never a floor here — the room starts at 0 and the history the join carries shows.
         ...(ticket && data.op === 'join' ? { ticket } : {}),
         ...(data.op === 'join' ? { roster: rosterOf(data, { sharedFrom: { remoteRoomId: data.roomId, inviterHome: event.fromHome, inviterHandle: event.fromHandle, invitedHandle: data.invitedHandle } }, event) } : {}),
         ...(typeof noticeOf(data, undefined, event) === 'string' ? { notice: noticeOf(data, undefined, event) } : {}),
