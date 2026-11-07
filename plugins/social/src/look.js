@@ -30,6 +30,23 @@ function isEmojiAvatar(value) {
   return true
 }
 
+// Same test as core/src/shared/look-image.js (test/look.test.js keeps the two in step, and
+// the core copy alone allows gif): a look's image reaches the page-wide mention stylesheet
+// as url("…"), so a value carrying a quote, a paren, a backslash, whitespace or a control
+// character is dropped here rather than escaped there (#2646).
+const UNSAFE_IMAGE = /["'()\\\u0000-\u001f\u007f\s<>]/
+const HTTP_IMAGE = /^https?:\/\//i
+
+export function lookImage(value, max = AVATAR_MAX) {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  if (text.length === 0 || text.length > max || UNSAFE_IMAGE.test(text)) return null
+  if (DATA_IMAGE.test(text)) return text
+  if (!HTTP_IMAGE.test(text)) return null
+  try { new URL(text) } catch { return null }
+  return text
+}
+
 export function lookFromServer(row = {}) {
   const out = {}
   const rawColor = String(row.color ?? '').trim()
@@ -48,8 +65,9 @@ export function lookFromServer(row = {}) {
     }
   } else if (raw && typeof raw === 'object') {
     if (typeof raw.shape === 'string' && PRESET.test(raw.shape)) avatar.shape = raw.shape
-    if (typeof raw.image === 'string' && raw.image.length <= AVATAR_MAX && /^(https?:\/\/|data:image\/)/i.test(raw.image.trim()) && !/[\s<>]/.test(raw.image)) {
-      avatar.image = raw.image.trim()
+    if (typeof raw.image === 'string') {
+      const image = lookImage(raw.image)
+      if (image) avatar.image = image
     }
     if (typeof raw.emoji === 'string' && isEmojiAvatar(raw.emoji)) avatar.emoji = raw.emoji.trim().slice(0, 16)
   }

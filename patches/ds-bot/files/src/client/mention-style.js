@@ -1,5 +1,6 @@
 import { lookAvoidingLocals, lookOf, maskOf, DEFAULT_MASK } from './characters.js'
 import { inkText, paintCss } from './inks.js'
+import { cssImageUrl } from '../shared/look-image.js'
 import { MENTION_ORIGIN } from './text.js'
 
 // One @Name file chip per display name. A local Bot owns the chip when a
@@ -30,8 +31,11 @@ export function mentionCss(bots) {
     // sidebar has already stepped off (#1088). A local Bot still owns a shared @Name chip.
     const look = bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot)
     const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`
-    const mark = look.image
-      ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}`
+    // A friend's Bot publishes this URL, so the value is checked here as well as where it
+    // enters; one that could leave url("…") draws the colour/mask look instead (#2646).
+    const image = cssImageUrl(look.image)
+    const mark = image
+      ? `${marks}{background:center/cover ${image};-webkit-mask:none;mask:none;border-radius:50%}`
       : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`
     const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : ''
     return `${anchor}{color:${inkText(look.color)}}${chipBase}${mark}`

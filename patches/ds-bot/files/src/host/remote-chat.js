@@ -15,6 +15,7 @@ import { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { SOURCE_KIND } from './constants.js'
 import { cleanName, fenceUntrusted } from './delivery.js'
 import { isHomeLevelRemote, normRemoteHandle } from '../shared/remote-label.js'
+import { safeLookImage } from '../shared/look-image.js'
 import { cut } from './text.js'
 
 export const REMOTE_PROVIDER = 'flybot-remote'
@@ -23,6 +24,36 @@ const SENT_KEPT = 500
 
 export const isRemoteChat = bot => typeof bot?.remote?.handle === 'string'
 const textOf = content => (Array.isArray(content) ? content.filter(block => block?.type === 'text').map(block => block.text).join('\n') : String(content ?? ''))
+
+// A published look reaches the mention stylesheet, so its image is checked here as well as
+// at that sink: a value that could leave url("…") is dropped and the Bot keeps no photo (#2646).
+export function applyPublishedLook(bot, member) {
+  if (!bot || !member) return false
+  const at = typeof member.avatarUpdatedAt === 'string' ? member.avatarUpdatedAt : ''
+  if (at && bot.avatarUpdatedAt === at) return false
+  let changed = false
+  if (typeof member.color === 'string' && member.color && bot.color !== member.color) {
+    bot.color = member.color
+    changed = true
+  }
+  if (member.avatar && typeof member.avatar === 'object') {
+    const avatar = { ...member.avatar }
+    if (avatar.image !== undefined) {
+      const image = safeLookImage(avatar.image)
+      if (image === null) delete avatar.image
+      else avatar.image = image
+    }
+    if (JSON.stringify(bot.avatar) !== JSON.stringify(avatar)) {
+      bot.avatar = avatar
+      changed = true
+    }
+  }
+  if (at && bot.avatarUpdatedAt !== at) {
+    bot.avatarUpdatedAt = at
+    changed = true
+  }
+  return changed
+}
 
 // Sidebar / chat preview for a failed 1:1 send to a friend's Bot. Keep it one short
 // English line with a next step; never dump `Bot Social send_as_member: …`.
@@ -193,27 +224,6 @@ export function install(rt) {
   }
 
   let opening = Promise.resolve()
-  function applyPublishedLook(bot, member) {
-    if (!bot || !member) return false
-    const at = typeof member.avatarUpdatedAt === 'string' ? member.avatarUpdatedAt : ''
-    if (at && bot.avatarUpdatedAt === at) return false
-    let changed = false
-    if (typeof member.color === 'string' && member.color && bot.color !== member.color) {
-      bot.color = member.color
-      changed = true
-    }
-    if (member.avatar && typeof member.avatar === 'object') {
-      if (JSON.stringify(bot.avatar) !== JSON.stringify(member.avatar)) {
-        bot.avatar = { ...member.avatar }
-        changed = true
-      }
-    }
-    if (at && bot.avatarUpdatedAt !== at) {
-      bot.avatarUpdatedAt = at
-      changed = true
-    }
-    return changed
-  }
   // Creates the chat for a remote Bot (once), or refreshes its name, home label, and look.
   function open({ handle, name, home, homeName, plugin, color, avatar, avatarUpdatedAt }) {
     if (isHomeLevelRemote({ handle, home })) return Promise.resolve(undefined)
