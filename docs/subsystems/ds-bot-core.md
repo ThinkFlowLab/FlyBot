@@ -44,6 +44,7 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 | `core/dev/token-report.mjs` | Reads the usage ledger into per-Bot, per-Session and per-day token numbers and each Session's prompt growth, keeping fresh input, cache read and cache write apart (#799). Read-only; `--db`, `--from`, `--to`, `--tz`, `--bot`, `--top`, `--growth`, `--json`. |
 | `core/dev/turn-split.mjs` | Reads Session logs into the split of one turn's prompt: the fixed block (system prompt plus tool schemas) measured as each Session's fit intercept, then history, tool results and task by character share (#796). Read-only; `--sessions`, `--session`, `--turn`, `--tz`, `--days`, `--top`, `--stats`, `--room`, `--json`. |
 | `core/dev/perf-baseline.mjs` | Measures the four baseline numbers (#356) on the mock bench: turn end-to-end p50/p95, tool-call latency p50/p95, resident RSS peak, plugin load time — read from the Session events the activity feed folds, never from the page. Prints its markdown table and writes the `--out` JSON; no thresholds (see [performance-baseline](../performance-baseline.md)). Tooling only: reads the bench and starts nothing. |
+| `core/dev/bench-preflight.mjs` | Bench preflight (#2576): `dev/bench.sh start` calls it before the profile is written and refuses with the remedy when `pnpm` is not on PATH or the harness checkout lacks the host's prebuilt native addon (`native/system/packages/<platform>/bin/<libc>/system.node`). Exit 0 pass, 1 refusal on stderr, 2 usage. Tests: `core/test/bench-preflight.test.js`. |
 | `core/dev/experience/` | Offline experience library (#874 Step 2): JSON lessons under `repos/<owner>/<name>/` and `stacks/<techStack>/`. The read API is `core/src/host/experience.js` (see [core-host](core-host.md)). `check.mjs` validates the tree and can add one entry file. Not part of the npm `files` list, and not injected into a harness tier. |
 | `core/src/host/hooks.js` (approvals) | Held sends bound to their owner — provenance, owner-bound decisions, stale revalidation. Chief replacement invalidates sender-side holds eagerly on `setMain` (not via `staleReason`). The authority contract lives in [team](team.md) (#52). |
 
@@ -51,7 +52,7 @@ holds. Task bookkeeping does not imply runtime execution or tool permission.
 
 - `core/index.js` — plugin server.
 - `core/client.js` — built browser bundle (generated; never hand-edit).
-- `dev/bench.sh`, `dev/smoke.mjs` — test bench. The mock reads who leads a group from the system prompt (`Members: … and you (admin).`), which is where the standing section puts that line (#894). A turn's own text no longer carries it, so "admin calls everyone" in the smoke is decided from the section (#917).
+- `dev/bench.sh`, `dev/bench-preflight.mjs`, `dev/smoke.mjs` — test bench; `start` runs the preflight first, so a missing `pnpm` or native addon stops it instead of surfacing as smoke failures. The mock reads who leads a group from the system prompt (`Members: … and you (admin).`), which is where the standing section puts that line (#894). A turn's own text no longer carries it, so "admin calls everyone" in the smoke is decided from the section (#917).
 
 ## Reviewing a tip without checking it out
 

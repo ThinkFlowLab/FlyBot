@@ -59,7 +59,12 @@ ensure_profile() {
 }
 EOF
   printf 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n' > "$profile/pnpm-workspace.yaml"
-  (cd "$profile" && DSH_HOME="$HOME_DIR" pnpm install >/dev/null)
+  if ! install_output=$(cd "$profile" && DSH_HOME="$HOME_DIR" pnpm install 2>&1); then
+    printf '%s\n' "$install_output" >&2
+    rm -rf "$profile"
+    echo "pnpm install failed; the bench profile was not created" >&2
+    exit 1
+  fi
 }
 
 # Bench-only plugin config, layered over the profile with --patch.
@@ -80,6 +85,9 @@ write_overlay() {
 }
 
 start() {
+  # Refuse before the profile is written: a missing pnpm or native addon otherwise surfaces
+  # as smoke failures that look like plugin bugs (#2576).
+  node "$PLUGIN/dev/bench-preflight.mjs" "$DSH_HARNESS" || exit 1
   mkdir -p "$HOME_DIR"
   ensure_profile
   write_overlay
