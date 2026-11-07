@@ -7,7 +7,7 @@ import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
-  chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, doneCount, failNode, freshStatus, layerMarks,
+  chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, cutCodePoints, doneCount, failNode, freshStatus, layerMarks,
   missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
   rowPreview, startFrontier, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
@@ -21,6 +21,11 @@ const MAX_MESSAGES = 200
 const FILE = 'workflows.json'
 const DEFAULT_CONCURRENT = 2
 const MAX_CONCURRENT = 8
+// #2581: a failed step's own text is the node's (or peer Bot's) output, so the bound goes through
+// cutCodePoints: a UTF-16 slice at 197 units can end inside an emoji and every reader downstream
+// gets U+FFFD. 200 is the budget in characters, the ellipsis included.
+const clipFailureText = text => (Array.from(text).length > 200 ? `${cutCodePoints(text, 197)}…` : text)
+
 const MAX_ORPHANS = 50
 // How many held task ids a workflow lists in `workflow/state`; the count beside
 // them is always the whole truth (#1647).
@@ -635,7 +640,7 @@ export function createWorkflowService({
         code: 'step-failed',
         at: next.updatedAt,
         ...(node ? { nodeName: node.name } : {}),
-        ...(text ? { text: text.length > 200 ? `${text.slice(0, 197)}…` : text } : {}),
+        ...(text ? { text: clipFailureText(text) } : {}),
       }
     }
     const lines = linesFor(item, working.task, {

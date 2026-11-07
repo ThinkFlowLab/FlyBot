@@ -636,3 +636,18 @@ test('the reminder cap never silences the task own work (#1172)', async (t) => {
   assert.equal(app.calls('s').length, 2, 'a working task wakes even with the comment reminder used up')
   assert.match(app.calls('s')[1].content.map(block => block.text).join('\n'), new RegExp(`Continue ${id} \\[normal\\] Ship the fix`))
 })
+
+// #2581: the cue re-cuts the title that tasks.js already bounded, and the second bound must land on
+// a code point boundary. A title of emoji is two UTF-16 units per character, so the old 200-unit
+// slice ended inside one and the other Bot's turn read a lone surrogate as U+FFFD.
+test('#2581: a title of emoji is cut on a code point boundary in the cue', async (t) => {
+  const app = await start(t)
+  // Five ASCII units plus 300 emoji units: the 200-unit offset lands inside a face.
+  const title = `Draft${'🚀'.repeat(150)}`
+  const body = await app.track('s', { tasks: [{ title, column: 'not-started' }] })
+  const id = app.idOf(body, 'Draft')
+  const cue = app.calls('s').at(-1).content.map(block => block.text ?? '').join('\n')
+  assert.equal(cue.isWellFormed(), true, 'the cue carries no lone surrogate')
+  assert.equal(cue.includes('\uFFFD'), false, 'the cue carries no replacement character')
+  assert.match(cue, new RegExp(`Continue ${id} \\[normal\\] Draft`))
+})

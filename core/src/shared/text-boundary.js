@@ -23,6 +23,11 @@ export const fits = (text, max) => {
 }
 
 // A bounded prefix that never splits a surrogate pair. `cut` says whether anything was dropped.
+// `max` stays a UTF-16 unit budget, on purpose: its callers bound the units a stored field may cost
+// (a capability description at 2000, the open-page snapshot's address and title, a busy-ack prompt
+// at 600), and those shapes are pinned by tests. `fits` above is the *character* judgment, for a
+// consumer whose budget is characters (#2321); the two questions differ on purpose, and what must
+// never differ is that the kept prefix ends on a code point boundary (#1963, #2581).
 // The input is flattened first (#1963): a string that already carried an unpaired surrogate went
 // straight through, so the caller stored a value that was not well formed. U+FFFD is one UTF-16 unit
 // for the one it replaces, so a well-formed input keeps its exact prefix and its `cut` flag.

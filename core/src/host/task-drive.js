@@ -5,6 +5,7 @@
 // open a group Session and does not post the reply into the room. Assigning,
 // progress, and the next assignee are board writes; chat is not the scheduler.
 import { compareForQueue, compareForWork, occupiesSlot, sameRole } from '../shared/task-board.js'
+import { cut } from '../shared/text-boundary.js'
 import { formatRoomBoard } from './room-context.js'
 import { retiredBot } from './store.js'
 
@@ -34,7 +35,7 @@ const fingerprint = (tasks) => tasks.map(task => [
 // A queue item is offered, not owned: this cue names the item and the claim, never its note —
 // the note is the body, and reading it is the turn's job, not the wake's (#1247).
 const queueCueFor = (task) => {
-  const title = String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
+  const title = cut(String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim(), 200).text
   const priority = task.priority ?? 'normal'
   return `Take ${task.id} [${priority}] ${title} — queued for ${task.queueRole}. Claim it with track_tasks {claim: true, id: '${task.id}'}, then set its column to in-progress. Do not post a status in the group. Stop when it is done or waiting on an answer. Do not invent other work.`
 }
@@ -51,7 +52,7 @@ const queueFingerprint = (task) => (task === undefined ? '' : [
 ].join('\u0000'))
 
 const cueFor = (task) => {
-  const title = String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
+  const title = cut(String(task.title ?? '').replace(/[\r\n]+/g, ' ').trim(), 200).text
   const priority = task.priority ?? 'normal'
   const post = task.writeBack?.state === 'pending'
     ? ` Then post the decision comment on ${task.writeBack.target} with your GitHub connector and record it with track_tasks postResult {task: '${task.id}', ok: true}, or ok: false with the error.`

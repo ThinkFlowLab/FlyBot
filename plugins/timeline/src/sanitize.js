@@ -5,11 +5,21 @@ const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 // Bidirectional overrides and isolates reorder text on screen; zero-width characters hide it.
 const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
 
+// Cut on code points, never on UTF-16 units: `max` is a character budget and a unit offset can
+// end inside a surrogate pair, so the panel or the exported JSON would carry half a character
+// (#2581). The input is flattened first, so a value that already carried an unpaired surrogate is
+// never stored as one.
+const cutCodePoints = (text, max) => {
+  const value = text.toWellFormed()
+  if (!Number.isFinite(max) || value.length <= max) return value
+  return Array.from(value).slice(0, max).join('')
+}
+
 // One line of plain text, no controls, no fence markers, no angle brackets, capped.
 export const cleanLabel = (value, max = 60) => {
   let out = String(value ?? '').replace(CONTROLS, ' ').replace(INVISIBLE, '')
   for (let previous; previous !== out;) { previous = out; out = out.replace(/<\s*\/?\s*untrusted-?/gi, '') }
-  return out.replace(/[<>`"]/g, '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return cutCodePoints(out.replace(/[<>`"]/g, '').replace(/\s+/g, ' ').trim(), max)
 }
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9:_#.@-]{0,159}$/

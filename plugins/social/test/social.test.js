@@ -1336,6 +1336,41 @@ test('#1141: a co-member reaches a shared-room Bot without being the friendship 
   assert.equal((room.participants ?? []).some(p => p.handle === '@coder.bob.home' && p.leftSeq === undefined), false)
 })
 
+// #2581: the co-seat envelope leaves this Bot as JSON, and its 18 000 is a character budget.
+// A UTF-16 slice there can end inside an emoji, and the other home reads half a pair as U+FFFD.
+test('#2581: a co-seat room line keeps its emoji whole at the envelope bound', async (t) => {
+  const rooms = {
+    delivery: {
+      id: 'delivery', name: '交付组', members: ['a', 'b'], admin: 'a', named: true, log: [], seq: 0, seen: {},
+      participants: [
+        { kind: 'bot', id: 'a', role: 'admin', displayName: 'Chief', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', id: 'b', role: 'member', displayName: 'Writer', joinedSeq: 0, joinedAt: 1 },
+        { kind: 'bot', remote: true, id: '@coder.bob.home', handle: '@coder.bob.home', ownerHome: '@bob.home', ownerName: 'Bob', displayName: 'Coder', role: 'member', joinedSeq: 1, joinedAt: 1 },
+      ],
+    },
+  }
+  const { ctx, stop } = await team({ rooms })
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_remote_bots = () => ({ homes: [{ relationship_id: 'r1', home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' }, bots: [{ bot_id: 'x1', handle: '@coder.bob.home', display_name: 'Coder' }], scope: 'member', via: ['@writer.danyang.home'] }] })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot, '@bob.home')
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  await ctx.flybot.grants.set('a', [{ grantee: '@bob.home' }])
+  // 18 001 characters, 36 001 UTF-16 units: the old 18 000-unit slice kept 8 999 faces and half of the next.
+  const text = `A${'🚀'.repeat(18_000)}`
+  const sent = await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text, role: 'reply', via: 'auto-reply' })
+  assert.equal(sent.action, 'allow', JSON.stringify(sent))
+  const call = server.calls.filter(item => item.name === 'send_as_member').at(-1)
+  const body = JSON.parse(String(call.args.text).slice('FLYBOT-ROOM-SHARE\n'.length))
+  assert.equal(body.text.isWellFormed(), true, 'the envelope text carries no lone surrogate')
+  assert.equal(body.text.includes('\uFFFD'), false)
+  assert.equal(Array.from(body.text).length, 18_000, 'the budget is characters, the shared text included')
+  assert.equal(body.text, `A${'🚀'.repeat(17_999)}`)
+})
+
 // A server that holds every send_as_member and lists the holds. `reasons` names what Bot Social
 // held it for: the plain approval requirement, or a finding of its own (a DLP category).
 function holdingServer({ reasons = ['mvp.all_outbound_requires_approval'], riskFlags = [], holdReason } = {}) {

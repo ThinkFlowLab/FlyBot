@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  addNode, chainLabel, cleanLine, cleanPrompt, completeNode, connectNodes, doneCount, failNode, freshStatus, layerMarks,
+  addNode, chainLabel, cleanLine, cleanPrompt, completeNode, connectNodes, cutCodePoints, doneCount, failNode, freshStatus, layerMarks,
   moveNode, nextDemoOp, normalizeGraph, readStepResult, reconnectEdge, removeEdge, removeNode, retryNode,
   rowPreview, startFrontier, summarizeTask, validateGraph,
 } from '../src/graph.js'
@@ -208,4 +208,15 @@ test('a node prompt and a step reply stop on the bound without splitting the cha
   const step = readStepResult(reply, { outputs: [] })
   assert.equal(step.text, reply, 'the step body keeps the whole last character')
   assert.equal(hasLoneSurrogate(step.text), false, 'readStepResult left a lone surrogate in the body')
+})
+
+// #2581: the plugin's own bound judges characters, not UTF-16 units.
+test('#2581: cutCodePoints counts characters, not UTF-16 units', () => {
+  assert.equal(cutCodePoints('🚀Dev', 1), '🚀')
+  assert.equal(cutCodePoints('🚀Dev', 10), '🚀Dev')
+  assert.equal(cutCodePoints('🚀'.repeat(3), 2), '🚀🚀')
+  assert.equal(cutCodePoints('🚀'.repeat(3), 2).isWellFormed(), true)
+  // A value that already carried an unpaired surrogate is flattened, never stored as one.
+  assert.equal(cutCodePoints('a\uD800b', 10).isWellFormed(), true)
+  assert.equal(cutCodePoints(undefined, 5), '')
 })
