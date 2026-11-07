@@ -1270,12 +1270,27 @@ export function createWorkflowService({
       if (!item) return { ok: false, error: 'No such workflow' }
       const name = cleanLine(body.name, 80)
       if (!name) return { ok: false, error: 'A workflow needs a name' }
-      item.name = name
-      if (body.description !== undefined) {
-        item.description = cleanLine(body.description, 400)
+      // #2598: the new name is memory until `write()` has landed it, so a
+      // refused write puts the old one back instead of listing a name the
+      // store never took.
+      const before = { name: item.name, description: item.description, hadDescription: Object.hasOwn(item, 'description') }
+      let written = false
+      try {
+        item.name = name
+        if (body.description !== undefined) {
+          item.description = cleanLine(body.description, 400)
+        }
+        write()
+        written = true
+        return present()
+      } catch (error) {
+        if (!written) {
+          item.name = before.name
+          if (before.hadDescription) item.description = before.description
+          else delete item.description
+        }
+        return refuse(error)
       }
-      write()
-      return present()
     },
     delete(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
@@ -1324,6 +1339,14 @@ export function createWorkflowService({
     },
     create(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      // #2598: `write()` refuses before its first byte when the temp leaf is not
+      // writable, but the caller is told nothing was created. The push and its
+      // creation line below are memory, so remember what they change and undo
+      // them when the write refuses: the next successful write must not persist
+      // a graph the caller never got.
+      const before = { workflows: state.workflows.length, seq, stateSeq: state.seq }
+      let created = null
+      let written = false
       try {
         if (body.template) {
           const template = templateById(body.template)
@@ -1360,6 +1383,7 @@ export function createWorkflowService({
           ...(Array.isArray(body.edges) ? { edges: body.edges } : { layers: body.layers }),
         })
         if (!item.name) throw new Error('A workflow needs a name')
+        created = item
         // #1544: the Bot that wrote the graph caps the connectors a run may reach from it.
         const authoredBy = cleanLine(body.callerBotId ?? body.authoredBy, 80) || undefined
         if (authoredBy) item.authoredBy = authoredBy
@@ -1378,8 +1402,15 @@ export function createWorkflowService({
           text: `Workflow「${item.name}」已创建 · 成员 ${memberNames}`,
         }], now())
         write()
+        written = true
         return present()
       } catch (error) {
+        if (!written && created) {
+          state.workflows.length = before.workflows
+          delete state.logs[created.id]
+          seq = before.seq
+          state.seq = before.stateSeq
+        }
         return refuse(error)
       }
     },
