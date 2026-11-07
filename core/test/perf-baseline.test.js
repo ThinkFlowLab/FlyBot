@@ -3,7 +3,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { decide } from '../dev/mock-llm.mjs'
+
 import {
+  DEFAULT_MESSAGE,
   benchCommit,
   buildReport,
   markdownTable,
@@ -124,6 +127,21 @@ test('arguments: bench name, port and --out are required; flags parse by name', 
   assert.equal(flags.warmup, 1)
   assert.equal(flags.message, 'hi')
   assert.equal(flags.timeout, 120_000)
+})
+
+test('the default message makes the scripted model call a tool (#2577)', () => {
+  // The bench answers only a message the scripted model routes to a tool; on any other message
+  // every turn warns "carried no tool call" and the run refuses to record. This is the seam, so
+  // a change to the default message or to the model's branches fails here instead of at run time.
+  const out = decide({
+    tools: [{ name: 'list_bots' }, { name: 'send_message' }],
+    messages: [{ role: 'user', content: DEFAULT_MESSAGE }],
+  })
+  const called = out.filter((block) => block.type === 'tool_use')
+  assert.ok(called.length > 0, `the perf default message carried no tool_use: ${JSON.stringify(out)}`)
+  assert.equal(called[0].name, 'list_bots')
+  // The message is the flag's default, so --message is the only way to override it.
+  assert.equal(parseArgs(['perf', '3097', '--out', '/tmp/perf.json']).message, DEFAULT_MESSAGE)
 })
 
 test('plugin load time is null when the bench never logged a ready line', () => {

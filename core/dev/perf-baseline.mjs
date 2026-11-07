@@ -23,8 +23,10 @@ const USAGE = 'usage: node dev/perf-baseline.mjs <bench-name> <port> --out <file
   + '[--turns 20] [--warmup 3] [--timeout 120000] [--message <text>]'
 
 // The mock model is scripted; this is a prompt the bench answers with one tool call, which is
-// what makes the tool-call latency sample exist at all.
-const DEFAULT_MESSAGE = '请读一下项目根目录的 README.md 第一段，然后告诉我它讲了什么。'
+// what makes the tool-call latency sample exist at all. It has to be a message `decide()` routes
+// to a tool (`/团队|班底|team/i` answers with `list_bots`), and a test feeds this exact string
+// through `decide()` so a change on either side fails instead of warning once per turn.
+export const DEFAULT_MESSAGE = '看看团队现在在忙什么。'
 
 export function nearestRank(sortedAsc, p) {
   if (!Array.isArray(sortedAsc) || sortedAsc.length === 0) throw new Error('nearestRank: no samples')
