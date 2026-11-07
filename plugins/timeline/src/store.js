@@ -93,118 +93,132 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
   let closed = false
   let failures = 0
 
-  if (persist) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 })
-    lock = acquire(dir)
-    const files = readdirSync(dir).filter(name => SEGMENT.test(name)).sort()
-    for (const name of files) {
-      try {
-        const data = JSON.parse(readFileSync(join(dir, name), 'utf8'))
-        if (data?.version !== TRACE_VERSION || !Array.isArray(data.records)) throw new Error('not a trace segment')
-        const names = data.names && typeof data.names === 'object' ? data.names : {}
-        kept.push({ n: Number(SEGMENT.exec(name)[1]), startedAt: Number(data.startedAt) || 0, names, records: data.records, saved: data.records.length, savedNames: JSON.stringify(names) })
-      } catch (error) {
-        // Never crash the host over the trace, and never read the same bad file every start.
-        warn('flybot-timeline: trace segment %s is unreadable (%s); it is set aside', name, error?.message ?? error)
-        try { renameSync(join(dir, name), join(dir, `${name}.corrupt`)) } catch { /* it is ignored either way */ }
-      }
-    }
-  }
-  const fresh = () => ({ n: (kept.at(-1)?.n ?? 0) + 1, startedAt: now(), names: {}, records: [] })
-  const newest = () => {
-    if (kept.length === 0) kept.push(fresh())
-    return kept.at(-1)
-  }
-  newest()
-
-  const flush = () => {
-    clearTimeout(timer)
-    timer = undefined
-    if (!persist || !dirty) return true
-    try {
-      for (const segment of kept) {
-        if (segment.saved === segment.records.length && segment.savedNames === JSON.stringify(segment.names)) continue
-        writeWhole(dir, join(dir, segmentName(segment.n)), { version: TRACE_VERSION, segment: segment.n, startedAt: segment.startedAt, names: segment.names, records: segment.records })
-        segment.saved = segment.records.length
-        segment.savedNames = JSON.stringify(segment.names)
-      }
-      dirty = false
-      failures = 0
-      return true
-    } catch (error) {
-      // Disk full, directory removed: record in memory and say so once per streak.
-      if (failures++ === 0) warn('flybot-timeline: trace write failed: %s', error?.message ?? error)
-      return false
-    }
-  }
-  const schedule = () => {
-    if (!persist || timer !== undefined || closed) return
-    timer = setTimeout(flush, flushMs)
-    timer.unref?.()
-  }
-  // Files beyond the newest `segments`, segments that hold only expired records, and
-  // corrupt leftovers older than every kept segment go.
-  const prune = () => {
-    const floor = now() - retentionMs
-    const expired = segment => segment.records.length > 0 && segment.records.every(record => record.t < floor)
-    while (kept.length > 1 && (kept.length > segments || expired(kept[0]))) {
-      const [old] = kept.splice(0, 1)
-      if (persist) { try { unlinkSync(join(dir, segmentName(old.n))) } catch { /* already gone */ } }
-    }
-    if (!persist) return
-    for (const name of readdirSync(dir)) {
-      const match = /^trace-(\d{6})\.json\.corrupt$/.exec(name)
-      if (match && Number(match[1]) < kept[0].n) { try { unlinkSync(join(dir, name)) } catch { /* already gone */ } }
-    }
-  }
-  prune()
-
-  return {
-    dir,
-    // Appends one record; `names` (optional) refreshes the id -> label table kept with the segment.
-    append(record, names) {
-      if (closed) return
-      let segment = newest()
-      if (segment.records.length >= segmentRecords) {
-        // A refused write leaves the newest segments undurable: do not delete the last good one.
-        const saved = flush()
-        segment = fresh()
-        kept.push(segment)
-        if (saved) prune()
-      }
-      segment.records.push(record)
-      if (names) {
-        for (const [group, table] of Object.entries(names)) {
-          segment.names[group] ??= {}
-          Object.assign(segment.names[group], table)
+  // Everything between taking the lock and answering the trace can throw: a directory that
+  // cannot be listed, a segment read, a prune. A refused open has to give the lock back the way
+  // `close()` does, or this process holds the directory for good and `writer.lock` stays on disk
+  // for every later process.
+  try {
+    if (persist) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      lock = acquire(dir)
+      const files = readdirSync(dir).filter(name => SEGMENT.test(name)).sort()
+      for (const name of files) {
+        try {
+          const data = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+          if (data?.version !== TRACE_VERSION || !Array.isArray(data.records)) throw new Error('not a trace segment')
+          const names = data.names && typeof data.names === 'object' ? data.names : {}
+          kept.push({ n: Number(SEGMENT.exec(name)[1]), startedAt: Number(data.startedAt) || 0, names, records: data.records, saved: data.records.length, savedNames: JSON.stringify(names) })
+        } catch (error) {
+          // Never crash the host over the trace, and never read the same bad file every start.
+          warn('flybot-timeline: trace segment %s is unreadable (%s); it is set aside', name, error?.message ?? error)
+          try { renameSync(join(dir, name), join(dir, `${name}.corrupt`)) } catch { /* it is ignored either way */ }
         }
       }
-      dirty = true
-      schedule()
-    },
-    // The retained records, oldest first, without those past the retention age.
-    records() {
-      const floor = now() - retentionMs
-      return kept.flatMap(segment => segment.records).filter(record => !(record.t < floor))
-    },
-    // Newest-wins merge of the label tables of the retained segments.
-    names() {
-      const out = { bots: {}, rooms: {} }
-      for (const segment of kept) for (const [group, table] of Object.entries(segment.names)) Object.assign(out[group] ??= {}, table)
-      return out
-    },
-    flush,
-    stats: () => ({ segments: kept.length, records: kept.reduce((sum, segment) => sum + segment.records.length, 0), segmentRecords, maxSegments: segments, retentionMs, persist, failing: failures > 0 }),
-    close() {
-      if (closed) return
-      flush()
-      closed = true
+    }
+    const fresh = () => ({ n: (kept.at(-1)?.n ?? 0) + 1, startedAt: now(), names: {}, records: [] })
+    const newest = () => {
+      if (kept.length === 0) kept.push(fresh())
+      return kept.at(-1)
+    }
+    newest()
+
+    const flush = () => {
       clearTimeout(timer)
-      if (lock) {
-        held.delete(dir)
-        try { unlinkSync(lock) } catch { /* already gone */ }
+      timer = undefined
+      if (!persist || !dirty) return true
+      try {
+        for (const segment of kept) {
+          if (segment.saved === segment.records.length && segment.savedNames === JSON.stringify(segment.names)) continue
+          writeWhole(dir, join(dir, segmentName(segment.n)), { version: TRACE_VERSION, segment: segment.n, startedAt: segment.startedAt, names: segment.names, records: segment.records })
+          segment.saved = segment.records.length
+          segment.savedNames = JSON.stringify(segment.names)
+        }
+        dirty = false
+        failures = 0
+        return true
+      } catch (error) {
+        // Disk full, directory removed: record in memory and say so once per streak.
+        if (failures++ === 0) warn('flybot-timeline: trace write failed: %s', error?.message ?? error)
+        return false
       }
-    },
+    }
+    const schedule = () => {
+      if (!persist || timer !== undefined || closed) return
+      timer = setTimeout(flush, flushMs)
+      timer.unref?.()
+    }
+    // Files beyond the newest `segments`, segments that hold only expired records, and
+    // corrupt leftovers older than every kept segment go.
+    const prune = () => {
+      const floor = now() - retentionMs
+      const expired = segment => segment.records.length > 0 && segment.records.every(record => record.t < floor)
+      while (kept.length > 1 && (kept.length > segments || expired(kept[0]))) {
+        const [old] = kept.splice(0, 1)
+        if (persist) { try { unlinkSync(join(dir, segmentName(old.n))) } catch { /* already gone */ } }
+      }
+      if (!persist) return
+      for (const name of readdirSync(dir)) {
+        const match = /^trace-(\d{6})\.json\.corrupt$/.exec(name)
+        if (match && Number(match[1]) < kept[0].n) { try { unlinkSync(join(dir, name)) } catch { /* already gone */ } }
+      }
+    }
+    prune()
+
+    return {
+      dir,
+      // Appends one record; `names` (optional) refreshes the id -> label table kept with the segment.
+      append(record, names) {
+        if (closed) return
+        let segment = newest()
+        if (segment.records.length >= segmentRecords) {
+          // A refused write leaves the newest segments undurable: do not delete the last good one.
+          const saved = flush()
+          segment = fresh()
+          kept.push(segment)
+          if (saved) prune()
+        }
+        segment.records.push(record)
+        if (names) {
+          for (const [group, table] of Object.entries(names)) {
+            segment.names[group] ??= {}
+            Object.assign(segment.names[group], table)
+          }
+        }
+        dirty = true
+        schedule()
+      },
+      // The retained records, oldest first, without those past the retention age.
+      records() {
+        const floor = now() - retentionMs
+        return kept.flatMap(segment => segment.records).filter(record => !(record.t < floor))
+      },
+      // Newest-wins merge of the label tables of the retained segments.
+      names() {
+        const out = { bots: {}, rooms: {} }
+        for (const segment of kept) for (const [group, table] of Object.entries(segment.names)) Object.assign(out[group] ??= {}, table)
+        return out
+      },
+      flush,
+      stats: () => ({ segments: kept.length, records: kept.reduce((sum, segment) => sum + segment.records.length, 0), segmentRecords, maxSegments: segments, retentionMs, persist, failing: failures > 0 }),
+      close() {
+        if (closed) return
+        flush()
+        closed = true
+        clearTimeout(timer)
+        if (lock) {
+          held.delete(dir)
+          try { unlinkSync(lock) } catch { /* already gone */ }
+        }
+      },
+    }
+  } catch (error) {
+    // A refused open leaves nothing behind: the directory leaves `held` and the lock file goes,
+    // exactly as `close()` would have done it.
+    if (lock) {
+      held.delete(dir)
+      try { unlinkSync(lock) } catch { /* already gone */ }
+    }
+    throw error
   }
 }
 export const traceExists = dir => existsSync(dir) && readdirSync(dir).some(name => SEGMENT.test(name))
