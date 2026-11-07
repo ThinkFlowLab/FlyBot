@@ -27,7 +27,7 @@
 // - Backward compat: without a home, config.botId + token use the per-bot identity
 //   (start_conversation / send_message) as before.
 import { createHash } from 'node:crypto'
-import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
@@ -477,9 +477,21 @@ export function registerUnavailable(service, reason) {
   return () => { for (const off of offs.splice(0).reverse()) off?.() }
 }
 
-export const readCredentials = (path) => {
-  try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return undefined }
+// A state file is read for its bytes only. `ENOENT` is the one answer that means "nothing saved
+// yet"; a file that exists and cannot be read or parsed is not that answer. Reading it as absent is
+// how a start onboarded a fresh home over a torn credentials file (#2631), so it refuses, names the
+// path, and leaves the file where an operator can move it aside on purpose.
+const readStateFile = (path, what) => {
+  let text
+  try { text = readFileSync(path, 'utf8') } catch (error) {
+    if (error?.code === 'ENOENT') return undefined
+    throw Object.assign(new Error(`Bot Social ${what} at ${path} cannot be read: ${error?.message ?? error}`), { code: 'bot/refused', cause: error })
+  }
+  try { return JSON.parse(text) } catch {
+    throw Object.assign(new Error(`Bot Social ${what} at ${path} is damaged: the file exists but does not parse as JSON. Move it aside to start over; nothing here overwrote it.`), { code: 'bot/refused' })
+  }
 }
+export const readCredentials = path => readStateFile(path, 'credentials')
 // The credentials file is one leaf of its own, and so are the `.bak` copy kept for another server
 // and `flybot-social-settings.json`: all three go through this one function. `lstat` does not follow
 // the last component, so a link left at the path reports itself and is refused before the first
@@ -506,7 +518,24 @@ const refuseLeaf = (path) => {
 export const writeCredentials = (path, value) => {
   if (!leafWritable(path)) throw refuseLeaf(path)
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify(value, null, 2), { mode: 0o600 })
+  // Same-directory temp, fsync, rename — the shape `server-config.js` writes with. Writing in place
+  // truncated the file first, so a write that stopped half way (ENOSPC, EFBIG, a kill) took the
+  // previous credentials with it (#2631). The temp name is a leaf of its own (temp-name sweep): a
+  // link left there refuses the write instead of taking the bytes outside the folder and renaming
+  // the link into place.
+  const temp = `${path}.${process.pid}.tmp`
+  if (!leafWritable(temp)) throw refuseLeaf(temp)
+  try {
+    const fd = openSync(temp, 'w', 0o600)
+    try {
+      writeFileSync(fd, JSON.stringify(value, null, 2))
+      fsyncSync(fd)
+    } finally { closeSync(fd) }
+    renameSync(temp, path)
+  } catch (error) {
+    try { rmSync(temp, { force: true }) } catch { /* already gone */ }
+    throw error
+  }
   try { chmodSync(path, 0o600) } catch { console.warn('flybot-social:', 'credentials mode not tightened:', path) }
 }
 
@@ -684,7 +713,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   // identity carries the user's own chat with that friend's Bot.
   const settingsPath = config.settingsPath ?? (config.credentialsPath ? join(dirname(config.credentialsPath), 'flybot-social-settings.json') : undefined)
   let settings = { autoAccept: {}, via: {}, hiddenRemotes: {}, inboundBots: {}, roomBots: {} }
-  try { if (settingsPath) settings = { autoAccept: {}, via: {}, hiddenRemotes: {}, inboundBots: {}, roomBots: {}, ...JSON.parse(readFileSync(settingsPath, 'utf8')) } } catch { /* none yet */ }
+  // Absent is a normal first start; a file that exists and does not parse refuses the start
+  // (#2631) instead of silently dropping the owner's Auto-send, hides and cursors for an empty set.
+  if (settingsPath) settings = { ...settings, ...readStateFile(settingsPath, 'settings') }
   settings.hiddenRemotes ??= {}
   settings.inboundBots ??= {}
   settings.roomBots ??= {}
