@@ -8,8 +8,8 @@ import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
   chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, cutCodePoints, doneCount, failNode, freshStatus, layerMarks,
-  missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
-  rowPreview, startFrontier, summarizeTask, unmetRequired, validateGraph,
+  firstBranchValue, missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
+  rowPreview, startFrontier, stepArtifacts, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
 import { matchTask, namedTarget } from './match.js'
 import { linesFor } from './narrate.js'
@@ -172,6 +172,10 @@ function publicRun(workflow, run) {
     ...(run.paused === true ? { paused: true } : {}),
     ...(run.failure ? { failure: { ...run.failure } } : {}),
     ...(run.earlyEnd ? { earlyEnd: run.earlyEnd } : {}),
+    // #2583: a step that ended without a gate-read OUTPUT says so, and the pull request
+    // it produced is named here so nobody has to search the chat for it.
+    ...(run.missingOutput && Object.keys(run.missingOutput).length > 0 ? { outputMissing: true } : {}),
+    ...(run.producedPull ? { producedPull: run.producedPull } : {}),
     ...(run.ephemeral && Object.keys(run.ephemeral).length > 0 ? { ephemeral: { ...run.ephemeral } } : {}),
     // #1862: the shadow pass's record, exposed so the run can be compared with the human path.
     ...(run.shadow ? { shadow: { ...run.shadow } } : {}),
@@ -616,6 +620,9 @@ export function createWorkflowService({
     const handed = { ...working.handed }
     if (op.type === 'fail' || op.type === 'retry') delete handed[op.nodeId]
     if (Array.isArray(result.reset)) for (const id of result.reset) delete handed[id]
+    const missingOutput = { ...working.missingOutput }
+    if (op.outputMissing) missingOutput[op.nodeId] = [...op.outputMissing]
+    else if (op.type === 'complete') delete missingOutput[op.nodeId]
     const next = {
       ...working,
       status: finished ? 'done' : stopped ? 'failed' : 'running',
@@ -628,7 +635,10 @@ export function createWorkflowService({
       ...(result.failAttempts ? { failAttempts: result.failAttempts } : {}),
       ...(Object.keys(handed).length > 0 ? { handed } : {}),
       ...(earlyEnded ? { earlyEnd: result.earlyEnd } : {}),
+      ...(op.producedPull ? { producedPull: op.producedPull } : {}),
     }
+    if (Object.keys(missingOutput).length > 0) next.missingOutput = missingOutput
+    else delete next.missingOutput
     if (Object.keys(handed).length === 0) delete next.handed
     if (next.status === 'failed') {
       const hole = blocked ? gated.blocked[0] : null
@@ -665,6 +675,29 @@ export function createWorkflowService({
         params: { node: node?.name ?? hole.id, missing },
         text: `${node?.name ?? hole.id} 不能开始：缺少输入 ${missing}。`,
       })
+    }
+    // #2583: the step stands on the work it did, not on the line it forgot. Say so in
+    // the stage log and name the pull request, so a format slip is visible as one.
+    if (op.type === 'complete' && op.outputMissing) {
+      const name = nodeById(item, op.nodeId)?.name ?? op.nodeId
+      const outputs = op.outputMissing.join(', ')
+      const pull = op.producedPull
+      const copy = pull != null && op.producedClaim
+        ? {
+          key: '{node} did not print OUTPUT {outputs}; the step stands because it claimed the issue and opened PR #{pull}.',
+          text: `${name} 没有打印 OUTPUT ${outputs}；它已认领 issue 并开了 PR #${pull}，这一步按完成继续。`,
+        }
+        : pull != null
+          ? {
+            key: '{node} did not print OUTPUT {outputs}; the step stands because it opened PR #{pull}.',
+            text: `${name} 没有打印 OUTPUT ${outputs}；它已开了 PR #${pull}，这一步按完成继续。`,
+          }
+          : {
+            key: '{node} did not print OUTPUT {outputs}; the step stands because it claimed the issue.',
+            text: `${name} 没有打印 OUTPUT ${outputs}；它已认领 issue，这一步按完成继续。`,
+          }
+      lines.push({ kind: 'system', key: copy.key, params: { node: name, outputs, ...(pull != null ? { pull } : {}) }, text: copy.text })
+      warnOnce(`missing-output:${working.id}:${op.nodeId}`, `flybot-workflow: step ${op.nodeId} did not print OUTPUT ${outputs}; the step stands because it produced ${pull != null ? `PR #${pull}` : 'the claim'}${op.assumedState ? ` (gate reads state: ${op.assumedState})` : ''}`)
     }
     return { run: next, lines }
   }
@@ -1161,8 +1194,29 @@ export function createWorkflowService({
     // missing verdict fails the step here — the gate never runs, and the run's `failure`
     // names the node and the OUTPUT it did not print.
     if (op.type === 'complete') {
-      const missing = missingVerdicts(item, op.nodeId, op.outputs ?? run.produced?.[op.nodeId] ?? {})
-      if (missing.length > 0) op = { ...op, type: 'fail', text: `Missing OUTPUT ${missing.join(', ')}` }
+      const outputs = op.outputs ?? run.produced?.[op.nodeId] ?? {}
+      const missing = missingVerdicts(item, op.nodeId, outputs)
+      if (missing.length > 0) {
+        // #2583: a Triage step has already claimed the issue and opened the pull request
+        // when it ends without its `state` line. Failing the run there kills gate/enqueue
+        // after those writes, so the step stands when its own result shows the work, and
+        // the run record keeps the pull request number. Every other gate-read OUTPUT keeps
+        // #1773's rule: a verdict is not prose.
+        const artifact = missing.length === 1 && missing[0] === 'state' ? stepArtifacts(op.text, outputs) : { pull: null, claimed: false }
+        const stands = artifact.pull != null || artifact.claimed
+        // The step did the work; the gate still needs the branch it would have named.
+        // The graph's first `state` branch is that choice — on the issue fast line it is
+        // `ready → claim`, which keeps the pull request moving to gate/enqueue.
+        const value = stands ? firstBranchValue(item, op.nodeId, 'state') : null
+        op = {
+          ...op,
+          ...(stands ? {} : { type: 'fail', text: `Missing OUTPUT ${missing.join(', ')}` }),
+          ...(value != null && value !== '' ? { outputs: { ...outputs, state: value }, assumedState: value } : {}),
+          outputMissing: missing,
+          ...(artifact.pull != null ? { producedPull: artifact.pull } : {}),
+          ...(stands && artifact.claimed ? { producedClaim: true } : {}),
+        }
+      }
     }
     try {
       let stepped = applyOp(item, run, op)

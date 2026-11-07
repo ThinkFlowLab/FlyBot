@@ -101,6 +101,34 @@ export function readStepResult(text, node) {
   return { text: body, outputs }
 }
 
+// #2583: an issue fast line's Triage node claims the issue and opens the pull request
+// before it prints its last line. The step's own result is the only evidence the engine
+// has of that work — the plugin has no GitHub client — so the reply is read for a pull
+// request it names or the claim line it posted. A bare reference ("see PR #1") is not
+// evidence: a pull request counts by its URL, by `pull/<n>`, or by a line that says it
+// was opened. Anything else would let a step that only quoted an issue pass.
+const PULL_URL = /https?:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)/i
+const PULL_PATH = /\bpull\/(\d+)\b/i
+const PULL_SPOKEN = /\b(?:PR|pull request)\s*#?(\d+)/i
+const OPENED = /\b(?:opened|created|raised|submitted|pushed)\b/i
+const CLAIM_LINE = /^\s*claimed(?:-by)?\s*:/i
+const CLAIM_ISSUE = /^\s*claimed\s+#\d+/i
+
+export function stepArtifacts(text, outputs) {
+  const haystack = [String(text ?? ''), ...Object.values(outputs ?? {}).map(value => String(value ?? ''))].join('\n')
+  const link = PULL_URL.exec(haystack) ?? PULL_PATH.exec(haystack)
+  let pull = link ? Number(link[1]) : null
+  if (pull == null) {
+    for (const line of haystack.split('\n')) {
+      if (!OPENED.test(line)) continue
+      const spoken = PULL_SPOKEN.exec(line)
+      if (spoken) { pull = Number(spoken[1]); break }
+    }
+  }
+  const claimed = haystack.split('\n').some(line => CLAIM_LINE.test(line) || CLAIM_ISSUE.test(line))
+  return { pull: Number.isInteger(pull) ? pull : null, claimed }
+}
+
 function coord(value, fallback) {
   const number = Number(value)
   if (!Number.isFinite(number)) return fallback
@@ -584,6 +612,20 @@ function takenFrom(graph, nodeId, outputs) {
     if (take) fired[edgeKey(edge)] = true
   }
   return fired
+}
+
+// #2583: the branch a step that stands on its own work would have taken. The issue fast
+// line declares `state: ready → claim` as its first branch, so a missing `state` line
+// continues to the work nodes instead of falling into the `else` route the step never
+// chose. Only used when the step stands on evidence it produced; a step with no evidence
+// still fails its missing verdict (#1773).
+export function firstBranchValue(graph, nodeId, name) {
+  ensure(graph)
+  for (const edge of graph.edges) {
+    if (edge.from !== nodeId || edge.loop === true) continue
+    if (edge.when && edge.when.else !== true && edge.when.output === name) return edge.when.eq ?? null
+  }
+  return null
 }
 
 // #1773: the outputs a gate reads are verdicts, not prose. A `when`/`else` or `until`
