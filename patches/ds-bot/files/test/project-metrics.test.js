@@ -222,3 +222,65 @@ test('only cancelled and failed cards is null, never zero', () => {
   const out = summarizeMetrics({ now: NOW, timeZone: 'UTC', source: { ok: true, pullRequests: [], issues: [] }, tasks })
   assert.equal(out.metrics.taskDoneMedianMs, null)
 })
+
+// #2650: seven days is longer than one page. The first page is full and carries the `Link` header;
+// the rows that decide the counts and the medians sit on page two, where a one-page read never looks.
+const pageRows = (count, make) => Array.from({ length: count }, (_, index) => make(index))
+const pageLink = (pathname, page) => new Map([['link', `<https://api.github.com${pathname}?page=${page}>; rel="next"`]])
+
+test('#2650: the metric lists are read page by page, so a deciding row on page two counts', async () => {
+  const pageOnePulls = pageRows(100, index => ({ number: index + 1, created_at: '2026-10-29T11:00:00Z', updated_at: '2026-10-30T11:59:00Z', merged_at: null }))
+  const pageTwoPulls = pageRows(5, index => ({ number: 101 + index, created_at: '2026-10-28T06:00:00Z', updated_at: '2026-10-30T06:00:00Z', merged_at: '2026-10-30T06:00:00Z' }))
+  const pageOneIssues = pageRows(100, index => ({ number: index + 1, created_at: '2026-10-29T11:00:00Z', updated_at: '2026-10-30T11:59:00Z', closed_at: null }))
+  const pageTwoIssues = [{ number: 101, created_at: '2026-10-29T06:00:00Z', updated_at: '2026-10-30T10:00:00Z', closed_at: '2026-10-30T10:00:00Z' }]
+  const seen = []
+  const fetchImpl = async (url) => {
+    const at = new URL(url)
+    seen.push(at)
+    const page = Number(at.searchParams.get('page') ?? '1')
+    const pulls = at.pathname.endsWith('/pulls')
+    const rows = pulls
+      ? (page === 1 ? pageOnePulls : page === 2 ? pageTwoPulls : [])
+      : (page === 1 ? pageOneIssues : page === 2 ? pageTwoIssues : [])
+    return { ok: true, headers: page === 1 ? pageLink(at.pathname, 2) : new Map(), json: async () => rows }
+  }
+  const out = await readMetrics({ repo: 'o/r', token: 'tok', now: NOW, timeZone: 'UTC', fetchImpl, cacheStore: new Map() })
+  assert.equal(out.ok, true)
+  assert.equal(seen.length, 4, 'both lists were followed to their second page')
+  assert.equal(seen.filter(at => at.pathname.endsWith('/pulls')).every(at => at.searchParams.has('since') === false), true,
+    '`/pulls` does not accept `since`, so the request no longer pretends to filter by it')
+  assert.equal(out.metrics.prsMergedToday, 5)
+  assert.equal(out.metrics.prMergeMedianMs, 48 * HOUR)
+  assert.equal(out.metrics.issuesClosedToday, 1)
+  assert.equal(out.metrics.issueCloseMedianMs, 28 * HOUR)
+  assert.equal(out.metrics.prsOpenedToday, 0)
+  assert.equal(out.truncated, undefined)
+})
+
+test('#2650: a `next` that never ends stops at the page cap and answers truncated', async () => {
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    return { ok: true, headers: pageLink('/next', calls + 1), json: async () => [pr('2026-10-30T06:00:00Z', null)] }
+  }
+  const out = await readMetrics({ repo: 'o/r', token: 'tok', now: NOW, timeZone: 'UTC', fetchImpl, cacheStore: new Map() })
+  assert.equal(out.ok, true)
+  assert.equal(out.truncated, true, 'the answer does not claim the whole window was read')
+  assert.equal(calls, 60, 'thirty pages for each of the two lists')
+  assert.equal(out.metrics.prsOpenedToday, 30, 'the rows read before the cap are kept')
+})
+
+test('#2650: a failed page is a failed read, never a silent partial list', async () => {
+  const store = new Map()
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    if (calls <= 2) return { ok: true, headers: pageLink('/next', 2), json: async () => [] }
+    return { ok: false, status: 502, json: async () => ({}) }
+  }
+  const out = await readMetrics({ repo: 'o/r', token: 'tok', now: NOW, timeZone: 'UTC', fetchImpl, cacheStore: store })
+  assert.equal(out.ok, false)
+  assert.match(out.reason, /^read-failed: .*answered 502$/)
+  assert.equal(out.metrics.prsOpenedToday, null)
+  assert.equal(store.size, 0, 'a failed page is not cached as a complete window')
+})
