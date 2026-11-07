@@ -1331,6 +1331,17 @@ export function createWorkflowService({
         .filter(Boolean)
         .flatMap(run => Object.values(run.ephemeral ?? {})))]
       const finish = () => {
+        // #2623: everything removed below is memory until `write()` has landed
+        // it. A write that refuses puts it all back, so the page and the store
+        // cannot disagree about whether the workflow was deleted and the owner
+        // can retry instead of being told "No such workflow".
+        const index = state.workflows.indexOf(item)
+        const lane = state.lanes[workflowId]
+        const run = state.runs[workflowId]
+        const log = state.logs[workflowId]
+        const routes = Object.entries(state.routes).filter(([, route]) => route?.id === workflowId)
+        const claims = Object.entries(state.claims ?? {}).filter(([, claim]) => claim?.kind === 'workflow' && claim.id === workflowId)
+        const briefs = Object.entries(state.briefs ?? {}).filter(([, brief]) => brief?.workflowId === workflowId)
         state.workflows = state.workflows.filter(workflow => workflow.id !== workflowId)
         delete state.lanes[workflowId]
         delete state.runs[workflowId]
@@ -1349,7 +1360,18 @@ export function createWorkflowService({
         Object.keys(state.briefs ?? {}).forEach(taskId => {
           if (state.briefs[taskId]?.workflowId === workflowId) delete state.briefs[taskId]
         })
-        write()
+        try {
+          write()
+        } catch (error) {
+          state.workflows.splice(index, 0, item)
+          if (lane !== undefined) state.lanes[workflowId] = lane
+          if (run !== undefined) state.runs[workflowId] = run
+          if (log !== undefined) state.logs[workflowId] = log
+          for (const [taskId, route] of routes) state.routes[taskId] = route
+          for (const [taskId, claim] of claims) state.claims[taskId] = claim
+          for (const [taskId, brief] of briefs) state.briefs[taskId] = brief
+          throw error
+        }
         return present()
       }
       if (typeof release !== 'function' || releasing.length === 0) return finish()
