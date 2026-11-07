@@ -461,3 +461,63 @@ test('#2159: a hard-linked project file refuses to become the default', (t) => {
   assert.equal(lstatSync(leaf).nlink, 2, 'the file is still another name of the same inode')
   assert.deepEqual([...new Set(warnings)], [leaf], 'the warning names the file, once')
 })
+
+// ---------------------------------------------------------------------------
+// #2609: the read path asks the same question the write path does. An id was joined onto the
+// workflow folder unchecked, so `../outside/stolen` read a JSON file written outside the workspace's
+// `workflows/` folder and served it as this workspace's own definition. Every read entry point goes
+// through `readDefinition`, which is where the guard lives.
+
+const folderWithOutsideDefinition = (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const outside = join(root, 'outside')
+  mkdirSync(outside, { recursive: true })
+  writeFileSync(join(outside, 'stolen.json'), JSON.stringify({ ...blankWorkflow, id: 'stolen', name: 'SECRET-OUTSIDE-WORKFLOWS' }, null, 2))
+  return { root, dir }
+}
+
+test('#2609: a read of an id that leaves the workflow folder answers not-found', (t) => {
+  const { dir } = folderWithOutsideDefinition(t)
+  const store = createWorkflowStore({ dir })
+  const id = '../outside/stolen'
+  const opened = store.open(id)
+  assert.equal(opened.ok, false)
+  assert.equal(opened.code, 'workflow/not-found')
+  assert.equal(JSON.stringify(opened).includes('SECRET-OUTSIDE-WORKFLOWS'), false, 'the outside definition never comes back')
+  assert.equal(store.bytesOf(id), null, 'no bytes of a file outside the folder')
+  const copied = store.customize({ from: id, id: 'stolen-copy', name: 'Copy' })
+  assert.equal(copied.ok, false)
+  assert.equal(copied.code, 'workflow/not-found')
+  assert.deepEqual(readdirSync(dir), [], 'nothing outside the folder was read or copied in')
+  // The control: a legal id still opens, so the guard did not switch the feature off.
+  assert.equal(store.customize({ from: 'blank', id: 'blank-mine', name: 'Mine' }).ok, true)
+  const mine = store.open('blank-mine')
+  assert.equal(mine.ok, true)
+  assert.equal(mine.workflow.source, 'workspace')
+  assert.equal(store.bytesOf('blank-mine').source, 'workspace')
+  assert.equal(store.open('blank').workflow.source, 'preset', 'a preset id still opens')
+})
+
+test('#2609: the workflows endpoint previews nothing for an id that leaves the folder', async (t) => {
+  const { root } = folderWithOutsideDefinition(t)
+  const rt = { state: { bots: {} }, ctx: { workspaceRegistry: { get: () => ({ path: root }) } }, warn: () => {} }
+  install(rt)
+  const previewed = await rt.workflowEndpoint('workflows', { op: 'preview', id: '../outside/stolen' })
+  assert.equal(previewed.ok, false)
+  assert.equal(previewed.code, 'workflow/not-found')
+  assert.equal(JSON.stringify(previewed).includes('SECRET-OUTSIDE-WORKFLOWS'), false)
+  assert.equal((await rt.workflowEndpoint('workflows', { op: 'open', id: '../outside/stolen' })).code, 'workflow/not-found')
+  // The control, at the endpoint the page actually calls.
+  assert.equal((await rt.workflowEndpoint('workflows', { op: 'open', id: 'blank' })).ok, true)
+})
+
+test('#2609: a stored default that leaves the folder is answered as none', (t) => {
+  const { dir } = folderWithOutsideDefinition(t)
+  writeFileSync(join(dir, 'project.json'), `${JSON.stringify({ default: '../outside/stolen' }, null, 2)}\n`)
+  const listed = createWorkflowStore({ dir }).list()
+  assert.equal(listed.default, null, 'a stored key is a file name only when it is one')
+  assert.deepEqual(listed.own, [])
+})
