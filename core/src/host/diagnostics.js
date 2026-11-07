@@ -103,8 +103,13 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
   // The log's own line, in the journal's shape (#2134): a host whose log is off says nothing, and
   // every other bundle gets the one fact the recent errors cannot show — whether they were written.
   const log = facts.diagnosticsLog === undefined ? [] : ['', `diagnostics log: ${facts.diagnosticsLog}`]
-  const out = [...lines, ...stateFile, ...stateBackups, ...journal, ...log, '']
-  out.push(recent.length === 0 ? 'No host errors recorded.' : `Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
+  // A log this host could not read is not a log with no errors (#2604): the sentence stands where
+  // `No host errors recorded.` would claim otherwise, and the entries below it stay listed.
+  const unread = facts.diagnosticsLogUnread === undefined ? []
+    : ['', `The diagnostics log could not be read (${facts.diagnosticsLogUnread}); the errors it holds are not shown.`]
+  const out = [...lines, ...stateFile, ...stateBackups, ...journal, ...log, ...unread, '']
+  if (recent.length > 0) out.push(`Recent host errors (${recent.length} of ${entries.length}, oldest first):`)
+  else if (unread.length === 0) out.push('No host errors recorded.')
   if (recent.length > 0) out.push('```', ...recent.map(entryLine), '```')
   const stacks = recent.filter(entry => entry.stack).slice(-3)
   for (const entry of stacks) out.push('', `<details><summary>Stack: ${cut(entry.text, 80).text.replace(/</g, '&lt;')}</summary>`, '', '```', entry.stack, '```', '</details>')
@@ -149,7 +154,10 @@ export function install(rt) {
 
   const clean = text => cleanText(text, { redact: rt.redactSecrets })
 
-  // Entries from earlier runs, read once; new ones are kept apart until then.
+  // Entries from earlier runs, read once; new ones are kept apart until then. A read that failed
+  // (`EACCES`, `EISDIR`, a name this host may not open) is not a log without errors (#2604): the
+  // rejection is kept, the report names it, and the entries this host records still count.
+  let earlierFailure
   const earlier = toFile
     ? readFile(logPath, 'utf8').then(text => text.split('\n').filter(Boolean).slice(-KEEP).flatMap((line) => {
         try {
@@ -158,7 +166,10 @@ export function install(rt) {
         } catch {
           return []
         }
-      }), () => [])
+      }), (error) => {
+        earlierFailure = error?.code ?? clean(error?.message ?? String(error))
+        return []
+      })
     : Promise.resolve([])
   let cleared = 0
 
@@ -188,6 +199,9 @@ export function install(rt) {
       if (size > LOG_MAX_BYTES) await rename(logPath, `${logPath}.1`)
       await appendFile(logPath, `${JSON.stringify(entry)}\n`, 'utf8')
       fileFailure = undefined
+      // A line that landed describes a log this host writes to again, so the read failure clears
+      // the way the write one does; the start-up read is not repeated either way.
+      earlierFailure = undefined
     }).catch((error) => {
       fileFailure = error?.code ?? clean(error?.message ?? String(error))
       if (fileFailed) return
@@ -243,11 +257,16 @@ export function install(rt) {
 
   const entries = async () => {
     const old = (await earlier).filter(entry => entry.time > cleared)
-    return [...old, ...fresh].slice(-KEEP).map(entry => ({
+    const list = [...old, ...fresh].slice(-KEEP).map(entry => ({
       ...entry,
       text: clean(entry.text),
       ...(entry.stack ? { stack: clean(entry.stack) } : {}),
     }))
+    // A log this host could not read is not an empty one (#2604): the answer carries the reason
+    // beside the entries, so a caller that would show "no entries" can say why instead. It is a
+    // property of the answer, so every caller that reads the array still gets the array it knew.
+    if (earlierFailure !== undefined) list.unread = earlierFailure
+    return list
   }
 
   // A file named without opening it (#2388): `lstat` answers what the name is — a missing file is
@@ -355,6 +374,17 @@ export function install(rt) {
     return named.length === 0 ? 'none' : named.join(', ')
   }
 
+  // The write side and the read side of the log are different facts (#2383, #2604): an append that
+  // lands says nothing about the lines this host never read, so the one line names both when both
+  // apply, and `recording` only when neither does.
+  const logState = () => {
+    const written = leafRefusedNow ? 'not written (not a plain file of its own)'
+      : fileFailure ? `not written (${fileFailure})`
+        : undefined
+    const read = earlierFailure === undefined ? undefined : `not read (${earlierFailure})`
+    return [written, read].filter(Boolean).join(', ') || 'recording'
+  }
+
   const facts = async () => {
     const bots = Object.values(rt.state.bots)
     const models = [...new Set(bots.map(bot => bot.model ?? bot.appliedModel).filter(Boolean))]
@@ -398,11 +428,13 @@ export function install(rt) {
       // with the log off says nothing (#2134), a host whose appends land says so, and a refused
       // leaf or a failed append names its own reason — the words stderr already used, never the
       // folder, and never a claim about a file behind a link this host did not write (#2089). Both
-      // reasons are read as they stand now, not as the stderr latches left them (#2383).
-      diagnosticsLog: !toFile ? undefined
-        : leafRefusedNow ? 'not written (not a plain file of its own)'
-          : fileFailure ? `not written (${fileFailure})`
-            : 'recording',
+      // reasons are read as they stand now, not as the stderr latches left them (#2383). The
+      // start-up read is the third (#2604): a log this host could not open leaves every earlier
+      // line out of the list, so `recording` alone would claim a read that never happened.
+      diagnosticsLog: !toFile ? undefined : logState(),
+      // The read's own reason, so the report's text can say the earlier lines are missing without
+      // reading it back out of the sentence above (#2604).
+      diagnosticsLogUnread: !toFile ? undefined : earlierFailure,
     }
   }
 
@@ -429,6 +461,10 @@ export function install(rt) {
       facts: hostFacts,
       entries: list.slice(-50).reverse(),
       total: list.length,
+      // The read failure on its own (#2604): additive, so a window that knows no such field keeps
+      // reading `entries` and `total` as it did, and one that does can tell an empty log from one
+      // this host never opened.
+      ...(list.unread === undefined ? {} : { unread: list.unread }),
       markdown: reportMarkdown({ facts: hostFacts, client, entries: list, clientEntries }),
       issuesUrl: ISSUES_URL,
     }
@@ -437,7 +473,11 @@ export function install(rt) {
   async function logText() {
     await rt.loadSecrets?.().catch(() => { /* without stored secrets the log is still built, redacting what it can */ })
     const list = await entries()
-    return list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry))).join('\n')
+    const lines = list.map(entry => (entry.stack ? `${entryLine(entry)}\n${entry.stack.replace(/^/gm, '    ')}` : entryLine(entry)))
+    // The download is what a user hands over with a fault report, so it must not read as a log with
+    // no entries when the reason it is empty is that this host could not read it (#2604).
+    if (list.unread !== undefined) lines.push(`the diagnostics log could not be read (${list.unread}); the errors it holds are not shown`)
+    return lines.join('\n')
   }
 
   async function clear() {

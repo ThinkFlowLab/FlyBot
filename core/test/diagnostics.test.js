@@ -607,6 +607,79 @@ test('the report says nothing about the log while it is off, and recording while
   assert.match(live.markdown, /^diagnostics log: recording$/m)
 })
 
+// #2604: the log is read once at start-up and the rejection was discarded (`() => []`), so a log
+// that exists and holds recorded errors but cannot be opened answered `No host errors recorded.` —
+// the read side of #2383. Root reads a file without its read bit, so the case is skipped there.
+test('the report says the diagnostics log could not be read (#2604)', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root reads a file without its read bit')
+    return
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const logPath = join(home, 'logs', 'diagnostics.jsonl')
+  writeFileSync(logPath, `${JSON.stringify({ time: Date.now() - 60_000, level: 'error', source: 'host', text: 'state write failed' })}\n`)
+  chmodSync(logPath, 0o000)
+  t.after(() => {
+    try { chmodSync(logPath, 0o644) } catch { /* the home may already be gone */ }
+    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+  })
+  assert.throws(() => readFileSync(logPath), /EACCES/, 'this file cannot be read at all')
+
+  const rt = host(home)
+  const report = await rt.diagnostics.report({})
+
+  assert.equal(report.facts.diagnosticsLog, 'not read (EACCES)', 'the report names the read it could not make')
+  assert.match(report.markdown, /^diagnostics log: not read \(EACCES\)$/m)
+  assert.match(report.markdown, /The diagnostics log could not be read \(EACCES\); the errors it holds are not shown\./)
+  assert.doesNotMatch(report.markdown, /No host errors recorded\./, 'an unread log is not a log with no errors')
+  assert.equal(report.total, 0, 'the lines it could not read are counted as nothing rather than guessed at')
+  const listed = await rt.diagnostics.entries()
+  assert.equal(listed.length, 0, 'the list does not invent the entries it could not read')
+  assert.equal(listed.unread, 'EACCES', 'and says the log was not read rather than being empty')
+  assert.equal(report.unread, 'EACCES', 'the report answers the same way')
+  assert.match(await rt.diagnostics.logText(), /could not be read \(EACCES\); the errors it holds are not shown/, 'the Download says so instead of handing over an empty file')
+  assert.equal(report.markdown.includes(home), false, 'the sentence never carries the home folder')
+})
+
+// The other half of #2604: the read failure is about the lines an earlier run wrote, so the errors
+// this host recorded since start-up still reach the report — and the line names both faults when the
+// same leaf refuses the append too.
+test('a failed read of the log keeps the errors this host recorded since start-up (#2604)', async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root reads a file without its read bit')
+    return
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  mkdirSync(join(home, 'logs'), { recursive: true })
+  const logPath = join(home, 'logs', 'diagnostics.jsonl')
+  writeFileSync(logPath, `${JSON.stringify({ time: Date.now() - 60_000, level: 'error', source: 'host', text: 'an earlier run line' })}\n`)
+  chmodSync(logPath, 0o000)
+  t.after(() => {
+    try { chmodSync(logPath, 0o644) } catch { /* the home may already be gone */ }
+    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+  })
+
+  const stderr = []
+  const quiet = t.mock.method(console, 'error', (...args) => stderr.push(args.join(' ')))
+  const rt = host(home)
+  rt.warn('ds-bot: a line written since start-up')
+  await rt.dispose()
+  const report = await rt.diagnostics.report({})
+  quiet.mock.restore()
+
+  assert.equal(report.total, 1, 'the line this host recorded is still counted')
+  assert.equal(report.entries[0].text, 'a line written since start-up')
+  assert.match(report.markdown, /a line written since start-up/)
+  assert.match(report.markdown, /The diagnostics log could not be read \(EACCES\); the errors it holds are not shown\./)
+  assert.doesNotMatch(report.markdown, /No host errors recorded\./)
+  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES), not read (EACCES)', 'the one line names both faults')
+  const download = await rt.diagnostics.logText()
+  assert.match(download, /a line written since start-up/, 'the Download still carries the live line')
+  assert.match(download, /could not be read \(EACCES\)/, 'and says the earlier lines were not read')
+  assert.equal(stderr.filter(line => /not written/.test(line)).length, 1, 'stderr keeps its one line')
+})
+
 // The Read-only row answered one constant for every window that may not write, but the store
 // answers three ways (#2153): `stuck` (the team file cannot be read) is not a live lock at all,
 // and a report that calls a newer or unreadable team file "another dsh holds the team" sends the
