@@ -337,16 +337,29 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     if (!connectorTokenAllowed(path)) {
       throw new BotSocialError(`Bot Social ${method} ${path}: a connector token is not accepted there`, 'route_not_allowed')
     }
-    const response = await fetchImpl(`${base}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${token}`,
-        accept: 'application/json',
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    })
-    const text = await response.text()
+    // The REST fallback shares the MCP client's deadline: a server that accepts and never answers
+    // is a timeout here too, and the signal covers reading the body (#2633).
+    const signal = AbortSignal.timeout(timeoutMs)
+    let response
+    let text
+    try {
+      response = await fetchImpl(`${base}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: 'application/json',
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
+      })
+      text = await response.text()
+    } catch (error) {
+      if (signal.aborted || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw new BotSocialError(`Bot Social ${method} ${path}: no answer in ${Math.round(timeoutMs / 1000)}s`, 'timeout')
+      }
+      throw error
+    }
     let data
     try { data = text ? JSON.parse(text) : {} } catch { data = { message: text } }
     if (!response.ok) {
