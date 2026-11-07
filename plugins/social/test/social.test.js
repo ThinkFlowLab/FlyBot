@@ -5586,11 +5586,19 @@ test('remote-bots does not wait for per-Bot grant listing', async (t) => {
   t.after(stop)
   const server = mockServer()
   const base = createSocialApi({ server: 'https://s', token: 'owner-token', fetch: server.fetch })
+  // Hold the listing open instead of sleeping inside it: `false` then means "the listing is still
+  // running", not "80 ms had not passed yet on this machine". A slow runner used to flip this
+  // assertion on a merge-queue entry whose tree differed only in markdown (#1748).
+  let releaseGrants
+  const grantsHeld = new Promise((resolve) => { releaseGrants = resolve })
+  t.after(() => releaseGrants())
+  let grantsStarted = false
   let grantsDone = false
   const api = {
     ...base,
     listGrants: async () => {
-      await new Promise(resolve => setTimeout(resolve, 80))
+      grantsStarted = true
+      await grantsHeld
       grantsDone = true
       return []
     },
@@ -5602,9 +5610,20 @@ test('remote-bots does not wait for per-Bot grant listing', async (t) => {
   })
   t.after(() => social.dispose())
   await grantTeam(ctx.flybot)
-  const listed = await social.remoteBots({ fresh: true })
-  assert.equal(grantsDone, false)
+  // The listing stays open until the latch below, so an implementation that awaited it would never
+  // return: the bound fails that shape instead of waiting longer for a slow runner.
+  const listed = await Promise.race([
+    social.remoteBots({ fresh: true }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('remote-bots waited for the per-Bot grant listing')), 2000)),
+  ])
+  await waitUntil(() => grantsStarted, { timeout: 5000 })
+  assert.equal(grantsDone, false, 'the roster returned while the grant listing was still running')
   assert.equal(listed.homes[0].bots.some(b => b.handle === '@coder.bob.home'), true)
+  // The listing the poll owns still seats the grant when it answers, and the friend stays listed.
+  releaseGrants()
+  await waitUntil(() => grantsDone, { timeout: 5000 })
+  const after = await social.remoteBots({ fresh: true })
+  assert.equal(after.homes[0].bots.some(b => b.handle === '@coder.bob.home'), true, 'the grant was seated after the wait')
 })
 
 test('#90: a hidden Bot shows again only after the owner re-shares it', async (t) => {
