@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -87,6 +87,33 @@ test('one writer: a live holder is respected, a dead one is taken over, a second
   rmSync(join(dir, 'writer.lock'))
   const again = openTrace({ dir })
   again.close()
+})
+
+// #2629: an open that refuses after it took the writer lock must give the lock back. A directory
+// that exists but cannot be listed takes the lock (creating `writer.lock` needs only `+wx`) and
+// then throws on the listing; the only release used to be `close()`, which that path never reached,
+// so the process held the directory for good and the lock file stayed for every later process.
+test('a refused open releases the writer lock for the next open in this process', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-timeline-store-'))
+  const dir = join(root, 'trace')
+  mkdirSync(dir, { recursive: true })
+  t.after(() => {
+    chmodSync(dir, 0o700)
+    rmSync(root, { recursive: true, force: true })
+  })
+  chmodSync(dir, 0o300)
+  // (a) the open throws instead of answering a trace that cannot read its own directory.
+  assert.throws(() => openTrace({ dir }), (error) => error?.code === 'EACCES', 'the open fails on the unlistable directory')
+  chmodSync(dir, 0o700)
+  const lockLeft = existsSync(join(dir, 'writer.lock'))
+  const reopened = (() => { try { return openTrace({ dir, now: () => 10_000 }) } catch (error) { return error } })()
+  // (b) the directory is not still held in this process: the same open succeeds once it is listable.
+  assert.ok(!(reopened instanceof Error), `the same process opens the directory again: ${reopened?.message}`)
+  // (c) and the failed open left no lock file behind for the next process.
+  assert.equal(lockLeft, false, 'the refused open left writer.lock on disk')
+  reopened.append(rec(9_000))
+  assert.equal(reopened.flush(), true)
+  reopened.close()
 })
 
 test('a corrupt or foreign segment is set aside, never crashes the start, and is not read again', (t) => {
