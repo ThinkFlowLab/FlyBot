@@ -99,9 +99,16 @@ async function start({ services = {}, workspaces = [] } = {}) {
     method: 'POST', body: JSON.stringify({ endpoint, payload }),
   }))).json()
   const tool = (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: agentOf(sessionId), name, callId: 'c1' })
-  // Runs the parts check, registered last; 'next' means the step goes on.
-  const preStep = (sessionId, messages = [], step = 1) => ctx.listeners.get('agent/pre-step').at(-1)(
-    { agent: agentOf(sessionId), messages, step, signal: AbortSignal.timeout(60_000) }, async () => 'next')
+  // Runs the pre-step gates the way DSH does — the listener registered last answers first, and its
+  // next() runs the one registered before it. `next` is the answer the step goes on with; a gate
+  // that refuses returns `{ kind: 'reject' }` and the ones behind it never run.
+  const preStep = (sessionId, messages = [], step = 1) => {
+    const chain = ctx.listeners.get('agent/pre-step')
+    const run = index => index < 0
+      ? Promise.resolve({ kind: 'next', messages })
+      : chain[index]({ agent: agentOf(sessionId), messages, step, signal: AbortSignal.timeout(60_000) }, () => run(index - 1))
+    return run(chain.length - 1).then(decision => decision?.kind === 'next' ? 'next' : decision)
+  }
   const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
   // Waits until the Bot's own chat runs in `dir` and its move has finished.
   const workingIn = async (botId, dir) => {
