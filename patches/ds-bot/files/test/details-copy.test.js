@@ -100,3 +100,33 @@ test('the copy drops a flat trace on the first line and keeps the paragraphs und
   assert.equal(text.split('\n').map(line => line.trim()).filter(Boolean).join(' '), 'Hi there second para')
   assert.equal(text.split('\n').length, 3, 'the paragraph break is not folded away')
 })
+
+// A Bot's name is a whole word (#2645). The copy reads a stored line the way the preview does, so a
+// line that merely starts with a name's letters is the same line on both surfaces — and a trace that
+// really is one still goes.
+const PLAIN_NAMES = ['Dev', 'Release', 'Reviewer', 'Chief']
+const previewLine = () => import('../src/client/text.js').then(module => module.readableLine)
+
+test('the copy keeps a word that only starts with a Bot name, as the preview reads it', async () => {
+  const copyBodyOf = await copyBody()
+  const readableLine = await previewLine()
+  for (const line of [
+    'Development plan is ready',
+    'Devices are offline',
+    'Released v0.2.26',
+    'Reviewers disagree',
+    'Chief concern about the tip',
+  ]) {
+    assert.equal(readableLine(line, PLAIN_NAMES), line, `the preview keeps ${JSON.stringify(line)}`)
+    assert.equal(copyBodyOf(line, PLAIN_NAMES), line, `the copy keeps ${JSON.stringify(line)}`)
+  }
+})
+
+test('the copy still drops a real delegation trace on the first line', async () => {
+  const copyBodyOf = await copyBody()
+  const readableLine = await previewLine()
+  const line = 'Dev → Reviewer please check the tip'
+  assert.equal(readableLine(line, PLAIN_NAMES), 'please check the tip')
+  assert.equal(copyBodyOf(line, PLAIN_NAMES), 'please check the tip')
+  assert.equal(copyBodyOf(`${line}\n\nsecond para`, PLAIN_NAMES), 'please check the tip\n\nsecond para')
+})

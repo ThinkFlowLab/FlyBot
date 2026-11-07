@@ -2120,8 +2120,8 @@ diff --git a/client.js b/client.js
 +  const body = String(text2 ?? "");
 +  const known = sortedNames(names);
 +  if (known.length === 0) return body;
-+  const hop = `(?:${known.map(escapeName).join("|")})`;
-+  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})*[ \\t]*(?=\\S)`);
++  const hop = `(?:${known.map(escapeName).join("|")})(?=[ \\t→,，.。:：]|$)`;
++  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*(?=\\S)`);
 +  const found = trace.exec(body);
 +  return found ? body.slice(found[0].length) : body;
 +}
