@@ -101,6 +101,14 @@ export const sizeLabel = (n) => {
   const kb = (n / 1024).toFixed(1)
   return Number(kb) >= 1024 ? `${(n / 1048576).toFixed(1)} MB` : `${kb} KB`
 }
+// Cut on code points, never on UTF-16 units: the share envelope leaves this Bot as JSON and a
+// slice that ends inside a surrogate pair reaches the other home as U+FFFD (#2581).
+export const cutCodePoints = (value, max) => {
+  const text = String(value ?? '').toWellFormed()
+  if (!Number.isFinite(max) || text.length <= max) return text
+  return Array.from(text).slice(0, max).join('')
+}
+
 // Remote strings that reach model-visible text: one line, no brackets or markup, capped.
 export const cleanText = (value, fallback = '') => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || fallback
 // Owner-only draft body: keep punctuation the friend will see; strip controls and cap.
@@ -1838,7 +1846,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       who: cleanText(flybot.bot.get(msg.from)?.name, 'member'),
       kind: 'message',
       authorKind: 'human',
-      text: String(msg.text ?? '').slice(0, 18_000),
+      text: cutCodePoints(msg.text, 18_000),
       calls: [to],
     }
     return `FLYBOT-ROOM-SHARE\n${JSON.stringify(body)}`

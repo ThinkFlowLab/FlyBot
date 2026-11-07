@@ -54,3 +54,16 @@ test('cleanCode keeps an enumerated error code and nothing else', () => {
   assert.equal(cleanCode('AUTH'), 'AUTH')
   for (const bad of ['sk-live-0123456789abcdef', 'quota exceeded for key abc', 'rate_limit', '<b>', '', 'A'.repeat(41), 5, null, undefined]) assert.equal(cleanCode(bad), 'UNKNOWN', String(bad))
 })
+
+// #2581: 60 is a character budget. A label of emoji is 120 UTF-16 units, and a unit slice at 60
+// ends inside the 31st face, so the panel and the exported JSON carried half a character.
+test('#2581: cleanLabel cuts emoji on a code point boundary', () => {
+  const out = cleanLabel('🚀'.repeat(61))
+  assert.equal(out.isWellFormed(), true)
+  assert.equal(out.includes('\uFFFD'), false)
+  assert.equal(Array.from(out).length, 60)
+  assert.equal(out, '🚀'.repeat(60))
+  // A label already inside the budget is untouched, however many units it costs.
+  const short = '🚀'.repeat(30)
+  assert.equal(cleanLabel(short), short)
+})

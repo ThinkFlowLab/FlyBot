@@ -4854,3 +4854,44 @@ test('a paused run is named Paused in the strip and in the Runs history', async 
     view.unmount()
   }
 })
+
+// #2581: an avatar takes one code point, not one UTF-16 unit; the role line and the canvas label
+// are bounded in characters for the same reason. A name or role of emoji used to leave half a
+// surrogate pair in the circle / subtitle / flowchart.
+test('#2581: an emoji-leading name keeps one whole character in the palette avatar', async () => {
+  const graph = delivery()
+  const call = async (name) => (name === 'workflow/state' ? { workflows: [graph], templates: [] } : { ok: true, workflows: [graph] })
+  const roster = { bots: [{ id: 'chief-e', name: '🚀Dev', role: 'Ops', remote: false }] }
+  const view = mount(client.Section, { roster, call, actions: {} })
+  try {
+    await settle()
+    findAll(view.tree, node => node.type === 'button' && textOf(node).includes('发布交付流水线'))[0].props.onClick()
+    button(view.tree, 'Flow').props.onClick()
+    button(view.tree, 'Edit').props.onClick()
+    await settle()
+    const avatar = findAll(view.tree, node => node.props?.className === 'wf-palette-av')[0]
+    assert.ok(avatar, 'the palette renders the Bot avatar')
+    assert.equal(textOf(avatar), '🚀')
+    assert.equal(client.firstGlyph('🚀Dev'), '🚀')
+    assert.equal(client.firstGlyph(''), '?')
+  } finally {
+    view.unmount()
+  }
+  const role = client.botPaletteSubtitle({ id: 'chief-e', name: '🚀Dev', role: '🚀'.repeat(28) }, roster.bots)
+  assert.equal(role.isWellFormed(), true, 'the subtitle carries no lone surrogate')
+  assert.equal(role.includes('\uFFFD'), false)
+  assert.equal(Array.from(role).length, 28, '27 characters plus the ellipsis')
+})
+
+test('#2581: the canvas node label is one code point', () => {
+  const graph = delivery()
+  graph.nodes = graph.nodes.map(node => (node.id === 'coder' ? { ...node, name: '🚀Dev' } : node))
+  const view = mount(client.MiniFlowchart, { workflow: graph })
+  try {
+    const labels = findAll(view.tree, node => node.type === 'text').map(textOf)
+    assert.ok(labels.includes('🚀'), `the flowchart text labels are ${JSON.stringify(labels)}`)
+    assert.equal(labels.every(label => label.isWellFormed()), true, 'no label is half a pair')
+  } finally {
+    view.unmount()
+  }
+})

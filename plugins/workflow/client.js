@@ -295,6 +295,14 @@ window.__ModuleLoader__.load({
     const COLUMN_KEY = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' }
     const COLUMN_OF = { open: 'not-started', claimed: 'not-started', working: 'in-progress', blocked: 'in-progress', 'result-ready': 'in-progress', accepted: 'done', cancelled: 'done', failed: 'done' }
     const COLORS = { Planner: '#8b5cf6', Writer: '#f0509a', Coder: '#1fbf6a', Reviewer: '#f5a524', Tester: '#14b8a6', Deployer: '#2f7cf6', '研究员': '#a78bfa', '数据分析师': '#ec4899' }
+    // One code point, not one UTF-16 unit: half a surrogate pair renders as a replacement
+    // character in the avatar circle (#2017, #2581).
+    const firstGlyph = name => Array.from(String(name ?? '').trim())[0] ?? '?'
+    // A cut in code points, so a label never ends inside a surrogate pair (#2581).
+    const cutCodePoints = (value, max) => {
+      const text = String(value ?? '')
+      return text.length <= max ? text : Array.from(text).slice(0, max).join('')
+    }
     // Zero-width plane center line: shift wire coordinates so strokes stay inside the SVG box.
     const WIRE_SPAN = 480
     const NODE_WIRE_OUT = 56
@@ -397,7 +405,7 @@ window.__ModuleLoader__.load({
       const Avatar = globalThis.__flybot__?.BotAvatar
       if (bot && typeof Avatar === 'function') return h(Avatar, { bot, size, badge: false, live: false })
       const color = COLORS[node?.name] ?? '#4d6bfe'
-      return h('span', { className: 'wf-av', style: { background: color, width: size, height: size, fontSize: Math.max(11, size * 0.42) } }, (node?.name ?? '?').slice(0, 1))
+      return h('span', { className: 'wf-av', style: { background: color, width: size, height: size, fontSize: Math.max(11, size * 0.42) } }, firstGlyph(node?.name))
     }
 
     const BOT_TINTS = ['#4d6bfe', '#8b5cf6', '#14b8a6', '#f5a524', '#ec4899', '#1fbf6a', '#2f7cf6']
@@ -410,7 +418,7 @@ window.__ModuleLoader__.load({
     function botPaletteSubtitle(bot, peers) {
       const role = String(bot?.role ?? '').replace(/\s+/g, ' ').trim()
       const dupes = (peers ?? []).filter(item => item.name === bot.name).length > 1
-      if (role) return role.length > 28 ? `${role.slice(0, 27)}…` : role
+      if (role) return Array.from(role).length > 28 ? `${cutCodePoints(role, 27)}…` : role
       if (dupes && bot?.id) return `…${String(bot.id).slice(-6)}`
       return ''
     }
@@ -422,7 +430,7 @@ window.__ModuleLoader__.load({
       return h('span', {
         className: 'wf-palette-av',
         style: { background: color, width: size, height: size, fontSize: Math.max(11, size * 0.42) },
-      }, (bot?.name ?? '?').slice(0, 1))
+      }, firstGlyph(bot?.name))
     }
 
     function PaletteBotChip({ bot, peers, onPointerDown, dragging }) {
@@ -515,7 +523,7 @@ window.__ModuleLoader__.load({
               fill: color,
               fontSize: 12,
               fontWeight: 600,
-            }, (node.name ?? '?').slice(0, 1)))
+            }, firstGlyph(node.name)))
         })))
     }
 
@@ -2690,7 +2698,7 @@ window.__ModuleLoader__.load({
       runHistoryRows, liveStageRuns, resolveFocusedRun, newestAttempt, parallelFrameStyle, fitPlane,
       editPlane, flowLayout, flowRows,
       DRAWER_FLOW_W, NODE_W, NODE_H,
-      botPaletteSubtitle, botTint, settledCall,
+      botPaletteSubtitle, botTint, settledCall, firstGlyph, MiniFlowchart,
     }
   },
 })
