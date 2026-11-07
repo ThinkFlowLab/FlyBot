@@ -31,7 +31,7 @@ function credentialsAt(home, server) {
   writeFileSync(credentialsFile(home), JSON.stringify({ server, token: 'test-token' }), { mode: 0o600 })
 }
 
-async function statusAt(cwd, home) {
+async function statusAt(cwd) {
   process.chdir(cwd)
   const handlers = new Map()
   const ctx = { flybot: fakeFlybot(handlers), effect(fn) { this.off = fn() } }
@@ -64,8 +64,8 @@ test('the credentials file follows the DSH home whatever the working directory',
   try {
     credentialsAt(home, 'https://peer.test')
     await withEnv({ DSH_HOME: '', HOME: home }, async () => {
-      const first = await statusAt(a, home)
-      const second = await statusAt(b, home)
+      const first = await statusAt(a)
+      const second = await statusAt(b)
       assert.equal(isAbsolute(dshHomeOf()), true, 'the resolved root is absolute')
       assert.deepEqual(first.known, ['https://peer.test'], 'the saved server is read from the DSH home')
       assert.deepEqual(second.known, first.known, 'two working directories resolve to one credentials root')
