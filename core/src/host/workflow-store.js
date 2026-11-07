@@ -93,7 +93,12 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     }
   }
 
+  // A file name is a file name on both sides of the store (#2609): `save` has always refused an id
+  // that is not one, and the read joins the same id onto the folder, so `../outside/stolen` would
+  // read a JSON file outside `workflows/` — including the stored `default` key `list()` feeds
+  // back in here. Every read entry point comes through this function, so the check lives here once.
   const readDefinition = (id) => {
+    if (!isWorkflowId(id)) return null
     const preset = presets.map(normaliseWorkflow).find((definition) => definition.id === id)
     if (preset !== undefined) return { definition: preset, source: 'preset' }
     const own = readOwn(id)
