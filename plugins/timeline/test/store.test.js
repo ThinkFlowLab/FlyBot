@@ -206,6 +206,31 @@ test('a missing temporary name is a writer’s to create', (t) => {
   trace.close()
 })
 
+test('a rotation whose flush fails does not prune the last durable segment', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const trace = openTrace({ dir, segmentRecords: 2, segments: 2, flushMs: 60_000, now: () => 1_000_000 })
+  const disk = () => files(dir).filter(name => /^trace-\d{6}\.json$/.test(name))
+    .map(name => [name, JSON.parse(readFileSync(join(dir, name), 'utf8')).records.map(r => r.t)])
+  trace.append(rec(1)); trace.append(rec(2))
+  assert.equal(trace.flush(), true)
+  assert.deepEqual(disk(), [['trace-000001.json', [1, 2]]])
+  trace.append(rec(3)); trace.append(rec(4))
+  // The next write is refused: a link sits where the new segment's temporary file goes.
+  symlinkSync(join(dir, 'outside'), join(dir, 'trace-000002.json.tmp'))
+  trace.append(rec(5))
+  // The page still shows what it holds, and the durable segment is still there for a restarted host.
+  assert.deepEqual(trace.records().map(r => r.t).filter(t => t >= 3), [3, 4, 5])
+  assert.deepEqual(disk(), [['trace-000001.json', [1, 2]]])
+  rmSync(join(dir, 'trace-000002.json.tmp'), { force: true })
+  trace.append(rec(6)); trace.append(rec(7))
+  assert.equal(trace.flush(), true)
+  // The next successful rotation applies the cap again, and the newest segments are on disk.
+  assert.deepEqual(trace.records().map(r => r.t), [5, 6, 7])
+  assert.deepEqual(disk(), [['trace-000003.json', [5, 6]], ['trace-000004.json', [7]]])
+  trace.close()
+})
+
 test('a plain temporary file a crashed writer left behind (one name) is overwritten', (t) => {
   const dir = tmp()
   t.after(() => rmSync(dir, { recursive: true, force: true }))

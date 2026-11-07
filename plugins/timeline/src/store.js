@@ -166,10 +166,11 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
       if (closed) return
       let segment = newest()
       if (segment.records.length >= segmentRecords) {
-        flush()
+        // A refused write leaves the newest segments undurable: do not delete the last good one.
+        const saved = flush()
         segment = fresh()
         kept.push(segment)
-        prune()
+        if (saved) prune()
       }
       segment.records.push(record)
       if (names) {
