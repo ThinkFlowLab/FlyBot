@@ -10,7 +10,7 @@ import { homeLock } from './home-lock.js'
 import { openJournal } from './journal.js'
 import { tempWritable } from './real-dir.js'
 import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
-import { codePoints, currentColor, normalize, unquote } from './text.js'
+import { codePoints, currentColor, cut, normalize, unquote } from './text.js'
 
 // The saved team's format version. Version 2 (#47) adds the identity schema: member
 // records, a per-Bot owner binding, and the owner's designated Chief. A version-1 file
@@ -418,7 +418,9 @@ export function install(rt) {
   // A Project's working folder is the absolute path the folder picker hands back (#1766), never a
   // relative one: a record that says 'src' would mean a different folder on every machine.
   const PROJECT_WORKDIR = /^(?:\/|[A-Za-z]:[\\/]|~[\\/]|\\\\)[^\u0000-\u001f]*$/
-  const projectText = (value, limit) => (typeof value === 'string' ? value.trim().slice(0, limit) : '')
+  // The bound is a code point budget (#2638): a slice at 120 UTF-16 units kept half of an emoji
+  // at the edge, so the record held a lone surrogate that every UTF-8 write turned into U+FFFD.
+  const projectText = (value, limit) => (typeof value === 'string' ? cut(value.trim(), limit).text : '')
   const projectRefusal = (message, code = 'bot/invalid') => {
     const error = new Error(message)
     error.code = code

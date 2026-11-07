@@ -170,6 +170,51 @@ test('the record and its bindings survive a store re-open', async () => {
   }
 })
 
+// #2638: `projectText` bounded every Project field with `String#slice`, which counts UTF-16
+// units, so a name whose last code point is an emoji at the 120 bound stored half a surrogate
+// pair; any UTF-8 write of it reached the world as U+FFFD. The kept prefix must end on a code
+// point boundary, and what survives must still round-trip through state.json.
+test('a Project name cut at the bound keeps whole code points (#2638)', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-cut-'))
+  const name = `${'P'.repeat(119)}🙂`
+  let first
+  try {
+    first = await start(home)
+    const project = created(await first.call('project-create', { name }))
+    assert.equal(project.name.isWellFormed(), true, 'the stored name is well formed')
+    assert.ok([...project.name].length <= 120, `at most 120 code points, got ${[...project.name].length}`)
+    // The file is what the next host reads: no half pair may reach it, in any encoding.
+    const bytes = readFileSync(join(home, 'state.json'))
+    assert.equal(bytes.includes(Buffer.from([0xef, 0xbf, 0xbd])), false, 'state.json carries no replacement character')
+    await first.stop({ keepHome: true })
+
+    const second = await start(home)
+    try {
+      const loaded = created(await second.call('project-read', { id: project.id }))
+      assert.equal(loaded.name.isWellFormed(), true, 'the name loaded back is well formed')
+      assert.ok([...loaded.name].length <= 120, `at most 120 code points, got ${[...loaded.name].length}`)
+    } finally { await second.stop({ keepHome: true }) }
+  } finally {
+    await first?.stop({ keepHome: true }).catch(() => {})
+    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+  }
+})
+
+// The other half of #2638: a field under its bound is not shortened, so the boundary rule only
+// ever drops text that would not have fitted.
+test('a Project field under its bound is kept whole after trim (#2638)', async () => {
+  const { call, stop } = await start()
+  try {
+    const fits = created(await call('project-create', { name: '  Padded  ', workDir: `/${'d'.repeat(396)}🙂` }))
+    assert.equal(fits.name, 'Padded')
+    assert.equal(fits.workDir, `/${'d'.repeat(396)}🙂`, 'a working folder under 400 units is kept whole')
+    // A working folder whose last code point is an emoji at the 400 bound is cut on a boundary.
+    const overBound = created(await call('project-create', { name: 'Beyond', workDir: `/${'d'.repeat(398)}🙂` }))
+    assert.equal(overBound.workDir.isWellFormed(), true, 'the kept working folder is well formed')
+    assert.ok([...overBound.workDir].length <= 400, `at most 400 code points, got ${[...overBound.workDir].length}`)
+  } finally { await stop() }
+})
+
 // #1704: the id tables are plain objects, so `state.projects['__proto__']` and
 // `state.bots['__proto__']` answered `Object.prototype` (which `isRecord` accepts). An id that
 // is not an own key must resolve as absent, and no request may write `Object.prototype`.
