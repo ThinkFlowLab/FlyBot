@@ -13,6 +13,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { canRetry } from '../shared/held-retry.js'
+import { safeLookImage } from '../shared/look-image.js'
 import { mentionSpans } from '../shared/mentions.js'
 import { isHomeLevelRemote, remoteMentionLabel } from '../shared/remote-label.js'
 import { cleanName, stripSessionChips } from './delivery.js'
@@ -937,8 +938,8 @@ export function install(rt) {
     const avatar = {}
     if (typeof src.shape === 'string' && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(src.shape)) avatar.shape = src.shape
     if (typeof src.image === 'string') {
-      const image = src.image.trim()
-      if (image.length <= 65536 && /^(https?:\/\/|data:image\/)/i.test(image) && !/[\s<>]/.test(image)) avatar.image = image
+      const image = safeLookImage(src.image)
+      if (image) avatar.image = image
     }
     if (typeof src.emoji === 'string') {
       const emoji = src.emoji.trim()

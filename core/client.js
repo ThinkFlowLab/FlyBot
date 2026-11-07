@@ -4935,6 +4935,29 @@ function registerTheme(id, theme) {
 }
 var allThemes = () => ({ ...THEMES, ...customThemes });
 
+// src/shared/look-image.js
+var LOOK_IMAGE_MAX = 65536;
+var DATA_IMAGE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/i;
+var HTTP = /^https?:\/\//i;
+var UNSAFE = /["'()\\\u0000-\u001f\u007f\s<>]/;
+function safeLookImage(value, max = LOOK_IMAGE_MAX) {
+  if (typeof value !== "string") return null;
+  const text2 = value.trim();
+  if (text2.length === 0 || text2.length > max || UNSAFE.test(text2)) return null;
+  if (DATA_IMAGE.test(text2)) return text2;
+  if (!HTTP.test(text2)) return null;
+  try {
+    new URL(text2);
+  } catch {
+    return null;
+  }
+  return text2;
+}
+function cssImageUrl(value) {
+  const image = safeLookImage(value);
+  return image === null ? null : `url("${image}")`;
+}
+
 // src/client/mention-style.js
 function chipKey(bot) {
   if (/\s/.test(bot?.name)) return null;
@@ -4956,7 +4979,8 @@ function mentionCss(bots) {
     const chip = key !== null && owner.get(key) === bot ? `[class*="_userRow"] [data-ref-chip="file"][title="@${String(bot.name).replace(/["\\]/g, "\\$&")}" i]` : "";
     const look = bot?.remote ? lookAvoidingLocals(bot) : lookOf(bot);
     const marks = chip ? `${anchor}::before,${chip}::before` : `${anchor}::before`;
-    const mark = look.image ? `${marks}{background:center/cover url("${look.image}");-webkit-mask:none;mask:none;border-radius:50%}` : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`;
+    const image = cssImageUrl(look.image);
+    const mark = image ? `${marks}{background:center/cover ${image};-webkit-mask:none;mask:none;border-radius:50%}` : `${marks}{background:${paintCss(look.color)};-webkit-mask-image:${maskOf(look.shape)};mask-image:${maskOf(look.shape)}}`;
     const chipBase = chip ? `${chip}{color:inherit;font-weight:600}${chip}>svg{display:none}${chip}::before{content:"";display:inline-block;flex:none;width:16px;height:16px;margin-right:3px;vertical-align:-3px;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}` : "";
     return `${anchor}{color:${inkText(look.color)}}${chipBase}${mark}`;
   }).join("\n");
