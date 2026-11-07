@@ -196,9 +196,11 @@ export function install(rt) {
       // A name saved before the rule stays usable until it changes.
       const problem = next === bot.name ? undefined : nameProblem(next)
       if (problem !== undefined) throw new Error(problem)
-      bot.name = next
+      // The title write is the one step here that can refuse, so the record moves only after
+      // it has: a refused rename leaves the Bot, its rooms and the store as they were (#2622).
       const agent = await rt.resolveAgent(rt.chatOf(id))
       await ctx.sessionTitle.rename(agent.session, next)
+      bot.name = next
       await followMemberNames(Object.values(state.rooms).filter(room => room.members.includes(id)))
     }
     if (patch.role !== undefined) bot.role = cut(String(patch.role).trim(), 24).text
