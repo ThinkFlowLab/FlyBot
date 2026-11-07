@@ -168,7 +168,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +import { currentColor, cut, isColor, unquote } from './text.js'
  import { nameProblem } from '../shared/mentions.js'
 +import { cleanExternal } from './room-participant-external.js'
-+import { implicitRoomOwner } from './room-membership.js'
++import { currentParticipants, implicitRoomOwner, syncMembers } from './room-membership.js'
 +import { ownEntry } from './store.js'
  
  export function install(rt) {
@@ -688,7 +688,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,12 +417,43 @@ export function install(rt) {
+@@ -417,14 +417,45 @@ export function install(rt) {
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -698,9 +698,9 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    }
      state.mainBotIds = next
 +    rt.syncDesignatedChief()
-+    await rt.save()
-+  }
-+
+     await rt.save()
+   }
+ 
 +  // #638: retire a Bot instead of deleting it. The tree already reads fields['flybot-tree'].retired:
 +  // adoption skips the record and it no longer counts against maxChildren, while its chat, its parts
 +  // and its memory stay where they are. `hidden` keeps it out of the default Bot list the way the
@@ -731,12 +731,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      delete state.grants[id]
 +      await rt.reachChanged?.(id)
 +    }
-     await rt.save()
++    await rt.save()
 +    return { bot, freed }
-   }
- 
++  }
++
    async function deleteBot(id) {
-@@ -434,22 +434,42 @@ export function install(rt) {
+     const bot = rt.botOf(id)
+     if (bot === undefined) throw new Error('Unknown Bot')
+@@ -434,22 +434,54 @@ export function install(rt) {
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
      const parts = new Set([id, current, ...(bot.segments ?? []).map(segment => segment.sessionId)])
@@ -765,9 +767,24 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      }
      const touched = []
      for (const room of Object.values(state.rooms)) {
-       if (!room.members.includes(id)) continue
-       room.members = room.members.filter(member => member !== id)
-       if (room.admin === id) room.admin = null
+-      if (!room.members.includes(id)) continue
+-      room.members = room.members.filter(member => member !== id)
+-      if (room.admin === id) room.admin = null
++      const seat = currentParticipants(room).find(p => p.kind === 'bot' && !p.remote && p.id === id)
++      if (!room.members.includes(id) && seat === undefined) continue
++      // #2607: end the seat the way leaving does, then derive `members` from the seats. A separate
++      // filter leaves the participant current, and the next membership write writes the id back.
++      if (Array.isArray(room.participants)) {
++        if (seat !== undefined) {
++          seat.leftSeq = room.seq ?? 0
++          seat.leftAt = Date.now()
++        }
++        if (room.admin === id) room.admin = null
++        syncMembers(room)
++      } else {
++        room.members = room.members.filter(member => member !== id)
++        if (room.admin === id) room.admin = null
++      }
 +      if (room.taskLead === id) delete room.taskLead
        rt.dropGroupSession(room, id)
        touched.push(room)

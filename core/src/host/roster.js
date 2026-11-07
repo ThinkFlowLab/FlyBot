@@ -6,7 +6,7 @@ import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOT
 import { currentColor, cut, isColor, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { cleanExternal } from './room-participant-external.js'
-import { implicitRoomOwner } from './room-membership.js'
+import { currentParticipants, implicitRoomOwner, syncMembers } from './room-membership.js'
 import { ownEntry } from './store.js'
 
 export function install(rt) {
@@ -649,9 +649,21 @@ export function install(rt) {
     }
     const touched = []
     for (const room of Object.values(state.rooms)) {
-      if (!room.members.includes(id)) continue
-      room.members = room.members.filter(member => member !== id)
-      if (room.admin === id) room.admin = null
+      const seat = currentParticipants(room).find(p => p.kind === 'bot' && !p.remote && p.id === id)
+      if (!room.members.includes(id) && seat === undefined) continue
+      // #2607: end the seat the way leaving does, then derive `members` from the seats. A separate
+      // filter leaves the participant current, and the next membership write writes the id back.
+      if (Array.isArray(room.participants)) {
+        if (seat !== undefined) {
+          seat.leftSeq = room.seq ?? 0
+          seat.leftAt = Date.now()
+        }
+        if (room.admin === id) room.admin = null
+        syncMembers(room)
+      } else {
+        room.members = room.members.filter(member => member !== id)
+        if (room.admin === id) room.admin = null
+      }
       if (room.taskLead === id) delete room.taskLead
       rt.dropGroupSession(room, id)
       touched.push(room)
