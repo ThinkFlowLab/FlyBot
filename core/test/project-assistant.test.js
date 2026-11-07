@@ -365,6 +365,22 @@ test('buildDigest is pure: the same rows answer the same four sections', () => {
   assert.match(quiet.text, /no change since the previous digest\.$/)
 })
 
+// #2618: the header and the day the digest is filed under are one calendar day — the digest's own
+// zone, Asia/Shanghai, not UTC. A fixed instant with an explicit offset keeps the machine's TZ out
+// of the assertion: 00:30 Shanghai is still the previous day in UTC.
+test('the digest header names the Shanghai day the digest is filed under', () => {
+  const at = Date.parse('2026-11-08T00:30:00+08:00')
+  assert.equal(dayIn(at, 'Asia/Shanghai'), '2026-11-08')
+  const project = { id: 'project-1', name: 'Edge' }
+  const quiet = buildDigest({ project, rows: [], at })
+  assert.equal(quiet.day, '2026-11-08')
+  assert.equal(quiet.text.split('\n')[0], 'Project Assistant (Edge) — 2026-11-08: no change since the previous digest.')
+  const rows = [{ id: 'a', source: 'bot', column: 'in-progress', assignee: 'Writer', updatedAt: 10 }]
+  const busy = buildDigest({ project, rows, at })
+  assert.equal(busy.day, '2026-11-08')
+  assert.equal(busy.text.split('\n')[0], 'Project Assistant (Edge) — 2026-11-08')
+})
+
 // --- #1733: per-owner digests, quiet windows that hold, opt-out and one owner's failure -------
 
 // A second owner on the same host, with their own Session (a second chief Bot).
