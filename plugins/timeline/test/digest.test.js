@@ -278,3 +278,79 @@ test('#2543: a Bot busy the whole window reads as busy, not as a turn-less Bot',
   // Control: a Bot with no turn and no busy time still reads as idle, exactly as before.
   assert.match(buildDigest(make(), { now: 100_000 }).markdown, /## Writer\n- no turns in the window/)
 })
+
+// #2619: the report's hours are the reader's, and only the panel knows which zone that is. The host
+// formats the window in the zone the panel sends; without that, a host in another zone printed its
+// own hours next to a panel header showing the browser's (`fmtClock`), and a Shanghai reader behind
+// a UTC host got `15:30–16:30` above a header that said `23:30–00:30`.
+const READER_FROM = Date.parse('2026-11-06T15:30:00Z')
+const READER_TO = Date.parse('2026-11-06T16:30:00Z')
+const readerWindow = () => make({ from: READER_FROM, to: READER_TO, live: false })
+
+test('#2619: the report prints the window in the zone the panel names', () => {
+  const zone = timeZone => buildDigest(readerWindow(), { now: READER_TO, timeZone }).range
+  assert.equal(zone('UTC'), '15:30–16:30')
+  assert.equal(zone('Asia/Shanghai'), '23:30–00:30 (+1 day)')
+  assert.equal(zone('America/New_York'), '10:30–11:30')
+  // The day suffix follows the reader's midnight too, not the host's: UTC crosses none, Shanghai
+  // crosses its own, and New York stays inside one day.
+  assert.equal(buildDigest(readerWindow(), { now: READER_TO, timeZone: 'UTC' }).line, '4 turns, 1 failed, 12.3k tokens in over 15:30–16:30.')
+})
+
+// A zone the browser named but the host cannot use must never break the report, and must never be
+// silently replaced by another zone's hours: it falls back to today's host-zone answer.
+test('#2619: an unknown zone falls back to the host zone and never throws', () => {
+  const fallback = buildDigest(readerWindow(), { now: READER_TO })
+  for (const timeZone of ['Mars/Olympus', '', '   ', null, 42, {}, 'A'.repeat(200)]) {
+    const digest = buildDigest(readerWindow(), { now: READER_TO, timeZone })
+    assert.equal(digest.range, fallback.range, String(timeZone))
+    assert.equal(digest.markdown, fallback.markdown, String(timeZone))
+  }
+})
+
+// Without a zone the report is what it printed before this change, byte for byte: the host's own
+// clock, as a reminder or an older panel that names no zone still gets.
+test('#2619: no zone keeps the report byte for byte as it was', () => {
+  const digest = buildDigest(readerWindow(), { now: READER_TO })
+  assert.equal(digest.markdown, [
+    '# Team report',
+    'Window: 23:30–00:30 (+1 day)',
+    '',
+    '## Chief (main)',
+    '- 4 turns, 1 failed (25%)',
+    '- busy 62% of the window',
+    '- tokens: 12.3k in / 1.2k out / 8.0k cached',
+    '- tools: web_search ×6 (1 failed), read ×2',
+    '',
+    '## Writer',
+    '- no turns in the window',
+    '- 1 request(s) unanswered',
+    '- look: 1 request(s) unanswered',
+    '',
+    '## Team',
+    '- 4 turns, 1 failed',
+    '- tokens: 12.3k in / 1.2k out (4 calls)',
+    '- longest wait: b → a, 12m',
+  ].join('\n'))
+  assert.equal(digest.line, '4 turns, 1 failed, 12.3k tokens in over 23:30–00:30 (+1 day).')
+})
+
+// The zone crosses the wire as `body.timeZone`, trimmed and length-capped; anything else is not a
+// zone and leaves the request exactly as it was.
+test('#2619: the endpoint passes the panel\'s zone through and ignores anything else', () => {
+  const adapter = mockAdapter()
+  const timeline = createTimeline(adapter, { persist: false, now: () => Date.UTC(2026, 10, 6, 16, 30) })
+  try {
+    const ask = adapter.endpoints.get(DIGEST_ENDPOINT)
+    assert.equal(ask({ windowMs: 3_600_000, timeZone: 'UTC' }).range, '15:30–16:30')
+    assert.equal(ask({ windowMs: 3_600_000, timeZone: ' Asia/Shanghai ' }).range, '23:30–00:30 (+1 day)')
+    // No zone, and every shape that is not one: the host's own clock, exactly as before.
+    const host = ask({ windowMs: 3_600_000 }).range
+    assert.equal(host, '23:30–00:30 (+1 day)')
+    assert.equal(ask({ windowMs: 3_600_000, timeZone: 42 }).range, host)
+    assert.equal(ask({ windowMs: 3_600_000, timeZone: '   ' }).range, host)
+    assert.equal(ask({ windowMs: 3_600_000, timeZone: 'A'.repeat(65) }).range, host)
+  } finally {
+    timeline.dispose()
+  }
+})

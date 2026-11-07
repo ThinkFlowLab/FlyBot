@@ -64,7 +64,15 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   const alertView = (body = {}) => alerts.fold(window(body))
   const offAlerts = adapter.handle(ALERTS_ENDPOINT, alertView)
   // The team run report (#582): the same window, as short Markdown a person can paste. Read-only.
-  const digest = (body = {}) => buildDigest(window(body), { ...(typeof body?.title === 'string' && body.title.trim() ? { title: body.title.trim().slice(0, 80) } : {}), now: now() })
+  // The panel names the reader's zone (#2619); it is passed through only when it looks like one.
+  const digest = (body = {}) => {
+    const timeZone = typeof body?.timeZone === 'string' ? body.timeZone.trim() : ''
+    return buildDigest(window(body), {
+      ...(typeof body?.title === 'string' && body.title.trim() ? { title: body.title.trim().slice(0, 80) } : {}),
+      ...(timeZone && timeZone.length <= 64 ? { timeZone } : {}),
+      now: now(),
+    })
+  }
   const offDigest = adapter.handle(DIGEST_ENDPOINT, digest)
   return {
     trace, recorder, window, exportNow, exportWindow, health, alerts, alertView, digest,
