@@ -21,7 +21,7 @@ import { retiredBot } from './store.js'
 import { currentParticipants, deriveParticipants } from './room-membership.js'
 import { cardNamesIssue } from '../shared/issue-ref.js'
 import { ownEntry } from './store.js'
-import { codePoints } from './text.js'
+import { codePoints, normalize, unquote } from './text.js'
 import { cut } from '../shared/text-boundary.js'
 
 const ACTIVE = new Set(['open', 'claimed', 'working', 'blocked'])
@@ -763,7 +763,8 @@ export function install(rt) {
   }
 
   const roomByName = (botId, name) => {
-    const rooms = Object.values(state.rooms ?? {}).filter(room => Array.isArray(room.members) && room.members.includes(botId) && room.name === name)
+    const wanted = normalize(unquote(name))
+    const rooms = Object.values(state.rooms ?? {}).filter(room => Array.isArray(room.members) && room.members.includes(botId) && normalize(room.name) === wanted)
     if (rooms.length !== 1) throw invalid(`No single group named "${name.slice(0, 80)}" that you are in`)
     return rooms[0].id
   }
@@ -808,10 +809,11 @@ export function install(rt) {
     throw forbidden(`Only the ${picked ? "room's task lead" : 'group admin'} can ${action}`)
   }
   const memberBot = (room, name) => {
-    const wanted = String(name).trim()
+    const given = String(name).trim()
+    const wanted = normalize(given).replace(/^@/, '')
     const ids = liveParticipants(room).filter(person => person.kind === 'bot' && !person.remote).map(person => person.id)
-    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && !retiredBot(candidate) && candidate.name === wanted)
-    if (matches.length !== 1) throw invalid(`No single Bot named "${wanted.slice(0, 80)}" in this group`)
+    const matches = [...new Set(ids)].map(id => botRecord(id)).filter(candidate => candidate && !retiredBot(candidate) && normalize(candidate.name) === wanted)
+    if (matches.length !== 1) throw invalid(`No single Bot named "${given.slice(0, 80)}" in this group`)
     return matches[0]
   }
   const isOverall = (task, roomId) => task?.kind === 'group' && task.origin?.roomId === roomId && openTask(task)
