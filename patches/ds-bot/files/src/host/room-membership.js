@@ -66,6 +66,16 @@ export function currentParticipants(room) {
   return (room?.participants ?? []).filter(p => p.leftSeq === undefined)
 }
 
+// The one derivation of `room.members` from the seats. `deleteBot` (roster.js) shares it so a
+// deletion closes the seat and derives `members` in the same step (#2607): a separate filter
+// leaves a current participant behind, and the next membership write rebuilds the deleted id.
+export function syncMembers(room) {
+  room.members = currentParticipants(room).filter(p => p.kind === 'bot' && !p.remote).map(p => p.id)
+  const botAdmin = currentParticipants(room).find(p => p.kind === 'bot' && !p.remote && p.role === 'admin')
+  if (botAdmin) room.admin = botAdmin.id
+  else if (room.admin && !room.members.includes(room.admin)) room.admin = room.members[0] ?? null
+}
+
 export function isRemoteParticipant(p) {
   return p?.kind === 'bot' && p.remote === true
 }
@@ -405,13 +415,6 @@ export function install(rt) {
     const stored = storeLine(stamped)
     room.log = [...room.log, stored].slice(-200)
     return stored
-  }
-
-  const syncMembers = (room) => {
-    room.members = currentParticipants(room).filter(p => p.kind === 'bot' && !p.remote).map(p => p.id)
-    const botAdmin = currentParticipants(room).find(p => p.kind === 'bot' && !p.remote && p.role === 'admin')
-    if (botAdmin) room.admin = botAdmin.id
-    else if (room.admin && !room.members.includes(room.admin)) room.admin = room.members[0] ?? null
   }
 
   // #1987: a group without a chosen name is named after its seats, so a seat that joins or leaves moves
