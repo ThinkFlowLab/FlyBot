@@ -66,21 +66,18 @@ Scenario rows are `turn end-to-end` (ms), `tool-call latency` (ms), `resident RS
 
 ## First baseline on the maintenance box
 
-**Not measured — this host cannot build the deepseek-harness checkout (no `git`, no C compiler); tracked in #2571.** The checkout present here is pristine source, and building it needs `git` for its version step and a C compiler for the `native/system` addon, so `core/dev/bench.sh` cannot boot a bench and the four rows would be invented rather than measured. Recording invented numbers would be worse than an empty table: the point of this page is that a later run can be compared with it.
-
-The command above is the run to do, and the commit to record is the one that added
-`core/dev/perf-baseline.mjs`. The table to fill is:
-
-<!-- Replace this block with the printed table, and keep the machine line it prints. -->
+Measured on 2026-11-07T07:26:31Z at `87b2e08bc9b6a814a7a56f29292e3b16568a353c`, with `core/dev/bench.sh perf` and the scripted model, using the script's **default message** (`看看团队现在在忙什么。`). All 20 measured turns produced a tool call, so the tool-call row is a real sample rather than an empty one: the default message triggers one since #2577, and before that fix this script refused to record a baseline at all.
 
 | metric | unit | samples | p50 | p95 | peak |
 | --- | --- | --- | --- | --- | --- |
-| turn end-to-end | ms | — | — | — | — |
-| tool-call latency | ms | — | — | — | — |
-| resident RSS | MB | — | — | — | — |
-| plugin load time | ms | — | — | — | — |
+| turn end-to-end | ms | 20 | 2330.9 | 2379.7 | 2695.9 |
+| tool-call latency | ms | 20 | 5.0 | 6.0 | 9.0 |
+| resident RSS | MB | 942 | 500.4 | 533.7 | 595.4 |
+| plugin load time | ms | 1 | 14108.7 | 14108.7 | 14108.7 |
 
-Machine: —. Commit: —. Node: —. Date: —.
+Machine: Linux 5.10.0-60.18.0.50.r865_35.hce2.aarch64; Cortex-A32; 192 cores; 1511.1 GB RAM. Commit: 87b2e08bc9b6a814a7a56f29292e3b16568a353c. Node: v22.23.3. Date: 2026-11-07T07:26:31Z.
+
+For reference, an earlier run on this same box with a **different** prompt (05:53:26Z, commit `31d5c0b4`) reported turn end-to-end p50 2333.8 / p95 2623.3 ms, tool-call p50 6 ms, resident RSS peak 466.7 MB and plugin load 10108.6 ms. The turn latency is the same within noise; the two higher numbers are a single-sample difference that this page records and does not explain. Compare a later run with the table above, not with the reference line.
 
 ## Metrics to record on each daily tag (#351)
 
