@@ -135,7 +135,7 @@ diff --git a/test/roster.test.js b/test/roster.test.js
  test('a new name must be one "@" can call; a name saved before the rule still saves', async (t) => {
    const { call, stop } = start(undefined, { models: ['deepseek-v4-flash'] })
    t.after(stop)
-@@ -129,85 +129,59 @@ test('a new name must be one "@" can call; a name saved before the rule still sa
+@@ -129,85 +129,94 @@ test('a new name must be one "@" can call; a name saved before the rule still sa
    assert.equal((await call('update-bot', { id: writer.id, name: '新 Writer' })).ok, true)
  })
  
@@ -175,20 +175,10 @@ diff --git a/test/roster.test.js b/test/roster.test.js
 -    if (kind === 'made by a Main Bot') assert.match(text, /Why you exist: Review the team notes\./)
 -  })
 -}
--
--test('a first message from the user is helped with, not replaced by an opening question', async (t) => {
--  const { call, stop, sent } = start(undefined, { models: ['deepseek-v4-flash'] })
 +test('a name and a role stop their bound before a split surrogate pair', async (t) => {
 +  const { call, stop } = start(undefined, { models: ['deepseek-v4-flash'] })
-   t.after(stop)
-   await call('state', {})
--  const brief = 'Review the team notes and list the next tasks.'
--  const bot = (await call('create-bot', { name: 'Writer', brief })).value
--  await until(() => sent.some(entry => entry.sessionId === bot.id))
--  const text = sent.find(entry => entry.sessionId === bot.id).message.content[0].text
--  assert.ok(text.includes(brief))
--  assert.match(text, /then help with it\./)
--  assert.doesNotMatch(text, /\b(?:ask_user(?:_question)?|allowCustom)\b/)
++  t.after(stop)
++  await call('state', {})
 +  const name = `${'a'.repeat(39)}\u{1F600}tail`
 +  const role = `${'b'.repeat(23)}\u{1F600}tail`
 +  const writer = (await call('create-bot', { name, role })).value
@@ -206,6 +196,50 @@ diff --git a/test/roster.test.js b/test/roster.test.js
 +  bounded(saved.name, renamed, 40)
 +  assert.equal(saved.role, 'd'.repeat(23))
 +  bounded(saved.role, reRole, 24)
++})
+ 
+-test('a first message from the user is helped with, not replaced by an opening question', async (t) => {
+-  const { call, stop, sent } = start(undefined, { models: ['deepseek-v4-flash'] })
++// #2622: the record must not move before the Session title write does. A refused rename used to
++// leave the live team renamed while the store still held the old name, and a restart reverted it.
++test('a refused Session rename leaves the Bot under its old name, in the team and on disk', async (t) => {
++  const { call, stop, home, ctx, rt } = start(undefined, { models: ['deepseek-v4-flash'] })
+   t.after(stop)
+   await call('state', {})
+-  const brief = 'Review the team notes and list the next tasks.'
+-  const bot = (await call('create-bot', { name: 'Writer', brief })).value
+-  await until(() => sent.some(entry => entry.sessionId === bot.id))
+-  const text = sent.find(entry => entry.sessionId === bot.id).message.content[0].text
+-  assert.ok(text.includes(brief))
+-  assert.match(text, /then help with it\./)
+-  assert.doesNotMatch(text, /\b(?:ask_user(?:_question)?|allowCustom)\b/)
++  const writer = (await call('create-bot', { name: 'Writer' })).value
++  await rt.savesSettled()
++  const titles = []
++  const working = ctx.sessionTitle.rename
++  let refuse = true
++  ctx.sessionTitle.rename = async (session, title) => {
++    titles.push([session, title])
++    if (refuse) throw new Error('EACCES: session rename refused')
++    return working(session, title)
++  }
++  const answer = await call('update-bot', { id: writer.id, name: 'Renamed' })
++  assert.equal(answer.ok, false)
++  await rt.savesSettled()
++  const live = (await call('state', {})).value.bots.find(bot => bot.id === writer.id)
++  assert.equal(live.name, 'Writer', 'the team still lists the old name after a refused rename')
++  const stored = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).bots[writer.id]
++  assert.equal(stored.name, 'Writer', 'the store still holds the old name after a refused rename')
++
++  // The same rename goes through once the title write works, and the new name reaches the host.
++  refuse = false
++  titles.length = 0
++  assert.equal((await call('update-bot', { id: writer.id, name: 'Renamed' })).ok, true)
++  await rt.savesSettled()
++  const renamed = (await call('state', {})).value.bots.find(bot => bot.id === writer.id)
++  assert.equal(renamed.name, 'Renamed')
++  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).bots[writer.id].name, 'Renamed')
++  assert.deepEqual(titles.map(([, title]) => title), ['Renamed'], 'the host was asked to title the Session with the new name')
 +})
 +
 +// Creation is silent (#645): no path that makes a Bot opens a turn, and only a brief from a

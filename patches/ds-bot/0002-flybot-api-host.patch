@@ -355,7 +355,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      })
    }
  
-@@ -166,7 +166,7 @@ export function install(rt) {
+@@ -166,18 +166,20 @@ export function install(rt) {
      const moving = patch.workDir !== undefined
      const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
      if (patch.name !== undefined) {
@@ -364,8 +364,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        const clash = rt.findBot(next)
        if (next === '' || (clash && clash.id !== id)) throw new Error(`Name ${next} is not available`)
        // A name saved before the rule stays usable until it changes.
-@@ -177,7 +177,7 @@ export function install(rt) {
+       const problem = next === bot.name ? undefined : nameProblem(next)
+       if (problem !== undefined) throw new Error(problem)
+-      bot.name = next
++      // The title write is the one step here that can refuse, so the record moves only after
++      // it has: a refused rename leaves the Bot, its rooms and the store as they were (#2622).
+       const agent = await rt.resolveAgent(rt.chatOf(id))
        await ctx.sessionTitle.rename(agent.session, next)
++      bot.name = next
        await followMemberNames(Object.values(state.rooms).filter(room => room.members.includes(id)))
      }
 -    if (patch.role !== undefined) bot.role = String(patch.role).trim().slice(0, 24)
@@ -688,7 +694,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,14 +417,45 @@ export function install(rt) {
+@@ -417,12 +417,43 @@ export function install(rt) {
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -698,9 +704,9 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    }
      state.mainBotIds = next
 +    rt.syncDesignatedChief()
-     await rt.save()
-   }
- 
++    await rt.save()
++  }
++
 +  // #638: retire a Bot instead of deleting it. The tree already reads fields['flybot-tree'].retired:
 +  // adoption skips the record and it no longer counts against maxChildren, while its chat, its parts
 +  // and its memory stay where they are. `hidden` keeps it out of the default Bot list the way the
@@ -731,13 +737,11 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      delete state.grants[id]
 +      await rt.reachChanged?.(id)
 +    }
-+    await rt.save()
+     await rt.save()
 +    return { bot, freed }
-+  }
-+
+   }
+ 
    async function deleteBot(id) {
-     const bot = rt.botOf(id)
-     if (bot === undefined) throw new Error('Unknown Bot')
 @@ -434,22 +434,54 @@ export function install(rt) {
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.

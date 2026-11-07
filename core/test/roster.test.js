@@ -186,6 +186,41 @@ test('a name and a role stop their bound before a split surrogate pair', async (
   bounded(saved.role, reRole, 24)
 })
 
+// #2622: the record must not move before the Session title write does. A refused rename used to
+// leave the live team renamed while the store still held the old name, and a restart reverted it.
+test('a refused Session rename leaves the Bot under its old name, in the team and on disk', async (t) => {
+  const { call, stop, home, ctx, rt } = start(undefined, { models: ['deepseek-v4-flash'] })
+  t.after(stop)
+  await call('state', {})
+  const writer = (await call('create-bot', { name: 'Writer' })).value
+  await rt.savesSettled()
+  const titles = []
+  const working = ctx.sessionTitle.rename
+  let refuse = true
+  ctx.sessionTitle.rename = async (session, title) => {
+    titles.push([session, title])
+    if (refuse) throw new Error('EACCES: session rename refused')
+    return working(session, title)
+  }
+  const answer = await call('update-bot', { id: writer.id, name: 'Renamed' })
+  assert.equal(answer.ok, false)
+  await rt.savesSettled()
+  const live = (await call('state', {})).value.bots.find(bot => bot.id === writer.id)
+  assert.equal(live.name, 'Writer', 'the team still lists the old name after a refused rename')
+  const stored = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).bots[writer.id]
+  assert.equal(stored.name, 'Writer', 'the store still holds the old name after a refused rename')
+
+  // The same rename goes through once the title write works, and the new name reaches the host.
+  refuse = false
+  titles.length = 0
+  assert.equal((await call('update-bot', { id: writer.id, name: 'Renamed' })).ok, true)
+  await rt.savesSettled()
+  const renamed = (await call('state', {})).value.bots.find(bot => bot.id === writer.id)
+  assert.equal(renamed.name, 'Renamed')
+  assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).bots[writer.id].name, 'Renamed')
+  assert.deepEqual(titles.map(([, title]) => title), ['Renamed'], 'the host was asked to title the Session with the new name')
+})
+
 // Creation is silent (#645): no path that makes a Bot opens a turn, and only a brief from a
 // Bot that creates one (`create_bot`) becomes instructions. A line typed in the new-Bot card
 // is the user's first request, sent as a turn by the client, never a standing rule.
