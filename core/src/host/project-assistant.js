@@ -53,8 +53,6 @@ export function dayIn(at, zone = DIGEST_ZONE) {
     .format(new Date(at))
 }
 
-const stamp = at => new Date(at).toISOString().slice(0, 10)
-
 // The four answers, in the order the issue names them, from rows the read model already carries:
 // `source`, `column`, `assignee`, `updatedAt`. "Merged" is finished work a workflow run carried
 // in (the run's binding is what put the row on this Project's board); "closed" is finished work a
@@ -87,7 +85,7 @@ export function buildDigest({ project, rows = [], since = null, files = [], at =
     ...(next === undefined ? [] : line('Next slice:', [`${next.id} (${next.source})`])),
     ...personal,
   ]
-  const head = `${assistantName(project)} — ${stamp(at)}`
+  const head = `${assistantName(project)} — ${dayIn(at)}`
   if (sections.length === 0) return { changed: false, day: dayIn(at), text: `${head}: no change since the previous digest.` }
   const stateLine = files.length === 0
     ? 'Project State: no Project State files read.'
