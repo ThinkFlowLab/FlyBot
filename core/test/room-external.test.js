@@ -145,6 +145,61 @@ test('a child that ignores the stop is killed after the grace (#1164)', async (t
   await waitFor(() => { try { process.kill(pid, 0); return false } catch { return true } }, 4000)
 })
 
+test('a timed-out turn never settles the next one with its late answer (#2634)', async (t) => {
+  // The child holds its answer to the first turn until the marker appears and handles turns one
+  // at a time, so the stale line lands while the second turn is in flight (#2634).
+  const HELD = `const fs=require('node:fs');
+const queue=[];
+let pumping=false;
+function pump(){
+  if(pumping||queue.length===0)return;
+  if(queue[0].text==='one'&&!fs.existsSync(process.env.MARK)){setTimeout(pump,5);return}
+  pumping=true;
+  const m=queue.shift();
+  process.stdout.write(JSON.stringify({text:'answer to '+m.text})+'\\n');
+  setTimeout(()=>{pumping=false;pump()},0);
+}
+fs.appendFileSync(process.env.SEEN,'start '+process.pid+'\\n');
+let b='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',c=>{
+  b+=c;
+  let i;
+  while((i=b.indexOf('\\n'))!==-1){
+    const l=b.slice(0,i);
+    b=b.slice(i+1);
+    const m=JSON.parse(l);
+    if(m.type!=='turn')continue;
+    fs.appendFileSync(process.env.SEEN,'turn '+process.pid+' '+m.text+'\\n');
+    queue.push(m);
+    pump();
+  }
+});`
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const seen = join(dir, 'seen.txt')
+  const mark = join(dir, 'mark')
+  writeFileSync(seen, '')
+  const { rt, run } = fixture(t)
+  rt.roomReplyTimeoutMs = 300
+  const member = { id: 'held2', name: 'Held2', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { SEEN: seen, MARK: mark } } }
+  const rows = () => readFileSync(seen, 'utf8').split('\n').filter(Boolean)
+  const seenTurns = () => rows().filter(row => row.startsWith('turn '))
+  const starts = () => rows().filter(row => row.startsWith('start '))
+  const first = run(member, 'one')
+  await waitFor(() => seenTurns().length === 1)
+  assert.deepEqual(await first, { missed: true })
+  // The second turn goes to whatever the driver believes answers it; the marker then releases the
+  // first turn's answer, which must not become the second turn's answer.
+  const second = run(member, 'two')
+  await waitFor(() => seenTurns().length === 2)
+  writeFileSync(mark, '1')
+  const answer = await second
+  assert.notDeepEqual(answer, 'answer to one', "the next turn was settled by the timed-out turn's late answer")
+  if (typeof answer === 'string') assert.equal(answer, 'answer to two')
+  await waitFor(() => starts().length === 2)
+  assert.notEqual(starts()[1], starts()[0], 'a timed-out process must not answer the next turn')
+})
+
 test('a seat that was closed is never handed the next turn (#1164)', async (t) => {
   // The child records each turn with its own pid and never answers. A stopped turn leaves the
   // entry in place while the child may still be running: that is the reuse path — the next turn
