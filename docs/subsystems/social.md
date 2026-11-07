@@ -78,9 +78,12 @@ Bot Social accepts the FlyBot connector token on `/mcp`, every face-room REST ro
 now reads and writes through MCP `whoami` / `set_auto_approve` (#109). `mcp-client.js`
 enforces the same list in `connectorTokenAllowed`: a `rest()` path outside it fails
 locally with `route_not_allowed` before the token is sent, so a new call cannot quietly
-start using a route Bot Social rejects. `plugins/social/test/connector-scope.test.js`
-pins the list. The authority for the list is Bot Social's README and `docs/FACE_ROOMS.md`
-§Auth.
+start using a route Bot Social rejects. `rest()` runs on the same `timeoutMs` deadline as
+the MCP client (`AbortSignal.timeout`, covering the body read): a server that accepts and
+never answers rejects with `Bot Social <method> <path>: no answer in <n>s` instead of
+leaving the fallback pending (#2633). `plugins/social/test/connector-scope.test.js` pins
+the list, and `plugins/social/test/rest-timeout.test.js` pins the deadline. The authority
+for the list is Bot Social's README and `docs/FACE_ROOMS.md` §Auth.
 
 ### Inline approvals and compact Friends' Bots (#114, #115)
 
