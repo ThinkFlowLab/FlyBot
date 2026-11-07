@@ -569,7 +569,7 @@ export function install(rt) {
       if (task.status === 'accepted') {
         if (countsAsDelivery(task)) row.deliveries += 1
         const lease = leaseOf(task)
-        if (lease !== undefined && Number.isFinite(lease.takenAt)) row.workerSeconds += Math.max(0, Math.round((task.updatedAt - lease.takenAt) / 1000))
+        if (lease !== undefined && Number.isFinite(lease.takenAt) && Number.isFinite(task.updatedAt)) row.workerSeconds += Math.max(0, Math.round((task.updatedAt - lease.takenAt) / 1000))
       }
       if (run !== '') {
         const runRow = bucket(runs, run)
