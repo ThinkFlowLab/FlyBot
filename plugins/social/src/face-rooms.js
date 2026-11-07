@@ -21,6 +21,15 @@ const CALL_TIMEOUT_MS = 30_000
 const NAME_MAX = 60
 const SEEN_KEPT = 200
 
+// Peer text is cut on code points, never on UTF-16 units: a cut between the halves of a surrogate
+// pair stores a lone surrogate, which every encoder reads as U+FFFD (#2438). The plugin ships as its
+// own package and may not reach into core's shared/text-boundary.js (#155), so the rule is repeated
+// here the way social.js's `cutCodePoints` already repeats it.
+const cutCodePoints = (value, max) => {
+  const text = String(value ?? '').toWellFormed()
+  return text.length <= max ? text : Array.from(text).slice(0, max).join('')
+}
+
 export class FaceRoomError extends Error {
   constructor(message, code, extra = {}) {
     super(message)
@@ -74,12 +83,11 @@ export const localInviteHandle = value => parseInviteLink(value)?.handle ?? ''
 // brackets, markup or @, capped. Used for every peer-controlled name and for platform
 // system copy that embeds those names.
 export function cleanFaceName(value, fallback = 'a remote Bot') {
-  const text = stripFaceMarkers(String(value ?? ''))
+  const text = cutCodePoints(stripFaceMarkers(String(value ?? ''))
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/[[\]"<>`@]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, NAME_MAX)
+    .trim(), NAME_MAX)
   return text || fallback
 }
 
@@ -196,7 +204,7 @@ export function mapRegisterError(error, bot) {
   if (code === 'http_401' || code === 'http_403' || code === 'unauthorized' || /401|403|unauthori[sz]ed|token/i.test(code + msg)) {
     return new FaceRoomError(FRIENDLY.unauthorized, 'unauthorized', { status: 401 })
   }
-  const raw = msg.replace(/^Bot Social\s+\S+:\s*/, '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  const raw = cutCodePoints(msg.replace(/^Bot Social\s+\S+:\s*/, '').replace(/\s+/g, ' ').trim(), 200)
   const detail = raw && !/^[a-z_]+$/.test(raw) ? `: ${raw}` : '. Try again.'
   return new FaceRoomError(`Could not register ${name} on Bot Social${detail}`, code || 'register_failed')
 }
@@ -221,7 +229,7 @@ export function mapFaceError(data, status) {
       ? `Too many failed attempts. Try again in ${formatRetryAfter(retryAfter)}.`
       : 'Too many failed attempts. Try again later.'
   } else if (!message) {
-    const raw = String(payload.message ?? '').replace(/\s+/g, ' ').trim().slice(0, 200)
+    const raw = cutCodePoints(String(payload.message ?? '').replace(/\s+/g, ' ').trim(), 200)
     message = raw && !/^[a-z_]+$/.test(raw) ? raw : 'Could not join that room. Try another number.'
     if (status === 401) message = FRIENDLY.unauthorized
     else if (status === 429) message = retryAfter != null
@@ -500,12 +508,11 @@ export function viewFaceMember(member) {
 export const FACE_ROLE_MAX = 80
 export function cleanFaceRole(value) {
   if (typeof value !== 'string') return ''
-  return stripFaceMarkers(value)
+  return cutCodePoints(stripFaceMarkers(value)
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/[[\]"<>`@]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, FACE_ROLE_MAX)
+    .trim(), FACE_ROLE_MAX)
 }
 
 // The room lead every home follows (#476). Bot Social sends the creator's pick, else its default
@@ -610,12 +617,11 @@ function sanitizePlatformText(text, type, member, reason) {
   if (type === 'member.left' && member) return platformLeaveText(member)
   if (type === 'room.started') return platformStartedText(reason)
   if (type === 'room.lead_changed') return platformLeadText(member, reason)
-  const cleaned = String(text ?? '')
+  const cleaned = cutCodePoints(String(text ?? '')
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/[[\]"<>`@]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 200)
+    .trim(), 200)
   return cleaned
 }
 
