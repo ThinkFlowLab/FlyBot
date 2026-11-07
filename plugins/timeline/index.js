@@ -25,6 +25,7 @@
 import { appendFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createAdapter } from './src/adapter.js'
+import { dshHomeOf } from './src/dsh-home.js'
 import { createTimeline } from './src/timeline.js'
 
 export const name = 'flybot-timeline'
@@ -95,7 +96,7 @@ export function apply(ctx, config = {}) {
   if (ctx.flybot?.pluginEnabled?.('timeline') === false) return { timeline: undefined, enabled: false, dispose() {} }
   if (config?.enabled !== true) return { timeline: undefined, enabled: false, dispose() {} }
   const adapter = createAdapter(ctx.flybot)
-  const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '.', '.dsh')
+  const dshHome = dshHomeOf()
   const { dir = join(dshHome, 'bot', 'flybot-timeline'), persist, segmentRecords, segments, retentionMs, flushMs } = config
   const limits = Object.fromEntries(Object.entries({ segmentRecords, segments, retentionMs, flushMs }).filter(([, value]) => Number.isFinite(value) && value > 0))
   const timeline = createTimeline(adapter, { dir, persist: persist !== false, exporter: makeExporter(config, dir, adapter.warn), ...limits })
