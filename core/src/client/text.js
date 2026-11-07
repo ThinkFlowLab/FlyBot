@@ -150,8 +150,10 @@ export function stripFlatTrace(text, names = []) {
   const body = String(text ?? '')
   const known = sortedNames(names)
   if (known.length === 0) return body
-  const hop = `(?:${known.map(escapeName).join('|')})`
-  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})*[ \\t]*(?=\\S)`)
+  // A hop is a whole name, and a trace needs the arrow that makes it one: `Development` is not
+  // `Dev`, and `Chief concern` is a sentence, not routing. Same reading as `dropKnownTrace`.
+  const hop = `(?:${known.map(escapeName).join('|')})(?=[ \\t→,，.。:：]|$)`
+  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*(?=\\S)`)
   const found = trace.exec(body)
   return found ? body.slice(found[0].length) : body
 }
