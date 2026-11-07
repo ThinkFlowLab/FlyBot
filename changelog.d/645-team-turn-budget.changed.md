@@ -1,1 +1,0 @@
-A team can now cap its model turns per team-local day (`prefs.turnBudget`, 200 for a fresh team, `0` turns the budget off). At or over the cap only a turn the user starts themselves is still dispatched; scheduled reports, tidy passes and rounds a Bot starts are refused before a model call, with one line in the host log ([#645](https://github.com/ThinkFlowLab/FlyBot/issues/645)).
