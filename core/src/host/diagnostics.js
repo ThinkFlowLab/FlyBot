@@ -55,11 +55,18 @@ export function cleanText(text, { redact = value => value, home = homedir() } = 
 
 const errorText = error => `${error.name && error.name !== 'Error' ? `${error.name}: ` : ''}${error.message}`
 
-// One log line, as the downloaded log and the report show it.
+// One log line, as the downloaded log and the report show it. The reader of the log keeps a line on
+// a numeric `time` and a string `text` alone, so a hand-edited line — or one an older build wrote —
+// can lack the level or the source, and a `time` JSON parses as `Infinity` is a number that is not a
+// time. Those parts are defaulted the way the browser-entry reader defaults a missing level, because
+// one unusable field must not cost the whole report (#2591).
 export function entryLine(entry) {
   const where = [entry.bot, entry.where].filter(Boolean).join(' · ')
   const code = entry.code ? ` [${entry.code}${entry.status ? ` ${entry.status}` : ''}]` : ''
-  return `${new Date(entry.time).toISOString()} ${entry.level.toUpperCase()} ${entry.source}${where ? ` (${where})` : ''}${code} ${entry.text}`
+  const when = typeof entry.time === 'number' && Number.isFinite(entry.time) ? `${new Date(entry.time).toISOString()} ` : ''
+  const level = (typeof entry.level === 'string' && entry.level ? entry.level : 'error').toUpperCase()
+  const source = typeof entry.source === 'string' && entry.source ? entry.source : 'host'
+  return `${when}${level} ${source}${where ? ` (${where})` : ''}${code} ${entry.text}`
 }
 
 // The Markdown block for an issue. `facts` come from this host, `client` from the

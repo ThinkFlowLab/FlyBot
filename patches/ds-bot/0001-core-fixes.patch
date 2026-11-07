@@ -5094,7 +5094,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
  
  const quote = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  
-@@ -47,7 +47,8 @@ export function cleanText(text, { redact = value => value, home = homedir() } =
+@@ -47,16 +47,24 @@ export function cleanText(text, { redact = value => value, home = homedir() } =
      const doubled = home.replace(/\\/g, '\\\\')
      if (doubled !== home) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
    }
@@ -5104,6 +5104,24 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
  }
  
  const errorText = error => `${error.name && error.name !== 'Error' ? `${error.name}: ` : ''}${error.message}`
+ 
+-// One log line, as the downloaded log and the report show it.
++// One log line, as the downloaded log and the report show it. The reader of the log keeps a line on
++// a numeric `time` and a string `text` alone, so a hand-edited line — or one an older build wrote —
++// can lack the level or the source, and a `time` JSON parses as `Infinity` is a number that is not a
++// time. Those parts are defaulted the way the browser-entry reader defaults a missing level, because
++// one unusable field must not cost the whole report (#2591).
+ export function entryLine(entry) {
+   const where = [entry.bot, entry.where].filter(Boolean).join(' · ')
+   const code = entry.code ? ` [${entry.code}${entry.status ? ` ${entry.status}` : ''}]` : ''
+-  return `${new Date(entry.time).toISOString()} ${entry.level.toUpperCase()} ${entry.source}${where ? ` (${where})` : ''}${code} ${entry.text}`
++  const when = typeof entry.time === 'number' && Number.isFinite(entry.time) ? `${new Date(entry.time).toISOString()} ` : ''
++  const level = (typeof entry.level === 'string' && entry.level ? entry.level : 'error').toUpperCase()
++  const source = typeof entry.source === 'string' && entry.source ? entry.source : 'host'
++  return `${when}${level} ${source}${where ? ` (${where})` : ''}${code} ${entry.text}`
+ }
+ 
+ // The Markdown block for an issue. `facts` come from this host, `client` from the
 @@ -66,7 +66,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
    const lines = [
      '| | |',
