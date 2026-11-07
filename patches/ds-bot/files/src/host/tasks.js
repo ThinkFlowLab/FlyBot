@@ -177,9 +177,13 @@ export function install(rt) {
   const { state } = rt
   state.tasks ??= {}
 
+  // #2597: a batch is one write. `trackBotTasks` stages its whole list on a copy of the board
+  // and commits the copy only after the last item passed, so a refusal anywhere in the list
+  // leaves `state.tasks` byte-identical; while it runs, every reader and writer sees the copy.
+  let staging = null
   const store = () => {
     state.tasks ??= {}
-    return state.tasks
+    return staging ?? state.tasks
   }
   // A workflow run names a board task, never a second one (#1696). Core never reads
   // `workflows.json`, so the workflow plugin registers its run refs here and the host only
@@ -1140,137 +1144,152 @@ export function install(rt) {
     }
     const saved = []
     const kinds = []
+    const claims = []
     const batch = new Map()
-    for (const item of items) {
-      if (item === null || typeof item !== 'object' || Array.isArray(item)) throw invalid('Each task must be an object')
-      const column = readColumn(item.column)
-      const title = item.title !== undefined ? readTitle(item.title) : undefined
-      const ask = readOptionalLine(item.ask, 'A question')
-      const answer = readOptionalLine(item.answer, 'An answer')
-      const overall = item.overall === true
-      const assigneeName = item.assignee === undefined || item.assignee === null ? '' : String(item.assignee).trim()
-      const parentRef = item.parent === undefined || item.parent === null ? '' : String(item.parent).trim()
-      if (ask && column === 'done') throw invalid('A task that needs an answer cannot be done')
-      const roomId = resolveRoom(botId, item.group, origin.roomId)
-      const room = roomId ? state.rooms?.[roomId] : undefined
-      if ((overall || assigneeName || parentRef) && !room) throw invalid('A group task needs a group')
-      if (room?.origin === 'face-to-face' && (overall || assigneeName || parentRef)) throw invalid('A face-to-face room has no group task board')
-      if (overall && assigneeName) throw invalid('The overall task is the group\'s, not a subtask')
-      if (overall && parentRef) throw invalid('The overall task has no parent')
-      if (overall && !plansRoom(botId, room)) planDenied(room, 'record the overall task')
-      if (assigneeName && !plansRoom(botId, room)) planDenied(room, 'assign a subtask')
-      // A queued item names a role instead of an assignee (#1247). Only the room's lead
-      // enqueues, and an item whose role no live member carries is refused here: left open it
-      // would sit for ever and the age on the board would name a wait nobody can take.
-      const queue = item.queue === true
-      const role = readRole(item.role)
-      if (queue && !room) throw invalid('A queued item needs a group')
-      if (queue && room?.origin === 'face-to-face') throw invalid('A face-to-face room has no group task board')
-      if (queue && overall) throw invalid('A queued item is not the overall task')
-      if (queue && assigneeName) throw invalid('A queued item has no assignee; a member claims it from the queue')
-      if (queue && !plansRoom(botId, room)) planDenied(room, 'enqueue work')
-      if (queue && role === undefined) throw invalid('A queued item needs a role')
-      if (!queue && role !== undefined) throw invalid('role belongs to a queued item; pass queue: true with it')
-      if (queue && roleCarriers(room, role).length === 0) throw refuse('no-member-with-role', `no member of this group has the role ${role}`)
-      let ownerBot = bot
-      if (assigneeName) {
-        ownerBot = memberBot(room, assigneeName)
-        if (ownerBot.id !== botId && !parentRef) throw invalid('A subtask needs the overall task (parent)')
-      }
-      const parent = parentRef ? resolveParent(roomId, parentRef, batch) : undefined
-      let task
-      let isNew = false
-      let frozen = false
-      const givenId = item.id !== undefined && item.id !== null && String(item.id) !== ''
-      if (givenId) {
-        task = find(item.id)
-        if (!task || task.ownerBotId !== botId) throw forbidden('That task is not yours')
-        if (overall && task.kind !== 'group') throw invalid('That task is not the overall task')
-      } else if (overall) {
-        task = openOverall(roomId)
-        if (task && task.ownerBotId !== botId) throw forbidden('That overall task belongs to another Bot')
-        if (!task) {
+    const board = store()
+    // The list is one write: it runs against a staged copy of the board, and the copy is
+    // committed only after the last item passed. A refusal anywhere in the list therefore
+    // leaves `state.tasks` byte-identical and posts no claim line for a card that never landed
+    // (#2597). Every card the accepted batch created lands on the board once, below.
+    const staged = structuredClone(board)
+    staging = staged
+    try {
+      for (const item of items) {
+        if (item === null || typeof item !== 'object' || Array.isArray(item)) throw invalid('Each task must be an object')
+        const column = readColumn(item.column)
+        const title = item.title !== undefined ? readTitle(item.title) : undefined
+        const ask = readOptionalLine(item.ask, 'A question')
+        const answer = readOptionalLine(item.answer, 'An answer')
+        const overall = item.overall === true
+        const assigneeName = item.assignee === undefined || item.assignee === null ? '' : String(item.assignee).trim()
+        const parentRef = item.parent === undefined || item.parent === null ? '' : String(item.parent).trim()
+        if (ask && column === 'done') throw invalid('A task that needs an answer cannot be done')
+        const roomId = resolveRoom(botId, item.group, origin.roomId)
+        const room = roomId ? state.rooms?.[roomId] : undefined
+        if ((overall || assigneeName || parentRef) && !room) throw invalid('A group task needs a group')
+        if (room?.origin === 'face-to-face' && (overall || assigneeName || parentRef)) throw invalid('A face-to-face room has no group task board')
+        if (overall && assigneeName) throw invalid('The overall task is the group\'s, not a subtask')
+        if (overall && parentRef) throw invalid('The overall task has no parent')
+        if (overall && !plansRoom(botId, room)) planDenied(room, 'record the overall task')
+        if (assigneeName && !plansRoom(botId, room)) planDenied(room, 'assign a subtask')
+        // A queued item names a role instead of an assignee (#1247). Only the room's lead
+        // enqueues, and an item whose role no live member carries is refused here: left open it
+        // would sit for ever and the age on the board would name a wait nobody can take.
+        const queue = item.queue === true
+        const role = readRole(item.role)
+        if (queue && !room) throw invalid('A queued item needs a group')
+        if (queue && room?.origin === 'face-to-face') throw invalid('A face-to-face room has no group task board')
+        if (queue && overall) throw invalid('A queued item is not the overall task')
+        if (queue && assigneeName) throw invalid('A queued item has no assignee; a member claims it from the queue')
+        if (queue && !plansRoom(botId, room)) planDenied(room, 'enqueue work')
+        if (queue && role === undefined) throw invalid('A queued item needs a role')
+        if (!queue && role !== undefined) throw invalid('role belongs to a queued item; pass queue: true with it')
+        if (queue && roleCarriers(room, role).length === 0) throw refuse('no-member-with-role', `no member of this group has the role ${role}`)
+        let ownerBot = bot
+        if (assigneeName) {
+          ownerBot = memberBot(room, assigneeName)
+          if (ownerBot.id !== botId && !parentRef) throw invalid('A subtask needs the overall task (parent)')
+        }
+        const parent = parentRef ? resolveParent(roomId, parentRef, batch) : undefined
+        let task
+        let isNew = false
+        let frozen = false
+        const givenId = item.id !== undefined && item.id !== null && String(item.id) !== ''
+        if (givenId) {
+          task = find(item.id)
+          if (!task || task.ownerBotId !== botId) throw forbidden('That task is not yours')
+          if (overall && task.kind !== 'group') throw invalid('That task is not the overall task')
+        } else if (overall) {
+          task = openOverall(roomId)
+          if (task && task.ownerBotId !== botId) throw forbidden('That overall task belongs to another Bot')
+          if (!task) {
+            if (!title) throw invalid('A new task needs a title')
+            isNew = true
+            task = makeTask(bot, title, roomId)
+            task.kind = 'group'
+          }
+        } else if (ownerBot.id !== botId) {
           if (!title) throw invalid('A new task needs a title')
-          isNew = true
-          task = makeTask(bot, title, roomId)
-          task.kind = 'group'
+          task = matchChild(ownerBot.id, title, roomId, parent.id)
+          if (task) frozen = true
+          else {
+            isNew = true
+            task = makeTask(ownerBot, title, roomId)
+            task.parentId = parent.id
+          }
+        } else {
+          if (!title) throw invalid('A new task needs a title')
+          task = matchTitle(botId, title, roomId)
+          if (!task) {
+            // A member still records its own room card, parented or not. Dividing
+            // the board (overall, or assignee) is refused above (#1182).
+            isNew = true
+            task = makeTask(bot, title, roomId)
+          }
         }
-      } else if (ownerBot.id !== botId) {
-        if (!title) throw invalid('A new task needs a title')
-        task = matchChild(ownerBot.id, title, roomId, parent.id)
-        if (task) frozen = true
-        else {
-          isNew = true
-          task = makeTask(ownerBot, title, roomId)
-          task.parentId = parent.id
+        if (!frozen) {
+          if (parent && task.kind !== 'group') {
+            task.parentId = parent.id
+            task.origin = { ...task.origin, roomId: parent.origin?.roomId ?? roomId }
+          }
+          if (overall) task.kind = 'group'
+          if (queue) {
+            if (task.claimedBy) throw invalid('That queued item is already claimed; enqueue a new one')
+            // A graph may state the role's ceiling; otherwise the one constant does (#1729). The
+            // count leaves this card out, so re-offering a queued item keeps its id and is never
+            // refused for the place it already holds.
+            const cap = readCap(item.cap) ?? (Number.isInteger(task.queueCap) ? task.queueCap : ROLE_QUEUE_CAP)
+            const queued = Object.values(store()).filter(other => other.id !== task.id
+              && other.origin?.roomId === roomId && unclaimed(other) && other.status === 'open'
+              && other.queueRole && sameRole(other.queueRole, role))
+            if (queued.length >= cap) throw refuse('queue-full', `the ${role} queue already holds ${queued.length} items, its cap is ${cap}`)
+            task.queueRole = role
+            task.queueBy = botId
+            task.queueCap = cap
+            delete task.retryAt
+            delete task.queueReason
+          }
+          if (!answer && waitingForInput(task) && (column !== undefined || item.progress !== undefined)) {
+            throw stale('This task is waiting on an answer. Ask, then pass answer with what was said.')
+          }
+          if (title && task.title !== title) task.title = title
+          // A refused value must not leave a half-created card behind: the writer validates before
+          // it assigns, and a new row it refuses is removed again (#1720).
+          try {
+            writeContract(task, item)
+          } catch (error) {
+            if (isNew) delete store()[task.id]
+            throw error
+          }
+          const { progress } = applyFields(task, item)
+          if (!task.source) task.source = 'conversation'
+          const before = task.updatedAt
+          // #1253: only the move out of the queue/not-started is a claim, so the progress ticks that
+          // follow it on the same card never reach the room.
+          const wasOpen = task.status === 'open'
+          if (answer) resumeFromAnswer(task, answer)
+          const moved = applyColumn(task, column, null, 'conversation')
+          if (column === 'done' && progress === undefined) task.progress = 100
+          if (ask) {
+            if (task.ownerBotId !== botId) throw forbidden('Only that Bot can mark its task waiting')
+            blockForInput(task, ask)
+          } else if (!answer && !isNew && !moved && task.updatedAt === before) record(task, null, { by: 'conversation' })
+          // Assigning claims the card. The assignee starts the work; nobody confirms first (#1182).
+          if (isNew && parent && task.ownerBotId !== botId && task.status === 'open') transition(task, 'claimed', null, { by: 'assigned' })
+          if (wasOpen && (task.status === 'claimed' || task.status === 'working')) claims.push(task)
         }
-      } else {
-        if (!title) throw invalid('A new task needs a title')
-        task = matchTitle(botId, title, roomId)
-        if (!task) {
-          // A member still records its own room card, parented or not. Dividing
-          // the board (overall, or assignee) is refused above (#1182).
-          isNew = true
-          task = makeTask(bot, title, roomId)
-        }
+        if (task.title) batch.set(task.title, task)
+        batch.set(task.id, task)
+        saved.push(task)
+        kinds.push(isNew ? 'create' : 'update')
       }
-      if (!frozen) {
-        if (parent && task.kind !== 'group') {
-          task.parentId = parent.id
-          task.origin = { ...task.origin, roomId: parent.origin?.roomId ?? roomId }
-        }
-        if (overall) task.kind = 'group'
-        if (queue) {
-          if (task.claimedBy) throw invalid('That queued item is already claimed; enqueue a new one')
-          // A graph may state the role's ceiling; otherwise the one constant does (#1729). The
-          // count leaves this card out, so re-offering a queued item keeps its id and is never
-          // refused for the place it already holds.
-          const cap = readCap(item.cap) ?? (Number.isInteger(task.queueCap) ? task.queueCap : ROLE_QUEUE_CAP)
-          const queued = Object.values(store()).filter(other => other.id !== task.id
-            && other.origin?.roomId === roomId && unclaimed(other) && other.status === 'open'
-            && other.queueRole && sameRole(other.queueRole, role))
-          if (queued.length >= cap) throw refuse('queue-full', `the ${role} queue already holds ${queued.length} items, its cap is ${cap}`)
-          task.queueRole = role
-          task.queueBy = botId
-          task.queueCap = cap
-          delete task.retryAt
-          delete task.queueReason
-        }
-        if (!answer && waitingForInput(task) && (column !== undefined || item.progress !== undefined)) {
-          throw stale('This task is waiting on an answer. Ask, then pass answer with what was said.')
-        }
-        if (title && task.title !== title) task.title = title
-        // A refused value must not leave a half-created card behind: the writer validates before
-        // it assigns, and a new row it refuses is removed again (#1720).
-        try {
-          writeContract(task, item)
-        } catch (error) {
-          if (isNew) delete store()[task.id]
-          throw error
-        }
-        const { progress } = applyFields(task, item)
-        if (!task.source) task.source = 'conversation'
-        const before = task.updatedAt
-        // #1253: only the move out of the queue/not-started is a claim, so the progress ticks that
-        // follow it on the same card never reach the room.
-        const wasOpen = task.status === 'open'
-        if (answer) resumeFromAnswer(task, answer)
-        const moved = applyColumn(task, column, null, 'conversation')
-        if (column === 'done' && progress === undefined) task.progress = 100
-        if (ask) {
-          if (task.ownerBotId !== botId) throw forbidden('Only that Bot can mark its task waiting')
-          blockForInput(task, ask)
-        } else if (!answer && !isNew && !moved && task.updatedAt === before) record(task, null, { by: 'conversation' })
-        // Assigning claims the card. The assignee starts the work; nobody confirms first (#1182).
-        if (isNew && parent && task.ownerBotId !== botId && task.status === 'open') transition(task, 'claimed', null, { by: 'assigned' })
-        if (wasOpen && (task.status === 'claimed' || task.status === 'working')) announceClaim(task)
-      }
-      if (task.title) batch.set(task.title, task)
-      batch.set(task.id, task)
-      saved.push(task)
-      kinds.push(isNew ? 'create' : 'update')
+      prune()
+    } finally {
+      staging = null
     }
-    prune()
+    for (const id of Object.keys(board)) if (!(id in staged)) delete board[id]
+    for (const [id, task] of Object.entries(staged)) board[id] = task
+    for (const task of claims) announceClaim(task)
     await save()
     // The conversation path is a board write like task-create and task-update, so a plugin
     // has to see it: a card a Bot records itself with `workflow:<id>` starts nothing
