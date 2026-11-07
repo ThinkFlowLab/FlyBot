@@ -69,7 +69,8 @@
     "src/host/home-lock.js",
     "test/fake-ctx.js",
     "test/blocking-question.test.js",
-    "test/update-bot.test.js"
+    "test/update-bot.test.js",
+    "test/legacy-state.test.js"
   ],
   "0003-flybot-api-client": [
     "src/client/index.js",

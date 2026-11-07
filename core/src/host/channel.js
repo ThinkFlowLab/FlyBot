@@ -6,6 +6,7 @@ import { questionReply } from './parts.js'
 import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 import { isFaceRoom } from './room-membership.js'
 import { readQuietHours } from '../shared/quiet-hours.js'
+import { readTurnBudget } from './turn-budget.js'
 import { faceMentions } from './face-mentions.js'
 import { visibleText } from '../shared/preview.js'
 
@@ -299,6 +300,14 @@ export function install(rt) {
       const quiet = readQuietHours(body.quietHours, state.prefs.quietHours)
       if (quiet === undefined) delete state.prefs.quietHours
       else state.prefs.quietHours = quiet
+    }
+    // Team turn budget (#645, the C half): a whole number of turns per team-local day, `0` off.
+    // Clearing the field is not "off" — it goes back to the default the store seeded — so an
+    // invalid value is refused rather than stored as a number nobody meant.
+    if (body.turnBudget !== undefined) {
+      const budget = readTurnBudget(body.turnBudget)
+      if (budget === undefined) delete state.prefs.turnBudget
+      else state.prefs.turnBudget = budget
     }
     return rt.save()
   }

@@ -42,6 +42,8 @@ Shipped behavior stays what [core/README.md](../../core/README.md) (roles: You /
 initiative. That is prompt text in `core/src/host/prompt.js`, not a team-mode setting, and it changes the
 unaddressed default only: a Bot that is addressed answers as before.
 
+**The turn budget (part C of #645, shipped; owner decision 2026-11-07) is a setting, not team mode.** The team counts model turns per team-local day (`state.turns`), carries the cap in `state.prefs.turnBudget` (200 for a fresh team, 0 — off — for a team saved before the field existed), and at or over the cap dispatches only a turn the user started themselves; the system-started ones (a timer, a tidy, a round a Bot started, a kickoff) are refused before a model call. It is one setting of the single-owner deployment and adds no owner scope, cross-owner routing or team-mode gate. Implementation in [core-host](core-host.md#team-turn-budget-645-owner-decision-2026-11-07).
+
 ## Schema foundation (landed, #47)
 
 Shipped by the core store (`core/src/host/store.js`, owned by [ds-bot-core](ds-bot-core.md)) as **data records only**. It replaces implicit single-user ownership with explicit stable identities while the product stays single-human:

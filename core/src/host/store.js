@@ -9,6 +9,7 @@ import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants
 import { homeLock } from './home-lock.js'
 import { openJournal } from './journal.js'
 import { tempWritable } from './real-dir.js'
+import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
 import { codePoints, currentColor, normalize, unquote } from './text.js'
 
 // The saved team's format version. Version 2 (#47) adds the identity schema: member
@@ -257,6 +258,13 @@ export function install(rt) {
     // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
     if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
     let migrated = !hadCapabilities
+    // Team turn budget (#645, the C half; owner decision 2026-11-07): a fresh team starts at the
+    // default cap, and a team saved before the budget existed stays off (0) until the owner sets a
+    // number. The file itself is what tells them apart, so one line here is one migration.
+    if (state.prefs.turnBudget === undefined) {
+      state.prefs.turnBudget = parsed === null || parsed === undefined ? TEAM_TURNS_PER_DAY : 0
+      migrated = true
+    }
     if (!isRecord(state.projects)) {
       state.projects = {}
       migrated = true

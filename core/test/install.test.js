@@ -98,6 +98,10 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'effect ds-bot: archive a part once its job ends',
     'on agent/status',
     'on llm/stream',
+    // #645: the team turn budget, installed after parts so its gate answers first (it registers
+    // with prepend) and its spend listener sees turns.js's records.
+    'on session/event',
+    'on agent/pre-step (prepend)',
     'on llm/stream',
     'on agent/status',
     'tool request_secret',

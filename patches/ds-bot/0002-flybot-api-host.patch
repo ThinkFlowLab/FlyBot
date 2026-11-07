@@ -23,7 +23,7 @@ diff --git a/index.js b/index.js
  import * as delivery from './src/host/delivery.js'
  import * as roster from './src/host/roster.js'
  import * as folders from './src/host/folders.js'
-@@ -14,6 +14,9 @@ import * as agents from './src/host/agents.js'
+@@ -14,22 +14,35 @@ import * as agents from './src/host/agents.js'
  import * as prompt from './src/host/prompt.js'
  import * as timeContext from './src/host/time-context.js'
  import * as tools from './src/host/tools.js'
@@ -33,7 +33,11 @@ diff --git a/index.js b/index.js
  import * as chatIndex from './src/host/chat-index.js'
  import * as groups from './src/host/groups.js'
  import * as approvals from './src/host/approvals.js'
-@@ -24,12 +24,21 @@ import * as images from './src/host/images.js'
+ import * as resume from './src/host/resume.js'
+ import * as memory from './src/host/memory.js'
+ import * as parts from './src/host/parts.js'
++import * as turnBudget from './src/host/turn-budget.js'
+ import * as images from './src/host/images.js'
  import * as browser from './src/host/browser.js'
  import * as secrets from './src/host/secrets.js'
  import * as connectors from './src/host/connectors.js'
@@ -60,7 +64,7 @@ diff --git a/index.js b/index.js
  // install. Listeners run and tools are listed in registration order, so this order holds:
  // usage meters model requests after every listener that rewrites them.
 -const MODULES = [diagnostics, store, models, permissions, turns, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
-+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, health, channel]
++const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, turnBudget, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, health, channel]
  
  export function apply(ctx, config = {}) {
 -  createRuntime(ctx, config)
@@ -797,7 +801,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,76 @@
+@@ -1,21 +1,77 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
@@ -813,6 +817,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 -import { currentColor, normalize, unquote } from './text.js'
 +import { openJournal } from './journal.js'
 +import { tempWritable } from './real-dir.js'
++import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
 +import { codePoints, currentColor, normalize, unquote } from './text.js'
 +
 +// The saved team's format version. Version 2 (#47) adds the identity schema: member
@@ -1005,10 +1010,17 @@ diff --git a/src/host/store.js b/src/host/store.js
      return undefined
    }
  
-@@ -104,6 +104,20 @@ export function install(rt) {
+@@ -104,6 +104,27 @@ export function install(rt) {
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
      let migrated = !hadCapabilities
++    // Team turn budget (#645, the C half; owner decision 2026-11-07): a fresh team starts at the
++    // default cap, and a team saved before the budget existed stays off (0) until the owner sets a
++    // number. The file itself is what tells them apart, so one line here is one migration.
++    if (state.prefs.turnBudget === undefined) {
++      state.prefs.turnBudget = parsed === null || parsed === undefined ? TEAM_TURNS_PER_DAY : 0
++      migrated = true
++    }
 +    if (!isRecord(state.projects)) {
 +      state.projects = {}
 +      migrated = true
@@ -2574,6 +2586,19 @@ diff --git a/test/fake-ctx.js b/test/fake-ctx.js
      effect(execute, label) {
        calls.push(`effect ${label}`)
        const dispose = execute()
+diff --git a/test/legacy-state.test.js b/test/legacy-state.test.js
+--- a/test/legacy-state.test.js
++++ b/test/legacy-state.test.js
+@@ -51,7 +51,8 @@ test('a team saved with the legacy grok theme opens with the mono theme', async
+   const { call, stop, home } = open(savedTeam({ theme: 'grok', accent: '#123456' }))
+   t.after(stop)
+   const team = (await call('state', {})).value
+-  assert.deepEqual(team.prefs, { theme: 'mono', accent: '#123456' })
++  // A team saved before #645 existed is seeded with its budget off (0), not the fresh-team 200.
++  assert.deepEqual(team.prefs, { theme: 'mono', accent: '#123456', turnBudget: 0 })
+   assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).prefs.theme, 'mono')
+ })
+ 
 diff --git a/test/update-bot.test.js b/test/update-bot.test.js
 --- a/test/update-bot.test.js
 +++ b/test/update-bot.test.js

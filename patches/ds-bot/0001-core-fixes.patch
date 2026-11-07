@@ -11840,14 +11840,20 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on approval/request (prepend)',
      'on agent/inbox/discarded',
      'on session/event',
-@@ -81,6 +81,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -81,8 +81,13 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on agent/pre-step (prepend)',
      'on agent/request-error (prepend)',
      'on agent/request-error (prepend)',
 +    'effect ds-bot: archive a part once its job ends',
      'on agent/status',
      'on llm/stream',
++    // #645: the team turn budget, installed after parts so its gate answers first (it registers
++    // with prepend) and its spend listener sees turns.js's records.
++    'on session/event',
++    'on agent/pre-step (prepend)',
      'on llm/stream',
+     'on agent/status',
+     'tool request_secret',
 @@ -91,12 +91,24 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
@@ -15256,6 +15262,26 @@ diff --git a/test/tool-node.test.js b/test/tool-node.test.js
 diff --git a/test/work-dir.test.js b/test/work-dir.test.js
 --- a/test/work-dir.test.js
 +++ b/test/work-dir.test.js
+@@ -99,9 +99,16 @@ async function start({ services = {}, workspaces = [] } = {}) {
+     method: 'POST', body: JSON.stringify({ endpoint, payload }),
+   }))).json()
+   const tool = (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: agentOf(sessionId), name, callId: 'c1' })
+-  // Runs the parts check, registered last; 'next' means the step goes on.
+-  const preStep = (sessionId, messages = [], step = 1) => ctx.listeners.get('agent/pre-step').at(-1)(
+-    { agent: agentOf(sessionId), messages, step, signal: AbortSignal.timeout(60_000) }, async () => 'next')
++  // Runs the pre-step gates the way DSH does — the listener registered last answers first, and its
++  // next() runs the one registered before it. `next` is the answer the step goes on with; a gate
++  // that refuses returns `{ kind: 'reject' }` and the ones behind it never run.
++  const preStep = (sessionId, messages = [], step = 1) => {
++    const chain = ctx.listeners.get('agent/pre-step')
++    const run = index => index < 0
++      ? Promise.resolve({ kind: 'next', messages })
++      : chain[index]({ agent: agentOf(sessionId), messages, step, signal: AbortSignal.timeout(60_000) }, () => run(index - 1))
++    return run(chain.length - 1).then(decision => decision?.kind === 'next' ? 'next' : decision)
++  }
+   const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
+   // Waits until the Bot's own chat runs in `dir` and its move has finished.
+   const workingIn = async (botId, dir) => {
 @@ -219,6 +219,32 @@ test('an idle Bot\'s own chat moves to its new folder at once, and back', async
    assert.match(handoffOf(agentOf('s2')), new RegExp(`because your working folder changed to ${escapeRegExp(team)}\\.`))
  })

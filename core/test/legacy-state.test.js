@@ -51,7 +51,8 @@ test('a team saved with the legacy grok theme opens with the mono theme', async 
   const { call, stop, home } = open(savedTeam({ theme: 'grok', accent: '#123456' }))
   t.after(stop)
   const team = (await call('state', {})).value
-  assert.deepEqual(team.prefs, { theme: 'mono', accent: '#123456' })
+  // A team saved before #645 existed is seeded with its budget off (0), not the fresh-team 200.
+  assert.deepEqual(team.prefs, { theme: 'mono', accent: '#123456', turnBudget: 0 })
   assert.equal(JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).prefs.theme, 'mono')
 })
 
