@@ -107,6 +107,13 @@ const ONE_LINE = 200
 // queue reason the panel draws, which reads as a replacement character.
 const oneLine = value => (typeof value === 'string' ? cut(value.replace(/\s+/g, ' ').trim(), ONE_LINE).text : '')
 const stampOf = value => (Number.isFinite(value) ? value : null)
+// #2587: `text()` proves only that a stored timestamp is a non-empty string, so a hand-edited
+// `decidedAt` / `createdAt` reached `toISOString()` and threw for the whole board read. A value
+// that does not parse reads as no date, like the other unreadable fields.
+const dayOf = value => {
+  const parsed = Date.parse(text(value))
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : ''
+}
 
 // Waiting: an open card a role may claim and no member has. `waitedMs` is measured from the card's
 // own `createdAt`, so the board shows a duration a reader can check, not a guess.
@@ -400,7 +407,7 @@ export function install(rt) {
         const pastCut = file === undefined && decisions.known?.has(named) === true
         decided.push({
           id,
-          date: text(meeting.decidedAt) !== '' ? new Date(meeting.decidedAt).toISOString().slice(0, 10) : '',
+          date: dayOf(meeting.decidedAt),
           question,
           owner: text(meeting.owner) || null,
           ...cardOf(meeting),
@@ -414,7 +421,7 @@ export function install(rt) {
       if (meeting.status === 'open' || meeting.status === 'deliberating' || meeting.status === 'blocked') {
         pending.push({
           id,
-          date: text(meeting.createdAt) !== '' ? new Date(meeting.createdAt).toISOString().slice(0, 10) : '',
+          date: dayOf(meeting.createdAt),
           question,
           status: meeting.status,
           ...cardOf(meeting),
