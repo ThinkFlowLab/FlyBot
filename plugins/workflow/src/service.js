@@ -3,7 +3,7 @@
 // (default 2). A live node stays running until its Bot replies.
 
 import { randomBytes } from 'node:crypto'
-import { lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { copyFileSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
@@ -218,7 +218,12 @@ export function createWorkflowService({
   setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = handle => clearTimeout(handle),
 } = {}) {
   const file = dir ? join(dir, FILE) : null
-  let state = load(file, warn) ?? seed()
+  const loaded = load(file, warn)
+  let state = loaded.state ?? seed()
+  // #2603: a store this service could not read stays a failure instead of turning
+  // into a clean list. `state()` answers it and the first `write()` keeps the bytes
+  // before replacing them; every other endpoint keeps running on the fixture.
+  let loadError = loaded.error
   state.routes ??= {}
   // migrateRuns() also normalizes the orphan list a deleted workflow left
   // (#1621), so a store written by an older version keeps those ids.
@@ -372,12 +377,27 @@ export function createWorkflowService({
     }).catch(error => warn(`flybot-workflow: step ${nodeId} could not be timed out: ${error?.message ?? error}`))
   }
 
+  // The bytes of a store this service could not read are kept before the first write
+  // replaces them, the way the core store takes `state.json.broken-<stamp>` (#2603).
+  function keepUnreadable() {
+    if (!loadError) return
+    const backup = `${file}.broken-${Date.now()}`
+    try {
+      copyFileSync(file, backup)
+    } catch (error) {
+      // A store that is gone by now has no bytes left to keep.
+      if (error?.code !== 'ENOENT') throw new Error(`Not saved: ${file} could not be read and its bytes could not be kept as ${backup} (${error?.code ?? error}).`)
+    }
+    loadError = null
+  }
+
   function write() {
     if (!persist || !file) return
     state.seq = seq
     mkdirSync(dir, { recursive: true })
     const tmp = `${file}.${process.pid}.tmp`
     if (!tempWritable(tmp)) throw new Error(`Not saved: ${tmp} is not a plain file of its own, so the workflow store was not written there.`)
+    keepUnreadable()
     writeFileSync(tmp, JSON.stringify(state))
     renameSync(tmp, file)
   }
@@ -1262,7 +1282,13 @@ export function createWorkflowService({
   }
 
   return {
-    state(body) { return present(heldLimitOf(body)) },
+    state(body) {
+      // #2603: a store that could not be read is not answered as a list nothing in it
+      // came from. The factory templates are not the store, so `workflow/templates`
+      // still gets them from here.
+      if (loadError) return { ok: false, code: 'store-unreadable', error: loadError, templates: templateCatalog() }
+      return present(heldLimitOf(body))
+    },
     rename(body = {}) {
       if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
@@ -2257,27 +2283,33 @@ function migrateRuns(state) {
   state.laneFormat = true
 }
 
+// #2603: the reason a store could not be read travels beside the state instead of
+// ending at the warning. Every endpoint except `workflow/state` keeps running on the
+// fixture; the read is the one answer that must not pretend the fixture is the store.
 function load(file, warn) {
-  if (!file) return null
+  if (!file) return { state: null, error: null }
   let text
   try {
     text = readFileSync(file, 'utf8')
   } catch (error) {
-    if (error?.code === 'ENOENT') return null
-    warn(`flybot-workflow: could not read ${file}`)
-    return null
+    if (error?.code === 'ENOENT') return { state: null, error: null }
+    const problem = `the workflow store ${file} could not be read (${error?.code ?? error?.message ?? error})`
+    warn(`flybot-workflow: ${problem}; starting from the fixture`)
+    return { state: null, error: problem }
   }
   try {
     const parsed = JSON.parse(text)
     if (parsed?.version !== 1 || !Array.isArray(parsed.workflows) || typeof parsed.runs !== 'object') {
-      warn('flybot-workflow: the store is not a workflow file; starting from the fixture')
-      return null
+      const problem = `the workflow store ${file} is not a workflow file`
+      warn(`flybot-workflow: ${problem}; starting from the fixture`)
+      return { state: null, error: problem }
     }
-    return parsed
+    return { state: parsed, error: null }
   } catch (error) {
     // A file that does not parse is not a workflow store. Keep the plugin up
     // on the fixture instead of failing every endpoint.
-    warn(`flybot-workflow: the store did not parse (${error?.message ?? error}); starting from the fixture`)
-    return null
+    const problem = `the workflow store ${file} did not parse (${error?.message ?? error})`
+    warn(`flybot-workflow: ${problem}; starting from the fixture`)
+    return { state: null, error: problem }
   }
 }
