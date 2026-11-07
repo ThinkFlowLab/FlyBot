@@ -29,6 +29,53 @@ test('spansFrom builds only closed spans; an open turn or tool call yields nothi
   assert.deepEqual(Object.fromEntries(tool.attributes.map(a => [a.key, a.value]))['flybot.tool.ok'], { boolValue: true })
 })
 
+// #2442: an old or hand-edited record may carry no usable time. It builds no span, and it must
+// not take the spans of the same batch down with it.
+test('an untimed turn is skipped, and a complete turn in the same batch still exports', () => {
+  const untimed = [
+    { r: 'ts', id: 'old#1', pl: 'chat', bot: 'a' },
+    { r: 'te', id: 'old#1', t: '2026-11-04T10:00:00.000Z', o: 'completed' },
+  ]
+  assert.deepEqual(spansFrom(untimed, { names }), [], 'the untimed turn builds no span')
+  const complete = [
+    { r: 'ts', t: 1_000, id: 'a#1', pl: 'chat', bot: 'a' },
+    { r: 'te', t: 1_600, id: 'a#1', o: 'completed' },
+  ]
+  const spans = spansFrom([...untimed, ...complete], { names })
+  assert.deepEqual(spans.map(span => span.name), ['invoke_agent Chief'], 'the complete turn still exports')
+  assert.equal(spans[0].startTimeUnixNano, '1000000000')
+  assert.equal(spans[0].endTimeUnixNano, '1600000000')
+})
+
+test('an untimed tool call is skipped, and a complete one in the same batch still exports', () => {
+  const spans = spansFrom([
+    { r: 'ts', t: 1_000, id: 'a#1', pl: 'chat', bot: 'a' },
+    { r: 'ks', id: 'c1', tid: 'a#1', nm: 'web_search', bot: 'a' },
+    { r: 'ke', t: 1_400, id: 'c1', tid: 'a#1', ok: true },
+    { r: 'ks', t: 1_100, id: 'c2', tid: 'a#1', nm: 'read', bot: 'a' },
+    { r: 'ke', t: 1_450, id: 'c2', tid: 'a#1', ok: true },
+    { r: 'te', t: 1_600, id: 'a#1', o: 'completed' },
+  ])
+  assert.deepEqual(spans.map(span => span.name).sort(), ['execute_tool read', 'invoke_agent'])
+  const tool = spans.find(span => span.name === 'execute_tool read')
+  assert.equal(tool.startTimeUnixNano, '1100000000')
+  assert.equal(tool.endTimeUnixNano, '1450000000')
+})
+
+test('the on-demand export skips an untimed record instead of failing the whole trace (#2442)', () => {
+  const adapter = mockAdapter()
+  const timeline = createTimeline(adapter, { persist: false, now: () => 5_000 })
+  timeline.trace.append({ r: 'ts', id: 'old#1', pl: 'chat', bot: 'a' })
+  timeline.trace.append({ r: 'te', id: 'old#1', t: '2026-11-04T10:00:00.000Z', o: 'completed' })
+  timeline.trace.append({ r: 'ts', t: 4_100, id: 'a#1', pl: 'chat', bot: 'a' })
+  timeline.trace.append({ r: 'te', t: 4_900, id: 'a#1', o: 'completed' })
+  const spans = timeline.exportWindow().resourceSpans[0].scopeSpans[0].spans
+  assert.equal(spans.length, 1, 'the complete turn is exported and the untimed one is not')
+  assert.equal(spans[0].name, 'invoke_agent')
+  assert.equal(spans[0].startTimeUnixNano, '4100000000')
+  timeline.dispose()
+})
+
 test('pendingRecords returns the records whose span is not closed yet', () => {
   const open = pendingRecords([
     { r: 'ts', t: 1, id: 'a#1' }, { r: 'te', t: 2, id: 'a#1' },
