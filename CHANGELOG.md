@@ -6,6 +6,39 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.26] - 2026-11-08
+
+### Added
+
+- FlyBot has a community WeChat group; the README now carries its QR code, with a note that the code expires and how to ask for a fresh one ([#775](https://github.com/ThinkFlowLab/FlyBot/issues/775)).
+
+### Changed
+
+- A team can now cap its model turns per team-local day (`prefs.turnBudget`, 200 for a fresh team, `0` turns the budget off). At or over the cap only a turn the user starts themselves is still dispatched; scheduled reports, tidy passes and rounds a Bot starts are refused before a model call, with one line in the host log ([#645](https://github.com/ThinkFlowLab/FlyBot/issues/645)).
+
+### Fixed
+
+- Face-to-face room names, role labels, platform lines and surface Bot Social's own failure text now cap on character boundaries instead of UTF-16 units, so an emoji at the cut is no longer split into a half character and shown as a replacement character ([#2438](https://github.com/ThinkFlowLab/FlyBot/issues/2438)).
+- The timeline's on-demand OTLP export no longer fails as a whole when the trace holds an old or hand-edited record without a usable time: a turn or tool call whose timestamps cannot be read is skipped, and the complete spans in the same trace are still exported ([#2442](https://github.com/ThinkFlowLab/FlyBot/issues/2442)).
+- Workflow failure text, task cues, co-seat room shares, workflow avatars and role lines, and timeline labels now cut on character boundaries instead of UTF-16 units, so an emoji is never split into a half character and rendered as a replacement character ([#2581](https://github.com/ThinkFlowLab/FlyBot/issues/2581)).
+- A workflow step that ends without the `OUTPUT state:` line its gate reads no longer kills the run when it has already done the work: a Triage node that opened a pull request or claimed the issue keeps its `done` status, the run continues, and `run.outputMissing` / `run.producedPull` record the slip and the pull request ([#2583](https://github.com/ThinkFlowLab/FlyBot/issues/2583)).
+- The Diagnostics report and its downloaded log survive a corrupt line in `logs/diagnostics.jsonl`: a line with no level or source, or a timestamp JSON parses as `Infinity`, is shown with that part defaulted instead of throwing the whole report away ([#2591](https://github.com/ThinkFlowLab/FlyBot/issues/2591)).
+- The meeting list — and every write that echoes a record back — keeps a stored meeting whose `level` is not one of ordinary, major or severe instead of throwing the whole list away; a write still refuses an unknown level ([#2592](https://github.com/ThinkFlowLab/FlyBot/issues/2592)).
+- A task update refused for an invalid priority, progress or column no longer leaves the card partly changed: `task-update` reads and validates the whole request before it writes, so a refused call leaves every task record exactly as it was ([#2596](https://github.com/ThinkFlowLab/FlyBot/issues/2596)).
+- A `track_tasks` batch that is refused no longer leaves the cards it had already created on the board: the whole list is validated on a staged copy of the board and only committed once every item passed, so a refused batch leaves `state.tasks` exactly as it was and posts no claim line for a card that never landed ([#2597](https://github.com/ThinkFlowLab/FlyBot/issues/2597)).
+- A workflow save that the store refused no longer leaves a half-created workflow in memory: the refusal is returned and the graph, its creation line and the sequence number are dropped, so the next successful save cannot persist a workflow the caller was told was not created; a refused rename keeps the name it could not save ([#2598](https://github.com/ThinkFlowLab/FlyBot/issues/2598)).
+- A workflow store that cannot be read is no longer answered as a clean list: `workflow/state` now reports `store-unreadable` with the file and the reason instead of the factory fixture, so the Workflows page says the store is unreadable instead of showing workflows that are not yours, and the first save keeps the unreadable bytes in `workflows.json.broken-<stamp>` before it writes a fresh store ([#2603](https://github.com/ThinkFlowLab/FlyBot/issues/2603)).
+- The Diagnostics report and its downloaded log now say when `logs/diagnostics.jsonl` could not be read at start-up, instead of reporting `No host errors recorded.` for a log that exists and holds errors: the report names the reason (`not read (EACCES)`), says that the errors the log holds are not shown, and the entry list and the download carry that reason rather than an empty answer, while the errors this host recorded since start-up stay listed ([#2604](https://github.com/ThinkFlowLab/FlyBot/issues/2604)).
+- Deleting a Bot now ends its seat in every group chat in the same save: the group's member list and a shared room's guest roster stop naming it, and the next membership change can no longer write the deleted id back into the room, also after a reload ([#2607](https://github.com/ThinkFlowLab/FlyBot/issues/2607)).
+- Opening, previewing or reading the bytes of a workflow whose id is not a plain file name no longer reaches a JSON file outside the workspace's `workflows/` folder: the read path now accepts only the same ids the save path always did, so an id such as `../outside/stolen` — or a stored default naming one — answers `workflow/not-found` instead of returning that file's definition ([#2609](https://github.com/ThinkFlowLab/FlyBot/issues/2609)).
+- A group shared with a friend's Bot now shows the room's recent messages right after the share, and every message that arrives afterwards, instead of an empty room that stayed empty until the host's message count reached the number the share carried: the guest numbers its mirrored copy of the room locally, so it no longer takes the host's line counter as the point where its own history starts, and a malformed counter in a share can no longer be stored or blank the room ([#2612](https://github.com/ThinkFlowLab/FlyBot/issues/2612)).
+- A workspace's `workflows/` folder that is there but cannot be listed no longer answers "no workflows": the host now says `workflow/unreadable` and names the folder, a save that landed still reports `wrote: true`, and opening a workflow by name keeps working ([#2614](https://github.com/ThinkFlowLab/FlyBot/issues/2614)).
+- Removing the DSH Agent no longer drops a Session added while its earlier Sessions are still being archived: the removal applies its own archives to the live record, keeps any Session that arrived meanwhile, and asks you to remove the Agent again instead of leaving that Session orphaned ([#2616](https://github.com/ThinkFlowLab/FlyBot/issues/2616)).
+- The Project digest header now names the same Asia/Shanghai calendar day the digest is filed under, so a digest built between 00:00 and 08:00 no longer prints yesterday's date — including one held by quiet hours and replayed later ([#2618](https://github.com/ThinkFlowLab/FlyBot/issues/2618)).
+- The timeline panel's **Copy report** now prints the window's hours in your own time zone, the same hours the header above the button shows, instead of the Bot host's: the panel sends its browser zone with the request and the host formats the report in it, including the `(+1 day)` suffix on a window that crosses your midnight. A zone the host cannot use falls back to its own clock, as before ([#2619](https://github.com/ThinkFlowLab/FlyBot/issues/2619)).
+- Renaming a Bot now moves the DSH Session title before the stored record, so a refused title write leaves the Bot, its group chats and `state.json` under the old name instead of showing the new one until a restart silently reverts it ([#2622](https://github.com/ThinkFlowLab/FlyBot/issues/2622)).
+- Deleting a Workflow whose store write is refused now puts the workflow and its lane, run, log, route, claim and brief records back before the refusal reaches the page, so the list and `workflows.json` cannot disagree and the delete can be retried instead of answering `No such workflow` until a restart ([#2623](https://github.com/ThinkFlowLab/FlyBot/issues/2623)).
+
 ## [0.2.25] - 2026-11-07
 
 ### Added
@@ -1256,7 +1289,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.25...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.26...HEAD
+[0.2.26]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.25...v0.2.26
 [0.2.25]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.24...v0.2.25
 [0.2.24]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.23...v0.2.24
 [0.2.23]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.22...v0.2.23
