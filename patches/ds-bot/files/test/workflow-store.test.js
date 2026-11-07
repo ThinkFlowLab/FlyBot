@@ -3,7 +3,7 @@
 // actor (acceptance 6 and 7).
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -520,4 +520,85 @@ test('#2609: a stored default that leaves the folder is answered as none', (t) =
   const listed = createWorkflowStore({ dir }).list()
   assert.equal(listed.default, null, 'a stored key is a file name only when it is one')
   assert.deepEqual(listed.own, [])
+})
+
+// ---------------------------------------------------------------------------
+// #2614: a workflow folder that is there but cannot be listed (a restore with the owner bits
+// wrong, or a `chmod -R` accident) answered `ok: true` with an empty `own`, while `open` still
+// read a definition by name: listing a folder needs `+r`, reading a name in it only `+x`, so the
+// two halves disagreed. The listing half refuses with `workflow/unreadable`, a write that landed
+// still says `wrote: true`, and getting the permission back lists the files again.
+// Root ignores the permission bits, so both cases are skipped there.
+
+const unlistableFolder = (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'mine.json'), JSON.stringify({ ...blankWorkflow, id: 'mine', name: 'Mine' }))
+  t.after(() => {
+    chmodSync(dir, 0o755)
+    rmSync(root, { recursive: true, force: true })
+  })
+  chmodSync(dir, 0o311)
+  return dir
+}
+
+test('#2614: a workflow folder that cannot be listed refuses the list instead of answering empty', (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root ignores the folder permission bits')
+    return
+  }
+  const dir = unlistableFolder(t)
+  const store = createWorkflowStore({ dir })
+  const listed = store.list()
+  assert.equal(listed.ok, false)
+  assert.equal(listed.code, 'workflow/unreadable')
+  assert.ok(listed.message.includes(`the workflow folder ${dir} is there but cannot be listed`), listed.message)
+  assert.equal('own' in listed, false, 'a refusal never carries an empty own list')
+  // Reading a name out of the folder needs only `+x`, so it still answers: that is how the two
+  // halves disagreed before the refusal existed.
+  const opened = store.open('mine')
+  assert.equal(opened.ok, true)
+  assert.equal(opened.workflow.source, 'workspace')
+  assert.equal(opened.workflow.definition.name, 'Mine')
+  // Put the permission back: the same store lists the file again.
+  chmodSync(dir, 0o755)
+  const back = store.list()
+  assert.equal(back.ok, true)
+  assert.deepEqual(back.own.map((entry) => entry.id), ['mine'])
+})
+
+test('#2614: a save that landed in an unlistable folder says wrote: true and refuses the list', (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip('root ignores the folder permission bits')
+    return
+  }
+  const dir = unlistableFolder(t)
+  const store = createWorkflowStore({ dir })
+  const saved = store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine 2' } })
+  assert.equal(saved.ok, false)
+  assert.equal(saved.code, 'workflow/unreadable')
+  assert.equal(saved.wrote, true)
+  assert.equal(saved.changed, true)
+  assert.equal('own' in saved, false, 'a refusal never carries an empty own list')
+  assert.equal(JSON.parse(readFileSync(join(dir, 'mine.json'), 'utf8')).name, 'Mine 2', 'the write landed')
+  // An unedited save writes nothing, and still refuses the list it could not read.
+  const again = store.save({ definition: store.open('mine').workflow.definition })
+  assert.equal(again.ok, false)
+  assert.equal(again.code, 'workflow/unreadable')
+  assert.equal(again.wrote, false)
+  assert.equal(again.changed, false)
+  // A default lands too, and says the same thing about the listing half.
+  const set = store.setDefault({ id: 'mine' })
+  assert.equal(set.ok, false)
+  assert.equal(set.code, 'workflow/unreadable')
+  assert.equal(set.wrote, true)
+  assert.equal(JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8')).default, 'mine', 'the default landed')
+  // Reading the default back by name needs only `+x`; the listing half is what refused.
+  assert.equal(store.open('mine').ok, true)
+  chmodSync(dir, 0o755)
+  const back = store.list()
+  assert.equal(back.ok, true)
+  assert.equal(back.default, 'mine')
+  assert.deepEqual(back.own.map((entry) => entry.id), ['mine'])
 })

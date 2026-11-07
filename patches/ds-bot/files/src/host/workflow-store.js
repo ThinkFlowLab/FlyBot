@@ -75,14 +75,13 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   const refuseNotFile = (file) => ({ ok: false, code: 'workflow/not-a-file', message: `the workflow file ${file} is not a plain file of its own, so nothing is written there`, problems: [] })
   // A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
   // may be someone's hand-edit that does not parse: one broken file must not take the list down.
+  // A real folder that cannot be listed is not that case (#2614): `list` turns the failure into a
+  // refusal, because an empty list here would sit beside the files `open` still reads by name.
   const ownFiles = () => {
     if (!folderReal()) return []
-    try {
-      return readdirSync(dir).filter((name) => name.endsWith('.json') && name !== PROJECT_FILE).sort()
-    } catch {
-      return []
-    }
+    return readdirSync(dir).filter((name) => name.endsWith('.json') && name !== PROJECT_FILE).sort()
   }
+  const refuseUnreadable = () => ({ ok: false, code: 'workflow/unreadable', message: `the workflow folder ${dir} is there but cannot be listed, so its workflows cannot be read`, problems: [] })
 
   const readOwn = (id) => {
     if (!folderReal()) return null
@@ -116,7 +115,13 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   }
 
   const list = () => {
-    const own = ownFiles().flatMap((name) => {
+    let names
+    try {
+      names = ownFiles()
+    } catch {
+      return refuseUnreadable()
+    }
+    const own = names.flatMap((name) => {
       const definition = readOwn(name.slice(0, -'.json'.length))
       if (definition === null || definition.id === '') {
         skipped(join(dir, name), name, dir)
@@ -141,9 +146,13 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     const { definition, source } = found
     const target = typeof node === 'string' && node !== '' ? node : definition.nodes.find((entry) => entry.column !== false)?.id ?? definition.nodes[0]?.id ?? null
     const answer = factsFor({ id: definition.id, node: target })
+    const listed = list()
     return {
       ok: true,
-      ...list(),
+      // A folder that cannot be listed still opens a definition by name (reading one name needs
+      // only `+x`), so the refusal belongs to the listing half: the listing fields are left out
+      // rather than spreading an empty `own` over this answer (#2614).
+      ...(listed.ok ? listed : {}),
       workflow: {
         id: definition.id,
         name: definition.name,
@@ -185,11 +194,16 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
         return null
       }
     })()
-    if (previous !== bytes) {
+    const wrote = previous !== bytes
+    if (wrote) {
       mkdirSync(dir, { recursive: true })
       writeFileSync(path, bytes, { mode: 0o600 })
     }
-    return { ok: true, id: def.id, bytes, changed: previous !== bytes, ...list() }
+    const listed = list()
+    // A landed write and a folder that refuses to be listed are both true: saying only `ok: false`
+    // would hide the write, and `ok: true` beside an empty `own` would hide the folder (#2614).
+    if (!listed.ok) return { ...listed, id: def.id, wrote, changed: wrote }
+    return { ok: true, id: def.id, bytes, changed: wrote, ...listed }
   }
 
   const customize = ({ from, id, name } = {}) => {
@@ -209,7 +223,9 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     if (!fileWritable(path)) return refuseNotFile(path)
     mkdirSync(dir, { recursive: true })
     writeFileSync(path, `${JSON.stringify({ default: found.definition.id }, null, 2)}\n`, { mode: 0o600 })
-    return { ok: true, ...list() }
+    const listed = list()
+    if (!listed.ok) return { ...listed, wrote: true, changed: true }
+    return { ok: true, ...listed }
   }
 
   return {
