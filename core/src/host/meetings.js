@@ -498,8 +498,12 @@ export function install(rt) {
     const head = `${meeting.id} [${meeting.status}] ${meeting.question}`
     const lines = [head, `positions ${positions}/${meeting.participants.length}${meeting.owner ? ` | owner ${meeting.owner}` : ''}`]
     // #1831: the card's level and recipients are part of what the caller is told, and a severe
-    // card says in the summary why it will not advance on its own.
-    lines.push(`level: ${decisionLevel(meeting.level)}${(meeting.recipients ?? []).length === 0 ? '' : ` | recipients: ${(meeting.recipients ?? []).join(', ')}`}`)
+    // card says in the summary why it will not advance on its own. #2592: this is the projection
+    // every action answers through, so a stored level no writer stores — a hand edit, or a record
+    // from an older build — renders as `ordinary`, the way the sibling readers treat it, instead
+    // of throwing the whole list away. The strict validator stays on the write path.
+    const level = DECISION_LEVELS.includes(meeting.level) ? meeting.level : 'ordinary'
+    lines.push(`level: ${level}${(meeting.recipients ?? []).length === 0 ? '' : ` | recipients: ${(meeting.recipients ?? []).join(', ')}`}`)
     const paused = advanceRefusal(meeting)
     if (paused !== undefined) lines.push(`paused: ${paused}`)
     if (meeting.dissent !== undefined) lines.push(`dissent: ${meeting.dissent.text} — ${meeting.dissent.owner}`)
