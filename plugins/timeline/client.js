@@ -129,6 +129,10 @@ window.__ModuleLoader__.load({
         // does, so a report costs one request when a person wants one.
         async digest({ title } = {}) {
           const asked = { windowMs: state.windowMs, ...(state.to === undefined ? {} : { to: state.to }) }
+          // The report prints the reader's clock, so the host is told which zone that is (#2619): the
+          // same browser zone the header above the button prints (`fmtClock`).
+          const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+          if (timeZone) asked.timeZone = timeZone
           if (typeof title === 'string' && title.trim()) asked.title = title.trim().slice(0, 80)
           const value = await flybot.call(DIGEST_ENDPOINT, asked)
           const markdown = typeof value?.markdown === 'string' ? value.markdown : undefined

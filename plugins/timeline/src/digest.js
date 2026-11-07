@@ -41,14 +41,44 @@ const percent = (part) => `${Math.round(part * 100)}%`
 const turnWord = (n) => (n === 1 ? 'turn' : 'turns')
 const pad = n => String(n).padStart(2, '0')
 // The reader's own clock, the hours the panel header prints (`fmtClock` in client.js): a report
-// copied from the panel must not name a different time than the header above the button.
-const clock = (ms) => {
+// copied from the panel must not name a different time than the header above the button. The panel
+// names the reader's zone with the request (#2619); a host that gets no usable one keeps its own
+// clock, exactly as before.
+const hostClock = (ms) => {
   const at = new Date(ms)
   return Number.isFinite(at.getTime()) ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : ''
 }
 // Whole local calendar days between two instants: 0 inside one day, 1 across midnight.
-const daysApart = (from, to) => {
+const hostDaysApart = (from, to) => {
   const day = (ms) => { const at = new Date(ms); return Number.isFinite(at.getTime()) ? new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime() : NaN }
+  const a = day(from)
+  const b = day(to)
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.round((b - a) / 86_400_000) : 0
+}
+const zonePart = (formatter, ms, type) => formatter.formatToParts(ms).find(part => part.type === type)?.value
+// The reader's clock in the zone the panel named. A name the runtime will not take is no zone at
+// all, so the caller falls back to the host's clock and a bad zone never throws the report away.
+const readerZone = (timeZone) => {
+  if (typeof timeZone !== 'string' || !timeZone.trim()) return undefined
+  const zone = timeZone.trim()
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone })
+    return {
+      clock: new Intl.DateTimeFormat('en-CA', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }),
+      day: new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }),
+    }
+  } catch {
+    return undefined
+  }
+}
+const zonedClock = (zone, ms) => Number.isFinite(ms)
+  ? `${zonePart(zone.clock, ms, 'hour')}:${zonePart(zone.clock, ms, 'minute')}`
+  : ''
+// Whole calendar days in the reader's zone, read from that zone's own Y/M/D: a DST day is 23 or 25
+// hours long but still one calendar day, and the host's midnight never decides the suffix (#2619).
+const zonedDaysApart = (zone, from, to) => {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0
+  const day = (ms) => Date.UTC(Number(zonePart(zone.day, ms, 'year')), Number(zonePart(zone.day, ms, 'month')) - 1, Number(zonePart(zone.day, ms, 'day')))
   const a = day(from)
   const b = day(to)
   return Number.isFinite(a) && Number.isFinite(b) ? Math.round((b - a) / 86_400_000) : 0
@@ -60,7 +90,7 @@ const daysApart = (from, to) => {
  * panel draws it), `team` the rollup, `markdown` the report, `line` a one-line summary a reminder
  * can post.
  */
-export function buildDigest(window = {}, { title = 'Team report', now = Date.now() } = {}) {
+export function buildDigest(window = {}, { title = 'Team report', now = Date.now(), timeZone } = {}) {
   const lanes = new Map((window.lanes ?? []).map(lane => [lane.id, lane]))
   const usageBy = new Map((window.usage ?? []).map(use => [use.lane, use]))
   const toolUseBy = new Map((window.toolUse ?? []).map(use => [use.lane, use.tools ?? []]))
@@ -121,11 +151,13 @@ export function buildDigest(window = {}, { title = 'Team report', now = Date.now
     unhealthy: bots.filter(bot => bot.counted >= ERROR_TURNS_MIN && bot.errorRate >= ERROR_RATE_MIN).map(bot => bot.id),
   }
 
+  const zone = readerZone(timeZone)
+  const clock = zone ? ms => zonedClock(zone, ms) : hostClock
+  const days = zone ? zonedDaysApart(zone, window.from, window.to) : hostDaysApart(window.from, window.to)
   const from = clock(window.from)
   const to = clock(window.to)
   // The clock prints HH:MM only, so a range that crosses local midnight would read backwards
   // (#1787): name the extra days instead (`23:50–00:10 (+1 day)`), and leave a same-day range alone.
-  const days = daysApart(window.from, window.to)
   const range = from && to ? `${from}–${to}${days > 0 ? ` (+${days} ${days === 1 ? 'day' : 'days'})` : ''}` : 'the window'
   const lines = [`# ${title}`, `Window: ${range}${window.live === true ? ' · live' : ''}`]
 

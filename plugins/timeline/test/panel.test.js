@@ -543,12 +543,15 @@ test('#582: the data layer asks for the report at the window the panel shows', a
   const flybot = { call: async (endpoint, body) => { asked.push([endpoint, body]); return { markdown: '# Team report', line: '4 turns' } } }
   const store = client.createStore(flybot, { windowMs: 300_000 })
   const report = await store.digest()
-  assert.deepEqual(asked, [['timeline/digest', { windowMs: 300_000 }]])
+  // The report prints the reader's clock, so the request names the browser's zone (#2619) — the
+  // same one the header prints. A page without one sends no zone and the host keeps its own clock.
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  assert.deepEqual(asked, [['timeline/digest', { windowMs: 300_000, timeZone: zone }]])
   assert.equal(report.markdown, '# Team report')
   assert.equal(report.line, '4 turns')
   store.setWindow({ windowMs: 60_000 })
   await store.digest({ title: ' Standup ' })
-  assert.deepEqual(asked.at(-1), ['timeline/digest', { windowMs: 60_000, title: 'Standup' }])
+  assert.deepEqual(asked.at(-1), ['timeline/digest', { windowMs: 60_000, timeZone: zone, title: 'Standup' }])
   // A host that answers nothing usable is an error, not an empty report.
   const silent = client.createStore({ call: async () => ({}) }, {})
   await assert.rejects(() => silent.digest(), /no report/)
