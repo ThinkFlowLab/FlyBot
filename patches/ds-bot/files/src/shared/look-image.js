@@ -3,7 +3,8 @@
 // so a value that can close the quote, the url() or the rule is dropped where it enters —
 // hooks.js `cleanRemoteLook` and remote-chat.js `applyPublishedLook` — and again at that sink.
 // A dropped image draws the colour/mask look instead. The social plugin carries the same test
-// for its own threshold (no gif there); plugins/social/test/look.test.js keeps the two in step.
+// for its own threshold (the same formats, gif included since #2649); plugins/social/test/look.test.js
+// keeps the two in step.
 export const LOOK_IMAGE_MAX = 65536
 const DATA_IMAGE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/i
 const HTTP = /^https?:\/\//i
