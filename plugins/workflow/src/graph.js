@@ -645,6 +645,24 @@ export function firstBranchValue(graph, nodeId, name) {
   return null
 }
 
+// #2669: a node is told which OUTPUT lines to print, and the names come from its own
+// declared ports — but the edges leaving it read outputs too, so a node that declares
+// none was never told the line its gate reads. Name them, with the values those edges
+// compare against, so the step can answer the gate it is judged by.
+export function edgeOutputs(graph, nodeId) {
+  ensure(graph)
+  const values = new Map()
+  for (const edge of graph.edges) {
+    if (edge.from !== nodeId) continue
+    if (edge.when?.else === true || !edge.when?.output) continue
+    const name = edge.when.output
+    if (!values.has(name)) values.set(name, [])
+    const list = values.get(name)
+    if (edge.when.eq != null && !list.includes(edge.when.eq)) list.push(edge.when.eq)
+  }
+  return [...values].map(([name, list]) => ({ name, values: list }))
+}
+
 // #1773: the outputs a gate reads are verdicts, not prose. A `when`/`else` or `until`
 // edge decides from them, so a reply that leaves one blank is silence, and the gate
 // would take it for "not this branch". A step must not settle on that: name what it

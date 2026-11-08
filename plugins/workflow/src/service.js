@@ -7,8 +7,8 @@ import { copyFileSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFile
 import { join } from 'node:path'
 import { releaseAll, spawnAll } from './ephemeral.js'
 import {
-  chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, cutCodePoints, doneCount, failNode, freshStatus, layerMarks,
-  firstBranchValue, missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
+  chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, cutCodePoints, doneCount, edgeOutputs, failNode, freshStatus,
+  layerMarks, firstBranchValue, missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
   rowPreview, startFrontier, stepArtifacts, summarizeTask, unmetRequired, validateGraph,
 } from './graph.js'
 import { matchTask, namedTarget } from './match.js'
@@ -722,6 +722,25 @@ export function createWorkflowService({
     return { run: next, lines }
   }
 
+  // #2669: the outgoing edges read outputs too, so a node that declares none has to be
+  // told the lines its own gate reads. A declared port wins on every other field.
+  function stepOutputs(item, node) {
+    const ports = (node.outputs ?? []).map(port => ({ ...port }))
+    const byName = new Map(ports.map(port => [port.name, port]))
+    for (const read of edgeOutputs(item, node.id)) {
+      let port = byName.get(read.name)
+      if (!port) {
+        port = { name: read.name }
+        byName.set(read.name, port)
+        ports.push(port)
+      }
+      const values = Array.isArray(port.values) ? [...port.values] : []
+      for (const value of read.values) if (!values.includes(value)) values.push(value)
+      if (values.length > 0) port.values = values
+    }
+    return ports
+  }
+
   function stepBody(item, run, node) {
     const inputs = resolveInputs(item, node.id, run.produced, run.task)
     return {
@@ -737,7 +756,7 @@ export function createWorkflowService({
       brief: run.task?.brief || run.task?.title || '',
       taskId: run.task?.id ?? '',
       inputs,
-      outputs: node.outputs ?? [],
+      outputs: stepOutputs(item, node),
     }
   }
 
