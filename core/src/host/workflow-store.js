@@ -1,7 +1,7 @@
 // Where a workflow definition lives (#1272 step 3): the two FlyBot ships as presets, plus the
 // owner's own `workflows/<id>.json` in the workspace. This module is the only writer — a page asks
 // it, it validates with the engine's own `validateWorkflow`, and it writes the canonical bytes
-// `workflow-doc.js` produces. Three rules are enforced here rather than trusted to the page:
+// `workflow-doc.js` produces. Four rules are enforced here rather than trusted to the page:
 //
 //   - **a preset is copied, never mutated.** `repo-dev` and `blank` are read from the shipped
 //     modules and no file with their id is ever written, so the factory preset's bytes cannot
@@ -10,12 +10,18 @@
 //     canonical, so a round trip is byte-identical and a definition diffs cleanly in git.
 //   - **a guard preview never invents a pass** (acceptance 5): the facts come from a reader the
 //     caller supplies; a reader that answered nothing makes every row say it could not read.
+//   - **a file from a newer build is refused, not rewritten** (#2681). `workflowDocument` emits a
+//     fixed key set and `normaliseWorkflow` reads only what it knows, so writing over a definition
+//     whose `version` is higher would drop every field this build has no reader for while the file
+//     kept claiming that version — the newer build could not tell its file had been damaged. The
+//     read names such a file instead of presenting it, and the write refuses with its bytes intact,
+//     the shape `plugins/timeline/src/store.js` takes for a newer trace segment.
 //
 // The endpoint is `workflow-save`, which is in `authz.js`'s `TASK_ENDPOINTS` allow list; `workflows`
 // is the read side and is listed with the other reads.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { layoutWorkflow, normaliseWorkflow, validateWorkflow } from '../shared/workflow.js'
+import { layoutWorkflow, normaliseWorkflow, validateWorkflow, WORKFLOW_VERSION } from '../shared/workflow.js'
 import { copyOfPreset, isPresetId, isWorkflowId, workflowBytes, WORKFLOW_DIR } from '../shared/workflow-doc.js'
 import { previewNode } from '../shared/workflow-preview.js'
 import { repoDevWorkflow } from '../shared/workflow-repo-dev.js'
@@ -82,26 +88,51 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     return readdirSync(dir).filter((name) => name.endsWith('.json') && name !== PROJECT_FILE).sort()
   }
   const refuseUnreadable = () => ({ ok: false, code: 'workflow/unreadable', message: `the workflow folder ${dir} is there but cannot be listed, so its workflows cannot be read`, problems: [] })
+  // The version a file says it carries, read the way `normaliseWorkflow` reads it: a value that is
+  // not an integer is no claim at all, so this build's own version stands in for it.
+  const versionOf = (raw) => (Number.isInteger(raw?.version) ? raw.version : WORKFLOW_VERSION)
+  const refuseNewer = (file, version) => ({
+    ok: false,
+    code: 'workflow/newer-version',
+    message: `the workflow file ${file} was written by a newer FlyBot (version ${version}); this build writes version ${WORKFLOW_VERSION} and would drop the fields it has no reader for, so nothing is written there`,
+    problems: [],
+  })
 
-  const readOwn = (id) => {
+  // What `workflows/<id>.json` holds, or why this build may not present it: `{ definition }`, or
+  // `{ newer: version, refusal }` for a file a newer build wrote (the refusal names the file, so the
+  // path is built here, inside the sink that already asks `folderReal`), or `null` when the file is
+  // absent or does not parse.
+  const readOwnFile = (id) => {
     if (!folderReal()) return null
+    let raw
     try {
-      return normaliseWorkflow(JSON.parse(readFileSync(fileFor(id), 'utf8')))
+      raw = JSON.parse(readFileSync(fileFor(id), 'utf8'))
+    } catch {
+      return null
+    }
+    const version = versionOf(raw)
+    if (version > WORKFLOW_VERSION) return { newer: version, refusal: refuseNewer(fileFor(id), version) }
+    try {
+      return { definition: normaliseWorkflow(raw) }
     } catch {
       return null
     }
   }
+  const readOwn = (id) => readOwnFile(id)?.definition ?? null
 
   // A file name is a file name on both sides of the store (#2609): `save` has always refused an id
   // that is not one, and the read joins the same id onto the folder, so `../outside/stolen` would
   // read a JSON file outside `workflows/` — including the stored `default` key `list()` feeds
   // back in here. Every read entry point comes through this function, so the check lives here once.
+  // A newer file is answered as itself (`refusal`), never as a stripped definition of this build's.
   const readDefinition = (id) => {
     if (!isWorkflowId(id)) return null
     const preset = presets.map(normaliseWorkflow).find((definition) => definition.id === id)
     if (preset !== undefined) return { definition: preset, source: 'preset' }
-    const own = readOwn(id)
-    return own === null ? null : { definition: own, source: 'workspace' }
+    const own = readOwnFile(id)
+    if (own === null) return null
+    if (own.refusal !== undefined) return { newer: own.newer, refusal: own.refusal }
+    return { definition: own.definition, source: 'workspace' }
   }
 
   const projectDefault = () => {
@@ -121,28 +152,40 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     } catch {
       return refuseUnreadable()
     }
-    const own = names.flatMap((name) => {
-      const definition = readOwn(name.slice(0, -'.json'.length))
-      if (definition === null || definition.id === '') {
+    const own = []
+    const newer = []
+    for (const name of names) {
+      const id = name.slice(0, -'.json'.length)
+      const found = readOwnFile(id)
+      if (found === null || (found.definition !== undefined && found.definition.id === '')) {
         skipped(join(dir, name), name, dir)
-        return []
+        continue
       }
-      return [summary(definition, 'workspace')]
-    })
+      // #2681: a file a newer build wrote is named, not listed as one of this store's own — its
+      // definition would come back stripped of the fields this build cannot read.
+      if (found.newer !== undefined) {
+        newer.push({ id, version: found.newer })
+        continue
+      }
+      own.push(summary(found.definition, 'workspace'))
+    }
     const current = projectDefault()
+    const chosen = current === null ? null : readDefinition(current)
     return {
       ok: true,
       presets: presets.map((definition) => summary(definition, 'preset')),
       own,
+      newer,
       // A default naming a workflow nobody has (a deleted file) is answered as "none", never echoed
-      // back as a workflow the page would then fail to open.
-      default: current !== null && readDefinition(current) !== null ? current : null,
+      // back as a workflow the page would then fail to open. A newer file cannot be opened either.
+      default: chosen !== null && chosen.definition !== undefined ? current : null,
     }
   }
 
   const open = (id, node = null) => {
     const found = readDefinition(String(id ?? ''))
     if (found === null) return { ok: false, code: 'workflow/not-found', message: `there is no workflow "${id}"`, problems: [] }
+    if (found.refusal !== undefined) return found.refusal
     const { definition, source } = found
     const target = typeof node === 'string' && node !== '' ? node : definition.nodes.find((entry) => entry.column !== false)?.id ?? definition.nodes[0]?.id ?? null
     const answer = factsFor({ id: definition.id, node: target })
@@ -181,11 +224,17 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     if (isPresetId(def.id)) {
       return { ok: false, code: 'workflow/preset-read-only', message: `"${def.id}" is a preset FlyBot ships; customize it into a new workflow instead of saving over it`, problems: [] }
     }
+    const path = fileFor(def.id)
+    // #2681: before anything else about the content, the version question. A definition that says
+    // it is newer, or a file on disk a newer build wrote, is refused and left byte-for-byte alone;
+    // `validate` would otherwise answer a stripped copy with its own, unrelated refusal.
+    if (def.version > WORKFLOW_VERSION) return refuseNewer(path, def.version)
+    const onDisk = readOwnFile(def.id)
+    if (onDisk?.newer !== undefined) return refuseNewer(path, onDisk.newer)
     const problems = validate(def)
     if (problems.length > 0) return { ok: false, code: 'workflow/invalid', message: problems[0].message, problems }
     const bytes = workflowBytes(def)
     if (!folderWritable()) return refuseWritable()
-    const path = fileFor(def.id)
     if (!fileWritable(path)) return refuseNotFile(path)
     const previous = (() => {
       try {
@@ -209,6 +258,9 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   const customize = ({ from, id, name } = {}) => {
     const found = readDefinition(String(from ?? ''))
     if (found === null) return { ok: false, code: 'workflow/not-found', message: `there is no workflow "${from}" to customize`, problems: [] }
+    // A copy is a write of this build's canonical bytes, so it may not be made from a definition
+    // whose fields this build cannot read (#2681).
+    if (found.refusal !== undefined) return found.refusal
     const copy = copyOfPreset(found.definition, { id, name })
     const saved = save({ definition: copy })
     if (!saved.ok) return saved
@@ -218,6 +270,7 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
   const setDefault = ({ id } = {}) => {
     const found = readDefinition(String(id ?? ''))
     if (found === null) return { ok: false, code: 'workflow/not-found', message: `there is no workflow "${id}"`, problems: [] }
+    if (found.refusal !== undefined) return found.refusal
     if (!folderWritable()) return refuseWritable()
     const path = join(dir, PROJECT_FILE)
     if (!fileWritable(path)) return refuseNotFile(path)
@@ -236,14 +289,16 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     customize,
     setDefault,
     // The definitions in play, for the board's columns. Presets always; a workspace file is read on
-    // every call so a save is visible to the next board read without a restart.
+    // every call so a save is visible to the next board read without a restart. A file a newer build
+    // wrote is left out: this build cannot run a definition whose fields it cannot read (#2681).
     definitions: () => {
       const own = ownFiles().map((name) => readOwn(name.slice(0, -'.json'.length))).filter((definition) => definition !== null && definition.id !== '')
       return [...presets.map(normaliseWorkflow), ...own]
     },
     bytesOf: (id) => {
       const found = readDefinition(String(id ?? ''))
-      return found === null ? null : { source: found.source, bytes: workflowBytes(found.definition) }
+      // No bytes this build would write for a file it may not rewrite.
+      return found?.definition === undefined ? null : { source: found.source, bytes: workflowBytes(found.definition) }
     },
   }
 }

@@ -9,7 +9,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { install as installAuthz } from '../src/host/authz.js'
 import { createWorkflowStore, install, PRESETS } from '../src/host/workflow-store.js'
-import { copyOfPreset, differingFields, workflowBytes } from '../src/shared/workflow-doc.js'
+import { WORKFLOW_VERSION } from '../src/shared/workflow.js'
+import { copyOfPreset, differingFields, workflowBytes, workflowDocument } from '../src/shared/workflow-doc.js'
 import { repoDevWorkflow } from '../src/shared/workflow-repo-dev.js'
 import { blankWorkflow } from '../src/shared/workflow-blank.js'
 
@@ -320,7 +321,7 @@ test('#2068: a save still creates a missing workflow folder, and lands in a real
 const WORKFLOW_PROBES = {
   fileFor: 'a linked workflow folder refuses a save instead of writing into it',
   ownFiles: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
-  readOwn: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
+  readOwnFile: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
   projectDefault: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
   list: 'a workflow folder that is a symlink lists nothing and never reads the outside file',
   save: 'a linked workflow folder refuses a save instead of writing into it',
@@ -341,9 +342,9 @@ test('#2068: every path built from the workflow folder is one of the reviewed si
     .filter((owner, at, all) => all.indexOf(owner) === at)
   const paths = ownersOf(/join\(dir|fileFor\(/)
   const gates = ownersOf(/folderReal\(\)|folderWritable\(\)/)
-  assert.deepEqual(paths, ['fileFor', 'readOwn', 'projectDefault', 'list', 'save', 'setDefault'],
+  assert.deepEqual(paths, ['fileFor', 'readOwnFile', 'projectDefault', 'list', 'save', 'setDefault'],
     'a new path under workflows/ is a new sink: route it through folderReal/folderWritable and add it here and to WORKFLOW_PROBES')
-  assert.deepEqual(gates, ['ownFiles', 'readOwn', 'projectDefault', 'save', 'setDefault'])
+  assert.deepEqual(gates, ['ownFiles', 'readOwnFile', 'projectDefault', 'save', 'setDefault'])
   assert.deepEqual([...new Set([...paths, ...gates])].sort(), Object.keys(WORKFLOW_PROBES).sort(),
     'every sink needs a probe in WORKFLOW_PROBES, and every probe a sink')
   const tests = new Set([...readFileSync(new URL('./workflow-store.test.js', import.meta.url), 'utf8').matchAll(/test\('#(?:2057|2068): ([^']+)'/g)].map((found) => found[1]))
@@ -601,4 +602,86 @@ test('#2614: a save that landed in an unlistable folder says wrote: true and ref
   assert.equal(back.ok, true)
   assert.equal(back.default, 'mine')
   assert.deepEqual(back.own.map((entry) => entry.id), ['mine'])
+})
+
+// #2681: a file written by a newer build is not this build's to rewrite. `workflowDocument` emits
+// a fixed key set and `normaliseWorkflow` reads only what it knows, so a save over such a file would
+// drop every field this build has no reader for while `version` kept saying the newer number — the
+// newer build reading it back could not even tell the file had been damaged. The refusal names the
+// file, and the bytes stay exactly as the newer build wrote them.
+const newerDocument = (id = 'newer-mine') => ({
+  id,
+  name: 'Newer mine',
+  version: WORKFLOW_VERSION + 1,
+  inputs: [],
+  deliverables: [],
+  stages: ['plan', 'build'],
+  nodes: [
+    { id: 'plan', name: 'Planner', role: 'Dev', inputs: [], outputs: [], guards: [], refusal: '', timeoutMinutes: 30 },
+    { id: 'build', name: 'Builder', role: 'Dev', inputs: [], outputs: [], guards: [], refusal: '' },
+  ],
+  edges: [{ from: 'plan', to: 'build' }],
+  loops: [],
+})
+
+test('#2681: a store file from a newer build is named on read and never rewritten', () => {
+  withDir((dir) => {
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, 'newer-mine.json')
+    const original = Buffer.from(`${JSON.stringify(newerDocument(), null, 2)}\n`, 'utf8')
+    writeFileSync(path, original)
+    const store = createWorkflowStore({ dir })
+
+    const listed = store.list()
+    assert.equal(listed.ok, true, 'one file this build cannot read does not take the list down')
+    assert.deepEqual(listed.own, [], 'a definition whose fields this build cannot read is not listed as its own')
+    assert.deepEqual(listed.newer, [{ id: 'newer-mine', version: WORKFLOW_VERSION + 1 }], 'the read names the file and the version that wrote it')
+
+    const opened = store.open('newer-mine')
+    assert.equal(opened.ok, false, 'a read does not present a stripped definition as the store')
+    assert.equal(opened.code, 'workflow/newer-version')
+    assert.match(opened.message, /newer/)
+
+    // What an older page would send after reading the file through a build that strips it: this
+    // build's own version, and none of the fields it does not know. Today that overwrote the file.
+    const stale = store.save({ definition: copyOfPreset(blankWorkflow, { id: 'newer-mine', name: 'Mine' }) })
+    assert.equal(stale.ok, false, 'the write path refuses a file a newer build wrote')
+    assert.equal(stale.code, 'workflow/newer-version')
+    // And a definition that says it is newer itself is refused too, before anything is written.
+    const incoming = store.save({ definition: newerDocument() })
+    assert.equal(incoming.ok, false)
+    assert.equal(incoming.code, 'workflow/newer-version')
+
+    const after = readFileSync(path)
+    assert.equal(after.equals(original), true, 'the file is byte-identical after both refusals')
+    const kept = JSON.parse(after.toString('utf8'))
+    assert.equal(kept.version, WORKFLOW_VERSION + 1)
+    assert.deepEqual(kept.stages, ['plan', 'build'], 'the top-level field this build cannot read is still there')
+    assert.equal(kept.nodes[0].timeoutMinutes, 30, 'the node field this build cannot read is still there')
+  })
+})
+
+test('#2681: a definition at this build own version with unknown fields still saves as it does today', () => {
+  withDir((dir) => {
+    mkdirSync(dir, { recursive: true })
+    const base = copyOfPreset(blankWorkflow, { id: 'mine', name: 'Mine' })
+    const doc = workflowDocument(base)
+    const handEdited = { ...doc, stages: ['plan'], nodes: doc.nodes.map((node) => ({ ...node, timeoutMinutes: 30 })) }
+    writeFileSync(join(dir, 'mine.json'), `${JSON.stringify(handEdited, null, 2)}\n`)
+    const store = createWorkflowStore({ dir })
+
+    const listed = store.list()
+    assert.deepEqual(listed.newer, [], 'a file at this build version is not reported as newer')
+    assert.deepEqual(listed.own.map((entry) => entry.id), ['mine'], 'and it is still listed as this store own')
+
+    const opened = store.open('mine')
+    assert.equal(opened.ok, true, 'a definition at this build version still opens')
+    const saved = store.save({ definition: opened.workflow.definition })
+    assert.equal(saved.ok, true, 'and still saves')
+    assert.equal(saved.changed, true)
+    const written = JSON.parse(readFileSync(join(dir, 'mine.json'), 'utf8'))
+    assert.equal('stages' in written, false, 'a key this build has no reader for is dropped, as before')
+    assert.equal('timeoutMinutes' in written.nodes[0], false)
+    assert.deepEqual(written, workflowDocument(base), 'the canonical bytes are unchanged by this fix')
+  })
 })
