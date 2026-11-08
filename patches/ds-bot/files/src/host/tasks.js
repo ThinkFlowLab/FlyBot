@@ -505,8 +505,11 @@ export function install(rt) {
     }
     if (taskClass !== undefined) task.taskClass = taskClass
     if (reworkOf !== undefined) task.reworkOf = reworkOf
-    if (handoff !== undefined) task.handoff = handoff
-    if (handoff !== undefined) routeToPool(task, handoff)
+    // The route answers before the field lands, so a refused handoff leaves the card as it was.
+    if (handoff !== undefined) {
+      routeToPool(task, handoff)
+      task.handoff = handoff
+    }
     if (evidence !== undefined) task.evidence = evidence
     if (clearingLease) delete task.lease
     if (lease !== undefined) task.lease = lease
@@ -517,6 +520,10 @@ export function install(rt) {
   // member is holding hands the card on in the same write, so the producer lets go of it and the
   // target role can take it with no dispatch from a supervisor.
   function routeToPool(task, handoff) {
+    // A finished card keeps its terminal state (#2667): the same refusal `blockForInput` makes,
+    // because no later write may drag accepted/cancelled/failed back into the queue. result-ready
+    // is not terminal — it is allowed to go back to working, so a handoff from it still lands.
+    if (TERMINAL_MATCH.has(task.status)) throw stale('A finished task cannot be handed on')
     const held = task.claimedBy !== undefined || task.status === 'claimed' || task.status === 'working' || task.status === 'blocked'
     task.queueRole = handoff.to
     if (held) requeue(task, `handoff to ${handoff.to}`, 0, 'handed on')
