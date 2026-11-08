@@ -113,6 +113,13 @@ const PULL_SPOKEN = /\b(?:PR|pull request)\s*#?(\d+)/i
 const OPENED = /\b(?:opened|created|raised|submitted|pushed)\b/i
 const CLAIM_LINE = /^\s*claimed(?:-by)?\s*:/i
 const CLAIM_ISSUE = /^\s*claimed\s+#\d+/i
+// #2658: a step may declare what it delivered as its own OUTPUT instead of naming
+// it in the prose (`OUTPUT pr: 2657 (verified)`, `OUTPUT merged: <sha>`). Only these
+// names and shapes count, so a step that says nothing is still not evidence.
+const PULL_OUTPUTS = new Set(['pr', 'pull'])
+const MERGE_OUTPUTS = new Set(['merged', 'merge-commit'])
+const PULL_NUMBER = /\d+/
+const COMMIT_SHA = /\b[0-9a-f]{40}\b/i
 
 export function stepArtifacts(text, outputs) {
   const haystack = [String(text ?? ''), ...Object.values(outputs ?? {}).map(value => String(value ?? ''))].join('\n')
@@ -125,8 +132,18 @@ export function stepArtifacts(text, outputs) {
       if (spoken) { pull = Number(spoken[1]); break }
     }
   }
+  let merged = false
+  for (const [name, value] of Object.entries(outputs ?? {})) {
+    const key = String(name).toLowerCase()
+    const line = String(value ?? '')
+    if (!merged && MERGE_OUTPUTS.has(key) && COMMIT_SHA.test(line)) merged = true
+    if (pull == null && PULL_OUTPUTS.has(key)) {
+      const number = PULL_NUMBER.exec(line)
+      if (number) pull = Number(number[0])
+    }
+  }
   const claimed = haystack.split('\n').some(line => CLAIM_LINE.test(line) || CLAIM_ISSUE.test(line))
-  return { pull: Number.isInteger(pull) ? pull : null, claimed }
+  return { pull: Number.isInteger(pull) ? pull : null, claimed, ...(merged ? { merged: true } : {}) }
 }
 
 function coord(value, fallback) {
