@@ -1,12 +1,14 @@
 // Map Bot Social profile look fields (optional on older servers) to FlyBot's
 // { color, avatar: { shape | emoji | image } }. Server avatar is a preset id,
-// a single emoji, or a data:image/(png|jpeg|webp);base64 string <= 64KiB.
+// a single emoji, or a data:image/(png|jpeg|webp|gif);base64 string <= 64KiB.
 // Color is #rrggbb. Peers without a look keep the handle-seeded palette.
 
 export const AVATAR_MAX = 64 * 1024
 const PRESET = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const HEX = /^#[0-9a-f]{6}$/i
-const DATA_IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i
+// gif is here because core/src/host/roster.js stores one (`png|jpeg|webp|gif`, #2649):
+// a format the host accepts must not fall through to the shape branch on the way out.
+const DATA_IMAGE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/i
 
 // Light ink of each FlyBot named color (core/src/client/inks.js), lowercase #rrggbb.
 export const COLOR_HEX = {
@@ -30,8 +32,8 @@ function isEmojiAvatar(value) {
   return true
 }
 
-// Same test as core/src/shared/look-image.js (test/look.test.js keeps the two in step, and
-// the core copy alone allows gif): a look's image reaches the page-wide mention stylesheet
+// Same test as core/src/shared/look-image.js (test/look.test.js keeps the two in step, both
+// accepting the same formats): a look's image reaches the page-wide mention stylesheet
 // as url("…"), so a value carrying a quote, a paren, a backslash, whitespace or a control
 // character is dropped here rather than escaped there (#2646).
 const UNSAFE_IMAGE = /["'()\\\u0000-\u001f\u007f\s<>]/

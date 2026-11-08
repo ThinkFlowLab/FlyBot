@@ -7984,6 +7984,54 @@ test('#137: owner look is sent with update_bot_profile; old servers are skipped'
   assert.ok(JSON.parse(readFileSync(settingsPath, 'utf8')).lookSynced?.a)
 })
 
+test('#2649: a refused look is not recorded as synced, so the next save sends it again', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const painted = await call('update-bot', { id: 'a', color: 'deepseek', avatar: { shape: 'whale' } })
+  assert.equal(painted.ok, true, painted.error?.message)
+  const server = mockServer()
+  const sent = []
+  let refuse = true
+  // Bot Social refusing the look itself: a JSON-RPC tool error with the code the publisher reads.
+  const client = createMcpClient({ server: 'https://s', token: 'owner-token', fetch: async (url, init) => {
+    const body = JSON.parse(init.body)
+    if (body?.params?.name === 'update_bot_profile') {
+      sent.push(body.params.arguments)
+      if (refuse) {
+        return new Response(JSON.stringify({
+          jsonrpc: '2.0', id: body.id,
+          result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'invalid_avatar', message: 'avatar is too large' }) }] },
+        }), { status: 200 })
+      }
+    }
+    return server.fetch(url, init)
+  } })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0, settingsPath }, {
+    client,
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.ok(sent.length > 0, 'the look reached Bot Social')
+  let saved = {}
+  try { saved = JSON.parse(readFileSync(settingsPath, 'utf8')) } catch { /* none */ }
+  assert.equal(saved.lookSynced?.a, undefined, 'a refused look stays unsynced')
+  const before = sent.length
+  refuse = false
+  server.tools.update_bot_profile = (a) => ({ bot_id: a.bot_id, avatar: a.avatar, color: a.color, avatar_kind: 'preset', avatar_updated_at: '2026-10-16T00:00:00Z' })
+  await social.registerAll()
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.ok(sent.length > before, 'saving again sends the same look again')
+  saved = JSON.parse(readFileSync(settingsPath, 'utf8'))
+  assert.equal(typeof saved.lookSynced?.a, 'string', 'a successful send is recorded')
+  const chief = sent.filter(c => c.bot_id === ctx.flybot.scope('social').fields.get('a', 'member')?.bot_id).at(-1)
+  assert.equal(chief.avatar, 'whale')
+  assert.equal(chief.color, '#4d6bfe')
+})
+
 test('#182: a new Bot Social identity for the same Bot gets its look again', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)

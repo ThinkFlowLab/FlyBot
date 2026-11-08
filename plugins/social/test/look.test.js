@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { lookFromServer, lookImage } from '../src/look.js'
+import { lookFromServer, lookImage, lookToServer } from '../src/look.js'
 import { safeLookImage } from '../../../core/src/shared/look-image.js'
 
 // #2646: a friend's published look is pasted into the page-wide mention stylesheet as
@@ -28,8 +28,21 @@ test('the string look form still drops the same payload (#2646)', () => {
   assert.equal(lookFromServer({ avatar: PAYLOAD }).avatar, undefined)
 })
 
+// #2649: the host stores a gif (roster.js accepts png|jpeg|webp|gif), so the publisher must
+// carry it as the image instead of falling through to the shape branch and dropping it.
+const GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+test('a stored gif look is published as its image, never as a shape (#2649)', () => {
+  // lookToServer is the publish path syncBotLook runs; the shape beside the image is only the fallback.
+  assert.deepEqual(lookToServer({ color: 'blue', avatar: { image: GIF, shape: 'moon' } }), { color: '#2a92fe', avatar: GIF })
+  assert.deepEqual(lookToServer({ avatar: { image: GIF } }), { avatar: GIF })
+  // The other direction reads the same format back from a friend's server.
+  assert.deepEqual(lookFromServer({ avatar: GIF, avatar_kind: 'image' }).avatar, { image: GIF })
+  assert.deepEqual(lookFromServer({ avatar: { image: GIF } }).avatar, { image: GIF })
+})
+
 test('the plugin predicate and core/src/shared/look-image.js agree (#2646)', () => {
-  // The core copy alone allows a local gif (roster.js stores one); everything else matches.
+  // Both copies accept the same set, gif included: a gif stored by roster.js is a look here too (#2649).
   const cases = [
     'https://ok.example/a.png',
     'http://ok.example/a.png',
@@ -37,6 +50,8 @@ test('the plugin predicate and core/src/shared/look-image.js agree (#2646)', () 
     'data:image/png;base64,AAAA',
     'data:image/jpeg;base64,AA==',
     'data:image/webp;base64,AAAA',
+    'data:image/gif;base64,AAAA',
+    GIF,
     PAYLOAD,
     `https://ok.example/a".png`,
     `https://ok.example/a'.png`,

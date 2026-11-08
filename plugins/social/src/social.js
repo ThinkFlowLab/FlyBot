@@ -937,8 +937,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (result?.unavailable) return
     } catch (error) {
       if (/invalid_avatar|invalid_color|invalid_request/i.test(`${error?.code ?? ''} ${error?.message ?? ''}`)) {
-        settings.lookSynced = { ...(settings.lookSynced ?? {}), [bot.id]: fingerprint }
-        saveSettings()
+        // A refusal is not a sync: recording it would make the next save of the same look
+        // fingerprint-match and skip, leaving the other home on a shape forever (#2649).
         return
       }
       throw error
