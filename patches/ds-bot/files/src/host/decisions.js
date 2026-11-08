@@ -8,11 +8,12 @@
 // default install behaves exactly as before. The log is local text, one JSON line per entry; the
 // same entry is fired on the activity feed as `decision` so a consumer (Timeline, an audit view)
 // can show it without reading the file.
-import { appendFile, mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, open, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { looksSecret } from './memory.js'
+import { PRIVATE_FILE_MODE, ensurePrivateDir, replacePrivateFile } from './private-files.js'
 import { fileKind, tempWritable } from './real-dir.js'
 import { output } from './tools.js'
 
@@ -86,8 +87,9 @@ export function install(rt) {
         }
         return kept.length
       }
-      await writeFile(tmp, next, 'utf8')
-      await rename(tmp, path)
+      // A trim replaces the log through the temp name, so the mode the log has now is the one the
+      // replacement lands with: a log the owner narrowed by hand stays narrowed (#2697).
+      await replacePrivateFile(tmp, path, next)
     }
     return kept.length
   }
@@ -95,8 +97,10 @@ export function install(rt) {
     const line = `${JSON.stringify(entry)}\n`
     writing = writing.then(async () => {
       if (!await leafWritable()) return 'refused'
-      await mkdir(dirname(path), { recursive: true })
-      await appendFile(path, line, 'utf8')
+      // What a Bot considered and rejected is its own reasoning, so the log and its folder are
+      // private (#2697). `appendFile`'s mode applies when the append creates the file.
+      await ensurePrivateDir(dirname(path))
+      await appendFile(path, line, { encoding: 'utf8', mode: PRIVATE_FILE_MODE })
       linesOnDisk = linesOnDisk === null ? await countLines() : linesOnDisk + 1
       const { size } = await stat(path)
       if (linesOnDisk > KEPT || size > MAX_BYTES) {

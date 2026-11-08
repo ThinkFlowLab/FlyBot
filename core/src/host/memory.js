@@ -21,10 +21,11 @@
 // provider's prefix cache holds; a fresh part, or a checkpoint (which breaks the cache
 // anyway), freezes it anew.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { appendFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+import { PRIVATE_FILE_MODE, ensurePrivateDir, ensurePrivateDirSync, replacePrivateFile, replacePrivateFileSync } from './private-files.js'
 import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
 import { clip, codePoints, splitRef, unquote } from './text.js'
@@ -557,16 +558,16 @@ export function install(rt) {
   // too, asked like the journal's file — absent is ours to create, anything else refuses the write
   // before it starts, says so once, and leaves the memory file as it was. Asking and then writing
   // still leaves a window in which the name can change: this closes a link that is already there,
-  // not the race.
+  // not the race. The bytes are the user's own notes, so the folder is the host's private one and
+  // the temp file takes the mode of the file it replaces (#2697).
   async function writeText(path, text) {
-    await mkdir(dirname(path), { recursive: true })
+    await ensurePrivateDir(dirname(path))
     const temp = `${path}.${process.pid}.tmp`
     if (!tempWritable(temp)) {
       warnFile(temp, 'the memory write', 'nothing is written there')
       throw new Error(`Not saved: ${temp} is not a plain file of its own, so nothing is written there.`)
     }
-    await writeFile(temp, text, 'utf8')
-    await rename(temp, path)
+    await replacePrivateFile(temp, path, text)
   }
   async function journal(record) {
     if (!writeFolder(root)) return
@@ -574,8 +575,8 @@ export function install(rt) {
       warnFile(journalPath)
       return
     }
-    await mkdir(root, { recursive: true })
-    await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, { encoding: 'utf8', mode: 0o600 })
+    await ensurePrivateDir(root)
+    await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, { encoding: 'utf8', mode: PRIVATE_FILE_MODE })
   }
   let writing = Promise.resolve()
   const queued = (job) => {
@@ -782,7 +783,7 @@ export function install(rt) {
       if (!readFolder(dir)) return
       if (!writeFolder(archiveDir)) return
       const name = `${safeId(botId)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-      await mkdir(archiveDir, { recursive: true })
+      await ensurePrivateDir(archiveDir)
       await rename(dir, join(archiveDir, name))
       await journal({ op: 'archive', scope: scopeKey(ownScope(botId)), actor: 'user', actorName: 'user', botName: bot?.name, to: `archive/${name}` })
     }).catch(error => rt.warn('ds-bot: memory of %s not archived: %s', bot?.name ?? botId, error))
@@ -838,15 +839,12 @@ export function install(rt) {
       text = memorySection(bot)
       if (rt.readOnly() === undefined && writeFolder(snapshotsDir)) {
         try {
-          mkdirSync(dirname(path), { recursive: true })
+          ensurePrivateDirSync(dirname(path))
           // The snapshot's temp name is a leaf like the entry's (#2097): a link left there would
           // take the frozen memory outside and then replace the snapshot with the link.
           const temp = `${path}.tmp`
           if (!tempWritable(temp)) warnFile(temp, 'the memory snapshot', 'nothing is written there')
-          else {
-            writeFileSync(temp, text, 'utf8')
-            renameSync(temp, path)
-          }
+          else replacePrivateFileSync(temp, path, text)
         } catch (error) {
           rt.warn('ds-bot: memory snapshot for %s not saved: %s', bot.name, error)
         }

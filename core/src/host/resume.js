@@ -6,9 +6,9 @@
 // inflight.json; what is still noted at the next start is picked up once.
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SOURCE_KIND } from './constants.js'
+import { ensurePrivateDir, writePrivateFile } from './private-files.js'
 import { OTHER, settled } from './turn-origin.js'
 import { retiredBot } from './store.js'
 
@@ -70,12 +70,14 @@ export function install(rt) {
     if (due) return
     due = true
     // Written in place: a rename over the file fails on Windows while anything reads
-    // it, and a torn write only loses what one restart would pick up.
+    // it, and a torn write only loses what one restart would pick up. The notes name the
+    // Session, the room and the message a turn was handed, so the file is private like the
+    // team file: created 0600 in a 0700 home, and an existing file keeps the mode it has (#2697).
     writing = writing.then(async () => {
       due = false
       const snapshot = latest
-      await mkdir(home, { recursive: true })
-      await writeFile(file, snapshot, 'utf8')
+      await ensurePrivateDir(home)
+      await writePrivateFile(file, snapshot)
     }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
   }
   const originNote = (id) => {
