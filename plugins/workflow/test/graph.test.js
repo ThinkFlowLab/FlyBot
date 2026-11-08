@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  addNode, chainLabel, cleanLine, cleanPrompt, completeNode, connectNodes, cutCodePoints, doneCount, failNode, freshStatus, layerMarks,
-  moveNode, nextDemoOp, normalizeGraph, readStepResult, reconnectEdge, removeEdge, removeNode, retryNode,
+  addNode, chainLabel, cleanLine, cleanPrompt, completeNode, connectNodes, cutCodePoints, doneCount, edgeOutputs, failNode, freshStatus,
+  layerMarks, moveNode, nextDemoOp, normalizeGraph, readStepResult, reconnectEdge, removeEdge, removeNode, retryNode,
   rowPreview, startFrontier, summarizeTask, validateGraph,
 } from '../src/graph.js'
 import { deliveryWorkflow, weeklyWorkflow } from '../src/template.js'
@@ -219,4 +219,32 @@ test('#2581: cutCodePoints counts characters, not UTF-16 units', () => {
   // A value that already carried an unpaired surrogate is flattened, never stored as one.
   assert.equal(cutCodePoints('a\uD800b', 10).isWellFormed(), true)
   assert.equal(cutCodePoints(undefined, 5), '')
+})
+
+// #2669: the gate reads the outputs of a node's outgoing edges, so the list has to
+// be readable from the graph the same way missingVerdicts reads it.
+test('#2669: edgeOutputs names the OUTPUT every outgoing edge reads, with its values', () => {
+  const graph = normalizeGraph({
+    nodes: [
+      { id: 'triage', name: 'Triage' },
+      { id: 'review', name: 'Review' },
+      { id: 'claim', name: 'Claim' },
+      { id: 'escalate', name: 'Escalate' },
+      { id: 'fix', name: 'Fix' },
+      { id: 'done', name: 'Done' },
+    ],
+    edges: [
+      { from: 'triage', to: 'claim', when: { output: 'state', eq: 'ready' } },
+      { from: 'triage', to: 'fix', when: { output: 'state', eq: 'ready' } },
+      { from: 'triage', to: 'escalate', when: { output: 'state', eq: 'blocked' } },
+      { from: 'triage', to: 'done', when: { else: true } },
+      { from: 'review', to: 'claim', when: { output: 'verdict', eq: 'PASS' } },
+      { from: 'claim', to: 'done' },
+    ],
+  })
+  assert.deepEqual(edgeOutputs(graph, 'triage'), [{ name: 'state', values: ['ready', 'blocked'] }],
+    'one entry per output name: values in edge order, deduped, and `else` contributes nothing')
+  assert.deepEqual(edgeOutputs(graph, 'review'), [{ name: 'verdict', values: ['PASS'] }])
+  assert.deepEqual(edgeOutputs(graph, 'claim'), [], 'a node whose edges read no output names none')
+  assert.deepEqual(edgeOutputs(graph, 'nope'), [])
 })

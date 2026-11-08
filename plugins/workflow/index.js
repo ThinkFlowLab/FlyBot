@@ -86,8 +86,15 @@ export function apply(ctx, config = {}) {
       for (const [name, value] of Object.entries(step.inputs ?? {})) {
         if (value) lines.push(`Input ${name}: ${value}`)
       }
-      const outputs = (step.outputs ?? []).map(port => port.name).filter(Boolean)
-      if (outputs.length > 0) lines.push(`When you finish, add one line per output: OUTPUT <name>: <value> (${outputs.join(', ')}).`)
+      // #2669: a port the outgoing edges compare against is printed as `<one of: …>`,
+      // so the step knows which values its own gate accepts.
+      const ports = (step.outputs ?? []).filter(port => port?.name)
+      if (ports.length > 0) {
+        const forms = ports.map(port => (port.values?.length
+          ? `OUTPUT ${port.name}: <one of: ${port.values.join(', ')}>`
+          : `OUTPUT ${port.name}: <value>`))
+        lines.push(`When you finish, add one line per output: ${forms.join(', ')}.`)
+      }
       lines.push('Reply with the result of this step.')
       return fb.bot.send({ from, to: step.botId, text: lines.join('\n'), role: 'request' })
     },

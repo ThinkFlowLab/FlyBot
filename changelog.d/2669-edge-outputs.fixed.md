@@ -1,0 +1,1 @@
+A workflow node is now told which `OUTPUT` lines it owes from its own declared outputs **and** from the outputs its outgoing edges read, with the accepted values spelled out (`OUTPUT state: <one of: ready, blocked>`), so a node that declares no outputs no longer runs every step into `Missing OUTPUT state` and fails ([#2669](https://github.com/ThinkFlowLab/FlyBot/issues/2669)).
