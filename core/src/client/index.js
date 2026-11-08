@@ -773,8 +773,9 @@ export function apply(ctx) {
   actions.workflows = (payload) => call('workflows', payload)
   actions.workflowSave = (payload) => call('workflow-save', payload)
   // The Inbox lists failed workflow runs (#1706). It reads the same pack the Workflows page does,
-  // with the same settle, so a missing plugin is "no runs", not an Inbox error line.
-  actions.workflowState = () => readWorkflows(call)
+  // with the same settle, so a missing plugin is "no runs", not an Inbox error line. The host
+  // routes a plugin only under `flybot/` (#2656), so the bare call never reached it.
+  actions.workflowState = () => readWorkflows(flybotCall)
   actions.noteTurnTime = (sessionId, turn, key, time) => {
     if (sessionId === undefined || !Number.isFinite(turn) || !Number.isFinite(time)) return
     turnClock.set((state) => {

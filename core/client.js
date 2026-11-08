@@ -23394,7 +23394,7 @@ function apply(ctx) {
   actions.repoStars = () => call("repo-stars");
   actions.workflows = (payload) => call("workflows", payload);
   actions.workflowSave = (payload) => call("workflow-save", payload);
-  actions.workflowState = () => readWorkflows(call);
+  actions.workflowState = () => readWorkflows(call2);
   actions.noteTurnTime = (sessionId, turn, key, time) => {
     if (sessionId === void 0 || !Number.isFinite(turn) || !Number.isFinite(time)) return;
     turnClock.set((state) => {
