@@ -54,6 +54,26 @@ test('#2658: a value without a pull number is not guessed', () => {
   assert.deepEqual(stepArtifacts(other.text, other.outputs), { pull: null, claimed: false })
 })
 
+// #2685: the declared path took any run of digits, so a value that says there is no
+// pull request ("blocked on issue 2658"), a decimal, or `0` became one. Only a value
+// that *is* the number counts: a positive integer, optional leading `#`, optional
+// trailing parenthetical.
+test('#2685: a declared pr value counts only when it is the pull number', () => {
+  assert.deepEqual(stepArtifacts('', { pr: 'none — blocked on issue 2658' }), { pull: null, claimed: false })
+  assert.deepEqual(stepArtifacts('', { pr: '12.5' }), { pull: null, claimed: false })
+  assert.deepEqual(stepArtifacts('', { pr: '0' }), { pull: null, claimed: false })
+  assert.deepEqual(stepArtifacts('', { pr: 'PR #2657, not merged' }), { pull: null, claimed: false })
+  assert.deepEqual(stepArtifacts('', { pr: '#2657' }), { pull: 2657, claimed: false })
+  assert.deepEqual(stepArtifacts('', { pr: '2657 (verified)' }), { pull: 2657, claimed: false })
+  assert.deepEqual(stepArtifacts('', { pull: '42' }), { pull: 42, claimed: false })
+})
+
+test('#2685: the prose rules still read a pull request the usual way', () => {
+  assert.equal(stepArtifacts('Opened https://github.com/o/r/pull/2657 for it.', {}).pull, 2657)
+  assert.equal(stepArtifacts('Branch pushed; see pull/2657 for details.', {}).pull, 2657)
+  assert.equal(stepArtifacts('Opened PR #2657 with the fix.', {}).pull, 2657)
+})
+
 test('#2658: a 40-character sha in merged or merge-commit counts as delivered', () => {
   const merged = stepOf(`OUTPUT merged: ${SHA}`)
   assert.deepEqual(stepArtifacts(merged.text, merged.outputs), { pull: null, claimed: false, merged: true })

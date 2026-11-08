@@ -118,7 +118,11 @@ const CLAIM_ISSUE = /^\s*claimed\s+#\d+/i
 // names and shapes count, so a step that says nothing is still not evidence.
 const PULL_OUTPUTS = new Set(['pr', 'pull'])
 const MERGE_OUTPUTS = new Set(['merged', 'merge-commit'])
-const PULL_NUMBER = /\d+/
+// #2685: the value itself must be the pull number — a positive integer, an optional
+// leading `#`, an optional trailing parenthetical (`2657 (verified)`). A sentence that
+// mentions an issue, a decimal or `0` is not delivery evidence; the prose rules below
+// still decide on their own terms.
+const PULL_NUMBER = /^\s*#?([1-9]\d*)\s*(?:\([^)]*\))?\s*$/
 const COMMIT_SHA = /\b[0-9a-f]{40}\b/i
 
 export function stepArtifacts(text, outputs) {
@@ -139,7 +143,7 @@ export function stepArtifacts(text, outputs) {
     if (!merged && MERGE_OUTPUTS.has(key) && COMMIT_SHA.test(line)) merged = true
     if (pull == null && PULL_OUTPUTS.has(key)) {
       const number = PULL_NUMBER.exec(line)
-      if (number) pull = Number(number[0])
+      if (number) pull = Number(number[1])
     }
   }
   const claimed = haystack.split('\n').some(line => CLAIM_LINE.test(line) || CLAIM_ISSUE.test(line))
@@ -645,20 +649,24 @@ export function firstBranchValue(graph, nodeId, name) {
   return null
 }
 
-// #2669: a node is told which OUTPUT lines to print, and the names come from its own
-// declared ports — but the edges leaving it read outputs too, so a node that declares
-// none was never told the line its gate reads. Name them, with the values those edges
-// compare against, so the step can answer the gate it is judged by.
+// #2669, #2685: a node is told which OUTPUT lines to print, and the names come from
+// its own declared ports — but the edges leaving it read outputs too, so a node that
+// declares none was never told the line its gate reads. Name them, with the values
+// those edges compare against, so the step can answer the gate it is judged by. A
+// loop's `until` is one of those gates, and missingVerdicts below reads the same two.
 export function edgeOutputs(graph, nodeId) {
   ensure(graph)
   const values = new Map()
+  const add = (output, eq) => {
+    if (!output) return
+    if (!values.has(output)) values.set(output, [])
+    const list = values.get(output)
+    if (eq != null && !list.includes(eq)) list.push(eq)
+  }
   for (const edge of graph.edges) {
     if (edge.from !== nodeId) continue
-    if (edge.when?.else === true || !edge.when?.output) continue
-    const name = edge.when.output
-    if (!values.has(name)) values.set(name, [])
-    const list = values.get(name)
-    if (edge.when.eq != null && !list.includes(edge.when.eq)) list.push(edge.when.eq)
+    if (edge.when && edge.when.else !== true) add(edge.when.output, edge.when.eq)
+    if (edge.until) add(edge.until.output, edge.until.eq)
   }
   return [...values].map(([name, list]) => ({ name, values: list }))
 }

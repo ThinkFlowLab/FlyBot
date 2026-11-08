@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   addNode, chainLabel, cleanLine, cleanPrompt, completeNode, connectNodes, cutCodePoints, doneCount, edgeOutputs, failNode, freshStatus,
-  layerMarks, moveNode, nextDemoOp, normalizeGraph, readStepResult, reconnectEdge, removeEdge, removeNode, retryNode,
+  layerMarks, missingVerdicts, moveNode, nextDemoOp, normalizeGraph, readStepResult, reconnectEdge, removeEdge, removeNode, retryNode,
   rowPreview, startFrontier, summarizeTask, validateGraph,
 } from '../src/graph.js'
 import { deliveryWorkflow, weeklyWorkflow } from '../src/template.js'
@@ -247,4 +247,41 @@ test('#2669: edgeOutputs names the OUTPUT every outgoing edge reads, with its va
   assert.deepEqual(edgeOutputs(graph, 'review'), [{ name: 'verdict', values: ['PASS'] }])
   assert.deepEqual(edgeOutputs(graph, 'claim'), [], 'a node whose edges read no output names none')
   assert.deepEqual(edgeOutputs(graph, 'nope'), [])
+})
+
+// #2685: a node whose only gate is its loop's `until` is failed by missingVerdicts for
+// a line it was never told to print, because edgeOutputs read only `when` edges. The
+// two must name the same set for that node.
+test('#2685: edgeOutputs offers a loop until port, and missingVerdicts agrees', () => {
+  const graph = normalizeGraph({
+    nodes: [
+      { id: 'scout', name: 'Scout' },
+      { id: 'finish', name: 'Finish' },
+    ],
+    edges: [
+      { from: 'scout', to: 'scout', loop: true, max: 3, until: { output: 'ready', eq: 'yes' } },
+      { from: 'scout', to: 'finish' },
+    ],
+  })
+  assert.deepEqual(edgeOutputs(graph, 'scout'), [{ name: 'ready', values: ['yes'] }],
+    'the loop until port is named with the value it compares against')
+  assert.deepEqual(missingVerdicts(graph, 'scout', {}), ['ready'])
+  assert.deepEqual(edgeOutputs(graph, 'scout').map(port => port.name), missingVerdicts(graph, 'scout', {}),
+    'the outputs a node owes and the ones it is told to print are the same set')
+  assert.deepEqual(missingVerdicts(graph, 'scout', { ready: 'yes' }), [])
+})
+
+test('#2685: until values dedupe into the when entry of the same name', () => {
+  const graph = normalizeGraph({
+    nodes: [
+      { id: 'a', name: 'A' },
+      { id: 'b', name: 'B' },
+    ],
+    edges: [
+      { from: 'a', to: 'b', when: { output: 'state', eq: 'ready' } },
+      { from: 'a', to: 'a', loop: true, max: 2, until: { output: 'state', eq: 'done' } },
+    ],
+  })
+  assert.deepEqual(edgeOutputs(graph, 'a'), [{ name: 'state', values: ['ready', 'done'] }],
+    'one entry per name, values in edge order, deduped the same way as when')
 })
