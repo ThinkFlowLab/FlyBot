@@ -6,7 +6,10 @@
 // written for an older tip (a signature that does not move with the head signs nothing).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { judge, loadPolicy, main, parseSignature, readPull } from './policy-sign.mjs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { judge, loadPolicy, main, parseSignature, pullRequestNumber, readPull } from './policy-sign.mjs'
 
 const policy = loadPolicy()
 
@@ -297,4 +300,60 @@ test('#2314: main prints one line per signable comment', async () => {
   })
   assert.equal(run.code, 1)
   assert.match(run.out, /policy-sign: comment 42 by Birfy signs this tip — add `Policy-sign: 42` to the body/)
+})
+
+// #2671: `policy-sign` read the queue ref with its own regex — one base segment, no tail check — so a
+// queue built on a slashed base (`release/1.0`) named no pull request and the run exited 0, while
+// `merge-gate` judged the same payload and refused. One parser now serves both, and a `merge_group`
+// run that cannot read a pull request fails closed: a queue entry always points at one.
+function eventEnv(event) {
+  const dir = mkdtempSync(join(tmpdir(), 'policy-sign-2671-'))
+  const path = join(dir, 'event.json')
+  writeFileSync(path, JSON.stringify(event))
+  return { env: { GITHUB_EVENT_PATH: path }, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+}
+
+async function runMainAt(env) {
+  const written = []
+  const write = process.stdout.write
+  process.stdout.write = chunk => { written.push(String(chunk)); return true }
+  try {
+    return { code: await main([], env), out: written.join('') }
+  } finally {
+    process.stdout.write = write
+  }
+}
+
+test('#2671: a queue ref with a slashed base names the pull request merge-gate reads', t => {
+  const { env, cleanup } = eventEnv({ merge_group: { head_ref: 'gh-readonly-queue/release/1.0/pr-12-abc1234' } })
+  t.after(cleanup)
+  assert.equal(pullRequestNumber([], env), 12, 'a base branch is not a single path segment')
+})
+
+test('#2671: a queue ref with no hex tail names no pull request, and the run fails closed', async t => {
+  const { env, cleanup } = eventEnv({ merge_group: { head_ref: 'gh-readonly-queue/main/pr-12-nothex' } })
+  t.after(cleanup)
+  assert.equal(pullRequestNumber([], env), undefined, 'the hex tail merge-gate refuses is not a pull request here either')
+  const run = await runMainAt(env)
+  assert.equal(run.code, 1, 'a queue entry always names a pull request, so a ref this script cannot read is a failure')
+  assert.match(run.out, /::error::policy-sign cannot read a pull request from this queue ref: gh-readonly-queue\/main\/pr-12-nothex/)
+})
+
+test('#2671: a push event still carries no pull request to sign', async t => {
+  const { env, cleanup } = eventEnv({ push: { ref: 'refs/heads/main' } })
+  t.after(cleanup)
+  assert.equal(pullRequestNumber([], env), undefined)
+  const run = await runMainAt(env)
+  assert.equal(run.code, 0, 'a push is not a queue entry')
+  assert.match(run.out, /nothing to sign/)
+})
+
+test('#2671: no event file still exits 0 and names no pull request', async () => {
+  const run = await runMainAt({})
+  assert.equal(pullRequestNumber([], {}), undefined)
+  assert.equal(run.code, 0)
+})
+
+test('#2671: --pr still takes the number with no event file', () => {
+  assert.equal(pullRequestNumber(['--pr', '123'], {}), 123)
 })
