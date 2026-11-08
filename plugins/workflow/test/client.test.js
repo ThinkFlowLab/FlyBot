@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { cleanTools } from '../src/graph.js'
+import { cleanTools, validateGraph } from '../src/graph.js'
 
 import { allThemes } from '../../../core/src/client/themes.js'
 
@@ -3889,6 +3889,78 @@ test('#2193: a refused create keeps its dialog open and shows the host sentence 
   assert.ok(dialog, 'a refused create leaves the dialog open')
   assert.deepEqual(findAll(dialog, node => node.props?.role === 'alert').map(textOf), [refusal])
   view.unmount()
+})
+
+// #2663: `CreateModal.add` took the node id from the layer count (`n${list.length + 1}`), but
+// with Parallel ticked a new Bot joins the last layer, so the layer count stopped moving and the
+// third Bot was given the second one's id (`n1,n2,n2`). Node ids are the graph's unique key, so
+// `workflow/create` refused the whole dialog with `Node n2 is listed twice`.
+// What `workflow/create` receives is the graph the host validates, so these drive the dialog the
+// way a user does and check the body against `src/graph.js` itself.
+const CREATE_BOTS = [
+  { id: 'b1', name: 'One' },
+  { id: 'b2', name: 'Two' },
+  { id: 'b3', name: 'Three' },
+]
+
+async function mountCreateDialog(bots = CREATE_BOTS) {
+  const calls = []
+  const call = async (name, body) => {
+    calls.push({ name, body })
+    if (name === 'workflow/state') return { workflows: [], templates: [] }
+    return { ok: true, workflows: [] }
+  }
+  const view = mount(client.Section, { roster: { bots }, call, actions: {} })
+  await settle()
+  button(view.tree, 'New').props.onClick()
+  await settle()
+  const dialog = () => findAll(view.tree, node => node.props?.role === 'dialog')[0]
+  const addBot = async (botId) => {
+    findAll(dialog(), node => node.type === 'select')[0].props.onChange({ target: { value: botId } })
+    await settle()
+    button(dialog(), 'Add a Bot').props.onClick()
+    await settle()
+  }
+  const create = async (name) => {
+    findAll(dialog(), node => node.type === 'input' && node.props?.type !== 'checkbox')[0].props.onChange({ target: { value: name } })
+    await settle()
+    findAll(dialog(), node => node.type === 'button' && node.props?.className === 'wf-btn wf-dark')[0].props.onClick()
+    await settle()
+  }
+  const sent = () => calls.find(item => item.name === 'workflow/create')?.body
+  return { view, dialog, addBot, create, sent }
+}
+
+test('#2663: three Bots added under Parallel get three distinct node ids and a graph the host accepts', async (t) => {
+  const dialog = await mountCreateDialog()
+  t.after(() => dialog.view.unmount())
+  findAll(dialog.dialog(), node => node.type === 'input' && node.props?.type === 'checkbox')[0].props.onChange({ target: { checked: true } })
+  await settle()
+  await dialog.addBot('b1')
+  await dialog.addBot('b2')
+  await dialog.addBot('b3')
+  await dialog.create('Lane A')
+  const body = dialog.sent()
+  assert.ok(body, 'Create was submitted')
+  const ids = body.nodes.map(node => node.id)
+  assert.equal(new Set(ids).size, 3, `three Bots in one Parallel step got ${ids.join(',')}`)
+  assert.deepEqual(body.layers, [ids], 'Parallel keeps the three Bots in one step')
+  assert.doesNotThrow(() => validateGraph({ nodes: body.nodes, layers: body.layers }), 'the host must accept the graph Create sent')
+  assert.deepEqual(body.nodes.map(node => node.name), ['One', 'Two', 'Three'])
+})
+
+test('#2663: sequential adding still numbers the nodes n1, n2, n3', async (t) => {
+  const dialog = await mountCreateDialog()
+  t.after(() => dialog.view.unmount())
+  await dialog.addBot('b1')
+  await dialog.addBot('b2')
+  await dialog.addBot('b3')
+  await dialog.create('Lane A')
+  const body = dialog.sent()
+  assert.ok(body, 'Create was submitted')
+  assert.deepEqual(body.nodes.map(node => node.id), ['n1', 'n2', 'n3'])
+  assert.deepEqual(body.layers, [['n1'], ['n2'], ['n3']], 'each Bot keeps its own step')
+  assert.doesNotThrow(() => validateGraph({ nodes: body.nodes, layers: body.layers }))
 })
 
 // #2200: the sidebar list is the other face of the same read-only window. #2187 took the edit
