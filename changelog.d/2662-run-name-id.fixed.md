@@ -1,0 +1,1 @@
+Two `run_workflow` calls that land in the same millisecond now start two runs instead of sharing a generated task id, so the second call is no longer silently dropped and no longer overwrites the first run's brief; a repeated dispatch that passes the same `task` explicitly is still de-duplicated ([#2662](https://github.com/ThinkFlowLab/FlyBot/issues/2662)).
