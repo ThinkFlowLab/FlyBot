@@ -1,1 +1,0 @@
-Adding three or more Bots to one Parallel step in the New workflow dialog no longer gives two of them the same node id, so Create succeeds instead of failing with `Node n2 is listed twice` ([#2663](https://github.com/ThinkFlowLab/FlyBot/issues/2663)).

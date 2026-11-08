@@ -1,1 +1,0 @@
-A Feishu webhook message whose answer was lost is no longer posted a second time: a timed-out or aborted send gets one attempt and says the message may already be in the chat, instead of claiming Feishu refused it ([#2660](https://github.com/ThinkFlowLab/FlyBot/issues/2660)).

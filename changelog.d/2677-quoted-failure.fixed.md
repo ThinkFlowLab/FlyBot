@@ -1,1 +1,0 @@
-A workflow step no longer fails because its own answer quotes `could not answer your message` while auditing that sentence: the host marks its real failure notice structurally, and an old host without the marker is read only from the notice shape at the start of the reply ([#2677](https://github.com/ThinkFlowLab/FlyBot/issues/2677)).
