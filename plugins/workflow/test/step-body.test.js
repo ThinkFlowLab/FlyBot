@@ -116,3 +116,66 @@ test('#2669: the run walks the branch once the node prints the OUTPUT it was tol
   assert.equal(run.nodeStatus.escalate, 'skipped', 'the else route is not taken')
   assert.equal(run.status, 'running')
 })
+
+// #2677: a step's answer is its own text, so an audit that quotes the host's failure
+// sentence, a pasted log, or a retold failure must not fail the node. The host marks the
+// real notice on the message; only an old host falls back to the sentence, and only when
+// it is the shape at the start of the text.
+function replyMiddleware() {
+  let handle
+  const seen = []
+  const fb = {
+    bot: {
+      list: () => [],
+      send: Object.assign(async () => ({ action: 'allow' }), {
+        use(spec) {
+          handle = spec.handle
+          return () => {}
+        },
+        priority: { ROUTING: 10 },
+      }),
+    },
+    readOnly: () => false,
+    api: { handle: () => () => {} },
+    tools: { register: () => () => {} },
+    warn: () => {},
+  }
+  const started = apply({ flybot: { scope: () => fb }, effect(fn) { fn() } }, { persist: false })
+  started.service.ownsBot = () => true
+  started.service.stepResult = async body => { seen.push(body); return {} }
+  return { handle, seen }
+}
+
+async function stepOk(message) {
+  const { handle, seen } = replyMiddleware()
+  const verdict = await handle({ from: 'bot-step', role: 'reply', text: '', ...message })
+  assert.equal(verdict?.action, 'deny')
+  assert.equal(seen.length, 1)
+  return seen[0].ok
+}
+
+const QUOTED_FAILURE = '候选 3：turns.js:709 的正文是 `<name> could not answer your message: its model call failed (…)`'
+
+test('#2677: an answer that quotes the failure sentence still advances the step', async () => {
+  assert.equal(await stepOk({ text: QUOTED_FAILURE }), true, 'a quoted failure inside the answer is not the step failing')
+  assert.equal(await stepOk({ text: '查完了，3 条候选。' }), true, 'an ordinary answer advances the step')
+})
+
+test('#2677: the host marks a real failure notice, and the marker decides', async () => {
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', failed: true }), false)
+  assert.equal(await stepOk({ text: 'anything at all', ok: false }), false)
+  // `rt.deliver` hands the middleware its own args under `deliverArgs`, which is where
+  // the host's notice carries the marker on a live run.
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', deliverArgs: { failed: true } }), false)
+  // A marker that says the answer is fine wins over text that looks like the notice.
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', failed: false }), true)
+})
+
+test('#2677: an old host without the marker is read only at the start of the text', async () => {
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message:' }), false, 'the notice shape at the start still fails')
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).' }), false)
+  // These two are what the middleware caught before #2677; the anchored fallback keeps them.
+  assert.equal(await stepOk({ text: 'could not answer your message' }), false)
+  assert.equal(await stepOk({ text: 'The model call failed.' }), false)
+  assert.equal(await stepOk({ text: 'The log said "`<name> could not answer your message: its model call failed`".' }), true, 'a quoted notice after the start is not the step failing')
+})
