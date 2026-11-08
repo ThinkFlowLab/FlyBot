@@ -618,7 +618,10 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -140,8 +140,10 @@ export function install(rt) {
+@@ -137,11 +137,13 @@ export function install(rt) {
+         case 'usage':
+           await rt.load()
+           return ok(await rt.usageView({ timeZone: typeof body.timeZone === 'string' ? body.timeZone.slice(0, 64) : undefined }))
 -        case 'room-progress':
 -          return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
 +        case 'room-progress': {
