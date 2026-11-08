@@ -1,1 +1,0 @@
-A Bot or group-chat name written in either Unicode canonical form, or carrying an invisible format character such as a zero-width space, is now one identity: the duplicate guard refuses the twin, `@Name` and every lookup reach the same record, and a stored name keeps only the characters that show on screen ([#2691](https://github.com/ThinkFlowLab/FlyBot/issues/2691)).

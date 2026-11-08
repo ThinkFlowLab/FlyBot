@@ -1,1 +1,0 @@
-An external room participant whose answer line grows past the 4 KB stdout buffer is now reported to the room as `answer exceeded 4096 bytes` and keeps its process for later turns, instead of the answer being dropped as if the process had never spoken ([#2689](https://github.com/ThinkFlowLab/FlyBot/issues/2689)).
