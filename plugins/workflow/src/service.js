@@ -2091,6 +2091,10 @@ export function createWorkflowService({
       return rows
     },
     reap() {
+      // A read-only host never ran these runs, so it cannot tell which of them the
+      // writer still holds; judging them here would end the writer's live run and
+      // overwrite the store with this host's older copy (#2673).
+      if (readOnly()) return Promise.resolve()
       if (typeof release !== 'function') return Promise.resolve()
       const stale = []
       const staleRuns = []
@@ -2156,6 +2160,10 @@ export function createWorkflowService({
     },
     dispose() {
       for (const key of [...timers.keys()]) clearTimerAt(key)
+      // A read-only host must not end the writer's runs, release its step Bots or
+      // overwrite the store with its own older copy (#2673). Only local timers are
+      // cleared; ending belongs to the writer's own dispose or the next reap.
+      if (readOnly()) return Promise.resolve()
       const ids = []
       const runs = []
       let endedLive = false
