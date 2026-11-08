@@ -1,10 +1,11 @@
 // Out-of-app delivery, first half (#355): the adapter that will carry a reminder to Slack.
 // A reminder has to reach the owner when the desktop app is closed, so delivery cannot be a
 // client toast. The transport is injected; what this module owns is the policy around it: one
-// idempotency key per reminder, so a retried send cannot arrive twice; exponential backoff that
-// honours `Retry-After`; three attempts at most; no retry at all for a failure that will not
-// change (the channel is gone, the app was removed). A channel switched off makes zero transport
-// calls, including one that is switched off while it waits to retry.
+// idempotency key per reminder, deduplicated inside this process only, and a send that may already
+// have left the process is never repeated, because the outbound transport cannot dedupe it;
+// exponential backoff that honours `Retry-After`; three attempts at most; no retry at all for a
+// failure that will not change (the channel is gone, the app was removed). A channel switched off
+// makes zero transport calls, including one that is switched off while it waits to retry.
 //
 // The real Slack transport waits for the owner's credential, so it is not here: the module speaks
 // Slack's `chat.postMessage` shape and ships a fake transport that records every call and scripts

@@ -275,6 +275,25 @@ function withDeadline(promise, ms) {
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer))
 }
 
+// A request that never reached Feishu wrote nothing, so notify.js may safely send it again. A
+// request that timed out, was aborted, or failed in a way we cannot read may already be in the
+// chat, and a custom-bot webhook has no idempotency field: repeating it would post it twice.
+// `feishu/no-answer` is deliberately absent from notify.js's `RETRYABLE`, so it gets one attempt.
+const UNSENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN'])
+const NO_ANSWER = 'feishu/no-answer'
+
+function connectionNeverOpened(error) {
+  const seen = new Set()
+  const inspect = cause => {
+    if (!cause || typeof cause !== 'object' || seen.has(cause)) return false
+    seen.add(cause)
+    if (UNSENT_CODES.has(String(cause.code))) return true
+    if (inspect(cause.cause)) return true
+    return Array.isArray(cause.errors) && cause.errors.some(inspect)
+  }
+  return inspect(error)
+}
+
 // One text message through a custom-bot webhook, answered in notify.js's vocabulary: `{ ok, ts }`
 // or `{ ok: false, error }`, where `rate_limited` and `service_unavailable` may pass on their own
 // and every other error is a shape Feishu will refuse again. The URL is never part of the answer.
@@ -288,8 +307,9 @@ export async function feishuPost(webhook, text, { fetch: request = fetch, timeou
       redirect: 'error',
       signal: AbortSignal.timeout(Math.max(1, timeoutMs)),
     }), timeoutMs)
-  } catch {
-    return { ok: false, error: 'network' }
+  } catch (error) {
+    // Only a connection that never opened is retried; anything else is an unconfirmed delivery.
+    return connectionNeverOpened(error) ? { ok: false, error: 'network' } : { ok: false, error: NO_ANSWER }
   }
   const body = await response.json().catch(() => ({}))
   if (response.status === 429) {
@@ -311,6 +331,7 @@ export async function feishuPost(webhook, text, { fetch: request = fetch, timeou
 export async function feishuCheck(webhook, { api = FEISHU_DEFAULTS.api, fetch: request = fetch, timeoutMs = CHECK_TIMEOUT_MS } = {}) {
   const answer = await feishuPost(webhookAddress(webhook, api), FEISHU_TEST_TEXT, { fetch: request, timeoutMs })
   if (answer.ok) return {}
+  if (answer.error === NO_ANSWER) throw new Error('Feishu did not answer in time — the test message may already be in the chat; check before connecting again')
   if (answer.error === 'network' || answer.error === 'service_unavailable') throw new Error('Could not reach Feishu')
   if (answer.error === 'rate_limited') throw new Error('Feishu is rate-limiting this webhook; try again in a minute')
   throw new Error(`Feishu did not accept the webhook (${answer.error})`)
@@ -1018,7 +1039,9 @@ export function install(rt) {
       // A fresh key per call: two messages with the same text are two messages, not a duplicate.
       const result = await notifier.send({ key: randomUUID(), text })
       const sent = result.state === 'sent' || result.state === 'duplicate'
-      const failure = `Feishu refused the message (${result.error ?? result.reason ?? 'no answer'})`
+      const failure = result.error === NO_ANSWER
+        ? 'Feishu did not answer in time — the message may already be in the chat; check before sending again'
+        : `Feishu refused the message (${result.error ?? result.reason ?? 'no answer'})`
       await keep(c, { ...saved(c), ...(sent ? { lastOkAt: Date.now() } : { lastError: failure }) })
       if (!sent) throw new Error(failure)
       return connectorsView()
