@@ -340,16 +340,22 @@ test('health: startedAt is the process start, stable in one process and new in t
 test('health: commit is the checkout HEAD inside a git clone and null without one', t => {
   const repoRoot = dirname(CORE_ROOT)
   let expected
+  let gitError
   try {
     expected = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
-  } catch {
+  } catch (error) {
+    gitError = error
     expected = undefined
   }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-health-'))
   try {
     assert.equal(readCommit(home), null, 'no .git above the module means no commit')
+    // `ok` here would claim the checkout half ran when it did not (#2702): skip instead, naming
+    // which half of the environment is missing, so the suite's skipped count carries the gap.
     if (expected === undefined) {
-      t.diagnostic('git is not available here; the checkout half of this test is skipped')
+      t.skip(gitError?.code === 'ENOENT'
+        ? 'git is not available here; the checkout half of this test did not run'
+        : 'git cannot name the HEAD of this copy; the checkout half of this test did not run')
       return
     }
     assert.equal(readCommit(repoRoot), expected)

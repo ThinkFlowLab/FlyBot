@@ -182,11 +182,19 @@ test('the --days table divides each day by the same measured fixed block', (t) =
 })
 
 test('a missing session root is an error that names the path', () => {
-  const missing = join(tmpdir(), 'turn-split-no-such-root')
-  const result = spawnSync(process.execPath, [SCRIPT, '--sessions', missing], { encoding: 'utf8' })
-  assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /no session root at/)
-  assert.match(result.stderr, new RegExp(missing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  // A fixed name in the shared temp directory can already exist — an earlier run that died, or
+  // another process — and then the root is not missing at all (#2702). A fresh parent makes the
+  // subpath below it impossible to pre-exist.
+  const parent = mkdtempSync(join(tmpdir(), 'turn-split-missing-'))
+  try {
+    const missing = join(parent, 'no-such-root')
+    const result = spawnSync(process.execPath, [SCRIPT, '--sessions', missing], { encoding: 'utf8' })
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /no session root at/)
+    assert.match(result.stderr, new RegExp(missing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
 })
 
 // #1989: `compat · windows-latest` lost four cases to one cause — the Session id came from
