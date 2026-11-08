@@ -5775,7 +5775,7 @@ diff --git a/src/host/images.js b/src/host/images.js
 diff --git a/src/host/memory.js b/src/host/memory.js
 --- a/src/host/memory.js
 +++ b/src/host/memory.js
-@@ -23,11 +23,16 @@
+@@ -23,11 +23,17 @@
  import { createHash } from 'node:crypto'
  import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
  import { appendFile, mkdir, rename, unlink, writeFile } from 'node:fs/promises'
@@ -5788,6 +5788,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 +import { defineTool } from './tool-schema.js'
 +import { clip, codePoints, splitRef, unquote } from './text.js'
 +import { cut, fits } from '../shared/text-boundary.js'
++import { nameKey } from '../shared/identity.js'
  import { output } from './tools.js'
 +import { retiredBot } from './store.js'
 +import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -5805,6 +5806,20 @@ diff --git a/src/host/memory.js b/src/host/memory.js
  // A change whose entry is gone; any other failure keeps the review's place.
  const NO_MATCH = 'memory/no-match'
  const GONE = 'memory/bot-gone'
+@@ -98,9 +98,11 @@ export function cleanEntry(raw) {
+   return splitMeta(line).text
+ }
+ 
+-// A flat file name: case folds on some file systems, so names are lower case.
++// A flat file name: case folds on some file systems, so names are lower case. Since #2692 the name
++// is also the shared name key, so canonical equivalents are one topic and one file, and a
++// decomposed Latin topic (refused while U+0301 was not a letter) is accepted as its NFC form.
+ export function cleanTopic(raw) {
+-  const name = String(raw ?? '').trim().replace(/^\[\[|\]\]$/g, '').replace(/\.md$/i, '').trim().toLowerCase().replace(/\s+/g, '-')
++  const name = nameKey(raw).replace(/^\[\[|\]\]$/g, '').replace(/\.md$/i, '').replace(/\s+/g, '-')
+   return /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,47}$/u.test(name) && name !== 'memory' ? name : undefined
+ }
+ 
 @@ -312,7 +312,7 @@ const teamRule = (main, writer) => (main
      ? '- The team memory is shared by every Bot. As a group admin you write it with remember scope "team", for what the whole team needs.'
      : '- The team memory is shared by every Bot. Main Bots and group admins write it; when the whole team should know something, tell a Main Bot with message_bot.')
@@ -5922,31 +5937,40 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    const readText = (path) => {
      try {
        return readFileSync(path, 'utf8')
-@@ -433,34 +433,60 @@ export function install(rt) {
+@@ -433,34 +433,68 @@ export function install(rt) {
        return ''
      }
    }
 -  const topicNames = (scope) => {
-+  const topicNamesIn = (dir) => {
++  // A topic file's name is the topic, but not always the key: a file written before #2692 keeps the
++  // spelling it was written with (a decomposed Hangul syllable among them), so the topic is the key
++  // computed from that name and the name itself is still the file recall reads and remember
++  // appends to. When both spellings exist, the one already in key form wins.
++  const topicFilesIn = (dir) => {
      try {
 -      return readdirSync(dirOf(scope)).filter(name => name.endsWith('.md') && name !== MAIN).map(name => name.slice(0, -3)).sort()
-+      return readdirSync(dir).filter(name => name.endsWith('.md') && name !== MAIN).map(name => name.slice(0, -3)).sort()
++      const byTopic = new Map()
++      for (const file of readdirSync(dir).filter(name => name.endsWith('.md') && name !== MAIN).sort()) {
++        const topic = nameKey(file.slice(0, -3))
++        if (!byTopic.has(topic) || file === `${topic}.md`) byTopic.set(topic, file)
++      }
++      return [...byTopic].map(([topic, file]) => ({ topic, file }))
      } catch {
        return []
      }
    }
 +  const topicNames = (scope) => {
 +    const dir = scopeDir(scope)
-+    return dir === undefined ? [] : topicNamesIn(dir)
++    return dir === undefined ? [] : topicFilesIn(dir).map(file => file.topic)
 +  }
    // MEMORY.md first, then the topics by name.
    const loadScope = (scope) => {
      const dir = dirOf(scope)
 -    return [undefined, ...topicNames(scope)].map((topic) => {
-+    const open = scopeDir(scope) !== undefined
-+    return [undefined, ...(open ? topicNamesIn(dir) : [])].map((topic) => {
-       const file = topic === undefined ? MAIN : `${topic}.md`
+-      const file = topic === undefined ? MAIN : `${topic}.md`
 -      const content = readText(join(dir, file))
++    const open = scopeDir(scope) !== undefined
++    return [{ topic: undefined, file: MAIN }, ...(open ? topicFilesIn(dir) : [])].map(({ topic, file }) => {
 +      const content = open ? readText(join(dir, file)) : ''
        return { topic, file, path: join(dir, file), content, ...parseMemory(content) }
      })
@@ -6077,6 +6101,15 @@ diff --git a/src/host/memory.js b/src/host/memory.js
    }
  
    function addEntry({ scope, topic, text, meta, actor, label }) {
+@@ -559,7 +559,7 @@ export function install(rt) {
+       const next = joinLines(insertEntry(base, line))
+       checkSize(target, next, label)
+       let index
+-      if (topic !== undefined && !main.links.includes(topic)) {
++      if (topic !== undefined && !main.links.some(link => nameKey(link) === topic)) {
+         index = joinLines(addLink(main.lines.length > 0 ? main.lines : parseMemory(EMPTY_MAIN).lines, topic))
+         checkSize(main, index, label)
+       }
 @@ -568,7 +568,7 @@ export function install(rt) {
        await journal({ op: 'add', scope: scopeKey(scope), file: target.file, ...actorOf(actor), after: line })
        noteNews(scope, actor, 'add', line)
@@ -6086,6 +6119,18 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      })
    }
  
+@@ -614,7 +614,10 @@ export function install(rt) {
+       if (empty) {
+         await unlink(old.file.path).catch(error => { if (error?.code !== 'ENOENT') throw error })
+         const main = files[0]
+-        if (main.links.includes(old.file.topic)) await writeText(main.path, joinLines(removeLink(main.lines, old.file.topic)))
++        // The link was written with whatever spelling the topic had then; remove that one, not a
++        // second entry the key would otherwise leave behind (#2692).
++        const link = main.links.find(one => nameKey(one) === old.file.topic)
++        if (link !== undefined) await writeText(main.path, joinLines(removeLink(main.lines, link)))
+       } else {
+         await writeText(old.file.path, joinLines(lines))
+       }
 @@ -632,12 +632,13 @@ export function install(rt) {
      news.delete(botId)
      return queued(async () => {
@@ -7906,26 +7951,26 @@ diff --git a/src/host/steward.js b/src/host/steward.js
 diff --git a/src/host/text.js b/src/host/text.js
 --- a/src/host/text.js
 +++ b/src/host/text.js
-@@ -1,6 +1,10 @@
+@@ -1,6 +1,11 @@
  // Pure text helpers shared by the host modules: message text, names, model refs,
  // cutting and estimating text, and the clock format of chat anchors.
  import { COLORS, EXTRA_COLORS, LEGACY_COLORS, OWN_CHAT_LINE_MAX } from './constants.js'
 +import { codePointEnd, codePointStart, cut, fits } from '../shared/text-boundary.js'
++import { nameKey } from '../shared/identity.js'
 +import { stripInvisible } from '../shared/mentions.js'
 +
 +export { cut, stripInvisible }
  
  // A color id saved under its legacy name reads as the current one.
  export const currentColor = color => (typeof color === 'string' && Object.hasOwn(LEGACY_COLORS, color) ? LEGACY_COLORS[color] : color)
-@@ -17,17 +17,37 @@ export const textOf = content => (Array.isArray(content) ? content : [])
+@@ -17,17 +17,36 @@ export const textOf = content => (Array.isArray(content) ? content : [])
    .join('\n')
    .trim()
  
 -export const normalize = value => String(value ?? '').trim().toLowerCase()
-+// The identity key for a name (#2691): both canonical spellings (NFC and NFD) of one
-+// visible name are one key, and so are the invisible characters `trim()` keeps. The NFC
-+// pass runs again after lowercasing because a lower can compose a new sequence (U+0130).
-+export const normalize = value => stripInvisible(String(value ?? '').normalize('NFC')).trim().toLowerCase().normalize('NFC')
++// The identity key for a name (#2691, #2692): one function in `shared/identity.js`, so the tree's
++// sibling names, a role label and a memory topic compare by the same rule as a Bot name does.
++export const normalize = nameKey
  
  export const unquote = text => String(text ?? '').trim().replace(/^["'“”「『《]+|["'“”」』》]+$/g, '').trim()
  
@@ -12502,6 +12547,46 @@ diff --git a/test/memory.test.js b/test/memory.test.js
  
  test('remember saves one entry with its source, and forget removes it, both in the journal', async (t) => {
    const { tool, read, journal, stop } = start()
+@@ -218,6 +218,39 @@ test('topics hold details, linked from MEMORY.md, and go when their last entry d
+   assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n')
+ })
+ 
++// #2692: a topic is one identity and one file name. Canonically equivalent spellings used to be
++// two topics writing two files, so one topic split into two memories. A decomposed Latin topic is
++// refused by the \p{L} rule, so the collision needs a script whose decomposition stays letters:
++// the Hangul syllable 가 (U+AC00) and U+1100 U+1161.
++test('#2692 a topic is one identity whichever canonical spelling it is written in', async (t) => {
++  const { tool, read, stop, home } = start()
++  t.after(() => stop())
++  assert.equal(cleanTopic('\uac00'), cleanTopic('\u1100\u1161'))
++  assert.equal(cleanTopic('\u1100\u1161'), '\uac00', 'the file stem is the canonical form')
++  await tool('remember', { text: 'Flies from Hangzhou', topic: '\uac00' }, 'b2')
++  // the other spelling names the same topic, and reads the same file
++  assert.match(await tool('recall', { topic: '\u1100\u1161' }, 'b2'), /^Topic \[\[\uac00\]\] in your memory \(\uac00\.md: \d+ of 16000 characters\):\n# \uac00\n\n- Flies from Hangzhou/)
++  assert.match(await tool('remember', { text: 'Prefers window seats', topic: '\u1100\u1161' }, 'b2'), /in topic \[\[\uac00\]\] \(\uac00\.md: \d+ of 16000 characters\)/)
++  assert.deepEqual(readdirSync(join(home, 'memory', 'bots', 'b2')).sort(), ['MEMORY.md', '\uac00.md'])
++  assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n- [[\uac00]]\n')
++})
++
++// A topic file written before this change keeps the spelling it was written with. The key is
++// computed from the name, so the file is still the one recall reads and remember appends to.
++test('#2692 a topic saved under another spelling before this change is still the file it names', async (t) => {
++  const { tool, read, stop, home } = start()
++  t.after(() => stop())
++  const dir = join(home, 'memory', 'bots', 'b2')
++  mkdirSync(dir, { recursive: true })
++  writeFileSync(join(dir, 'MEMORY.md'), '# Memory\n\n## Index\n- [[\u1100\u1161]]\n')
++  writeFileSync(join(dir, '\u1100\u1161.md'), '# legs\n\n- Saved the old way [added: 2026-01-01]\n')
++  assert.match(await tool('recall', { topic: '\uac00' }, 'b2'), /^Topic \[\[\uac00\]\] in your memory \(\u1100\u1161\.md: \d+ of 16000 characters\):\n# legs/)
++  assert.match(await tool('remember', { text: 'Added after the fix', topic: '\uac00' }, 'b2'), /in topic \[\[\uac00\]\]/)
++  assert.deepEqual(readdirSync(dir).sort(), ['MEMORY.md', '\u1100\u1161.md'], 'no second file for the same topic')
++  assert.match(read('bots', 'b2', '\u1100\u1161.md'), /- Added after the fix \[/)
++  assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n- [[\u1100\u1161]]\n', 'the link it already had is not written twice')
++})
++
+ test('Main Bots and group admins write the team memory; only Main Bots touch another Bot\'s', async (t) => {
+   const { tool, read, stop } = start()
+   t.after(() => stop())
 @@ -336,7 +336,7 @@ test('the memory panel shows every entry and a summary the Bot\'s model writes o
    const asked = (await call('memory-view', { botId: 'b2', summarize: true })).value
    assert.deepEqual(asked.entries.map(entry => [entry.scope, entry.topic, entry.text]), [['own', null, 'Likes tea']])

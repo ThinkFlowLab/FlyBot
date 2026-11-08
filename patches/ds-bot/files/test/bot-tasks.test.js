@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
-import { columnOf, occupiesSlot } from '../src/shared/task-board.js'
+import { columnOf, occupiesSlot, sameRole } from '../src/shared/task-board.js'
 import { fakeContext } from './fake-ctx.js'
 
 const team = () => ({
@@ -680,4 +680,21 @@ test('only a claimed or working card occupies the member\'s WIP slot (#1744)', (
   assert.equal(occupiesSlot(undefined), false)
   assert.equal(occupiesSlot({}), false)
   assert.equal(columnOf({ status: 'result-ready' }), 'in-progress', 'the board reading is unchanged')
+})
+
+// #2692: a role label is one identity whichever canonical spelling it is written in, so a queued
+// card reaches the member whose label spells the same role instead of staying in the pool forever.
+test('#2692 a role label is one identity whichever canonical spelling it uses', () => {
+  const nfc = 'Caf\u00e9'
+  const nfd = 'Cafe\u0301'
+  assert.equal(sameRole(nfc, nfd), true)
+  assert.equal(sameRole(nfd, nfc), true)
+  // the folded spelling is the one the tree plugin hands out as a role label
+  assert.equal(sameRole(` ${nfd} `, nfc), true)
+  // the invisible format characters trim() keeps are part of the same identity
+  assert.equal(sameRole(`${nfd}\u200b`, nfc), true)
+  // a different role still is a different role, and an empty label still matches nothing
+  assert.equal(sameRole(nfd, 'Caf\u00e9 writer'), false)
+  assert.equal(sameRole('', ''), false)
+  assert.equal(sameRole(undefined, nfc), false)
 })

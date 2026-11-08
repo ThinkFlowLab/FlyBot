@@ -8729,6 +8729,9 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 @media (prefers-reduced-motion:reduce){.bt-mw-row{animation:none}}
 `;
 
+// src/shared/identity.js
+var nameKey = (value) => stripInvisible(String(value ?? "").normalize("NFC")).trim().toLowerCase().normalize("NFC");
+
 // src/shared/task-board.js
 var COLUMNS = ["not-started", "in-progress", "done"];
 var PRIORITIES = ["urgent", "high", "normal", "low"];
@@ -8767,8 +8770,8 @@ function compareForWork(a, b) {
   return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
 }
 function sameRole(a, b) {
-  const left = String(a ?? "").trim().toLowerCase();
-  const right = String(b ?? "").trim().toLowerCase();
+  const left = nameKey(a);
+  const right = nameKey(b);
   return left !== "" && left === right;
 }
 function compareForQueue(a, b) {

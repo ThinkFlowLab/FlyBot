@@ -5752,7 +5752,7 @@ diff --git a/client.js b/client.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -2488,3021 +2488,6777 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2488,3021 +2488,6780 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  @keyframes bt-rise{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
  @media (prefers-reduced-motion:reduce){.bt-member,.bt-addlist{animation:none}}
  
@@ -8478,9 +8478,7 @@ diff --git a/client.js b/client.js
 +      }
 +      if (reply.kind === "missed") {
 +        return (0, import_react11.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("{name} didn't answer in time", { name: bot.name }));
-       }
--      const bot = people[index];
--      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
++      }
 +      if (reply.kind === "resumed") {
 +        return (0, import_react11.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("{name} was cut off by a restart and picked its work back up", { name: bot.name }));
 +      }
@@ -8519,7 +8517,9 @@ diff --git a/client.js b/client.js
 +          msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0,
 +          useUi
 +        });
-+      }
+       }
+-      const bot = people[index];
+-      return (0, import_react2.createElement)("span", { key: bot?.id ?? "you", style }, seat(bot, s));
 +      return (0, import_react11.createElement)(GroupMessage, { key: `${reply.botId}-${index}`, bot, text: reply.text, room: room2, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : void 0, useUi, seq: reply.seq });
      })
    );
@@ -9932,6 +9932,9 @@ diff --git a/client.js b/client.js
 -  const members = steps.length ? steps : [current];
 -  if (members.find((step) => stepReasoning(step) !== "")?.step !== current.step) return "";
 -  return members.filter((step) => !thinkingLive(step)).map(stepReasoning).filter(Boolean).join("\n\n");
++// src/shared/identity.js
++var nameKey = (value) => stripInvisible(String(value ?? "").normalize("NFC")).trim().toLowerCase().normalize("NFC");
++
 +// src/shared/task-board.js
 +var COLUMNS = ["not-started", "in-progress", "done"];
 +var PRIORITIES = ["urgent", "high", "normal", "low"];
@@ -9970,8 +9973,8 @@ diff --git a/client.js b/client.js
 +  return (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0);
 +}
 +function sameRole(a, b) {
-+  const left = String(a ?? "").trim().toLowerCase();
-+  const right = String(b ?? "").trim().toLowerCase();
++  const left = nameKey(a);
++  const right = nameKey(b);
 +  return left !== "" && left === right;
 +}
 +function compareForQueue(a, b) {

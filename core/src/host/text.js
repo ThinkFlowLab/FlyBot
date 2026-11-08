@@ -2,6 +2,7 @@
 // cutting and estimating text, and the clock format of chat anchors.
 import { COLORS, EXTRA_COLORS, LEGACY_COLORS, OWN_CHAT_LINE_MAX } from './constants.js'
 import { codePointEnd, codePointStart, cut, fits } from '../shared/text-boundary.js'
+import { nameKey } from '../shared/identity.js'
 import { stripInvisible } from '../shared/mentions.js'
 
 export { cut, stripInvisible }
@@ -21,10 +22,9 @@ export const textOf = content => (Array.isArray(content) ? content : [])
   .join('\n')
   .trim()
 
-// The identity key for a name (#2691): both canonical spellings (NFC and NFD) of one
-// visible name are one key, and so are the invisible characters `trim()` keeps. The NFC
-// pass runs again after lowercasing because a lower can compose a new sequence (U+0130).
-export const normalize = value => stripInvisible(String(value ?? '').normalize('NFC')).trim().toLowerCase().normalize('NFC')
+// The identity key for a name (#2691, #2692): one function in `shared/identity.js`, so the tree's
+// sibling names, a role label and a memory topic compare by the same rule as a Bot name does.
+export const normalize = nameKey
 
 export const unquote = text => String(text ?? '').trim().replace(/^["'“”「『《]+|["'“”」』》]+$/g, '').trim()
 

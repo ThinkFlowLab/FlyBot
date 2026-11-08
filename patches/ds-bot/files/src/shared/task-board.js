@@ -1,6 +1,7 @@
 // Board columns for the task records in src/host/tasks.js (#1058).
 // The state machine stays the record. A column is how the board reads it.
 // result-ready still waits for acceptance, so it stays In progress.
+import { nameKey } from './identity.js'
 
 export const COLUMNS = ['not-started', 'in-progress', 'done']
 export const PRIORITIES = ['urgent', 'high', 'normal', 'low']
@@ -54,9 +55,11 @@ export function compareForWork(a, b) {
 
 // A role label, matched the way a person reads it (#1247): free text, trimmed, case-insensitive.
 // The label is not a membership role (`admin` / `member`), so nothing here reads that field.
+// Since #2692 the comparison is the shared name key, so either canonical spelling of one visible
+// label is one role and a queued card reaches the carrier that spells it the other way.
 export function sameRole(a, b) {
-  const left = String(a ?? '').trim().toLowerCase()
-  const right = String(b ?? '').trim().toLowerCase()
+  const left = nameKey(a)
+  const right = nameKey(b)
   return left !== '' && left === right
 }
 

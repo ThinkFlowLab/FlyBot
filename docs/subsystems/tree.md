@@ -45,6 +45,7 @@ Everything in `plugins/tree/` (entry `plugins/tree/index.js` and any helpers).
 - `maxChildren` and depth limits stay, checked at the target parent. Parallel creates are serialized per (target) parent.
 - `maxChildren` and `maxDepth` apply to **every** create path while the tree plugin is loaded (#446). A Bot made without tree fields (core `create_bot`, the Bot list) is placed by role by `src/organize.js` on `bot.created`: inside the create call when it fits a level or an existing lead, right after when a new lead has to be created first (it is marked `organizing` until then). No parent goes over `maxChildren` at any moment. `create_child_bot` keeps its limit contract (`limit reached` at a full target parent).
 - A newly created child starts with no person-grant (`bot.hasAnyGrant` false, even when the parent is granted). Sharing with another person still needs an independent per-Bot grant (default deny). Tree never copies grants and never publishes.
+- A sibling name is one identity (#2692): `checkCreate` (the duplicate guard), `findBotByName` and `moveBot`'s duplicate check compare by `src/identity.js`'s `nameKey` — NFC, the invisible format characters `trim()` keeps dropped, trimmed, lowercased, NFC again — so either canonical spelling of one visible name is one child instead of two that render the same, and the name lookup resolves it. The plugin ships as its own package (invariant 1), so that function is a copy of `core/src/shared/identity.js`; `test/identity.test.js` fails when the two copies answer differently.
 
 ## The root follows the Main Bot
 
