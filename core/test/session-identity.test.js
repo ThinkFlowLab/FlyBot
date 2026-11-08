@@ -217,8 +217,10 @@ test('the Session hooks pass DS Bot\'s own requests through, and still act on a 
 
 // #779: with no vision model a picture cannot be read, and the placeholder then names the bytes on
 // disk so a Bot can pick them up with its own file tools. Both paths that turn an image into text
-// for a text-only model share that placeholder: the group relay and a Bot chat.
-test('an unread image names its bytes in a group and in a chat alike', async (t) => {
+// for a text-only model share that placeholder: the group relay and a Bot chat. #2699: the path is
+// for the reader on this host only — the group relay's text is a room line the room's other homes
+// read, so it names the attachment by id and size and never a path of this machine.
+test('an unread image names its bytes in a chat, and only a name in a group', async (t) => {
   const { ctx, rt, bench, home, stop } = start({ config: { textOnlyModels: ['deepseek/vision'] } })
   t.after(stop)
   const id = 'b'.repeat(64)
@@ -228,14 +230,16 @@ test('an unread image names its bytes in a group and in a chat alike', async (t)
   const picture = { attachmentId: `sha256:${id}`, name: 'chart.png', mediaType: 'image/png', bytes: 16 }
 
   const [line] = await rt.imagesForGroup([picture], 'r1')
-  assert.match(line, /it could not be read right now\. The file is at /)
-  assert.ok(line.includes(`"${objectPath}"`), line)
+  assert.match(line, /\[Image "chart\.png" \(image\/png, 16 bytes\): it could not be read right now\./, line)
+  assert.doesNotMatch(line, /The file is at/, 'the group line is read by other homes: no path of this host')
+  assert.equal(line.includes(home), false, line)
 
   bench.respond = () => 'It is a chart.'
   const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', attachment: picture }, { type: 'text', text: 'What is this?' }] }
   const chunks = await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
   assert.equal(chunks.at(-1).reason.kind, 'stop')
-  // No vision request went out: there is no model to send it to.
+  // No vision request went out: there is no model to send it to. The Bot's own chat is this host's
+  // reader, so its placeholder still names the bytes (#779).
   assert.deepEqual(bench.requests.map(request => request.model), ['v4'])
   assert.ok(bench.requests[0].messages[0].content[0].text.includes(`"${objectPath}"`), bench.requests[0].messages[0].content[0].text)
 })

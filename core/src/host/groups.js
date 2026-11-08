@@ -30,7 +30,7 @@ import { FACE_LEAD_NOTE, FACE_LEAD_ROUTE, faceLeadIsRemote, faceMemberNote, face
 import { faceMentions } from './face-mentions.js'
 import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createRoomParticipants } from './room-participant.js'
-import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine } from './room-context.js'
+import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine, setRoomLineRedactor } from './room-context.js'
 import { workDispatch } from './work-dispatch.js'
 import { retiredBot } from './store.js'
 
@@ -236,6 +236,9 @@ export function install(rt) {
   const participant = createRoomParticipants(rt)
   fanoutRoomLine = (room, line) => rt.fanoutRoomLine?.(room, line)
   stampRoomLine = (room, line) => rt.stampHop?.(room, line) ?? line
+  // A stored room line leaves for the room's other homes, so the store gate redacts with this host's
+  // own redactor (#2699).
+  setRoomLineRedactor(text => rt.redactSecrets?.(text) ?? text)
   rt.notePostedLine = (roomId, text) => postedLines.set(roomId, [...(postedLines.get(roomId) ?? []), text].slice(-20))
   // What an external participant's process does is a room line (#198), so a crash is seen where
   // the Bot speaks and not only in a log nobody reads.

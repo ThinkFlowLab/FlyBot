@@ -72,9 +72,11 @@ const imageFacts = attachment => {
 }
 
 // One placeholder for both places an unread image becomes text: a Bot chat (`imageAsText`) and the
-// group relay (`imagesForGroup`). It names the bytes only when `path` is a file this Bot can open.
+// group relay (`imagesForGroup`). It names the bytes only when `path` is a file this Bot can open, and
+// never in the group form: a group line is fanned out to the room's other homes (#2699), where a path
+// of this host says nothing the far side can open and names this machine's folders to it.
 export function imagePlaceholder(attachment, { path, group = false } = {}) {
-  const where = path === undefined ? '' : ` The file is at "${path}"; your own file tools can open it.`
+  const where = group || path === undefined ? '' : ` The file is at "${path}"; your own file tools can open it.`
   const cannot = group ? '' : 'you cannot see images and '
   return `[Image ${imageLabel(attachment)}${imageFacts(attachment)}: ${cannot}it could not be read right now.${where} Ask the user what it shows if it matters.]`
 }
@@ -207,7 +209,7 @@ export function install(rt) {
       const reading = await imageReading(attachment, sessionId)
       const label = imageLabel(attachment)
       return reading === null
-        ? imagePlaceholder(attachment, { path: await attachmentFilePath(attachment, attachmentServices()), group: true })
+        ? imagePlaceholder(attachment, { group: true })
         : `[Image ${label}, read by ${reading.model}:]\n${reading.text}\n[End of image ${label}]`
     }))
   }

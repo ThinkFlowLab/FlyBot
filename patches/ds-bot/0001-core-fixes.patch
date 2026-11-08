@@ -5706,7 +5706,7 @@ diff --git a/src/host/images.js b/src/host/images.js
  import { splitRef } from './text.js'
  
  export function offloadTargets(session, beforeSeq) {
-@@ -27,6 +27,56 @@ export function offloadTargets(session, beforeSeq) {
+@@ -27,6 +27,58 @@ export function offloadTargets(session, beforeSeq) {
    return targets
  }
  
@@ -5753,9 +5753,11 @@ diff --git a/src/host/images.js b/src/host/images.js
 +}
 +
 +// One placeholder for both places an unread image becomes text: a Bot chat (`imageAsText`) and the
-+// group relay (`imagesForGroup`). It names the bytes only when `path` is a file this Bot can open.
++// group relay (`imagesForGroup`). It names the bytes only when `path` is a file this Bot can open, and
++// never in the group form: a group line is fanned out to the room's other homes (#2699), where a path
++// of this host says nothing the far side can open and names this machine's folders to it.
 +export function imagePlaceholder(attachment, { path, group = false } = {}) {
-+  const where = path === undefined ? '' : ` The file is at "${path}"; your own file tools can open it.`
++  const where = group || path === undefined ? '' : ` The file is at "${path}"; your own file tools can open it.`
 +  const cannot = group ? '' : 'you cannot see images and '
 +  return `[Image ${imageLabel(attachment)}${imageFacts(attachment)}: ${cannot}it could not be read right now.${where} Ask the user what it shows if it matters.]`
 +}
@@ -5809,7 +5811,7 @@ diff --git a/src/host/images.js b/src/host/images.js
        const label = imageLabel(attachment)
        return reading === null
 -        ? `[Image ${label}: it could not be read right now. Ask the user what it shows if it matters.]`
-+        ? imagePlaceholder(attachment, { path: await attachmentFilePath(attachment, attachmentServices()), group: true })
++        ? imagePlaceholder(attachment, { group: true })
          : `[Image ${label}, read by ${reading.model}:]\n${reading.text}\n[End of image ${label}]`
      }))
    }
@@ -12051,7 +12053,7 @@ diff --git a/test/images.test.js b/test/images.test.js
  
  test('offloadTargets selects live images from prior user and tool messages', () => {
    const events = [
-@@ -32,3 +32,170 @@ test('offloadTargets selects live images from prior user and tool messages', ()
+@@ -32,3 +32,173 @@ test('offloadTargets selects live images from prior user and tool messages', ()
      { seq: 2, imageIndexes: [0] },
    ])
  })
@@ -12131,6 +12133,9 @@ diff --git a/test/images.test.js b/test/images.test.js
 +  const group = imagePlaceholder(attachment, { path: '/p/x', group: true })
 +  assert.match(group, /\[Image "IMG_2431\.jpeg" \(image\/jpeg, 1080x1596, 213569 bytes\): it could not be read right now\./)
 +  assert.doesNotMatch(group, /you cannot see images/)
++  // #2699: the group line is fanned out to the room's other homes, so it never names a path of this
++  // host — not even when one is passed in.
++  assert.doesNotMatch(group, /The file is at/, 'a group line is read on the far side: no path of this host')
 +
 +  // An unnamed image keeps the sha prefix the host has always shown.
 +  assert.match(imagePlaceholder({ attachmentId: id }), /\[Image sha256:bdc77c70:/)
@@ -15429,15 +15434,17 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
  test('an image in a Bot chat is read for that chat, and the chat gets the reading', async (t) => {
    const { ctx, bench, stop } = start()
    t.after(stop)
-@@ -172,3 +172,43 @@ test('the Session hooks pass DS Bot\'s own requests through, and still act on a
+@@ -172,3 +172,47 @@ test('the Session hooks pass DS Bot\'s own requests through, and still act on a
    assert.equal(images(own('b2', picture), pass), passed)
    assert.notEqual(images(round('b2', picture), pass), passed)
  })
 +
 +// #779: with no vision model a picture cannot be read, and the placeholder then names the bytes on
 +// disk so a Bot can pick them up with its own file tools. Both paths that turn an image into text
-+// for a text-only model share that placeholder: the group relay and a Bot chat.
-+test('an unread image names its bytes in a group and in a chat alike', async (t) => {
++// for a text-only model share that placeholder: the group relay and a Bot chat. #2699: the path is
++// for the reader on this host only — the group relay's text is a room line the room's other homes
++// read, so it names the attachment by id and size and never a path of this machine.
++test('an unread image names its bytes in a chat, and only a name in a group', async (t) => {
 +  const { ctx, rt, bench, home, stop } = start({ config: { textOnlyModels: ['deepseek/vision'] } })
 +  t.after(stop)
 +  const id = 'b'.repeat(64)
@@ -15447,14 +15454,16 @@ diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 +  const picture = { attachmentId: `sha256:${id}`, name: 'chart.png', mediaType: 'image/png', bytes: 16 }
 +
 +  const [line] = await rt.imagesForGroup([picture], 'r1')
-+  assert.match(line, /it could not be read right now\. The file is at /)
-+  assert.ok(line.includes(`"${objectPath}"`), line)
++  assert.match(line, /\[Image "chart\.png" \(image\/png, 16 bytes\): it could not be read right now\./, line)
++  assert.doesNotMatch(line, /The file is at/, 'the group line is read by other homes: no path of this host')
++  assert.equal(line.includes(home), false, line)
 +
 +  bench.respond = () => 'It is a chart.'
 +  const message = { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', attachment: picture }, { type: 'text', text: 'What is this?' }] }
 +  const chunks = await drain(ctx.llm.stream({ provider: 'deepseek', model: 'v4', sessionId: 'b2', messages: [message] }))
 +  assert.equal(chunks.at(-1).reason.kind, 'stop')
-+  // No vision request went out: there is no model to send it to.
++  // No vision request went out: there is no model to send it to. The Bot's own chat is this host's
++  // reader, so its placeholder still names the bytes (#779).
 +  assert.deepEqual(bench.requests.map(request => request.model), ['v4'])
 +  assert.ok(bench.requests[0].messages[0].content[0].text.includes(`"${objectPath}"`), bench.requests[0].messages[0].content[0].text)
 +})

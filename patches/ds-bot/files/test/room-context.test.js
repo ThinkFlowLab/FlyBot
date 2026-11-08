@@ -36,6 +36,25 @@ test('prepare collapses bot status and leaves the stored line and a person line'
   assert.equal(prepareRoomLine(short), short)
 })
 
+test('the store gate runs the host redactor on every line, and leaves a clean one alone (#2699)', () => {
+  // A room line leaves for the room's other homes (`fanoutRoomLine`), so the one gate both writers of
+  // `room.log` pass through is where the host's redactor runs (`rt.redactSecrets`, a stub here).
+  const redact = text => text.replace(/ghp_[A-Za-z0-9]+/g, '[secret:GITHUB_TOKEN]')
+  const person = { seq: 1, who: 'User', text: 'the key is ghp_FAKE2699, keep it here' }
+  const stored = prepareRoomLine(person, { redact })
+  assert.match(stored.text, /\[secret:GITHUB_TOKEN\]/)
+  assert.equal(person.text.includes('ghp_FAKE2699'), true, 'the log line is not rewritten')
+  const bot = { seq: 2, who: 'Dev', botId: 'dev', text: 'ghp_FAKE2699 is what I pasted' }
+  assert.match(prepareRoomLine(bot, { redact }).text, /\[secret:GITHUB_TOKEN\]/)
+  // A bot essay is collapsed after the redaction, so a secret in it is gone whichever end it was on.
+  const essayBot = { seq: 3, who: 'Dev', botId: 'dev', text: essay('ghp_FAKE2699') }
+  assert.doesNotMatch(prepareRoomLine(essayBot, { redact }).text, /ghp_FAKE/)
+  const clean = { seq: 4, who: 'User', text: 'nothing to redact here' }
+  assert.equal(prepareRoomLine(clean, { redact }), clean, 'a line with no secret keeps its identity')
+  // Without the host's redactor (a caller that has none) the line is prepared as before.
+  assert.equal(prepareRoomLine(person), person)
+})
+
 test('the transcript stays inside the budget and prefers a newer short line over an older essay', () => {
   const lines = []
   for (let seq = 1; seq <= 8; seq += 1) lines.push({ seq, who: 'Dev', botId: 'dev', text: essay(`marker-${seq}`) })

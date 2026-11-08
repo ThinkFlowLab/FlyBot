@@ -112,6 +112,9 @@ test('#779: the placeholder names the file, its size and its type; without a pat
   const group = imagePlaceholder(attachment, { path: '/p/x', group: true })
   assert.match(group, /\[Image "IMG_2431\.jpeg" \(image\/jpeg, 1080x1596, 213569 bytes\): it could not be read right now\./)
   assert.doesNotMatch(group, /you cannot see images/)
+  // #2699: the group line is fanned out to the room's other homes, so it never names a path of this
+  // host — not even when one is passed in.
+  assert.doesNotMatch(group, /The file is at/, 'a group line is read on the far side: no path of this host')
 
   // An unnamed image keeps the sha prefix the host has always shown.
   assert.match(imagePlaceholder({ attachmentId: id }), /\[Image sha256:bdc77c70:/)
