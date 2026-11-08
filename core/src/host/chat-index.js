@@ -219,10 +219,11 @@ export function install(rt) {
     return job
   }
 
-  // A message's anchor: its part (once there are several) and its seq in that part.
+  // A message's anchor: always its part and its seq in that part. A bare `#<seq>` printed
+  // while the chat had one part would resolve into whichever part is current later (#2710).
   const anchorOf = (parts, row) => {
     const part = parts.find(item => item.sessionId === row.session)
-    return `${parts.length > 1 ? `part ${part?.number ?? '?'} ` : ''}#${row.seq}`
+    return `part ${part?.number ?? '?'} #${row.seq}`
   }
   const rowLine = (parts, row, terms = [], max = OWN_CHAT_LINE_MAX) => {
     const lower = row.text.toLowerCase()
@@ -296,18 +297,28 @@ export function install(rt) {
     return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length) }
   }
 
-  // The messages around an anchor, in its part.
+  // The messages around an anchor, in its part. A bare `#<seq>` — an anchor printed before
+  // the chat had more than one part — still resolves in the current part, as it always did,
+  // but `guessedPart` says so and `exact` is then false: the seq a Bot saved named no part,
+  // so the message it finds may be a different one (#2710).
   async function aroundOwnChat(botId, anchor) {
     const { index, parts } = await indexedParts(botId)
     if (index === null) return { error: 'Anchors need the chat index, which is unavailable here. Search with words instead.' }
     const found = /(?:part\s*)?(\d+)?\s*#\s*(\d+)/i.exec(anchor)
     if (found === null) return { error: `"${anchor}" is not an anchor. Anchors look like "part 2 #1234", or "#1234" in the current part.` }
+    // With one part a bare anchor is unambiguous, so only a chat that split had to guess.
+    const guessedPart = found[1] === undefined && parts.length > 1
     const number = found[1] === undefined ? parts.length : Number(found[1])
     const part = parts[number - 1]
     if (part === undefined) return { error: `Your own chat has no part ${number}.` }
     const seq = Number(found[2])
     const rows = [...index.before.all(part.sessionId, seq, AROUND_LINES).reverse(), ...index.from.all(part.sessionId, seq, AROUND_LINES + 1)]
-    return { part, exact: rows.some(row => row.seq === seq), lines: rows.map(row => rowLine(parts, row, [], row.seq === seq ? ANCHOR_LINE_MAX : OWN_CHAT_LINE_MAX)) }
+    return {
+      part,
+      exact: !guessedPart && rows.some(row => row.seq === seq),
+      guessedPart,
+      lines: rows.map(row => rowLine(parts, row, [], row.seq === seq ? ANCHOR_LINE_MAX : OWN_CHAT_LINE_MAX)),
+    }
   }
 
   // Without the index: what the user, other Bots, and the Bot itself said, across all

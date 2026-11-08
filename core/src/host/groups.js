@@ -952,7 +952,7 @@ export function install(rt) {
     description: 'Read or search your own chat with the user, across all its parts, including earlier parts that left your working context. Each line starts with its anchor, such as [part 2 #1234 · 10-08 14:22]; long messages are cut. Pass the anchor as around to read that message in full, with what was said just before and after it. In a group chat the group sees that you looked, so share only what the group needs.',
     parameters: {
       query: { type: 'string', description: 'Words to look for in every part, separated by spaces. A message must have all of them; when none has, those with the most are shown. Omit for the latest messages' },
-      around: { type: 'string', description: 'An anchor from an earlier result, such as "part 2 #1234": shows that message in full and the messages just before and after it' },
+      around: { type: 'string', description: 'An anchor from an earlier result, such as "part 2 #1234" (the part is always printed with it): shows that message in full and the messages just before and after it. A bare "#1234" reads the part that is current now, and the answer says the part was guessed' },
       part: { type: 'integer', description: 'Number of an earlier part: shows the handoff note you wrote when it ended' },
     },
     output,
@@ -982,6 +982,11 @@ export function install(rt) {
         const found = await rt.aroundOwnChat(botId, around)
         if (found.error) return `${found.error}${partsNote}`
         if (found.lines.length === 0) return `Nothing was said around ${around}.${partsNote}`
+        if (found.guessedPart) {
+          // The anchor names no part, so this read can only guess: say so, and never report
+          // the guess as an exact hit (#2710).
+          return `Your own chat around ${around} in the part that is current now; that anchor names no part, so the part is a guess (name one as "part N #<seq>"):\n${found.lines.join('\n')}${partsNote}`
+        }
         const heading = found.exact ? `around ${around}` : `with no message at ${around}; the nearest ones`
         return `Your own chat ${heading} (oldest first):\n${found.lines.join('\n')}${partsNote}`
       }

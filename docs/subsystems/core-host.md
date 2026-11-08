@@ -424,6 +424,12 @@ Work a member hands a Bot with `message_bot` from its group Session runs in a hi
 - `chat-index.js` returns the count next to the lines — `searchOwnChat` answers `{ lines, every, more }`, `latestOwnChat` `{ lines, more }` — instead of the lines alone. A search counts the same match in all only once its limit was filled (`termCountQuery`; the per-term fallback uses `anyTermCountQuery`, which unions one branch per term so a line matching two counts once), and a latest read counts the part's visible lines (`countAll` / `countVisible`, the latter leaving out the asking turn). Without the SQLite index the log scan counts every match while it reads, because that count is the only way to say what was left out.
 - Covered by `core/test/group-work.test.js`; `core/test/history.test.js` still pins `termQuery`'s SQL.
 
+### Chat anchors name their part (#2710)
+
+- `chat-index.js` `anchorOf` prints every anchor as `part N #<seq>` — the form `aroundOwnChat` resolves exactly — including while the chat still has one part. The bare `#<seq>` it printed there used to resolve against `parts[parts.length - 1]`, so once `parts.js` ended a segment and a fresh part became current, an anchor a Bot had saved opened a different message in the new part and reported `exact: true`.
+- A bare `#<seq>` in an older anchor keeps that resolution for compatibility, but `aroundOwnChat` answers `guessedPart: true` and `exact: false` when the chat has more than one part (with one part the bare form is unambiguous), and `read_own_chat` says the part was a guess instead of claiming an exact hit. The tool's `around` description says the same.
+- Covered by `core/test/chat-anchors.test.js` (the real module, a temporary home, a real `chat-index.sqlite` and a fake Session log).
+
 ### Out-of-app delivery, first half (#355)
 
 - A reminder has to reach the owner with the desktop app closed, so its delivery cannot be a client toast. `src/host/notify.js` is the adapter that half needs, and nothing calls it yet: `schedules.js` wiring is the second half, once a real channel exists.
