@@ -1,0 +1,1 @@
+A second, read-only DSH window on the same home no longer reaps or disposes the writer's live workflow: loading the plugin and closing that window both leave the run, its step Bots and the stored progress alone, and the writing host's own load-time reap decides ([#2673](https://github.com/ThinkFlowLab/FlyBot/issues/2673)).
