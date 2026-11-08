@@ -7906,17 +7906,28 @@ diff --git a/src/host/steward.js b/src/host/steward.js
 diff --git a/src/host/text.js b/src/host/text.js
 --- a/src/host/text.js
 +++ b/src/host/text.js
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,10 @@
  // Pure text helpers shared by the host modules: message text, names, model refs,
  // cutting and estimating text, and the clock format of chat anchors.
  import { COLORS, EXTRA_COLORS, LEGACY_COLORS, OWN_CHAT_LINE_MAX } from './constants.js'
 +import { codePointEnd, codePointStart, cut, fits } from '../shared/text-boundary.js'
++import { stripInvisible } from '../shared/mentions.js'
 +
-+export { cut }
++export { cut, stripInvisible }
  
  // A color id saved under its legacy name reads as the current one.
  export const currentColor = color => (typeof color === 'string' && Object.hasOwn(LEGACY_COLORS, color) ? LEGACY_COLORS[color] : color)
-@@ -23,11 +23,28 @@ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「
+@@ -17,17 +17,37 @@ export const textOf = content => (Array.isArray(content) ? content : [])
+   .join('\n')
+   .trim()
+ 
+-export const normalize = value => String(value ?? '').trim().toLowerCase()
++// The identity key for a name (#2691): both canonical spellings (NFC and NFD) of one
++// visible name are one key, and so are the invisible characters `trim()` keeps. The NFC
++// pass runs again after lowercasing because a lower can compose a new sequence (U+0130).
++export const normalize = value => stripInvisible(String(value ?? '').normalize('NFC')).trim().toLowerCase().normalize('NFC')
+ 
+ export const unquote = text => String(text ?? '').trim().replace(/^["'“”「『《]+|["'“”」』》]+$/g, '').trim()
  
  export const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  
@@ -8895,6 +8906,25 @@ diff --git a/src/host/usage.js b/src/host/usage.js
 diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 --- a/src/shared/mentions.js
 +++ b/src/shared/mentions.js
+@@ -16,9 +16,16 @@ const fitsAt = (text, at, word) => text.slice(at, at + word.length).toLowerCase(
+   && !NAME_GOES_ON.test(text.slice(at + word.length))
+ const overlaps = (spans, start, end) => spans.some(span => start < span.end && span.start < end)
+ 
+-// What a Bot may be named: something "@" can call without a second reading.
++// A name can carry characters that cannot be seen: the Unicode format characters (Cf) —
++// zero-width space / non-joiner / joiner, the byte-order mark, soft hyphen, the bidi
++// controls — and `trim()` removes no character that is not White_Space. The identity key
++// (#2691) drops them, and a stored name drops them too, so what is saved is what is shown.
++export const stripInvisible = value => String(value ?? '').replace(/\p{Cf}/gu, '')
++
++// What a Bot may be named: something "@" can call without a second reading. A name made
++// only of invisible characters reads as no name at all.
+ export function nameProblem(name) {
+-  const text = String(name ?? '').trim()
++  const text = stripInvisible(name).trim()
+   if (text === '') return 'A Bot needs a name'
+   if (/[@`\r\n]/.test(text)) return 'A Bot name cannot contain @, ` or a line break'
+   if (ALL_WORDS.includes(text.toLowerCase())) return `"${text}" calls everyone in a group, so it cannot be a Bot name`
 @@ -63,3 +63,24 @@ export function mentionSpans(text, bots, { references = [] } = {}) {
    }
    return spans

@@ -16,9 +16,16 @@ const fitsAt = (text, at, word) => text.slice(at, at + word.length).toLowerCase(
   && !NAME_GOES_ON.test(text.slice(at + word.length))
 const overlaps = (spans, start, end) => spans.some(span => start < span.end && span.start < end)
 
-// What a Bot may be named: something "@" can call without a second reading.
+// A name can carry characters that cannot be seen: the Unicode format characters (Cf) —
+// zero-width space / non-joiner / joiner, the byte-order mark, soft hyphen, the bidi
+// controls — and `trim()` removes no character that is not White_Space. The identity key
+// (#2691) drops them, and a stored name drops them too, so what is saved is what is shown.
+export const stripInvisible = value => String(value ?? '').replace(/\p{Cf}/gu, '')
+
+// What a Bot may be named: something "@" can call without a second reading. A name made
+// only of invisible characters reads as no name at all.
 export function nameProblem(name) {
-  const text = String(name ?? '').trim()
+  const text = stripInvisible(name).trim()
   if (text === '') return 'A Bot needs a name'
   if (/[@`\r\n]/.test(text)) return 'A Bot name cannot contain @, ` or a line break'
   if (ALL_WORDS.includes(text.toLowerCase())) return `"${text}" calls everyone in a group, so it cannot be a Bot name`

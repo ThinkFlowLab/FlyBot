@@ -7,7 +7,7 @@ owned_paths:
 
 # core-client
 
-The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/client/`, built into the committed bundle `core/client.js`. Split out of [ds-bot-core](ds-bot-core.md) so a host-only change does not have to edit this page. `client.js` is generated: never hand-edit it, run `npm run build` in `core/` and commit both.
+The browser side of the patched `ds-bot` core (`core/`): sources in `core/src/client/`, built into the committed bundle `core/client.js`. Split out of [ds-bot-core](ds-bot-core.md) so a host-only change does not have to edit this page. `client.js` is generated: never hand-edit it, run `npm run build` in `core/` and commit both. The bundle also carries the `core/src/shared/` modules the client imports — `mentions.js` (the `@Name` rule, `nameProblem` and `stripInvisible`), `text-boundary.js`, `remote-label.js`, `approval-waiting.js`, `room-share.js` among them — so a change in one of those rebuilds `client.js` too even when no file under `core/src/client/` was edited; the rules themselves are documented on [core-host](core-host.md#key-files).
 
 ## Owns
 
