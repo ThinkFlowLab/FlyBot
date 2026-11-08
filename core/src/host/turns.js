@@ -711,6 +711,8 @@ export function install(rt) {
               hop: (source.hop ?? 0) + 1,
               replyTo: source.exchangeId,
               origin,
+              // #2677: the same marker the remote notice uses, so a reader never parses the sentence.
+              failure: true,
             }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
           } else if (reply !== '' || reason?.kind === 'aborted') {
             // A turn stopped before it could answer still owes the sender a line,

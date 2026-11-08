@@ -15,6 +15,25 @@ function runnerName(base, taken) {
   return `${stem} ${randomBytes(3).toString('hex')}`.slice(0, 40)
 }
 
+// #2677: a step's answer is its own text, so quoting the host's failure sentence in an
+// audit or a pasted log must not fail the node. The host marks a real notice on the
+// message; an old host without that marker is read only in the notice shape at the start
+// of the text (`<name> could not answer your message: …`).
+const LEGACY_FAILURE_NOTICE = [
+  /^[^\n:`"'<>]{1,80} could not answer your message:/i,
+  /^could not answer your message$/i,
+  /^[^\n:`"'<>]{0,80}model call failed\.?$/i,
+]
+const legacyFailureNotice = text => LEGACY_FAILURE_NOTICE.some(pattern => pattern.test(text))
+// `rt.deliver` hands the middleware its own args under `deliverArgs`, where the notice
+// carries the marker; a direct `bot.send` message carries it at the top level.
+function failureMarker(msg) {
+  const marked = msg.failure ?? msg.deliverArgs?.failure
+  if (marked !== undefined) return marked === true
+  if (msg.ok !== undefined) return msg.ok === false
+  return undefined
+}
+
 export const name = 'flybot-workflow'
 export const inject = ['flybot']
 
@@ -168,7 +187,8 @@ export function apply(ctx, config = {}) {
         const owned = service.ownsBot(from)
         if (owned !== true) return undefined
         const text = String(msg.text ?? '')
-        const failed = /could not answer your message|model call failed/i.test(text)
+        const marked = failureMarker(msg)
+        const failed = marked === undefined ? legacyFailureNotice(text) : marked === true
         // The reply advances the run only. It must not land in a persistent Bot chat (e.g. Chief).
         try {
           await Promise.resolve(service.stepResult({ botId: from, text, ok: !failed }))
