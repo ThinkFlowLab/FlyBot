@@ -1097,7 +1097,7 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
-@@ -152,6 +152,16 @@
+@@ -152,6 +152,16 @@ export function install(rt) {
        state.prefs.theme = LEGACY_THEMES[state.prefs.theme]
        migrated = true
      }

@@ -2448,7 +2448,7 @@ diff --git a/test/store.test.js b/test/store.test.js
  test('dispose waits for a pending save and prevents later writes', async (t) => {
    const { rt, home, statePath, dispose } = runtime(t)
    await rt.load()
-@@ -285,3 +285,94 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
+@@ -285,3 +285,155 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
      restore()
    }
  })
@@ -2543,7 +2543,6 @@ diff --git a/test/store.test.js b/test/store.test.js
 +  assert.ok(warnings.some(line => /not a plain file/.test(line.join(' '))), 'the refusal is named')
 +  assert.ok(warnings.some(line => line.join(' ').includes(`${statePath}.${process.pid}.tmp`)), 'the warning names the temp path')
 +})
-@@ -287,0 +288,61 @@
 +
 +// #2714: a room record that carries no `members` list (a hand edit, a restore from another
 +// machine, a half-written state, or a version-1 room from before the field existed) made
