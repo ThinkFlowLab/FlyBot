@@ -390,9 +390,12 @@ export function install(rt) {
   }
   // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
   // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
-  // same place: one blip and a provider that has been refusing for hours read differently.
+  // same place: one blip and a provider that has been refusing for hours read differently. A turn DSH
+  // cut off at the output ceiling (#2679) is kept too: it is not a failure, but its text is incomplete
+  // and, when it wrote none, it is the same kind of quiet, which is why it joins the same streak.
   const noteEnded = (id, turn, info, reason, failure, calls, texts = 0, rateLimited = undefined) => {
-    if (failure === undefined && reason?.kind !== 'completed') return
+    const limited = failure === undefined && reason?.kind === 'max-tokens'
+    if (failure === undefined && !limited && reason?.kind !== 'completed') return
     const owner = rt.groupOwners.get(id)
     const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
     if (bot === undefined || bot.remote !== undefined) return
@@ -401,7 +404,7 @@ export function install(rt) {
     if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
     const at = Date.now()
     const place = `${bot.id}|${owner?.roomId ?? ''}`
-    const silent = failure !== undefined && texts === 0
+    const silent = (failure !== undefined || limited) && texts === 0
     const lastHere = ended.findLast?.(entry => placeOfEnded(entry) === place) ?? [...ended].reverse().find(entry => placeOfEnded(entry) === place)
     const streak = silent ? (lastHere?.silent === true ? (lastHere.streak ?? 0) + 1 : 1) : 0
     ended = trimEnded([...ended, {
@@ -410,6 +413,7 @@ export function install(rt) {
       ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
       at,
       ...(calls > 0 ? { calls } : {}),
+      ...(limited ? { limited: true } : {}),
       ...(failure ? { failed: cut(failure.message || failure.code, 160).text } : {}),
       ...(rateLimited !== undefined ? { rateLimited } : {}),
       ...(silent ? { silent: true, streak } : {}),
@@ -729,6 +733,10 @@ export function install(rt) {
             }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
           }
         }
+        // A turn DSH cut off at the output ceiling before it wrote a line (#2679) is not a member that
+        // read the line and chose silence, and `''` is exactly what the round reads as a pass. The round
+        // already tells a no-answer apart: `{ missed }`, the value a member that ran out of time leaves.
+        const missedRoomTurn = () => reason?.kind === 'max-tokens' && replyText() === ''
         // A retried turn answers the same waiter or sender, so this one passes nothing on.
         if (!retry && info?.role === 'room') {
           const waiter = roomWaiters.get(info.exchangeId)
@@ -736,9 +744,11 @@ export function install(rt) {
           const stopped = stoppedRoomTurns.delete(info.exchangeId)
           if (waiter !== undefined) {
             if (failure !== undefined) waiter.fail(failure)
-            else waiter.resolve(reason?.kind === 'aborted' ? null : replyText())
+            else if (reason?.kind === 'aborted') waiter.resolve(null)
+            else waiter.resolve(missedRoomTurn() ? { missed: true } : replyText())
           } else if (!stopped && reason?.kind !== 'aborted') {
-            // The round moved on without this member; how its turn ends still reaches the group.
+            // The round moved on without this member; how its turn ends still reaches the group. A
+            // cut-off turn with no text hands over `''`, which `lateRoomReply` drops like a pass.
             if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
             else void rt.lateRoomReply?.(id, info, replyText(), origin)
           }
@@ -749,6 +759,8 @@ export function install(rt) {
             if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
             else if (reason?.kind !== 'aborted') void rt.lateRoomReply?.(id, info, replyText(), origin)
           } else {
+            // Nothing is delivered for an empty answer, cut off or not: `answer` only speaks a line
+            // for a failure, a stop, or text the turn actually wrote.
             answer(info, replyText())
           }
         }

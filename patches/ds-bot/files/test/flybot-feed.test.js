@@ -91,6 +91,25 @@ test('a Bot turn with a user trigger and a tool folds into turn and tool events'
   assert.ok(!JSON.stringify(feed).includes('hello'))
 })
 
+// #2679: DSH ends a turn at the model's output ceiling with `reason.kind === 'max-tokens'`, which is
+// neither a failure nor a normal finish. The three-value outcome stays (the turn did end), and
+// `limited` is the fact a consumer acts on, so every reader is no longer told "finished normally".
+test('#2679: a turn cut off at the output limit says so instead of a bare completed', async (t) => {
+  const { feed, emit, stop } = await boot()
+  t.after(stop)
+  emit('a', 'turn/start', { turn: 4 }, 2000)
+  emit('a', 'assistant/message', { turn: 4, message: { content: [{ type: 'text', text: 'half a sen' }] } }, 2100)
+  emit('a', 'turn/end', { turn: 4, reason: { kind: 'completed' } }, 2200)
+  emit('a', 'turn/start', { turn: 5 }, 2300)
+  emit('a', 'turn/end', { turn: 5, reason: { kind: 'max-tokens' } }, 2400)
+  const [whole, cut] = only(feed, 'turn.end')
+  assert.equal(whole.outcome, 'completed')
+  assert.equal(whole.limited, undefined, 'a normal finish stays unmarked')
+  assert.equal(cut.outcome, 'completed')
+  assert.equal(cut.limited, true)
+  assert.equal(cut.errorCode, undefined, 'a cut-off turn carries no error code')
+})
+
 test('a Bot-to-Bot send reaches the feed with the exchange id and the reply links back by replyTo', async (t) => {
   const { fb, feed, emit, agents, stop } = await boot()
   t.after(stop)

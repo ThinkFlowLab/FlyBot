@@ -12,9 +12,12 @@ export const failureLines = (snapshot, place, t, limit = FAILURE_LINES_SHOWN) =>
     .slice(-limit)
     .map(entry => ({
       id: `turn-failure-${entry.id}`,
-      // The stored text can be a provider's JSON body cut mid-sentence; `failureSentence` says the
-      // same fact in words that name what to change (#1347).
-      text: t('Could not run: {error}', { error: entry.failed === undefined ? t('the model call failed') : failureSentence(entry.failed, t) }),
+      // A turn cut off at the output limit did run (#2679): it gets its own sentence, because "could not
+      // run" would name a failure nobody saw. The stored failure text can be a provider's JSON body cut
+      // mid-sentence; `failureSentence` says that same fact in words that name what to change (#1347).
+      text: entry.limited === true
+        ? t('The reply was cut off at the model\'s output limit')
+        : t('Could not run: {error}', { error: entry.failed === undefined ? t('the model call failed') : failureSentence(entry.failed, t) }),
       ...(Number(entry.streak) > 1 ? { streak: Number(entry.streak) } : {}),
     }))
 }
