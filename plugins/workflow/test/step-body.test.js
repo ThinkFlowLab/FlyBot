@@ -162,13 +162,13 @@ test('#2677: an answer that quotes the failure sentence still advances the step'
 })
 
 test('#2677: the host marks a real failure notice, and the marker decides', async () => {
-  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', failed: true }), false)
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', failure: true }), false)
   assert.equal(await stepOk({ text: 'anything at all', ok: false }), false)
   // `rt.deliver` hands the middleware its own args under `deliverArgs`, which is where
   // the host's notice carries the marker on a live run.
-  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', deliverArgs: { failed: true } }), false)
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', deliverArgs: { failure: true } }), false)
   // A marker that says the answer is fine wins over text that looks like the notice.
-  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', failed: false }), true)
+  assert.equal(await stepOk({ text: 'Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).', failure: false }), true)
 })
 
 test('#2677: an old host without the marker is read only at the start of the text', async () => {

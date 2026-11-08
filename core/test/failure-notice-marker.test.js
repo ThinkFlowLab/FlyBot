@@ -46,11 +46,11 @@ test('#2677: the failure notice carries the structural marker; a normal reply do
   joined(failed)
   failed.emit('b', 'turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'SERVER', message: 'upstream busy', status: 503 } } })
   assert.equal(failed.delivered.length, 1)
-  assert.equal(failed.delivered[0].failed, true)
+  assert.equal(failed.delivered[0].failure, true)
 
   const answered = turnsHost()
   joined(answered)
   answered.emit('b', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
   assert.equal(answered.delivered.length, 1)
-  assert.equal(answered.delivered[0].failed, undefined)
+  assert.equal(answered.delivered[0].failure, undefined)
 })

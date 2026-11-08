@@ -28,9 +28,10 @@ const legacyFailureNotice = text => LEGACY_FAILURE_NOTICE.some(pattern => patter
 // `rt.deliver` hands the middleware its own args under `deliverArgs`, where the notice
 // carries the marker; a direct `bot.send` message carries it at the top level.
 function failureMarker(msg) {
-  if (msg.failed !== undefined) return msg.failed === true
+  const marked = msg.failure ?? msg.deliverArgs?.failure
+  if (marked !== undefined) return marked === true
   if (msg.ok !== undefined) return msg.ok === false
-  return msg.deliverArgs?.failed
+  return undefined
 }
 
 export const name = 'flybot-workflow'
