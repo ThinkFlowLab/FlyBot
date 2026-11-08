@@ -19,6 +19,9 @@ import { DELIVERY_ID, DELIVERY_STEPS, WEEKLY_ID, deliveryWorkflow, templateById,
 const MAX_WORKFLOWS = 24
 const MAX_MESSAGES = 200
 const FILE = 'workflows.json'
+// The version this build writes into `workflows.json`. A file that says a higher one was written by
+// a newer FlyBot: this build cannot read all of it, so it must not write over it (#2681).
+const STORE_VERSION = 1
 const DEFAULT_CONCURRENT = 2
 const MAX_CONCURRENT = 8
 // #2581: a failed step's own text is the node's (or peer Bot's) output, so the bound goes through
@@ -224,6 +227,10 @@ export function createWorkflowService({
   // into a clean list. `state()` answers it and the first `write()` keeps the bytes
   // before replacing them; every other endpoint keeps running on the fixture.
   let loadError = loaded.error
+  // #2681: a store a newer build wrote is the one that must not be replaced at all — its
+  // version travels here so `state()` can name it and `write()` can refuse before the first
+  // byte (a `.broken-` copy is only for a store this build is about to write over).
+  let loadNewer = loaded.newer ?? null
   state.routes ??= {}
   // migrateRuns() also normalizes the orphan list a deleted workflow left
   // (#1621), so a store written by an older version keeps those ids.
@@ -393,6 +400,12 @@ export function createWorkflowService({
 
   function write() {
     if (!persist || !file) return
+    // #2681: a newer build's store is refused before the first byte, not backed up and
+    // replaced. This build cannot read every field of it, so writing would drop them while
+    // the file kept claiming the newer version — the same damage the trace store refuses.
+    if (loadNewer !== null) {
+      throw new Error(`Not saved: the workflow store ${file} was written by a newer FlyBot (version ${loadNewer}), and this build writes version ${STORE_VERSION}; it was left byte for byte as it is.`)
+    }
     state.seq = seq
     mkdirSync(dir, { recursive: true })
     const tmp = `${file}.${process.pid}.tmp`
@@ -1304,8 +1317,11 @@ export function createWorkflowService({
     state(body) {
       // #2603: a store that could not be read is not answered as a list nothing in it
       // came from. The factory templates are not the store, so `workflow/templates`
-      // still gets them from here.
-      if (loadError) return { ok: false, code: 'store-unreadable', error: loadError, templates: templateCatalog() }
+      // still gets them from here. #2681: a newer store says which it is, so the page can
+      // ask for a newer FlyBot instead of reading this as a store that got damaged.
+      if (loadError) {
+        return { ok: false, code: loadNewer === null ? 'store-unreadable' : 'store-newer-version', error: loadError, templates: templateCatalog() }
+      }
       return present(heldLimitOf(body))
     },
     rename(body = {}) {
@@ -2195,7 +2211,15 @@ export function createWorkflowService({
           keepUnreleased(run, failed)
           delete run.handed
         }
-        if (shouldWrite) write()
+        if (!shouldWrite) return
+        // A host closing on a store a newer build wrote still ends its runs and releases their
+        // Bots, and still does not save over that file (#2681): the shutdown says so once rather
+        // than rejecting the disposer its caller awaits.
+        if (loadNewer !== null) {
+          warn(`flybot-workflow: the workflow store ${file} was written by a newer FlyBot (version ${loadNewer}); this window ended its runs but did not save over it`)
+          return
+        }
+        write()
       })
     },
   }
@@ -2275,7 +2299,7 @@ function seed() {
   const delivery = normalizeGraph(deliveryWorkflow())
   const weekly = normalizeGraph(weeklyWorkflow())
   return {
-    version: 1,
+    version: STORE_VERSION,
     workflows: [delivery, weekly],
     runs: {},
     lanes: { [DELIVERY_ID]: emptyLane(), [WEEKLY_ID]: emptyLane() },
@@ -2345,6 +2369,8 @@ function migrateRuns(state) {
 // #2603: the reason a store could not be read travels beside the state instead of
 // ending at the warning. Every endpoint except `workflow/state` keeps running on the
 // fixture; the read is the one answer that must not pretend the fixture is the store.
+// #2681: a store a newer build wrote is not an unreadable one. `newer` says which it is:
+// the read names the version, and no write lands at all, so the file keeps its bytes.
 function load(file, warn) {
   if (!file) return { state: null, error: null }
   let text
@@ -2358,7 +2384,13 @@ function load(file, warn) {
   }
   try {
     const parsed = JSON.parse(text)
-    if (parsed?.version !== 1 || !Array.isArray(parsed.workflows) || typeof parsed.runs !== 'object') {
+    const version = parsed?.version
+    if (Number.isInteger(version) && version > STORE_VERSION) {
+      const problem = `the workflow store ${file} was written by a newer FlyBot (version ${version}); this build writes version ${STORE_VERSION} and cannot read all of it, so it is not saved over`
+      warn(`flybot-workflow: ${problem}; starting from the fixture`)
+      return { state: null, error: problem, newer: version }
+    }
+    if (version !== STORE_VERSION || !Array.isArray(parsed.workflows) || typeof parsed.runs !== 'object') {
       const problem = `the workflow store ${file} is not a workflow file`
       warn(`flybot-workflow: ${problem}; starting from the fixture`)
       return { state: null, error: problem }
