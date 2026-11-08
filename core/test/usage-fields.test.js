@@ -85,7 +85,15 @@ test('extractIssuePr prefers PR refs over bare issue numbers', () => {
   assert.equal(extractIssuePr('https://github.com/ThinkFlowLab/FlyBot/issues/903'), '#903')
 })
 
-test('fixture usage.sqlite has one real calls row with all five fields', () => {
+test('fixture usage.sqlite has one real calls row with all five fields', (t) => {
+  // The fixture is read with the interpreter's own sqlite3, so a host without python3 cannot run
+  // this half. Skipping keeps that visible in the suite's count instead of failing as if the
+  // fixture were wrong.
+  const probe = spawnSync('python3', ['-c', '0'])
+  if (probe.error !== undefined || probe.status !== 0) {
+    t.skip('python3 is not available')
+    return
+  }
   const dbPath = join(here, 'fixtures', 'usage-sample.sqlite')
   const script = `
 import sqlite3, sys
