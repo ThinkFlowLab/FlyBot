@@ -3,7 +3,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
-import { currentColor, cut, isColor, unquote } from './text.js'
+import { currentColor, cut, isColor, stripInvisible, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { cleanExternal } from './room-participant-external.js'
 import { currentParticipants, implicitRoomOwner, syncMembers } from './room-membership.js'
@@ -62,7 +62,9 @@ export function install(rt) {
   // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
   // Bot made when no model is served.
   async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId, hidden, ephemeral }) {
-    const cleanName = cut(String(botName ?? '').trim(), 40).text
+    // The stored name is the visible one: the invisible characters a name can carry would
+    // make two Bots read the same on screen while the key still tells them apart (#2691).
+    const cleanName = cut(stripInvisible(String(botName ?? '')).trim(), 40).text
     // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
     // team names never clash with it and creating it starts no turn.
     const isRemote = typeof remote?.handle === 'string'
@@ -190,7 +192,7 @@ export function install(rt) {
     const moving = patch.workDir !== undefined
     const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
     if (patch.name !== undefined) {
-      const next = cut(String(patch.name).trim(), 40).text
+      const next = cut(stripInvisible(String(patch.name)).trim(), 40).text
       const clash = rt.findBot(next)
       if (next === '' || (clash && clash.id !== id)) throw new Error(`Name ${next} is not available`)
       // A name saved before the rule stays usable until it changes.
@@ -277,7 +279,7 @@ export function install(rt) {
   const cleanNotice = text => cut(String(text ?? '').trim(), ROOM_NOTICE_MAX).text
 
   function cleanRoomName(text, selfId) {
-    const next = cut(unquote(text).replace(/\s+/g, ' '), ROOM_NAME_MAX).text
+    const next = cut(stripInvisible(unquote(text)).replace(/\s+/g, ' '), ROOM_NAME_MAX).text
     if (next !== '' && rt.findRooms(next).some(room => room.id !== selfId)) throw new Error(`Another group chat is already called "${next}"`)
     return next
   }

@@ -2412,8 +2412,9 @@ var ADDRESS_BEFORE = /[a-z0-9_./]/i;
 var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\)/g;
 var fitsAt = (text2, at, word) => text2.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text2.slice(at + word.length));
 var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
+var stripInvisible = (value) => String(value ?? "").replace(/\p{Cf}/gu, "");
 function nameProblem(name) {
-  const text2 = String(name ?? "").trim();
+  const text2 = stripInvisible(name).trim();
   if (text2 === "") return "A Bot needs a name";
   if (/[@`\r\n]/.test(text2)) return "A Bot name cannot contain @, ` or a line break";
   if (ALL_WORDS.includes(text2.toLowerCase())) return `"${text2}" calls everyone in a group, so it cannot be a Bot name`;
