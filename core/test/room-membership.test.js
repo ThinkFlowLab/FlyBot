@@ -619,3 +619,39 @@ test('#2612: a junk wire seq never lands in state.json and never empties the roo
     assert.deepEqual(floors(stored).filter(value => typeof value !== 'number'), [], `every stored member floor is a local number, saw ${JSON.stringify(floors(stored))}`)
   }
 })
+
+test('#2652: the invite gate and the invite handler act on the same room', async (t) => {
+  const { call, rt } = startChannel(t, TEAM)
+  const first = (await call('auth-invite', {})).value
+  const alice = (await call('auth-redeem', { token: first.token, displayName: 'Alice' })).value
+  const second = (await call('auth-invite', {}, alice.sessionToken)).value
+  const bob = (await call('auth-redeem', { token: second.token, displayName: 'Bob' })).value
+  rt.state.members[bob.memberId].designatedChiefId = 'chief-b'
+  rt.state.bots['chief-b'].ownerId = bob.memberId
+  rt.state.bots['spec-b'].ownerId = bob.memberId
+  // A Bot Social handle on each Chief, so a link mints without the network (as #852 does).
+  rt.state.bots['chief-a'].fields = { social: { member: { home: '@alice.home', handle: '@chief.a.home' } } }
+  rt.state.bots['chief-b'].fields = { social: { member: { home: '@bob.home', handle: '@chief.b.home' } } }
+  rt.state.rooms.ra = { id: 'ra', name: 'RA', members: ['chief-a'], admin: 'chief-a', named: true, log: [], seq: 0, seen: {} }
+  rt.state.rooms.rb = { id: 'rb', name: 'RB', members: ['chief-b'], admin: 'chief-b', named: true, log: [], seq: 0, seen: {} }
+  await rt.save()
+
+  assert.equal((await call('room-invite-mint', { roomId: 'ra' }, alice.sessionToken)).ok, true)
+  const bobLink = (await call('room-invite-mint', { roomId: 'rb' }, bob.sessionToken)).value.invite
+  assert.equal(typeof bobLink.ticket, 'string', "Bob's room starts with its own link")
+
+  // `id` names the room the actor may use and `roomId` names another member's room: the gate and
+  // the handler must look at one room, so every one of these is refused, and Bob's link survives.
+  for (const endpoint of ['room-invite', 'room-invite-mint', 'room-invite-revoke', 'room-invite-seat']) {
+    const answer = await call(endpoint, { id: 'ra', roomId: 'rb' }, alice.sessionToken)
+    assert.equal(answer.ok, false, endpoint)
+    assert.equal(answer.error.code, 'bot/forbidden', endpoint)
+  }
+  assert.deepEqual(rt.localInvitesOf('rb').map(invite => invite.ticket), [bobLink.ticket], "the other member's link is untouched")
+
+  // The single-field bodies the client sends keep working exactly as they did.
+  assert.equal((await call('room-invite', { id: 'ra' }, alice.sessionToken)).ok, true, 'id alone names her own room')
+  assert.equal((await call('room-invite', { roomId: 'rb' }, bob.sessionToken)).ok, true, 'roomId alone names his own room')
+  assert.equal((await call('room-invite-mint', { id: 'rb' }, alice.sessionToken)).ok, false, "id alone on another member's room is still refused")
+  assert.equal((await call('room-invite-mint', { roomId: 'rb' }, alice.sessionToken)).ok, false, "roomId alone on another member's room is still refused")
+})

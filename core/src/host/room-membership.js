@@ -287,6 +287,13 @@ export function presentRoom(room, actor, state) {
   }
 }
 
+// The room a request body names (#2652). Clients send `roomId` on the invite surface and `id`
+// elsewhere, so both are accepted; the permission gate and the handler it gates must resolve them
+// the same way, or a body naming two rooms passes on one and writes the other.
+export function roomTargetOf(body) {
+  return body?.roomId ?? body?.id
+}
+
 // A signed-in human may see a room when they are a current human participant,
 // they own an invited Bot in it, or (legacy / single-owner) every bot belongs to them.
 export function roomVisibleTo(state, actor, roomId) {

@@ -13,7 +13,7 @@
 // Install order matters: right after member-auth, so rt.authzEnforced sees the same
 // state.authSessions the sign-in surface writes, and before any module it gates.
 
-import { currentParticipants, roomVisibleTo } from './room-membership.js'
+import { currentParticipants, roomTargetOf, roomVisibleTo } from './room-membership.js'
 import { hasAnyGrant } from './reach.js'
 
 // Endpoints a request without an actor may still reach. auth-invite keeps the
@@ -389,13 +389,13 @@ export function install(rt) {
         return roomMemberOf(actor, id) || roomOwnedBy(actor, id) ? ALLOW : deny('bot/forbidden', 'You are not a member of that room')
       }
       if (ep === 'room-invite') {
-        const id = body?.id ?? body?.roomId
+        const id = roomTargetOf(body)
         const room = state.rooms?.[id]
         const me = currentParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)
         return roomOwnedBy(actor, id) || roomMemberOf(actor, id) || me?.role === 'admin' ? ALLOW : deny('bot/forbidden', 'You are not a member of that room')
       }
       if (ep === 'room-invite-mint' || ep === 'room-invite-revoke' || ep === 'room-invite-seat') {
-        const id = body?.id ?? body?.roomId
+        const id = roomTargetOf(body)
         if (roomOwnedBy(actor, id)) return ALLOW
         const room = state.rooms?.[id]
         const me = currentParticipants(room).find(p => p.kind === 'human' && p.id === actor.memberId)

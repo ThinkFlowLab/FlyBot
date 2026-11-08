@@ -115,6 +115,14 @@ test('owner cannot touch another owner Bot or room', async (t) => {
   assert.equal(rt.authorize(actorA, 'room-invite-ask', { link: 'https://social.botawaken.com/r/@chief.b.home/AbCdEfGhIjKlMnOpQrStUv' }).ok, true)
   assert.equal(rt.authorize(null, 'room-invite-ask', {}).ok, false, 'a signed-in actor is still required')
 
+  // #2652: `id` and `roomId` resolve to one room, so a body naming two is judged on the room the
+  // handler acts on (`roomId`) and cannot pass on the actor's own.
+  for (const ep of ['room-invite', 'room-invite-mint', 'room-invite-revoke', 'room-invite-seat']) {
+    const gate = rt.authorize(actorA, ep, { id: 'ra', roomId: 'rb' })
+    assert.equal(gate.ok, false, ep)
+    assert.equal(gate.code, 'bot/forbidden', ep)
+  }
+
   const mixed = rt.authorize(actorA, 'create-room', { members: ['a1', 'b1'] })
   assert.equal(mixed.ok, false)
   assert.equal(mixed.code, 'bot/forbidden')
