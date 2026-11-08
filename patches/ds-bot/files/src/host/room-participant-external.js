@@ -137,7 +137,7 @@ export function createExternalRoomParticipant(rt) {
       else processes.delete(key)
     }
     const record = member.external
-    const entry = { state: 'starting', detail: undefined, turn: undefined, child: undefined, buffer: '', overflowed: false }
+    const entry = { state: 'starting', detail: undefined, turn: undefined, child: undefined, buffer: '', overflowed: false, overflowTurn: undefined }
     processes.set(key, entry)
     let child
     try {
@@ -161,9 +161,15 @@ export function createExternalRoomParticipant(rt) {
       if (entry.overflowed === true) {
         const cut = chunk.indexOf('\n')
         if (cut === -1) return
+        // The line belongs to the turn that was open when it overflowed, or to none: a turn that
+        // opened while its tail was still in flight is not settled by someone else's log line.
+        const owner = entry.overflowTurn
         entry.overflowed = false
+        entry.overflowTurn = undefined
         chunk = chunk.slice(cut + 1)
-        if (settleOverflow(entry)) void report(room, member, 'overflow', `answer exceeded ${MAX_OUT} bytes`)
+        if (entry.turn !== undefined && entry.turn === owner && settleOverflow(entry)) {
+          void report(room, member, 'overflow', `answer exceeded ${MAX_OUT} bytes`)
+        }
       }
       entry.buffer += chunk
       let index
@@ -175,6 +181,7 @@ export function createExternalRoomParticipant(rt) {
       // Bound the unterminated tail: remember that this line overflowed instead of erasing it.
       if (entry.buffer.length > MAX_OUT) {
         entry.overflowed = true
+        entry.overflowTurn = entry.turn
         entry.buffer = ''
       }
     })

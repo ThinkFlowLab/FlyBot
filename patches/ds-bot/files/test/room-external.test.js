@@ -384,6 +384,39 @@ process.stdin.on('data',c=>{
   assert.deepEqual(lines.filter(line => line.botId === 'noisy'), [])
 })
 
+test('a log line that overflowed while idle does not settle a turn opened before its newline (#2689)', async (t) => {
+  // The line owned no turn when it overflowed, and the turn opens while its tail is still in
+  // flight: that line's newline is not its answer, so it must not settle the turn.
+  const CROSSING = `const fs=require('node:fs');
+fs.appendFileSync(process.env.SEEN,'start '+process.pid+'\\n');
+setTimeout(()=>process.stdout.write('z'.repeat(6000)),50);
+setTimeout(()=>process.stdout.write('\\n'),400);
+let b='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',c=>{
+  b+=c;
+  let i;
+  while((i=b.indexOf('\\n'))!==-1){
+    const l=b.slice(0,i);
+    b=b.slice(i+1);
+    const m=JSON.parse(l);
+    if(m.type==='turn')setTimeout(()=>process.stdout.write(JSON.stringify({text:'ok: '+m.text})+'\\n'),200);
+  }
+});`
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const seen = join(dir, 'seen.txt')
+  writeFileSync(seen, '')
+  const { driver, room, lines, run } = fixture(t)
+  const member = { id: 'cross', name: 'Cross', external: { driver: 'subprocess', command: [process.execPath, '-e', CROSSING], env: { SEEN: seen } } }
+  await driver.open({ room, member })
+  await waitFor(() => readFileSync(seen, 'utf8').includes('start '))
+  // The 6000-byte log line has overflowed while the seat is idle; the turn opens before its
+  // newline lands at ~400 ms, and the child answers 200 ms after that.
+  await new Promise(resolve => setTimeout(resolve, 300))
+  assert.equal(await run(member, 'hi'), 'ok: hi', 'the idle log line did not swallow the turn')
+  assert.deepEqual(lines.filter(line => line.botId === 'cross'), [], 'an idle log line is not an answer')
+});
+
 test('a log line and a second object next to the answer are still ignored (#2689)', async (t) => {
   const THREE = `let b='';
 process.stdin.setEncoding('utf8');
