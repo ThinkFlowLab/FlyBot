@@ -1814,6 +1814,13 @@ export function createWorkflowService({
     saveGraph(body = {}) {
       const endedRuns = []
       const saved = mutate(String(body.workflowId ?? ''), (item) => {
+        // #2654: a replaced graph has no door but this save — `define_workflow`'s replace branch
+        // and the `workflow/graph` endpoint both come through it — so the timeout is settled here
+        // for both. A bad value throws before anything is written; omitted, `null` and `''` keep
+        // what is stored.
+        const stepTimeoutMinutes = body.stepTimeoutMinutes === undefined || body.stepTimeoutMinutes === null || body.stepTimeoutMinutes === ''
+          ? undefined
+          : stepTimeoutValue(body.stepTimeoutMinutes)
         // #1544: a save from a Bot records it as the graph's author; a save with no Bot behind it (the
         // canvas, the API, a template copy) is the owner's own edit and lifts the ceiling again.
         const authoredBy = cleanLine(body.callerBotId ?? body.authoredBy, 80) || undefined
@@ -1867,6 +1874,7 @@ export function createWorkflowService({
         item.nodes = next.nodes
         item.edges = next.edges
         item.layers = next.layers
+        if (stepTimeoutMinutes !== undefined) item.stepTimeoutMinutes = stepTimeoutMinutes
         // Applied only once the graph validated and the runs settled, so a save that throws leaves
         // neither the record nor the lane half-changed (#1856).
         if (projectId === null) delete item.projectId
@@ -1909,6 +1917,12 @@ export function createWorkflowService({
       // #1544: the graph remembers the Bot that wrote it, so a run nobody's tool call started is still
       // capped by the switches of the Bot that chose the node's `tools`.
       const authoredBy = cleanLine(body.callerBotId, 80) || undefined
+      // #1868/#2654: both branches take the field, and both refuse a bad one — `create()` and
+      // `saveGraph()` validate it through `stepTimeoutValue()`. Omitting it, or passing `null`
+      // or `''`, keeps the value that is already stored.
+      const stepTimeoutMinutes = body.stepTimeoutMinutes === undefined || body.stepTimeoutMinutes === null || body.stepTimeoutMinutes === ''
+        ? undefined
+        : body.stepTimeoutMinutes
       const existing = body.workflow ? findWorkflow(body.workflow) : undefined
       if (existing) {
         const finish = () => {
@@ -1919,18 +1933,12 @@ export function createWorkflowService({
           }
           return present()
         }
-        const saved = this.saveGraph({ workflowId: existing.id, nodes: body.nodes, edges: body.edges ?? [], ...(authoredBy ? { authoredBy } : {}) })
+        const saved = this.saveGraph({ workflowId: existing.id, nodes: body.nodes, edges: body.edges ?? [], ...(authoredBy ? { authoredBy } : {}), ...(stepTimeoutMinutes === undefined ? {} : { stepTimeoutMinutes }) })
         // saveGraph returns a promise when the edit had to end a live run.
         if (typeof saved?.then === 'function') return saved.then(value => (value?.ok === false ? value : finish()))
         if (saved.ok === false) return saved
         return finish()
       }
-      // #1868: a lane created through `define_workflow` used to inherit the 45-minute
-      // default with no way to say otherwise. The field goes to `create()`, which
-      // validates it through `stepTimeoutValue()`: a bad value is refused, not dropped.
-      const stepTimeoutMinutes = body.stepTimeoutMinutes === undefined || body.stepTimeoutMinutes === null || body.stepTimeoutMinutes === ''
-        ? undefined
-        : body.stepTimeoutMinutes
       return this.create({
         name: body.name, nodes: body.nodes, edges: body.edges ?? [], description: body.description,
         ...(stepTimeoutMinutes === undefined ? {} : { stepTimeoutMinutes }),
