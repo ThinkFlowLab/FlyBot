@@ -280,6 +280,129 @@ test('a record may not carry a command line, only arguments (#198)', () => {
     { driver: 'subprocess', command: ['node', 'agent.js'], cwd: '/tmp', env: { HOME: '/tmp' } })
 })
 
+// ---- #2689: a line that outgrows the 4 KB in-flight buffer -------------------------------
+// A line is settled only when its newline arrives, so an answer split across the buffer cap used
+// to be erased: the turn then hit the reply timeout, the room was told the process timed out, and
+// an answer that did exist was counted as silence. The cap bounds the unparsed tail, so an
+// over-long line is now a reported failure of the turn, and the process stays for the next one.
+const LONG_ANSWER = (text, splitAt) => `const fs=require('node:fs');
+fs.appendFileSync(process.env.SEEN,'start '+process.pid+'\\n');
+let b='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',c=>{
+  b+=c;
+  let i;
+  while((i=b.indexOf('\\n'))!==-1){
+    const l=b.slice(0,i);
+    b=b.slice(i+1);
+    const m=JSON.parse(l);
+    if(m.type!=='turn')continue;
+    if(m.text==='big'){
+      const j=JSON.stringify({text:${JSON.stringify(text)}});
+      process.stdout.write(j.slice(0,${splitAt}));
+      setTimeout(()=>process.stdout.write(j.slice(${splitAt})+'\\n'),60);
+    } else process.stdout.write(JSON.stringify({text:'ok: '+m.text})+'\\n');
+  }
+});`
+
+test('an answer line split past the 4 KB buffer is a failure, not a timeout, and keeps the process (#2689)', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const seen = join(dir, 'seen.txt')
+  writeFileSync(seen, '')
+  const { driver, rt, lines, run } = fixture(t)
+  rt.roomReplyTimeoutMs = 700
+  const member = { id: 'long', name: 'Long', external: { driver: 'subprocess', command: [process.execPath, '-e', LONG_ANSWER('x'.repeat(5000), 4200)], env: { SEEN: seen } } }
+  const starts = () => readFileSync(seen, 'utf8').split('\n').filter(row => row.startsWith('start '))
+
+  const reply = await run(member, 'big')
+  assert.deepEqual(reply, { failure: { reason: 'error', detail: 'answer exceeded 4096 bytes' } },
+    'the answer existed; it is reported as too large, not as silence')
+  const line = await waitForLine(lines, 'long')
+  assert.doesNotMatch(line.text, /timed out/, 'an over-long answer is not an unanswered turn')
+  assert.match(line.text, /more than 4096 bytes/)
+  assert.equal(driver.snapshot('external:ops:long').state, 'idle')
+
+  // The process was not killed for timing out: the same one answers the next turn.
+  assert.equal(await run(member, 'two'), 'ok: two')
+  assert.equal(starts().length, 1, 'a long answer cost the seat its process')
+})
+
+test('bytes after an over-long line are dropped, never parsed as the answer (#2689)', async (t) => {
+  // The tail after the overflow happens to be a well-formed answer object; it is the remainder of
+  // the line that already overflowed, so it must not settle the turn with its text.
+  const SPLIT_FRAGMENT = `let b='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',c=>{
+  b+=c;
+  let i;
+  while((i=b.indexOf('\\n'))!==-1){
+    const l=b.slice(0,i);
+    b=b.slice(i+1);
+    const m=JSON.parse(l);
+    if(m.type!=='turn')continue;
+    process.stdout.write('{"text":"'+'x'.repeat(4200));
+    setTimeout(()=>process.stdout.write('{"text":"sneaky"}\\n'),60);
+  }
+});`
+  const { rt, run } = fixture(t)
+  rt.roomReplyTimeoutMs = 700
+  const member = { id: 'frag', name: 'Frag', external: { driver: 'subprocess', command: [process.execPath, '-e', SPLIT_FRAGMENT] } }
+  const reply = await run(member, 'big')
+  assert.deepEqual(reply, { failure: { reason: 'error', detail: 'answer exceeded 4096 bytes' } })
+})
+
+test('a long line logged while no turn is open is discarded to its newline, not buffered (#2689)', async (t) => {
+  // A child may log; a log line past the cap must not grow the buffer without bound, and it must
+  // not leave the entry in a state where the next real answer is mangled or the turn fails.
+  const NOISY = `const fs=require('node:fs');
+fs.appendFileSync(process.env.SEEN,'start '+process.pid+'\\n');
+setTimeout(()=>process.stdout.write('z'.repeat(20000)),50);
+setTimeout(()=>process.stdout.write('\\n'),150);
+let b='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',c=>{
+  b+=c;
+  let i;
+  while((i=b.indexOf('\\n'))!==-1){
+    const l=b.slice(0,i);
+    b=b.slice(i+1);
+    const m=JSON.parse(l);
+    if(m.type==='turn')process.stdout.write(JSON.stringify({text:'ok: '+m.text})+'\\n');
+  }
+});`
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const seen = join(dir, 'seen.txt')
+  writeFileSync(seen, '')
+  const { driver, room, lines, run } = fixture(t)
+  const member = { id: 'noisy', name: 'Noisy', external: { driver: 'subprocess', command: [process.execPath, '-e', NOISY], env: { SEEN: seen } } }
+  // `open` starts the process without a turn: the noise line is written while the seat is idle.
+  await driver.open({ room, member })
+  await waitFor(() => readFileSync(seen, 'utf8').includes('start '))
+  // The turn opens after the noise line is closed: the noise never becomes its answer or line.
+  await new Promise(resolve => setTimeout(resolve, 300))
+  assert.equal(await run(member, 'hi'), 'ok: hi')
+  assert.deepEqual(lines.filter(line => line.botId === 'noisy'), [])
+})
+
+test('a log line and a second object next to the answer are still ignored (#2689)', async (t) => {
+  const THREE = `let b='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',c=>{
+  b+=c;
+  let i;
+  while((i=b.indexOf('\\n'))!==-1){
+    const l=b.slice(0,i);
+    b=b.slice(i+1);
+    const m=JSON.parse(l);
+    if(m.type==='turn')process.stdout.write('starting up\\n'+JSON.stringify({text:'ok: '+m.text})+'\\n'+JSON.stringify({text:'not this turn'})+'\\n');
+  }
+});`
+  const { run } = fixture(t)
+  const member = { id: 'three', name: 'Three', external: { driver: 'subprocess', command: [process.execPath, '-e', THREE] } }
+  assert.equal(await run(member, 'one'), 'ok: one')
+  assert.equal(await run(member, 'two'), 'ok: two')
+})
+
 const waitForLine = async (lines, botId, ms = 4000) => {
   await waitFor(() => lines.some(line => line.botId === botId), ms)
   return lines.find(line => line.botId === botId)

@@ -6,7 +6,8 @@
 // The protocol on the child's stdio is one JSON object per line.
 //   in:  { type: 'turn', text, note, from?, exchangeId }   { type: 'stop' }
 //   out: { text }   or   { error }
-// Anything else on stdout is ignored, so a process may log.
+// Anything else on stdout is ignored, so a process may log. A line that outgrows the in-flight
+// buffer is that turn's reported failure, never silence and never a timeout (#2689).
 import { spawn } from 'node:child_process'
 import { ROOM_REPLY_TIMEOUT_MS } from './constants.js'
 
@@ -75,6 +76,8 @@ export function createExternalRoomParticipant(rt) {
   // A state is a sentence the room reads, not a state name: `timeout` reads as `timed out` (#1164).
   function stateLine(member, state, detail) {
     if (state === 'crashed') return `${member.name}'s external process crashed${detail ? ` (${detail})` : ''}. Its turns in this room have no answer until it starts again.`
+    // An over-long line is not a dead or a slow process: the seat keeps it for the next turn.
+    if (state === 'overflow') return oneLine(`${member.name} answered more than ${MAX_OUT} bytes in one line, so that answer was dropped; the process is still running for the next turn.`)
     return `${member.name}'s external process ${state === 'timeout' ? 'timed out' : state}${detail ? ` (${detail})` : ''}.`
   }
 
@@ -108,6 +111,18 @@ export function createExternalRoomParticipant(rt) {
     }
   }
 
+  // An over-long line is the turn's answer with too many bytes to carry, which is why it ends the
+  // turn as a failure instead of ending the child: a timeout means the child will not answer, an
+  // overflow means it answered too large, and only the first one is a reason to kill it (#2689).
+  function settleOverflow(entry) {
+    if (entry.turn === undefined) return false
+    const turn = entry.turn
+    entry.turn = undefined
+    entry.state = 'idle'
+    turn.finish({ failure: { reason: 'error', detail: `answer exceeded ${MAX_OUT} bytes` } })
+    return true
+  }
+
   function start(room, member) {
     const key = keyOf(room, member)
     const known = processes.get(key)
@@ -122,7 +137,7 @@ export function createExternalRoomParticipant(rt) {
       else processes.delete(key)
     }
     const record = member.external
-    const entry = { state: 'starting', detail: undefined, turn: undefined, child: undefined, buffer: '' }
+    const entry = { state: 'starting', detail: undefined, turn: undefined, child: undefined, buffer: '', overflowed: false }
     processes.set(key, entry)
     let child
     try {
@@ -140,6 +155,16 @@ export function createExternalRoomParticipant(rt) {
     entry.state = 'idle'
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk) => {
+      // The line already overflowed: drop its bytes up to the newline that ends it, then settle
+      // the turn it belongs to. Only the tail of the line is kept — long enough to find that
+      // newline, never parsed as an answer (#2689).
+      if (entry.overflowed === true) {
+        const cut = chunk.indexOf('\n')
+        if (cut === -1) return
+        entry.overflowed = false
+        chunk = chunk.slice(cut + 1)
+        if (settleOverflow(entry)) void report(room, member, 'overflow', `answer exceeded ${MAX_OUT} bytes`)
+      }
       entry.buffer += chunk
       let index
       while ((index = entry.buffer.indexOf('\n')) !== -1) {
@@ -147,7 +172,11 @@ export function createExternalRoomParticipant(rt) {
         entry.buffer = entry.buffer.slice(index + 1)
         if (line !== '') settleLine(entry, line)
       }
-      if (entry.buffer.length > MAX_OUT) entry.buffer = ''
+      // Bound the unterminated tail: remember that this line overflowed instead of erasing it.
+      if (entry.buffer.length > MAX_OUT) {
+        entry.overflowed = true
+        entry.buffer = ''
+      }
     })
     child.stdin.on('error', () => {})
     child.stderr.setEncoding('utf8')
