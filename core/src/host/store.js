@@ -340,6 +340,16 @@ export function install(rt) {
       state.prefs.theme = LEGACY_THEMES[state.prefs.theme]
       migrated = true
     }
+    // A room record restored by hand, from another machine or from a version-1 home can carry
+    // no `members` list (or a corrupt value). Every group path reads the field, and the two
+    // calls below used to throw on it: `load()` rejected, `loaded ??=` cached the rejection and
+    // the team never appeared. The record is repaired to an empty list instead of dropped, so
+    // the room stays and the next save writes it whole (#2714).
+    for (const room of Object.values(state.rooms)) {
+      if (Array.isArray(room.members)) continue
+      room.members = []
+      migrated = true
+    }
     // Groups from before group settings existed reply in turn, led by a Main Bot member.
     for (const room of Object.values(state.rooms)) {
       if (room.admin !== undefined && ROOM_MODES.includes(room.mode)) continue

@@ -2448,7 +2448,7 @@ diff --git a/test/store.test.js b/test/store.test.js
  test('dispose waits for a pending save and prevents later writes', async (t) => {
    const { rt, home, statePath, dispose } = runtime(t)
    await rt.load()
-@@ -285,3 +285,94 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
+@@ -285,3 +285,155 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
      restore()
    }
  })
@@ -2542,6 +2542,67 @@ diff --git a/test/store.test.js b/test/store.test.js
 +  assert.equal(fs.readFileSync(statePath, 'utf8'), before, 'the state file kept what it had')
 +  assert.ok(warnings.some(line => /not a plain file/.test(line.join(' '))), 'the refusal is named')
 +  assert.ok(warnings.some(line => line.join(' ').includes(`${statePath}.${process.pid}.tmp`)), 'the warning names the temp path')
++})
++
++// #2714: a room record that carries no `members` list (a hand edit, a restore from another
++// machine, a half-written state, or a version-1 room from before the field existed) made
++// adopt() throw inside load(); `loaded ??=` then cached the rejection, so every later load()
++// rejected too, with no warning and no repair path. The room is kept and the list is repaired.
++const team = (rooms) => ({
++  version: 2,
++  revision: 1,
++  mainBotIds: ['a'],
++  members: { 'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' } },
++  bots: { a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'a', createdAt: 1, ownerId: 'owner-1' } },
++  rooms,
++  agents: {},
++  exchanges: [],
++})
++
++test('a version-2 room record with no members keeps load() resolving and the room (#2714)', async (t) => {
++  const { rt, statePath } = runtime(t, team({
++    broken: { id: 'broken', name: 'Ops', mode: 'everyone', sessions: {} },
++    kept: { id: 'kept', name: 'Lab', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {} },
++  }))
++  await rt.load()
++  assert.equal(rt.readOnly(), undefined, 'the file is not refused read-only')
++  assert.deepEqual(Object.keys(rt.state.rooms).sort(), ['broken', 'kept'], 'the room with no members is kept')
++  assert.deepEqual(rt.state.rooms.broken.members, [], 'the room list is repaired to an empty one')
++  assert.equal(rt.state.rooms.kept.name, 'Lab', 'the other room is untouched')
++  await rt.load()
++  const saved = JSON.parse(fs.readFileSync(statePath, 'utf8'))
++  assert.deepEqual(saved.rooms.broken.members, [], 'the repair is saved, so the next start reads it whole')
++  assert.deepEqual(saved.rooms.kept.members, ['a'])
++})
++
++test('a version-2 room record whose members is null keeps load() resolving and the room (#2714)', async (t) => {
++  const { rt } = runtime(t, team({
++    // `admin` and a valid mode keep the first adopt() loop off the field, so this fixture reaches
++    // the autoRoomName call that maps it — the second of the two throwing lines.
++    broken: { id: 'broken', name: '', members: null, mode: 'admin', admin: 'a', named: false, sessions: {} },
++  }))
++  rt.autoRoomName = members => members.map(id => id).join(', ') || 'Room'
++  await rt.load()
++  assert.equal(rt.readOnly(), undefined)
++  assert.deepEqual(rt.state.rooms.broken.members, [])
++  assert.equal(rt.state.rooms.broken.name, 'Room', 'the unnamed room is named from its repaired list')
++  await rt.load()
++  assert.deepEqual(rt.state.rooms.broken.members, [])
++})
++
++test('a version-1 home with a room that has no members keeps load() resolving (#2714)', async (t) => {
++  const { rt, statePath } = runtime(t, {
++    version: 1,
++    mainBotId: 'chief',
++    bots: { chief: { id: 'chief', name: 'Chief' } },
++    rooms: { legacy: { id: 'legacy', name: '', mode: 'everyone', sessions: {} } },
++  })
++  await rt.load()
++  assert.equal(rt.readOnly(), undefined, 'the home is not left half-migrated and read-only')
++  assert.ok(rt.state.rooms.legacy, 'the legacy room survives the migration')
++  assert.deepEqual(rt.state.rooms.legacy.members, [])
++  assert.equal(fs.existsSync(`${statePath}.v1`), true, 'the version-1 backup is still taken')
++  await rt.load()
 +})
 diff --git a/test/update.test.js b/test/update.test.js
 --- a/test/update.test.js
