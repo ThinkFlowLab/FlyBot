@@ -82,7 +82,12 @@ function writeWhole(dir, path, value) {
 const segmentName = n => `trace-${String(n).padStart(6, '0')}.json`
 
 // Opens (and creates) the trace in `dir`. `persist: false` keeps everything in memory.
-export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}, ...limits } = {}) {
+//
+// `retryLock: true` answers a memory-only trace instead of throwing when another live process
+// holds the writer lock; that trace asks for the lock again on every flush (and on its flush
+// timer) and adopts everything already on disk when it gets it. Without the option a held lock
+// still refuses the open, which is what a caller that wants one writer at a time relies on.
+export function openTrace({ dir, persist = true, retryLock = false, now = Date.now, warn = () => {}, ...limits } = {}) {
   const { segmentRecords, segments, retentionMs, flushMs } = { ...DEFAULTS, ...limits }
   if (persist && typeof dir !== 'string') throw new Error('openTrace needs a directory')
   /** @type {{ n: number, startedAt: number, names: Record<string, Record<string, string>>, records: object[] }[]} */
@@ -92,6 +97,35 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
   let dirty = false
   let closed = false
   let failures = 0
+  let persisting = persist
+  let deferred = false
+  let lockFailure
+  let lockWarned = false
+
+  const release = () => {
+    if (!lock) return
+    held.delete(dir)
+    try { unlinkSync(lock) } catch { /* already gone */ }
+    lock = undefined
+  }
+
+  // Reads the segments already in `dir` into `kept`. A segment that does not parse is set aside
+  // and never read again; a directory that cannot be listed throws to the caller.
+  const load = () => {
+    const files = readdirSync(dir).filter(name => SEGMENT.test(name)).sort()
+    for (const name of files) {
+      try {
+        const data = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+        if (data?.version !== TRACE_VERSION || !Array.isArray(data.records)) throw new Error('not a trace segment')
+        const names = data.names && typeof data.names === 'object' ? data.names : {}
+        kept.push({ n: Number(SEGMENT.exec(name)[1]), startedAt: Number(data.startedAt) || 0, names, records: data.records, saved: data.records.length, savedNames: JSON.stringify(names) })
+      } catch (error) {
+        // Never crash the host over the trace, and never read the same bad file every start.
+        warn('flybot-timeline: trace segment %s is unreadable (%s); it is set aside', name, error?.message ?? error)
+        try { renameSync(join(dir, name), join(dir, `${name}.corrupt`)) } catch { /* it is ignored either way */ }
+      }
+    }
+  }
 
   // Everything between taking the lock and answering the trace can throw: a directory that
   // cannot be listed, a segment read, a prune. A refused open has to give the lock back the way
@@ -100,20 +134,16 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
   try {
     if (persist) {
       mkdirSync(dir, { recursive: true, mode: 0o700 })
-      lock = acquire(dir)
-      const files = readdirSync(dir).filter(name => SEGMENT.test(name)).sort()
-      for (const name of files) {
-        try {
-          const data = JSON.parse(readFileSync(join(dir, name), 'utf8'))
-          if (data?.version !== TRACE_VERSION || !Array.isArray(data.records)) throw new Error('not a trace segment')
-          const names = data.names && typeof data.names === 'object' ? data.names : {}
-          kept.push({ n: Number(SEGMENT.exec(name)[1]), startedAt: Number(data.startedAt) || 0, names, records: data.records, saved: data.records.length, savedNames: JSON.stringify(names) })
-        } catch (error) {
-          // Never crash the host over the trace, and never read the same bad file every start.
-          warn('flybot-timeline: trace segment %s is unreadable (%s); it is set aside', name, error?.message ?? error)
-          try { renameSync(join(dir, name), join(dir, `${name}.corrupt`)) } catch { /* it is ignored either way */ }
-        }
+      try {
+        lock = acquire(dir)
+      } catch (error) {
+        if (!(retryLock && error instanceof TraceLocked)) throw error
+        // Another writer is live: keep in memory and ask again when there is something to write.
+        lockFailure = error
+        persisting = false
+        deferred = true
       }
+      if (!deferred) load()
     }
     const fresh = () => ({ n: (kept.at(-1)?.n ?? 0) + 1, startedAt: now(), names: {}, records: [] })
     const newest = () => {
@@ -122,10 +152,54 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
     }
     newest()
 
+    // Takes the lock that was held at open, and continues after the newest segment already on
+    // disk: the records collected while deferred are newer than every one of those, so they go
+    // into a segment of their own and the older segments are read, never overwritten.
+    const adopt = () => {
+      if (!deferred) return true
+      try {
+        lock = acquire(dir)
+      } catch (error) {
+        lockFailure = error
+        return false
+      }
+      const pending = kept
+      try {
+        kept = []
+        load()
+        if (pending.some(segment => segment.records.length > 0)) kept.push(fresh())
+        const target = newest()
+        for (const segment of pending) {
+          target.records.push(...segment.records)
+          for (const [group, table] of Object.entries(segment.names)) {
+            target.names[group] ??= {}
+            Object.assign(target.names[group], table)
+          }
+        }
+        persisting = true
+        prune()
+      } catch (error) {
+        // A directory that can be written but not read: give the lock back and stay in memory.
+        release()
+        kept = pending
+        persisting = false
+        lockFailure = error
+        return false
+      }
+      deferred = false
+      return true
+    }
     const flush = () => {
       clearTimeout(timer)
       timer = undefined
-      if (!persist || !dirty) return true
+      if (deferred && dirty && !adopt()) {
+        if (!lockWarned) {
+          lockWarned = true
+          warn('flybot-timeline: the trace in %s is not writable yet (%s); keeping %d record(s) in memory and asking for the writer lock again', dir, lockFailure?.message ?? lockFailure, kept.reduce((sum, segment) => sum + segment.records.length, 0))
+        }
+        return false
+      }
+      if (!persisting || !dirty) return true
       try {
         for (const segment of kept) {
           if (segment.saved === segment.records.length && segment.savedNames === JSON.stringify(segment.names)) continue
@@ -143,7 +217,7 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
       }
     }
     const schedule = () => {
-      if (!persist || timer !== undefined || closed) return
+      if (timer !== undefined || closed || (!persisting && !deferred)) return
       timer = setTimeout(flush, flushMs)
       timer.unref?.()
     }
@@ -154,9 +228,9 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
       const expired = segment => segment.records.length > 0 && segment.records.every(record => record.t < floor)
       while (kept.length > 1 && (kept.length > segments || expired(kept[0]))) {
         const [old] = kept.splice(0, 1)
-        if (persist) { try { unlinkSync(join(dir, segmentName(old.n))) } catch { /* already gone */ } }
+        if (persisting) { try { unlinkSync(join(dir, segmentName(old.n))) } catch { /* already gone */ } }
       }
-      if (!persist) return
+      if (!persisting) return
       for (const name of readdirSync(dir)) {
         const match = /^trace-(\d{6})\.json\.corrupt$/.exec(name)
         if (match && Number(match[1]) < kept[0].n) { try { unlinkSync(join(dir, name)) } catch { /* already gone */ } }
@@ -199,25 +273,19 @@ export function openTrace({ dir, persist = true, now = Date.now, warn = () => {}
         return out
       },
       flush,
-      stats: () => ({ segments: kept.length, records: kept.reduce((sum, segment) => sum + segment.records.length, 0), segmentRecords, maxSegments: segments, retentionMs, persist, failing: failures > 0 }),
+      stats: () => ({ segments: kept.length, records: kept.reduce((sum, segment) => sum + segment.records.length, 0), segmentRecords, maxSegments: segments, retentionMs, persist: persisting, failing: failures > 0, ...(deferred ? { deferred: true } : {}) }),
       close() {
         if (closed) return
         flush()
         closed = true
         clearTimeout(timer)
-        if (lock) {
-          held.delete(dir)
-          try { unlinkSync(lock) } catch { /* already gone */ }
-        }
+        release()
       },
     }
   } catch (error) {
     // A refused open leaves nothing behind: the directory leaves `held` and the lock file goes,
     // exactly as `close()` would have done it.
-    if (lock) {
-      held.delete(dir)
-      try { unlinkSync(lock) } catch { /* already gone */ }
-    }
+    release()
     throw error
   }
 }
