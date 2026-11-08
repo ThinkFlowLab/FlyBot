@@ -1601,7 +1601,9 @@ window.__ModuleLoader__.load({
         const bot = locals.find(item => item.id === botId)
         if (!bot) return
         setSteps(list => {
-          const node = { id: `n${list.length + 1}`, botId: bot.id, name: bot.name, role: bot.role ?? '' }
+          // Parallel joins the last layer, so the layer count stops moving; allocate over the
+          // flat node list or a third Bot takes the second one's id and the host refuses (#2663).
+          const node = { id: nextNodeId(list.flat()), botId: bot.id, name: bot.name, role: bot.role ?? '' }
           if (parallel && list.length > 0) {
             const next = list.slice()
             next[next.length - 1] = [...next[next.length - 1], node]
