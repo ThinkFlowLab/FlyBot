@@ -2,12 +2,13 @@
 // host on the same data from writing it, and the indexes that map a Session to the Bot
 // or group chat it belongs to.
 import { randomUUID } from 'node:crypto'
-import { constants, mkdirSync, statSync } from 'node:fs'
-import { copyFile, lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { constants, statSync } from 'node:fs'
+import { copyFile, lstat, readFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 import { homeLock } from './home-lock.js'
 import { openJournal } from './journal.js'
+import { ensurePrivateDir, ensurePrivateDirSync, stagePrivateFile } from './private-files.js'
 import { tempWritable } from './real-dir.js'
 import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
 import { codePoints, currentColor, cut, normalize, unquote } from './text.js'
@@ -95,7 +96,9 @@ export function install(rt) {
   const claimLock = () => {
     if (lockBroken) return
     try {
-      mkdirSync(home, { recursive: true })
+      // The home holds the team file, the chat index and the OCR cache: the host's own folder, so
+      // it is created private and an existing one is narrowed to the same mode (#2697).
+      ensurePrivateDirSync(home)
       holder = lock.claim()
     } catch (error) {
       // An unusable lock (a read-only or odd file system) must not stop the team; a
@@ -978,7 +981,7 @@ export function install(rt) {
       // outside the home and the rename would put the link over state.json (temp-name sweep).
       if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so the Bot team was not written there.`)
       try {
-        await mkdir(home, { recursive: true })
+        await ensurePrivateDir(home)
         const ensureLock = () => {
           if (lockBroken) return
           if (!lock.owns()) {
@@ -988,7 +991,9 @@ export function install(rt) {
           }
         }
         ensureLock()
-        await writeFile(temp, snapshot, 'utf8')
+        // The team file holds the messages and the saved keys, so the temp name is written at the
+        // mode the file it replaces already has — the owner's `chmod 0600` survives the save (#2697).
+        await stagePrivateFile(temp, statePath, snapshot)
         ensureLock()
         // The rename replaces the name, link included, so a linked team file is never written
         // through: its target keeps every byte and its last write time. Ask the name here, before

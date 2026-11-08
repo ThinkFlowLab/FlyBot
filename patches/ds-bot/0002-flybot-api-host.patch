@@ -824,21 +824,22 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,77 @@
+@@ -1,21 +1,78 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
 -import { mkdirSync, statSync } from 'node:fs'
 -import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 +import { randomUUID } from 'node:crypto'
-+import { constants, mkdirSync, statSync } from 'node:fs'
-+import { copyFile, lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
++import { constants, statSync } from 'node:fs'
++import { copyFile, lstat, readFile, rename, unlink } from 'node:fs/promises'
  import { join } from 'node:path'
 -import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
 +import { LEGACY_THEMES, MAX_ENTRY, MAX_EXCHANGES, ROOM_MODES } from './constants.js'
  import { homeLock } from './home-lock.js'
 -import { currentColor, normalize, unquote } from './text.js'
 +import { openJournal } from './journal.js'
++import { ensurePrivateDir, ensurePrivateDirSync, stagePrivateFile } from './private-files.js'
 +import { tempWritable } from './real-dir.js'
 +import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
 +import { codePoints, currentColor, cut, normalize, unquote } from './text.js'
@@ -909,6 +910,17 @@ diff --git a/src/host/store.js b/src/host/store.js
  
    const EMPTY = JSON.stringify(state)
    // The other dsh host that holds state.lock while this one only reads (see home-lock.js);
+@@ -39,7 +39,9 @@ export function install(rt) {
+   const claimLock = () => {
+     if (lockBroken) return
+     try {
+-      mkdirSync(home, { recursive: true })
++      // The home holds the team file, the chat index and the OCR cache: the host's own folder, so
++      // it is created private and an existing one is narrowed to the same mode (#2697).
++      ensurePrivateDirSync(home)
+       holder = lock.claim()
+     } catch (error) {
+       // An unusable lock (a read-only or odd file system) must not stop the team; a
 @@ -50,12 +50,88 @@ export function install(rt) {
      }
    }
@@ -1625,7 +1637,7 @@ diff --git a/src/host/store.js b/src/host/store.js
          warnedReadOnly = false
          adopt(await readFileState())
          return
-@@ -235,16 +235,58 @@ export function install(rt) {
+@@ -235,18 +235,60 @@ export function install(rt) {
      return warnReadOnly()
    }
  
@@ -1682,11 +1694,19 @@ diff --git a/src/host/store.js b/src/host/store.js
 +      // outside the home and the rename would put the link over state.json (temp-name sweep).
 +      if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so the Bot team was not written there.`)
        try {
-         await mkdir(home, { recursive: true })
+-        await mkdir(home, { recursive: true })
++        await ensurePrivateDir(home)
          const ensureLock = () => {
-@@ -258,11 +258,17 @@ export function install(rt) {
+           if (lockBroken) return
+           if (!lock.owns()) {
+@@ -256,13 +256,21 @@ export function install(rt) {
+           }
+         }
          ensureLock()
-         await writeFile(temp, snapshot, 'utf8')
+-        await writeFile(temp, snapshot, 'utf8')
++        // The team file holds the messages and the saved keys, so the temp name is written at the
++        // mode the file it replaces already has — the owner's `chmod 0600` survives the save (#2697).
++        await stagePrivateFile(temp, statePath, snapshot)
          ensureLock()
 +        // The rename replaces the name, link included, so a linked team file is never written
 +        // through: its target keeps every byte and its last write time. Ask the name here, before

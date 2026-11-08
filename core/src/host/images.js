@@ -2,10 +2,11 @@
 // reaches a model that cannot read them, each image becomes text from a vision model.
 // Texts are kept per attachment, so later requests repeat the same words and the
 // prompt cache still hits.
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { OCR_CACHE_MAX, OCR_PROMPT, OCR_RETRY_MS, OCR_TIMEOUT_MS } from './constants.js'
+import { ensurePrivateDir, replacePrivateFile } from './private-files.js'
 import { tempWritable } from './real-dir.js'
 import { splitRef } from './text.js'
 
@@ -130,13 +131,13 @@ export function install(rt) {
     while (ocrCache.size > OCR_CACHE_MAX) ocrCache.delete(ocrCache.keys().next().value)
     const snapshot = JSON.stringify(Object.fromEntries(ocrCache))
     ocrWriting = ocrWriting.then(async () => {
-      await mkdir(home, { recursive: true })
+      await ensurePrivateDir(home)
       const temp = `${ocrPath}.${process.pid}.tmp`
       // The temp name is a leaf like the cache: a link there would take the readings outside
-      // the home and the rename would put the link over ocr.json (temp-name sweep).
+      // the home and the rename would put the link over ocr.json (temp-name sweep). The readings
+      // are the user's own images, so the cache is private like the team file (#2697).
       if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so the OCR cache was not written there.`)
-      await writeFile(temp, snapshot, 'utf8')
-      await rename(temp, ocrPath)
+      await replacePrivateFile(temp, ocrPath, snapshot)
     }).catch(error => rt.warn('ds-bot: OCR cache write failed: %s', error))
   }
 

@@ -7,9 +7,10 @@
 // The index is derived from the Session logs: a part catches up when it is read, an
 // ended part is sealed once it is complete, and deleting the file only costs a
 // rebuild. Without SQLite, read_own_chat scans the logs as before.
-import { mkdir, unlink } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ANCHOR_LINE_MAX, HISTORY_PAGE, HISTORY_PAGES_MAX, HISTORY_TIMEOUT_MS, OWN_CHAT_BRIEF, OWN_CHAT_LINE_MAX, OWN_CHAT_READ, OWN_CHAT_SEARCH } from './constants.js'
+import { ensurePrivateDir, tightenFile } from './private-files.js'
 import { excerpt } from './text.js'
 
 const INDEX_VERSION = 3
@@ -90,13 +91,22 @@ export function install(rt) {
     }
   }
 
+  // The index is a full-text copy of every part of a Bot's own chat, so SQLite's files are private
+  // like the rest of the home (#2697). SQLite creates them itself, with the ambient mode, so what
+  // exists is tightened right after it is made; `-wal` and `-shm` appear at the first write, which
+  // is why the home is made private as well.
+  async function hardenIndex() {
+    await ensurePrivateDir(home)
+    for (const file of [indexPath, `${indexPath}-wal`, `${indexPath}-shm`]) await tightenFile(file)
+  }
+
   function openIndex() {
     if (chatIndex !== undefined) return Promise.resolve(chatIndex)
     const opening = indexOpening ??= (async () => {
       let DatabaseSync
       try {
         ({ DatabaseSync } = await import('node:sqlite'))
-        await mkdir(home, { recursive: true })
+        await ensurePrivateDir(home)
       } catch (error) {
         rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
         return null
@@ -105,7 +115,9 @@ export function install(rt) {
       for (const fresh of [false, true]) {
         try {
           if (fresh) await unlink(indexPath).catch(() => { /* the index file may not exist yet */ })
-          return createIndex(new DatabaseSync(indexPath))
+          const index = createIndex(new DatabaseSync(indexPath))
+          await hardenIndex().catch(error => rt.warn('ds-bot: the chat index could not be made private: %s', error))
+          return index
         } catch (error) {
           if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
         }
@@ -135,6 +147,7 @@ export function install(rt) {
       }
       return {
         db,
+        hardened: false,
         mark: db.prepare('SELECT through, keep, sealed, turn FROM marks WHERE session = ?'),
         setMark: db.prepare('INSERT OR REPLACE INTO marks (session, through, keep, sealed, turn) VALUES (?, ?, ?, ?, ?)'),
         insert: db.prepare('INSERT INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
@@ -192,6 +205,11 @@ export function install(rt) {
         }
         index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn)
         index.db.exec('COMMIT')
+        // The first commit is what makes `-wal`/`-shm`, so the modes are put right once it exists.
+        if (!index.hardened) {
+          index.hardened = true
+          await hardenIndex().catch(error => rt.warn('ds-bot: the chat index could not be made private: %s', error))
+        }
       } catch (error) {
         index.db.exec('ROLLBACK')
         throw error
