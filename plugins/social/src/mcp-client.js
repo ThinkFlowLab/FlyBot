@@ -7,6 +7,7 @@
 
 import http from 'node:http'
 import https from 'node:https'
+import { cutCodePoints } from './code-points.js'
 
 const UNTRUSTED = /^[\s\S]*?\n([\s\S]*)\n[^\n]*$/
 const GRANT_CONCURRENCY = 4
@@ -252,7 +253,7 @@ export function grantPersonView(grant) {
   // grant is synced again; only a bare handle falls back to the home (#275).
   const rawName = (personNameOf(grant?.name) || personNameOf(peer) || personNameOf(grant)).replace(/\s*\(@[^()\s]+\)\s*$/, '')
   const nameLooksLikeHandle = /@/.test(rawName) || /[a-z0-9]+@[a-z0-9.]/i.test(rawName)
-  const person = (!nameLooksLikeHandle && rawName) ? rawName.replace(/\s+/g, ' ').trim().slice(0, 60) : titleHome(home)
+  const person = (!nameLooksLikeHandle && rawName) ? cutCodePoints(rawName.replace(/\s+/g, ' ').trim(), 60) : titleHome(home)
   const label = home ? `${person} (${home})` : person
   return { home, member, person, label }
 }
