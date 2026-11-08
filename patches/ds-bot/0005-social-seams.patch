@@ -618,8 +618,13 @@ diff --git a/src/host/channel.js b/src/host/channel.js
          case 'duplicate-bot':
            await rt.load()
            return ok(await rt.duplicateBot(body.id))
-@@ -141,7 +141,7 @@ export function install(rt) {
-           return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
+@@ -140,8 +140,10 @@ export function install(rt) {
+-        case 'room-progress':
+-          return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
++        case 'room-progress': {
++          const id = roomTargetOf(body)
++          return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === id).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
++        }
          case 'create-bot': {
            await rt.bootstrap()
 -          const bot = await rt.createBot({ name: body.name, role: body.role, color: body.color, instructions: body.instructions, brief: body.brief, avatar: body.avatar, model: body.model, effort: body.effort, workDir: body.workDir })

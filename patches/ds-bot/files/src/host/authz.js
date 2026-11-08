@@ -385,7 +385,7 @@ export function install(rt) {
         return deny('bot/forbidden', 'You do not own that room or one of its Bots')
       }
       if (ep === 'room-history' || ep === 'room-progress' || ep === 'room-post') {
-        const id = body?.id ?? body?.roomId
+        const id = roomTargetOf(body)
         return roomMemberOf(actor, id) || roomOwnedBy(actor, id) ? ALLOW : deny('bot/forbidden', 'You are not a member of that room')
       }
       if (ep === 'room-invite') {
