@@ -4,7 +4,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isApprovalWaiting } from '../shared/approval-waiting.js'
 import { questionReply } from './parts.js'
 import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
-import { isFaceRoom } from './room-membership.js'
+import { isFaceRoom, roomTargetOf } from './room-membership.js'
 import { readQuietHours } from '../shared/quiet-hours.js'
 import { readTurnBudget } from './turn-budget.js'
 import { faceMentions } from './face-mentions.js'
@@ -359,8 +359,10 @@ export function install(rt) {
         case 'usage':
           await rt.load()
           return ok(await rt.usageView({ timeZone: typeof body.timeZone === 'string' ? body.timeZone.slice(0, 64) : undefined }))
-        case 'room-progress':
-          return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === body.roomId).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
+        case 'room-progress': {
+          const id = roomTargetOf(body)
+          return ok([...rt.roomProgress.entries()].filter(([, entry]) => entry.roomId === id).map(([callId, entry]) => ({ callId, replies: entry.replies, speaking: entry.speaking ?? null })))
+        }
         case 'create-bot': {
           await rt.bootstrap()
           const bot = await rt.createBot({ name: body.name, role: body.role, color: body.color, instructions: body.instructions, brief: body.brief, avatar: body.avatar, model: body.model, effort: body.effort, workDir: body.workDir, ownerId: rt.authzEnforced() ? actor.memberId : undefined })
@@ -428,21 +430,23 @@ export function install(rt) {
         }
         // #876: the room's own link. Reading it is what the Members card shows (copy and the
         // countdown); minting replaces the live ticket, withdrawing stops answering at once.
+        // The gate checks the room this body resolves to (#2652): the handler must resolve it the
+        // same way, or `{ id: <mine>, roomId: <theirs> }` passes on one room and writes the other.
         case 'room-invite': {
           await rt.load()
-          const roomId = String(body.roomId ?? body.id ?? '')
+          const roomId = String(roomTargetOf(body) ?? '')
           const invite = rt.localInviteOf(roomId)
           // #878: every open link of the room; `invite` stays the newest, for the card that shows one.
           return ok({ invite: invite ?? null, invites: rt.localInvitesOf(roomId) })
         }
         case 'room-invite-mint': {
           await rt.load()
-          return ok({ invite: await rt.mintRoomInvite(String(body.roomId ?? body.id ?? ''), actor) })
+          return ok({ invite: await rt.mintRoomInvite(String(roomTargetOf(body) ?? ''), actor) })
         }
         case 'room-invite-revoke': {
           await rt.load()
           const ticket = typeof body.ticket === 'string' && body.ticket ? body.ticket : undefined
-          return ok(await rt.revokeRoomInvite(String(body.roomId ?? body.id ?? ''), ticket))
+          return ok(await rt.revokeRoomInvite(String(roomTargetOf(body) ?? ''), ticket))
         }
         // The invitee's side: what the link is (Bot Social's record when there is one), before Join.
         case 'room-invite-preview': {
@@ -459,7 +463,7 @@ export function install(rt) {
         // that did not leave). Same read as the poll, with the retries reset.
         case 'room-invite-seat': {
           await rt.load()
-          const roomId = String(body.roomId ?? body.id ?? '')
+          const roomId = String(roomTargetOf(body) ?? '')
           const seated = await rt.seatOpenClaims({ roomId, force: true })
           return ok({ ...seated, invite: rt.localInviteOf(roomId) ?? null, invites: rt.localInvitesOf(roomId) })
         }
