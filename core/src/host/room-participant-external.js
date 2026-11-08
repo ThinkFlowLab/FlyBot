@@ -81,12 +81,14 @@ export function createExternalRoomParticipant(rt) {
     return `${member.name}'s external process ${state === 'timeout' ? 'timed out' : state}${detail ? ` (${detail})` : ''}.`
   }
 
-  // A crash line carries the child's last words, flattened and capped, so `exit 1` is diagnosable
-  // from the room itself (#1164).
+  // The child's last words, flattened and capped, are this host's diagnosis (#1164).
   const tailOf = (entry) => String(entry.stderr ?? '').slice(-STDERR_TAIL).replace(/[\r\n]+/g, ' ').trim().slice(0, STDERR_TAIL)
   // The room sees what happened to its participant, not just a turn that never came back (#198).
-  async function report(room, member, state, detail) {
-    rt.warn?.('ds-bot: external Bot %s in %s: %s%s', member.name, room.name, state, detail ? ` (${detail})` : '')
+  // `roomDetail` is the part the room may read — an exit code, a signal name, a timeout reason — and
+  // `logDetail` is this host's diagnosis (the stderr tail, a spawn error naming a file): a room line is
+  // fanned out to the room's other homes, so only the log keeps the detail (#2699).
+  async function report(room, member, state, roomDetail, logDetail = roomDetail) {
+    rt.warn?.('ds-bot: external Bot %s in %s: %s%s', member.name, room.name, state, logDetail ? ` (${logDetail})` : '')
     try {
       await rt.externalRoomLine?.(room, {
         who: member.name,
@@ -94,7 +96,7 @@ export function createExternalRoomParticipant(rt) {
         authorId: member.id,
         authorKind: 'bot',
         kind: 'external',
-        text: stateLine(member, state, detail),
+        text: stateLine(member, state, roomDetail),
       })
     } catch (error) {
       rt.warn?.('ds-bot: the state of %s in %s was not posted: %s', member.name, room.name, error)
@@ -148,7 +150,7 @@ export function createExternalRoomParticipant(rt) {
       })
     } catch (error) {
       settle(entry, 'crashed', oneLine(error?.message ?? error))
-      void report(room, member, 'crashed', entry.detail)
+      void report(room, member, 'crashed', undefined, entry.detail)
       return entry
     }
     entry.child = child
@@ -192,7 +194,7 @@ export function createExternalRoomParticipant(rt) {
       entry.child = undefined
       entry.reported = true
       settle(entry, 'crashed', oneLine(error?.message ?? error))
-      void report(room, member, 'crashed', entry.detail)
+      void report(room, member, 'crashed', undefined, entry.detail)
     })
     const reportExit = (code, signal) => {
       // One line either way: whichever of 'exit' and 'close' reports first wins (#1164).
@@ -202,11 +204,12 @@ export function createExternalRoomParticipant(rt) {
       // room should hear about: it stopped when asked, so no 'crashed' line (#198).
       if (entry.state === 'stopped' || entry.stopping === true) return
       const clean = code === 0
-      const detail = signal !== null ? `signal ${signal}` : `exit ${code}`
+      const ending = signal !== null ? `signal ${signal}` : `exit ${code}`
       const tail = clean ? '' : tailOf(entry)
-      const said = tail === '' ? detail : `${detail}: ${tail}`
-      settle(entry, clean ? 'exited' : 'crashed', said)
-      void report(room, member, entry.state, said)
+      // The room hears how the process ended; its last words stay in the log, where the owner reads
+      // them and a seat on another home cannot (#2699).
+      settle(entry, clean ? 'exited' : 'crashed', tail === '' ? ending : `${ending}: ${tail}`)
+      void report(room, member, entry.state, ending, entry.detail)
       entry.stopping = false
     }
     // 'exit' must free the seat at once — otherwise the next turn writes into a dead child and the
@@ -339,7 +342,7 @@ export function createExternalRoomParticipant(rt) {
       entry.child.stdin.write(`${JSON.stringify({ type: 'turn', text, note, ...(by ? { from: by } : {}), exchangeId })}\n`)
     } catch (error) {
       settle(entry, 'crashed', oneLine(error?.message ?? error))
-      void report(room, member, 'crashed', entry.detail)
+      void report(room, member, 'crashed', undefined, entry.detail)
     }
     return done
   }

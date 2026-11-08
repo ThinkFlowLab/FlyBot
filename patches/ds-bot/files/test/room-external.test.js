@@ -11,10 +11,11 @@ const DIE = 'process.exit(3)'
 
 function fixture(t) {
   const lines = []
+  const warnings = []
   const rt = {
     live: new Map(), groupOwners: new Map(), roomWaiters: new Map(),
     workDirOf: () => undefined,
-    warn: () => {},
+    warn: (...args) => warnings.push(args.join(' ')),
     externalRoomLine: async (room, line) => { lines.push({ roomId: room.id, ...line }); return line },
   }
   const driver = createExternalRoomParticipant(rt)
@@ -25,7 +26,7 @@ function fixture(t) {
     room, member, sessionId: `external:ops:${member.id}`, text, note: 'your turn',
     signal: controller.signal, started: [], by: 'chief', exchangeId: `x-${member.id}`,
   })
-  return { driver, rt, room, lines, run }
+  return { driver, rt, room, lines, warnings, run }
 }
 
 test('an external Bot whose process dies answers with a failure and lands in the room, not in silence (#198)', async (t) => {
@@ -233,20 +234,27 @@ test('the timeout state line says timed out (#1164)', async (t) => {
   assert.doesNotMatch(entry.text, /process timeout/)
 })
 
-test('a crash line carries the last words from stderr (#1164)', async (t) => {
+test('a crash line reports the ending, and the last words stay in this host\'s log (#1164, #2699)', async (t) => {
   const BOOM = "process.stderr.write('boom: missing config\\n',()=>process.exit(3))"
-  const { lines, run } = fixture(t)
+  const { lines, warnings, run } = fixture(t)
   const member = { id: 'boom', name: 'Boom', external: { driver: 'subprocess', command: [process.execPath, '-e', BOOM] } }
   assert.equal((await run(member))?.failure?.reason, 'crashed')
   const entry = await waitForLine(lines, 'boom')
-  assert.match(entry.text, /crashed \(exit 3: boom: missing config\)/)
+  assert.match(entry.text, /crashed \(exit 3\)/)
+  // The room reads how the process ended; its last words name this host's files, and the room's line
+  // is read by the other homes in it (#2699).
+  assert.doesNotMatch(entry.text, /missing config/)
+  assert.ok(warnings.some(line => line.includes('boom: missing config')), 'the log keeps what the child said')
   // The tail is capped: 400 characters of stderr keep only the last 200.
   const NOISE = "process.stderr.write('x'.repeat(400),()=>process.exit(3))"
   const noisy = { id: 'noise', name: 'Noise', external: { driver: 'subprocess', command: [process.execPath, '-e', NOISE] } }
   assert.equal((await run(noisy))?.failure?.reason, 'crashed')
   const noise = await waitForLine(lines, 'noise')
-  assert.match(noise.text, /x{200}/)
-  assert.doesNotMatch(noise.text, /x{201}/)
+  assert.match(noise.text, /crashed \(exit 3\)/)
+  assert.doesNotMatch(noise.text, /x{2,}/)
+  const logged = warnings.find(line => line.includes('xxxxxxxx')) ?? ''
+  assert.match(logged, /x{200}/)
+  assert.doesNotMatch(logged, /x{201}/)
 })
 test('a crash is reported when a grandchild holds the stdio open (#1164)', async (t) => {
   // On the first launch the child leaves a grandchild on its inherited stdio and exits 1, so
@@ -256,14 +264,16 @@ test('a crash is reported when a grandchild holds the stdio open (#1164)', async
   const HELD = "const fs=require('node:fs');const cp=require('node:child_process');if(!fs.existsSync(process.env.MARK)){fs.writeFileSync(process.env.MARK,'1');fs.writeSync(2,'boom: helper holds the pipe\\n');cp.spawn(process.execPath,['-e','setTimeout(()=>{},1200)'],{stdio:'inherit'});process.exit(1)}let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);const m=JSON.parse(l);if(m.type==='turn')process.stdout.write(JSON.stringify({text:'again: '+m.text})+'\\n')}})"
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const mark = join(dir, 'mark')
-  const { lines, run } = fixture(t)
+  const { lines, warnings, run } = fixture(t)
   const member = { id: 'held', name: 'Held', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { MARK: mark } } }
   const started = Date.now()
   const first = run(member)
   // 900 ms is before the grandchild's 1.2 s: only reporting from 'exit' can meet this.
   const entry = await waitForLine(lines, 'held', 900)
   const elapsed = Date.now() - started
-  assert.match(entry.text, /crashed \(exit 1: boom: helper holds the pipe\)/)
+  assert.match(entry.text, /crashed \(exit 1\)/)
+  assert.doesNotMatch(entry.text, /helper holds the pipe/)
+  assert.ok(warnings.some(line => line.includes('helper holds the pipe')), 'the log keeps what the child said')
   assert.ok(elapsed < 900, `the crash line waited for close (${elapsed} ms)`)
   assert.equal((await first)?.failure?.reason, 'crashed')
   // The seat was cleared on 'exit', so the next turn reaches a fresh process, not a dead pipe.

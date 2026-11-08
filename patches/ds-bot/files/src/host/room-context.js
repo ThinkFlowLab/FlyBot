@@ -105,9 +105,20 @@ const FENCED_LINE = /^<untrusted-message from="([^"]*)">\n?([\s\S]*?)\n?<\/untru
 
 // Bot speech only. A person's line, and a short line, stay as stored. The log
 // object is not modified: a collapsed line is a copy.
-export function prepareRoomLine(line) {
+//
+// Every writer of `room.log` passes through here — `groups.js` `appendRoom` (a group round) and
+// `room-membership.js` `append` (a person's line, a seat's `line` op, a face-room event) — and the log
+// is fanned out to the room's other homes (`fanoutRoomLine`), so the redaction this host trusts runs
+// once, on this gate, instead of in each builder of a line (#2699). `redact` is that host's
+// `rt.redactSecrets`, wired once at install; a line the redactor leaves alone comes back unchanged.
+let redactRoomLine = text => text
+export function setRoomLineRedactor(redact) { redactRoomLine = redact }
+
+export function prepareRoomLine(line, { redact = redactRoomLine } = {}) {
   if (line == null || typeof line !== 'object') return line
   if (typeof line.text !== 'string') return line
+  const clean = typeof redact === 'function' ? redact(line.text) : line.text
+  if (clean !== line.text) line = { ...line, text: clean }
   // A line a writer already fenced for another home's Bot keeps its fence, and while it is fenced
   // neither `kind` nor `authorKind` is an exemption: both travel from the other home
   // (room-membership.js copies them), so a peer could otherwise mark an essay `notice` or type it as a
