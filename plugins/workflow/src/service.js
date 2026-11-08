@@ -1954,7 +1954,9 @@ export function createWorkflowService({
       const brief = cleanPrompt(body.brief, MAX_BRIEF)
       const title = cleanLine(body.title || brief.split('\n')[0], 300)
       if (!title) return { ok: false, error: 'A run needs a brief' }
-      const taskId = cleanLine(body.task || body.taskId, 80) || `task-${now().toString(36)}`
+      // #2662: a millisecond timestamp is not unique — two calls in the same
+      // millisecond shared an id, so the second run was dropped by queuedOrRunning.
+      const taskId = cleanLine(body.task || body.taskId, 80) || idOf('task')
       return this.assign({ workflowId: item.id, taskId, title, ...(brief ? { brief } : {}), ...(body.callerBotId ? { callerBotId: body.callerBotId } : {}) })
     },
     // Auto-assign an open board task. A miss leaves the task untouched.
