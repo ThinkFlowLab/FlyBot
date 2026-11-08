@@ -92,6 +92,57 @@ test('#1044: a turn that dies with no text is marked silent, once, naming the pr
   assert.equal(lines[0].streak, undefined)
 })
 
+// #2679: `max-tokens` is DSH ending the turn at the model's output ceiling. It is not a failure — the
+// call answered — and not a normal finish, so it is recorded as `limited`, with the silence of a turn
+// that wrote nothing kept apart from the failure streak it used to fall out of.
+const limit = (emit, id, turn, texts = 0) => {
+  emit(id, 'turn/start', { turn })
+  for (let n = 0; n < texts; n++) emit(id, 'assistant/message', { turn, message: { content: [{ type: 'text', text: `line ${n}` }] } })
+  emit(id, 'turn/end', { turn, reason: { kind: 'max-tokens' } })
+}
+const identity = (key, values) => (values?.error === undefined ? key : `${key.split('{error}')[0]}${values.error}`)
+
+test('#2679: a turn cut off before it wrote a line is limited and silent, and says so', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  limit(host.emit, 'b', 1)
+  const [entry] = await host.ended()
+  assert.equal(entry.limited, true)
+  assert.equal(entry.failed, undefined, 'a cut-off turn is not a failure')
+  assert.equal(entry.silent, true)
+  assert.equal(entry.streak, 1)
+  const lines = failureLines({ ended: await host.ended() }, 'b', identity)
+  assert.equal(lines.length, 1, 'a turn cut off before it spoke is not left looking like a quiet Bot')
+  assert.doesNotMatch(lines[0].text, /model call failed/, 'the call did not fail: it was cut off')
+  assert.match(lines[0].text, /cut off/)
+})
+
+test('#2679: a turn cut off mid-answer is limited but not silent, and adds no line', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  limit(host.emit, 'b', 1)
+  limit(host.emit, 'b', 2, 2)
+  limit(host.emit, 'b', 3)
+  const ended = await host.ended()
+  assert.deepEqual(ended.map(entry => [entry.limited, entry.silent ?? null, entry.streak ?? null]), [[true, true, 1], [true, null, null], [true, true, 1]])
+  assert.equal(failureLines({ ended }, 'b', identity).length, 2, 'only the turns that wrote nothing draw a line')
+})
+
+test('#2679: a failure and a cut-off turn share the streak, and a finished turn resets it', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  die(host.emit, 'b', 1)
+  limit(host.emit, 'b', 2)
+  host.emit('b', 'turn/start', { turn: 3 })
+  host.emit('b', 'assistant/message', { turn: 3, message: { content: [{ type: 'text', text: 'ok' }] } })
+  host.emit('b', 'turn/end', { turn: 3, reason: { kind: 'completed' } })
+  limit(host.emit, 'b', 4)
+  const ended = await host.ended()
+  // The same place's silent turns in a row: one provider refusal and one cut-off turn read as two.
+  assert.deepEqual(ended.map(entry => [entry.limited ?? null, entry.failed === undefined ? null : 'failed', entry.silent ?? null, entry.streak ?? null]),
+    [[null, 'failed', true, 1], [true, null, true, 2], [null, null, null, null], [true, null, true, 1]])
+})
+
 test('#1044: a turn that wrote text then failed adds no line', async (t) => {
   const host = await start()
   t.after(host.stop)

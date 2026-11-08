@@ -253,8 +253,12 @@ export function installFeed(rt, fire) {
         closeCalls(id, entry, where, turnId, time, true)
         const kind = event.data?.reason?.kind
         const outcome = OUTCOMES.has(kind) ? kind : 'completed'
+        // A turn DSH ended at the model's output ceiling (#2679) did end, so the three-value outcome
+        // stays; `limited` is the fact that its text is incomplete, and a consumer that cannot read it
+        // is no longer told the turn finished normally.
+        const limited = kind === 'max-tokens' ? true : undefined
         const errorCode = outcome === 'error' ? cleanCode(event.data?.reason?.error?.code) : undefined
-        fire('turn.end', omitUndefined({ ...base, turnId, turn: entry.turn, time, seq: seqOf(event), outcome, errorCode, model: turnModel(session, id, entry, where), tokens: entry.usage }))
+        fire('turn.end', omitUndefined({ ...base, turnId, turn: entry.turn, time, seq: seqOf(event), outcome, errorCode, limited, model: turnModel(session, id, entry, where), tokens: entry.usage }))
         entry.turn = undefined
         entry.stepped = false
         entry.usage = undefined

@@ -1751,6 +1751,37 @@ test('a face room\'s roster and routing rule stand in its section; a routed turn
   assert.ok(turns.some(turn => turn.sessionId === hosted.sessions[writer]))
 })
 
+// #2679: a member whose turn DSH cut off at the output ceiling before it wrote a line did not read the
+// line and choose silence — it never answered. The round now records that slot `missed` (the value
+// `runTurn` already uses for a member that ran out of time), while a completed turn that writes nothing
+// is still the pass it chose.
+test('#2679: a member cut off at the output limit is missed, not passed', async (t) => {
+  const { call, emit, userMessage, relay, stop, sent } = start()
+  t.after(stop)
+  const room = await team(call, sent)
+  const state = (await call('state', {})).value
+  const chiefName = state.bots.find(bot => bot.id === state.mainBotId).name
+  await emit(room.id, userMessage('Tell me the plan'))
+  const running = relay(room.id, '2679-limit')
+  // The admin's turn starts, runs, and is cut off before it writes anything.
+  const first = await turnFor(sent)
+  const answering = async (turn, sessionId, exchangeId, reason) => {
+    await emit(sessionId, { type: 'turn/start', data: { turn } })
+    await emit(sessionId, { type: 'user/message', data: { source: { kind: 'bot', role: 'room', exchangeId }, content: [{ type: 'text', text: 'your turn' }] } })
+    await emit(sessionId, { type: 'turn/end', data: { reason } })
+  }
+  await answering(1, first.sessionId, first.message.source.exchangeId, { kind: 'max-tokens' })
+  // The next member reads the cut-off one as "(no answer)": the pass it used to look like said the
+  // member had read the line and had nothing to add.
+  const second = await turnFor(sent, first)
+  assert.match(promptOf(second), new RegExp(`${chiefName} \\(no answer\\)`))
+  await answering(2, second.sessionId, second.message.source.exchangeId, { kind: 'completed' })
+  const done = JSON.parse(await running)
+  assert.deepEqual(done.replies.filter(reply => reply.kind === 'missed').map(reply => reply.name), [chiefName],
+    'the cut-off member is the only one recorded as missed')
+  assert.equal(done.replies.filter(reply => reply.kind === 'missed').length, 1, 'a completed turn with no text is a pass, not a miss')
+})
+
 // #913: the closing report wrote a member the line called with `@` and that never answered into the
 // same sentence as a member that read the line and answered [PASS], so the person could not tell "he
 // had nothing to add" from "he was addressed and said nothing". The round already knows which of its

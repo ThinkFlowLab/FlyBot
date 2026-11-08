@@ -113,6 +113,12 @@ export interface TurnEnded extends FeedPlace {
   /** True when the turn never reported its end and a newer turn closed it. */
   interrupted?: boolean
   /**
+   * True when DSH ended the turn at the model's output ceiling (`reason.kind` `max-tokens`): the
+   * turn ended and did not fail, so `outcome` stays 'completed', but the text it wrote is incomplete
+   * and a turn that wrote none stopped before it answered.
+   */
+  limited?: boolean
+  /**
    * `provider/model` of the turn's latest request header: the model it ran on. Absent for a
    * turn that made no model call, for place 'remote', and when DSH logged no header.
    */

@@ -737,7 +737,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    // Shared
    'Main Bot': '主 Bot',
    Working: '工作中',
-@@ -12,6 +12,67 @@ const ZH = {
+@@ -12,6 +12,69 @@ const ZH = {
    'Unread activity': '有未读',
    Search: '搜索',
    'New chat': '新对话',
@@ -763,6 +763,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  // #1044: a turn that died before writing anything still says so where the chat is.
 +  'Could not run: {error}': '这一轮没能跑起来：{error}',
 +  'the model call failed': '模型调用失败',
++  // #2679: the turn did run; DSH ended it at the model's output ceiling.
++  'The reply was cut off at the model\'s output limit': '回复在模型的输出上限处被截断',
 +  '{count} turns in a row': '连续 {count} 轮',
 +  'Group invite link': '群邀请链接',
 +  'Room-only: friends do not see these Bots unless you invite them.': '仅限这个房间：除非你邀请，好友看不到这些 Bot。',
@@ -8227,7 +8229,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
          ...(speaking.has(`${owner.roomId}:${owner.botId}`) ? { speaking: true } : {}),
        }]
      }
-@@ -228,15 +228,69 @@ export function install(rt) {
+@@ -228,15 +228,73 @@ export function install(rt) {
    }
  
    // What a running tool call is about, for an approval card: its own description and
@@ -8268,9 +8270,12 @@ diff --git a/src/host/turns.js b/src/host/turns.js
    }
 +  // A turn that died before writing a line leaves the chat looking like a Bot that chose to stay
 +  // quiet (#1044), so a failure with no text is marked `silent` and carries the streak of them at the
-+  // same place: one blip and a provider that has been refusing for hours read differently.
++  // same place: one blip and a provider that has been refusing for hours read differently. A turn DSH
++  // cut off at the output ceiling (#2679) is kept too: it is not a failure, but its text is incomplete
++  // and, when it wrote none, it is the same kind of quiet, which is why it joins the same streak.
 +  const noteEnded = (id, turn, info, reason, failure, calls, texts = 0, rateLimited = undefined) => {
-+    if (failure === undefined && reason?.kind !== 'completed') return
++    const limited = failure === undefined && reason?.kind === 'max-tokens'
++    if (failure === undefined && !limited && reason?.kind !== 'completed') return
 +    const owner = rt.groupOwners.get(id)
 +    const bot = rt.botOf(owner?.botId ?? rt.selfOf(id))
 +    if (bot === undefined || bot.remote !== undefined) return
@@ -8279,7 +8284,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +    if (owner !== undefined && rt.roomOf(owner.roomId)?.origin !== undefined) return
 +    const at = Date.now()
 +    const place = `${bot.id}|${owner?.roomId ?? ''}`
-+    const silent = failure !== undefined && texts === 0
++    const silent = (failure !== undefined || limited) && texts === 0
 +    const lastHere = ended.findLast?.(entry => placeOfEnded(entry) === place) ?? [...ended].reverse().find(entry => placeOfEnded(entry) === place)
 +    const streak = silent ? (lastHere?.silent === true ? (lastHere.streak ?? 0) + 1 : 1) : 0
 +    ended = trimEnded([...ended, {
@@ -8288,6 +8293,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 +      ...(owner ? { roomId: owner.roomId } : { sessionId: id }),
 +      at,
 +      ...(calls > 0 ? { calls } : {}),
++      ...(limited ? { limited: true } : {}),
 +      ...(failure ? { failed: cut(failure.message || failure.code, 160).text } : {}),
 +      ...(rateLimited !== undefined ? { rateLimited } : {}),
 +      ...(silent ? { silent: true, streak } : {}),
@@ -8515,7 +8521,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,6 +446,7 @@ export function install(rt) {
+@@ -446,9 +446,14 @@ export function install(rt) {
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -8523,9 +8529,24 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
-@@ -460,14 +460,14 @@ export function install(rt) {
++        // A turn DSH cut off at the output ceiling before it wrote a line (#2679) is not a member that
++        // read the line and chose silence, and `''` is exactly what the round reads as a pass. The round
++        // already tells a no-answer apart: `{ missed }`, the value a member that ran out of time leaves.
++        const missedRoomTurn = () => reason?.kind === 'max-tokens' && replyText() === ''
+         // A retried turn answers the same waiter or sender, so this one passes nothing on.
+         if (!retry && info?.role === 'room') {
+           const waiter = roomWaiters.get(info.exchangeId)
+@@ -456,19 +456,23 @@ export function install(rt) {
+           const stopped = stoppedRoomTurns.delete(info.exchangeId)
+           if (waiter !== undefined) {
+             if (failure !== undefined) waiter.fail(failure)
+-            else waiter.resolve(reason?.kind === 'aborted' ? null : replyText())
++            else if (reason?.kind === 'aborted') waiter.resolve(null)
++            else waiter.resolve(missedRoomTurn() ? { missed: true } : replyText())
            } else if (!stopped && reason?.kind !== 'aborted') {
-             // The round moved on without this member; how its turn ends still reaches the group.
+-            // The round moved on without this member; how its turn ends still reaches the group.
++            // The round moved on without this member; how its turn ends still reaches the group. A
++            // cut-off turn with no text hands over `''`, which `lateRoomReply` drops like a pass.
              if (failure !== undefined) void rt.lateRoomFailure?.(id, info, failure)
 -            else void rt.lateRoomReply?.(id, info, replyText())
 +            else void rt.lateRoomReply?.(id, info, replyText(), origin)
@@ -8538,8 +8559,11 @@ diff --git a/src/host/turns.js b/src/host/turns.js
 -            else if (reason?.kind !== 'aborted') void rt.lateRoomReply?.(id, info, replyText())
 +            else if (reason?.kind !== 'aborted') void rt.lateRoomReply?.(id, info, replyText(), origin)
            } else {
++            // Nothing is delivered for an empty answer, cut off or not: `answer` only speaks a line
++            // for a failure, a stop, or text the turn actually wrote.
              answer(info, replyText())
            }
+         }
 @@ -488,13 +488,32 @@ export function install(rt) {
              hop: request.info.hop ?? 0,
              exchangeId: request.info.exchangeId,

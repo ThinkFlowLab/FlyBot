@@ -88,6 +88,8 @@ const ZH = {
   // #1044: a turn that died before writing anything still says so where the chat is.
   'Could not run: {error}': '这一轮没能跑起来：{error}',
   'the model call failed': '模型调用失败',
+  // #2679: the turn did run; DSH ended it at the model's output ceiling.
+  'The reply was cut off at the model\'s output limit': '回复在模型的输出上限处被截断',
   '{count} turns in a row': '连续 {count} 轮',
   'Group invite link': '群邀请链接',
   'Room-only: friends do not see these Bots unless you invite them.': '仅限这个房间：除非你邀请，好友看不到这些 Bot。',
