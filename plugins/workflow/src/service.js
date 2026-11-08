@@ -221,22 +221,68 @@ export function createWorkflowService({
   setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = handle => clearTimeout(handle),
 } = {}) {
   const file = dir ? join(dir, FILE) : null
-  const loaded = load(file, warn)
-  let state = loaded.state ?? seed()
+  let state
   // #2603: a store this service could not read stays a failure instead of turning
   // into a clean list. `state()` answers it and the first `write()` keeps the bytes
   // before replacing them; every other endpoint keeps running on the fixture.
-  let loadError = loaded.error
+  let loadError
   // #2681: a store a newer build wrote is the one that must not be replaced at all — its
   // version travels here so `state()` can name it and `write()` can refuse before the first
   // byte (a `.broken-` copy is only for a store this build is about to write over).
-  let loadNewer = loaded.newer ?? null
-  state.routes ??= {}
-  // migrateRuns() also normalizes the orphan list a deleted workflow left
-  // (#1621), so a store written by an older version keeps those ids.
-  migrateRuns(state)
-  purgeDemos(state, historyRow)
-  let seq = state.seq ?? 1
+  let loadNewer = null
+  let seq = 1
+  // #2704: whether this process has held the host's lock since it loaded the store.
+  // A window that starts behind another writer reads that writer's copy, and the first
+  // call that finds the host writable has to re-read the file before it changes anything.
+  let writer = !readOnly()
+  let takingOver = null
+
+  // Read the store whole, the way core's store.refresh() adopts state.json. A window
+  // that was read-only carries no change of its own to keep, so replacing the copy
+  // loses nothing; a store it still cannot read keeps the fixture and the reason.
+  function adoptStore() {
+    const loaded = load(file, warn)
+    loadError = loaded.error
+    loadNewer = loaded.newer ?? null
+    state = loaded.state ?? seed()
+    state.routes ??= {}
+    // migrateRuns() also normalizes the orphan list a deleted workflow left
+    // (#1621), so a store written by an older version keeps those ids.
+    migrateRuns(state)
+    purgeDemos(state, historyRow)
+    seq = state.seq ?? 1
+  }
+  adoptStore()
+
+  // #2704: becoming the writer is a state change, not a flag flip. The host takes
+  // `state.lock` before it answers a write (core/src/host/store.js), so the first call
+  // that finds it writable re-reads `workflows.json` once and reaps the runs the dead
+  // window left `running` — the same cleanup a load does (#1388, #2673). Only the first
+  // such call: after it this process is the writer and its copy is current.
+  function takeover() {
+    adoptStore()
+    // Another host may have taken the lock again while the file was read; writing this
+    // copy after that would be the same clobber.
+    if (readOnly()) return false
+    writer = true
+    try {
+      takingOver = Promise.resolve(reapRuns())
+    } catch (error) {
+      takingOver = Promise.resolve()
+      warn(`flybot-workflow: the reap after takeover failed: ${error?.message ?? error}`)
+    }
+    takingOver.catch(error => warn(`flybot-workflow: the reap after takeover failed: ${error?.message ?? error}`))
+    return true
+  }
+
+  // Every write path asks this instead of `readOnly()`: false still means the host is a
+  // reader, and a writer that lost the lock is refused the same way it was before. The
+  // one path that changes is a window that started read-only and now holds the lock.
+  function writable() {
+    if (readOnly()) return false
+    if (!writer) return takeover()
+    return true
+  }
   // One lock for every start and release to serialize drain operations.
   let hostTail = Promise.resolve()
   function hostSerial(fn) {
@@ -400,6 +446,17 @@ export function createWorkflowService({
 
   function write() {
     if (!persist || !file) return
+    // #2704: a write from a window that has not taken the store over would put the copy
+    // it read while the other writer held it back over that writer's newer records.
+    // Every entry point calls writable() first; this catches one that does not.
+    if (!writer) {
+      throw new Error(`Not saved: this window has not taken the workflow store ${file} over since the other window let go, so it would write over that window's records.`)
+    }
+    // The lock can move to another host between the takeover and this write; a reader
+    // must not land its copy then either (#2673).
+    if (readOnly()) {
+      throw new Error(`Not saved: the host became read-only before the workflow store ${file} was written.`)
+    }
     // #2681: a newer build's store is refused before the first byte, not backed up and
     // replaced. This build cannot read every field of it, so writing would drop them while
     // the file kept claiming the newer version — the same damage the trace store refuses.
@@ -1301,7 +1358,7 @@ export function createWorkflowService({
   }
 
   function mutate(workflowId, fn) {
-    if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+    if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
     const item = workflow(workflowId)
     if (!item) return { ok: false, error: 'No such workflow' }
     try {
@@ -1313,8 +1370,86 @@ export function createWorkflowService({
     }
   }
 
+  // #2704: the reaper a load runs, reusable when a read-only window becomes the writer.
+  // Only runs the dead writer was holding are collected: a run on `active` (or still the
+  // archived `last`) that is `running` with step Bots named, or a `live:true` run already
+  // marked `running` whose Bot map is gone (#1414). An ended run keeps its own status
+  // (#1388) and only gives back the Bots it still names. `lane.queue` is never touched:
+  // a parked card is not a run, so a takeover leaves it waiting for the next drain.
+  function reapRuns() {
+    // A read-only host never ran these runs, so it cannot tell which of them the
+    // writer still holds; judging them here would end the writer's live run and
+    // overwrite the store with this host's older copy (#2673).
+    if (readOnly()) return Promise.resolve()
+    if (typeof release !== 'function') return Promise.resolve()
+    const stale = []
+    const staleRuns = []
+    const abandoned = []
+    const orphans = orphanIds(state)
+    let wrote = false
+    for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
+      const seen = new Set()
+      for (const run of [...(lane.active ?? []), lane.last].filter(Boolean)) {
+        if (seen.has(run)) continue
+        seen.add(run)
+        const hasEphemeral = run?.ephemeral && Object.keys(run.ephemeral).length > 0
+        const zombie = run?.live === true && run.status === 'running' && !hasEphemeral
+        if (!hasEphemeral && !zombie) continue
+        // A run still marked running here was cut off with the host that ran it,
+        // and nothing resumes it: its instances are abandoned, not in progress.
+        // Release them and end the run, or they stay hidden with no way to remove
+        // them. A run that already ended keeps its own status (#1388). A zombie
+        // is a run dispose() already stripped: heal it on load (#1414).
+        if (run.status === 'running') {
+          abandoned.push({ workflowId, run })
+          continue
+        }
+        if (hasEphemeral) {
+          clearRunTimers(run.id)
+          stale.push(...Object.values(run.ephemeral))
+          staleRuns.push(run)
+          delete run.handed
+          wrote = true
+        }
+      }
+    }
+    for (const { workflowId, run } of abandoned) {
+      try {
+        clearRunTimers(run.id)
+        if (run.ephemeral) stale.push(...Object.values(run.ephemeral))
+        endRun(workflow(workflowId), run, { code: 'host-ended' })
+        push(workflowId, [failureLine(run)], now())
+        staleRuns.push(run)
+        delete run.handed
+        archiveCutoffRun(workflowId, run)
+        wrote = true
+      } catch (error) {
+        warn(`flybot-workflow: could not end ${run.id}: ${error?.message ?? error}`)
+      }
+    }
+    if (stale.length === 0 && orphans.length === 0 && !wrote) return Promise.resolve()
+    if (stale.length === 0 && orphans.length === 0) {
+      write()
+      return Promise.resolve()
+    }
+    return releaseAll([...new Set([...stale, ...orphans])], release, warn).then((failed) => {
+      // Only the ids the host really removed leave the record. A failed one
+      // stays named so this same path retries it on the next load (#1616).
+      for (const run of staleRuns) keepUnreleased(run, failed)
+      // #1621: a deleted workflow's Bot has no lane left to name it, so it is
+      // the orphan list that keeps a failed id — the same entry, retried until
+      // the host really removes it.
+      state.orphans = orphans.filter(id => failed.includes(id))
+      if (state.orphans.length === 0) delete state.orphans
+      write()
+    })
+  }
+
   return {
     state(body) {
+      // #2704: a window that has just taken the lock adopts the store and reaps before
+      // it answers, so the page does not keep showing the dead window's run as live.
+      writable()
       // #2603: a store that could not be read is not answered as a list nothing in it
       // came from. The factory templates are not the store, so `workflow/templates`
       // still gets them from here. #2681: a newer store says which it is, so the page can
@@ -1325,7 +1460,7 @@ export function createWorkflowService({
       return present(heldLimitOf(body))
     },
     rename(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
@@ -1354,7 +1489,7 @@ export function createWorkflowService({
       }
     },
     delete(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
@@ -1421,7 +1556,7 @@ export function createWorkflowService({
       })()
     },
     create(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       // #2598: `write()` refuses before its first byte when the temp leaf is not
       // writable, but the caller is told nothing was created. The push and its
       // creation line below are memory, so remember what they change and undo
@@ -1503,7 +1638,7 @@ export function createWorkflowService({
     // title is only the label (and its fallback). A field this endpoint does
     // not read comes back in `ignored` instead of vanishing (#1869).
     assign(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const ignored = Object.keys(body).filter(key => !ASSIGN_FIELDS.has(key))
       const answer = value => (ignored.length === 0 ? value : { ...value, ignored })
       if (body.botId) return answer(routeBot(body))
@@ -1582,7 +1717,7 @@ export function createWorkflowService({
       return saved
     },
     setModel(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const model = body.model ? cleanLine(body.model, 80) : null
       const saved = mutate(workflowId, (item) => {
@@ -1592,7 +1727,7 @@ export function createWorkflowService({
       return present()
     },
     advance(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const outcome = body.outcome === 'failed' ? 'fail' : 'complete'
       const nodeId = String(body.nodeId ?? '')
@@ -1657,7 +1792,7 @@ export function createWorkflowService({
       return findEphemeral(botId) !== null
     },
     pause(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
@@ -1679,7 +1814,7 @@ export function createWorkflowService({
       return present()
     },
     resume(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const item = workflow(workflowId)
       if (!item) return { ok: false, error: 'No such workflow' }
@@ -1710,7 +1845,7 @@ export function createWorkflowService({
       })
     },
     reset(body = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const workflowId = String(body.workflowId ?? '')
       const runId = body.runId ? String(body.runId) : ''
       // Release first, then forget the ids (#1476, #1387). A failed release is
@@ -2002,7 +2137,7 @@ export function createWorkflowService({
     // keeps it too, and nothing is written. Passing `rematch: true` drops that one
     // claim first — the panel's per-task action.
     ingest(task = {}) {
-      if (readOnly()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
+      if (!writable()) return { ok: false, code: 'read-only', error: 'The host is read-only' }
       const taskId = cleanLine(task.id, 80)
       if (!taskId) return { ok: false, error: 'A task needs an id' }
       if (task.rematch === true && forgetClaim(taskId)) write()
@@ -2107,75 +2242,25 @@ export function createWorkflowService({
       return rows
     },
     reap() {
-      // A read-only host never ran these runs, so it cannot tell which of them the
-      // writer still holds; judging them here would end the writer's live run and
-      // overwrite the store with this host's older copy (#2673).
-      if (readOnly()) return Promise.resolve()
-      if (typeof release !== 'function') return Promise.resolve()
-      const stale = []
-      const staleRuns = []
-      const abandoned = []
-      const orphans = orphanIds(state)
-      let wrote = false
-      for (const [workflowId, lane] of Object.entries(state.lanes ?? {})) {
-        const seen = new Set()
-        for (const run of [...(lane.active ?? []), lane.last].filter(Boolean)) {
-          if (seen.has(run)) continue
-          seen.add(run)
-          const hasEphemeral = run?.ephemeral && Object.keys(run.ephemeral).length > 0
-          const zombie = run?.live === true && run.status === 'running' && !hasEphemeral
-          if (!hasEphemeral && !zombie) continue
-          // A run still marked running here was cut off with the host that ran it,
-          // and nothing resumes it: its instances are abandoned, not in progress.
-          // Release them and end the run, or they stay hidden with no way to remove
-          // them. A run that already ended keeps its own status (#1388). A zombie
-          // is a run dispose() already stripped: heal it on load (#1414).
-          if (run.status === 'running') {
-            abandoned.push({ workflowId, run })
-            continue
-          }
-          if (hasEphemeral) {
-            clearRunTimers(run.id)
-            stale.push(...Object.values(run.ephemeral))
-            staleRuns.push(run)
-            delete run.handed
-            wrote = true
-          }
-        }
+      if (!writable()) return Promise.resolve()
+      // #2704: the call that noticed the takeover already started the same reaper a load
+      // runs; hand that one back instead of releasing the dead window's Bots twice.
+      if (takingOver !== null) {
+        const pending = takingOver
+        takingOver = null
+        return pending
       }
-      for (const { workflowId, run } of abandoned) {
-        try {
-          clearRunTimers(run.id)
-          if (run.ephemeral) stale.push(...Object.values(run.ephemeral))
-          endRun(workflow(workflowId), run, { code: 'host-ended' })
-          push(workflowId, [failureLine(run)], now())
-          staleRuns.push(run)
-          delete run.handed
-          archiveCutoffRun(workflowId, run)
-          wrote = true
-        } catch (error) {
-          warn(`flybot-workflow: could not end ${run.id}: ${error?.message ?? error}`)
-        }
-      }
-      if (stale.length === 0 && orphans.length === 0 && !wrote) return Promise.resolve()
-      if (stale.length === 0 && orphans.length === 0) {
-        write()
-        return Promise.resolve()
-      }
-      return releaseAll([...new Set([...stale, ...orphans])], release, warn).then((failed) => {
-        // Only the ids the host really removed leave the record. A failed one
-        // stays named so this same path retries it on the next load (#1616).
-        for (const run of staleRuns) keepUnreleased(run, failed)
-        // #1621: a deleted workflow's Bot has no lane left to name it, so it is
-        // the orphan list that keeps a failed id — the same entry, retried until
-        // the host really removes it.
-        state.orphans = orphans.filter(id => failed.includes(id))
-        if (state.orphans.length === 0) delete state.orphans
-        write()
-      })
+      return reapRuns()
     },
     dispose() {
       for (const key of [...timers.keys()]) clearTimerAt(key)
+      // #2704: a window that is only now taking the store over has no run of its own to
+      // end — the runs on disk belong to the writer that died — so the takeover reap is
+      // the cleanup. Nothing here would be needed on top of it.
+      if (!writer) {
+        if (!writable()) return Promise.resolve()
+        return takingOver ?? Promise.resolve()
+      }
       // A read-only host must not end the writer's runs, release its step Bots or
       // overwrite the store with its own older copy (#2673). Only local timers are
       // cleared; ending belongs to the writer's own dispose or the next reap.
