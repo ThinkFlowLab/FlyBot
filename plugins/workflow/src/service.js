@@ -1223,7 +1223,7 @@ export function createWorkflowService({
         // the run record keeps the pull request number. Every other gate-read OUTPUT keeps
         // #1773's rule: a verdict is not prose.
         const artifact = missing.length === 1 && missing[0] === 'state' ? stepArtifacts(op.text, outputs) : { pull: null, claimed: false }
-        const stands = artifact.pull != null || artifact.claimed
+        const stands = artifact.pull != null || artifact.claimed || artifact.merged === true
         // The step did the work; the gate still needs the branch it would have named.
         // The graph's first `state` branch is that choice — on the issue fast line it is
         // `ready → claim`, which keeps the pull request moving to gate/enqueue.
