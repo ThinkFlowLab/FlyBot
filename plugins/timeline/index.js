@@ -62,6 +62,9 @@ function makeExporter(config, dir, warn) {
       send: async (payload) => {
         const response = await fetch(url, {
           method: 'POST',
+          // A redirect is refused: `follow` replays otlpHeaders and the span payload at the
+          // Location origin, which the operator never named (#2687).
+          redirect: 'error',
           headers: { 'content-type': 'application/json', ...headers },
           body: JSON.stringify(payload),
         })
