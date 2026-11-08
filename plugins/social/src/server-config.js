@@ -94,7 +94,13 @@ const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8'))
  * @param flybot  the plugin-scoped FlyBot service
  * @param start   (config) => Promise<social>: startSocial
  */
-export function createServerController({ base, flybot, start, registerUnavailable, onFailure, probe = probeServer, warn = () => {}, startTimeoutMs = START_MS }) {
+export function createServerController({ base: configured, flybot, start, registerUnavailable, onFailure, probe = probeServer, warn = () => {}, startTimeoutMs = START_MS }) {
+  // A read-only window may still start the layer to show friends and messages, but it must not
+  // onboard a home or write the shared credentials file (#2675). The plugin lifecycle reaches
+  // `startSocial` through `apply`, which the core's read-only endpoint guard cannot see, so every
+  // start config carries the host switch. A getter, not a snapshot: `configFor` reads it each time
+  // a start is composed, the way the other `flybot.readOnly?.()` sites read it at use.
+  const base = Object.defineProperty({ ...configured }, 'readOnly', { get: () => flybot.readOnly?.() === true, enumerable: true, configurable: true })
   const credentialsPath = base.credentialsPath
   const dir = dirname(credentialsPath)
   const overridePath = join(dir, 'flybot-social-server.json')

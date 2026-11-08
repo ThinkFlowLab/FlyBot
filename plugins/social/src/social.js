@@ -4754,6 +4754,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
 
 // Plugin start: onboard once (credentials file), then build the social layer.
 export async function startSocial(service, config = {}) {
+  // `startSocial` is the plugin lifecycle (`apply` → `ready` → `launch`), not an API endpoint, so the
+  // core's read-only guard never sees it: a read-only window must skip the onboarding and the
+  // credentials writes here (#2675). It still starts the layer below when an identity already exists.
+  const readOnly = config.readOnly === true
   // Saved credentials belong to the server they came from: they are used only for that
   // server (a file from before this check is bound to the configured server on first
   // use), and an explicit token (config or FLYBOT_SOCIAL_TOKEN) always wins.
@@ -4763,12 +4767,12 @@ export async function startSocial(service, config = {}) {
   if (credentials && config.server) {
     if (credentials.server === undefined) {
       credentials = { ...credentials, server: serverKey(config.server) }
-      writeCredentials(config.credentialsPath, credentials)
+      if (!readOnly) writeCredentials(config.credentialsPath, credentials)
     } else if (serverKey(credentials.server) !== serverKey(config.server)) {
       credentials = undefined
     }
   }
-  if (credentials === undefined && explicit === undefined && config.server && config.onboard !== false) {
+  if (credentials === undefined && explicit === undefined && config.server && config.onboard !== false && !readOnly) {
     // Asked before the onboarding, not after it: that call is a real home on the server, and a start
     // that cannot keep the token it is given must not spend one (and a round-trip) on every boot.
     // Both leaves this start writes are named from what is already on disk, a local read before the
@@ -4786,6 +4790,9 @@ export async function startSocial(service, config = {}) {
       writeCredentials(config.credentialsPath, credentials)
     }
   }
+  // A read-only window has no identity to show and must not ask for one; `createSocial` cannot build
+  // a client without a token, so there is no layer until a writable window onboards the home.
+  if (credentials === undefined && explicit === undefined && readOnly) return undefined
   const social = createSocial(service, { ...config, token: explicit ?? credentials?.token, home: explicit !== undefined ? config.home : credentials?.home ?? config.home })
   try {
     if (social.home) await social.registerAll()
