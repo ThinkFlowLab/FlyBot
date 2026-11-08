@@ -142,7 +142,8 @@ test('#1263: a webhook Feishu refuses stays on the row as an error that names no
 test('#1263: a Feishu that never answers fails on the deadline instead of hanging', async () => {
   const started = Date.now()
   const answerOrNothing = await feishuPost(webhookOf('x'), 'hello', { fetch: () => new Promise(() => {}), timeoutMs: 25 })
-  assert.deepEqual(answerOrNothing, { ok: false, error: 'network' })
+  // #2660: the POST may already be in the chat, so it is an unconfirmed delivery, not a retryable link.
+  assert.deepEqual(answerOrNothing, { ok: false, error: 'feishu/no-answer' })
   assert.ok(Date.now() - started < 2_000, 'the deadline, not the fetch, ends the wait')
 })
 
