@@ -5,10 +5,12 @@
 // running Bot turn and each message it delivers until a turn takes it up, in
 // inflight.json; what is still noted at the next start is picked up once.
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { unlink } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { SOURCE_KIND } from './constants.js'
-import { ensurePrivateDir, writePrivateFile } from './private-files.js'
+import { ensurePrivateDir, replacePrivateFile } from './private-files.js'
+import { tempWritable } from './real-dir.js'
 import { OTHER, settled } from './turn-origin.js'
 import { retiredBot } from './store.js'
 
@@ -36,12 +38,25 @@ const triggerOf = info => ({
   ...(info.senderRoomId ? { senderRoomId: info.senderRoomId } : {}),
 })
 
-const readNotes = (file) => {
+// A file that is not the notes cannot be resumed safely, but that is not the same answer as
+// "nothing was in flight": every turn it named is dropped, so it is named once — path and reason —
+// instead of passing for a clean start (#2705).
+const readNotes = (file, warn) => {
+  let text
   try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    text = readFileSync(file, 'utf8')
+  } catch (error) {
+    // A missing file is the ordinary case: nothing was noted, or the last write cleared it.
+    if (error?.code !== 'ENOENT') warn('ds-bot: reading %s failed (%s); nothing is picked up from it', file, error?.message ?? error)
+    return { turns: {}, queued: {} }
+  }
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not the object of turns and queued messages')
     const object = value => (value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {})
-    return { turns: object(parsed?.turns), queued: object(parsed?.queued) }
-  } catch {
+    return { turns: object(parsed.turns), queued: object(parsed.queued) }
+  } catch (error) {
+    warn('ds-bot: %s could not be read as the notes of a running turn (%s); the turns and messages it named are not picked up', file, error?.message ?? error)
     return { turns: {}, queued: {} }
   }
 }
@@ -51,7 +66,7 @@ export function install(rt) {
   const file = join(home, 'inflight.json')
 
   // What the last run left; read before this run notes anything.
-  let interrupted = readNotes(file)
+  let interrupted = readNotes(file, rt.warn)
 
   /** @type {Record<string, {botId:string, roomId?:string, since:number, origin?:string, trigger?:any, approval?:{tool:string, reason:string}, resumed?:boolean}>} */
   let turns = {}
@@ -61,6 +76,20 @@ export function install(rt) {
   let stopped = false
   let latest
   let due = false
+  // A write this host never finished left its temp name behind. It holds no state — the target it
+  // was going to replace is still the last complete notes — so the first write of the next host
+  // sweeps it. Only a writing host does: a read-only window leaves the home alone.
+  let swept = false
+  const sweepTemps = () => {
+    swept = true
+    const prefix = `${basename(file)}.`
+    let names = []
+    try { names = readdirSync(home) } catch { return }
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith('.tmp')) continue
+      try { unlinkSync(join(home, name)) } catch { /* another host may be writing it */ }
+    }
+  }
   const persist = () => {
     // Only the host that saves the team runs its work again.
     if (stopped || rt.readOnly() !== undefined) return
@@ -69,15 +98,26 @@ export function install(rt) {
     // write the file once per change.
     if (due) return
     due = true
-    // Written in place: a rename over the file fails on Windows while anything reads
-    // it, and a torn write only loses what one restart would pick up. The notes name the
-    // Session, the room and the message a turn was handed, so the file is private like the
-    // team file: created 0600 in a 0700 home, and an existing file keeps the mode it has (#2697).
+    // Renamed into place, never written through: the file is the only record of the turns a crash
+    // cut off, and a crash inside an in-place write left it empty or half written — every one of
+    // them dropped on the next start (#2705). The notes name the Session, the room and the message
+    // a turn was handed, so the temp name is private like the team file: created 0600 in a 0700
+    // home, at the mode an existing file already has (#2697).
     writing = writing.then(async () => {
       due = false
       const snapshot = latest
       await ensurePrivateDir(home)
-      await writePrivateFile(file, snapshot)
+      if (!swept) sweepTemps()
+      const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
+      // `writeFile` follows a link at the temp name, which would take the notes outside the home
+      // and the rename after them would put the link where the notes belong (temp-name sweep).
+      if (!tempWritable(temp)) throw new Error(`${temp} is not a plain file of its own, so the notes were not written there`)
+      try {
+        await replacePrivateFile(temp, file, snapshot)
+      } catch (error) {
+        await unlink(temp).catch(() => { /* nothing was staged, or the rename already took it */ })
+        throw error
+      }
     }).catch(error => rt.warn('ds-bot: noting running turns failed: %s', error))
   }
   const originNote = (id) => {
