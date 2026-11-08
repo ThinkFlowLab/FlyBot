@@ -29,6 +29,7 @@ import { currentParticipants } from './room-membership.js'
 import { defineTool } from './tool-schema.js'
 import { clip, codePoints, splitRef, unquote } from './text.js'
 import { cut, fits } from '../shared/text-boundary.js'
+import { nameKey } from '../shared/identity.js'
 import { output } from './tools.js'
 import { retiredBot } from './store.js'
 import { botNode, buildGraph, buildIndex, relatedOf, searchIndex, topicNode } from './memory-search.js'
@@ -106,9 +107,11 @@ export function cleanEntry(raw) {
   return splitMeta(line).text
 }
 
-// A flat file name: case folds on some file systems, so names are lower case.
+// A flat file name: case folds on some file systems, so names are lower case. Since #2692 the name
+// is also the shared name key, so canonical equivalents are one topic and one file, and a
+// decomposed Latin topic (refused while U+0301 was not a letter) is accepted as its NFC form.
 export function cleanTopic(raw) {
-  const name = String(raw ?? '').trim().replace(/^\[\[|\]\]$/g, '').replace(/\.md$/i, '').trim().toLowerCase().replace(/\s+/g, '-')
+  const name = nameKey(raw).replace(/^\[\[|\]\]$/g, '').replace(/\.md$/i, '').replace(/\s+/g, '-')
   return /^[\p{L}\p{N}][\p{L}\p{N}_-]{0,47}$/u.test(name) && name !== 'memory' ? name : undefined
 }
 
@@ -511,23 +514,31 @@ export function install(rt) {
       return ''
     }
   }
-  const topicNamesIn = (dir) => {
+  // A topic file's name is the topic, but not always the key: a file written before #2692 keeps the
+  // spelling it was written with (a decomposed Hangul syllable among them), so the topic is the key
+  // computed from that name and the name itself is still the file recall reads and remember
+  // appends to. When both spellings exist, the one already in key form wins.
+  const topicFilesIn = (dir) => {
     try {
-      return readdirSync(dir).filter(name => name.endsWith('.md') && name !== MAIN).map(name => name.slice(0, -3)).sort()
+      const byTopic = new Map()
+      for (const file of readdirSync(dir).filter(name => name.endsWith('.md') && name !== MAIN).sort()) {
+        const topic = nameKey(file.slice(0, -3))
+        if (!byTopic.has(topic) || file === `${topic}.md`) byTopic.set(topic, file)
+      }
+      return [...byTopic].map(([topic, file]) => ({ topic, file }))
     } catch {
       return []
     }
   }
   const topicNames = (scope) => {
     const dir = scopeDir(scope)
-    return dir === undefined ? [] : topicNamesIn(dir)
+    return dir === undefined ? [] : topicFilesIn(dir).map(file => file.topic)
   }
   // MEMORY.md first, then the topics by name.
   const loadScope = (scope) => {
     const dir = dirOf(scope)
     const open = scopeDir(scope) !== undefined
-    return [undefined, ...(open ? topicNamesIn(dir) : [])].map((topic) => {
-      const file = topic === undefined ? MAIN : `${topic}.md`
+    return [{ topic: undefined, file: MAIN }, ...(open ? topicFilesIn(dir) : [])].map(({ topic, file }) => {
       const content = open ? readText(join(dir, file)) : ''
       return { topic, file, path: join(dir, file), content, ...parseMemory(content) }
     })
@@ -690,7 +701,7 @@ export function install(rt) {
       const next = joinLines(insertEntry(base, line))
       checkSize(target, next, label)
       let index
-      if (topic !== undefined && !main.links.includes(topic)) {
+      if (topic !== undefined && !main.links.some(link => nameKey(link) === topic)) {
         index = joinLines(addLink(main.lines.length > 0 ? main.lines : parseMemory(EMPTY_MAIN).lines, topic))
         checkSize(main, index, label)
       }
@@ -745,7 +756,10 @@ export function install(rt) {
       if (empty) {
         await unlink(old.file.path).catch(error => { if (error?.code !== 'ENOENT') throw error })
         const main = files[0]
-        if (main.links.includes(old.file.topic)) await writeText(main.path, joinLines(removeLink(main.lines, old.file.topic)))
+        // The link was written with whatever spelling the topic had then; remove that one, not a
+        // second entry the key would otherwise leave behind (#2692).
+        const link = main.links.find(one => nameKey(one) === old.file.topic)
+        if (link !== undefined) await writeText(main.path, joinLines(removeLink(main.lines, link)))
       } else {
         await writeText(old.file.path, joinLines(lines))
       }

@@ -44,6 +44,29 @@ test('limits: defaults, config override, rules', () => {
   assert.match(checkCreate({ parentName: 'R', parentDepth: 1, siblings: [], name: '  ', limits: L }), /name required/)
 })
 
+// #2692: a sibling name is one identity whichever canonical spelling it is written in. A model can
+// send the decomposed form, so without the name key two children render as the same "Café" while
+// create_child_bot admits both, and find_bot_by_name then resolves the visible name to one of them.
+test('#2692 a sibling name is one identity whichever canonical spelling it uses', async () => {
+  const m = await setup()
+  const nfc = 'Caf\u00e9'
+  const nfd = 'Cafe\u0301'
+  const cafe = await make(m, m.root, nfc)
+  assert.equal(m.bots.get(cafe).name, nfc)
+  assert.equal(m.tree.findBotByName(nfd).id, cafe, 'the other canonical spelling is the same Bot')
+  // the duplicate guard: one child under the root, either spelling is the same sibling name
+  assert.match((await m.call(m.root, 'create_child_bot', { name: nfd, role_description: 'dup' })).error, /a child named "Cafe\u0301" already exists/)
+  // the invisible format characters trim() keeps are part of the same identity
+  assert.match((await m.call(m.root, 'create_child_bot', { name: `${nfc}\u200b`, role_description: 'dup' })).error, /already exists/)
+  assert.equal(m.tree.childrenOf(m.tree.snapshot(), m.root).length, 1, 'one child, not three')
+
+  // move_bot refuses a second sibling that spells the same name: the same guard on the other path
+  const other = await make(m, m.root, 'Ops')
+  const twin = await make(m, other, nfd)
+  assert.throws(() => m.tree.moveBot(twin, m.root), /a child named "Cafe\u0301" already exists/)
+  assert.equal(f(m, twin, 'parent'), other, 'the refused move left it where it was')
+})
+
 test('tree starts with only a root; ensureRoot is idempotent', async () => {
   const m = await setup()
   assert.equal(m.bots.size, 1)

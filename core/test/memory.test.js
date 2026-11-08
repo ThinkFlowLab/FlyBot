@@ -227,6 +227,39 @@ test('topics hold details, linked from MEMORY.md, and go when their last entry d
   assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n')
 })
 
+// #2692: a topic is one identity and one file name. Canonically equivalent spellings used to be
+// two topics writing two files, so one topic split into two memories. A decomposed Latin topic is
+// refused by the \p{L} rule, so the collision needs a script whose decomposition stays letters:
+// the Hangul syllable 가 (U+AC00) and U+1100 U+1161.
+test('#2692 a topic is one identity whichever canonical spelling it is written in', async (t) => {
+  const { tool, read, stop, home } = start()
+  t.after(() => stop())
+  assert.equal(cleanTopic('\uac00'), cleanTopic('\u1100\u1161'))
+  assert.equal(cleanTopic('\u1100\u1161'), '\uac00', 'the file stem is the canonical form')
+  await tool('remember', { text: 'Flies from Hangzhou', topic: '\uac00' }, 'b2')
+  // the other spelling names the same topic, and reads the same file
+  assert.match(await tool('recall', { topic: '\u1100\u1161' }, 'b2'), /^Topic \[\[\uac00\]\] in your memory \(\uac00\.md: \d+ of 16000 characters\):\n# \uac00\n\n- Flies from Hangzhou/)
+  assert.match(await tool('remember', { text: 'Prefers window seats', topic: '\u1100\u1161' }, 'b2'), /in topic \[\[\uac00\]\] \(\uac00\.md: \d+ of 16000 characters\)/)
+  assert.deepEqual(readdirSync(join(home, 'memory', 'bots', 'b2')).sort(), ['MEMORY.md', '\uac00.md'])
+  assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n- [[\uac00]]\n')
+})
+
+// A topic file written before this change keeps the spelling it was written with. The key is
+// computed from the name, so the file is still the one recall reads and remember appends to.
+test('#2692 a topic saved under another spelling before this change is still the file it names', async (t) => {
+  const { tool, read, stop, home } = start()
+  t.after(() => stop())
+  const dir = join(home, 'memory', 'bots', 'b2')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'MEMORY.md'), '# Memory\n\n## Index\n- [[\u1100\u1161]]\n')
+  writeFileSync(join(dir, '\u1100\u1161.md'), '# legs\n\n- Saved the old way [added: 2026-01-01]\n')
+  assert.match(await tool('recall', { topic: '\uac00' }, 'b2'), /^Topic \[\[\uac00\]\] in your memory \(\u1100\u1161\.md: \d+ of 16000 characters\):\n# legs/)
+  assert.match(await tool('remember', { text: 'Added after the fix', topic: '\uac00' }, 'b2'), /in topic \[\[\uac00\]\]/)
+  assert.deepEqual(readdirSync(dir).sort(), ['MEMORY.md', '\u1100\u1161.md'], 'no second file for the same topic')
+  assert.match(read('bots', 'b2', '\u1100\u1161.md'), /- Added after the fix \[/)
+  assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n- [[\u1100\u1161]]\n', 'the link it already had is not written twice')
+})
+
 test('Main Bots and group admins write the team memory; only Main Bots touch another Bot\'s', async (t) => {
   const { tool, read, stop } = start()
   t.after(() => stop())

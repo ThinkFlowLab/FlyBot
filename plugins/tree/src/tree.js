@@ -8,6 +8,7 @@
 // The root is ds-bot's Main Bot (Chief, BotView.isMain), adopted with treeRole 'root'. A separate
 // root bot is created only when the team has no Main Bot at all.
 import { checkCreate } from './limits.js'
+import { nameKey } from './identity.js'
 import { systemPrompt, withTreeBlock, hasTreeBlock } from './prompt.js'
 import { forestOf } from './forest.js'
 import { createOrganizer } from './organize.js'
@@ -228,14 +229,14 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     return { id, name: clean, depth: depthOf(nodes, parentId) + 1 }
   }
 
-  /** Resolves a bot by id or name (trimmed, case-insensitive). Throws when missing or ambiguous. */
+  /** Resolves a bot by id or name (by the shared name key: trimmed, case-insensitive, either canonical spelling). Throws when missing or ambiguous. */
   function findBotByName(ref) {
     const raw = String(ref ?? '').trim()
     if (!raw) throw new Error('bot name required')
     const byId = fb.listBots().find(b => b.id === raw)
     if (byId) return byId
-    const clean = raw.toLowerCase()
-    const hits = fb.listBots().filter(b => String(b.name ?? '').trim().toLowerCase() === clean)
+    const clean = nameKey(raw)
+    const hits = fb.listBots().filter(b => nameKey(b.name) === clean)
     if (hits.length === 0) throw new Error(`no bot named "${raw}"`)
     if (hits.length > 1) throw new Error(`more than one bot is named "${raw}"`)
     return hits[0]
@@ -262,7 +263,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
     }
     const siblings = childrenOf(nodes, parent.id).filter(s => s.id !== bot.id)
     if (siblings.length >= limits.maxChildren) throw new Error(`limit reached: ${parent.name} already has ${siblings.length} children (maxChildren=${limits.maxChildren})`)
-    if (siblings.some(s => String(s.name).trim().toLowerCase() === String(bot.name).trim().toLowerCase())) {
+    if (siblings.some(s => nameKey(s.name) === nameKey(bot.name))) {
       throw new Error(`a child named "${bot.name}" already exists under ${parent.name}`)
     }
     const bottom = depthOf(nodes, parent.id) + 1 + heightOf(nodes, bot.id)
