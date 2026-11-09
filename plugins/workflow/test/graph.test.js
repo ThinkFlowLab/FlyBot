@@ -285,3 +285,43 @@ test('#2685: until values dedupe into the when entry of the same name', () => {
   assert.deepEqual(edgeOutputs(graph, 'a'), [{ name: 'state', values: ['ready', 'done'] }],
     'one entry per name, values in edge order, deduped the same way as when')
 })
+
+// #2746 S4: 12 steps per workflow. `place > 11` is the cap on a chain's rank; a
+// 13th rank used to be accepted and stored, and `stepBudget` is sized for 12.
+test('a graph longer than 12 steps is refused', () => {
+  const nodes = Array.from({ length: 13 }, (_, index) => ({ id: `s${index}`, name: `Step ${index}` }))
+  const edges = nodes.slice(1).map((node, index) => ({ from: `s${index}`, to: node.id }))
+  assert.throws(() => normalizeGraph({ nodes, edges }), /at most 12 steps/)
+})
+
+// #2746 S5: 24 Bots per workflow. The count is checked before the ranks, so a
+// 25th Bot is refused even when every step it would join has room.
+test('a graph with 25 Bots is refused', () => {
+  const nodes = Array.from({ length: 25 }, (_, index) => ({ id: `n${index}`, name: `Bot ${index}` }))
+  const layers = [0, 1, 2, 3, 4].map(row => nodes.slice(row * 5, row * 5 + 5).map(node => node.id))
+  assert.throws(() => normalizeGraph({ nodes, layers }), /at most 24 Bots/)
+})
+
+// #2746 S6: 64 links per workflow. Six Bots in the first step wired to six in the
+// second is already 36; the extra 30 to the third step makes 66.
+test('a graph with 66 links is refused', () => {
+  const ids = step => Array.from({ length: 6 }, (_, index) => `${step}${index}`)
+  const first = ids('a')
+  const second = ids('b')
+  const third = ids('c')
+  const edges = []
+  for (const from of first) for (const to of second) edges.push({ from, to })
+  for (const from of second) for (const to of third.slice(0, 5)) edges.push({ from, to })
+  assert.equal(edges.length, 66, 'the fixture really carries 66 links')
+  const nodes = [...first, ...second, ...third].map(id => ({ id, name: id.toUpperCase() }))
+  assert.throws(() => normalizeGraph({ nodes, edges }), /at most 64 links/)
+})
+
+// #2746 S7: a node coordinate is clamped to the drawable box. A stored x/y that a
+// hand edit or an older board wrote far outside it used to be kept as-is, and the
+// canvas drew the node where nothing can scroll to it.
+test('a node coordinate is clamped to the drawable box', () => {
+  const graph = normalizeGraph({ nodes: [{ id: 'only', name: 'Only', x: 99999, y: -99999 }], edges: [] })
+  assert.equal(graph.nodes[0].x, 4000, 'x stops at the right edge of the box')
+  assert.equal(graph.nodes[0].y, -2000, 'y stops at the top edge of the box')
+})

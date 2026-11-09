@@ -2214,3 +2214,17 @@ test('#819: a burst whose member is reused does not seat it, so the lead never n
   assert.equal(byName(f, 'FlyBot Lead'), undefined, 'a burst of one new member makes no lead')
   assert.equal(created.created.parent.id, f.devLead)
 })
+
+// #2746 S8: `create_team` counted its members against nothing, so a team one member
+// larger than `maxChildren` was planned and started placing before the level ran out —
+// leaving a partly built team, or (with room computed per bot) nothing but the error
+// from a failed placement. The count is refused up front and nothing is created.
+test('#447: a team larger than maxChildren is refused and leaves nothing behind', async () => {
+  const m = await setup()
+  const before = kidsOf(m, m.root)
+  const members = Array.from({ length: 9 }, (_, index) => `Member ${index}: does job ${index}`)
+  const refused = await m.call(m.root, 'create_team', { team: 'Oversized', members })
+  assert.match(refused.error, /at most 8 members/)
+  assert.deepEqual(kidsOf(m, m.root), before, 'the refused team placed no child under Chief')
+  assert.equal(m.bots.size, 1, 'and no other Bot was made')
+})
