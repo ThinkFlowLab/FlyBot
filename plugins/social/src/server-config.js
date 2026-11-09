@@ -87,7 +87,21 @@ const writePrivate = (path, value) => {
   renameSync(temp, path)
   try { chmodSync(path, 0o600) } catch { /* file systems that ignore the write mode */ }
 }
-const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return undefined } }
+// Absent is the one answer that means "nothing saved yet" (`ENOENT`): a first run and a server
+// never visited keep working. A file that exists but cannot be read or parsed is not that answer —
+// reading it as absent lost a parked Bot identity and let the next `park()` replace the only copy,
+// and a torn server choice fell back to the config server (#2717). It refuses, names the path, and
+// leaves the file where a person can move it aside on purpose.
+const readJson = (path, what = 'A saved Bot Social file') => {
+  let text
+  try { text = readFileSync(path, 'utf8') } catch (failure) {
+    if (failure?.code === 'ENOENT') return undefined
+    throw refused(`${what} at ${path} cannot be read: ${cleanLine(failure?.message ?? failure, 120)}. Nothing there was changed.`, 'unreadable')
+  }
+  try { return JSON.parse(text) } catch {
+    throw refused(`${what} at ${path} exists but does not parse as JSON. Move it aside on purpose to discard it; nothing here changed it.`, 'damaged')
+  }
+}
 
 /**
  * @param base    the plugin config (yaml) with the plugin defaults; `server` is the default server
@@ -109,7 +123,7 @@ export function createServerController({ base: configured, flybot, start, regist
   const botsPath = tag => join(dir, `flybot-social-bots.${tag}.json`)
 
   const readOverride = () => {
-    const saved = readJson(overridePath)
+    const saved = readJson(overridePath, 'The Bot Social server chosen in Settings')
     if (typeof saved?.server !== 'string') return undefined
     try { return { server: parseServerUrl(saved.server), displayName: cleanLine(saved.displayName, 40) || undefined } } catch { return undefined }
   }
@@ -219,8 +233,12 @@ export function createServerController({ base: configured, flybot, start, regist
       try { await flybot.grants?.set?.(id, []) } catch (failure) { warn('flybot-social: grants not cleared:', failure) }
     }))
   }
-  async function restore(key) {
-    const saved = readJson(botsPath(serverTag(key)))
+  // Read before a switch touches any file: a torn file for the server being switched to then
+  // refuses with every identity and every saved file where they were, instead of parking the
+  // previous server first and finding out here. The default argument keeps callers that read at
+  // restore time (a same-server rename) working.
+  const readParked = key => readJson(botsPath(serverTag(key)), 'The Bot identities saved for this server')
+  async function restore(key, saved = readParked(key)) {
     if (!saved || serverKey(saved.server) !== serverKey(key)) return
     for (const [id, entry] of Object.entries(saved.bots ?? {})) {
       if (!flybot.bot.get(id)) continue
@@ -237,9 +255,23 @@ export function createServerController({ base: configured, flybot, start, regist
   }
 
   // Servers this profile has saved credentials for (the address only, never the credentials).
+  const warnedKnown = new Set()
   function knownServers() {
     const found = new Set()
-    const add = path => { const saved = readJson(path); if (typeof saved?.server === 'string' && saved.token) found.add(saved.server) }
+    // Listing the saved servers is a convenience, not an identity restore: one damaged credentials
+    // file is warned about and left out instead of taking the whole Settings page down with it.
+    // Warned once per path — `status` is polled, and one broken file is one fact for the operator.
+    const add = path => {
+      let saved
+      try { saved = readJson(path, 'Saved Bot Social credentials') } catch (failure) {
+        if (!warnedKnown.has(path)) {
+          warnedKnown.add(path)
+          warn('flybot-social: saved credentials not listed:', failure)
+        }
+        return
+      }
+      if (typeof saved?.server === 'string' && saved.token) found.add(saved.server)
+    }
     add(credentialsPath)
     try {
       const stem = `${basename(credentialsPath)}.`
@@ -270,7 +302,7 @@ export function createServerController({ base: configured, flybot, start, regist
       if (!address) throw refused('No server is set yet.', 'no_server')
       const info = await probe(address, { fetch: base.fetch })
       if (serverKey(address) === serverKey(current.server)) lastProbe = { server: address, info }
-      return { server: address, ...info, same: serverKey(address) === serverKey(current.server), known: knownServers().some(item => serverKey(item) === serverKey(address)) || serverKey(address) === defaultKey && Boolean(readJson(credentialsPath)?.token) }
+      return { server: address, ...info, same: serverKey(address) === serverKey(current.server), known: knownServers().some(item => serverKey(item) === serverKey(address)) || serverKey(address) === defaultKey && Boolean(readJson(credentialsPath, 'The Bot Social credentials')?.token) }
     },
     async set({ server, displayName, confirm } = {}) {
       if (flybot.readOnly?.() === true) throw refused('Another FlyBot window holds this team. Change the server there.', 'read_only')
@@ -288,10 +320,14 @@ export function createServerController({ base: configured, flybot, start, regist
         const previousFaceRooms = (flybot.rooms?.list?.() ?? [])
           .filter(room => room.origin === 'face-to-face' && room.face?.roomId && (room.face.status === 'open' || room.face.status === 'candidate'))
           .map(room => room.face.roomId)
+        // A same-server rename is no switch (#729): park() rewrites this server's file and restore()
+        // reads it back, so it is read at restore time. Any other target is read before anything
+        // moves — a torn identity file refuses the switch with the live server still connected.
+        const savedIdentities = serverKey(address) === serverKey(previous.server) ? undefined : readParked(address)
         stop()
         if (previous.server) await park(previous.server)
         writeOverride(target)
-        await restore(address)
+        await restore(address, savedIdentities)
         current = target
         lastProbe = { server: address, info }
         try {
@@ -302,7 +338,11 @@ export function createServerController({ base: configured, flybot, start, regist
           // A failed start leaves nothing of the new server worth parking: a failed park changes nothing here.
           if (target.server) await park(target.server).catch(() => undefined)
           writeOverride(previous)
-          if (previous.server) await restore(previous.server)
+          if (previous.server) {
+            // The rollback must not mask the switch failure; park() just wrote this file, so a
+            // failure here is reported and the file left where it is.
+            try { await restore(previous.server) } catch (failure) { warn('flybot-social: previous server identities not restored:', failure) }
+          }
           current = previous
           lastProbe = undefined
           // launch() has already recorded the failure (state, error, the unavailable answers); the message below reports it.
