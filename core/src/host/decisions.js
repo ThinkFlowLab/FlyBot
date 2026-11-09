@@ -8,6 +8,7 @@
 // default install behaves exactly as before. The log is local text, one JSON line per entry; the
 // same entry is fired on the activity feed as `decision` so a consumer (Timeline, an audit view)
 // can show it without reading the file.
+import { randomUUID } from 'node:crypto'
 import { appendFile, open, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { cut } from './text.js'
@@ -35,6 +36,13 @@ export function install(rt) {
   }
   const { home } = rt
   const path = join(home, 'decisions.jsonl')
+  // One writer per home (`home-lock`): the second host of one team folder is read-only, and it reads
+  // the log a writer left instead of writing one of its own. `rt.readOnly()` names that other host
+  // (#2724); its absence is what makes this window the writer.
+  const readOnly = () => rt.readOnly() !== undefined
+  // The host's own sentence when a record was refused for being read-only, so the answer can give
+  // the reason the window asks the reader to act on.
+  let readonlyReason = ''
   // One append at a time, and a failure is a warning, never a turn failure (the log is a side
   // record, not part of the Bot's work).
   let writing = Promise.resolve()
@@ -49,7 +57,7 @@ export function install(rt) {
   // (#2103): a link left there would take the retained log and then become the log. One refusal is
   // said once, the same way the leaf is.
   let refusedTemp = false
-  let trimRefused = false
+  let trimRefused = ''
   const leafWritable = async () => {
     if (await fileKind(path) !== 'other') return true
     if (!refusedLeaf) {
@@ -63,7 +71,9 @@ export function install(rt) {
   // file so a reader never sees a half-trimmed log. The Bot side stays append-only; this is the
   // host's own housekeeping.
   async function trim() {
-    trimRefused = false
+    trimRefused = ''
+    // The trim is a write like the append, so a read-only window leaves the log as it found it.
+    if (readOnly()) return linesOnDisk ?? 0
     let text
     try { text = await readFile(path, 'utf8') } catch (error) { if (error?.code === 'ENOENT') return 0; throw error }
     const lines = text.split('\n').filter(Boolean)
@@ -78,9 +88,12 @@ export function install(rt) {
     kept.reverse()
     const next = kept.length > 0 ? `${kept.join('\n')}\n` : ''
     if (next !== text) {
-      const tmp = `${path}.tmp`
+      // The temp name belongs to this write alone: one fixed `decisions.jsonl.tmp` was a name every
+      // writer on the home shared, so one writer's rename took the other's temp away and that write
+      // failed with ENOENT mid-chain (#2724). Same shape as the other atomic writers.
+      const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
       if (!tempWritable(tmp)) {
-        trimRefused = true
+        trimRefused = tmp
         if (!refusedTemp) {
           refusedTemp = true
           rt.warn('ds-bot: the decision log was not trimmed: %s is not a plain file of its own', tmp)
@@ -96,6 +109,13 @@ export function install(rt) {
   function record(entry) {
     const line = `${JSON.stringify(entry)}\n`
     writing = writing.then(async () => {
+      // A read-only window writes nothing: the log belongs to the home's writer, and this window
+      // shows what that writer left (#2724).
+      const reason = rt.readOnly()
+      if (reason !== undefined) {
+        readonlyReason = reason ?? ''
+        return 'readonly'
+      }
       if (!await leafWritable()) return 'refused'
       // What a Bot considered and rejected is its own reasoning, so the log and its folder are
       // private (#2697). `appendFile`'s mode applies when the append creates the file.
@@ -164,9 +184,12 @@ export function install(rt) {
       // A refused leaf drops the line, so the answer and the feed say the same thing: nothing was
       // recorded. A write that failed for another reason keeps its old shape (a warning, an answer).
       if (wrote === 'refused') return 'Not recorded: the decision log is not a plain file of its own.'
+      // The read-only window is not a failure — it is the window the host chose — so the answer says
+      // what the host said, and the entry is not announced on the feed it never reached (#2724).
+      if (wrote === 'readonly') return ['Not recorded: this window is read-only, so the decision log was not written.', readonlyReason].filter(Boolean).join(' ')
       // The feed payload drops the id to a safe shape and adds the live botId (a consumer keys by it).
       rt.fireFeed?.('decision', { botId, option, choice, ...(why ? { why } : {}), time: entry.time })
-      if (wrote === 'untrimmed') return `Written: ${choice} "${option}"${why ? ` — ${why}` : ''} — the log was not trimmed: ${path}.tmp is not a plain file of its own.`
+      if (wrote === 'untrimmed') return `Written: ${choice} "${option}"${why ? ` — ${why}` : ''} — the log was not trimmed: ${trimRefused} is not a plain file of its own.`
       return `Recorded: ${choice} "${option}"${why ? ` — ${why}` : ''}.`
     },
   }))
