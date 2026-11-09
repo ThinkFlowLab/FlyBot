@@ -128,7 +128,7 @@ runs:
         DSH: ${{ inputs.dsh }}
       run: |
         set -o pipefail
-        node --import ./test/harness-resolve.mjs --test --experimental-test-coverage \
+        node --import ./test/harness-resolve.mjs --test --test-timeout=180000 --experimental-test-coverage \
           --test-reporter=spec --test-reporter-destination=stdout \
           --test-reporter=lcov --test-reporter-destination=lcov.info \
           "test/*.test.js" | tee test-output.txt
