@@ -45,7 +45,7 @@
   ],
   "scripts": {
     "build": "node scripts/build-client.mjs",
-    "test": "node --import ./test/harness-resolve.mjs --test \"test/*.test.js\"",
+    "test": "node --import ./test/harness-resolve.mjs --test --test-concurrency=4 --test-timeout=120000 \"test/*.test.js\"",
     "lint": "node scripts/lint.mjs",
     "arch-docs": "node scripts/check-arch-docs.mjs",
     "harness": "npm install --prefix dev/harness --legacy-peer-deps=false --no-package-lock --no-fund --no-audit",
