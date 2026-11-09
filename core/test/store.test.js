@@ -593,3 +593,83 @@ test('a version-1 home with a room that has no members keeps load() resolving (#
   assert.equal(fs.existsSync(`${statePath}.v1`), true, 'the version-1 backup is still taken')
   await rt.load()
 })
+
+// #2715: `exchanges` was the one table `adopt()` never looked at — `Object.assign` copied a
+// `null` in as it was, so `load()` resolved and `readOnly()` answered null (writable) while
+// `save()` threw on `state.exchanges.slice(-MAX_EXCHANGES)` every time. Every write goes through
+// save(): a Bot, a room name, a group message, a memory write, a delivery.
+const teamWith = (extra) => ({ ...team({}), ...extra })
+
+test('a team file whose exchanges is null loads writable and saves (#2715)', async (t) => {
+  const { rt, statePath, warnings } = runtime(t, teamWith({ exchanges: null }))
+  await rt.load()
+  assert.equal(rt.readOnly(), undefined, 'the window is told it may write the team')
+  assert.deepEqual(rt.state.exchanges, [], 'the null list is repaired before the first write reads it')
+  assert.equal(warnings.some(line => /saving the migrated Bot team failed/.test(line.join(' '))), false, 'the load-time migration save does not fail')
+  await rt.save()
+  assert.deepEqual(JSON.parse(fs.readFileSync(statePath, 'utf8')).exchanges, [], 'the repaired list is saved')
+})
+
+for (const [label, value] of [['an object', { old: 'entry' }], ['a string', 'exchanges'], ['a number', 3]]) {
+  test(`a team file whose exchanges is ${label} is repaired to an empty list (#2715)`, async (t) => {
+    const { rt, statePath } = runtime(t, teamWith({ exchanges: value }))
+    await rt.load()
+    assert.equal(rt.readOnly(), undefined)
+    assert.deepEqual(rt.state.exchanges, [])
+    await rt.save()
+    assert.deepEqual(JSON.parse(fs.readFileSync(statePath, 'utf8')).exchanges, [])
+  })
+}
+
+// The repair must not touch a list that is already one: the shipped shape keeps its entries and
+// `save()` trims it to the newest MAX_EXCHANGES, which is the only trimming that ever applied.
+test('a valid exchanges list keeps its newest MAX_EXCHANGES entries (#2715)', async (t) => {
+  const { MAX_EXCHANGES } = await import('../src/host/constants.js')
+  const entries = Array.from({ length: MAX_EXCHANGES + 3 }, (_, i) => ({ id: `e${i}`, from: 'a', to: 'b', text: `line ${i}` }))
+  const { rt, statePath } = runtime(t, teamWith({ exchanges: entries }))
+  await rt.load()
+  assert.equal(rt.readOnly(), undefined)
+  assert.equal(rt.state.exchanges.at(-1).text, `line ${MAX_EXCHANGES + 2}`, 'load() keeps a saved list as it is')
+  await rt.save()
+  const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')).exchanges
+  assert.equal(saved.length, MAX_EXCHANGES, 'the save trims the list to the newest entries')
+  assert.equal(saved[0].text, 'line 3', 'the oldest entries are the ones dropped')
+  assert.equal(saved.at(-1).text, `line ${MAX_EXCHANGES + 2}`, 'the newest entry survives the trim')
+})
+
+// The same class one field over: a table the schema expects as a record arrived as `null` or a
+// scalar. `save()` itself survived those, but the first write that indexed the table threw — the
+// turn record in turns.js, the group question in tools.js, a Bot or a room lookup — so the team
+// was loaded, writable and unusable, with the same stack instead of the file being named.
+for (const [field, shape, value] of [['exchangeTurns', 'null', null], ['questions', 'null', null], ['questions', 'a string', 'lost'], ['rooms', 'null', null], ['rooms', 'a list', []]]) {
+  test(`a team file whose ${field} is ${shape} is repaired instead of failing every write (#2715)`, async (t) => {
+    const { rt, statePath } = runtime(t, teamWith({ [field]: value }))
+    await rt.load()
+    assert.equal(rt.readOnly(), undefined, `${field}: the window is told it may write the team`)
+    assert.deepEqual(rt.state[field], {}, `${field}: the corrupt table is repaired to an empty one`)
+    await rt.save()
+    assert.deepEqual(JSON.parse(fs.readFileSync(statePath, 'utf8'))[field], {}, `${field}: the repair is saved`)
+  })
+}
+
+test('a team file whose prefs is not a record is repaired instead of refusing the team (#2715)', async (t) => {
+  const { rt, statePath } = runtime(t, teamWith({ prefs: 'quiet' }))
+  await rt.load()
+  assert.equal(rt.readOnly(), undefined, 'a prefs scalar does not make the file unreadable')
+  assert.equal(typeof rt.state.prefs, 'object')
+  assert.equal(rt.state.prefs.turnBudget, 0, 'the default turn budget is written to the repaired record')
+  await rt.save()
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).prefs.turnBudget, 0)
+})
+
+// The roster is the last table `Object.assign` copies in raw. A version-2 file that carries `bots`
+// as `null` is refused read-only before adopt() sees it (`ownershipProblem`), so only a version-1
+// home can reach the copy with no roster — and there it threw out of load().
+test('a version-1 home whose roster is null loads instead of throwing (#2715)', async (t) => {
+  const { rt, statePath } = runtime(t, { version: 1, bots: null, revision: 1 })
+  await rt.load()
+  assert.equal(rt.readOnly(), undefined, 'the team is not refused read-only')
+  assert.deepEqual(rt.state.bots, {}, 'a roster that carried no record is repaired to an empty one')
+  await rt.save()
+  assert.deepEqual(JSON.parse(fs.readFileSync(statePath, 'utf8')).bots, {})
+})
