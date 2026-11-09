@@ -1519,10 +1519,16 @@ export function install(rt) {
       })
       if (unfit.length > 0) rt.warn('ds-bot: memory review of %s left out an entry memory cannot keep: %s', bot.name, problemOf(unfit[0]))
       const landed = applied.filter(change => !unfit.includes(change))
-      const badTopic = applied.find(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
-      if (badTopic !== undefined) throw new Error(`the model's answer names the topic "${clip(badTopic.topic, 60)}", which cannot be a topic name`)
+      // A topic name memory cannot use drops only that change too, so the rest of
+      // the answer still lands and the cursor still moves on. One warning per answer,
+      // not per process: it says how many this answer lost and the first topic, so a
+      // later bad topic is reported again. A secret keeps its silence and is not counted.
+      const badTopics = landed.filter(change => change.op === 'add' && typeof change.topic === 'string' && change.topic.trim() !== '' && cleanTopic(change.topic) === undefined)
+      const wrongTopics = badTopics.filter(change => !secretEntry(cleanEntry(change.text)))
+      if (wrongTopics.length > 0) rt.warn('ds-bot: memory review of %s left out %d change(s) with a topic memory cannot use: first is "%s"', bot.name, wrongTopics.length, clip(wrongTopics[0].topic, 60))
+      const usable = landed.filter(change => !badTopics.includes(change))
       if (rt.botOf(bot.id) === undefined) return
-      const changed = await applyReview(bot, sessionId, numbered, landed, batch.source(read), { teamAllowed: teamAllowedFrom(live, bot) })
+      const changed = await applyReview(bot, sessionId, numbered, usable, batch.source(read), { teamAllowed: teamAllowedFrom(live, bot) })
       if (rt.botOf(bot.id) === undefined) return
       // An answer at the limit may have left some out, so the same lines are read
       // again, a few times at most, while each pass still changes something.

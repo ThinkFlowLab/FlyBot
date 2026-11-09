@@ -925,11 +925,10 @@ test('a new user turn clears the backoff, so those lines are read again', async 
   assert.match(requests[2].messages[0].content[0].text, /And keep this too/)
 })
 
-test('an answer with a malformed change, an unlisted entry, or a bad topic changes nothing and keeps the review\'s place', async (t) => {
+test('an answer with a malformed change or an unlisted entry changes nothing and keeps the review\'s place', async (t) => {
   const replies = [
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add' }] }),
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'remove', entry: 7 }] }),
-    JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'The user writes C++', topic: 'C++' }] }),
     JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'I use hunter2 as my password' }] }),
   ]
   const history = { b2: [...ownChat] }
@@ -938,8 +937,8 @@ test('an answer with a malformed change, an unlisted entry, or a bad topic chang
   await call('state', {})
   // Each bad answer is its own review: two failures at one cursor now back off
   // (#P-601), so a new user line starts the next one.
-  for (let tries = 0; tries < 3; tries += 1) {
-    if (tries > 0) history.b2.push({ event: { seq: 10 + tries, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: `Again ${tries}` }] } } })
+  for (let tries = 0; tries < 2; tries += 1) {
+    if (tries > 0) history.b2.push({ event: { seq: 11 + tries, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: `Again ${tries}` }] } } })
     ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
     await reviewed(call)
     assert.throws(() => read('bots', 'b2', 'MEMORY.md'), { code: 'ENOENT' })
@@ -949,9 +948,82 @@ test('an answer with a malformed change, an unlisted entry, or a bad topic chang
   ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
   await reviewed(call)
   // A password is only left out: the rest is written and the place moves on.
-  assert.equal(requests.length, 4)
+  assert.equal(requests.length, 3)
   assert.deepEqual(parseMemory(read('bots', 'b2', 'MEMORY.md')).entries.map(entry => entry.text), ['The user likes tea'])
   assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 13 })
+})
+
+// A topic name memory cannot use drops only that change: the rest of the answer
+// lands and the cursor moves on, so the same lines are never read twice for it.
+test('a change with a topic memory cannot use is left out, the rest of the answer lands, and the review moves on', async (t) => {
+  const warned = []
+  const original = console.error
+  console.error = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const replies = [JSON.stringify({ changes: [{ op: 'add', text: 'The user likes tea' }, { op: 'add', text: 'The user writes C++', topic: 'C++' }] })]
+  const { ctx, call, read, requests, stop } = start({ replies, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  assert.equal(requests.length, 1)
+  // The add beside it landed; the one with the bad topic did not.
+  let saved = ''
+  try { saved = read('bots', 'b2', 'MEMORY.md') } catch { saved = '' }
+  assert.deepEqual(parseMemory(saved).entries.map(entry => entry.text), ['The user likes tea'], 'the rest of the answer landed')
+  assert.doesNotMatch(saved, /C\+\+/)
+  // Left out once, and said so once, with the count and the topic; the answer was not failed.
+  const left = warned.filter(line => /topic memory cannot use/.test(line))
+  assert.equal(left.length, 1, warned.join('\n'))
+  assert.match(left[0], /left out 1 change\(s\) with a topic memory cannot use: first is "C\+\+"/)
+  assert.equal(warned.filter(line => /memory review of .*failed/.test(line)).length, 0, warned.join('\n'))
+  // The cursor moved past the line it read, so the next review calls no model at all.
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 11 })
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  assert.equal(requests.length, 1)
+})
+
+// "One warning" is one per answer, not one per process: the next answer that carries a
+// topic memory cannot use is its own review, and it says so again. The line names how
+// many this answer lost and the first topic — the same review `lastReview` describes.
+test('a later answer that leaves out a bad topic warns again, and the line carries the count', async (t) => {
+  const warned = []
+  const original = console.error
+  console.error = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.error = original })
+  const history = { b2: [...ownChat] }
+  const replies = [
+    JSON.stringify({ changes: [
+      { op: 'add', text: 'The user likes tea' },
+      { op: 'add', text: 'The user writes C++', topic: 'C++' },
+      { op: 'add', text: 'The user writes C#', topic: 'C#' },
+      // A secret is dropped in silence and is not one of the counted changes.
+      { op: 'add', text: 'I use hunter2 as my password', topic: 'C++' },
+    ] }),
+    JSON.stringify({ changes: [{ op: 'add', text: 'The user likes coffee' }, { op: 'add', text: 'The user writes Rust', topic: 'a/b' }] }),
+  ]
+  const { ctx, call, read, requests, stop } = start({ replies, history, config: { memoryReviewDelayMs: 0 } })
+  t.after(() => stop())
+  await call('state', {})
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  history.b2.push({ event: { seq: 12, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'And I like coffee' }] } } })
+  ctx.emit('agent/status', { agent: { id: 'b2' }, status: 'idle' })
+  await reviewed(call)
+  assert.equal(requests.length, 2)
+  // One warning per answer, each naming its own count and first topic: the second
+  // answer is not swallowed because the first one already warned.
+  const left = warned.filter(line => /topic memory cannot use/.test(line))
+  assert.equal(left.length, 2, warned.join('\n'))
+  assert.match(left[0], /left out 2 change\(s\) with a topic memory cannot use: first is "C\+\+"/)
+  assert.match(left[1], /left out 1 change\(s\) with a topic memory cannot use: first is "a\/b"/)
+  assert.equal(warned.filter(line => /memory review of .*failed/.test(line)).length, 0, warned.join('\n'))
+  // Each answer kept its good entries, lost only the bad ones, and moved the cursor on.
+  const saved = read('bots', 'b2', 'MEMORY.md')
+  assert.deepEqual(parseMemory(saved).entries.map(entry => entry.text), ['The user likes tea', 'The user likes coffee'])
+  assert.doesNotMatch(saved, /C\+\+|C#|hunter2|Rust/)
+  assert.deepEqual(JSON.parse(read('reviewed.json')), { 'chat:b2': 12 })
 })
 
 test('an entry memory cannot keep is left out, the rest of the answer lands, and the review moves on', async (t) => {
