@@ -18,11 +18,15 @@ function runnerName(base, taken) {
 // #2677: a step's answer is its own text, so quoting the host's failure sentence in an
 // audit or a pasted log must not fail the node. The host marks a real notice on the
 // message; an old host without that marker is read only in the notice shape at the start
-// of the text (`<name> could not answer your message: …`).
+// A turn the host stopped before it answered ends with a notice of its own, and that one
+// fails the step rather than finishing it with the notice as its output (#2741). The
+// legacy model-failure wording is kept only as the whole line an old host wrote, never as
+// a prefix, so an ordinary answer that ends in it stays an answer.
 const LEGACY_FAILURE_NOTICE = [
   /^[^\n:`"'<>]{1,80} could not answer your message:/i,
   /^could not answer your message$/i,
-  /^[^\n:`"'<>]{0,80}model call failed\.?$/i,
+  /^the model call failed\.?$/i,
+  /^[^\n:`"'<>]{1,80} was stopped before it could answer your message\.?$/i,
 ]
 const legacyFailureNotice = text => LEGACY_FAILURE_NOTICE.some(pattern => pattern.test(text))
 // `rt.deliver` hands the middleware its own args under `deliverArgs`, where the notice
