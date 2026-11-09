@@ -62,13 +62,19 @@ export function install(rt) {
         // An exact route is matched before the /api prefix, so the wall's own admission never
         // runs for it. Keep its first half: a request whose Host is not loopback, the bind
         // address or a trusted authority (or whose Origin is foreign) is refused, exactly as
-        // the wall refuses it. Only the session half is skipped. The fence is read as a hard
-        // member of the service, the way `admit()` reads it: a connection that cannot answer
-        // throws here, and the web server answers that with 400, rather than let a request
-        // through without the fence.
-        if (connection.requestRejection(req) === 403) {
-          res.writeHead(403)
-          res.end('forbidden')
+        // the wall refuses it. Only the session half — the 401 — is skipped. The fence is read
+        // as a hard member of the service, the way `admit()` reads it, and its answer is used as
+        // it comes instead of compared with the one code seen so far: a refusal this route does
+        // not know (a newer status, or the 400 a connection answers for a request it cannot
+        // read) is written with that code, and an answer that is not a status throws into the
+        // web server's 400 arm — never a health answer without the wall's verdict.
+        const rejection = connection.requestRejection(req)
+        if (rejection !== undefined && rejection !== 401) {
+          if (!Number.isInteger(rejection) || rejection < 400 || rejection > 599) {
+            throw new Error(`connection answered a rejection that is not an HTTP status: ${String(rejection)}`)
+          }
+          res.writeHead(rejection)
+          res.end(rejection === 403 ? 'forbidden' : undefined)
           return
         }
         if (req.method !== 'GET') {

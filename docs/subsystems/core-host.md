@@ -85,7 +85,11 @@ because it is an **exact** route and the wall is the `/api` **prefix** — no co
 but it keeps the wall's Host/Origin half: a request whose `Host` is neither loopback, the bind
 address nor a configured trusted authority, or whose `Origin` or `sec-fetch-site` is foreign, gets
 `403 forbidden` exactly as every other `/api` path does, and the route reads that decision from the
-connection service instead of copying the fence. Otherwise it changes nothing about how every other
+connection service instead of copying the fence. That answer is used as it comes, never reduced to
+"is it 403?": the route skips one code and one code only — `401`, the session half — writes any other
+refusal with the connection's own code (a status this route does not know included), and lets an
+answer that is not a status throw into the web server's `400` arm, so no fence answer can become a
+`200`. Otherwise it changes nothing about how every other
 `/api` path is admitted. It answers only `GET` (405 with `allow: GET` otherwise) and never reads
 `authzEnforced()`, so turning enforcement on does not close it. The answer is fixed per process:
 `startedAt` and `commit` cannot move until a restart, and an install that cannot name a checkout — a

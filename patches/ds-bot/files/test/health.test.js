@@ -274,6 +274,32 @@ test('health: a connection without the fence capability answers 400, not a healt
   assert.equal(loopback.status, 400, 'and a request that would have been trusted is refused the same way')
 })
 
+// The fence answer is the connection's decision, and `admit()` refuses with whatever it returned.
+// Reading it as "is it exactly 403?" is the same fail-open as omitting the call, one step later: a
+// refusal this route does not know (a newer status, or the 400 a connection answers for a request
+// it cannot read) becomes a health answer, and the four fields leave without the wall's verdict.
+// The route skips one code and one code only — 401, the session half — and every other answer is
+// written as it came.
+test('health: a fence answer other than 403 is written as it comes, not turned into a health answer', async () => {
+  const server = webServer()
+  server.register(signInWall())
+  boot({ server, fence: { requestRejection: () => 400 } })
+  const { status, body } = await health(server, { headers: { host: 'rebind.example:3080' } })
+  assert.equal(status, 400, "the connection's own code, never a 200 the route chose")
+  for (const field of FIELDS) assert.doesNotMatch(body, new RegExp(`"${field}"`), `no ${field} leaves after a rejection`)
+})
+
+// A connection that cannot answer in the fence's vocabulary at all (a truthy value that is not a
+// status) must reach the web server's 400 arm, not be read as "not 403, so serve it".
+test('health: a fence answer that is not a status leaves no health answer', async () => {
+  const server = webServer()
+  server.register(signInWall())
+  boot({ server, fence: { requestRejection: () => true } })
+  const { status, body } = await serveThroughServer(server, HEALTH_PATH, { headers: { host: 'rebind.example:3080' } })
+  assert.equal(status, 400, 'an answer the route cannot read is a server error, not a request that passed the fence')
+  for (const field of FIELDS) assert.doesNotMatch(body, new RegExp(`"${field}"`), `no ${field} leaves after an unreadable rejection`)
+})
+
 test('health: a method other than GET is not served as health', async () => {
   const server = webServer()
   server.register(signInWall())
