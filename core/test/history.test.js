@@ -38,12 +38,14 @@ test('historyEntry keeps answers, user and Bot messages, and skips setup', () =>
 
 test('termQuery matches long words with FTS5 and short ones with LIKE', () => {
   const sessions = ['s1', 's2']
+  // The rows live in a plain table with UNIQUE(session, seq); the FTS5 table is contentless
+  // over it, so a ranked query joins the index and reads the columns from the rows (#2711).
   assert.deepEqual(termQuery(['needle', 'a"b"c'], sessions, 20), {
-    sql: 'SELECT text, session, seq, time, who FROM lines WHERE lines MATCH ? AND session IN (SELECT value FROM json_each(?)) ORDER BY rank LIMIT 20',
+    sql: 'SELECT lines.text, lines.session, lines.seq, lines.time, lines.who FROM lines_fts JOIN lines ON lines.id = lines_fts.rowid WHERE lines_fts MATCH ? AND lines.session IN (SELECT value FROM json_each(?)) ORDER BY rank LIMIT 20',
     args: ['"needle" "a""b""c"', '["s1","s2"]'],
   })
   assert.deepEqual(termQuery(['会议', '5%'], sessions, 5, { session: 's2', from: 40 }), {
-    sql: "SELECT text, session, seq, time, who FROM lines WHERE session IN (SELECT value FROM json_each(?)) AND NOT (session = ? AND seq >= ?) AND text LIKE ? ESCAPE '\\' AND text LIKE ? ESCAPE '\\' ORDER BY time DESC LIMIT 5",
+    sql: "SELECT lines.text, lines.session, lines.seq, lines.time, lines.who FROM lines WHERE lines.session IN (SELECT value FROM json_each(?)) AND NOT (lines.session = ? AND lines.seq >= ?) AND lines.text LIKE ? ESCAPE '\\' AND lines.text LIKE ? ESCAPE '\\' ORDER BY lines.time DESC LIMIT 5",
     args: ['["s1","s2"]', 's2', 40, '%会议%', '%5\\%%'],
   })
 })
