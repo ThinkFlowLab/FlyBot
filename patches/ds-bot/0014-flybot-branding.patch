@@ -2448,7 +2448,7 @@ diff --git a/test/store.test.js b/test/store.test.js
  test('dispose waits for a pending save and prevents later writes', async (t) => {
    const { rt, home, statePath, dispose } = runtime(t)
    await rt.load()
-@@ -285,3 +285,235 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
+@@ -285,3 +285,263 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
      restore()
    }
  })
@@ -2683,6 +2683,34 @@ diff --git a/test/store.test.js b/test/store.test.js
 +  assert.deepEqual(rt.state.bots, {}, 'a roster that carried no record is repaired to an empty one')
 +  await rt.save()
 +  assert.deepEqual(JSON.parse(fs.readFileSync(statePath, 'utf8')).bots, {})
++})
++
++test('a team file with no version is reported as incomplete, not as a newer FlyBot', async (t) => {
++  const shapes = [
++    ['an empty object', '{}'],
++    ['null', 'null'],
++    ['an empty array', '[]'],
++    ['an empty string', '""'],
++  ]
++  for (const [label, original] of shapes) {
++    const { rt, home, statePath } = runtime(t, original)
++    await rt.load()
++    assert.match(rt.readOnly(), /the team file has no version — it is incomplete \(an empty or half-written file\)/, label)
++    assert.doesNotMatch(rt.readOnly(), /newer FlyBot/, label)
++    rt.state.prefs.marker = 'not saved'
++    await rt.save()
++    assert.equal(fs.readFileSync(statePath, 'utf8'), original, label)
++    assert.deepEqual(fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-')), [], label)
++  }
++})
++
++test('a zero-byte or truncated team file is backed up and loads fresh, never refused as newer', async (t) => {
++  for (const [label, original] of [['zero bytes', ''], ['truncated json', '{"version":2,"bots":{']]) {
++    const { rt, home } = runtime(t, original)
++    await rt.load()
++    assert.equal(rt.readOnly(), undefined, label)
++    assert.equal(fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-')).length, 1, label)
++  }
 +})
 diff --git a/test/update.test.js b/test/update.test.js
 --- a/test/update.test.js

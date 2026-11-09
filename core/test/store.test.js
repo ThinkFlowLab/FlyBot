@@ -673,3 +673,31 @@ test('a version-1 home whose roster is null loads instead of throwing (#2715)', 
   await rt.save()
   assert.deepEqual(JSON.parse(fs.readFileSync(statePath, 'utf8')).bots, {})
 })
+
+test('a team file with no version is reported as incomplete, not as a newer FlyBot', async (t) => {
+  const shapes = [
+    ['an empty object', '{}'],
+    ['null', 'null'],
+    ['an empty array', '[]'],
+    ['an empty string', '""'],
+  ]
+  for (const [label, original] of shapes) {
+    const { rt, home, statePath } = runtime(t, original)
+    await rt.load()
+    assert.match(rt.readOnly(), /the team file has no version — it is incomplete \(an empty or half-written file\)/, label)
+    assert.doesNotMatch(rt.readOnly(), /newer FlyBot/, label)
+    rt.state.prefs.marker = 'not saved'
+    await rt.save()
+    assert.equal(fs.readFileSync(statePath, 'utf8'), original, label)
+    assert.deepEqual(fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-')), [], label)
+  }
+})
+
+test('a zero-byte or truncated team file is backed up and loads fresh, never refused as newer', async (t) => {
+  for (const [label, original] of [['zero bytes', ''], ['truncated json', '{"version":2,"bots":{']]) {
+    const { rt, home } = runtime(t, original)
+    await rt.load()
+    assert.equal(rt.readOnly(), undefined, label)
+    assert.equal(fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-')).length, 1, label)
+  }
+})

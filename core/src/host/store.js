@@ -247,6 +247,12 @@ export function install(rt) {
       stuck = undefined
       return parsed
     }
+    // A file that parses but carries no version is not a newer one: it is empty or was
+    // cut short, and "update FlyBot" would send the person to the wrong repair (#2716).
+    if (parsed?.version === undefined) {
+      stuck = 'the team file has no version — it is incomplete (an empty or half-written file)'
+      return undefined
+    }
     stuck = 'saved by a newer FlyBot; update FlyBot'
     return undefined
   }
