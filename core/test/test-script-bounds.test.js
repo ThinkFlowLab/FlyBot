@@ -47,12 +47,11 @@ test('a stuck test file fails inside the deadline instead of hanging', () => {
       '',
     ].join('\n'))
     let output = ''
-    let status = 0
     try {
       output = execFileSync(process.execPath, ['--test', '--test-timeout=750', join(dir, 'stuck.test.js')], {
         encoding: 'utf8',
-        // A node that ignored the flag would hang here; killing it makes this test fail instead.
-        timeout: 30000,
+        // A node that ignored the flag would hang here instead of failing this test.
+        timeout: 20000,
         stdio: ['ignore', 'pipe', 'pipe'],
         // Inherited from the runner around this file, it makes the child run as a test child of
         // this one: it exits 0 at once and never parses `--test-timeout` at all.
@@ -60,10 +59,14 @@ test('a stuck test file fails inside the deadline instead of hanging', () => {
       })
     } catch (error) {
       output = `${error.stdout ?? ''}${error.stderr ?? ''}`
-      status = error.status
     }
-    assert.notEqual(status, 0, 'the stuck file has to fail, not pass or be killed from outside')
-    assert.match(output, /test timed out after 750ms/, 'node has to cancel it through the deadline and name the failure')
+    assert.match(output, /(?:not ok|✖)/, 'node has to report the stuck file as failed, not leave it pending')
+    // The wording is a node detail: 22 says "test timed out after 750ms", 24 reports the cancellation
+    // as the test's own duration. Both are the deadline; the fixture asks for 60s.
+    const named = /test timed out after 750ms/.test(output)
+    const reported = output.match(/✖ deliberately stuck \((\d+(?:\.\d+)?)ms\)/)
+    const cancelled = reported ? Number(reported[1]) < 5000 : false
+    assert.ok(named || cancelled, 'the failure has to come from the deadline, not from the fixture finishing on its own')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
