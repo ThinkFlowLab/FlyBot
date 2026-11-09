@@ -118,4 +118,6 @@ test('#2717: a torn credentials file of another server is warned about, not read
   t.after(() => controller.dispose())
   assert.deepEqual(controller.status().known, [], 'the unreadable entry is not listed as a known server')
   assert.ok(say.lines.some(line => line.includes(other)), `a warning names the path, saw ${JSON.stringify(say.lines)}`)
+  controller.status()
+  assert.equal(say.lines.filter(line => line.includes(other)).length, 1, 'one broken file is one warning, even though status is polled')
 })

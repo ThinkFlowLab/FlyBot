@@ -255,14 +255,19 @@ export function createServerController({ base: configured, flybot, start, regist
   }
 
   // Servers this profile has saved credentials for (the address only, never the credentials).
+  const warnedKnown = new Set()
   function knownServers() {
     const found = new Set()
     // Listing the saved servers is a convenience, not an identity restore: one damaged credentials
     // file is warned about and left out instead of taking the whole Settings page down with it.
+    // Warned once per path — `status` is polled, and one broken file is one fact for the operator.
     const add = path => {
       let saved
       try { saved = readJson(path, 'Saved Bot Social credentials') } catch (failure) {
-        warn('flybot-social: saved credentials not listed:', failure)
+        if (!warnedKnown.has(path)) {
+          warnedKnown.add(path)
+          warn('flybot-social: saved credentials not listed:', failure)
+        }
         return
       }
       if (typeof saved?.server === 'string' && saved.token) found.add(saved.server)
