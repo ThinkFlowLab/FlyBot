@@ -1010,8 +1010,10 @@ export function createWorkflowService({
     if (!best) return null
     const task = laneOf(best.item.id).queue.shift()
     // #1869: the row is rebuilt from the parked fields, so the brief has to be
-    // named here too or it is lost exactly when the run starts.
-    return { item: best.item, task: carriedTask(task) }
+    // named here too or it is lost exactly when the run starts. The parked row
+    // itself travels back too, so a start the host refuses puts the card where
+    // it was instead of taking it out of the queue for good.
+    return { item: best.item, task: carriedTask(task), row: task }
   }
 
   function noteUnstarted(item, error) {
@@ -1029,6 +1031,10 @@ export function createWorkflowService({
       if (!next) return
       const begun = beginRun(next.item, next.task)
       if (begun.ok === false) {
+        // The card never started, so it is still the owner's parked work. Taking it out
+        // of the queue here loses it: no run holds it, no claim is retried for it, and
+        // the next ingest answers "already" for a card in nobody's hands.
+        laneOf(next.item.id).queue.unshift(next.row)
         noteUnstarted(next.item, begun.error)
         return
       }
@@ -1047,6 +1053,7 @@ export function createWorkflowService({
       if (!next) return
       const started = await startLive(next.item, next.task)
       if (started?.ok === false) {
+        laneOf(next.item.id).queue.unshift(next.row)
         noteUnstarted(next.item, started.error)
         return
       }
@@ -1801,8 +1808,11 @@ export function createWorkflowService({
       let run = runId ? lane.active.find(itemRun => itemRun.id === runId) : lane.active.find(itemRun => itemRun.live === true && itemRun.status === 'running')
       if (!run || run.live !== true) return { ok: false, error: 'No live run to pause' }
       if (run.paused === true) return present()
-      run = { ...run, paused: true, updatedAt: now() }
-      storeRun(workflowId, run)
+      // Set on the record the lane holds, not on a copy: a hand-off waiting on its dispatch
+      // still holds that same object and stores it back when the dispatch lands, so a copy
+      // here is replaced by the hand-off's copy and the pause is silently lost.
+      run.paused = true
+      run.updatedAt = now()
       syncTimers(item, run)
       push(workflowId, [{
         kind: 'system',
@@ -1827,8 +1837,8 @@ export function createWorkflowService({
       // silent skip. Stop again is the retry (#1476).
       if (run.releasePending === true) return { ok: false, error: 'This run is still waiting to release a Bot; stop it again to retry' }
       if (run.paused !== true) return present()
-      run = { ...run, paused: false, updatedAt: now() }
-      storeRun(workflowId, run)
+      run.paused = false
+      run.updatedAt = now()
       syncTimers(item, run)
       push(workflowId, [{
         kind: 'system',
@@ -2475,7 +2485,12 @@ function load(file, warn) {
       warn(`flybot-workflow: ${problem}; starting from the fixture`)
       return { state: null, error: problem, newer: version }
     }
-    if (version !== STORE_VERSION || !Array.isArray(parsed.workflows) || typeof parsed.runs !== 'object') {
+    // A store this build can parse but not read is the same failure as one that does not parse:
+    // the read has to say so instead of throwing out of present() on every render. A workflow
+    // entry that is not an object, or carries no nodes, is not one this build wrote.
+    const entriesReadable = Array.isArray(parsed.workflows)
+      && parsed.workflows.every(item => item !== null && typeof item === 'object' && Array.isArray(item.nodes) && item.nodes.length > 0)
+    if (version !== STORE_VERSION || !entriesReadable || parsed.runs === null || typeof parsed.runs !== 'object') {
       const problem = `the workflow store ${file} is not a workflow file`
       warn(`flybot-workflow: ${problem}; starting from the fixture`)
       return { state: null, error: problem }
