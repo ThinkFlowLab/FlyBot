@@ -1045,10 +1045,34 @@ diff --git a/src/host/store.js b/src/host/store.js
      return undefined
    }
  
-@@ -104,6 +104,27 @@ export function install(rt) {
+@@ -104,6 +104,51 @@ export function install(rt) {
      // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
      if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
      let migrated = !hadCapabilities
++    // Everything above is the file's value, not EMPTY's, and a hand edit, a restore from another
++    // machine or a hand-merged file can bring `null` or a scalar where the schema holds a table.
++    // Those are repaired to their empty shape before anything reads them, because the alternative
++    // is not a refusal: the file loads, `readOnly()` answers "writable", and every write then
++    // fails with a stack that never names the file. `exchanges` was the costly one (#2715) —
++    // `save()` slices it on every write, so creating a Bot, renaming a room, a group message, a
++    // memory write and a delivery all threw — and the other four threw at their own first write
++    // (`state.exchangeTurns[id] ??= []` in turns.js, a group question in tools.js, a room or a
++    // Bot lookup). `prefs` is here too, before the turn-budget migration reads it; `agents`,
++    // `capabilities`, `members`, `projects`, `projectRuns`, `projectMemory`, `mainBotIds`,
++    // `invitations`, `authSessions`, `tasks` and `retiredSessions` are repaired below.
++    if (!isRecord(state.prefs)) {
++      state.prefs = {}
++      migrated = true
++    }
++    if (!Array.isArray(state.exchanges)) {
++      state.exchanges = []
++      migrated = true
++    }
++    for (const key of ['exchangeTurns', 'questions', 'rooms', 'bots']) {
++      if (isRecord(state[key])) continue
++      state[key] = {}
++      migrated = true
++    }
 +    // Team turn budget (#645, the C half; owner decision 2026-11-07): a fresh team starts at the
 +    // default cap, and a team saved before the budget existed stays off (0) until the owner sets a
 +    // number. The file itself is what tells them apart, so one line here is one migration.
