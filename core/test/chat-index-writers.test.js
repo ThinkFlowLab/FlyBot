@@ -47,17 +47,33 @@ const scratch = (t, name = 'ds-bot-index-') => {
 // Holds every page read until `parties` of them are waiting, so two indexers pass the mark
 // read before either commits — the interleaving that produced the duplicate rows. Real
 // hosts reach it by reading one part slowly.
+//
+// A party that never arrives must fail the test, not stall the whole suite until the CI
+// job is cancelled: a wait gives up after BARRIER_TIMEOUT_MS and names how many turned up.
+// The timer does not hold the process open once the test is done.
+const BARRIER_TIMEOUT_MS = 30_000
+
 function barrier(parties) {
   let waiting = []
   let open = false
   return async () => {
     if (open) return
-    await new Promise((resolve) => {
-      waiting.push(resolve)
+    await new Promise((resolve, reject) => {
+      const arrive = () => {
+        waiting = waiting.filter(item => item !== party)
+        reject(new Error(`barrier timeout: only ${waiting.length} of ${parties} parties arrived`))
+      }
+      const party = { resolve, timer: setTimeout(arrive, BARRIER_TIMEOUT_MS) }
+      party.timer.unref()
+      waiting.push(party)
       if (waiting.length >= parties) {
         open = true
-        for (const release of waiting) release()
+        const release = waiting
         waiting = []
+        for (const item of release) {
+          clearTimeout(item.timer)
+          item.resolve()
+        }
       }
     })
   }
@@ -93,6 +109,11 @@ async function start(t, home, { heldBy, gate } = {}) {
   })
   const rt = createRuntime(ctx, { home })
   provideFlyBot(ctx, rt.flybot)
+  // The runtime loads its own state asynchronously (`void rt.load()` on install), and
+  // `partsOf` reads the loaded roster: a read that runs before that load finished sees no
+  // parts, returns `{lines: []}` and never calls `sessionController.page()`, so the party
+  // this test's gate waits for never arrives. Wait for the load the host relies on.
+  await rt.load()
   const host = { home, ctx, rt, warnings, stop: () => ctx.dispose() }
   t.after(() => host.stop())
   return host
