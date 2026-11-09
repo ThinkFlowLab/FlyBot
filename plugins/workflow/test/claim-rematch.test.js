@@ -286,3 +286,36 @@ test('#1647: a non-open card naming a workflow that does not exist keeps its cla
     }
   }
 })
+
+// #2746 S3: a route with no claim beside it still answers `already`. A store written
+// before #1647 carries `routes` and no `claims`, and the claim was the only memory
+// `ingest` read: on that store the same card was matched — and dispatched — again on
+// every poll, rewriting the file each time. The route is the second memory of the
+// same fact, and an unclaimed route is still "this card is already here".
+test('a route with no claim beside it still answers already and writes nothing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-claim-orphan-route-'))
+  try {
+    const svc = serviceAt(dir)
+    const alpha = named(svc, 'Alpha')
+    const first = await svc.ingest({ id: 'task-9', status: 'open', title: 'Ship it', workflowId: alpha.id })
+    assert.deepEqual({ matched: first.matched, already: first.already }, { matched: true, already: false }, 'the first poll matched the card')
+
+    // The shape an older store has: the route is on disk, the claim is not, and no
+    // run is live beside it — so nothing but the route can answer.
+    const store = readStore(dir)
+    delete store.claims
+    store.lanes[alpha.id] = { active: [], queue: [], last: null, history: [] }
+    writeFileSync(join(dir, 'workflows.json'), JSON.stringify(store))
+    const before = snapshot(dir)
+
+    const reloaded = serviceAt(dir)
+    const again = await reloaded.ingest({ id: 'task-9', status: 'open', title: 'Ship it', workflowId: alpha.id })
+    assert.equal(again.ok, true, again.error)
+    assert.equal(again.already, true, 'the route beside the card still answers already')
+    const after = snapshot(dir)
+    assert.deepEqual(after.bytes, before.bytes, 'the store is byte-identical')
+    assert.equal(after.mtimeMs, before.mtimeMs, 'the store was not rewritten')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
