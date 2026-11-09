@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +11,9 @@ import {
   loadSubsystemMap,
 } from '../scripts/check-arch-docs.mjs';
 
-test('parseOwnedPaths reads front-matter', () => {
+test('parseOwnedPaths reads front-matter', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'arch-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const p = join(dir, 'x.md');
   writeFileSync(p, `---\nsubsystem: demo\nowned_paths:\n  - plugins/demo/\n  - core/x.js\n---\n# demo\n`);
   const { subsystem, ownedPaths } = parseOwnedPaths(p);
@@ -70,13 +71,14 @@ test('#1076: the refusal names both places the trailer has to appear', async () 
 // with no `.cmd`/`.exe` is not what PATH lookup finds, so the marker is never written. The case is
 // marked skipped there rather than quietly passing: the Windows behaviour is exercised by the real gate
 // in nightly.yml's `Lint` step on `windows-latest`.
-test('the gate never runs git through a shell', { skip: process.platform === 'win32' }, async () => {
+test('the gate never runs git through a shell', { skip: process.platform === 'win32' }, async (t) => {
   // #1954: on Windows `execSync('git rev-parse --verify origin/main^{commit}')` is handed to cmd.exe,
   // which eats `^`; rev-parse fails and the gate reports "cannot diff against origin/main" on a
   // checkout where origin/main exists. The gate must pass `^{commit}` to git as one argument, no shell
   // in between. A fake `git` early on PATH records the *name of its parent process*: a shell parent
   // means the command was built as a string and handed to sh (which is what cmd.exe does on Windows).
   const dir = mkdtempSync(join(tmpdir(), 'arch-shell-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, 'bin');
   mkdirSync(bin, { recursive: true });
   const marker = join(dir, 'parent.txt');

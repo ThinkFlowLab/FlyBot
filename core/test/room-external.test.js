@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { cleanExternal, createExternalRoomParticipant } from '../src/host/room-participant-external.js'
@@ -9,7 +9,7 @@ import { cleanExternal, createExternalRoomParticipant } from '../src/host/room-p
 const ANSWER = (reply) => `let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);const m=JSON.parse(l);if(m.type==='turn')process.stdout.write(JSON.stringify({text:${JSON.stringify(reply)} + m.text})+'\\n')}})`
 const DIE = 'process.exit(3)'
 
-function fixture(t) {
+function fixture(t, dir) {
   const lines = []
   const warnings = []
   const rt = {
@@ -22,6 +22,9 @@ function fixture(t) {
   const room = { id: 'ops', name: 'Ops', seq: 0 }
   const controller = new AbortController()
   t.after(() => { controller.abort(); driver.close() })
+  // The children write into the test's temp dir, so it is removed only after the close hook above
+  // has taken them with it (#2726).
+  if (dir !== undefined) t.after(() => rmSync(dir, { recursive: true, force: true }))
   const run = (member, text = 'hello') => driver.runTurn({
     room, member, sessionId: `external:ops:${member.id}`, text, note: 'your turn',
     signal: controller.signal, started: [], by: 'chief', exchangeId: `x-${member.id}`,
@@ -82,7 +85,7 @@ test('a stop is asked for on the protocol before the signal, and a shell is not 
   const seen = join(dir, 'seen.txt')
   writeFileSync(seen, '')
   const script = `const fs=require('node:fs');let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);fs.appendFileSync(process.env.SEEN,l+'\\n')}})`
-  const { driver, run } = fixture(t)
+  const { driver, run } = fixture(t, dir)
   const member = {
     id: 'stop', name: 'Stop',
     external: { driver: 'subprocess', command: [process.execPath, '-e', script], env: { SEEN: seen } },
@@ -136,7 +139,7 @@ test('a child that ignores the stop is killed after the grace (#1164)', async (t
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const seen = join(dir, 'pids.txt')
   writeFileSync(seen, '')
-  const { driver, run } = fixture(t)
+  const { driver, run } = fixture(t, dir)
   const member = { id: 'stubborn', name: 'Stubborn', external: { driver: 'subprocess', command: [process.execPath, '-e', STUBBORN], env: { SEEN: seen } } }
   const turn = run(member, 'work')
   await waitFor(() => /start \d+/.test(readFileSync(seen, 'utf8')))
@@ -180,7 +183,7 @@ process.stdin.on('data',c=>{
   const seen = join(dir, 'seen.txt')
   const mark = join(dir, 'mark')
   writeFileSync(seen, '')
-  const { rt, run } = fixture(t)
+  const { rt, run } = fixture(t, dir)
   rt.roomReplyTimeoutMs = 300
   const member = { id: 'held2', name: 'Held2', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { SEEN: seen, MARK: mark } } }
   const rows = () => readFileSync(seen, 'utf8').split('\n').filter(Boolean)
@@ -209,7 +212,7 @@ test('a seat that was closed is never handed the next turn (#1164)', async (t) =
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const seen = join(dir, 'pids.txt')
   writeFileSync(seen, '')
-  const { driver, run } = fixture(t)
+  const { driver, run } = fixture(t, dir)
   const member = { id: 'seat2', name: 'Seat2', external: { driver: 'subprocess', command: [process.execPath, '-e', PID_LOG], env: { SEEN: seen } } }
   const turns = () => readFileSync(seen, 'utf8').split('\n').filter(row => row.startsWith('turn ')).map(row => row.slice(5))
   const stopped = run(member, 'one')
@@ -264,7 +267,7 @@ test('a crash is reported when a grandchild holds the stdio open (#1164)', async
   const HELD = "const fs=require('node:fs');const cp=require('node:child_process');if(!fs.existsSync(process.env.MARK)){fs.writeFileSync(process.env.MARK,'1');fs.writeSync(2,'boom: helper holds the pipe\\n');cp.spawn(process.execPath,['-e','setTimeout(()=>{},1200)'],{stdio:'inherit'});process.exit(1)}let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);const m=JSON.parse(l);if(m.type==='turn')process.stdout.write(JSON.stringify({text:'again: '+m.text})+'\\n')}})"
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const mark = join(dir, 'mark')
-  const { lines, warnings, run } = fixture(t)
+  const { lines, warnings, run } = fixture(t, dir)
   const member = { id: 'held', name: 'Held', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { MARK: mark } } }
   const started = Date.now()
   const first = run(member)
@@ -319,7 +322,7 @@ test('an answer line split past the 4 KB buffer is a failure, not a timeout, and
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const seen = join(dir, 'seen.txt')
   writeFileSync(seen, '')
-  const { driver, rt, lines, run } = fixture(t)
+  const { driver, rt, lines, run } = fixture(t, dir)
   rt.roomReplyTimeoutMs = 700
   const member = { id: 'long', name: 'Long', external: { driver: 'subprocess', command: [process.execPath, '-e', LONG_ANSWER('x'.repeat(5000), 4200)], env: { SEEN: seen } } }
   const starts = () => readFileSync(seen, 'utf8').split('\n').filter(row => row.startsWith('start '))
@@ -383,7 +386,7 @@ process.stdin.on('data',c=>{
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const seen = join(dir, 'seen.txt')
   writeFileSync(seen, '')
-  const { driver, room, lines, run } = fixture(t)
+  const { driver, room, lines, run } = fixture(t, dir)
   const member = { id: 'noisy', name: 'Noisy', external: { driver: 'subprocess', command: [process.execPath, '-e', NOISY], env: { SEEN: seen } } }
   // `open` starts the process without a turn: the noise line is written while the seat is idle.
   await driver.open({ room, member })
@@ -416,7 +419,7 @@ process.stdin.on('data',c=>{
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const seen = join(dir, 'seen.txt')
   writeFileSync(seen, '')
-  const { driver, room, lines, run } = fixture(t)
+  const { driver, room, lines, run } = fixture(t, dir)
   const member = { id: 'cross', name: 'Cross', external: { driver: 'subprocess', command: [process.execPath, '-e', CROSSING], env: { SEEN: seen } } }
   await driver.open({ room, member })
   await waitFor(() => readFileSync(seen, 'utf8').includes('start '))

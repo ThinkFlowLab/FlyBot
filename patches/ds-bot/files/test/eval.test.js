@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -60,8 +60,9 @@ test('judgePrompt names the journey and the checklist', () => {
   assert.match(prompt.prompt, /must show/)
 })
 
-test('guard: a touched grader file is not unchanged', () => {
+test('guard: a touched grader file is not unchanged', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'flybot-eval-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
   const file = join(dir, 'rubric.txt')
   writeFileSync(file, 'v1')
   const before = hashes([file])

@@ -4,7 +4,7 @@
 // inline paths relative to their own package or to the runtime home, so judging them against the repo
 // root reports paths that are not broken. #1403 allows narrowing the file list; it forbids an allowlist.
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -52,8 +52,9 @@ test('every repo path named in inline code on the root READMEs exists on disk', 
   assert.deepEqual(docPathMisses(), [])
 })
 
-test('the tokenizer skips refs, URLs, globs, placeholders, npm scopes and absolute paths, and names a miss', () => {
+test('the tokenizer skips refs, URLs, globs, placeholders, npm scopes and absolute paths, and names a miss', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'doc-paths-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
   mkdirSync(join(root, 'dev', 'harness'), { recursive: true })
   mkdirSync(join(root, 'docs'), { recursive: true })
   writeFileSync(join(root, 'docs', 'install.md'), '# install\n')
