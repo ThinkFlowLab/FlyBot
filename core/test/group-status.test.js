@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -506,6 +506,95 @@ test('Always allow for this group is refused for an ask that did not come from a
   release('rejected')
   assert.equal(await outcome, 'rejected')
   assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'a').standingApprovals, undefined)
+})
+
+// #2764: "Always allow" was written into memory first and only then saved, and the catch did
+// nothing but refuse. A save the store refuses (a link or a directory at the temp name its bytes
+// land through) left the grant live in memory while nothing was on disk: the card stayed pending,
+// but the next matching ask was answered `allowed-once` by a grant the owner never gave. The same
+// shape hid a failed removal: the settings list said "gone" while the grant still answered.
+const tempName = home => `${join(home, 'state.json')}.${process.pid}.tmp`
+// Breaking the temp name refuses every write that starts afterwards, so the store has to be
+// idle first: a card or a turn still saving would fail on the same name and answer as an
+// unhandled rejection, which is not the write under test.
+const quietSaves = async (host, home) => {
+  let stable = 0
+  let last = -1
+  for (let i = 0; i < 400 && stable < 3; i += 1) {
+    const memory = (await host.call('state', {})).value.revision
+    const disk = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).revision
+    if (memory === disk && disk === last) stable += 1
+    else stable = 0
+    last = disk
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  assert.ok(stable >= 3, 'the store did not settle')
+}
+const refuseSave = async (host) => { await quietSaves(host, host.home); mkdirSync(tempName(host.home)) }
+const allowSave = home => rmSync(tempName(home), { recursive: true, force: true })
+
+test('#2764: a refused Bot-scope save leaves no standing grant in memory', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
+  const [card] = (await host.call('state', {})).value.work.approvals
+  await refuseSave(host)
+  const refused = await host.call('approval-answer', { id: card.id, choice: 'always-bot' })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /Not saved: .*is not a plain file of its own/)
+  // The card still waits, and the grant the save could not write is not in memory either.
+  assert.deepEqual((await host.call('state', {})).value.work.approvals.map(entry => entry.id), [card.id])
+  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'b').standingApprovals, undefined, 'the refused grant stayed in the Bot’s record')
+  allowSave(host.home)
+  // The next matching ask is a card again: nothing answers it on the owner's behalf.
+  const second = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
+  const waiting = (await host.call('state', {})).value.work.approvals
+  assert.deepEqual(waiting.map(entry => entry.answerable), [true, true])
+  for (const entry of waiting) assert.equal((await host.call('approval-answer', { id: entry.id, choice: 'reject' })).ok, true)
+  assert.equal(await first, 'rejected')
+  assert.equal(await second, 'rejected')
+})
+
+test('#2764: a refused room-scope save leaves no grant on the group', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
+  const [card] = (await host.call('state', {})).value.work.approvals
+  await refuseSave(host)
+  const refused = await host.call('approval-answer', { id: card.id, choice: 'always-room' })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /Not saved: /)
+  assert.deepEqual((await host.call('state', {})).value.work.approvals.map(entry => entry.id), [card.id])
+  assert.equal((await host.call('state', {})).value.rooms.find(entry => entry.id === 'r1').standingApprovals, undefined, 'the refused grant stayed on the group')
+  allowSave(host.home)
+  const second = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
+  const waiting = (await host.call('state', {})).value.work.approvals
+  assert.deepEqual(waiting.map(entry => entry.answerable), [true, true])
+  for (const entry of waiting) assert.equal((await host.call('approval-answer', { id: entry.id, choice: 'reject' })).ok, true)
+  assert.equal(await first, 'rejected')
+  assert.equal(await second, 'rejected')
+})
+
+test('#2764: a refused removal keeps the grant it could not delete', async (t) => {
+  const host = await start()
+  t.after(host.stop)
+  await openTurn(t, host)
+  await grantFromGroup(host, 'always-bot')
+  const grants = async () => (await host.call('state', {})).value.bots.find(entry => entry.id === 'b').standingApprovals
+  assert.deepEqual((await grants()).map(entry => entry.kind), [KIND])
+  await refuseSave(host)
+  const refused = await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })
+  assert.equal(refused.ok, false)
+  assert.match(refused.error.message, /Not saved: /)
+  // Still on disk, so still in memory — and still answering the asks it covers.
+  assert.deepEqual(((await grants()) ?? []).map(entry => entry.kind), [KIND], 'the grant the refused removal could not delete is gone')
+  chatTurn(host, 'b')
+  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
+  allowSave(host.home)
+  assert.equal((await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })).value, true)
+  assert.equal(await grants(), undefined)
 })
 
 test('a running Bot\'s work names its current step, in one short line, until the turn ends', async (t) => {

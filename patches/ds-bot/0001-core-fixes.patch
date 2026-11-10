@@ -3632,7 +3632,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
        detail: rt.callDetail?.(sessionId, request.callId) ?? {},
        at: Date.now(),
      }
-@@ -47,14 +47,82 @@ export function install(rt) {
+@@ -47,14 +47,102 @@ export function install(rt) {
      })
    }, { prepend: true })
  
@@ -3679,8 +3679,19 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +    const grants = target.standingApprovals ?? []
 +    if (!grants.some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)) {
 +      const grant = { kind, label: kindLabel(entry.tool, entry.reason), at: Date.now(), ...(bot.ownerId === undefined ? {} : { ownerId: bot.ownerId }) }
++      // #2764: the grant exists only once the store holds it. A refused save changed nothing on
++      // disk, so a grant left in memory would answer the next matching card without ever being
++      // written — an "Always allow" the owner never actually gave. The list is replaced, never
++      // edited in place, so the old reference is the snapshot to put back.
++      const before = target.standingApprovals
 +      target.standingApprovals = [...grants, grant]
-+      await rt.save()
++      try {
++        await rt.save()
++      } catch (error) {
++        if (before === undefined) delete target.standingApprovals
++        else target.standingApprovals = before
++        throw error
++      }
 +    }
 +    // Other cards the new grant already covers stop waiting too.
 +    for (const other of pending.values()) {
@@ -3694,12 +3705,21 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +    await rt.load()
 +    const target = scope === 'room' ? rt.roomOf(String(id ?? '')) : rt.botOf(String(id ?? ''))
 +    if (target === undefined) throw Object.assign(new Error('Not found'), { code: 'bot/not-found' })
-+    const before = target.standingApprovals ?? []
-+    const after = before.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
-+    if (after.length === before.length) return false
++    const before = target.standingApprovals
++    const grants = before ?? []
++    const after = grants.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
++    if (after.length === grants.length) return false
 +    if (after.length === 0) delete target.standingApprovals
 +    else target.standingApprovals = after
-+    await rt.save()
++    // #2764: a removal the store refused is not a removal — the grant is still on disk, so it
++    // must still be in memory, or the settings card says "gone" while every new ask is refused.
++    try {
++      await rt.save()
++    } catch (error) {
++      if (before === undefined) delete target.standingApprovals
++      else target.standingApprovals = before
++      throw error
++    }
 +    return true
 +  }
 +
@@ -11437,7 +11457,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 @@ -1,5 +1,5 @@
  import assert from 'node:assert/strict'
 -import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
++import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -11569,7 +11589,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    assert.deepEqual(round.failed, ['Writer'])
    assert.equal(host.agentOf('gb').calls.length, 1)
  })
-@@ -294,3 +294,204 @@ test('an approval asked inside a PTC program shows what that call does', async (
+@@ -294,3 +294,293 @@ test('an approval asked inside a PTC program shows what that call does', async (
    assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
    assert.equal(value.work.bots.b.tool, 'pwsh')
  })
@@ -11707,6 +11727,95 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 +  release('rejected')
 +  assert.equal(await outcome, 'rejected')
 +  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'a').standingApprovals, undefined)
++})
++
++// #2764: "Always allow" was written into memory first and only then saved, and the catch did
++// nothing but refuse. A save the store refuses (a link or a directory at the temp name its bytes
++// land through) left the grant live in memory while nothing was on disk: the card stayed pending,
++// but the next matching ask was answered `allowed-once` by a grant the owner never gave. The same
++// shape hid a failed removal: the settings list said "gone" while the grant still answered.
++const tempName = home => `${join(home, 'state.json')}.${process.pid}.tmp`
++// Breaking the temp name refuses every write that starts afterwards, so the store has to be
++// idle first: a card or a turn still saving would fail on the same name and answer as an
++// unhandled rejection, which is not the write under test.
++const quietSaves = async (host, home) => {
++  let stable = 0
++  let last = -1
++  for (let i = 0; i < 400 && stable < 3; i += 1) {
++    const memory = (await host.call('state', {})).value.revision
++    const disk = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).revision
++    if (memory === disk && disk === last) stable += 1
++    else stable = 0
++    last = disk
++    await new Promise(resolve => setImmediate(resolve))
++  }
++  assert.ok(stable >= 3, 'the store did not settle')
++}
++const refuseSave = async (host) => { await quietSaves(host, host.home); mkdirSync(tempName(host.home)) }
++const allowSave = home => rmSync(tempName(home), { recursive: true, force: true })
++
++test('#2764: a refused Bot-scope save leaves no standing grant in memory', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const [card] = (await host.call('state', {})).value.work.approvals
++  await refuseSave(host)
++  const refused = await host.call('approval-answer', { id: card.id, choice: 'always-bot' })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Not saved: .*is not a plain file of its own/)
++  // The card still waits, and the grant the save could not write is not in memory either.
++  assert.deepEqual((await host.call('state', {})).value.work.approvals.map(entry => entry.id), [card.id])
++  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'b').standingApprovals, undefined, 'the refused grant stayed in the Bot’s record')
++  allowSave(host.home)
++  // The next matching ask is a card again: nothing answers it on the owner's behalf.
++  const second = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const waiting = (await host.call('state', {})).value.work.approvals
++  assert.deepEqual(waiting.map(entry => entry.answerable), [true, true])
++  for (const entry of waiting) assert.equal((await host.call('approval-answer', { id: entry.id, choice: 'reject' })).ok, true)
++  assert.equal(await first, 'rejected')
++  assert.equal(await second, 'rejected')
++})
++
++test('#2764: a refused room-scope save leaves no grant on the group', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const [card] = (await host.call('state', {})).value.work.approvals
++  await refuseSave(host)
++  const refused = await host.call('approval-answer', { id: card.id, choice: 'always-room' })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Not saved: /)
++  assert.deepEqual((await host.call('state', {})).value.work.approvals.map(entry => entry.id), [card.id])
++  assert.equal((await host.call('state', {})).value.rooms.find(entry => entry.id === 'r1').standingApprovals, undefined, 'the refused grant stayed on the group')
++  allowSave(host.home)
++  const second = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const waiting = (await host.call('state', {})).value.work.approvals
++  assert.deepEqual(waiting.map(entry => entry.answerable), [true, true])
++  for (const entry of waiting) assert.equal((await host.call('approval-answer', { id: entry.id, choice: 'reject' })).ok, true)
++  assert.equal(await first, 'rejected')
++  assert.equal(await second, 'rejected')
++})
++
++test('#2764: a refused removal keeps the grant it could not delete', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  await grantFromGroup(host, 'always-bot')
++  const grants = async () => (await host.call('state', {})).value.bots.find(entry => entry.id === 'b').standingApprovals
++  assert.deepEqual((await grants()).map(entry => entry.kind), [KIND])
++  await refuseSave(host)
++  const refused = await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Not saved: /)
++  // Still on disk, so still in memory — and still answering the asks it covers.
++  assert.deepEqual(((await grants()) ?? []).map(entry => entry.kind), [KIND], 'the grant the refused removal could not delete is gone')
++  chatTurn(host, 'b')
++  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
++  allowSave(host.home)
++  assert.equal((await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })).value, true)
++  assert.equal(await grants(), undefined)
 +})
 +
 +test('a running Bot\'s work names its current step, in one short line, until the turn ends', async (t) => {
