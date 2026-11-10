@@ -55,6 +55,11 @@ export const MIN_STEP_TIMEOUT_MINUTES = 1
 export const MAX_STEP_TIMEOUT_MINUTES = 120
 export const STEP_DEADLINE_MS = DEFAULT_STEP_TIMEOUT_MINUTES * 60 * 1000
 export const HANDOFF_RETRY_DELAYS_MS = [1000, 2000]
+// #2748: a start whose Bots the host never finishes creating leaves the card
+// out of `lane.queue` (takeNext already shifted it) and the call hanging. The
+// spawn gets its own bound, shorter than a step's: no card waits a whole step
+// deadline for an answer that may never come.
+export const SPAWN_DEADLINE_MS = 60 * 1000
 
 function stepTimeoutValue(raw) {
   const value = Number(raw)
@@ -392,13 +397,48 @@ export function createWorkflowService({
     write()
   }
 
+  // #2748 C4: a host that never answers a spawn must not keep the card out of the
+  // queue with the call hanging. The wait is bounded; on the deadline the start is
+  // refused, and the Bots a late answer creates are released rather than leaked.
+  function boundedSpawn(pending) {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const handle = setTimer(() => {
+        settled = true
+        const error = new Error(`the host did not create the run Bots within ${Math.round(SPAWN_DEADLINE_MS / 1000)}s`)
+        error.code = 'spawn-timeout'
+        Promise.resolve(pending)
+          .then(ids => (typeof release === 'function' ? releaseAll(Object.values(ids ?? {}), release, warn) : []))
+          .catch(() => {})
+        reject(error)
+      }, SPAWN_DEADLINE_MS)
+      handle?.unref?.()
+      Promise.resolve(pending).then((ids) => {
+        if (settled) return
+        settled = true
+        clearTimer(handle)
+        resolve(ids)
+      }, (error) => {
+        if (settled) return
+        settled = true
+        clearTimer(handle)
+        reject(error)
+      })
+    })
+  }
+
   // A step that reaches its deadline is failed, frees its Bots and says which
   // step it was, so a lost Bot cannot hold a lane slot forever. The deadline is a
   // limit on the wait, not proof nothing arrived: a step was killed at 45 minutes
   // while still writing (#1868), so the line names the deadline it reached and
   // never reads as a reply that never came.
   function expireStep(workflowId, runId, nodeId) {
-    return hostSerial(async () => {
+    // #2748: the deadline must not be queued behind the wait it bounds. The tail
+    // can be parked for ever by a host call that never answers (a dispatch, a
+    // release, a spawn), and a deadline that waited its turn behind one never
+    // ran — the run stayed `running` with its timer already consumed. The record
+    // is settled here, off the tail, and the drain that follows runs outside it.
+    return (async () => {
       const item = workflow(workflowId)
       const minutes = stepTimeoutMinutesOf(item)
       const lane = laneOf(workflowId)
@@ -427,7 +467,7 @@ export function createWorkflowService({
       await releaseRun(workflowId, run)
       await drainAll()
       return present()
-    }).catch(error => warn(`flybot-workflow: step ${nodeId} could not be timed out: ${error?.message ?? error}`))
+    })().catch(error => warn(`flybot-workflow: step ${nodeId} could not be timed out: ${error?.message ?? error}`))
   }
 
   // The bytes of a store this service could not read are kept before the first write
@@ -1202,10 +1242,10 @@ export function createWorkflowService({
       try {
         // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
         // this run may use; the host intersects them with each node's `tools`.
-        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
+        ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
           callerBotId: task.callerBotId,
           authorBotId: item.authoredBy,
-        })
+        }))
       } catch (error) {
         await releaseAll(error.spawned ?? [], release, warn)
         return refuse(error)
