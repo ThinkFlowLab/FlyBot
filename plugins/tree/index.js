@@ -19,7 +19,7 @@ export function apply(ctx, config = {}) {
   // Cordis gives ctx.logger as a factory; a host may give a ready logger object instead.
   const logger = typeof ctx.logger === 'function' ? ctx.logger('flybot-tree') : ctx.logger
   const warn = (...args) => (logger?.warn ?? console.warn)(...args)
-  const tree = createTree(fb, { limits: resolveLimits(config), rootName: config.rootName, rootBotId: config.rootBotId, adoptExisting: config.adoptExisting !== false, warn, classify: config.classify, tidy: config.tidy, burstGrouping: config.burstGrouping, now: typeof config.now === 'function' ? config.now : undefined })
+  const tree = createTree(fb, { limits: resolveLimits(config), rootName: config.rootName, rootBotId: config.rootBotId, adoptExisting: config.adoptExisting !== false, warn, classify: config.classify, tidy: config.tidy, burstGrouping: config.burstGrouping, jobTimeoutMs: config.jobTimeoutMs, now: typeof config.now === 'function' ? config.now : undefined })
   // A child's turn boundary rewrites its parent's prompt, so a rename or role edit reaches the
   // coordinator's child list. The block carries no load (#895: list_children reads that live), so
   // writeBlock finds it unchanged and nothing churns.
