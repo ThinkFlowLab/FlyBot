@@ -101,7 +101,8 @@ per-call prompt percentiles (nearest rank), the top Sessions by prompt, and each
 prompt growth between consecutive calls. A prompt that shrinks inside a Session is a
 compaction, a checkpoint or a new part, so it starts a new run instead of counting as a
 negative delta. Fresh input and cache read are never summed into one figure. It opens the
-ledger read-only, defaults `--db` to `$DSH_HOME/usage.sqlite`, and exits non-zero naming the
+ledger read-only, defaults `--db` to `$DSH_HOME/bot/usage.sqlite` (the team folder
+`core/index.js:94` hands the host modules), and exits non-zero naming the
 path when it is missing. The report it produced and its sample are in
 [docs/reports/2026-10-23-token-spend.md](../../docs/reports/2026-10-23-token-spend.md);
 `core/test/token-report.test.js` asserts hand-computed sums on a fixture ledger, the
