@@ -295,6 +295,40 @@ export function install(rt) {
     await rt.considerTaskDrive?.()
   }
 
+  // #2761: every write here reaches `state.tasks` before the store takes it, and a refused store
+  // write (a temp name that is not a plain file, a lost lock, a full disk) used to leave the batch
+  // in memory for the next unrelated save to persist. A write path snapshots the board first and
+  // puts it back when the store refuses. The snapshot is deep, unlike the staged copy #2597 uses:
+  // the claim, release and rework paths mutate the live card in place, so a shallow copy would hold
+  // the very objects it has to undo. Restoring writes the old references back into the same keys, so
+  // a caller already holding a card keeps seeing that object; `state.revision` is never touched —
+  // the store moved it forward before the write, and a refusal does not rewind it.
+  const snapshotTasks = () => structuredClone(state.tasks ?? {})
+  const restoreTasks = (before) => {
+    state.tasks ??= {}
+    const live = state.tasks
+    for (const id of Object.keys(live)) if (!(id in before)) delete live[id]
+    for (const [id, saved] of Object.entries(before)) {
+      const card = live[id]
+      if (!card) { live[id] = saved; continue }
+      // Every key, in the saved order: a key the failed write deleted comes back where it was, so
+      // the restored card is byte-identical to the snapshot and not only equal to it.
+      for (const key of Object.keys(card)) delete card[key]
+      Object.assign(card, saved)
+    }
+  }
+  const commitTasks = async (before) => {
+    try {
+      await rt.save()
+    } catch (error) {
+      restoreTasks(before)
+      throw error
+    }
+    // #1205: the wake is not the write. A failure there must not fail the batch, and it must not
+    // roll one back either — `considerTaskDrive` already catches its own.
+    await rt.considerTaskDrive?.()
+  }
+
   const botRecord = id => state.bots?.[id]
   // The human who owns this Bot. With no signed-in member the single-human product
   // may see every local Bot, the same way the rest of the task API does.
@@ -1022,6 +1056,7 @@ export function install(rt) {
     await rt.load()
     const live = find(pick.id)
     if (live === undefined || live.status !== 'open' || live.claimedBy !== undefined) return { item: null, reason: 'taken' }
+    const before = snapshotTasks()
     live.claimedBy = botId
     live.ownerBotId = botId
     delete live.retryAt
@@ -1031,8 +1066,8 @@ export function install(rt) {
     // Every claim gets a worker nobody else has started (#1729).
     live.worker = newWorker()
     transition(live, 'claimed', null, { by: 'claimed from the queue' })
+    await commitTasks(before)
     announceClaim(live)
-    await save()
     return { item: view(live) }
   }
 
@@ -1064,6 +1099,7 @@ export function install(rt) {
     await rt.load()
     const live = find(pick.id)
     if (live === undefined || live.status !== 'open' || live.claimedBy !== undefined) return { item: null, reason: 'taken' }
+    const before = snapshotTasks()
     live.claimedBy = botId
     live.ownerBotId = botId
     delete live.retryAt
@@ -1072,8 +1108,8 @@ export function install(rt) {
     live.lease = { holder: botId, takenAt: claimedAt, expiresAt: claimedAt + LEASE_TTL_SEC * 1000 }
     live.worker = newWorker()
     transition(live, 'claimed', null, { by: 'claimed from the handoff pool' })
+    await commitTasks(before)
     announceClaim(live)
-    await save()
     return { item: view(live) }
   }
 
@@ -1091,8 +1127,9 @@ export function install(rt) {
     if (reason === undefined) throw invalid('Returning a card to its producer needs a one-line reason')
     const producer = oneLine(task.handoff?.from ?? '', ROLE_MAX)
     if (producer === '' || producer === 'requester') throw refuse('no-producer', `card ${task.id} carries no producer role to return it to`)
+    const before = snapshotTasks()
     const child = openRework(task, reason, myRole)
-    await save()
+    await commitTasks(before)
     return view(child)
   }
 
@@ -1112,8 +1149,9 @@ export function install(rt) {
     if (!Number.isInteger(seconds) || seconds < 0 || seconds > QUEUE_RETRY_MAX_SEC) {
       throw invalid(`retryInSec must be a whole number of seconds from 0 to ${QUEUE_RETRY_MAX_SEC}`)
     }
+    const before = snapshotTasks()
     requeue(task, reason, seconds)
-    await save()
+    await commitTasks(before)
     return view(task)
   }
 
@@ -1296,10 +1334,11 @@ export function install(rt) {
     } finally {
       staging = null
     }
+    const before = snapshotTasks()
     for (const id of Object.keys(board)) if (!(id in staged)) delete board[id]
     for (const [id, task] of Object.entries(staged)) board[id] = task
+    await commitTasks(before)
     for (const task of claims) announceClaim(task)
-    await save()
     // The conversation path is a board write like task-create and task-update, so a plugin
     // has to see it: a card a Bot records itself with `workflow:<id>` starts nothing
     // otherwise (#1462). Routing after the save also keeps a routed owner visible.
