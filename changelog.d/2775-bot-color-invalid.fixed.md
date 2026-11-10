@@ -1,0 +1,1 @@
+`update_bot` now refuses a colour the host does not know, instead of answering `Updated <name>.` while the Bot keeps the colour it had; the refusal names the accepted colours ([#2775](https://github.com/ThinkFlowLab/FlyBot/issues/2775)).

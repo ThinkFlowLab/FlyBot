@@ -2,7 +2,7 @@
 // the first Main Bot of a new team.
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
+import { COLORS, EXTRA_COLORS, MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
 import { currentColor, cut, isColor, stripInvisible, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { cleanExternal } from './room-participant-external.js'
@@ -210,7 +210,13 @@ export function install(rt) {
     let modelChanged = false
     if (patch.color !== undefined) {
       if (patch.color === null) delete bot.color
-      else if (isColor(currentColor(patch.color))) bot.color = currentColor(patch.color)
+      else {
+        const color = currentColor(patch.color)
+        // A colour the host does not know is refused like a bad name or model (#2775): dropping
+        // it in silence let the tool answer "Updated …" for a value that never landed.
+        if (!isColor(color)) throw new Error(`Color must be one of ${[...COLORS, ...EXTRA_COLORS].join(', ')} or #rrggbb`)
+        bot.color = color
+      }
     }
     if (patch.avatar !== undefined) {
       const avatar = cleanAvatar(patch.avatar)
