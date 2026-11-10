@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Phase 0: these rules only REPORT a tier (see docs/autonomous-dev.md). Nothing reads them to block or merge. Editing this file is itself T3.",
+  "note": "`risk-tier.yml` reports a tier from these rules, and `merge-gate.mjs` recomputes it from the same rules to decide whether a PASS is required: a T0/T1 change merges on green CI, a T2/T3 change needs a PASS at the tip. Editing this file is itself T3.",
   "tiers": {
     "T3": {
       "meaning": "high risk: a PASS at the current head (self-PASS counts) and green CI; the gating agent then merges it itself through the merge queue (owner decision 2026-10-21)",
@@ -31,7 +31,7 @@
     },
     "T1": {
       "meaning": "low risk: client code, tests, generated files; merges through the queue on green CI, no PASS or approval needed",
-      "paths": ["core/src/client/**", "core/client.js", "patches/**", "core/test/**", "plugins/*/test/**", "CHANGELOG.md", "changelog.d/**"]
+      "paths": ["core/src/client/**", "core/client.js", "patches/**", "core/test/**", "CHANGELOG.md", "changelog.d/**"]
     },
     "T0": {
       "meaning": "lowest risk: documentation; merges through the queue on green CI, no PASS or approval needed",

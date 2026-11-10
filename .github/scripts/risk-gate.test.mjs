@@ -152,6 +152,45 @@ test('render: the machine-readable line is the last line of the report', () => {
   assert.equal(render(r, meaning).trimEnd().split('\n').at(-1), summaryLine(r))
 })
 
+// A concrete path a glob matches, for the reachability check below: `**/` -> `x/`, `**` -> `x`,
+// `*` and `?` -> `x`, `{a,b}` -> `a`. One sample per glob is enough to catch a glob that a wider,
+// higher rule covers completely — the shape this guards — not a proof for every path beneath it.
+const globSample = (g) => {
+  let out = ''
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i]
+    if (c === '*' && g[i + 1] === '*') {
+      if (g[i + 2] === '/') { out += 'x/'; i += 2 } else { out += 'x'; i += 1 }
+    } else if (c === '*' || c === '?') out += 'x'
+    else if (c === '{' && g.indexOf('}', i) > i) { const j = g.indexOf('}', i); out += g.slice(i + 1, j).split(',')[0]; i = j }
+    else out += c
+  }
+  return out
+}
+
+// Every glob a tier lists must resolve to that tier. A glob a wider, higher rule already covers
+// makes its own tier unreachable: the tier a pull request gets is the wider one, and that tier is
+// what `merge-gate.mjs` reads to decide whether a PASS is required — so the line reads as a rule
+// it is not. This is the shape a dead `plugins/*/test/**` line under T1 had while `plugins/**` is T2.
+test('rules file: every glob a tier lists resolves to that tier, so no rule is unreachable', () => {
+  for (const [t, d] of Object.entries(rules.tiers)) {
+    for (const g of d.paths) {
+      const sample = globSample(g)
+      assert.ok(globToRe(g).test(sample), `${g}: the sample ${sample} does not match its own glob`)
+      const got = gate.tierOf(sample)
+      assert.equal(got, t, `${g}: ${sample} is ${got}, not ${t} — a higher tier already covers this glob`)
+    }
+  }
+})
+
+// The behaviour those rules produce today, pinned so a later edit has to say what it changes: a
+// plugin test file is T2 because `plugins/**` is the wider rule, while `core/test/**` is T1.
+test('tierOf: a plugin test file is T2 (plugins/** wins) while core/test/** is T1', () => {
+  assert.equal(gate.tierOf('plugins/workflow/test/x.test.js'), 'T2')
+  assert.equal(gate.tierOf('plugins/social/test/anything.test.js'), 'T2')
+  assert.equal(gate.tierOf('core/test/chat.test.js'), 'T1')
+})
+
 test('rules file is consistent', () => {
   for (const t of ['T0', 'T1', 'T2', 'T3']) assert.ok(rules.tiers[t].meaning && rules.tiers[t].paths.length, t)
   assert.ok(['T2', 'T3'].includes(rules.unknownPathTier), 'unknown paths must not default below T2')
