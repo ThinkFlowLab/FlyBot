@@ -1,0 +1,1 @@
+Reading a long room that was saved before rooms carried a `seq` counter no longer walks its log once per line: the read works out the join floor once and filters with that number, so a 20,000-line history reads in linear instead of quadratic time, with the same visible lines and the same one-time warning ([#2766](https://github.com/ThinkFlowLab/FlyBot/issues/2766)).

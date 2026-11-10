@@ -496,7 +496,12 @@ export function install(rt) {
     }
     return seq
   }
-  const linesFrom = (room, actor) => (room.log ?? []).filter(line => (line.seq ?? 0) >= floorOf(room, actor))
+  const linesFrom = (room, actor) => {
+    // The floor is one number for the whole read: a room saved before `seq` existed finds its clamp
+    // target with a reduce over the whole log, so asking per line reduced an n-line log n times.
+    const from = floorOf(room, actor)
+    return (room.log ?? []).filter(line => (line.seq ?? 0) >= from)
+  }
 
   rt.participantsOf = room => currentParticipants(room)
   rt.roomVisibleTo = (actor, roomId) => roomVisibleTo(state, actor, roomId)
