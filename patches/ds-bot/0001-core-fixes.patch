@@ -8959,7 +8959,7 @@ diff --git a/src/host/turns.js b/src/host/turns.js
            if (!expectsReply(source) || answersUser(source)) return
            const name = rt.botOf(rt.selfOf(id))?.name ?? 'The other Bot'
            // A sender that wrote from a group gets the reply in its Session there, while
-@@ -434,6 +434,9 @@ export function install(rt) {
+@@ -434,21 +434,33 @@ export function install(rt) {
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
@@ -8969,11 +8969,21 @@ diff --git a/src/host/turns.js b/src/host/turns.js
              }).catch(error => rt.warn('ds-bot: failure notice delivery failed: %s', error))
            } else if (reply !== '' || reason?.kind === 'aborted') {
              // A turn stopped before it could answer still owes the sender a line,
-@@ -446,9 +446,14 @@ export function install(rt) {
+             // or it would wait forever for a reply that never comes.
++            const stopped = reply === ''
++            // #2742: the outcome is the message's own field, not something a reader infers from
++            // the sentence — an answer says it answered, and a stop says it did not.
+             void rt.deliver({
+               fromId: rt.selfOf(id),
+               toId: source.senderSessionId,
+               ...(back ? { sessionId: back } : {}),
+-              text: reply !== '' ? reply : `${name} was stopped before it could answer your message.`,
++              text: stopped ? `${name} was stopped before it could answer your message.` : reply,
                role: 'reply',
                hop: (source.hop ?? 0) + 1,
                replyTo: source.exchangeId,
 +              origin,
++              failure: stopped,
              }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
            }
          }
@@ -9891,6 +9901,28 @@ diff --git a/test/bot-messages.test.js b/test/bot-messages.test.js
    }
    installTurns(rt)
    let seq = 0
+@@ -342,6 +342,21 @@ test('a joined request in a stopped turn tells its sender, and is not handed bac
+   assert.equal(delivered[0].toId, 'a')
+   assert.equal(delivered[0].replyTo, 'e1')
+   assert.match(delivered[0].text, /was stopped before it could answer/)
++  // #2742: the outcome travels with the answer, so a step reader never parses this sentence.
++  assert.equal(delivered[0].failure, true, 'a stopped turn answers with a failure marker')
++})
++
++test('#2742: a completed reply carries an explicit success marker', () => {
++  const { emit, delivered } = turnsHost()
++  emit('b', 'turn/start', { turn: 1 })
++  emit('b', 'user/message', { content: textBlock('[Message from Chief]\nstatus?'), source: replySource('request', { exchangeId: 'e1' }) })
++  emit('b', 'assistant/message', assistantText('Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).'))
++  emit('b', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
++  assert.equal(delivered.length, 1)
++  assert.equal(delivered[0].replyTo, 'e1')
++  // The answer says what it is, so an answer that happens to quote a failure notice is still an
++  // answer; without the marker a step reads the sentence and fails the node (#2742).
++  assert.equal(delivered[0].failure, false, 'an ordinary answer carries failure: false')
+ })
+ 
+ test('a joined request gets the failure notice when the model call fails', () => {
 @@ -356,6 +356,109 @@ test('a joined request gets the failure notice when the model call fails', () =>
    assert.match(delivered[0].text, /^Writer could not answer your message: its model call failed \(SERVER 503: upstream busy\)/)
  })

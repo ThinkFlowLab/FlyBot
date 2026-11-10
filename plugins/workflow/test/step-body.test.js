@@ -179,3 +179,13 @@ test('#2677: an old host without the marker is read only at the start of the tex
   assert.equal(await stepOk({ text: 'The model call failed.' }), false)
   assert.equal(await stepOk({ text: 'The log said "`<name> could not answer your message: its model call failed`".' }), true, 'a quoted notice after the start is not the step failing')
 })
+
+// #2742: every turn the host completes carries its outcome, so the sentence is never read for a
+// new host — a stop notice fails the step, and an answer that merely quotes one still advances it.
+test('#2742: the host marker decides a stop notice, not its wording', async () => {
+  const stopNotice = 'Writer was stopped before it could answer your message.'
+  assert.equal(await stepOk({ text: stopNotice, failure: true }), false, 'a marked stop fails the step')
+  assert.equal(await stepOk({ text: stopNotice, deliverArgs: { failure: true } }), false, 'the live delivery carries it under deliverArgs')
+  assert.equal(await stepOk({ text: stopNotice, failure: false }), true, 'a marker that says the answer succeeded wins over the wording')
+  assert.equal(await stepOk({ text: QUOTED_FAILURE, deliverArgs: { failure: false } }), true, 'an ordinary answer that quotes the notice is still an answer')
+})
