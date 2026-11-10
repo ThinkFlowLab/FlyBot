@@ -18645,7 +18645,7 @@ function statusText2(connector) {
 }
 function CredentialField({ credential, value, onChange, onEnter, autoFocus }) {
   const label = t(credential.label);
-  if (credential.masked) return (0, import_react39.createElement)(MaskedInput, { value, onChange, onEnter, label, autoFocus });
+  if (credential.masked) return (0, import_react39.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react39.createElement)(MaskedInput, { value, onChange, onEnter, label, autoFocus }));
   return (0, import_react39.createElement)(
     "label",
     { className: "bt-q-field" },
