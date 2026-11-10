@@ -1,0 +1,1 @@
+A card queued behind a run that ended **failed** now starts on its own: the load-time reap that ends a run a dead host left `running` drains the lane's queue the way any other terminal transition does, instead of leaving the card parked with a free slot until the next assign. See [#2752](https://github.com/ThinkFlowLab/FlyBot/issues/2752).

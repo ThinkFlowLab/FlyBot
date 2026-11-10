@@ -5,8 +5,10 @@
 //   node dev/token-report.mjs [--db <path>] [--from <date>] [--to <date>] [--tz <zone>]
 //                             [--bot <name>] [--top <n>] [--growth <n>] [--json]
 //
-// `--db` defaults to `$DSH_HOME/usage.sqlite` (see src/host/usage.js). A missing file is an
-// error, never an empty table: an empty report is exactly what a broken path looks like.
+// `--db` defaults to `$DSH_HOME/bot/usage.sqlite`, the team folder `createRuntime` hands the
+// host modules (`core/index.js:94`; `src/host/usage.js` writes the ledger there). A missing
+// file is an error, never an empty table: an empty report is exactly what a broken path looks
+// like.
 //
 // Fresh input, cache read and cache write are kept apart in every total. A cache read is
 // not a fresh input token and summing them hides which one moved (`#796`). `prompt` is the
@@ -346,7 +348,7 @@ function printText(report) {
 
 function main() {
   const flags = parseArgs(process.argv.slice(2))
-  const dbPath = flags.db ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'usage.sqlite')
+  const dbPath = flags.db ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'bot', 'usage.sqlite')
   if (!existsSync(dbPath)) die(`no ledger at ${dbPath} (pass --db <path>)`)
   const from = flags.from === null ? null : parseInstant(flags.from, flags.tz, false)
   const to = flags.to === null ? null : parseInstant(flags.to, flags.tz, true)
