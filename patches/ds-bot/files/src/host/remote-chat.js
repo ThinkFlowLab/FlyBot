@@ -139,11 +139,33 @@ export function remoteTurn(messages) {
   return { kind: 'none' }
 }
 
+// The chat a published record names (#2797). A room reaches this home once per member of that room:
+// every member record carries the same name — the room's own title — at the same home, and each one
+// used to open a chat of its own, so the friends' list showed one room as many rows. The chat belongs
+// to the room, not to the member handle it happened to arrive on. A record with no home, or none of
+// its own name, keeps the plain per-handle rule, and so does every older chat that recorded neither.
+const remoteNameKey = name => String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+const roomKeyOf = ({ home, name }) => {
+  const at = normRemoteHandle(home)
+  // The name is cut where a chat's stored name is cut, so a long room title keys the same on both sides.
+  const label = remoteNameKey(cut(String(name ?? ''), 40).text)
+  return label && at.length > 1 ? `${at}|${label}` : ''
+}
+
 export function install(rt) {
   const { ctx, state } = rt
   const warn = (...args) => rt.warn?.(...args)
   const chats = () => Object.values(state.bots ?? {}).filter(isRemoteChat)
   const chatOfHandle = handle => chats().find(bot => normRemoteHandle(bot.remote.handle) === normRemoteHandle(handle))
+  // The chat already holding this room, if one is. Two plugins publishing the same title are still
+  // two chats, and a chat that recorded no plugin is not rewritten by one that does.
+  const chatOfRoom = ({ home, name, plugin }) => {
+    const key = roomKeyOf({ home, name })
+    if (!key) return undefined
+    return chats().find(bot => (plugin === undefined || bot.remote.plugin === undefined || bot.remote.plugin === plugin)
+      && roomKeyOf({ home: bot.remote.home, name: bot.name }) === key)
+  }
+  const chatRoomKey = bot => roomKeyOf({ home: bot?.remote?.home, name: bot?.name })
   const senders = new Map()
   const pending = new Map()
 
@@ -229,7 +251,7 @@ export function install(rt) {
     if (isHomeLevelRemote({ handle, home })) return Promise.resolve(undefined)
     const run = opening.then(async () => {
       await rt.load()
-      const existing = chatOfHandle(handle)
+      const existing = chatOfHandle(handle) ?? chatOfRoom({ home, name, plugin })
       if (existing !== undefined) {
         const next = { ...existing.remote, home, ...(homeName ? { homeName } : {}), plugin, gone: undefined }
         delete next.gone
@@ -261,15 +283,26 @@ export function install(rt) {
     const goneBefore = new Map()
     for (const bot of chats()) if (bot.remote.plugin === plugin) goneBefore.set(bot.id, Boolean(bot.remote.gone))
     const handles = new Set()
+    const rooms = new Set()
     for (const member of list) {
       if (isHomeLevelRemote(member)) continue
       handles.add(normRemoteHandle(member.handle))
+      // One room is published once per member: opening each member would give the room one row each
+      // (#2797), so the room is opened once and the rest of its members only keep it from going stale.
+      const room = roomKeyOf(member)
+      if (room) {
+        if (rooms.has(room)) continue
+        rooms.add(room)
+      }
       await open({ ...member, plugin }).catch(error => warn('ds-bot: chat for %s not opened: %s', member.handle, error))
     }
     let changed = false
     for (const bot of chats()) {
       if (bot.remote.plugin !== plugin) continue
-      const gone = isHomeLevelRemote(bot.remote) || !handles.has(normRemoteHandle(bot.remote.handle))
+      // A chat whose room is still published is not gone when the member handle that carried the room
+      // has changed: the publisher names a room by its members, and any of them speaks for it.
+      const room = chatRoomKey(bot)
+      const gone = isHomeLevelRemote(bot.remote) || (!handles.has(normRemoteHandle(bot.remote.handle)) && !(room && rooms.has(room)))
       const wasGone = goneBefore.get(bot.id) ?? Boolean(bot.remote.gone)
       if (wasGone !== gone) {
         bot.remote = { ...bot.remote, ...(gone ? { gone: true } : {}) }
