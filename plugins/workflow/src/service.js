@@ -2255,12 +2255,13 @@ export function createWorkflowService({
       if (!writable()) return Promise.resolve()
       // #2704: the call that noticed the takeover already started the same reaper a load
       // runs; hand that one back instead of releasing the dead window's Bots twice.
-      if (takingOver !== null) {
-        const pending = takingOver
-        takingOver = null
-        return pending
-      }
-      return reapRuns()
+      const pending = takingOver !== null ? takingOver : reapRuns()
+      takingOver = null
+      // #2752: a run this reap ended is a terminal transition like a step's own ending, so
+      // the queue moves on it. With the drain on the finish paths only, the card behind a
+      // `host-ended` run stays parked while the lane reports a free slot and nothing
+      // running, and the next assign is what finally starts it.
+      return pending.then(() => drainAll())
     },
     dispose() {
       for (const key of [...timers.keys()]) clearTimerAt(key)
