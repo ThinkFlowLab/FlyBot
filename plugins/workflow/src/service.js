@@ -1037,13 +1037,28 @@ export function createWorkflowService({
     }
   }
 
+  // #2773: a card leaves the queue before its run exists — the host is asked to create the run Bots
+  // first — and `runningOf()` counts begun runs only. Two drains that reach one lane in the same turn
+  // therefore both read the free slot and each starts a card, taking the lane past `maxConcurrent`
+  // (the race that removing the serial tail exposed). A start in flight is counted here from the
+  // moment its card is taken until `beginRun()` puts the run where `runningOf()` sees it; every way
+  // out of a start releases it. It is never persisted: it lasts one start.
+  const startsInFlight = new Map()
+  const startsOf = id => startsInFlight.get(id) ?? 0
+  const holdStart = id => startsInFlight.set(id, startsOf(id) + 1)
+  const releaseStart = id => {
+    const left = startsOf(id) - 1
+    if (left > 0) startsInFlight.set(id, left)
+    else startsInFlight.delete(id)
+  }
+
   // The oldest queued task whose own workflow still has a slot, or null.
   function takeNext() {
     let best = null
     for (const item of state.workflows) {
       const lane = laneOf(item.id)
       if (lane.queue.length === 0) continue
-      if (runningOf(lane).length >= maxOf(item)) continue
+      if (runningOf(lane).length + startsOf(item.id) >= maxOf(item)) continue
       const task = lane.queue[0]
       const at = Number(task.enqueuedAt) || 0
       const order = Number(task.queueSeq) || 0
@@ -1237,39 +1252,55 @@ export function createWorkflowService({
   }
 
   async function startLive(item, task) {
-    let ephemeral
-    if (typeof spawn === 'function') {
-      const holes = missingProviders(item)
-      if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
-      try {
-        // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
-        // this run may use; the host intersects them with each node's `tools`.
-        ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
-          callerBotId: task.callerBotId,
-          authorBotId: item.authoredBy,
-        }))
-      } catch (error) {
-        await releaseAll(error.spawned ?? [], release, warn)
-        return refuse(error)
+    // #2773: this lane's slot is claimed here, before the first wait, and given back the moment
+    // `beginRun()` makes the run visible to `runningOf()` — or on any way out that never gets that
+    // far. Holding it any longer (through the hand-off) would keep a slot counted that nothing is
+    // using, and a dispatch that never answers would hold it for good.
+    holdStart(item.id)
+    let holding = true
+    const releaseHeld = () => {
+      if (!holding) return
+      holding = false
+      releaseStart(item.id)
+    }
+    try {
+      let ephemeral
+      if (typeof spawn === 'function') {
+        const holes = missingProviders(item)
+        if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
+        try {
+          // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
+          // this run may use; the host intersects them with each node's `tools`.
+          ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
+            callerBotId: task.callerBotId,
+            authorBotId: item.authoredBy,
+          }))
+        } catch (error) {
+          await releaseAll(error.spawned ?? [], release, warn)
+          return refuse(error)
+        }
       }
-    }
-    const begun = beginRun(item, task, ephemeral)
-    if (begun.ok === false) {
-      if (ephemeral) await releaseAll(Object.values(ephemeral), release, warn)
-      return begun
-    }
-    let run = begun.run
-    if (typeof spawn === 'function') {
-      try {
-        run = await handOff(item, run)
-      } catch (error) {
-        endRun(item, run, { code: 'dispatch-failed', text: String(error?.message ?? error).slice(0, 200) })
-        await releaseRun(item.id, run)
-        return refuse(error)
+      const begun = beginRun(item, task, ephemeral)
+      releaseHeld()
+      if (begun.ok === false) {
+        if (ephemeral) await releaseAll(Object.values(ephemeral), release, warn)
+        return begun
       }
+      let run = begun.run
+      if (typeof spawn === 'function') {
+        try {
+          run = await handOff(item, run)
+        } catch (error) {
+          endRun(item, run, { code: 'dispatch-failed', text: String(error?.message ?? error).slice(0, 200) })
+          await releaseRun(item.id, run)
+          return refuse(error)
+        }
+      }
+      if (run.status === 'done' || run.status === 'failed') await releaseRun(item.id, run)
+      return present()
+    } finally {
+      releaseHeld()
     }
-    if (run.status === 'done' || run.status === 'failed') await releaseRun(item.id, run)
-    return present()
   }
 
   function park(item, task) {
@@ -1303,7 +1334,7 @@ export function createWorkflowService({
   }
 
   function hasRoom(item) {
-    return runningOf(laneOf(item.id)).length < maxOf(item)
+    return runningOf(laneOf(item.id)).length + startsOf(item.id) < maxOf(item)
   }
 
   // A non-empty queue is joined at the tail, then the oldest task starts.
