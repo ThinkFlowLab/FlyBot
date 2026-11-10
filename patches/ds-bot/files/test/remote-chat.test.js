@@ -366,3 +366,76 @@ test('P-321: a friend\'s Bot name from another home is cut at 40 code points on 
   await rt.remoteChats.open(short)
   assert.equal(state.bots[sid].name, 'Bob')
 })
+
+// #2797: the publisher names one room once per member of that room — every member record carries
+// the same name (the room's own title) at the same home — so the friends' list showed one row per
+// member: the owner's screenshot has the same row eight times and reads it as one group. The chat
+// belongs to the room, not to the member handle it happens to arrive on.
+const ROOM = '123456 · 刘红升 2, flybot682b8a43, FlyBot'
+const roomHost = extra => {
+  const state = { bots: {} }
+  let created = 0
+  const rt = {
+    ...extra,
+    state, load: async () => {}, save: async () => {}, warn() {}, ctx: extra?.ctx ?? {},
+    // roster.createBot's own bound (roster.js:65), so the name kept is the one the app would keep.
+    createBot: async ({ name, model, remote }) => {
+      const bot = { id: `b${++created}`, name: cut(String(name ?? '').trim(), 40).text, model, remote }
+      state.bots[bot.id] = bot
+      return bot
+    },
+  }
+  install(rt)
+  return { state, rt, created: () => created }
+}
+const member = (n, name = ROOM, home = '@flybot682b8a43.home') => ({ handle: `@member${n}.flybot682b8a43.home`, name, home, homeName: 'FlyBot 682b8a43' })
+
+test('#2797: one room published once per member is one row in the list', async () => {
+  const { rt } = roomHost()
+  await rt.remoteChats.sync('social', [member(1), member(2), member(3), member(4)])
+  assert.equal(rt.remoteChats.list().length, 1, 'the same room is one chat, never one chat per member')
+  assert.equal(rt.remoteChats.list()[0].name, ROOM, 'and the row is the room, named the way the publisher names it')
+  // The second sync of the same room adds nothing either: same name, same home, same one row.
+  await rt.remoteChats.sync('social', [member(1), member(2)])
+  assert.equal(rt.remoteChats.list().length, 1, 'a repeated sync of one room is still one row')
+})
+
+test('#2797: a room whose member handle changes keeps its one chat instead of a vanished copy', async () => {
+  const { state, rt } = roomHost()
+  await rt.remoteChats.sync('social', [member(1)])
+  const id = rt.remoteChats.list()[0].id
+  // The publisher sends the same room through another member (another handle, the same room title).
+  await rt.remoteChats.sync('social', [member(7)])
+  assert.equal(rt.remoteChats.list().length, 1, 'the room is one row, not the old copy plus a new one')
+  assert.equal(rt.remoteChats.list()[0].id, id, 'and it is the same chat, so its history stays where it was')
+  assert.equal(state.bots[id].remote.gone, undefined, 'a room still published is never marked gone')
+})
+
+test('#2797: a line from another member of the room lands in the room\'s one chat', async () => {
+  const followups = []
+  let host
+  host = roomHost({
+    ctx: { sessions: { flush: async () => {} } },
+    botOf: id => host.state.bots[id],
+    chatOf: id => ({ id }),
+    resolveAgent: async () => ({ session: 's', followup: message => followups.push(message) }),
+  })
+  const rt = host.rt
+  await rt.remoteChats.sync('social', [member(1)])
+  const id = rt.remoteChats.list()[0].id
+  const landed = await rt.remoteChats.deliver({ ...member(2), plugin: 'social', text: 'hello room' })
+  assert.equal(landed, id, 'the member\'s line is the room\'s chat, not a second one')
+  assert.equal(rt.remoteChats.list().length, 1, 'so the list still holds one row')
+  assert.equal(followups.length, 1, 'and the line was delivered exactly once')
+})
+
+// The control: two friends, or two names, are still two chats — the room rule never folds a list.
+test('#2797: two names at one home, and one name at two homes, stay two rows', async () => {
+  const { rt } = roomHost()
+  await rt.remoteChats.sync('social', [
+    member(1, 'Helper'),
+    member(2, 'Coder'),
+    member(3, ROOM, '@flybot98b.home'),
+  ])
+  assert.equal(rt.remoteChats.list().length, 3, 'different names, and the same name at another home, are their own chats')
+})
