@@ -60,6 +60,12 @@ export const HANDOFF_RETRY_DELAYS_MS = [1000, 2000]
 // one instead of holding its lane slot for ever (#2750).
 export const STOP_RELEASE_RETRIES = 2
 
+// #2748: a start whose Bots the host never finishes creating leaves the card
+// out of `lane.queue` (takeNext already shifted it) and the call hanging. The
+// spawn gets its own bound, shorter than a step's: no card waits a whole step
+// deadline for an answer that may never come.
+export const SPAWN_DEADLINE_MS = 60 * 1000
+
 function stepTimeoutValue(raw) {
   const value = Number(raw)
   if (!Number.isInteger(value) || value < MIN_STEP_TIMEOUT_MINUTES || value > MAX_STEP_TIMEOUT_MINUTES) {
@@ -411,13 +417,50 @@ export function createWorkflowService({
     write()
   }
 
+  // #2748 C4: a host that never answers a spawn must not keep the card out of the
+  // queue with the call hanging. The wait is bounded; on the deadline the start is
+  // refused, and the Bots a late answer creates are released rather than leaked.
+  function boundedSpawn(pending) {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const handle = setTimer(() => {
+        settled = true
+        const error = new Error(`the host did not create the run Bots within ${Math.round(SPAWN_DEADLINE_MS / 1000)}s`)
+        error.code = 'spawn-timeout'
+        Promise.resolve(pending)
+          .then(ids => releaseAll(Object.values(ids ?? {}), release, warn))
+          // releaseAll already warns once per Bot it could not remove; this catches only a
+          // throw from the chain itself, and the start is refused either way, so say it.
+          .catch(error => warn(`flybot-workflow: a late start could not release its Bots: ${error?.message ?? error}`))
+        reject(error)
+      }, SPAWN_DEADLINE_MS)
+      handle?.unref?.()
+      Promise.resolve(pending).then((ids) => {
+        if (settled) return
+        settled = true
+        clearTimer(handle)
+        resolve(ids)
+      }, (error) => {
+        if (settled) return
+        settled = true
+        clearTimer(handle)
+        reject(error)
+      })
+    })
+  }
+
   // A step that reaches its deadline is failed, frees its Bots and says which
   // step it was, so a lost Bot cannot hold a lane slot forever. The deadline is a
   // limit on the wait, not proof nothing arrived: a step was killed at 45 minutes
   // while still writing (#1868), so the line names the deadline it reached and
   // never reads as a reply that never came.
   function expireStep(workflowId, runId, nodeId) {
-    return hostSerial(async () => {
+    // #2748: the deadline must not be queued behind the wait it bounds. The tail
+    // can be parked for ever by a host call that never answers (a dispatch, a
+    // release, a spawn), and a deadline that waited its turn behind one never
+    // ran — the run stayed `running` with its timer already consumed. The record
+    // is settled here, off the tail, and the drain that follows runs outside it.
+    return (async () => {
       const item = workflow(workflowId)
       const minutes = stepTimeoutMinutesOf(item)
       const lane = laneOf(workflowId)
@@ -446,7 +489,7 @@ export function createWorkflowService({
       await releaseRun(workflowId, run)
       await drainAll()
       return present()
-    }).catch(error => warn(`flybot-workflow: step ${nodeId} could not be timed out: ${error?.message ?? error}`))
+    })().catch(error => warn(`flybot-workflow: step ${nodeId} could not be timed out: ${error?.message ?? error}`))
   }
 
   // The bytes of a store this service could not read are kept before the first write
@@ -1014,13 +1057,28 @@ export function createWorkflowService({
     }
   }
 
+  // #2773: a card leaves the queue before its run exists — the host is asked to create the run Bots
+  // first — and `runningOf()` counts begun runs only. Two drains that reach one lane in the same turn
+  // therefore both read the free slot and each starts a card, taking the lane past `maxConcurrent`
+  // (the race that removing the serial tail exposed). A start in flight is counted here from the
+  // moment its card is taken until `beginRun()` puts the run where `runningOf()` sees it; every way
+  // out of a start releases it. It is never persisted: it lasts one start.
+  const startsInFlight = new Map()
+  const startsOf = id => startsInFlight.get(id) ?? 0
+  const holdStart = id => startsInFlight.set(id, startsOf(id) + 1)
+  const releaseStart = id => {
+    const left = startsOf(id) - 1
+    if (left > 0) startsInFlight.set(id, left)
+    else startsInFlight.delete(id)
+  }
+
   // The oldest queued task whose own workflow still has a slot, or null.
   function takeNext() {
     let best = null
     for (const item of state.workflows) {
       const lane = laneOf(item.id)
       if (lane.queue.length === 0) continue
-      if (runningOf(lane).length >= maxOf(item)) continue
+      if (runningOf(lane).length + startsOf(item.id) >= maxOf(item)) continue
       const task = lane.queue[0]
       const at = Number(task.enqueuedAt) || 0
       const order = Number(task.queueSeq) || 0
@@ -1214,39 +1272,55 @@ export function createWorkflowService({
   }
 
   async function startLive(item, task) {
-    let ephemeral
-    if (typeof spawn === 'function') {
-      const holes = missingProviders(item)
-      if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
-      try {
-        // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
-        // this run may use; the host intersects them with each node's `tools`.
-        ephemeral = await spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
-          callerBotId: task.callerBotId,
-          authorBotId: item.authoredBy,
-        })
-      } catch (error) {
-        await releaseAll(error.spawned ?? [], release, warn)
-        return refuse(error)
+    // #2773: this lane's slot is claimed here, before the first wait, and given back the moment
+    // `beginRun()` makes the run visible to `runningOf()` — or on any way out that never gets that
+    // far. Holding it any longer (through the hand-off) would keep a slot counted that nothing is
+    // using, and a dispatch that never answers would hold it for good.
+    holdStart(item.id)
+    let holding = true
+    const releaseHeld = () => {
+      if (!holding) return
+      holding = false
+      releaseStart(item.id)
+    }
+    try {
+      let ephemeral
+      if (typeof spawn === 'function') {
+        const holes = missingProviders(item)
+        if (holes.length > 0) return { ok: false, error: `Node ${holes[0].nodeId} input ${holes[0].name} has no upstream provider` }
+        try {
+          // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
+          // this run may use; the host intersects them with each node's `tools`.
+          ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
+            callerBotId: task.callerBotId,
+            authorBotId: item.authoredBy,
+          }))
+        } catch (error) {
+          await releaseAll(error.spawned ?? [], release, warn)
+          return refuse(error)
+        }
       }
-    }
-    const begun = beginRun(item, task, ephemeral)
-    if (begun.ok === false) {
-      if (ephemeral) await releaseAll(Object.values(ephemeral), release, warn)
-      return begun
-    }
-    let run = begun.run
-    if (typeof spawn === 'function') {
-      try {
-        run = await handOff(item, run)
-      } catch (error) {
-        endRun(item, run, { code: 'dispatch-failed', text: String(error?.message ?? error).slice(0, 200) })
-        await releaseRun(item.id, run)
-        return refuse(error)
+      const begun = beginRun(item, task, ephemeral)
+      releaseHeld()
+      if (begun.ok === false) {
+        if (ephemeral) await releaseAll(Object.values(ephemeral), release, warn)
+        return begun
       }
+      let run = begun.run
+      if (typeof spawn === 'function') {
+        try {
+          run = await handOff(item, run)
+        } catch (error) {
+          endRun(item, run, { code: 'dispatch-failed', text: String(error?.message ?? error).slice(0, 200) })
+          await releaseRun(item.id, run)
+          return refuse(error)
+        }
+      }
+      if (run.status === 'done' || run.status === 'failed') await releaseRun(item.id, run)
+      return present()
+    } finally {
+      releaseHeld()
     }
-    if (run.status === 'done' || run.status === 'failed') await releaseRun(item.id, run)
-    return present()
   }
 
   function park(item, task) {
@@ -1280,7 +1354,7 @@ export function createWorkflowService({
   }
 
   function hasRoom(item) {
-    return runningOf(laneOf(item.id)).length < maxOf(item)
+    return runningOf(laneOf(item.id)).length + startsOf(item.id) < maxOf(item)
   }
 
   // A non-empty queue is joined at the tail, then the oldest task starts.

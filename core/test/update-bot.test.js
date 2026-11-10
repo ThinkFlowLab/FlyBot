@@ -46,14 +46,19 @@ function start(seed = TEAM) {
     sessions: { flush: async () => {} },
     workspaceRegistry: { archiveSession: async () => {} },
   })
+  // The settings page's own endpoint, where a colour is cleared with `color: null`: the
+  // `update_bot` tool's schema takes a string and refuses null before any host code runs.
+  const register = ctx.connection.fetch.register
+  ctx.connection.fetch.register = (route) => { ctx.route = route; return register(route) }
   apply(ctx, { home })
   const tool = (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId } })
+  const call = async (endpoint, payload) => (await ctx.route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
   const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
   const stop = async () => {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5 })
   }
-  return { ctx, tool, state, stop }
+  return { ctx, tool, call, state, stop }
 }
 
 test('a Bot changes itself by leaving out bot, or by naming itself', async (t) => {
@@ -163,4 +168,44 @@ test('#1844: with authz off the write surface behaves exactly as before', async 
   assert.equal(state().authSessions, undefined)
   assert.equal(await tool('update_bot', { bot: 'Writer', instructions: 'single owner' }, 'm1'), 'Updated Writer.')
   assert.equal(state().bots.b2.instructions, 'single owner')
+})
+
+// #2775: the colour was the one field `updateBot` let pass without storing anything, and the
+// tool still answered "Updated <name>." A Bot retried the call or reported a colour the user
+// never got. Every other field this function owns refuses through the tool's own catch.
+test('#2775: a colour the host does not know is refused, not dropped behind "Updated"', async (t) => {
+  const { tool, state, stop } = start()
+  t.after(stop)
+  const before = state().bots.b2.color
+  const reply = await tool('update_bot', { bot: 'Writer', color: 'purple' }, 'm1')
+  assert.doesNotMatch(reply, /^Updated/, `answered ${JSON.stringify(reply)} while storing nothing`)
+  assert.match(reply, /colou?r|one of/i, `the refusal names the field: ${JSON.stringify(reply)}`)
+  assert.equal(state().bots.b2.color, before, 'the stored colour did not move')
+})
+
+// The three guards stay byte-identical to the base: a known name, a legacy alias, and null.
+test('#2775: a colour the host knows still lands (guard, green on the base)', async (t) => {
+  const { tool, state, stop } = start()
+  t.after(stop)
+  assert.equal(await tool('update_bot', { bot: 'Writer', color: 'violet' }, 'm1'), 'Updated Writer.')
+  assert.equal(state().bots.b2.color, 'violet')
+})
+
+test('#2775: a legacy colour name still lands as its current name (guard, green on the base)', async (t) => {
+  const { tool, state, stop } = start()
+  t.after(stop)
+  assert.equal(await tool('update_bot', { bot: 'Writer', color: 'kimi' }, 'm1'), 'Updated Writer.')
+  assert.equal(state().bots.b2.color, 'charcoal')
+})
+
+test('#2775: null still clears the colour (guard, green on the base)', async (t) => {
+  const { tool, call, state, stop } = start()
+  t.after(stop)
+  assert.equal(await tool('update_bot', { bot: 'Writer', color: 'violet' }, 'm1'), 'Updated Writer.')
+  assert.equal(state().bots.b2.color, 'violet')
+  // `color: null` is the settings page's clear (settings → colour → reset), not `update_bot`:
+  // the tool's parameter is a string, so null is refused by the schema before the host sees it.
+  const cleared = await call('update-bot', { id: 'b2', color: null })
+  assert.equal(cleared.ok, true, JSON.stringify(cleared))
+  assert.equal('color' in state().bots.b2, false, 'the colour is removed, not set to empty')
 })

@@ -19,14 +19,15 @@
 //
 // The endpoint is `workflow-save`, which is in `authz.js`'s `TASK_ENDPOINTS` allow list; `workflows`
 // is the read side and is listed with the other reads.
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import { replacePrivateFileSync } from './private-files.js'
 import { layoutWorkflow, normaliseWorkflow, validateWorkflow, WORKFLOW_VERSION } from '../shared/workflow.js'
 import { copyOfPreset, isPresetId, isWorkflowId, workflowBytes, WORKFLOW_DIR } from '../shared/workflow-doc.js'
 import { previewNode } from '../shared/workflow-preview.js'
 import { repoDevWorkflow } from '../shared/workflow-repo-dev.js'
 import { blankWorkflow } from '../shared/workflow-blank.js'
-import { dirKindSync, fileKindSync } from './real-dir.js'
+import { dirKindSync, fileKindSync, tempWritable } from './real-dir.js'
 
 // The shipped presets, as definitions. `PRESET_IDS` in `workflow-doc.js` names the same two; a test
 // asserts they cannot drift apart.
@@ -79,6 +80,44 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     return false
   }
   const refuseNotFile = (file) => ({ ok: false, code: 'workflow/not-a-file', message: `the workflow file ${file} is not a plain file of its own, so nothing is written there`, problems: [] })
+  // A write replaces the file instead of truncating it (#2762): `writeFileSync(path, …)` opens the
+  // target 'w', so a second process reading inside that window parses half a definition (or nothing)
+  // and `open()` answers `workflow/not-found` for a file that is being rewritten. A private temp
+  // name beside the target, renamed over it, makes every read see the previous complete bytes or the
+  // new complete bytes, and a crash inside the write leaves the previous definition whole.
+  let sweptTemps = false
+  // A crashed host's temp name holds no state — the target it was going to replace is still the
+  // last complete definition — so this host's first write sweeps it, and only a writing host does.
+  const sweepTemps = (file) => {
+    sweptTemps = true
+    const folder = dirname(file)
+    const prefix = `${basename(file)}.`
+    let names = []
+    try {
+      names = readdirSync(folder)
+    } catch {
+      return
+    }
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith('.tmp')) continue
+      try { unlinkSync(`${folder}/${name}`) } catch { /* another host may be writing it */ }
+    }
+  }
+  const replaceBytes = (path, bytes) => {
+    const temp = `${path}.${process.pid}.tmp`
+    if (!sweptTemps) sweepTemps(path)
+    // `writeFileSync` follows a link at the temp name (#2097, #2159), which would take the bytes
+    // outside and the rename after it would put the link where the definition belongs.
+    if (!tempWritable(temp)) return refuseNotFile(temp)
+    try {
+      replacePrivateFileSync(temp, path, bytes)
+    } catch (error) {
+      // The target still holds the bytes it had; its temp name is ours to remove.
+      try { unlinkSync(temp) } catch { /* nothing was staged, or the rename already took it */ }
+      throw error
+    }
+    return null
+  }
   // A directory may not exist yet (a workspace nobody has customized anything in), and a file in it
   // may be someone's hand-edit that does not parse: one broken file must not take the list down.
   // A real folder that cannot be listed is not that case (#2614): `list` turns the failure into a
@@ -246,7 +285,8 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     const wrote = previous !== bytes
     if (wrote) {
       mkdirSync(dir, { recursive: true })
-      writeFileSync(path, bytes, { mode: 0o600 })
+      const refused = replaceBytes(path, bytes)
+      if (refused !== null) return refused
     }
     const listed = list()
     // A landed write and a folder that refuses to be listed are both true: saying only `ok: false`
@@ -275,7 +315,8 @@ export function createWorkflowStore({ dir, presets = PRESETS, team = () => null,
     const path = join(dir, PROJECT_FILE)
     if (!fileWritable(path)) return refuseNotFile(path)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(path, `${JSON.stringify({ default: found.definition.id }, null, 2)}\n`, { mode: 0o600 })
+    const refused = replaceBytes(path, `${JSON.stringify({ default: found.definition.id }, null, 2)}\n`)
+    if (refused !== null) return refused
     const listed = list()
     if (!listed.ok) return { ...listed, wrote: true, changed: true }
     return { ok: true, ...listed }
