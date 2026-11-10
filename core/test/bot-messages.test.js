@@ -373,6 +373,21 @@ test('a joined request in a stopped turn tells its sender, and is not handed bac
   assert.equal(delivered[0].toId, 'a')
   assert.equal(delivered[0].replyTo, 'e1')
   assert.match(delivered[0].text, /was stopped before it could answer/)
+  // #2742: the outcome travels with the answer, so a step reader never parses this sentence.
+  assert.equal(delivered[0].failure, true, 'a stopped turn answers with a failure marker')
+})
+
+test('#2742: a completed reply carries an explicit success marker', () => {
+  const { emit, delivered } = turnsHost()
+  emit('b', 'turn/start', { turn: 1 })
+  emit('b', 'user/message', { content: textBlock('[Message from Chief]\nstatus?'), source: replySource('request', { exchangeId: 'e1' }) })
+  emit('b', 'assistant/message', assistantText('Scout abc could not answer your message: its model call failed (RATE_LIMIT 429).'))
+  emit('b', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  assert.equal(delivered.length, 1)
+  assert.equal(delivered[0].replyTo, 'e1')
+  // The answer says what it is, so an answer that happens to quote a failure notice is still an
+  // answer; without the marker a step reads the sentence and fails the node (#2742).
+  assert.equal(delivered[0].failure, false, 'an ordinary answer carries failure: false')
 })
 
 test('a joined request gets the failure notice when the model call fails', () => {

@@ -721,15 +721,19 @@ export function install(rt) {
           } else if (reply !== '' || reason?.kind === 'aborted') {
             // A turn stopped before it could answer still owes the sender a line,
             // or it would wait forever for a reply that never comes.
+            const stopped = reply === ''
+            // #2742: the outcome is the message's own field, not something a reader infers from
+            // the sentence — an answer says it answered, and a stop says it did not.
             void rt.deliver({
               fromId: rt.selfOf(id),
               toId: source.senderSessionId,
               ...(back ? { sessionId: back } : {}),
-              text: reply !== '' ? reply : `${name} was stopped before it could answer your message.`,
+              text: stopped ? `${name} was stopped before it could answer your message.` : reply,
               role: 'reply',
               hop: (source.hop ?? 0) + 1,
               replyTo: source.exchangeId,
               origin,
+              failure: stopped,
             }).catch(error => rt.warn('ds-bot: reply delivery failed: %s', error))
           }
         }
