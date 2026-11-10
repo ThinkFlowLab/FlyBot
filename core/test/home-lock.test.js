@@ -9,9 +9,16 @@ import { createRuntime, provideFlyBot } from '../index.js'
 import { homeLock } from '../src/host/home-lock.js'
 import { fakeContext } from './fake-ctx.js'
 
-const tempHome = (t) => {
+const removeHome = (home) => rmSync(home, { recursive: true, force: true, maxRetries: 5 })
+
+// A host writes to <home>/logs/diagnostics.jsonl while it disposes, and that write re-creates the
+// folder it goes in (src/host/diagnostics.js). node:test runs after-hooks in the order they were
+// registered, so a removal registered here runs before dispose() and leaves a fresh
+// ds-bot-lock-* directory in TMPDIR on every run (#2730). A test that starts a host passes
+// `defer: true`, and start() registers dispose() first and the removal after it.
+const tempHome = (t, { defer = false } = {}) => {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-lock-'))
-  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  if (!defer) t.after(() => removeHome(home))
   return home
 }
 
@@ -123,6 +130,7 @@ function start(t, home) {
   const rt = createRuntime(ctx, { home })
   provideFlyBot(ctx, rt.flybot)
   t.after(() => ctx.dispose())
+  t.after(() => removeHome(home))
   const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
   call.ctx = ctx
   call.rt = rt
@@ -130,7 +138,7 @@ function start(t, home) {
 }
 
 test('while another dsh holds the team, the channel reads it, refuses changes, then takes over', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   // The test runner's parent process: alive, on this host, and not this process.
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
@@ -160,7 +168,7 @@ test('while another dsh holds the team, the channel reads it, refuses changes, t
 })
 
 test('a reading host follows the other host\'s keys, never writes them, and keeps them after taking over', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   const secretsPath = join(home, 'secrets.json')
   const key = (name, value) => ({ name, value, purpose: '', scope: 'all', requestedBy: null, createdAt: 1, updatedAt: 1 })
   const writeKeys = (keys, revision) => {
@@ -191,7 +199,7 @@ test('a reading host follows the other host\'s keys, never writes them, and keep
 })
 
 test('#1027: a save in a stale read-only window takes the lock and writes', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
   const call = start(t, home)
@@ -209,7 +217,7 @@ test('#1027: a save in a stale read-only window takes the lock and writes', asyn
 })
 
 test('#1032: a change made before save() lands; taking over does not replace it with what the other host left', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
   const call = start(t, home)
@@ -231,7 +239,7 @@ test('#1032: a change made before save() lands; taking over does not replace it 
 })
 
 test('#1032: mutate() adopts what the other host left before the change, so both survive', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
   const call = start(t, home)
@@ -250,7 +258,7 @@ test('#1032: mutate() adopts what the other host left before the change, so both
 })
 
 test('#1041: a save() that takes over the lock says so once, naming the host it took it from', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
   const call = start(t, home)
@@ -277,7 +285,7 @@ test('#1041: a save() that takes over the lock says so once, naming the host it 
 })
 
 test('read-only host (#14): FlyBot queries answer, plugin reads answer, writes and polling stop', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
   const call = start(t, home)
@@ -298,7 +306,7 @@ test('read-only host (#14): FlyBot queries answer, plugin reads answer, writes a
 })
 
 test('#1363: the delivery board endpoints are gone, and a reading host still refuses a write', async (t) => {
-  const home = tempHome(t)
+  const home = tempHome(t, { defer: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
   const call = start(t, home)
