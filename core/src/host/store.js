@@ -84,6 +84,8 @@ export function install(rt) {
   let stopped = false
   // mtime and size of the state.json this host last read or wrote.
   let seen = ''
+  // A broken saved record was folded on the last read, so that read owes the disk a write.
+  let brokenRepaired = false
   const stamp = () => {
     try {
       const { mtimeMs, size } = statSync(statePath)
@@ -221,6 +223,40 @@ export function install(rt) {
       }
       return undefined
     }
+    // A saved record that is null (or a scalar) is a broken record, not a crash: a truncated write,
+    // a hand edit, a restore from another machine or an older build leaves `rooms: { r1: null }` or
+    // `bots: { chief: null }`. The record used to throw inside adopt (`room.members` on null,
+    // `'fields' in bot`), `loaded ??=` then cached the rejection and the team never appeared (#2755).
+    // Keep the file exactly as it was, then fold the record: a room stays with an empty member list,
+    // a Bot record is dropped because no data is left to keep. Both are named in one warning that
+    // names state.json, so "the team is gone" has a line to find.
+    if (parsed?.version === 1 || parsed?.version === STATE_VERSION) {
+      const broken = []
+      for (const key of ['bots', 'rooms']) {
+        if (!isRecord(parsed[key])) continue
+        for (const [id, record] of Object.entries(parsed[key])) if (!isRecord(record)) broken.push(`${key}.${id}`)
+      }
+      if (broken.length) {
+        const backup = `${statePath}.broken-${Date.now()}`
+        try {
+          await copyFile(statePath, backup)
+        } catch (copyError) {
+          stuck = `a broken record (${broken.join(', ')}) could not be preserved before repairing it (${copyError?.code ?? copyError?.message ?? copyError})`
+          warn('ds-bot: state %s has a broken record (%s) and the copy to %s failed: %s; the file is left untouched', statePath, broken.join(', '), backup, copyError)
+          return undefined
+        }
+        warn('ds-bot: state %s has a broken record (%s); the file as it was is kept as %s and the record is repaired', statePath, broken.join(', '), backup)
+        for (const key of ['bots', 'rooms']) {
+          if (!isRecord(parsed[key])) continue
+          for (const [id, record] of Object.entries(parsed[key])) {
+            if (isRecord(record)) continue
+            if (key === 'rooms') parsed[key][id] = {}
+            else delete parsed[key][id]
+          }
+        }
+        brokenRepaired = true
+      }
+    }
     if (parsed?.version === 1) {
       const problem = legacyOwnershipProblem(parsed)
       if (problem !== undefined) {
@@ -266,7 +302,8 @@ export function install(rt) {
     state.prefs ??= {}
     // Teams saved before the DSH Agent existed carry no `agents`; corrupt values reset.
     if (state.agents === null || typeof state.agents !== 'object' || Array.isArray(state.agents)) state.agents = {}
-    let migrated = !hadCapabilities
+    let migrated = !hadCapabilities || brokenRepaired
+    brokenRepaired = false
     // Everything above is the file's value, not EMPTY's, and a hand edit, a restore from another
     // machine or a hand-merged file can bring `null` or a scalar where the schema holds a table.
     // Those are repaired to their empty shape before anything reads them, because the alternative
