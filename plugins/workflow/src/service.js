@@ -429,9 +429,12 @@ export function createWorkflowService({
         error.code = 'spawn-timeout'
         Promise.resolve(pending)
           .then(ids => releaseAll(Object.values(ids ?? {}), release, warn))
-          // releaseAll already warns once per Bot it could not remove; this catches only a
+          // A late answer that failed carries the ids it had already made on the error
+          // (`error.spawned`), the same way the early refusal does, so those are released
+          // too (#2785). releaseAll warns once per Bot it could not remove; this catches a
           // throw from the chain itself, and the start is refused either way, so say it.
-          .catch(error => warn(`flybot-workflow: a late start could not release its Bots: ${error?.message ?? error}`))
+          .catch(late => releaseAll(Array.isArray(late?.spawned) ? late.spawned : [], release, warn)
+            .catch(error => warn(`flybot-workflow: a late start could not release its Bots: ${error?.message ?? error}`)))
         reject(error)
       }, SPAWN_DEADLINE_MS)
       handle?.unref?.()
