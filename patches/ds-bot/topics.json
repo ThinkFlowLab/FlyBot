@@ -70,7 +70,8 @@
     "test/fake-ctx.js",
     "test/blocking-question.test.js",
     "test/update-bot.test.js",
-    "test/legacy-state.test.js"
+    "test/legacy-state.test.js",
+    "test/questions.test.js"
   ],
   "0003-flybot-api-client": [
     "src/client/index.js",

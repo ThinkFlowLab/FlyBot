@@ -17,6 +17,8 @@ import { profileOf, keysOf, kindOf, KIND_RANK, labelOf, leadNameOf, canLead, sam
 import { systemPrompt, withTreeBlock, BLOCK_START } from './prompt.js'
 
 const DAY = 24 * 60 * 60 * 1000
+// #2751: how long one reorganization job may wait on the host before the queue gives up on it.
+const DEFAULT_JOB_TIMEOUT_MS = 10 * 60 * 1000
 const DOMAIN_AREA = new Map(DOMAINS.map(d => [d.id, d.area]))
 export const DEFAULT_TIDY = Object.freeze({ idleDays: 14, archiveIdleDays: 30, mergeGraceDays: 1, pinDays: 14, keepRuns: 5 })
 /** Mis-archive rename prefix (Chief update_bot / manual): 归档-Name or Archive-Name. Reorg never writes this. */
@@ -28,7 +30,7 @@ const MAX_TOOLS = 8
 /** Own prompt text without the tree's block: part of a Bot's description. */
 const ownText = prompt => { const s = String(prompt ?? ''); const i = s.indexOf(BLOCK_START); return (i >= 0 ? s.slice(0, i) : s).trim() }
 
-export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, warn, refreshAll, writeBlock, findRootId, now = Date.now, classify, tidy: tidyConfig = {} }) {
+export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, warn, refreshAll, writeBlock, findRootId, now = Date.now, classify, tidy: tidyConfig = {}, jobTimeoutMs: timeoutConfig }) {
   const cfg = { ...DEFAULT_TIDY, ...Object.fromEntries(Object.entries(tidyConfig).filter(([, v]) => Number.isFinite(v) && v >= 0)) }
   const get = (id, key) => fb.getField(id, key)
   const set = (id, key, value) => fb.setField(id, key, value)
@@ -306,14 +308,44 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
     return best
   }
 
+  // #2751: one host call that never settles used to hold `queue` for ever: every later
+  // reorganization waited on it and idle() never resolved. Each job now carries a deadline. When the
+  // host does not answer in time, the queue records the abandoned job, warns with its id and moves
+  // on. The work behind it cannot be cancelled, so it may still write later; the queue no longer
+  // waits for it.
+  const jobTimeoutMs = Number.isFinite(timeoutConfig) && timeoutConfig > 0 ? timeoutConfig : DEFAULT_JOB_TIMEOUT_MS
   let queue = Promise.resolve()
   let pending = 0
-  const enqueue = job => {
+  let jobSeq = 0
+  // Resolves { ok: true, value } / { ok: false, error } / { abandoned: true, job } and never rejects,
+  // so one bad job cannot stop the chain.
+  const bounded = (jobId, job, onAbandon) => new Promise(resolve => {
+    let done = false
+    const timer = setTimeout(() => {
+      if (done) return
+      done = true
+      warn(`flybot-tree: reorganization job ${jobId} was abandoned after ${jobTimeoutMs}ms: the host call never settled; later reorganizations continue`)
+      try { onAbandon?.() } catch (error) { warn(`flybot-tree: could not clean up after ${jobId}:`, error?.message ?? error) }
+      resolve({ abandoned: true, job: jobId })
+    }, jobTimeoutMs)
+    Promise.resolve().then(job).then(
+      value => { if (done) return; done = true; clearTimeout(timer); resolve({ ok: true, value }) },
+      error => { if (done) return; done = true; clearTimeout(timer); resolve({ ok: false, error }) }
+    )
+  })
+  const runInQueue = (job, onAbandon) => {
+    const jobId = `reorg-${++jobSeq}`
     pending++
-    const run = queue.then(job).catch(error => warn('flybot-tree: reorganization failed:', error?.message ?? error)).finally(() => { pending-- })
+    const run = queue.then(() => bounded(jobId, job, onAbandon)).finally(() => { pending-- })
     queue = run
-    return run
+    return { jobId, run }
   }
+  /** Runs a job in the queue: resolves its value, undefined when it failed or was abandoned. */
+  const enqueue = (job, onAbandon) => runInQueue(job, onAbandon).run.then(outcome => {
+    if (outcome.abandoned) return undefined
+    if (!outcome.ok) { warn('flybot-tree: reorganization failed:', outcome.error?.message ?? outcome.error); return undefined }
+    return outcome.value
+  })
   const placeAt = (id, parentId, role) => { set(id, 'treeRole', role); set(id, 'parent', parentId); set(id, 'seenAt', get(id, 'seenAt') ?? now()) }
 
   /**
@@ -374,6 +406,11 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
         if (fb.getBot(bot.id)) set(bot.id, 'organizing', null)
         refreshAll()
       }
+    }, () => {
+      // An abandoned placement never reaches its own finally: clear the flag so the next pass can
+      // place the Bot instead of leaving it marked 'organizing' for ever.
+      if (fb.getBot(bot.id)) set(bot.id, 'organizing', null)
+      refreshAll()
     })
   }
 
@@ -632,7 +669,25 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
    * Runs `job` in the reorganization queue (one at a time with placement, repair and tidy; a lead
    * being set up there is not re-placed by adoption). Resolves the job's value, rejects with its error.
    */
-  const exclusive = job => new Promise((resolve, reject) => { enqueue(async () => { try { resolve(await job()) } catch (error) { reject(error) } }) })
+  /**
+   * Runs `job` in the reorganization queue (one at a time with placement, repair and tidy; a lead
+   * being set up there is not re-placed by adoption). Resolves the job's value, rejects with its
+   * error — or, when the host never answered, with an Error carrying `abandoned: true` and the job
+   * id, so the caller can tell a give-up from a failure.
+   */
+  const exclusive = job => {
+    const { jobId, run } = runInQueue(job)
+    return run.then(outcome => {
+      if (outcome.abandoned) {
+        const error = new Error(`reorganization job ${jobId} was abandoned after ${jobTimeoutMs}ms: the host call never settled`)
+        error.abandoned = true
+        error.jobId = jobId
+        throw error
+      }
+      if (!outcome.ok) throw outcome.error
+      return outcome.value
+    })
+  }
   // The shared primitives explicit allocation (#447, src/allocate.js) is built on: the same role
   // profiles, homes, limit checks, lead creation, moves and journal as the self-organization.
   const shared = { profile, subtreeOf, heightOf, fits, homesFor, createLead, markLead, move, begin, commit, exclusive }

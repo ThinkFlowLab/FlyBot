@@ -1,0 +1,1 @@
+A Workflow run whose Stop cannot release a Bot no longer retries for ever: after two deadline retries it ends `failed` as `release-failed`, with the ids the host would not remove and the attempt count on the run, so its lane slot comes back and the cards queued behind it start (#2750).

@@ -3632,7 +3632,7 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
        detail: rt.callDetail?.(sessionId, request.callId) ?? {},
        at: Date.now(),
      }
-@@ -47,14 +47,82 @@ export function install(rt) {
+@@ -47,14 +47,102 @@ export function install(rt) {
      })
    }, { prepend: true })
  
@@ -3679,8 +3679,19 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +    const grants = target.standingApprovals ?? []
 +    if (!grants.some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)) {
 +      const grant = { kind, label: kindLabel(entry.tool, entry.reason), at: Date.now(), ...(bot.ownerId === undefined ? {} : { ownerId: bot.ownerId }) }
++      // #2764: the grant exists only once the store holds it. A refused save changed nothing on
++      // disk, so a grant left in memory would answer the next matching card without ever being
++      // written — an "Always allow" the owner never actually gave. The list is replaced, never
++      // edited in place, so the old reference is the snapshot to put back.
++      const before = target.standingApprovals
 +      target.standingApprovals = [...grants, grant]
-+      await rt.save()
++      try {
++        await rt.save()
++      } catch (error) {
++        if (before === undefined) delete target.standingApprovals
++        else target.standingApprovals = before
++        throw error
++      }
 +    }
 +    // Other cards the new grant already covers stop waiting too.
 +    for (const other of pending.values()) {
@@ -3694,12 +3705,21 @@ diff --git a/src/host/approvals.js b/src/host/approvals.js
 +    await rt.load()
 +    const target = scope === 'room' ? rt.roomOf(String(id ?? '')) : rt.botOf(String(id ?? ''))
 +    if (target === undefined) throw Object.assign(new Error('Not found'), { code: 'bot/not-found' })
-+    const before = target.standingApprovals ?? []
-+    const after = before.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
-+    if (after.length === before.length) return false
++    const before = target.standingApprovals
++    const grants = before ?? []
++    const after = grants.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
++    if (after.length === grants.length) return false
 +    if (after.length === 0) delete target.standingApprovals
 +    else target.standingApprovals = after
-+    await rt.save()
++    // #2764: a removal the store refused is not a removal — the grant is still on disk, so it
++    // must still be in memory, or the settings card says "gone" while every new ask is refused.
++    try {
++      await rt.save()
++    } catch (error) {
++      if (before === undefined) delete target.standingApprovals
++      else target.standingApprovals = before
++      throw error
++    }
 +    return true
 +  }
 +
@@ -8123,7 +8143,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +        if (at?.botId !== botId) return
 +        rows.push({
 +          at: when ?? '',
-+          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${when === undefined ? 'no next run' : `next ${when}`}, ${status}, ${at.place}, session ${entry.sessionId}`,
++          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
 +        })
 +      }
 +      for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
@@ -11437,7 +11457,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 @@ -1,5 +1,5 @@
  import assert from 'node:assert/strict'
 -import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
++import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
  import { tmpdir } from 'node:os'
  import { join } from 'node:path'
  import { test } from 'node:test'
@@ -11569,7 +11589,7 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
    assert.deepEqual(round.failed, ['Writer'])
    assert.equal(host.agentOf('gb').calls.length, 1)
  })
-@@ -294,3 +294,204 @@ test('an approval asked inside a PTC program shows what that call does', async (
+@@ -294,3 +294,293 @@ test('an approval asked inside a PTC program shows what that call does', async (
    assert.deepEqual(approval.detail, { text: 'Copy the doc', code: 'Copy-Item a.md E:/docs' })
    assert.equal(value.work.bots.b.tool, 'pwsh')
  })
@@ -11707,6 +11727,95 @@ diff --git a/test/group-status.test.js b/test/group-status.test.js
 +  release('rejected')
 +  assert.equal(await outcome, 'rejected')
 +  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'a').standingApprovals, undefined)
++})
++
++// #2764: "Always allow" was written into memory first and only then saved, and the catch did
++// nothing but refuse. A save the store refuses (a link or a directory at the temp name its bytes
++// land through) left the grant live in memory while nothing was on disk: the card stayed pending,
++// but the next matching ask was answered `allowed-once` by a grant the owner never gave. The same
++// shape hid a failed removal: the settings list said "gone" while the grant still answered.
++const tempName = home => `${join(home, 'state.json')}.${process.pid}.tmp`
++// Breaking the temp name refuses every write that starts afterwards, so the store has to be
++// idle first: a card or a turn still saving would fail on the same name and answer as an
++// unhandled rejection, which is not the write under test.
++const quietSaves = async (host, home) => {
++  let stable = 0
++  let last = -1
++  for (let i = 0; i < 400 && stable < 3; i += 1) {
++    const memory = (await host.call('state', {})).value.revision
++    const disk = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8')).revision
++    if (memory === disk && disk === last) stable += 1
++    else stable = 0
++    last = disk
++    await new Promise(resolve => setImmediate(resolve))
++  }
++  assert.ok(stable >= 3, 'the store did not settle')
++}
++const refuseSave = async (host) => { await quietSaves(host, host.home); mkdirSync(tempName(host.home)) }
++const allowSave = home => rmSync(tempName(home), { recursive: true, force: true })
++
++test('#2764: a refused Bot-scope save leaves no standing grant in memory', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const [card] = (await host.call('state', {})).value.work.approvals
++  await refuseSave(host)
++  const refused = await host.call('approval-answer', { id: card.id, choice: 'always-bot' })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Not saved: .*is not a plain file of its own/)
++  // The card still waits, and the grant the save could not write is not in memory either.
++  assert.deepEqual((await host.call('state', {})).value.work.approvals.map(entry => entry.id), [card.id])
++  assert.equal((await host.call('state', {})).value.bots.find(entry => entry.id === 'b').standingApprovals, undefined, 'the refused grant stayed in the Bot’s record')
++  allowSave(host.home)
++  // The next matching ask is a card again: nothing answers it on the owner's behalf.
++  const second = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const waiting = (await host.call('state', {})).value.work.approvals
++  assert.deepEqual(waiting.map(entry => entry.answerable), [true, true])
++  for (const entry of waiting) assert.equal((await host.call('approval-answer', { id: entry.id, choice: 'reject' })).ok, true)
++  assert.equal(await first, 'rejected')
++  assert.equal(await second, 'rejected')
++})
++
++test('#2764: a refused room-scope save leaves no grant on the group', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  const first = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const [card] = (await host.call('state', {})).value.work.approvals
++  await refuseSave(host)
++  const refused = await host.call('approval-answer', { id: card.id, choice: 'always-room' })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Not saved: /)
++  assert.deepEqual((await host.call('state', {})).value.work.approvals.map(entry => entry.id), [card.id])
++  assert.equal((await host.call('state', {})).value.rooms.find(entry => entry.id === 'r1').standingApprovals, undefined, 'the refused grant stayed on the group')
++  allowSave(host.home)
++  const second = host.askApproval('gb', { toolName: 'bash', reason: ESCALATE })
++  const waiting = (await host.call('state', {})).value.work.approvals
++  assert.deepEqual(waiting.map(entry => entry.answerable), [true, true])
++  for (const entry of waiting) assert.equal((await host.call('approval-answer', { id: entry.id, choice: 'reject' })).ok, true)
++  assert.equal(await first, 'rejected')
++  assert.equal(await second, 'rejected')
++})
++
++test('#2764: a refused removal keeps the grant it could not delete', async (t) => {
++  const host = await start()
++  t.after(host.stop)
++  await openTurn(t, host)
++  await grantFromGroup(host, 'always-bot')
++  const grants = async () => (await host.call('state', {})).value.bots.find(entry => entry.id === 'b').standingApprovals
++  assert.deepEqual((await grants()).map(entry => entry.kind), [KIND])
++  await refuseSave(host)
++  const refused = await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })
++  assert.equal(refused.ok, false)
++  assert.match(refused.error.message, /Not saved: /)
++  // Still on disk, so still in memory — and still answering the asks it covers.
++  assert.deepEqual(((await grants()) ?? []).map(entry => entry.kind), [KIND], 'the grant the refused removal could not delete is gone')
++  chatTurn(host, 'b')
++  assert.equal(await host.askApproval('b', { toolName: 'bash', reason: ESCALATE }, () => 'from-dsh'), 'allowed-once')
++  allowSave(host.home)
++  assert.equal((await host.call('standing-approval-remove', { scope: 'bot', id: 'b', kind: KIND })).value, true)
++  assert.equal(await grants(), undefined)
 +})
 +
 +test('a running Bot\'s work names its current step, in one short line, until the turn ends', async (t) => {
@@ -11851,7 +11960,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
  
-@@ -287,3 +287,275 @@ test('members still at work show in the team view and in the prompts of the othe
+@@ -287,3 +287,314 @@ test('members still at work show in the team view and in the prompts of the othe
    host.finish('gc', '没问题。')
    await settle(() => result() !== undefined)
  })
@@ -12126,6 +12235,45 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +  const capOut = await atCap.tool('read_own_chat', {}, 'b')
 +  assert.equal(shownLines(capOut).length, 12)
 +  assert.doesNotMatch(capOut, /newest 12 of/)
++})
++
++// #2774: a checkpoint condenses a part's older messages in place, so the current part is still
++// current but no longer in context. The part read says which checkpoint replaced it and where
++// the rest can still be read word for word.
++const checkpointMessages = number => [
++  { role: 'user', content: [{ type: 'text', text: `[Checkpoint ${number}]` }, { type: 'text', text: `\n\n<compacted-summary>\n[Checkpoint ${number}]\n- Done: outline\n` }] },
++]
++
++test('a current part condensed by a checkpoint is not called "in your context" (#2774)', async (t) => {
++  const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line'), chatLine(2, 'the url is https://example.test/xyz')] }
++  const host = await start(t, undefined, history)
++  host.agentOf('b').session.deriveMessages = () => checkpointMessages(1)
++  const out = await host.tool('read_own_chat', { part: 1 }, 'b')
++  assert.doesNotMatch(out, /it is in your context/, `still claims context: ${out}`)
++  assert.match(out, /Checkpoint 1/)
++  assert.match(out, /words/)
++  assert.match(out, /the url is https:\/\/example\.test\/xyz/, 'the newest lines are still shown')
++})
++
++test('a current part with no checkpoint, and an ended or missing part, answer as before (#2774)', async (t) => {
++  const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line')] }
++  const host = await start(t, undefined, history)
++  // This bench's Sessions have no deriveMessages: the check must stay optional, not throw.
++  assert.equal(await host.tool('read_own_chat', { part: 1 }, 'b'), 'Part 1 is the current one; it is in your context.')
++  host.rt.state.bots.b.segments = [{ sessionId: 'p1', endedAt: 2_000 }]
++  const ended = await host.tool('read_own_chat', { part: 1 }, 'b')
++  assert.match(ended, /^Part 1 of your own chat \(/)
++  assert.match(ended, /The handoff note that closed it:/)
++  assert.match(await host.tool('read_own_chat', { part: 9 }, 'b'), /^Your own chat has no part 9\./)
++})
++
++// A guard, not a red-first case: the Session's deriveMessages is only a hint, so one that throws
++// must leave the read working and answering what it answered before #2774, never fail the tool.
++test('a Session whose deriveMessages throws still reads the current part (#2774)', async (t) => {
++  const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line')] }
++  const host = await start(t, undefined, history)
++  host.agentOf('b').session.deriveMessages = () => { throw new Error('session is gone') }
++  assert.equal(await host.tool('read_own_chat', { part: 1 }, 'b'), 'Part 1 is the current one; it is in your context.')
 +})
 diff --git a/test/history.test.js b/test/history.test.js
 --- a/test/history.test.js
@@ -14841,7 +14989,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,860 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,882 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -15425,6 +15573,28 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
 +  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
 +  assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
++})
++
++// #2767: a row that is not `active` has no next run, whatever instant DSH still keeps on it.
++// The settings page on the same data says `Finished` (src/client/schedules.js), and DSH keeps
++// the originally due instant on a finished one-shot task, so printing it read as a time to come.
++test('#2767: an inactive task prints no next run, and an active one keeps its line', async (t) => {
++  const schedule = scheduleService()
++  const team = JSON.parse(JSON.stringify(TEAM))
++  team.pausedSchedules = { 's-paused': { id: 's-paused', sessionId: 'w2', record: { title: 'Paused brief', prompt: 'Sum up' }, pausedAt: 6 } }
++  const { ctx, home } = setup({ schedule }, team)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const task = (id, title, status, scheduledAt) => schedule.tasks.set(id, { sessionId: 'w2', status, record: { id, title, prompt: `${title} prompt`, scheduledAt } })
++  task('s-done', 'Finished one-shot', 'inactive', '2026-10-29T07:20:46.458Z')
++  task('s-live', 'Live brief', 'active', '2030-01-01T01:00:00.000Z')
++  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
++  // The finished one-shot keeps its status word and loses the past instant.
++  assert.ok(answer.includes('- "Finished one-shot" (s-done) — no next run, inactive, own chat, session w2'), answer)
++  assert.ok(!answer.includes('2026-10-29'), 'a time that has already passed is not a next run')
++  // Paused already read this way; the change must not disturb it.
++  assert.ok(answer.includes('- "Paused brief" (s-paused) — no next run, paused, own chat, session w2'), answer)
++  // An active row's line is byte-identical to the one the base prints for the same entry.
++  assert.ok(answer.includes('- "Live brief" (s-live) — next 2030-01-01T01:00:00.000Z, active, own chat, session w2'), answer)
 +})
 +
 +// #1321: two owners on one host. `copyFrom` and `schedule-update` resolve a source Session the
