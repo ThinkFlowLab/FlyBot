@@ -1,1 +1,0 @@
-A Workflow step whose Bot turn the host stopped before it answered is now reported as failed, with the stop notice as its reason, instead of finishing as done and handing that notice downstream as its output. A step's ordinary answer that merely mentions "model call failed" is no longer read as a failure. ([#2741](https://github.com/ThinkFlowLab/FlyBot/issues/2741))
