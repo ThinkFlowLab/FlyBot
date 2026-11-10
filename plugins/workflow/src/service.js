@@ -55,6 +55,10 @@ export const MIN_STEP_TIMEOUT_MINUTES = 1
 export const MAX_STEP_TIMEOUT_MINUTES = 120
 export const STEP_DEADLINE_MS = DEFAULT_STEP_TIMEOUT_MINUTES * 60 * 1000
 export const HANDOFF_RETRY_DELAYS_MS = [1000, 2000]
+// A Stop whose release keeps failing gets this many deadline retries after its own
+// attempt. A Bot the host will not remove then ends the run `failed` on the last
+// one instead of holding its lane slot for ever (#2750).
+export const STOP_RELEASE_RETRIES = 2
 
 function stepTimeoutValue(raw) {
   const value = Number(raw)
@@ -173,6 +177,9 @@ function publicRun(workflow, run) {
     currentStep: currentStepOf(workflow, run),
     ...(run.live === true ? { live: true } : {}),
     ...(run.paused === true ? { paused: true } : {}),
+    // #2750: how many deadline retries a failed Stop has used, so the stage can say
+    // how close the run is to ending `release-failed` instead of retrying for ever.
+    ...(run.releaseRetries ? { releaseRetries: run.releaseRetries } : {}),
     ...(run.failure ? { failure: { ...run.failure } } : {}),
     ...(run.earlyEnd ? { earlyEnd: run.earlyEnd } : {}),
     // #2583: a step that ended without a gate-read OUTPUT says so, and the pull request
@@ -370,14 +377,18 @@ export function createWorkflowService({
   // and consume that timer, leaving the run holding its lane slot until the owner
   // pressed Stop again — exactly what "a lost Bot cannot hold a lane slot forever"
   // rules out. Releasing again here ends the run as `paused-expired` once the Bot
-  // finally goes; while it still will not, the deadline is armed again.
+  // finally goes; a Bot the host keeps refusing gets `STOP_RELEASE_RETRIES` more
+  // deadlines, and the last one ends the run `failed` as `release-failed` with the
+  // ids it would not remove on the row, so the slot comes back (#2750).
   async function expireStoppedRun(item, run, nodeId) {
     const ids = Object.values(run.ephemeral ?? {})
     const failed = await releaseAll(ids, release, warn)
     for (const [node, id] of Object.entries(run.ephemeral ?? {})) {
       if (!failed.includes(id)) delete run.ephemeral[node]
     }
-    if (failed.length > 0) {
+    const retries = (run.releaseRetries ?? 0) + 1
+    run.releaseRetries = retries
+    if (failed.length > 0 && retries < STOP_RELEASE_RETRIES) {
       run.updatedAt = now()
       setTimerAt('deadline', run.id, nodeId, stepTimeoutMsOf(item), () => expireStep(item.id, run.id, nodeId))
       warn(`flybot-workflow: run ${run.id} still cannot release ${failed.length} Bot(s); its next deadline retries`)
@@ -385,7 +396,15 @@ export function createWorkflowService({
       return
     }
     clearRunTimers(run.id)
-    endRun(item, run, { code: 'paused-expired', text: `stop retried at the step deadline (${stepTimeoutMinutesOf(item)} min)` })
+    if (failed.length > 0) {
+      endRun(item, run, {
+        code: 'release-failed',
+        text: `stop could not release ${failed.length} Bot(s) in ${retries + 1} attempts: ${failed.join(', ')}`,
+        attempts: retries + 1,
+      })
+    } else {
+      endRun(item, run, { code: 'paused-expired', text: `stop retried at the step deadline (${stepTimeoutMinutesOf(item)} min)` })
+    }
     push(item.id, [failureLine(run)], now())
     delete run.handed
     archiveCutoffRun(item.id, run)

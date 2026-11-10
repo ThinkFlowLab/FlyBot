@@ -3,15 +3,16 @@
 // of the node it was on is still armed — `hold()` writes those flags without
 // syncing timers — and `expireStep()` returned at `paused` before doing anything,
 // so the timer was consumed and nothing retried the release. The run then held a
-// `maxConcurrent` slot until the owner pressed Stop again: the exact promise
-// docs/subsystems/workflow.md makes — "a lost Bot cannot hold a lane slot
-// forever" (#1530, #1580) — broken by the one path that has a Bot the host would
-// not remove. The deadline is now the retry: it releases again, ends the run as
-// `paused-expired` and frees the slot, and re-arms itself while a Bot still will
-// not go.
+// `maxConcurrent` slot until the owner pressed Stop again: exactly what the service
+// promises — "a lost Bot cannot hold a lane slot forever" (#1530, #1580) — was
+// broken by the one path that has a Bot the host would not remove. The deadline is
+// now the retry: it releases again, ends the run as `paused-expired` and frees the
+// slot, and gives a Bot that still will not go `STOP_RELEASE_RETRIES` more
+// deadlines before ending the run `failed` as `release-failed` (#2750).
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_STEP_TIMEOUT_MINUTES, STEP_DEADLINE_MS, createWorkflowService } from '../src/service.js'
+import * as service from '../src/service.js'
 
 const CLOCK = 1_700_000_000_000
 const ROSTER = [
@@ -148,6 +149,10 @@ test('a deadline retry that still cannot release keeps the Bot named and arms th
   assert.equal(after.run.ephemeral?.plan, run.ephemeral.plan, 'the id it could not remove is still named, never dropped')
   assert.equal(timers.pending(), 1, 'the deadline is armed again instead of being consumed by the paused run')
   assert.equal(after.activeCount, 1, 'the slot is still held while its Bot is still there')
+  // The re-arm has a stated end (#2750): this round is one of a counted number,
+  // and the next assertion here says the cap still has a retry left for it.
+  assert.equal(after.run.releaseRetries, 1, 'the round that just failed is counted on the run')
+  assert.ok(after.run.releaseRetries < service.STOP_RELEASE_RETRIES, 'the cap leaves this run one more retry, so the re-arm is not the last round')
 
   // A later deadline is a later retry, not a one-shot: the second one goes through.
   releaseFails.clear()
@@ -269,3 +274,38 @@ test('an owner Pause is still not timed out', async () => {
   assert.equal(after.history.length, 0)
   assert.deepEqual(released, [], 'and nothing is released behind the owner')
 })
+
+// #2750: the retry had no bound. A release the host never accepts kept the run
+// `paused` + `releasePending` for ever, so the lane slot never came back and the
+// cards parked behind it never started — the opposite of what the subsystem doc
+// promises. The deadline retries are counted on the run now, and the round that
+// uses the last of them ends the run `failed` with the ids the host would not
+// remove written on it, so the lane drains.
+const RETRY_ROUNDS = 2 // what STOP_RELEASE_RETRIES states: the Stop's own attempt, then two deadline retries
+
+test('a release that never succeeds ends the run at the retry cap and frees the lane', async () => {
+  const releaseFails = new Set()
+  const { svc, released, timers, flow, run } = await stoppedButHeld({ releaseFails })
+
+  // The lane holds one run, so the card parked behind it can only start once the
+  // slot is really free — "still retrying" is not free.
+  await svc.assign({ workflowId: flow.id, taskId: '#2606', title: 'Waiting behind it' })
+  assert.equal(row(svc.state(), flow.id).queueDepth, 1, 'the frozen run really blocks the only slot')
+
+  for (let round = 0; round < RETRY_ROUNDS; round += 1) await timers.tick(STEP_DEADLINE_MS)
+
+  const after = row(svc.state(), flow.id)
+  assert.equal(after.run?.task?.id, '#2606', 'the cap freed the slot, so the parked card starts instead of waiting for ever')
+  assert.equal(after.activeCount, 1)
+  assert.equal(after.queueDepth, 0)
+  assert.equal(after.history[0].id, run.id, 'the run that could not release its Bot is archived')
+  assert.equal(after.history[0].status, 'failed', 'it ends failed, not paused for ever')
+  assert.equal(after.history[0].failure?.code, 'release-failed', 'the ending names the release, not a step that timed out')
+  assert.ok(String(after.history[0].failure?.text).includes(run.ephemeral.plan), 'the id the host would not remove is written on the run')
+  assert.equal(after.history[0].failure?.attempts, RETRY_ROUNDS + 1, 'the row says how many release attempts were made in all')
+  assert.ok(!released.includes(run.ephemeral.plan), 'the Bot the host refused is still not pretended away')
+  assert.equal(timers.pending(), 1, 'only the run that started holds a deadline')
+  // The cap is a stated number a reader can check, not an implicit loop.
+  assert.equal(service.STOP_RELEASE_RETRIES, RETRY_ROUNDS, 'the service exports the number of deadline retries a failed Stop gets')
+})
+
