@@ -474,12 +474,12 @@ export function install(rt) {
     if (typeof room?.seq === 'number') return room.seq
     return (room?.log ?? []).reduce((max, line) => Math.max(max, line.seq ?? 0), 0)
   }
-  const floorOf = (room, actor) => {
-    const record = floorRecordOf(room, actor, state)
+  // The clamp over one seat's stored floor. `reader` keys the memo: a human seat and a Bot seat can
+  // carry the same id, so the kind belongs in the key — a Bot's read uses its own seat.
+  const clampedFloorOf = (room, record, reader) => {
     const floor = record?.joinedSeq ?? 0
     const joinedAt = record?.joinedAt ?? null
     const roomId = room?.id ?? ''
-    const reader = actor?.memberId ?? ''
     let perRoom = clampedFloors.get(roomId)
     const memo = perRoom?.get(reader)
     if (memo) {
@@ -496,6 +496,7 @@ export function install(rt) {
     }
     return seq
   }
+  const floorOf = (room, actor) => clampedFloorOf(room, floorRecordOf(room, actor, state), actor?.memberId ?? '')
   const linesFrom = (room, actor) => {
     // The floor is one number for the whole read: a room saved before `seq` existed finds its clamp
     // target with a reduce over the whole log, so asking per line reduced an n-line log n times.
@@ -511,6 +512,9 @@ export function install(rt) {
   rt.displayNameFor = (memberId, fallback) => displayNameFor(state, memberId, fallback)
   rt.authorOf = (line, room) => authorOf(line, room, state)
   rt.linesVisibleTo = (room, actor) => linesFrom(room, actor)
+  // A Bot reads a room through its own seat, not through the human actor `floorRecordOf` resolves,
+  // so that read needs the same clamp and memo the human reads get.
+  rt.seatFloor = (room, seat) => clampedFloorOf(room, seat, seat === undefined ? '' : `${seat.kind}:${seat.id}`)
   rt.deriveParticipants = room => deriveParticipants(room, state)
   rt.humanOwnersOf = room => humanOwnersOf(room, state)
   rt.publishedRemoteOf = handle => publishedRemoteOf(state, handle)
