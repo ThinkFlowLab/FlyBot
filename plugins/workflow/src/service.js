@@ -2261,7 +2261,11 @@ export function createWorkflowService({
       // the queue moves on it. With the drain on the finish paths only, the card behind a
       // `host-ended` run stays parked while the lane reports a free slot and nothing
       // running, and the next assign is what finally starts it.
-      return pending.then(() => drainAll())
+      // #2757: the caller does not await this reap — a load fires it and moves on — so the
+      // drain joins the serial tail the assigns use. Outside it, this drain and a concurrent
+      // `assign` both read `runningOf` before either `beginRun` lands, each sees a free slot
+      // and starts a card: two runs at cap 1, the second one over the lane's ceiling.
+      return pending.then(() => hostSerial(() => drainAll()))
     },
     dispose() {
       for (const key of [...timers.keys()]) clearTimerAt(key)

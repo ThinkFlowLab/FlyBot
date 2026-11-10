@@ -62,3 +62,30 @@ test('a card queued behind a run the host ended failed starts after the reap', a
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// The reaper a load fires is not awaited (`plugins/workflow/index.js`), so it can end a run
+// while an `assign` is already in flight. Both starts read `runningOf` before either
+// `beginRun` lands, so a drain outside the serial tail lets each of them see the same free
+// slot and start a card: a lane at cap 1 ends up with two runs and no queue.
+test('a load-time reap racing an assign never starts more than the lane cap', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wf-2752-race-'))
+  try {
+    const first = bench(dir, 0)
+    first.svc.setConcurrency({ workflowId: DELIVERY_ID, maxConcurrent: 1 })
+    await first.svc.ingest({ id: '#A', title: 'First card', status: 'open', workflowId: DELIVERY_ID })
+    await first.svc.ingest({ id: '#B', title: 'Second card', status: 'open', workflowId: DELIVERY_ID })
+    assert.deepEqual(running(first.svc), ['#A'])
+    assert.equal(queueDepth(first.svc), 1)
+
+    const second = bench(dir, 100)
+    // What loading does, and what an `assign` from the board does at the same moment.
+    const reaped = second.svc.reap()
+    const assigned = second.svc.assign({ workflowId: DELIVERY_ID, taskId: '#C', title: 'Third card' })
+    await Promise.all([reaped, assigned])
+
+    assert.equal(running(second.svc).length, 1, 'the lane started two cards at cap 1')
+    assert.equal(running(second.svc).length + queueDepth(second.svc), 2, 'a card left the lane without a run')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
