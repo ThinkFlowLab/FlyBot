@@ -279,7 +279,7 @@ export function createWorkflowService({
     if (readOnly()) return false
     writer = true
     try {
-      takingOver = Promise.resolve(reapRuns())
+      takingOver = reapOnce()
     } catch (error) {
       takingOver = Promise.resolve()
       warn(`flybot-workflow: the reap after takeover failed: ${error?.message ?? error}`)
@@ -1477,8 +1477,8 @@ export function createWorkflowService({
   // Only runs the dead writer was holding are collected: a run on `active` (or still the
   // archived `last`) that is `running` with step Bots named, or a `live:true` run already
   // marked `running` whose Bot map is gone (#1414). An ended run keeps its own status
-  // (#1388) and only gives back the Bots it still names. `lane.queue` is never touched:
-  // a parked card is not a run, so a takeover leaves it waiting for the next drain.
+  // (#1388) and only gives back the Bots it still names. The queue is not this function's:
+  // a parked card is not a run, and the drain that follows the reap is what starts it.
   function reapRuns() {
     // A read-only host never ran these runs, so it cannot tell which of them the
     // writer still holds; judging them here would end the writer's live run and
@@ -1546,6 +1546,20 @@ export function createWorkflowService({
       if (state.orphans.length === 0) delete state.orphans
       write()
     })
+  }
+
+  // #2752: a run this reap ended is a terminal transition like a step's own ending, so the
+  // queue moves on it. With the drain on the finish paths only, the card behind a
+  // `host-ended` run stays parked while the lane reports a free slot and nothing running,
+  // and the next assign is what finally starts it.
+  // #2757: the caller does not await this reap — a load fires it and moves on — so the
+  // drain joins the serial tail the assigns use. Outside it, this drain and a concurrent
+  // `assign` both read `runningOf` before either `beginRun` lands, each sees a free slot
+  // and starts a card: two runs at cap 1, the second one over the lane's ceiling.
+  // #2787: every path that starts the reaper gets the same answer, so takeover's reap
+  // drains too instead of leaving the dead window's queue parked.
+  function reapOnce() {
+    return reapRuns().then(() => hostSerial(() => drainAll()))
   }
 
   return {
@@ -2351,17 +2365,11 @@ export function createWorkflowService({
       if (!writable()) return Promise.resolve()
       // #2704: the call that noticed the takeover already started the same reaper a load
       // runs; hand that one back instead of releasing the dead window's Bots twice.
-      const pending = takingOver !== null ? takingOver : reapRuns()
+      // #2787: that reaper carries its own drain, so handing it back is the whole answer.
+      // Stacking a second drain here would reopen the cap-1 race #2757 closed.
+      const pending = takingOver !== null ? takingOver : reapOnce()
       takingOver = null
-      // #2752: a run this reap ended is a terminal transition like a step's own ending, so
-      // the queue moves on it. With the drain on the finish paths only, the card behind a
-      // `host-ended` run stays parked while the lane reports a free slot and nothing
-      // running, and the next assign is what finally starts it.
-      // #2757: the caller does not await this reap — a load fires it and moves on — so the
-      // drain joins the serial tail the assigns use. Outside it, this drain and a concurrent
-      // `assign` both read `runningOf` before either `beginRun` lands, each sees a free slot
-      // and starts a card: two runs at cap 1, the second one over the lane's ceiling.
-      return pending.then(() => hostSerial(() => drainAll()))
+      return pending
     },
     dispose() {
       for (const key of [...timers.keys()]) clearTimerAt(key)
