@@ -91,7 +91,10 @@ test('P-676 guard: a healthy floor is not clamped', async (t) => {
   assert.equal(out, `Latest in "Ops" (oldest first):\n${transcript(five.slice(2))}`)
   const founder = await host.tool('read_group_chat', { group: 'Ops' }, 'ga')
   assert.equal(founder, `Latest in "Ops" (oldest first):\n${transcript(five)}`)
-  assert.equal(host.warnings.filter(w => String(w[0]).includes('join floor above')).length, 0)
+  // The host logs through a `%s` template (diagnostics.js: ctx.logger.warn('%s', line)), so the
+  // message is a later argument, never `w[0]`: reading only `w[0]` made this guard always pass.
+  const floorWarnings = host.warnings.filter(w => w.map(arg => String(arg)).join(' ').includes('join floor above'))
+  assert.equal(floorWarnings.length, 0, 'a healthy floor must not warn')
 })
 
 // An empty room keeps its sentence.
