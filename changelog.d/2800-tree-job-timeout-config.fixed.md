@@ -1,0 +1,1 @@
+The tree plugin's `jobTimeoutMs` config key now bounds a queued reorganization job: the value was read by the organizer but never passed to it from the plugin config, so every job waited on the ten-minute default however the key was set. A value that is not a finite number above 0 still keeps that default. See [#2758](https://github.com/ThinkFlowLab/FlyBot/issues/2758).

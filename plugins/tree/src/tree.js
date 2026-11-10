@@ -21,7 +21,7 @@ export const ROOT_ROLE = 'root'
 const LEGACY_ROOT_ROLE = 'Top-level coordinator for everything.'
 const ROOT_LABEL = 'Main bot and root of the tree'
 
-export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExisting = true, warn = () => {}, classify, tidy, burstGrouping, now = Date.now } = {}) {
+export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExisting = true, warn = () => {}, classify, tidy, burstGrouping, jobTimeoutMs, now = Date.now } = {}) {
   const listeners = new Set()
   const load = createLoadTracker({ now })
 
@@ -84,7 +84,7 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
   // After a placement or repair any trace or child list may have changed; writeBlock skips unchanged prompts.
   const refreshAll = () => { const nodes = snapshot(); for (const id of Object.keys(nodes)) refreshPrompt(id, nodes) }
   const findRootId = () => { const nodes = snapshot(); return Object.values(nodes).find(n => n.root)?.id ?? Object.values(nodes).find(n => n.parent === null)?.id }
-  const organizer = createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, warn, refreshAll: () => refreshAll(), writeBlock: (id, block) => writeBlock(id, block), findRootId, now, classify, tidy })
+  const organizer = createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, warn, refreshAll: () => refreshAll(), writeBlock: (id, block) => writeBlock(id, block), findRootId, now, classify, tidy, jobTimeoutMs })
   // Forward allocation (#447) on the organizer's shared primitives: find_bots, reuse, parent?, teams.
   const allocator = createAllocator({ fb, limits, snapshot, childrenOf, depthOf, traceOf, shared: organizer.shared, createUnder: (parentId, name, role) => createChildNow(parentId, name, role), withParentLock: (id, fn) => withParentLock(id, fn), refreshAll: () => refreshAll(), classify, burst: burstGrouping !== false })
 
