@@ -52,10 +52,13 @@ function statusText(connector) {
 }
 
 // One credential of the form (#1266): the definition says which fields a mode needs and whether a
-// field is masked. A masked one is the same field the Secrets page uses, so it never comes back.
+// field is masked. A masked one is the same field the Secrets page uses, so it never comes back; it
+// is also drawn like the Secrets page draws it, inside the bordered `.bt-q-field` wrapper its bare
+// `.bt-secret-input` needs, or the field shows as a placeholder line and the form reads as the
+// unmasked fields only (#2799).
 function CredentialField({ credential, value, onChange, onEnter, autoFocus }) {
   const label = t(credential.label)
-  if (credential.masked) return h(MaskedInput, { value, onChange, onEnter, label, autoFocus })
+  if (credential.masked) return h('label', { className: 'bt-q-field bt-secret-field' }, h(MaskedInput, { value, onChange, onEnter, label, autoFocus }))
   return h('label', { className: 'bt-q-field' },
     h('input', {
       className: 'bt-input', type: 'text', value, 'aria-label': label, placeholder: label, spellCheck: false, autoFocus,
