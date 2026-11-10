@@ -635,7 +635,7 @@ export function install(rt) {
         if (at?.botId !== botId) return
         rows.push({
           at: when ?? '',
-          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${when === undefined ? 'no next run' : `next ${when}`}, ${status}, ${at.place}, session ${entry.sessionId}`,
+          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
         })
       }
       for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)

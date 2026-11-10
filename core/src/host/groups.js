@@ -32,6 +32,7 @@ import { cleanName, stripSessionChips, unwrapUntrusted } from './delivery.js'
 import { createRoomParticipants } from './room-participant.js'
 import { ROOM_CONTEXT_BUDGET, boardCoversCue, fitRoomLines, formatRoomBoard, formatRoomPresence, prepareRoomLine, setRoomLineRedactor } from './room-context.js'
 import { workDispatch } from './work-dispatch.js'
+import { checkpointCount } from './steward.js'
 import { retiredBot } from './store.js'
 
 // #1253: how long an identical claim line keeps a card quiet after it was posted. A claim is a
@@ -993,7 +994,24 @@ export function install(rt) {
       if (query === '' && number !== undefined) {
         const part = parts[number - 1]
         if (part === undefined) return `Your own chat has no part ${number}.${partsNote}`
-        if (part.endedAt === undefined) return `Part ${number} is the current one; it is in your context.${partsNote}`
+        if (part.endedAt === undefined) {
+          // A checkpoint replaces the part's older messages in place (#2774): the part is still
+          // the current one, but most of it left the context, so calling it context is false.
+          // A Session without deriveMessages (the test benches) and one whose deriveMessages
+          // throws both read as "no checkpoint": a read that used to answer keeps answering,
+          // instead of turning a broken Session into a failed tool call.
+          const agent = await rt.resolveAgent(part.sessionId).catch(() => undefined)
+          let checkpoints = 0
+          try {
+            checkpoints = checkpointCount(agent?.session?.deriveMessages?.() ?? [])
+          } catch {
+            // The count is a message hint only, so a Session that cannot report its messages
+            // keeps the unchanged sentence rather than failing this read.
+          }
+          if (checkpoints === 0) return `Part ${number} is the current one; it is in your context.${partsNote}`
+          const { lines } = await rt.latestOwnChat(botId, { askingId: id })
+          return `Part ${number} is the current one, but its earlier messages are condensed into [Checkpoint ${checkpoints}], so only its newest messages are still in your context:\n${lines.join('\n')}\nSearch it with words to read the rest word for word.${partsNote}`
+        }
         return `Part ${number} of your own chat (${rt.clock(part.startedAt)} – ${rt.clock(part.endedAt)}). The handoff note that closed it:\n${rt.noteText(part) ?? '(none: the part ended on a context overflow)'}${partsNote}`
       }
       if (query === '') {

@@ -139,8 +139,19 @@ export function install(rt) {
     const grants = target.standingApprovals ?? []
     if (!grants.some(grant => grant.kind === kind && grant.ownerId === bot.ownerId)) {
       const grant = { kind, label: kindLabel(entry.tool, entry.reason), at: Date.now(), ...(bot.ownerId === undefined ? {} : { ownerId: bot.ownerId }) }
+      // #2764: the grant exists only once the store holds it. A refused save changed nothing on
+      // disk, so a grant left in memory would answer the next matching card without ever being
+      // written — an "Always allow" the owner never actually gave. The list is replaced, never
+      // edited in place, so the old reference is the snapshot to put back.
+      const before = target.standingApprovals
       target.standingApprovals = [...grants, grant]
-      await rt.save()
+      try {
+        await rt.save()
+      } catch (error) {
+        if (before === undefined) delete target.standingApprovals
+        else target.standingApprovals = before
+        throw error
+      }
     }
     // Other cards the new grant already covers stop waiting too.
     for (const other of pending.values()) {
@@ -154,12 +165,21 @@ export function install(rt) {
     await rt.load()
     const target = scope === 'room' ? rt.roomOf(String(id ?? '')) : rt.botOf(String(id ?? ''))
     if (target === undefined) throw Object.assign(new Error('Not found'), { code: 'bot/not-found' })
-    const before = target.standingApprovals ?? []
-    const after = before.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
-    if (after.length === before.length) return false
+    const before = target.standingApprovals
+    const grants = before ?? []
+    const after = grants.filter(grant => grant.kind !== String(kind ?? '') || (scope === 'room' && ownerId !== undefined && grant.ownerId !== ownerId))
+    if (after.length === grants.length) return false
     if (after.length === 0) delete target.standingApprovals
     else target.standingApprovals = after
-    await rt.save()
+    // #2764: a removal the store refused is not a removal — the grant is still on disk, so it
+    // must still be in memory, or the settings card says "gone" while every new ask is refused.
+    try {
+      await rt.save()
+    } catch (error) {
+      if (before === undefined) delete target.standingApprovals
+      else target.standingApprovals = before
+      throw error
+    }
     return true
   }
 
