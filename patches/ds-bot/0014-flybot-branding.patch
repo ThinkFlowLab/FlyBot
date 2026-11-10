@@ -2448,7 +2448,7 @@ diff --git a/test/store.test.js b/test/store.test.js
  test('dispose waits for a pending save and prevents later writes', async (t) => {
    const { rt, home, statePath, dispose } = runtime(t)
    await rt.load()
-@@ -285,3 +285,263 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
+@@ -285,3 +285,329 @@ test('dispose waits for a pending save and prevents later writes', async (t) =>
      restore()
    }
  })
@@ -2711,6 +2711,72 @@ diff --git a/test/store.test.js b/test/store.test.js
 +    assert.equal(rt.readOnly(), undefined, label)
 +    assert.equal(fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-')).length, 1, label)
 +  }
++})
++
++// #2755: a saved record that is null (a truncated write, a hand edit, an older build) used to throw
++// out of adopt(), and `loaded ??=` cached the rejection: the team never appeared, `readOnly()` had no
++// answer and nothing named state.json. The record is evidence-backed up and folded instead.
++test('a room record that is null is backed up and folded, and the team still appears (#2755)', async (t) => {
++  const { rt, home, statePath, warnings } = runtime(t, team({ r1: null }))
++  await rt.load()
++  assert.equal(rt.readOnly(), undefined, 'the file loads as a writable team instead of a null answer')
++  assert.deepEqual(rt.state.rooms.r1.members, [], 'the room is kept and folded to an empty member list')
++
++  const backups = fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-'))
++  assert.equal(backups.length, 1, 'the pre-repair file is kept as one .broken copy')
++  const kept = JSON.parse(fs.readFileSync(join(home, backups[0]), 'utf8'))
++  assert.equal(kept.rooms.r1, null, 'the dropped value is preserved verbatim in the evidence copy')
++
++  const written = JSON.parse(fs.readFileSync(statePath, 'utf8'))
++  assert.equal(written.version, 2, 'the repair is written back as version 2')
++  assert.deepEqual(written.rooms.r1.members, [], 'the saved room carries the repaired list')
++  assert.equal(warnings.some(line => line.join(' ').includes('state.json')), true, 'a warning names state.json')
++})
++
++test('a version-1 Bot record that is null migrates, keeps .v1 and drops only that record (#2755)', async (t) => {
++  const { rt, home, statePath, warnings } = runtime(t, {
++    version: 1,
++    revision: 1,
++    bots: { chief: null, kept: { id: 'kept', name: 'Keeper', createdAt: 1 } },
++  })
++  await rt.load()
++  assert.equal(rt.readOnly(), undefined, 'the team is not refused read-only')
++  assert.equal(rt.state.version, 2, 'the version-1 team is migrated')
++  assert.deepEqual(Object.keys(rt.state.bots), ['kept'], 'only the broken record is dropped')
++
++  const v1 = JSON.parse(fs.readFileSync(`${statePath}.v1`, 'utf8'))
++  assert.equal(v1.version, 1, 'the version-1 backup is kept')
++  assert.equal(v1.bots.chief, null, 'the backup is the file as it was, broken record included')
++  const backups = fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-'))
++  assert.equal(backups.length, 1)
++  assert.equal(JSON.parse(fs.readFileSync(join(home, backups[0]), 'utf8')).bots.chief, null)
++
++  const written = JSON.parse(fs.readFileSync(statePath, 'utf8'))
++  assert.equal(written.version, 2)
++  assert.equal(Object.hasOwn(written.bots, 'chief'), false, 'the repaired file carries no null Bot record')
++  assert.equal(warnings.some(line => line.join(' ').includes('state.json')), true, 'a warning names state.json')
++})
++
++test('a version-1 team with a null record is not written back in a read-only pass (#2755)', async (t) => {
++  const home = fs.mkdtempSync(join(tmpdir(), 'ds-bot-store-'))
++  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const original = JSON.stringify({ version: 1, revision: 1, bots: { chief: null, kept: { id: 'kept', name: 'Keeper', createdAt: 1 } } })
++  fs.writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'other' }))
++  fs.writeFileSync(join(home, 'state.json'), original)
++
++  const { rt } = runtime(t, undefined, { home })
++  await rt.load()
++  assert.match(rt.readOnly(), /another dsh/, 'the window is told why it may not write')
++  assert.equal(fs.readFileSync(join(home, 'state.json'), 'utf8'), original, 'a read-only pass writes no state.json')
++  assert.equal(JSON.parse(fs.readFileSync(join(home, 'state.json.v1'), 'utf8')).version, 1, '.v1 is still kept')
++})
++
++test('a healthy team loads with no broken-record warning and no .broken copy (#2755)', async (t) => {
++  const { rt, home, warnings } = runtime(t, team({ r1: { id: 'r1', name: 'Ops', members: ['a'], mode: 'admin', admin: 'a', named: true, sessions: {}, log: [], seq: 0, seen: {} } }))
++  await rt.load()
++  assert.equal(rt.readOnly(), undefined)
++  assert.deepEqual(fs.readdirSync(home).filter(name => name.startsWith('state.json.broken-')), [], 'no evidence copy for a healthy file')
++  assert.equal(warnings.some(line => line.join(' ').includes('broken record')), false, 'no warning for a healthy file')
 +})
 diff --git a/test/update.test.js b/test/update.test.js
 --- a/test/update.test.js
