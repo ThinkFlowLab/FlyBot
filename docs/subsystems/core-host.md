@@ -430,6 +430,10 @@ Work a member hands a Bot with `message_bot` from its group Session runs in a hi
 - `chat-index.js` returns the count next to the lines — `searchOwnChat` answers `{ lines, every, more }`, `latestOwnChat` `{ lines, more }` — instead of the lines alone. A search counts the same match in all only once its limit was filled (`termCountQuery`; the per-term fallback uses `anyTermCountQuery`, which unions one branch per term so a line matching two counts once), and a latest read counts the part's visible lines (`countAll` / `countVisible`, the latter leaving out the asking turn). Without the SQLite index the log scan counts every match while it reads, because that count is the only way to say what was left out.
 - Covered by `core/test/group-work.test.js`; `core/test/history.test.js` still pins `termQuery`'s SQL.
 
+### Group reads say what a cap left out (#2780)
+
+- `read_group_chat` shows at most `ROOM_READ_MAX` (30) of the room lines visible to the caller, the newest ones, and the cut used to be silent: `Latest in "<room>" (oldest first):` printed as if those 30 were the whole log, so a Bot asked "didn't we decide X?" read a truncated log as the whole log — the same failure #1906 fixed for the own-chat read. The header now names the cut, `Latest in "<room>" (newest 30 of 45, oldest first):`, and a read that fits the cap stays byte-identical; lines before the member's `joinedSeq` are not counted as left out. Covered by `core/test/room-read-honest-count.test.js` and `core/test/group-work.test.js`.
+
 ### Chat anchors name their part (#2710)
 
 - `chat-index.js` `anchorOf` prints every anchor as `part N #<seq>` — the form `aroundOwnChat` resolves exactly — including while the chat still has one part. The bare `#<seq>` it printed there used to resolve against `parts[parts.length - 1]`, so once `parts.js` ended a segment and a fresh part became current, an anchor a Bot had saved opened a different message in the new part and reported `exact: true`.

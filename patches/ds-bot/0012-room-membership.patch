@@ -2118,17 +2118,23 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      },
    }))
  
-@@ -539,7 +539,9 @@ export function install(rt) {
+@@ -539,8 +539,14 @@ export function install(rt) {
        const { room, error } = rt.pickRoom(args.group, self)
        if (error) return error
        ensureRoomLog(room)
 -      const lines = room.log.slice(-ROOM_READ_MAX)
+-      return lines.length === 0 ? `"${room.name}" has no messages yet.` : `Latest in "${room.name}" (oldest first):\n${transcript(lines)}`
 +      const botPart = rt.participantsOf?.(room)?.find(p => p.kind === 'bot' && p.id === self)
 +      const from = botPart?.joinedSeq ?? 0
-+      const lines = room.log.filter(line => (line.seq ?? 0) >= from).slice(-ROOM_READ_MAX)
-       return lines.length === 0 ? `"${room.name}" has no messages yet.` : `Latest in "${room.name}" (oldest first):\n${transcript(lines)}`
++      const kept = room.log.filter(line => (line.seq ?? 0) >= from)
++      const lines = kept.slice(-ROOM_READ_MAX)
++      if (lines.length === 0) return `"${room.name}" has no messages yet.`
++      // A cut read says how much it left out, so a missing message does not read as never said (#2780).
++      const older = kept.length - lines.length
++      return `Latest in "${room.name}" (${older > 0 ? `newest ${lines.length} of ${kept.length}, ` : ''}oldest first):\n${transcript(lines)}`
      },
    }))
+ 
 @@ -548,46 +548,264 @@ export function install(rt) {
    // the admin answers alone in admin mode, or first of everyone. What a member posts
    // after its round moved on is answered by the member that asked for it; work the
