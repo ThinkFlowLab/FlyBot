@@ -408,8 +408,10 @@ export function createWorkflowService({
         const error = new Error(`the host did not create the run Bots within ${Math.round(SPAWN_DEADLINE_MS / 1000)}s`)
         error.code = 'spawn-timeout'
         Promise.resolve(pending)
-          .then(ids => (typeof release === 'function' ? releaseAll(Object.values(ids ?? {}), release, warn) : []))
-          .catch(() => {})
+          .then(ids => releaseAll(Object.values(ids ?? {}), release, warn))
+          // releaseAll already warns once per Bot it could not remove; this catches only a
+          // throw from the chain itself, and the start is refused either way, so say it.
+          .catch(error => warn(`flybot-workflow: a late start could not release its Bots: ${error?.message ?? error}`))
         reject(error)
       }, SPAWN_DEADLINE_MS)
       handle?.unref?.()
