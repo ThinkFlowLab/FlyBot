@@ -572,3 +572,42 @@ test('a bare read that hits its cap says newest 12 of 15 (#1906)', async (t) => 
   assert.equal(shownLines(capOut).length, 12)
   assert.doesNotMatch(capOut, /newest 12 of/)
 })
+
+// #2774: a checkpoint condenses a part's older messages in place, so the current part is still
+// current but no longer in context. The part read says which checkpoint replaced it and where
+// the rest can still be read word for word.
+const checkpointMessages = number => [
+  { role: 'user', content: [{ type: 'text', text: `[Checkpoint ${number}]` }, { type: 'text', text: `\n\n<compacted-summary>\n[Checkpoint ${number}]\n- Done: outline\n` }] },
+]
+
+test('a current part condensed by a checkpoint is not called "in your context" (#2774)', async (t) => {
+  const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line'), chatLine(2, 'the url is https://example.test/xyz')] }
+  const host = await start(t, undefined, history)
+  host.agentOf('b').session.deriveMessages = () => checkpointMessages(1)
+  const out = await host.tool('read_own_chat', { part: 1 }, 'b')
+  assert.doesNotMatch(out, /it is in your context/, `still claims context: ${out}`)
+  assert.match(out, /Checkpoint 1/)
+  assert.match(out, /words/)
+  assert.match(out, /the url is https:\/\/example\.test\/xyz/, 'the newest lines are still shown')
+})
+
+test('a current part with no checkpoint, and an ended or missing part, answer as before (#2774)', async (t) => {
+  const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line')] }
+  const host = await start(t, undefined, history)
+  // This bench's Sessions have no deriveMessages: the check must stay optional, not throw.
+  assert.equal(await host.tool('read_own_chat', { part: 1 }, 'b'), 'Part 1 is the current one; it is in your context.')
+  host.rt.state.bots.b.segments = [{ sessionId: 'p1', endedAt: 2_000 }]
+  const ended = await host.tool('read_own_chat', { part: 1 }, 'b')
+  assert.match(ended, /^Part 1 of your own chat \(/)
+  assert.match(ended, /The handoff note that closed it:/)
+  assert.match(await host.tool('read_own_chat', { part: 9 }, 'b'), /^Your own chat has no part 9\./)
+})
+
+// A guard, not a red-first case: the Session's deriveMessages is only a hint, so one that throws
+// must leave the read working and answering what it answered before #2774, never fail the tool.
+test('a Session whose deriveMessages throws still reads the current part (#2774)', async (t) => {
+  const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line')] }
+  const host = await start(t, undefined, history)
+  host.agentOf('b').session.deriveMessages = () => { throw new Error('session is gone') }
+  assert.equal(await host.tool('read_own_chat', { part: 1 }, 'b'), 'Part 1 is the current one; it is in your context.')
+})

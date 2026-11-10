@@ -435,6 +435,12 @@ Work a member hands a Bot with `message_bot` from its group Session runs in a hi
 - A bare `#<seq>` in an older anchor keeps that resolution for compatibility, but `aroundOwnChat` answers `guessedPart: true` and `exact: false` when the chat has more than one part (with one part the bare form is unambiguous), and `read_own_chat` says the part was a guess instead of claiming an exact hit. The tool's `around` description says the same.
 - Covered by `core/test/chat-anchors.test.js` (the real module, a temporary home, a real `chat-index.sqlite` and a fake Session log).
 
+### A checkpointed current part is not called context (#2774)
+
+- A checkpoint condenses a part's older messages in place (`parts.js` swaps the Session's summarizer for `writeCheckpoint()`), so the current part can be mostly gone from the model's context while `read_own_chat({ part: N })` still called it `it is in your context`. `groups.js` now resolves the part's Session and counts its checkpoints with `steward.js` `checkpointCount(agent.session.deriveMessages())`: with none, the answer is the old sentence byte for byte; with one, it names `[Checkpoint N]`, shows the newest lines `latestOwnChat` still returns, and points at the words search for the rest.
+- `deriveMessages` is called optionally (`agent?.session?.deriveMessages?.()`), because the bench Sessions in `core/test/group-work.test.js` have none and a hard call would throw instead of asserting. The ended-part handoff note and `Your own chat has no part N.` are unchanged.
+- Covered by `core/test/group-work.test.js` beside the `#1906` reads.
+
 ### One row per event in the chat index (#2711)
 
 - Two indexers over one home each read a part's mark before either committed, so both inserted the same events and every message came back twice — the doubling then lived in the file, because a later catch-up starts from the mark the last writer left. `chat-index.js` now reads `marks.through` **inside** the `BEGIN IMMEDIATE` transaction that inserts the rows, so a second writer's read sees the first one's commit; the transaction keeps its old size (one part's catch-up), and the rows and the mark move together, so an interrupted pass cannot leave the mark ahead of the index.
