@@ -140,6 +140,22 @@ export function runningOf(task, now) {
 // with it. A hit answers the same object and spends no source call, which is what the issue's
 // "cache hit reads the source once" case is about.
 const cache = new Map()
+// #2806: the key carries the five-minute window, so a bucket that is over can never be answered
+// again — a new key arrives every five minutes for each repository and zone, and nothing ever
+// removed the old ones. Every write now drops what it can no longer answer, and the cap catches a
+// table whose writes outpace its reads, because nothing sweeps in between.
+const CACHE_MAX = 512
+const pruneCache = (cacheStore, now) => {
+  // The default store is the Map above. An injected store that keeps only `get`/`set` (a test seam)
+  // is left as it is rather than given a `delete` it never promised.
+  if (typeof cacheStore.delete !== 'function') return
+  for (const [key, entry] of cacheStore) if (entry.expiresAt <= now) cacheStore.delete(key)
+  while (cacheStore.size >= CACHE_MAX) {
+    const oldest = cacheStore.keys().next()
+    if (oldest.done) break
+    cacheStore.delete(oldest.value)
+  }
+}
 
 const emptyMetrics = () => Object.fromEntries(METRIC_KEYS.map(key => [key, null]))
 
@@ -243,6 +259,7 @@ export async function readMetrics({ repo, token, fetchImpl, timeZone = 'UTC', no
     generatedAt: value.generatedAt,
     metrics: { prsOpenedToday, prsMergedToday, issuesOpenedToday, issuesClosedToday, prMergeMedianMs, issueCloseMedianMs },
   }
+  pruneCache(cacheStore, now)
   cacheStore.set(key, { expiresAt: now + ttlMs, value: repositoryValue })
   return { ...withLive(value), cache: 'miss', ...(source.truncated ? { truncated: true } : {}) }
 }
