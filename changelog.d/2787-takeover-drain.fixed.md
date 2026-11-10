@@ -1,0 +1,1 @@
+A card queued behind a run ended by the reap a window runs when it **takes the store over** now starts on its own: the takeover reap drains the lane's queue like the load-time reap, instead of leaving the card parked with a free slot until some unrelated assign or ingest. See [#2787](https://github.com/ThinkFlowLab/FlyBot/issues/2787).
