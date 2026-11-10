@@ -1,0 +1,1 @@
+A `track_tasks` batch whose store write was refused no longer leaves the cards it committed in memory: the board is restored before the error, so a ghost card cannot ride the next save onto disk (#2761).
