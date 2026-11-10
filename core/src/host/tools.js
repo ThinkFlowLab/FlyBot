@@ -650,8 +650,10 @@ export function install(rt) {
           ...(option.description ? { description: String(option.description).trim() } : {}),
         }))
         .filter(option => option.label !== '')
-        .slice(0, 6)
-      if (options.length === 0) return 'Give at least one option.'
+      // The card shows two to four answers and says so in its own parameter description. A fifth
+      // is not cut away silently and a lone one is not a choice, so both ends are refused here,
+      // on the labels that survived the filter above (#2771).
+      if (options.length < 2 || options.length > 4) return 'Give two to four answers.'
       // Work handed out from a group (turns.js): the user handed it out there, so a question
       // about it is asked there too, never in the Bot's own chat (#550).
       const handed = rt.handedFromGroup(id)
