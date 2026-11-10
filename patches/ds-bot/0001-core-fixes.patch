@@ -8123,7 +8123,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +        if (at?.botId !== botId) return
 +        rows.push({
 +          at: when ?? '',
-+          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${when === undefined ? 'no next run' : `next ${when}`}, ${status}, ${at.place}, session ${entry.sessionId}`,
++          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
 +        })
 +      }
 +      for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
@@ -14841,7 +14841,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,860 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,882 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -15425,6 +15425,28 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
 +  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
 +  assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
++})
++
++// #2767: a row that is not `active` has no next run, whatever instant DSH still keeps on it.
++// The settings page on the same data says `Finished` (src/client/schedules.js), and DSH keeps
++// the originally due instant on a finished one-shot task, so printing it read as a time to come.
++test('#2767: an inactive task prints no next run, and an active one keeps its line', async (t) => {
++  const schedule = scheduleService()
++  const team = JSON.parse(JSON.stringify(TEAM))
++  team.pausedSchedules = { 's-paused': { id: 's-paused', sessionId: 'w2', record: { title: 'Paused brief', prompt: 'Sum up' }, pausedAt: 6 } }
++  const { ctx, home } = setup({ schedule }, team)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const task = (id, title, status, scheduledAt) => schedule.tasks.set(id, { sessionId: 'w2', status, record: { id, title, prompt: `${title} prompt`, scheduledAt } })
++  task('s-done', 'Finished one-shot', 'inactive', '2026-10-29T07:20:46.458Z')
++  task('s-live', 'Live brief', 'active', '2030-01-01T01:00:00.000Z')
++  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
++  // The finished one-shot keeps its status word and loses the past instant.
++  assert.ok(answer.includes('- "Finished one-shot" (s-done) — no next run, inactive, own chat, session w2'), answer)
++  assert.ok(!answer.includes('2026-10-29'), 'a time that has already passed is not a next run')
++  // Paused already read this way; the change must not disturb it.
++  assert.ok(answer.includes('- "Paused brief" (s-paused) — no next run, paused, own chat, session w2'), answer)
++  // An active row's line is byte-identical to the one the base prints for the same entry.
++  assert.ok(answer.includes('- "Live brief" (s-live) — next 2030-01-01T01:00:00.000Z, active, own chat, session w2'), answer)
 +})
 +
 +// #1321: two owners on one host. `copyFrom` and `schedule-update` resolve a source Session the

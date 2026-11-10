@@ -794,6 +794,28 @@ test('#628: a Bot with no task in any Session gets an answer that is about the B
   assert.match(answer, /none — no scheduled task in any of its Sessions, so this is the whole list for the Bot/)
 })
 
+// #2767: a row that is not `active` has no next run, whatever instant DSH still keeps on it.
+// The settings page on the same data says `Finished` (src/client/schedules.js), and DSH keeps
+// the originally due instant on a finished one-shot task, so printing it read as a time to come.
+test('#2767: an inactive task prints no next run, and an active one keeps its line', async (t) => {
+  const schedule = scheduleService()
+  const team = JSON.parse(JSON.stringify(TEAM))
+  team.pausedSchedules = { 's-paused': { id: 's-paused', sessionId: 'w2', record: { title: 'Paused brief', prompt: 'Sum up' }, pausedAt: 6 } }
+  const { ctx, home } = setup({ schedule }, team)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const task = (id, title, status, scheduledAt) => schedule.tasks.set(id, { sessionId: 'w2', status, record: { id, title, prompt: `${title} prompt`, scheduledAt } })
+  task('s-done', 'Finished one-shot', 'inactive', '2026-10-29T07:20:46.458Z')
+  task('s-live', 'Live brief', 'active', '2030-01-01T01:00:00.000Z')
+  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
+  // The finished one-shot keeps its status word and loses the past instant.
+  assert.ok(answer.includes('- "Finished one-shot" (s-done) — no next run, inactive, own chat, session w2'), answer)
+  assert.ok(!answer.includes('2026-10-29'), 'a time that has already passed is not a next run')
+  // Paused already read this way; the change must not disturb it.
+  assert.ok(answer.includes('- "Paused brief" (s-paused) — no next run, paused, own chat, session w2'), answer)
+  // An active row's line is byte-identical to the one the base prints for the same entry.
+  assert.ok(answer.includes('- "Live brief" (s-live) — next 2030-01-01T01:00:00.000Z, active, own chat, session w2'), answer)
+})
+
 // #1321: two owners on one host. `copyFrom` and `schedule-update` resolve a source Session the
 // way the page does, and the host knowing that Session is not the caller being allowed to read
 // its task: a copy or an edit may only touch a task of the caller's own user.
