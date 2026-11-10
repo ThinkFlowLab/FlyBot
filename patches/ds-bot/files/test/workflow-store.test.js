@@ -2,11 +2,13 @@
 // are read-only, and the two endpoints — `workflows` reads, `workflow-save` writes with a signed-in
 // actor (acceptance 6 and 7).
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { install as installAuthz } from '../src/host/authz.js'
 import { createWorkflowStore, install, PRESETS } from '../src/host/workflow-store.js'
 import { WORKFLOW_VERSION } from '../src/shared/workflow.js'
@@ -684,4 +686,240 @@ test('#2681: a definition at this build own version with unknown fields still sa
     assert.equal('timeoutMinutes' in written.nodes[0], false)
     assert.deepEqual(written, workflowDocument(base), 'the canonical bytes are unchanged by this fix')
   })
+})
+
+// ---------------------------------------------------------------------------
+// #2762: a save replaces the definition instead of truncating it. `writeFileSync(path, …)` opens the
+// target with 'w' — zero bytes first, then the new ones — so a second process reading inside that
+// window parses half a definition (or nothing at all), `list()` skips it and `open()` answers
+// `workflow/not-found` while the bytes are being rewritten. The writer now stages a private temp
+// name in the same folder and renames it over the target, so every read sees either the previous
+// complete bytes or the new complete bytes.
+const WORKFLOW_STORE_MODULE = fileURLToPath(new URL('../src/host/workflow-store.js', import.meta.url))
+const WORKFLOW_TEST_HARNESS = fileURLToPath(new URL('./harness-resolve.mjs', import.meta.url))
+
+// A definition that is cheap to validate and big to write: the size lives in the node names, so the
+// renderer's work stays small while the bytes are the ones a real worksheet can carry.
+const bigDefinition = (name, { nodes = 300, pad = 2000 } = {}) => ({
+  id: 'big',
+  name,
+  version: 1,
+  inputs: [],
+  deliverables: [],
+  nodes: Array.from({ length: nodes }, (_, at) => ({
+    id: `n${at}`,
+    name: `Node ${at} `.padEnd(pad, 'x'),
+    role: 'system',
+    inputs: [],
+    outputs: [],
+    guards: [],
+    refusal: '{node} cannot start: it needs {spec} and has none.',
+  })),
+  edges: [],
+  loops: [],
+})
+
+const childProcess = (code, args) => {
+  const child = spawn(process.execPath, ['--import', WORKFLOW_TEST_HARNESS, '--input-type=module', '-e', code, ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+  let output = ''
+  let errors = ''
+  let exited = false
+  // The promise is made here, where the listener is attached before the child can exit: attaching it
+  // after a busy loop can miss a close that already happened.
+  const closed = new Promise((resolve) => child.on('close', (code, signal) => {
+    exited = true
+    resolve({ code, signal })
+  }))
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => { output += chunk })
+  child.stderr.on('data', (chunk) => { errors += chunk })
+  return { child, closed, get output() { return output }, get errors() { return errors }, get exited() { return exited } }
+}
+
+const WRITER = `
+import { createWorkflowStore } from ${JSON.stringify(WORKFLOW_STORE_MODULE)}
+import { readFileSync } from 'node:fs'
+const [dir, first, second, rounds] = process.argv.slice(1)
+const store = createWorkflowStore({ dir })
+const a = JSON.parse(readFileSync(first, 'utf8'))
+const b = JSON.parse(readFileSync(second, 'utf8'))
+process.stdout.write('@@ready\\n')
+for (let at = 0; at < Number(rounds); at++) store.save({ definition: at % 2 === 0 ? a : b })
+process.stdout.write('@@done\\n')
+`
+
+test('#2762: a reader in a second process never catches a half-written definition', { timeout: 90_000 }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-torn-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  const file = join(dir, 'big.json')
+  const skipped = []
+  const store = createWorkflowStore({ dir, skipped: (path, name) => skipped.push({ path, name }) })
+  const first = store.save({ definition: bigDefinition('First') })
+  assert.equal(first.ok, true)
+  // The variants live outside `workflows/`, so the folder the store reads holds one definition.
+  const alpha = bigDefinition('Alpha')
+  const beta = bigDefinition('Beta')
+  writeFileSync(join(root, 'a.json'), JSON.stringify(alpha))
+  writeFileSync(join(root, 'b.json'), JSON.stringify(beta))
+  const complete = new Set([workflowBytes(bigDefinition('First')).length, workflowBytes(alpha).length, workflowBytes(beta).length])
+  assert.equal(complete.size, 2, 'the two variant saves are one length apart, so a torn file is not mistaken for one of them')
+
+  const run = childProcess(WRITER, [dir, join(root, 'a.json'), join(root, 'b.json'), '120'])
+  const failures = []
+  const seen = new Set()
+  let polls = 0
+  // A reader that samples the length sees the truncation window itself: `'w'` opens the target at zero
+  // bytes, so any length other than a complete definition's is a half-written file on disk. It is the
+  // cheap half of a real read, and the parse checks below are the expensive half.
+  while (!run.exited && failures.length === 0 && polls < 200_000) {
+    polls += 1
+    const size = existsSync(file) ? statSync(file).size : -1
+    if (!complete.has(size)) {
+      failures.push(`poll ${polls} saw ${size} bytes, which is not a complete definition`)
+      break
+    }
+    if (polls % 2000 === 0) {
+      const text = readFileSync(file, 'utf8')
+      try {
+        seen.add(JSON.parse(text).name)
+      } catch {
+        failures.push(`poll ${polls} read ${text.length} bytes that do not parse`)
+        break
+      }
+      const opened = store.open('big')
+      if (opened.ok !== true) failures.push(`poll ${polls}: open answered ${opened.code}`)
+      if (!store.list().own.some((entry) => entry.id === 'big')) failures.push(`poll ${polls}: list() lost the definition`)
+    }
+  }
+  await run.closed
+  assert.equal(run.errors, '', 'the writer reported no error')
+  assert.ok(polls > 1000, `the reader looked ${polls} times while the writer was saving`)
+  assert.deepEqual(failures, [], 'every read saw a complete definition, never a torn one')
+  assert.deepEqual([...seen].filter((name) => name !== 'First').sort(), ['Alpha', 'Beta'], 'the reader saw both complete saves')
+  assert.deepEqual(skipped, [], 'no definition was skipped as unparsable')
+  assert.equal(readFileSync(file, 'utf8'), workflowBytes(beta), 'the last complete save landed whole')
+})
+
+test('#2762: a kill -9 inside the write leaves the previous complete definition, and list() still has it', { timeout: 120_000 }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-crash-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  const file = join(dir, 'big.json')
+  const store = createWorkflowStore({ dir })
+  const oldDefinition = copyOfPreset(blankWorkflow, { id: 'big', name: 'Old' })
+  assert.equal(store.save({ definition: oldDefinition }).ok, true)
+  const oldText = readFileSync(file, 'utf8')
+  const newDefinition = bigDefinition('New', { pad: 20_000 })
+  const newText = workflowBytes(newDefinition)
+  assert.ok(newText.length > 5 * 1024 * 1024, 'the write under test is wide enough for a kill to land inside it')
+  writeFileSync(join(root, 'input.json'), JSON.stringify(newDefinition))
+
+  // The window a crash has to land in: the truncating writer has already left the old length, or the
+  // atomic one has a temp name growing beside the untouched target.
+  const inWindow = () => {
+    for (const name of readdirSync(dir)) {
+      if (!name.startsWith('big.json.') || !name.endsWith('.tmp')) continue
+      if (statSync(join(dir, name)).size > 0) return { temp: name }
+    }
+    if (!existsSync(file)) return { target: 'missing' }
+    const size = statSync(file).size
+    return size !== oldText.length ? { target: size } : undefined
+  }
+
+  let cut
+  let left = ''
+  for (let attempt = 0; attempt < 3 && (left === '' || (left !== oldText && left !== newText)); attempt += 1) {
+    const run = childProcess(WRITER, [dir, join(root, 'input.json'), join(root, 'input.json'), '1'])
+    const deadline = Date.now() + 30_000
+    cut = undefined
+    while (cut === undefined && Date.now() < deadline && !run.exited) {
+      cut = inWindow()
+      if (cut === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    assert.ok(cut, `the writer never showed a write in flight\nstdout: ${run.output}\nstderr: ${run.errors}`)
+    run.child.kill('SIGKILL')
+    await run.closed
+    left = readFileSync(file, 'utf8')
+  }
+  t.diagnostic(`cut the write inside the window: ${JSON.stringify(cut)}`)
+
+  let onDisk
+  assert.doesNotThrow(() => { onDisk = JSON.parse(left) }, 'the killed write left a complete definition behind')
+  assert.ok(left === oldText || left === newText, `the file is byte-identical to the old or the new definition, not ${left.length} of ${newText.length} bytes`)
+  assert.equal(onDisk.id, 'big')
+  const listed = createWorkflowStore({ dir }).list()
+  assert.equal(listed.ok, true)
+  assert.deepEqual(listed.own.map((entry) => entry.id), ['big'], 'the definition is still listed after the crash')
+  assert.equal(createWorkflowStore({ dir }).open('big').ok, true, 'and still opens')
+})
+
+test('#2762: a landed save leaves no temp name behind, and no read face shows one', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-temp-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  const store = createWorkflowStore({ dir })
+  const definition = bigDefinition('Mine', { nodes: 40, pad: 200 })
+  assert.equal(store.save({ definition }).ok, true)
+  assert.equal(store.save({ definition: { ...definition, name: 'Mine again' } }).ok, true)
+  assert.equal(store.setDefault({ id: 'big' }).ok, true)
+
+  assert.deepEqual(readdirSync(dir).filter((name) => name.endsWith('.tmp')), [], 'a landed write leaves no temp name')
+  assert.equal(readFileSync(join(dir, 'big.json'), 'utf8'), workflowBytes({ ...definition, name: 'Mine again' }), 'the save landed the canonical bytes whole')
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8')), { default: 'big' })
+  assert.deepEqual(store.list().own.map((entry) => entry.id), ['big'], 'list() has the definition and nothing else')
+  assert.equal(store.list().default, 'big', 'the project pointer landed too')
+})
+
+test('#2762: a temp name left by a crashed write is swept, and a link planted there is never written through', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-sweep-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const definition = bigDefinition('Mine', { nodes: 20, pad: 100 })
+  let store = createWorkflowStore({ dir })
+  assert.equal(store.save({ definition }).ok, true)
+  const file = join(dir, 'big.json')
+
+  // A crashed write's leftover: it holds no state, so the next write of this host sweeps it.
+  writeFileSync(`${file}.424242.tmp`, 'half a definition')
+  store = createWorkflowStore({ dir })
+  assert.equal(store.save({ definition: { ...definition, name: 'After the crash' } }).ok, true)
+  assert.deepEqual(readdirSync(dir).filter((name) => name.endsWith('.tmp')), [], 'the leftover was swept before the next write')
+
+  // A link planted at the temp name would take the bytes outside and the rename after it would put
+  // the link where the definition belongs. The sweep removes the link itself, never its target.
+  const outside = elsewhere(t, { 'stolen.json': 'OUTSIDE BYTES\n' })
+  const afterSweep = readFileSync(file, 'utf8')
+  store = createWorkflowStore({ dir })
+  symlinkSync(join(outside, 'stolen.json'), `${file}.${process.pid}.tmp`, 'file')
+  const saved = store.save({ definition: { ...definition, name: 'Through a link' } })
+  assert.equal(saved.ok, true)
+  assert.equal(readFileSync(join(outside, 'stolen.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the file the link names is byte-identical')
+  assert.equal(existsSync(`${file}.${process.pid}.tmp`), false, 'the link is gone, not renamed over the definition')
+  assert.deepEqual(readdirSync(dir).filter((name) => name.endsWith('.tmp')), [])
+  assert.notEqual(readFileSync(file, 'utf8'), afterSweep)
+  assert.equal(readFileSync(file, 'utf8'), workflowBytes({ ...definition, name: 'Through a link' }))
+})
+
+test('#2762: a link planted at the temp name after the sweep refuses the write, and the old bytes stay', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-temp-link-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const definition = bigDefinition('Mine', { nodes: 20, pad: 100 })
+  const store = createWorkflowStore({ dir })
+  assert.equal(store.save({ definition }).ok, true)
+  const file = join(dir, 'big.json')
+  const written = readFileSync(file, 'utf8')
+  const outside = elsewhere(t, { 'stolen.json': 'OUTSIDE BYTES\n' })
+  const temp = `${file}.${process.pid}.tmp`
+  symlinkSync(join(outside, 'stolen.json'), temp, 'file')
+  const saved = store.save({ definition: { ...definition, name: 'Through a link' } })
+  assert.equal(saved.ok, false)
+  assert.equal(saved.code, 'workflow/not-a-file')
+  assert.equal(readFileSync(join(outside, 'stolen.json'), 'utf8'), 'OUTSIDE BYTES\n', 'the link target keeps its bytes')
+  assert.equal(readFileSync(file, 'utf8'), written, 'the definition keeps the bytes it had')
+  assert.equal(lstatSync(temp).isSymbolicLink(), true, 'the link is still a link')
 })
