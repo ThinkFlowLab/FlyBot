@@ -46,7 +46,7 @@ function host(t, saved) {
     await Promise.all(disposers.splice(0).map(cleanup => cleanup()))
     rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
   })
-  return { rt, statePath }
+  return { rt, statePath, warnings }
 }
 
 const TEAM = {
@@ -352,6 +352,159 @@ test('membership-window helper hides lines before joinedSeq', () => {
   const actor = { memberId: 'owner-2' }
   const visible = linesVisibleTo(room, actor)
   assert.deepEqual(visible.map(line => line.text), ['join', 'new'])
+})
+
+// #2754: a stored floor above the room's own `room.seq` hides every line, and every new line lands
+// below the floor too, so the room never heals. The read path clamps the floor to `room.seq`: the
+// guest sees the line it joined at plus whatever arrives later, and the stored state is not rewritten.
+function floorFixture({ participantFloor, sharedFromFloor }) {
+  return {
+    ...TEAM,
+    rooms: {
+      ...TEAM.rooms,
+      stuck: {
+        id: 'stuck',
+        name: 'Stuck room',
+        members: ['chief-a'],
+        admin: 'chief-a',
+        named: true,
+        log: [
+          { who: 'Alice', text: 'before Bob', seq: 1, authorId: 'owner-1', authorKind: 'human' },
+          { who: 'Bob', text: 'Bob joined', seq: 2, authorId: 'owner-2', authorKind: 'human' },
+        ],
+        seq: 2,
+        seen: {},
+        participants: [
+          { kind: 'human', id: 'owner-1', role: 'admin', displayName: 'Alice', joinedSeq: 0, joinedAt: 1 },
+          { kind: 'human', id: 'owner-2', role: 'member', displayName: 'Bob', joinedSeq: participantFloor, joinedAt: 1 },
+          { kind: 'bot', id: 'chief-a', role: 'admin', displayName: 'Chief A', joinedSeq: 0, joinedAt: 1 },
+        ],
+        sharedFrom: { ownerId: 'owner-1', joinedSeq: sharedFromFloor },
+      },
+    },
+  }
+}
+
+const BOB = { memberId: 'owner-2', displayName: 'Bob' }
+
+test('#2754: a stored floor above room.seq is clamped to room.seq on read', async (t) => {
+  // A: both sources carry a host counter (202) this room can never reach.
+  const a = host(t, floorFixture({ participantFloor: 202, sharedFromFloor: 202 }))
+  await a.rt.load()
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined'], 'the guest keeps the line it joined at')
+  assert.deepEqual(a.rt.linesVisibleTo(a.rt.state.rooms.stuck, BOB).map(line => line.text), ['Bob joined'], 'both read entries clamp')
+  assert.deepEqual(linesVisibleTo(a.rt.state.rooms.stuck, BOB, a.rt.state).map(line => line.text), [], 'the module-level helper stays pure and does not clamp')
+  // A mirrored line lands on a new seq; the guest sees it too, so the room heals on read.
+  a.rt.state.rooms.stuck.log = [...a.rt.state.rooms.stuck.log, { who: 'Alice', text: 'after the clamp', seq: 3, authorId: 'owner-1', authorKind: 'human' }]
+  a.rt.state.rooms.stuck.seq = 3
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined', 'after the clamp'])
+
+  // A2: the participant's own floor is the bad one; sharedFrom is already 0, so a fix that only
+  // touched sharedFrom would leave this room empty.
+  const a2 = host(t, floorFixture({ participantFloor: 202, sharedFromFloor: 0 }))
+  await a2.rt.load()
+  assert.deepEqual(a2.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined'], 'the participant path is clamped')
+
+  // A3: the participant says 0 and sharedFrom says 202. The participant wins, so this room is
+  // healthy and must not be clamped — that is why A2 cannot be fixed by touching sharedFrom alone.
+  const a3 = host(t, floorFixture({ participantFloor: 0, sharedFromFloor: 202 }))
+  await a3.rt.load()
+  assert.deepEqual(a3.rt.roomHistory('stuck', BOB).map(line => line.text), ['before Bob', 'Bob joined'], 'a healthy participant floor is left alone, and the participant wins over sharedFrom')
+
+  // A room saved before `seq` existed has no counter to clamp to; use its log's last seq (the number
+  // `ensureLog` writes on the next append), never 0 — 0 would hand the guest lines from before it joined.
+  const legacy = floorFixture({ participantFloor: 202, sharedFromFloor: 0 })
+  delete legacy.rooms.stuck.seq
+  const l = host(t, legacy)
+  await l.rt.load()
+  assert.deepEqual(l.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined'], 'a room without seq clamps to its stored log')
+
+  // Healthy boundaries at the instance level: only a floor above room.seq is clamped.
+  for (const [floor, expected] of [[0, ['before Bob', 'Bob joined']], [1, ['before Bob', 'Bob joined']], [2, ['Bob joined']]]) {
+    const h = host(t, floorFixture({ participantFloor: floor, sharedFromFloor: 0 }))
+    await h.rt.load()
+    assert.deepEqual(h.rt.roomHistory('stuck', BOB).map(line => line.text), expected, `floor ${floor} keeps its rows`)
+    assert.equal(h.warnings.filter(w => String(w[0]).includes('join floor above')).length, 0, `floor ${floor} is not a bad floor`)
+  }
+})
+
+test('#2754: a clamped floor keeps its window once room.seq reaches the stored floor', async (t) => {
+  // The clamp is memoised at the seq of the first read. When the room's own counter later reaches
+  // the stored floor, a lookup that clamps only the "floor above seq" case would answer with the
+  // stored floor again and drop every line the reader had already seen — the room would go dark a
+  // second time, from the other side.
+  const grow = (rt, text, seq) => {
+    const room = rt.state.rooms.stuck
+    room.log = [...room.log, { who: 'Alice', text, seq, authorId: 'owner-1', authorKind: 'human' }]
+    room.seq = seq
+  }
+
+  // Floor 5 over seq 2: the window opens at 2 and stays open when the room reaches 5 and passes it.
+  const a = host(t, floorFixture({ participantFloor: 5, sharedFromFloor: 0 }))
+  await a.rt.load()
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined'], 'seq 2 clamps to 2')
+  grow(a.rt, 'three', 3)
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined', 'three'])
+  grow(a.rt, 'four', 4)
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined', 'three', 'four'])
+  grow(a.rt, 'five', 5)
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined', 'three', 'four', 'five'], 'seq 5 is the stored floor and must not drop the earlier rows')
+  grow(a.rt, 'six', 6)
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined', 'three', 'four', 'five', 'six'], 'the window stays open past the stored floor')
+
+  // A real rejoin is a new floor: the memo describes the old window and must not answer for the new.
+  const bob = a.rt.state.rooms.stuck.participants.find(p => p.id === 'owner-2')
+  bob.joinedSeq = 6
+  bob.joinedAt = 2
+  assert.deepEqual(a.rt.roomHistory('stuck', BOB).map(line => line.text), ['six'], 'a rejoin reads from its own floor, not the old window')
+
+  // Floor 202 over a room that reaches seq 300: the same shape at host scale.
+  const b = host(t, floorFixture({ participantFloor: 202, sharedFromFloor: 0 }))
+  await b.rt.load()
+  assert.deepEqual(b.rt.roomHistory('stuck', BOB).map(line => line.text), ['Bob joined'], 'seq 2 clamps to 2')
+  for (let seq = 3; seq <= 300; seq += 1) grow(b.rt, `line ${seq}`, seq)
+  const seen = b.rt.roomHistory('stuck', BOB).map(line => line.text)
+  assert.equal(seen.length, 299, 'every row from the clamped window survives seq 300')
+  assert.equal(seen[0], 'Bob joined', 'the row at the clamped floor is still the first one')
+  assert.equal(seen.at(-1), 'line 300', 'the newest row is there too')
+})
+
+test('#2754: the membership-window helper keeps its 0/1/2/3 -> 2/2/1/0 rows', () => {
+  const room = {
+    seq: 2,
+    log: [
+      { seq: 1, text: 'one', who: 'Alice', authorId: 'owner-1', authorKind: 'human' },
+      { seq: 2, text: 'two', who: 'Bob', authorId: 'owner-2', authorKind: 'human' },
+    ],
+  }
+  for (const [floor, expected] of [[0, ['one', 'two']], [1, ['one', 'two']], [2, ['two']], [3, []]]) {
+    const seen = linesVisibleTo({ ...room, participants: [{ kind: 'human', id: 'owner-2', role: 'member', displayName: 'Bob', joinedSeq: floor }] }, BOB)
+    assert.deepEqual(seen.map(line => line.text), expected, `floor ${floor}`)
+  }
+})
+
+test('#2754: the clamp warns once per room and never rewrites the stored floor', async (t) => {
+  const saved = floorFixture({ participantFloor: 202, sharedFromFloor: 202 })
+  const first = host(t, saved)
+  await first.rt.load()
+  const before = JSON.stringify(first.rt.state.rooms.stuck)
+  assert.equal(first.rt.roomHistory('stuck', BOB).length, 1)
+  assert.equal(first.rt.roomHistory('stuck', BOB).length, 1)
+  assert.equal(first.rt.linesVisibleTo(first.rt.state.rooms.stuck, BOB).length, 1)
+  const noted = first.warnings.filter(w => String(w[0]).includes('join floor above'))
+  assert.equal(noted.length, 1, 'one warning per room, however many read entries clamp')
+  assert.equal(noted[0][1], 'stuck', 'the warning names the room')
+  assert.equal(noted[0][2], 202, 'the warning keeps the pre-clamp floor')
+  assert.equal(noted[0][3], 2, 'the warning names the room seq')
+  assert.match(String(noted[0][0]), /join floor above.*room\.seq/, 'the warning says what was clamped')
+  assert.equal(JSON.stringify(first.rt.state.rooms.stuck), before, 'the state object is not rewritten')
+
+  // A restart loads the same bytes again: the room is still readable, and the new process warns once.
+  const second = host(t, saved)
+  await second.rt.load()
+  assert.equal(second.rt.roomHistory('stuck', BOB).length, 1, 'the restart still shows the line')
+  assert.equal(second.warnings.filter(w => String(w[0]).includes('join floor above')).length, 1, 'the new process warns exactly once')
+  assert.equal(JSON.stringify(second.rt.state.rooms.stuck), before, 'neither process rewrites the floor')
 })
 
 function startChannel(t, team) {

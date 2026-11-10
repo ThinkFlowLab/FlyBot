@@ -312,12 +312,18 @@ export function roomVisibleTo(state, actor, roomId) {
   return ids.every(id => state.bots?.[id]?.ownerId === actor.memberId)
 }
 
-export function joinedSeqOf(room, actor, state) {
+// The record whose `joinedSeq` is this reader's floor: its own open seat first, then the invited Bot
+// it owns, then the home it is a guest of.
+function floorRecordOf(room, actor, state) {
   const me = participantOf(room, 'human', actor?.memberId)
-  if (me) return me.joinedSeq ?? 0
+  if (me) return me
   const invited = invitedBotOf(room, actor, state)
-  if (invited) return invited.joinedSeq ?? 0
-  return room?.sharedFrom?.joinedSeq ?? 0
+  if (invited) return invited
+  return room?.sharedFrom
+}
+
+export function joinedSeqOf(room, actor, state) {
+  return floorRecordOf(room, actor, state)?.joinedSeq ?? 0
 }
 
 // Membership-window filter. Callers must have already checked roomVisibleTo.
@@ -448,6 +454,50 @@ export function install(rt) {
     return room
   }
 
+  // #2754: a stored join floor can sit above the room's own `room.seq` (a host counter that reached a
+  // participant record before #2612/#2613 stopped the write). Every line is then below the floor and
+  // each new line lands below it too, so the room shows nothing and never heals. Clamp on the read
+  // path only — writing it back would save the clamp as a fact on disk. The clamped value is memoised
+  // per room and reader at the `room.seq` of the first read: recomputing it against the seq of every
+  // later read would slide the window forward and hide the line the guest joined at. The memo is read
+  // before the "floor is healthy" early return, because a room that grows past the stored floor stops
+  // being the case that needs clamping, and answering with the stored floor then would drop every row
+  // the reader had already seen. A reader that really rejoins gets a new `joinedSeq` (or the same
+  // number joined again later, a new `joinedAt`): the memo describes the old window, so it is dropped.
+  // `warn` is memoised per room alone, so one bad room reports once however many readers clamp.
+  const clampedFloors = new Map()
+  const warnedFloors = new Set()
+  // A room saved before `seq` existed has no counter to clamp against; its log's last seq is the
+  // number `ensureLog` would write on the next append, so clamp to that instead of 0 (0 would show a
+  // guest the lines from before it joined, the over-read this fix must not create).
+  const clampTargetOf = room => {
+    if (typeof room?.seq === 'number') return room.seq
+    return (room?.log ?? []).reduce((max, line) => Math.max(max, line.seq ?? 0), 0)
+  }
+  const floorOf = (room, actor) => {
+    const record = floorRecordOf(room, actor, state)
+    const floor = record?.joinedSeq ?? 0
+    const joinedAt = record?.joinedAt ?? null
+    const roomId = room?.id ?? ''
+    const reader = actor?.memberId ?? ''
+    let perRoom = clampedFloors.get(roomId)
+    const memo = perRoom?.get(reader)
+    if (memo) {
+      if (memo.floor === floor && memo.joinedAt === joinedAt) return memo.seq
+      perRoom.delete(reader)
+    }
+    const seq = clampTargetOf(room)
+    if (floor <= seq) return floor
+    if (!perRoom) clampedFloors.set(roomId, perRoom = new Map())
+    perRoom.set(reader, { seq, floor, joinedAt })
+    if (!warnedFloors.has(roomId)) {
+      warnedFloors.add(roomId)
+      rt.warn?.('ds-bot: room %s carries a join floor above its own seq (joinedSeq %s > room.seq %s); showing from room.seq', roomId, floor, seq)
+    }
+    return seq
+  }
+  const linesFrom = (room, actor) => (room.log ?? []).filter(line => (line.seq ?? 0) >= floorOf(room, actor))
+
   rt.participantsOf = room => currentParticipants(room)
   rt.roomVisibleTo = (actor, roomId) => roomVisibleTo(state, actor, roomId)
   rt.isCrossOwnerRoom = room => isCrossOwnerRoom(room, state)
@@ -455,7 +505,7 @@ export function install(rt) {
   rt.isSpecialist = botId => isSpecialist(state, botId)
   rt.displayNameFor = (memberId, fallback) => displayNameFor(state, memberId, fallback)
   rt.authorOf = (line, room) => authorOf(line, room, state)
-  rt.linesVisibleTo = (room, actor) => linesVisibleTo(room, actor, state)
+  rt.linesVisibleTo = (room, actor) => linesFrom(room, actor)
   rt.deriveParticipants = room => deriveParticipants(room, state)
   rt.humanOwnersOf = room => humanOwnersOf(room, state)
   rt.publishedRemoteOf = handle => publishedRemoteOf(state, handle)
@@ -894,7 +944,7 @@ export function install(rt) {
       throw forbidden('You are not a member of that room')
     }
     if (!rt.authzEnforced?.() && !actor) return room.log ?? []
-    return linesVisibleTo(room, actor, state)
+    return linesFrom(room, actor)
   }
 
   // The owner of a member Bot lets its brief — their own chat with it — ride into
