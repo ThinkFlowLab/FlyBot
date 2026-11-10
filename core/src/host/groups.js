@@ -1042,7 +1042,9 @@ export function install(rt) {
       if (error) return error
       ensureRoomLog(room)
       const botPart = rt.participantsOf?.(room)?.find(p => p.kind === 'bot' && p.id === self)
-      const from = botPart?.joinedSeq ?? 0
+      // A seat's stored floor can sit above the room's own counter (#2754); this read took the raw
+      // number, so it hid every line and answered "has no messages yet" in a room others still read.
+      const from = rt.seatFloor?.(room, botPart) ?? botPart?.joinedSeq ?? 0
       const kept = room.log.filter(line => (line.seq ?? 0) >= from)
       const lines = kept.slice(-ROOM_READ_MAX)
       if (lines.length === 0) return `"${room.name}" has no messages yet.`
