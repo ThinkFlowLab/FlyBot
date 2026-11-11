@@ -58,7 +58,7 @@ The response (`version: 1`) has `lanes` (You, Bots, groups), `turns` (with `tool
     # otlpUrl: https://collector.example.com/v1/traces   # https (or http on localhost only)
     # otlpHeaders: { authorization: "Bearer …" }
     # exportNames: true   # default false: send Bot/room ids only, no names
-    # exportMs: 5000       # how often new records are exported
+    # exportMs: 5000       # how often new records are exported (capped at 2147483647 ms)
 ```
 
 With `exporter: otlp`, the trace is sent as OpenTelemetry spans: each Bot turn becomes an `invoke_agent` span and its tool calls `execute_tool` spans beneath it. Only finished turns and tool calls are exported. It exports only the metadata the panel shows, never message text, tool arguments or output, and sends Bot and room ids only unless `exportNames: true`.

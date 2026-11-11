@@ -13,6 +13,13 @@ export const HEALTH_ENDPOINT = 'timeline/health'
 export const ALERTS_ENDPOINT = 'timeline/alerts'
 export const DIGEST_ENDPOINT = 'timeline/digest'
 
+const DEFAULT_EXPORT_MS = 5000
+// P-698: `setInterval` cannot hold a delay above a signed 32-bit millisecond count — it rewrites it
+// to 1ms and prints `TimeoutOverflowWarning` — so an export interval meant as "effectively never"
+// would run the exporter on every tick, each run mapping the whole trace. Anything above the
+// ceiling is clamped to it instead.
+const MAX_EXPORT_INTERVAL_MS = 2_147_483_647
+
 export function createTimeline(adapter, { dir, persist = true, now = Date.now, exporter, ...limits } = {}) {
   let trace
   try {
@@ -34,7 +41,11 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   if (exporter && typeof exporter.send === 'function') {
     const cursor = createExporter({ send: exporter.send, serviceName: exporter.serviceName, serviceVersion: exporter.serviceVersion, exportNames: exporter.exportNames === true, warn: adapter.warn })
     exportNow = async () => { try { return await cursor.push(trace.records(), trace.names()) } catch (error) { adapter.warn('flybot-timeline: export failed: %s', error?.message ?? error); return 0 } }
-    const intervalMs = Number.isFinite(exporter.intervalMs) && exporter.intervalMs > 0 ? exporter.intervalMs : 5000
+    const configuredIntervalMs = Number.isFinite(exporter.intervalMs) && exporter.intervalMs > 0 ? exporter.intervalMs : undefined
+    const intervalMs = configuredIntervalMs === undefined ? DEFAULT_EXPORT_MS : Math.min(configuredIntervalMs, MAX_EXPORT_INTERVAL_MS)
+    if (configuredIntervalMs > MAX_EXPORT_INTERVAL_MS) {
+      adapter.warn(`flybot-timeline: exportMs=${configuredIntervalMs}ms is above Node's ${MAX_EXPORT_INTERVAL_MS}ms timer ceiling; using ${MAX_EXPORT_INTERVAL_MS}ms`)
+    }
     exportTimer = setInterval(() => { void exportNow() }, intervalMs)
     exportTimer.unref?.()
   }
