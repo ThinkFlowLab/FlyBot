@@ -167,7 +167,7 @@ export function install(rt) {
         const before = target.standingApprovals
         target.standingApprovals = [...grants, grant]
         try {
-          await rt.save()
+          await rt.saveOrRefuse()
         } catch (error) {
           if (before === undefined) delete target.standingApprovals
           else target.standingApprovals = before
@@ -197,7 +197,7 @@ export function install(rt) {
       // #2764: a removal the store refused is not a removal — the grant is still on disk, so it
       // must still be in memory, or the settings card says "gone" while every new ask is refused.
       try {
-        await rt.save()
+        await rt.saveOrRefuse()
       } catch (error) {
         if (before === undefined) delete target.standingApprovals
         else target.standingApprovals = before

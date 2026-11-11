@@ -1106,6 +1106,29 @@ export function install(rt) {
     }
   }
 
+  // P-673: a caller whose change is only true once it is in the file cannot read `save()`'s silence
+  // as "saved" — a stopped host, a team another dsh holds, a team file this host cannot write all
+  // return without writing (see `save`, above). The watermark answers instead: `queued` moves only
+  // when this host really accepted a write, so a save that queued nothing is refused here. A save
+  // that *rejects* keeps its own error, which is the refusal the write-path callers already roll
+  // back on. Ordinary `save()` callers are unchanged: `mutate()`, a plugin write and a tick still
+  // take the silent skip.
+  const saveOrRefuse = async () => {
+    const tail = writing
+    const before = queued
+    const run = rt.save()
+    // Both readings are taken before any `await`, so a write another path gets accepted in a later
+    // tick cannot answer for this call. For the store's own `save()` the two agree: an accepted
+    // write bumps `queued` and replaces `writing` with a new promise, a skipped one moves neither.
+    // Requiring both keeps a *wrapped* `save` — a held write that defers the real one and returns a
+    // fresh promise without touching `queued` — waiting for its write instead of reading the
+    // wrapper as a refusal; a call that moved neither queued nothing at all.
+    if (queued === before && run === tail) {
+      throw Object.assign(new Error(readOnly() ?? 'The Bot team was not saved: this host is not writing it.'), { code: 'bot/read-only' })
+    }
+    await run
+  }
+
   // The write-path entry for a change made outside a request (a plugin, a scheduled task,
   // a delivery): take over the lock and adopt what the other host left *before* the change
   // is made, then write it. Adopting first is what keeps both sides: a change already in
@@ -1205,7 +1228,7 @@ export function install(rt) {
   const isAdminOf = (room, id) => id !== undefined && room.admin === id
 
   Object.assign(rt, {
-    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled, journal,
+    state, load, save, refresh, readOnly, mutate, savesQueued, savesSettled, saveOrRefuse, journal,
     stateLinkReplaced: () => ({ gen: linkGeneration, count: linkReplaced }),
     botOf, roomOf, isMain, chatOf, selfOf, isBotSession,
     chatOwners, groupOwners, pastOwners,
