@@ -31,6 +31,9 @@ test('a reply opening with a delegation trace shows without it', () => {
   const names = ['Chief', '助手', '程序员', '后端']
   assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.', names), 'Hi Chief! Good to hear from you.')
   assert.equal(stripTrace('Chief → 程序员 → 后端\n\nDone.', names), 'Done.')
+  // Routing with words on the same line: the words stay, and the line keeps its own shape.
+  assert.equal(stripTrace('Chief → FlyBot Dev-1: 正文', ['Chief', 'FlyBot Dev-1']), '正文')
+  assert.equal(stripTrace('Chief → FlyBot Dev-1: 正文\n下一行', ['Chief', 'FlyBot Dev-1']), '正文\n下一行')
   // No roster, no proof: a first line that only looks like routing keeps every word (#1408).
   assert.equal(stripTrace('user → 助手\nHi!'), 'user → 助手\nHi!')
   assert.equal(stripTrace('user → 助手\nHi!', names), 'user → 助手\nHi!')

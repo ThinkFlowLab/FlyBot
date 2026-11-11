@@ -3086,7 +3086,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // The prompts in a due scheduled task's message. DSH frames it for the model: one
  // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
  export function reminderPrompts(text) {
-@@ -62,6 +62,112 @@ export function reminderPrompts(text) {
+@@ -62,6 +62,113 @@ export function reminderPrompts(text) {
    }
  }
  export const stripHeader = text => text.replace(HEADER, '')
@@ -3102,7 +3102,8 @@ diff --git a/src/client/text.js b/src/client/text.js
 +  if (line === head) return text
 +  const rest = cut < 0 ? '' : text.slice(cut + 1)
 +  // A line that was nothing but routing goes with its line break; words it carried stay.
-+  return line === '' ? rest.replace(/^\s+/, '') : `${line}\n${rest}`
++  if (line === '') return rest.replace(/^\s+/, '')
++  return rest === '' ? line : `${line}\n${rest}`
 +}
 +
 +// The copy export reads a stored turn the way the drawer's rows read one (#130, #1347): a

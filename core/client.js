@@ -2584,7 +2584,8 @@ function stripTrace(text2, names = []) {
   const line2 = dropKnownTrace(head, names);
   if (line2 === head) return text2;
   const rest = cut2 < 0 ? "" : text2.slice(cut2 + 1);
-  return line2 === "" ? rest.replace(/^\s+/, "") : `${line2}
+  if (line2 === "") return rest.replace(/^\s+/, "");
+  return rest === "" ? line2 : `${line2}
 ${rest}`;
 }
 var COPY_FENCE = /untrusted-(?:message|file)\b/i;

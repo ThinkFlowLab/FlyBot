@@ -127,7 +127,8 @@ export function stripTrace(text, names = []) {
   if (line === head) return text
   const rest = cut < 0 ? '' : text.slice(cut + 1)
   // A line that was nothing but routing goes with its line break; words it carried stay.
-  return line === '' ? rest.replace(/^\s+/, '') : `${line}\n${rest}`
+  if (line === '') return rest.replace(/^\s+/, '')
+  return rest === '' ? line : `${line}\n${rest}`
 }
 
 // The copy export reads a stored turn the way the drawer's rows read one (#130, #1347): a
