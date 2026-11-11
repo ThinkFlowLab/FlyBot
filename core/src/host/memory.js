@@ -20,9 +20,9 @@
 // memory section the first time it renders, so its prompt stays byte-stable and the
 // provider's prefix cache holds; a fresh part, or a checkpoint (which breaks the cache
 // anyway), freezes it anew.
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
-import { appendFile, rename, unlink } from 'node:fs/promises'
+import { appendFile, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { PRIVATE_FILE_MODE, ensurePrivateDir, ensurePrivateDirSync, replacePrivateFile, replacePrivateFileSync } from './private-files.js'
@@ -80,6 +80,13 @@ const REVIEW_MEMORY_MAX = 16_000
 // its lines leave the group log (which keeps 60).
 const REVIEW_GROUP_LAG = 30
 const NEWS_TEXT_MAX = 160
+// The memory journal is a side channel, not history to keep forever (#2807): it holds the newest
+// changes under a line cap and a byte cap, and the changes past them are folded into one
+// `{ op: 'truncated', dropped }` line. A trim keeps most of the room, so once the file reaches a
+// cap it is rewritten every few changes rather than on every one.
+export const JOURNAL_KEPT = 500
+export const JOURNAL_MAX_BYTES = 1_024 * 1_024
+const JOURNAL_KEEP_TO = 0.9
 
 // ---------------------------------------------------------------------------
 // Entries and files, as text.
@@ -569,6 +576,60 @@ export function install(rt) {
     }
     await replacePrivateFile(temp, path, text)
   }
+  // The journal keeps its newest changes and folds the rest away, the way the state journal does
+  // (#2807): at most `JOURNAL_KEPT` lines and `JOURNAL_MAX_BYTES` bytes. The fold is one
+  // `truncated` line carrying how many changes it replaced; it keeps an earlier fold's count, so
+  // the tally survives repeated trims. The rewrite goes through a temp name, so a crash never
+  // leaves half a line.
+  let journalLines = null
+  let journalTrimRefused = false
+  const countJournalLines = async (path) => {
+    try {
+      return (await readFile(path, 'utf8')).split('\n').filter(Boolean).length
+    } catch (error) {
+      if (error?.code === 'ENOENT') return 0
+      throw error
+    }
+  }
+  async function trimJournal(path) {
+    let text
+    try {
+      text = await readFile(path, 'utf8')
+    } catch (error) {
+      if (error?.code === 'ENOENT') return 0
+      throw error
+    }
+    const lines = text.split('\n').filter(Boolean)
+    let dropped = 0
+    try {
+      const first = JSON.parse(lines[0])
+      if (first?.op === 'truncated' && Number.isSafeInteger(first.dropped) && first.dropped >= 0) dropped = first.dropped
+    } catch { /* the oldest line is folded with the rest */ }
+    const keepLines = Math.floor(JOURNAL_KEPT * JOURNAL_KEEP_TO)
+    const keepBytes = Math.floor(JOURNAL_MAX_BYTES * JOURNAL_KEEP_TO)
+    let from = 0
+    let bytes = Buffer.byteLength(text, 'utf8')
+    while (from < lines.length - 1 && (lines.length - from > keepLines || bytes > keepBytes)) {
+      bytes -= Buffer.byteLength(lines[from], 'utf8') + 1
+      from += 1
+    }
+    dropped += from
+    const next = [JSON.stringify({ time: new Date().toISOString(), op: 'truncated', dropped }), ...lines.slice(from)]
+      .map(line => `${line}\n`).join('')
+    if (next === text) return lines.length
+    // The temp name is this write's own, and it takes the mode of the journal it replaces, so a
+    // file the owner narrowed by hand stays narrowed (#2697).
+    const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+    if (!tempWritable(temp)) {
+      if (!journalTrimRefused) {
+        journalTrimRefused = true
+        rt.warn('ds-bot: the memory journal was not trimmed: %s is not a plain file of its own', temp)
+      }
+      return lines.length
+    }
+    await replacePrivateFile(temp, path, next)
+    return lines.length - from + 1
+  }
   async function journal(record) {
     if (!writeFolder(root)) return
     if (fileKindSync(journalPath) === 'other') {
@@ -577,6 +638,15 @@ export function install(rt) {
     }
     await ensurePrivateDir(root)
     await appendFile(journalPath, `${JSON.stringify({ time: new Date().toISOString(), ...record })}\n`, { encoding: 'utf8', mode: PRIVATE_FILE_MODE })
+    journalLines = journalLines === null ? await countJournalLines(journalPath) : journalLines + 1
+    const { size } = await stat(journalPath)
+    if (journalLines <= JOURNAL_KEPT && size <= JOURNAL_MAX_BYTES) return
+    try {
+      journalLines = await trimJournal(journalPath)
+    } catch (error) {
+      // The journal is a side channel: a failed trim leaves the memory write itself alone.
+      rt.warn('ds-bot: the memory journal was not trimmed: %s', error)
+    }
   }
   let writing = Promise.resolve()
   const queued = (job) => {
