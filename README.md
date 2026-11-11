@@ -88,6 +88,10 @@ here, so Bot lines post without a hold. Some waiting is sped up.*
 - **Workflows** (`@flybot/workflow`). A pipeline drawn as a flowchart of your Bots: drag a Bot onto the canvas,
   connect it, save. A run walks the graph and posts its progress in the Workflow chat. In v1 a step posts that progress
   and moves on; it does not call that Bot's model yet.
+- **Project** (`@flybot/project`). Project State (the files the day's work is written in), a board of cards by column, a
+  Chief that runs that Project, a team dossier and metrics, and an assistant that answers only from the Project's own
+  records. The core keeps the record and the `project-*` endpoints; the domain is this plugin, switched in Settings like
+  the others.
 - **Schedules.** A Bot wakes at a fixed time to do one job, then sleeps again.
 - **Connectors.** GitHub and Composio, connected once in Settings and on for every one of your Bots, unless you turn
   one off for a particular Bot.
