@@ -577,7 +577,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
    const [preview, setPreview] = useState(false)
    const [note, setNote] = useState('')
    // Each action reads the report again, so it holds errors from the last few seconds.
-@@ -82,12 +82,20 @@ export function FeedbackPage({ actions, run, Section, Row }) {
+@@ -82,12 +82,24 @@ export function FeedbackPage({ actions, run, Section, Row }) {
      download('ds-bot-diagnostics.log', text || 'No entries.\n')
      setNote(t('Downloaded the log. Keys, tokens, and your home folder are hidden in it.'))
    }))
@@ -594,13 +594,17 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
    const entries = [...(report?.entries ?? []), ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time))
    const total = (report?.total ?? 0) + browserErrors.length
 -  const shown = entries.slice(0, 8)
++  // The host's additive read failure (#2604): `entries` and `total` are 0 when the log could not
++  // be opened, which is not the same as a log with nothing in it. The reason is the host's own
++  // short word (EACCES), and it explains the empty list rather than any row in it.
++  const unread = typeof report?.unread === 'string' ? report.unread : undefined
 +  // The list opens with eight errors; anything past them waits behind one control, so a
 +  // burst of failures does not push the download and clear buttons off the page.
 +  const shown = allErrors ? entries : entries.slice(0, 8)
    return [
      h(Section, { key: 'report', title: t('Report a problem') },
        h('div', { className: 'bt-set-row bt-set-paste bt-fb-what' },
-@@ -99,23 +99,30 @@ export function FeedbackPage({ actions, run, Section, Row }) {
+@@ -99,23 +99,35 @@ export function FeedbackPage({ actions, run, Section, Row }) {
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setPreview(!preview), 'aria-expanded': preview }, preview ? t('Hide') : t('Show')),
          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: copyReport }, t('Copy'))),
        preview ? h('div', { className: 'bt-set-row bt-fb-preview' }, h('pre', { tabIndex: 0, 'aria-label': t('Diagnostics') }, report?.markdown || t('Loading…'))) : null,
@@ -613,7 +617,12 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
      h(Section, { key: 'errors', title: report ? t('Recent errors · {count}', { count: total }) : t('Recent errors') },
        shown.length === 0
 -        ? h(Row, { label: t('No errors recorded.'), hint: t('Failed model calls and DS Bot problems show here, newest first.') })
-+        ? h(Row, { label: t('No errors recorded.'), hint: t('Failed model calls and FlyBot problems show here, newest first.') })
++        ? h(Row, {
++            label: unread === undefined
++              ? t('No errors recorded.')
++              : t('The error log could not be read ({reason}); the errors it holds are not shown.', { reason: unread }),
++            hint: t('Failed model calls and FlyBot problems show here, newest first.'),
++          })
          : shown.map((entry, index) => h('div', { key: `${entry.time}-${index}`, className: 'bt-set-row bt-fb-entry', title: entry.text },
              h('span', { className: 'bt-fb-dot', 'data-level': entry.level, 'aria-hidden': true }),
              h('div', { className: 'bt-set-copy' },
@@ -1487,7 +1496,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Report on GitHub': '在 GitHub 上报告',
    'Copied the diagnostics.': '已复制诊断信息。',
    'Could not copy. Select the text below and copy it.': '无法复制。请选中下面的文字手动复制。',
-@@ -735,10 +735,12 @@ const ZH = {
+@@ -735,10 +735,13 @@ const ZH = {
    'Opened a new GitHub issue. Copy the diagnostics below into it.': '已打开新的 GitHub issue。请把下面的诊断信息复制进去。',
    'Downloaded the log. Keys, tokens, and your home folder are hidden in it.': '已下载日志。里面的密钥、令牌和用户目录都已隐藏。',
    'Cleared the error log.': '已清空错误日志。',
@@ -1497,6 +1506,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Recent errors · {count}': '最近的错误 · {count}',
    'No errors recorded.': '没有错误记录。',
 -  'Failed model calls and DS Bot problems show here, newest first.': '模型调用失败和 DS Bot 的问题会显示在这里，最新的在前。',
++  'The error log could not be read ({reason}); the errors it holds are not shown.': '错误日志读不出来（{reason}）；里面的错误没有显示。',
 +  'Failed model calls and FlyBot problems show here, newest first.': '模型调用失败和 FlyBot 的问题会显示在这里，最新的在前。',
    'Model call': '模型调用',
    'This window': '这个窗口',

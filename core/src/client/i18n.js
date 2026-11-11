@@ -1214,6 +1214,7 @@ const ZH = {
   'Recent errors': '最近的错误',
   'Recent errors · {count}': '最近的错误 · {count}',
   'No errors recorded.': '没有错误记录。',
+  'The error log could not be read ({reason}); the errors it holds are not shown.': '错误日志读不出来（{reason}）；里面的错误没有显示。',
   'Failed model calls and FlyBot problems show here, newest first.': '模型调用失败和 FlyBot 的问题会显示在这里，最新的在前。',
   'Model call': '模型调用',
   'This window': '这个窗口',
