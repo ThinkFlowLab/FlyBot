@@ -601,9 +601,13 @@ export function install(rt) {
     }
     const lines = text.split('\n').filter(Boolean)
     let dropped = 0
+    let folded = false
     try {
       const first = JSON.parse(lines[0])
-      if (first?.op === 'truncated' && Number.isSafeInteger(first.dropped) && first.dropped >= 0) dropped = first.dropped
+      if (first?.op === 'truncated' && Number.isSafeInteger(first.dropped) && first.dropped >= 0) {
+        dropped = first.dropped
+        folded = true
+      }
     } catch { /* the oldest line is folded with the rest */ }
     const keepLines = Math.floor(JOURNAL_KEPT * JOURNAL_KEEP_TO)
     const keepBytes = Math.floor(JOURNAL_MAX_BYTES * JOURNAL_KEEP_TO)
@@ -613,7 +617,9 @@ export function install(rt) {
       bytes -= Buffer.byteLength(lines[from], 'utf8') + 1
       from += 1
     }
-    dropped += from
+    // An earlier fold line sits at the top and is replaced by the new one; it is not a change of
+    // its own, so counting the line it occupies would add one per fold (#2816).
+    dropped += from - (folded && from > 0 ? 1 : 0)
     const next = [JSON.stringify({ time: new Date().toISOString(), op: 'truncated', dropped }), ...lines.slice(from)]
       .map(line => `${line}\n`).join('')
     if (next === text) return lines.length

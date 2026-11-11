@@ -1,0 +1,1 @@
+The memory journal's fold line now reports the number of changes it really replaced: each fold counted its own `truncated` line as a dropped change, so the tally grew by one more than the journal had folded away on every fold after the first. See [#2816](https://github.com/ThinkFlowLab/FlyBot/issues/2816).
