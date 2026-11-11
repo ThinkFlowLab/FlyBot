@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 import { advanceRefusal, decisionLevel } from '../src/host/meetings.js'
-import { decisionCardOf, install } from '../src/host/project-board.js'
+import { decisionCardOf, install } from '../../plugins/project/src/project-board.js'
+import '../../plugins/project/test/host-bind.js'
 
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL('../src/client/project-board.js', import.meta.url))],

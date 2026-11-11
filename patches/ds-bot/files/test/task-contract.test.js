@@ -9,9 +9,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { install as installProjectBoard } from '../src/host/project-board.js'
+import { install as installProjectBoard } from '../../plugins/project/src/project-board.js'
 import { formatRoomBoard } from '../src/host/room-context.js'
 import { fakeContext } from './fake-ctx.js'
+import { installProjectDomain } from './project-domain.js'
 
 const team = () => ({
   version: 2,
@@ -66,6 +67,7 @@ async function boot(home) {
     sessions: { flush: async () => {} },
   })
   const rt = createRuntime(ctx, { home })
+  installProjectDomain(rt)
   await rt.load()
   const track = (sessionId, args) => ctx.registeredTools.get('track_tasks').execute(args ?? {}, { agent: { id: sessionId } })
   const idOf = (body, title) => {

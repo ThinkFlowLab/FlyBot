@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { apply } from '../index.js'
+import { apply as applyProject } from '../../plugins/project/index.js'
 import { TEAM_TOOLS } from '../src/host/constants.js'
 // A run Bot (ephemeral) is not a team member (#1445). Its node's `tools` decides connectors and
 // the shell only, so the host refuses every tool whose effect reaches past its own Session — in the
@@ -55,6 +56,9 @@ async function start(config = {}) {
     sessions: { flush: async () => {} },
   })
   apply(ctx, { home, ...config })
+  // The Project domain is a peer plugin (#2684): a profile mounts it next to the core, and the
+  // team tools below include the two it registers.
+  applyProject({ flybot: ctx.flybot })
   // A fresh Session per run Bot, the way workflows.js gets one.
   let sessions = 0
   ctx.sessionController.create = async () => ({ sessionId: `run${++sessions}` })

@@ -21,14 +21,14 @@ const runtime = (state) => {
 }
 
 test('every switch is on until state.json says otherwise', () => {
-  assert.deepEqual(FEATURE_PLUGIN_IDS, ['social', 'tree', 'timeline', 'workflow'])
-  assert.deepEqual(pluginSwitches({}).map(plugin => plugin.enabled), [true, true, true, true])
+  assert.deepEqual(FEATURE_PLUGIN_IDS, ['social', 'tree', 'timeline', 'workflow', 'project'])
+  assert.deepEqual(pluginSwitches({}).map(plugin => plugin.enabled), [true, true, true, true, true])
   assert.deepEqual(pluginSwitches({ flybot: { plugins: { workflow: { enabled: false } } } }).map(plugin => [plugin.id, plugin.enabled]), [
-    ['social', true], ['tree', true], ['timeline', true], ['workflow', false],
+    ['social', true], ['tree', true], ['timeline', true], ['workflow', false], ['project', true],
   ])
 })
 
-test('a switch only takes the four known ids, and true/false only', () => {
+test('a switch only takes a known id, and true/false only', () => {
   const state = {}
   assert.equal(setPluginSwitch(state, 'social', false).find(plugin => plugin.id === 'social').enabled, false)
   assert.deepEqual(state.flybot.plugins.social, { enabled: false })

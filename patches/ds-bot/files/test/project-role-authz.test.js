@@ -11,6 +11,7 @@ import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { install as installAuthz } from '../src/host/authz.js'
 import { fakeContext } from './fake-ctx.js'
+import { installProjectDomain } from './project-domain.js'
 
 const seed = () => ({
   version: 2,
@@ -59,6 +60,7 @@ async function start() {
     sessions: { flush: async () => {} },
   })
   const rt = createRuntime(ctx, { home })
+  installProjectDomain(rt)
   provideFlyBot(ctx, rt.flybot)
   await rt.load()
   // One member has signed in, so the gate is enforced: the actor comes from the session cookie only.

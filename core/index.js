@@ -10,7 +10,6 @@ import * as authz from './src/host/authz.js'
 import * as roomMembership from './src/host/room-membership.js'
 import * as reach from './src/host/reach.js'
 import * as tasks from './src/host/tasks.js'
-import * as projectBoard from './src/host/project-board.js'
 import * as taskDrive from './src/host/task-drive.js'
 import * as models from './src/host/models.js'
 import * as permissions from './src/host/permissions.js'
@@ -25,7 +24,6 @@ import * as prompt from './src/host/prompt.js'
 import * as timeContext from './src/host/time-context.js'
 import * as tools from './src/host/tools.js'
 import * as decisions from './src/host/decisions.js'
-import * as projectState from './src/host/project-state.js'
 import * as meetings from './src/host/meetings.js'
 import * as chatIndex from './src/host/chat-index.js'
 import * as groups from './src/host/groups.js'
@@ -41,9 +39,6 @@ import * as connectors from './src/host/connectors.js'
 import * as connectorAccess from './src/host/connector-access.js'
 import * as capabilities from './src/host/capabilities.js'
 import * as schedules from './src/host/schedules.js'
-import * as projectAssistant from './src/host/project-assistant.js'
-import * as projectChief from './src/host/project-chief.js'
-import * as projectTeam from './src/host/project-team.js'
 import * as automationDefault from './src/host/automation-default.js'
 import * as usage from './src/host/usage.js'
 import * as update from './src/host/update.js'
@@ -63,7 +58,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, projectState, meetings, chatIndex, groups, roomMembership, reach, tasks, projectBoard, taskDrive, approvals, resume, memory, parts, turnBudget, images, secrets, connectors, connectorAccess, capabilities, schedules, projectAssistant, projectChief, projectTeam, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, health, channel]
+const MODULES = [diagnostics, store, harness, memberAuth, authz, models, permissions, turns, busyAck, steeringInterrupt, delivery, roster, folders, agents, prompt, timeContext, tools, decisions, meetings, chatIndex, groups, roomMembership, reach, tasks, taskDrive, approvals, resume, memory, parts, turnBudget, images, secrets, connectors, connectorAccess, capabilities, schedules, automationDefault, browser, usage, update, dshUpdate, hooks, remoteChat, workflowStore, health, channel]
 
 export function apply(ctx, config = {}) {
   const rt = createRuntime(ctx, config)

@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { installProjectDomain } from './project-domain.js'
 
 const hashToken = token => createHash('sha256').update(token).digest('hex')
 
@@ -62,6 +63,7 @@ async function start(home = mkdtempSync(join(tmpdir(), 'ds-bot-projects-')), { s
   // `createRuntime` + `provideFlyBot` is exactly what `apply` does, with the runtime kept so a
   // test can remove one seam and prove the host still answers (#1859).
   const rt = createRuntime(ctx, { home })
+  installProjectDomain(rt)
   provideFlyBot(ctx, rt.flybot)
   const call = async (endpoint, payload, token = 'tok-a') => (await route.fetch(new Request('http://localhost/api/bot', {
     method: 'POST',

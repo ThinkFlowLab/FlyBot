@@ -98,7 +98,7 @@ npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab
 ```
 
 第一行是 FlyBot 核心（包名 `ds-bot`），后两行才把它变成一支团队。想要工作流或时间线，照样再加
-`/plugins/workflow`、`/plugins/timeline`。
+`/plugins/workflow`、`/plugins/timeline`、`/plugins/project`。
 
 桌面版：**插件 → 添加插件**，一次粘一个 `github:` 地址，然后**安装**并**立即启用**。
 
@@ -139,7 +139,8 @@ npx -y @deepseek-ai/dsh@0.2.1-rc.2 web --port 3080
 
 - 核心选项、模型与更新：[`core/README.md`](core/README.md)
 - 插件：[`tree`](plugins/tree/README.md)、[`social`](plugins/social/README.md)、
-  [`workflow`](plugins/workflow/README.md)、[`timeline`](plugins/timeline/README.md)
+  [`workflow`](plugins/workflow/README.md)、[`timeline`](plugins/timeline/README.md)、
+  [`project`](plugins/project/README.md)
 - 架构与子系统页：[docs/architecture.md](docs/architecture.md)、[docs/subsystems/](docs/subsystems/README.md)
 - 已知问题：[docs/known-issues.md](docs/known-issues.md)
 - 参与开发：[CONTRIBUTING.md](CONTRIBUTING.md)、[AGENTS.md](AGENTS.md)、[LESSONS.md](LESSONS.md)

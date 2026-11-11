@@ -742,7 +742,7 @@ export function install(rt) {
           })),
         }
       }
-      // #1828: the role switch. The policy lives in project-board.js (`changeRole`), so the endpoint
+      // #1828: the role switch. The policy lives in the Project domain (`changeRole`), so the endpoint
       // and the menu cannot disagree; a refusal answers the reason and writes nothing.
       case 'project-role': {
         const project = readProject(projectText(body.id, 200))
@@ -860,7 +860,7 @@ export function install(rt) {
         return await rt.projectDecision?.(project.id, path, actor) ?? { ok: false, reason: `not listed: ${path}` }
       }
       // The read-only board (#1696): Project id in, its tasks out. The aggregate lives in
-      // project-board.js; it reads and returns, and writes nothing. The actor goes with the id
+      // the Project domain; it reads and returns, and writes nothing. The actor goes with the id
       // so the board applies the same visibility rule `tasks` does (#1723).
       case 'project-board': {
         const board = (await rt.projectBoard?.(projectText(body.id, 200), actor,

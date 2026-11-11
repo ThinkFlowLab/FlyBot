@@ -27,6 +27,10 @@ export const MAX_HOPS = 6
 // character note was refused as "over 600 characters". Count with `[...text].length`, as
 // `chat-index.js` and `busy-ack.js` already do, and keep both writers on that same unit.
 export const MAX_ENTRY = 600
+// The role label a Project Assistant carries (#2684). The meetings module refuses a close from
+// this role, and the Project assistant (now in plugins/project) creates the Bot with it; the seam
+// hands the plugin this same constant, so the two cannot spell it differently.
+export const ASSISTANT_ROLE = 'Project Assistant'
 // Bot requests a Bot's own chat may hold unread; past this the Bot is most likely
 // stuck, and more messages only pile up behind it.
 export const MAX_UNREAD_REQUESTS = 10

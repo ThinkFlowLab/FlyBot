@@ -35,10 +35,10 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 | `core/test/check-arch-docs.test.js` | Tests for the gate. |
 | `core/test/install-doctor.test.js` | Install doctor tests. |
 | `plugins/README.md` | Plugin list. |
-| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/workflow`, `plugins/timeline`) and the install commands (core, social, tree, workflow; `@flybot/timeline` is opt-in and not in the default commands, #281). |
+| `core/scripts/install-doctor.mjs` | Install doctor: Node floor, the packages (`core`, `plugins/social`, `plugins/tree`, `plugins/workflow`, `plugins/timeline`, `plugins/project`) and the install commands (core, social, tree, workflow, project; `@flybot/timeline` is opt-in and not in the default commands, #281). |
 | `core/scripts/local-ci.sh` | Local run of CI's steps, including each plugin's suite. |
 | `core/scripts/replay.mjs` | Dev-only state-journal replay (#511): rebuilds `state.json` up to an entry from `<home>/journal/state.jsonl`; no network or process calls, output is a new 0600 file or stdout, a bad journal is refused whole. See [core-host](core-host.md). |
-| `Dockerfile` | Packs `core` and the plugins (social, tree, workflow, timeline) with `check-pack.mjs` (the release tarballs), then a runtime with DSH (pinned like the README), pnpm and tini, as user `node`, one volume `/data`. |
+| `Dockerfile` | Packs `core` and the plugins (social, tree, workflow, timeline, project) with `check-pack.mjs` (the release tarballs), then a runtime with DSH (pinned like the README), pnpm and tini, as user `node`, one volume `/data`. |
 | `compose.yaml` | One instance: host networking (`network_mode: host`), so the server's bind on the host's `127.0.0.1` is the same loopback-only exposure a published port gave before; volume `data`, `FLYBOT_PORT` and `DEEPSEEK_API_KEY` passed through only when set. |
 | `docker/entrypoint.mjs`, `docker/profile.mjs` | Each start links the image's packages into `/data/profiles/web` (other plugins and `cordis.patch.yml` kept), `pnpm install`, then `dsh web` in `/data/workspace` on `FLYBOT_PORT` (default 3080). |
 | `docker/web.patch.yml` | Container-only overlay: `webserver.host: 127.0.0.1`. DSH 0.2.1 refuses a wildcard host — `host "0.0.0.0" is an unspecified (wildcard) address, which is not supported` — so the container shares the host network instead; the CLI refuses `--host 0.0.0.0` for the same reason. |
@@ -52,7 +52,7 @@ Tooling for setup checks, the architecture-docs gate and the container image (#3
 
 1. Owned-file changes require a matching subsystem doc in the same PR (or a `Docs-not-needed:` trailer).
 2. Empty diff vs base passes.
-3. A new peer plugin is added to the install doctor (and its test), `check-pack.mjs`, the CI plugin matrix, `local-ci.sh` and `plugins/README.md` in the same PR. `@flybot/workflow` is one of the default commands. `@flybot/timeline` stays opt-in.
+3. A new peer plugin is added to the install doctor (and its test), `check-pack.mjs`, the CI plugin matrix, `local-ci.sh` and `plugins/README.md` in the same PR. `@flybot/workflow` and `@flybot/project` are default commands. `@flybot/timeline` stays opt-in.
 4. The container image holds no key or token, runs as a normal user, and `compose.yaml` uses the host's network (`network_mode: host`) so the web server's own `127.0.0.1` bind is the only exposure — no port is published. CI (`.github/workflows/docker.yml`) builds and start-checks it; nothing is pushed to a registry (owner decision on #352).
 
 ## Tests

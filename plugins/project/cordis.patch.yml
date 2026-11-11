@@ -1,0 +1,4 @@
+# Mounts flybot-project (needs ds-bot, which provides the flybot service and the Project host seam).
+- insert:
+    - id: flybot-project
+      name: '@flybot/project'

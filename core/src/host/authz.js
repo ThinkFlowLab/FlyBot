@@ -83,7 +83,7 @@ const TASK_ENDPOINTS = new Set([
   'project-memory', 'project-memory-write', 'project-delete', 'project-assistant-owner',
   // The role switch (#1836) is the third of the same family after `project-board` (#1713) and
   // `project-assistant-owner` (#1759): `channel.js` dispatches it and `store.js` implements it, and
-  // the policy in front of the write is `changeRole` (`project-board.js`), which refuses a
+  // the policy in front of the write is `changeRole` (plugins/project/src/project-board.js), which refuses a
   // non-owner itself. Leaving it out only answered `bot/not-found: Unknown endpoint project-role`
   // before the handler ran, so the role menu failed on every host with a member session.
   'project-role',
