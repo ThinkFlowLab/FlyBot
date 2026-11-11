@@ -1,0 +1,1 @@
+A failed workflow card in the Inbox now opens the graph that failed, not just the Workflows list: the card's Open carries the graph id through Settings, so the reader lands on that flowchart, and a graph that no longer exists still leaves the list up ([#2874](https://github.com/ThinkFlowLab/FlyBot/issues/2874)).

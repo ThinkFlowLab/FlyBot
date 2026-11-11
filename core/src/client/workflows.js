@@ -636,7 +636,7 @@ function DeleteModal({ workflow, onClose, onConfirm }) {
         h('button', { type: 'button', className: 'bt-danger', onClick: onConfirm }, t('Delete')))))
 }
 
-export function WorkflowsPage({ call, roster }) {
+export function WorkflowsPage({ call, roster, start }) {
   const readOnly = typeof roster?.readOnly === 'string' && roster.readOnly.trim() ? roster.readOnly : ''
   const [phase, setPhase] = useState('loading')
   const [pack, setPack] = useState(null)
@@ -647,10 +647,19 @@ export function WorkflowsPage({ call, roster }) {
   const [deleting, setDeleting] = useState(null)
   const invoke = typeof call === 'function' ? call : () => Promise.reject(new Error('Could not read workflows'))
 
+  // #2874: an Inbox card names the graph that failed, and Settings carries that id as the
+  // page's own id. The first settled read opens it, so the reader lands on the flowchart
+  // instead of hunting for the row; an id the pack no longer holds leaves the list up.
+  const startId = typeof start === 'string' && start ? start : ''
+  const seeded = useRef(false)
   const apply = (settled) => {
     setPhase(settled.phase)
     setPack(settled.pack)
     setError(settled.error)
+    if (seeded.current || !startId) return
+    seeded.current = true
+    const named = settled.phase === 'ready' ? (settled.pack?.workflows ?? []).find((item) => item.id === startId) : null
+    if (named) setOpened({ source: 'own', id: named.id })
   }
 
   useEffect(() => {

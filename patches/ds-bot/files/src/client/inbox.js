@@ -608,7 +608,7 @@ function useNow(ms) {
 export function openCard(actions, card) {
   actions.closeInbox()
   if (card?.kind === 'workflow') {
-    actions.openSettings('workflows', null, 'inbox')
+    actions.openSettings('workflows', card.workflow?.id || null, 'inbox')
     return
   }
   actions.openSession(card.chat)

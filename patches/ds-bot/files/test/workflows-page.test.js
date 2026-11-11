@@ -1470,3 +1470,25 @@ test('#2176: a window that is not read-only keeps Use this and copies the preset
   assert.deepEqual(calls.filter((method) => method === 'workflow/create'), ['workflow/create'], 'a normal window copies the preset once')
   assert.match(text(page.tree), /Copy of delivery/, 'the copy opens')
 })
+
+// #2874: a failed workflow card in the Inbox knows which graph failed, so the row can open
+// that graph instead of the list. `start` is the id Settings carries; the page seeds the
+// canvas from it once the pack arrives, and a graph that is gone leaves the list up.
+test('#2874: the page opens the graph the link names', async () => {
+  const page = mountPage({ call: async () => pack, roster: { bots: [] }, start: 'wf-mine' })
+  await page.settle()
+  assert.match(text(page.tree), /Hotfix lane/, 'the named graph is what the page opens')
+  assert.equal(all(page.tree).some((entry) => entry.props?.className === 'bt-wf-editor'), true, 'the editor, not the list')
+  assert.equal(all(page.tree).some((entry) => entry.props?.className === 'bt-wf-lists'), false, 'the link does not land on the list')
+  // Back still returns to the list, so the deep link is a start, not a page someone is stuck on.
+  await page.click((entry) => entry.type === 'button' && text(entry) === 'Back')
+  assert.match(text(page.tree), /Factory presets/)
+})
+
+test('#2874 control: a stale graph id leaves the list up, not an empty canvas', async () => {
+  const page = mountPage({ call: async () => pack, roster: { bots: [] }, start: 'wf-gone' })
+  await page.settle()
+  assert.match(text(page.tree), /Factory presets/, 'the list stands where the missing graph would be')
+  assert.match(text(page.tree), /Hotfix lane/)
+  assert.equal(all(page.tree).some((entry) => entry.props?.className === 'bt-wf-editor'), false, 'no empty canvas')
+})
