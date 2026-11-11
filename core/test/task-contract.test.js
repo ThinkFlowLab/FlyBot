@@ -174,6 +174,10 @@ test('a rejection replayed after a restart adds no child and returns the origina
   assert.equal(byActor(rt.state.tasks[id], 'rework accepted').length, 1)
   // A replayed acceptance (the endpoint retried) is not a second transition.
   await assert.rejects(() => rt.taskEndpoint('task-accept-result', { id: childId }))
+  // ...and the refusal is a stale transition, not a second acceptance: pin its code, because
+  // `assert.rejects` alone would also accept any other error, a typo in the endpoint included.
+  const replay = await rt.taskEndpoint('task-accept-result', { id: childId }).catch(error => error)
+  assert.equal(replay.code, 'bot/stale', 'a replayed acceptance is refused as stale')
   assert.equal(rt.state.tasks[id].status, 'result-ready')
   assert.equal(byActor(rt.state.tasks[id], 'rework accepted').length, 1, 'the original moves once')
 })
