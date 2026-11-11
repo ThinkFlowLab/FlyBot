@@ -2312,7 +2312,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,692 +1624,2775 @@ function usageOf(list, ids) {
+@@ -1624,637 +1624,2658 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -3650,47 +3650,6 @@ diff --git a/client.js b/client.js
 -.bt-settings-item[aria-current=page]{background:var(--bt-active);color:var(--bt-ink)}
 -.bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
 -.bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
--.bt-settings-shell{margin-top:auto}
--/* Usage while another page is open: out of the flow at Usage's own width, so it keeps
--   its layout, and not rendered. */
--.bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
--/* The page column takes the dialog's final size at once, so while the dialog resizes
--   only its edge moves and the page does not lay out again every frame. */
--.bt-settings-main{flex:none;display:flex;flex-direction:column;min-width:0;width:calc(var(--bt-set-w) - 198px);height:var(--bt-set-h)}
--.bt-settings-head{display:flex;align-items:center;gap:6px;padding:16px 56px 4px 20px}
--.bt-settings-head h2{margin:0;font-size:15px;line-height:24px;font-weight:600;animation:bt-veil-in .2s ease-out}
--.bt-settings-head>.bt-icon-btn{animation:bt-back-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
--@keyframes bt-back-in{from{translate:6px 0;scale:.8}}
--.bt-settings-scroll{flex:1;overflow-y:auto;padding:12px 20px 24px;display:flex;flex-direction:column;gap:20px;scrollbar-width:thin}
--.bt-settings-page>:not(.bt-us){animation:bt-page-up ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .22s ease-out backwards}
--.bt-settings-page[data-move=in]>:not(.bt-us){animation-name:bt-page-in,bt-veil-in}
--.bt-settings-page[data-move=out]>:not(.bt-us){animation-name:bt-page-out,bt-veil-in}
--.bt-settings-page>:nth-child(2){animation-delay:30ms}
--.bt-settings-page>:nth-child(3){animation-delay:60ms}
--.bt-settings-page>:nth-child(4){animation-delay:90ms}
--.bt-settings-page>:nth-child(n+5){animation-delay:120ms}
--@keyframes bt-page-up{from{transform:translateY(10px)}}
--@keyframes bt-page-in{from{transform:translateX(18px)}}
--@keyframes bt-page-out{from{transform:translateX(-18px)}}
--.bt-settings-close{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:0;background:var(--bt-hover);color:var(--bt-ink-2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
--.bt-settings-close:hover{background:var(--bt-active);color:var(--bt-ink)}
--.bt-settings-form{display:flex;flex-direction:column;gap:16px}
--.bt-set-section h3{font-size:13px;line-height:18px;font-weight:600;margin:0 0 8px;padding:0 4px}
--.bt-set-card{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);display:flex;flex-direction:column}
--.bt-set-card>*+*{border-top:.5px solid var(--bt-line)}
--.bt-set-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;line-height:18px;text-align:left;width:100%;box-sizing:border-box;border-radius:0}
--button.bt-set-row{cursor:pointer}
--button.bt-set-row:hover{background:var(--bt-hover)}
--.bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
--.bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
--.bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
--.bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
--.bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
--.bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
--.bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
--.bt-set-bot{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
--.bt-set-paste{flex-direction:column;align-items:stretch;gap:8px}
--.bt-chevron{color:var(--bt-ink-3);display:inline-flex;flex:none}
 +// src/client/motion.js
 +var import_react3 = require("react");
 +var reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -3894,21 +3853,7 @@ diff --git a/client.js b/client.js
 +  }, [value]);
 +  return [value || kept, !value && Boolean(kept)];
 +}
- 
--/* Settings → Connectors. */
--.bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
--.bt-connector-head{display:flex;align-items:center;gap:12px;min-width:0}
--.bt-connector-mark{flex:none;width:36px;height:36px;border-radius:10px;background:var(--bt-card);border:.5px solid var(--bt-line);display:flex;align-items:center;justify-content:center;color:var(--bt-ink)}
--.bt-connector-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
--.bt-connector-name{font-size:14px;line-height:20px;font-weight:500}
--.bt-connector-status{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
--.bt-connector[data-state=ready] .bt-connector-status{color:var(--bt-ink-2)}
--.bt-connector[data-state=error] .bt-connector-status{color:#e02135;white-space:normal}
--.bt-connector-actions{flex:none;display:flex;gap:6px}
--.bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
--.bt-connector-form-row{display:flex;align-items:center;gap:6px}
--.bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
--.bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
++
 +// src/client/connector-bots.js
 +var import_react4 = require("react");
 +function ownBots(roster) {
@@ -5624,54 +5569,28 @@ diff --git a/client.js b/client.js
 +.bt-settings-item[aria-current=page]{background:var(--bt-active);color:var(--bt-ink)}
 +.bt-settings-nav>.bt-thumb{left:8px;right:8px;border-radius:8px;background:var(--bt-active)}
 +.bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:transparent}
-+.bt-settings-shell{margin-top:auto}
+ .bt-settings-shell{margin-top:auto}
 +.bt-settings-out{margin-left:auto;opacity:.6;font-size:12px}
-+/* Usage while another page is open: out of the flow at Usage's own width, so it keeps
-+   its layout, and not rendered. */
-+.bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
-+/* The page column takes the dialog's final size at once, so while the dialog resizes
-+   only its edge moves and the page does not lay out again every frame. */
-+.bt-settings-main{flex:none;display:flex;flex-direction:column;min-width:0;width:calc(var(--bt-set-w) - 198px);height:var(--bt-set-h)}
-+.bt-settings-head{display:flex;align-items:center;gap:6px;padding:16px 56px 4px 20px}
-+.bt-settings-head h2{margin:0;font-size:15px;line-height:24px;font-weight:600;animation:bt-veil-in .2s ease-out}
-+.bt-settings-head>.bt-icon-btn{animation:bt-back-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
-+@keyframes bt-back-in{from{translate:6px 0;scale:.8}}
-+.bt-settings-scroll{flex:1;overflow-y:auto;padding:12px 20px 24px;display:flex;flex-direction:column;gap:20px;scrollbar-width:thin}
-+.bt-settings-page>:not(.bt-us){animation:bt-page-up ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .22s ease-out backwards}
-+.bt-settings-page[data-move=in]>:not(.bt-us){animation-name:bt-page-in,bt-veil-in}
-+.bt-settings-page[data-move=out]>:not(.bt-us){animation-name:bt-page-out,bt-veil-in}
-+.bt-settings-page>:nth-child(2){animation-delay:30ms}
-+.bt-settings-page>:nth-child(3){animation-delay:60ms}
-+.bt-settings-page>:nth-child(4){animation-delay:90ms}
-+.bt-settings-page>:nth-child(n+5){animation-delay:120ms}
-+@keyframes bt-page-up{from{transform:translateY(10px)}}
-+@keyframes bt-page-in{from{transform:translateX(18px)}}
-+@keyframes bt-page-out{from{transform:translateX(-18px)}}
-+.bt-settings-close{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:0;background:var(--bt-hover);color:var(--bt-ink-2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
-+.bt-settings-close:hover{background:var(--bt-active);color:var(--bt-ink)}
-+.bt-settings-form{display:flex;flex-direction:column;gap:16px}
-+.bt-set-section h3{font-size:13px;line-height:18px;font-weight:600;margin:0 0 8px;padding:0 4px}
-+.bt-set-card{border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card);display:flex;flex-direction:column}
-+.bt-set-card>*+*{border-top:.5px solid var(--bt-line)}
-+.bt-set-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;line-height:18px;text-align:left;width:100%;box-sizing:border-box;border-radius:0}
-+button.bt-set-row{cursor:pointer}
-+button.bt-set-row:hover{background:var(--bt-hover)}
-+.bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
-+.bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
-+.bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
+ /* Usage while another page is open: out of the flow at Usage's own width, so it keeps
+    its layout, and not rendered. */
+ .bt-settings-usage[data-off]{position:absolute;top:0;left:198px;width:calc(min(1100px,calc(100vw - 48px)) - 198px);height:100%;box-sizing:border-box;content-visibility:hidden;pointer-events:none}
+@@ -2288,13 +2288,66 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+ .bt-set-card>.bt-set-row+.bt-set-row{border-top:.5px solid var(--bt-line)}
+ .bt-set-row:first-child{border-top-left-radius:12px;border-top-right-radius:12px}
+ .bt-set-row:last-child{border-bottom-left-radius:12px;border-bottom-right-radius:12px}
 +/* #892: a plugin's rows in the Members card (Invite by link) sit on the card's own padding, like a row. */
 +.bt-flybot-room-members{padding:10px 12px}
-+.bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+ .bt-set-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
 +/* #1347: a row's copy never breaks its own label. The label used to be a bare inline span inside a
 +   column that flexed down to 36px, so "Name" came out as "Nam" + "e"; a single-word label is now one
 +   line, and the hint below it is what wraps when the column is short. */
 +.bt-set-copy>.bt-bs-label,.bt-set-copy>.bt-set-value{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-+.bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
-+.bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
-+.bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
-+.bt-set-bot{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
-+.bt-set-paste{flex-direction:column;align-items:stretch;gap:8px}
-+.bt-chevron{color:var(--bt-ink-3);display:inline-flex;flex:none}
+ .bt-set-hint{font-size:12px;line-height:16px;color:color-mix(in srgb,var(--bt-ink-2) 50%,var(--bt-ink-3))}
+ .bt-set-control{flex:none;display:flex;align-items:center;gap:6px}
+ .bt-set-value{font-size:13px;color:var(--bt-ink-2);text-align:right}
+ .bt-set-bot{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+ .bt-set-paste{flex-direction:column;align-items:stretch;gap:8px}
+ .bt-chevron{color:var(--bt-ink-3);display:inline-flex;flex:none}
 +/* Settings → Workflows (#1364): factory and your own pipelines, then the flowchart. */
 +.bt-wf-page{display:flex;flex-direction:column;gap:16px}
 +.bt-wf-hint{margin:0;font-size:12px;line-height:1.5;color:var(--bt-ink-2)}
@@ -5719,25 +5638,19 @@ diff --git a/client.js b/client.js
 +.bt-wf-remove{position:absolute;top:-8px;right:-8px;width:18px;height:18px;border-radius:50%;border:1px solid var(--bt-line);background:var(--bt-card);cursor:pointer;line-height:16px;padding:0}
 +.bt-wf-par{position:absolute;border:1px dashed var(--bt-ink-3);border-radius:14px;pointer-events:none}
 +.bt-wf-plabel{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--bt-ink-2);background:var(--bt-card);padding:0 6px;white-space:nowrap}
-+
-+/* Settings → Connectors. */
-+.bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
-+.bt-connector-head{display:flex;align-items:center;gap:12px;min-width:0}
-+.bt-connector-mark{flex:none;width:36px;height:36px;border-radius:10px;background:var(--bt-card);border:.5px solid var(--bt-line);display:flex;align-items:center;justify-content:center;color:var(--bt-ink)}
-+.bt-connector-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-+.bt-connector-name{font-size:14px;line-height:20px;font-weight:500}
-+.bt-connector-status{font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-+.bt-connector[data-state=ready] .bt-connector-status{color:var(--bt-ink-2)}
-+.bt-connector[data-state=error] .bt-connector-status{color:#e02135;white-space:normal}
-+.bt-connector-actions{flex:none;display:flex;gap:6px}
-+.bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
-+.bt-connector-form-row{display:flex;align-items:center;gap:6px}
+ 
+ /* Settings → Connectors. */
+ .bt-connector{display:flex;flex-direction:column;gap:10px;padding:12px}
+@@ -2308,8 +2308,17 @@ button.bt-set-row:hover{background:var(--bt-hover)}
+ .bt-connector-actions{flex:none;display:flex;gap:6px}
+ .bt-connector-form{display:flex;flex-direction:column;gap:8px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+ .bt-connector-form-row{display:flex;align-items:center;gap:6px}
 +.bt-connector-apps{display:flex;flex-direction:column;gap:8px}
-+.bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
+ .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
 +.bt-connector-uses{padding-left:48px;font-size:12px;line-height:16px;color:var(--bt-ink-3)}
 +.bt-connector-bots{display:flex;flex-direction:column;gap:2px;padding-left:48px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
 +.bt-connector-others{padding-left:20px}
-+.bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
+ .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:#e02135}
 +.bt-connector-app-list{list-style:none;margin:0;padding:0 0 0 48px;display:flex;flex-direction:column;gap:2px}
 +.bt-connector-app{display:flex;gap:8px;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
 +.bt-connector-app-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
