@@ -166,6 +166,118 @@ export function install(rt) {
       && roomKeyOf({ home: bot.remote.home, name: bot.name }) === key)
   }
   const chatRoomKey = bot => roomKeyOf({ home: bot?.remote?.home, name: bot?.name })
+
+  // #2804: `#2797` stopped a *new* install from opening one chat per member of a room, but a state
+  // written before it still carries those rows. Every one of them holds the room key, so the gone
+  // check below reads each as "still published" and nothing joins them: the list shows the same
+  // room eight times and every member's line lands in its own row. This joins one room's rows into
+  // one chat without copying a message: the oldest row keeps the id, handle, name, model route and
+  // `hidden` flag, and every other row's Session becomes an earlier part of it (parts.js:299-308),
+  // with the newest Session current so the chat reads in the order the rows were made. No text is
+  // rewritten and nothing is injected, so an assistant reply inside a duplicate stays that reply
+  // and the user's own hide is never touched.
+  async function mergeRoom(key, plugin) {
+    if (!key) return false
+    const group = chats().filter(bot => chatRoomKey(bot) === key
+      && (plugin === undefined || bot.remote.plugin === undefined || bot.remote.plugin === plugin))
+    if (group.length < 2) return false
+    const ordered = [...group].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || String(a.id).localeCompare(String(b.id)))
+    const survivor = ordered[0]
+    const current = ordered[ordered.length - 1]
+    // A card is answered on the chat's own Session and only one card can move up to it, so two rows
+    // each waiting on an answer cannot both be kept: the merge below would delete one card and leave
+    // the wait behind it hanging. A room with more than one open card is left alone for this round
+    // (#2804 acceptance 10): nothing is written, and the next sync, open or deliver tries again once
+    // a card is answered.
+    if (ordered.filter(bot => state.questions?.[bot.sessionId] !== undefined).length > 1) return false
+    // The Session each row had, read before the chat's own id is replaced: the part boundaries, the
+    // re-index and the card move all need it, and the survivor's own Session becomes an earlier part.
+    const before = ordered.map(bot => bot.sessionId)
+    // The parts of the chat now: the survivor's own earlier parts first (they are the oldest), then
+    // each row's own parts and its Session, in creation order. A row that is itself a merged chat
+    // keeps the parts it already had; the newest row's Session stays current and needs no boundary.
+    const parts = [...(survivor.segments ?? [])]
+    for (let index = 0; index < ordered.length; index += 1) {
+      const bot = ordered[index]
+      if (index > 0) parts.push(...(bot.segments ?? []))
+      // A part ends when the next row was made: `partsOf` reads each part's `startedAt` from the
+      // `endedAt` before it (parts.js:299-308), so a boundary taken from its own row shifts the rest.
+      if (index < ordered.length - 1) parts.push({ sessionId: before[index], endedAt: ordered[index + 1].createdAt ?? Date.now() })
+    }
+    survivor.segments = parts
+    survivor.sessionId = current.sessionId
+    // The Session maps `selfOf` and `earlierPage` read follow the Sessions that moved: the chat's own
+    // Session is the survivor's, and every other one is an earlier part of it (#1453 applies the same
+    // rule to a gone Bot, and `indexSessions` rebuilds both maps from this state on the next load).
+    // The ids come from `before`: the survivor's own was just replaced by the chat's.
+    try {
+      for (const sessionId of before) {
+        rt.chatOwners?.delete(sessionId)
+        rt.pastOwners?.set(sessionId, { botId: survivor.id })
+      }
+      rt.chatOwners?.set(current.sessionId, survivor.id)
+      rt.pastOwners?.delete(current.sessionId)
+    } catch (error) {
+      warn('ds-bot: re-indexing the merged room chat failed: %s', error)
+    }
+    // A reply that was on its way to one of those chats is the survivor's wait now (#443).
+    if (state.remoteAwaiting !== undefined) {
+      for (const bot of ordered.slice(1)) {
+        const at = state.remoteAwaiting[bot.id]
+        if (at === undefined) continue
+        if (state.remoteAwaiting[survivor.id] === undefined) state.remoteAwaiting[survivor.id] = at
+        delete state.remoteAwaiting[bot.id]
+      }
+    }
+    // Who has spoken here (#420) hangs off the Bot id too, and the rows going away would take it
+    // along. The same sender keeps the earlier first-seen time so a first line stays a first line,
+    // and `friendLineAt` the latest, so a line that arrived in one of them still marks the row
+    // unread. `noteFriendLine` trims the map to its own cap on the next new sender (delivery.js:108).
+    if (state.remoteContacts !== undefined) {
+      const kept = (state.remoteContacts[survivor.id] ??= {})
+      for (const bot of ordered.slice(1)) {
+        for (const [handle, at] of Object.entries(state.remoteContacts[bot.id] ?? {})) {
+          if (kept[handle] === undefined || at < kept[handle]) kept[handle] = at
+        }
+        delete state.remoteContacts[bot.id]
+      }
+    }
+    for (const bot of ordered.slice(1)) {
+      if (typeof bot.friendLineAt === 'number' && (typeof survivor.friendLineAt !== 'number' || bot.friendLineAt > survivor.friendLineAt)) survivor.friendLineAt = bot.friendLineAt
+    }
+    // A question card is answered on the chat's current Session (channel.js:568-593 resolves an
+    // earlier part to it), so a card left open in one of these rows moves up the way a rotation
+    // moves it (parts.js:1009-1013): its call stays in the old part, the card does not. The gate
+    // above leaves at most one card in the room, so this move can never overwrite a card.
+    for (const sessionId of before.slice(0, -1)) {
+      const question = state.questions?.[sessionId]
+      if (question === undefined) continue
+      if (state.questions[current.sessionId] === undefined) {
+        const { callId: _call, ...rest } = question
+        state.questions[current.sessionId] = rest
+      }
+      delete state.questions[sessionId]
+    }
+    // The Session that is now the chat's own was opened for another row's handle, and a turn runs on
+    // the Session's own route (parts.js:965-968) while `forward` sends to the handle in it: without
+    // this, the next line typed here is sent for a handle that no longer has a row. The values it
+    // needs are taken here, because the rows go before the await below.
+    const route = typeof rt.selectSessionModel === 'function' && survivor.remote?.handle
+      ? { sessionId: survivor.sessionId, handle: survivor.remote.handle, name: survivor.name }
+      : undefined
+    // The rows go before that await, not after it: `sync` and `deliver` both call this function and
+    // do not serialise each other (`hooks.js` publishes `remoteChats.sync` without awaiting it while
+    // the inbox loop delivers), so a caller that arrived during the select would still see two rows
+    // and the whole write would run a second time — appending the same boundaries and Sessions to the
+    // survivor again, which is a line shown twice on disk after a restart. Deleting them first stops
+    // that second caller at the top check with one row, before it writes anything.
+    for (const bot of ordered.slice(1)) delete state.bots[bot.id]
+    if (route) {
+      await rt.selectSessionModel(route.sessionId, { provider: REMOTE_PROVIDER, model: route.handle })
+        .catch(error => warn('ds-bot: route for the merged chat %s not applied: %s', route.name, error))
+    }
+    return true
+  }
   const senders = new Map()
   const pending = new Map()
 
@@ -251,6 +363,8 @@ export function install(rt) {
     if (isHomeLevelRemote({ handle, home })) return Promise.resolve(undefined)
     const run = opening.then(async () => {
       await rt.load()
+      const room = roomKeyOf({ home, name })
+      if (room && await mergeRoom(room, plugin)) await rt.save()
       const existing = chatOfHandle(handle) ?? chatOfRoom({ home, name, plugin })
       if (existing !== undefined) {
         const next = { ...existing.remote, home, ...(homeName ? { homeName } : {}), plugin, gone: undefined }
@@ -297,6 +411,9 @@ export function install(rt) {
       await open({ ...member, plugin }).catch(error => warn('ds-bot: chat for %s not opened: %s', member.handle, error))
     }
     let changed = false
+    // #2804: rows written before #2797 are one room, not several. Joining them first makes the gone
+    // check below read one row, and every later line lands in it.
+    for (const room of rooms) if (await mergeRoom(room, plugin)) changed = true
     for (const bot of chats()) {
       if (bot.remote.plugin !== plugin) continue
       // A chat whose room is still published is not gone when the member handle that carried the room
@@ -331,6 +448,8 @@ export function install(rt) {
   // `human` + `ownerName`: the plugin has Bot Social's attestation that the friend typed this line
   // themselves (never derived from the text). The reply is then drawn as the person, not the Bot.
   async function deliver({ handle, text, name, home, plugin, human, ownerName }) {
+    const room = roomKeyOf({ home, name })
+    if (room && await mergeRoom(room, plugin)) await rt.save()
     const id = chatOfHandle(handle)?.id ?? await open({ handle, name: name ?? handle, home, plugin })
     const bot = rt.botOf(id)
     const agent = await rt.resolveAgent(rt.chatOf(id))
