@@ -54,6 +54,7 @@ var ZH = {
   "Reading workflows…": "正在读取工作流…",
   "Could not read workflows": "读不到工作流。",
   "The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.": "工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。",
+  "Not installed in this profile.": "当前 profile 未安装。",
   "Could not copy this workflow": "这个工作流复制不了。",
   "Could not save this workflow": "这个工作流保存不了。",
   "Could not rename this workflow": "这个工作流改不了名。",
@@ -1472,6 +1473,7 @@ var ZH = {
   "Member unbound.": "已解除成员的绑定。",
   "Project Assistant": "项目助手",
   "Project Chief": "项目 Chief",
+  "Project Chief: {error}": "项目 Chief：{error}",
   "Chief of this Project": "本项目的 Chief",
   "Pause the daily digest": "暂停每日摘要",
   "Assistant settings saved.": "助手设置已保存。",
@@ -19419,6 +19421,43 @@ var NOTIFY_KINDS = [
   ["finished", "Finished"],
   ["failed", "Failed"]
 ];
+function PluginsView({ answer = null, error = "", onFlip }) {
+  const plugins = answer?.plugins ?? [];
+  return (0, import_react43.createElement)(
+    "div",
+    null,
+    (0, import_react43.createElement)(
+      SetSection,
+      { title: t("Plugins") },
+      error ? (0, import_react43.createElement)("p", { className: "bt-set-hint", role: "alert" }, error) : null,
+      answer === null && !error ? (0, import_react43.createElement)("p", { className: "bt-set-hint" }, t("Loading…")) : null,
+      plugins.map((plugin) => plugin.installed === false ? (0, import_react43.createElement)(
+        "div",
+        { key: plugin.id, className: "bt-set-row bt-set-missing", "data-plugin": plugin.id, "data-installed": "false" },
+        (0, import_react43.createElement)(
+          "div",
+          { className: "bt-set-copy" },
+          (0, import_react43.createElement)("span", null, plugin.name),
+          (0, import_react43.createElement)("span", { className: "bt-set-hint" }, `${plugin.package} — ${t(plugin.purpose)}`),
+          (0, import_react43.createElement)(
+            "span",
+            { className: "bt-set-hint", role: "status" },
+            t("Not installed in this profile."),
+            " ",
+            (0, import_react43.createElement)("code", { className: "bt-install-command" }, `dsh plugin add ${plugin.package}`)
+          )
+        )
+      ) : (0, import_react43.createElement)(SwitchRow, {
+        key: plugin.id,
+        label: plugin.name,
+        hint: `${plugin.package} — ${t(plugin.purpose)}`,
+        on: plugin.enabled !== false,
+        onChange: (enabled) => onFlip?.(plugin.id, enabled)
+      })),
+      (0, import_react43.createElement)("p", { className: "bt-set-hint" }, answer?.pendingRestart === true ? t("Restart FlyBot to apply the switches you changed.") : t("A switch takes effect the next time FlyBot starts."))
+    )
+  );
+}
 function PluginsPage({ call: call4 }) {
   const [answer, setAnswer] = (0, import_react43.useState)(null);
   const [error, setError] = (0, import_react43.useState)("");
@@ -19440,25 +19479,7 @@ function PluginsPage({ call: call4 }) {
       setError("");
     }).catch((failure) => setError(failure?.message ?? String(failure)));
   };
-  const plugins = answer?.plugins ?? [];
-  return (0, import_react43.createElement)(
-    "div",
-    null,
-    (0, import_react43.createElement)(
-      SetSection,
-      { title: t("Plugins") },
-      error ? (0, import_react43.createElement)("p", { className: "bt-set-hint", role: "alert" }, error) : null,
-      answer === null && !error ? (0, import_react43.createElement)("p", { className: "bt-set-hint" }, t("Loading…")) : null,
-      plugins.map((plugin) => (0, import_react43.createElement)(SwitchRow, {
-        key: plugin.id,
-        label: plugin.name,
-        hint: `${plugin.package} — ${t(plugin.purpose)}`,
-        on: plugin.enabled !== false,
-        onChange: (enabled) => flip(plugin.id, enabled)
-      })),
-      (0, import_react43.createElement)("p", { className: "bt-set-hint" }, answer?.pendingRestart === true ? t("Restart FlyBot to apply the switches you changed.") : t("A switch takes effect the next time FlyBot starts."))
-    )
-  );
+  return (0, import_react43.createElement)(PluginsView, { answer, error, onFlip: flip });
 }
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {};
@@ -19817,36 +19838,41 @@ function ProjectsList({ projects, roster, call: call4, reload }) {
     (0, import_react43.createElement)(
       SetSection,
       { key: "projects", title: t("Projects · {count}", { count: projects.length }) },
-      projects.length === 0 ? (0, import_react43.createElement)("div", { className: "bt-set-row" }, (0, import_react43.createElement)("div", { className: "bt-set-copy" }, (0, import_react43.createElement)("span", null, t(locked ? "No Project yet." : "No Project yet — create one.")))) : projects.map((project) => (0, import_react43.createElement)(
-        SetRow,
-        {
-          key: project.id,
-          label: project.name,
-          hint: project.workDir === null || project.workDir === void 0 ? void 0 : project.workDir
-        },
-        (0, import_react43.createElement)(
-          "div",
-          { className: "bt-project-row-controls" },
-          (0, import_react43.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openProjectBoard(project.id) }, t("Open board")),
-          locked ? null : (0, import_react43.createElement)(
-            "select",
-            {
-              className: "bt-select",
-              "aria-label": t("Bind to {name}", { name: project.name }),
-              value: "",
-              onChange: (event) => {
-                void bind(event.target.value, project);
-              }
-            },
-            (0, import_react43.createElement)("option", { value: "" }, t("Bind a Bot or group")),
-            members.map((member) => (0, import_react43.createElement)(
-              "option",
-              { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
-              `${member.kind === "group" ? t("Group") : t("Bot")} · ${member.name}`
-            ))
+      projects.length === 0 ? (0, import_react43.createElement)("div", { className: "bt-set-row" }, (0, import_react43.createElement)("div", { className: "bt-set-copy" }, (0, import_react43.createElement)("span", null, t(locked ? "No Project yet." : "No Project yet — create one.")))) : projects.flatMap((project) => {
+        const chiefError = typeof project.chief?.error === "string" ? project.chief.error.trim() : "";
+        const row = (0, import_react43.createElement)(
+          SetRow,
+          {
+            key: project.id,
+            label: project.name,
+            hint: project.workDir === null || project.workDir === void 0 ? void 0 : project.workDir
+          },
+          (0, import_react43.createElement)(
+            "div",
+            { className: "bt-project-row-controls" },
+            (0, import_react43.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => openProjectBoard(project.id) }, t("Open board")),
+            locked ? null : (0, import_react43.createElement)(
+              "select",
+              {
+                className: "bt-select",
+                "aria-label": t("Bind to {name}", { name: project.name }),
+                value: "",
+                onChange: (event) => {
+                  void bind(event.target.value, project);
+                }
+              },
+              (0, import_react43.createElement)("option", { value: "" }, t("Bind a Bot or group")),
+              members.map((member) => (0, import_react43.createElement)(
+                "option",
+                { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
+                `${member.kind === "group" ? t("Group") : t("Bot")} · ${member.name}`
+              ))
+            )
           )
-        )
-      ))
+        );
+        if (chiefError === "") return [row];
+        return [row, (0, import_react43.createElement)("div", { key: `${project.id}:chief`, className: "bt-project-chief-error", role: "alert" }, t("Project Chief: {error}", { error: chiefError }))];
+      })
     ),
     bound2.length === 0 ? null : (0, import_react43.createElement)(
       SetSection,

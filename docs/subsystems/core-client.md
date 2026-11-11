@@ -304,6 +304,10 @@ when one is missing. Tests: `core/test/feedback-clear-sentence.test.js`.
 
 A discarded `.catch(() => {})` in the client sources either starts with `void` (fire and forget) or carries a one-line reason comment (an awaited wait); a `.catch(() => undefined)` whose value is used stays. `check-empty-catch` enforces it (see `docs/code-standards.md`).
 
+### A plugin this profile does not have (#2869)
+
+Settings → Plugins draws a switch only for a plugin this profile actually loads (#2868's `installed`): a row with `installed: false` is a plain row reading `Not installed in this profile.` beside the command that installs the package (`dsh plugin add @flybot/<id>`), so the page cannot offer a switch for a domain the process does not have. A missing `installed` (an older host, or no profile) keeps the switch, the shape every release before #2868 sends. This page is the one place that still says the package is missing: the Project surfaces themselves are gated by `projectPresent()` (#2877), so a profile without the plugin never reaches the Projects page. A project whose record carries `chief.error` (the host writes one when it has no Project Chief seam, `core/src/host/store.js`) prints that sentence under its row as an alert, so a Project without a Chief says why instead of looking empty. `PluginsView` and `ProjectsList` are exported and pure, so a test draws them without a host. Tests: `core/test/plugin-installed-faces.test.js`.
+
 ## Tests
 
 `npm test` in `core/` (it also fails when `client.js` is stale).
