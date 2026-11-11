@@ -1,1 +1,0 @@
-A refused state save no longer leaves an unaccepted **Always allow** live in memory: the grant is rolled back and the refusal is reported, so the next matching card still asks instead of being answered on the owner's behalf; a refused **Remove** likewise keeps the grant it could not delete ([#2764](https://github.com/ThinkFlowLab/FlyBot/issues/2764)).

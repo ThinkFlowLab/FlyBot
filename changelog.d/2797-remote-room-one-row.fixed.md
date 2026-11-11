@@ -1,1 +1,0 @@
-A room a friend publishes once per member is one chat again: the friends' list keys a remote chat by the room — the same published name at the same home — instead of by the member handle it arrived on, so one group no longer fills the sidebar with a row per member and keeps its history when that handle changes ([#2797](https://github.com/ThinkFlowLab/FlyBot/issues/2797)).

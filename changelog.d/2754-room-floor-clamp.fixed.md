@@ -1,1 +1,0 @@
-A room whose stored join floor sits above its own `room.seq` no longer shows an empty history: the read path clamps that floor to `room.seq`, so the guest sees the line it joined at and every line after it, warns once per room, and leaves the stored state untouched ([#2754](https://github.com/ThinkFlowLab/FlyBot/issues/2754)).

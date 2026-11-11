@@ -1,1 +1,0 @@
-`read_group_chat` now says how many room lines its 30-line cap left out — `Latest in "<room>" (newest 30 of 45, oldest first):` — instead of printing a cut log as the whole log; an uncut read is byte-identical ([#2780](https://github.com/ThinkFlowLab/FlyBot/issues/2780)).

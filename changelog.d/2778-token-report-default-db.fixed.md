@@ -1,1 +1,0 @@
-`core/dev/token-report.mjs` with no `--db` now reads the ledger where the host writes it, `$DSH_HOME/bot/usage.sqlite`, instead of one directory above it, so the command runs on an ordinary install instead of exiting with "no ledger at" ([#2778](https://github.com/ThinkFlowLab/FlyBot/issues/2778)).
