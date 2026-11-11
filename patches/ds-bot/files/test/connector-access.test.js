@@ -553,16 +553,31 @@ test('the running turn notes whose request it answers, so a resumed turn keeps t
   t.after(stop)
   await agentFor('writer')
   await agentFor('chief')
-  const noted = async () => { await tick(); await tick(); await new Promise(resolve => setTimeout(resolve, 20)); return JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')).turns }
+  // The note is written asynchronously (resume.js saves it through a promise chain), so a single read
+  // can land before the note it is about and see the one from a moment ago (#2817). Poll a small
+  // predicate for a short while; when it never holds the read is returned as it is, so the assertion
+  // below fails with the value it found, exactly as before.
+  const noted = async (done, ms = 2000) => {
+    const read = () => JSON.parse(readFileSync(join(home, 'inflight.json'), 'utf8')).turns
+    for (const end = Date.now() + ms; ;) {
+      let turns
+      // Nothing noted yet: the first note of this Session has not reached the disk.
+      try { turns = read() } catch (error) { if (error?.code !== 'ENOENT') throw error }
+      if (turns !== undefined && done(turns)) return turns
+      // Still absent at the deadline: fail with the read error, the way the single read did before.
+      if (Date.now() >= end) return turns ?? read()
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+  }
   take('writer', TYPED)
   begin('writer')
   take('chief', FRIEND)
   begin('chief')
-  const turns = await noted()
+  const turns = await noted(found => found.writer?.origin === 'owner' && found.chief?.origin === 'other')
   assert.equal(turns.writer.origin, 'owner')
   assert.equal(turns.chief.origin, 'other')
   take('writer', FRIEND)
-  assert.equal((await noted()).writer.origin, 'other', 'a friend\'s line later in the turn is noted too')
+  assert.equal((await noted(found => found.writer?.origin === 'other')).writer.origin, 'other', 'a friend\'s line later in the turn is noted too')
   end('writer')
   end('chief')
 })
