@@ -8,6 +8,7 @@ import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon,
 import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
 import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
+import { projectPresent, setPluginAnswer } from './flybot-registry.js'
 import { useDialogFocus, useEscape } from './overlay-hooks.js'
 import { BotSettingsForm, SwitchRow } from './bot-settings.js'
 import { Segmented, useGlide } from './motion.js'
@@ -61,7 +62,7 @@ function PluginsPage({ call }) {
   }, [])
   const flip = (id, enabled) => {
     call('plugins/set', { id, enabled })
-      .then(value => { setAnswer(value ?? null); setError('') })
+      .then(value => { setPluginAnswer(value ?? {}); setAnswer(value ?? null); setError('') })
       .catch(failure => setError(failure?.message ?? String(failure)))
   }
   const plugins = answer?.plugins ?? []
@@ -247,7 +248,9 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   const room = page === 'groups' && id ? roster.roomsById[id] : undefined
   // Plugin pages (flybot.settings.page) sit after Connectors; a page whose plugin is gone falls back to General.
   const extra = useSettingsPages().map(entry => ({ entry, key: `plugin:${entry.id}` }))
-  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'connectors' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item]))
+  // #2877: the Projects page is a Project surface like the sidebar row; with the plugin off or
+  // absent it is not in the list, so a page asked for by name falls back to General below.
+  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'connectors' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item])).filter(([key]) => key !== 'projects' || projectPresent())
   const shown = pages.some(([key]) => key === page) ? page : 'general'
   const pluginPage = extra.find(({ key }) => key === shown)?.entry
   const usageFocus = shown === 'usage' && id ? id : null

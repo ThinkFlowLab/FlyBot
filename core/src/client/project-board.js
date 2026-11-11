@@ -5,6 +5,7 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 import { call } from './api.js'
 import { dateLocale, hostText, t } from './i18n.js'
 import { readOnlyLine } from './read-only.js'
+import { useProjectPresent } from './project-presence.js'
 import { roleText } from './role-labels.js'
 import { lockedWindow } from './schedules.js'
 
@@ -790,6 +791,8 @@ export function projectAgentFor(bot, selfId) {
 }
 
 export function ProjectAgentEntry({ projectId, read, onOpen } = {}) {
+  // #2877: no Project plugin, no agent seat in the Bot header.
+  const present = useProjectPresent()
   const [agentId, setAgentId] = useState('')
   const id = text(projectId)
   const open = async () => {
@@ -806,7 +809,7 @@ export function ProjectAgentEntry({ projectId, read, onOpen } = {}) {
     }
     if (target !== '') onOpen?.(target)
   }
-  if (id === '') return null
+  if (id === '' || !present) return null
   return h('button', {
     type: 'button', className: 'bt-project-agent-entry',
     'data-project-agent': id, 'data-open-bot': agentId === '' ? undefined : agentId,
@@ -1024,6 +1027,9 @@ const boardPollPaused = () => (typeof document !== 'undefined' && document.visib
 export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) {
   // `call` is a seam for the tests only; in the app it is the channel every other view uses.
   const read = request ?? call
+  // #2877: `#project=<id>` is a Project route only while the Project plugin is here; with it off
+  // or absent the hash opens nothing and the board reads nothing from the host.
+  const present = useProjectPresent()
   // #2306: the board was registered with the roster injection and never read it, so a window that
   // holds the team read-only still drew the settings panel's four writes. One read of the same
   // predicate every other read-only surface uses (`lockedWindow`), handed down to that panel.
@@ -1065,7 +1071,7 @@ export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) 
   }, [])
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
-    if (!hash.startsWith('#project')) { setState(null); return undefined }
+    if (!present || !hash.startsWith('#project')) { setState(null); return undefined }
     const wanted = hash.slice('#project'.length).replace(/^=/, '')
     let gone = false
     // #1864: the board, its record, its rows, the task texts and the team dossier are one read path,
@@ -1098,7 +1104,7 @@ export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) 
     void refresh(true)
     const timer = setInterval(() => { if (!boardPollPaused()) void refresh(false) }, PROJECT_BOARD_POLL_MS)
     return () => { gone = true; clearInterval(timer) }
-  }, [hash])
+  }, [hash, present])
   // #1913: reading the dossier is the one deliberate act on this board, so opening its panel pays
   // for one `project-team` read (the host caps the answer at ~16 KB) instead of showing whatever the
   // board opened with. The poll keeps handing back the answer this leaves, so #1900's saving stands,
@@ -1119,7 +1125,7 @@ export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) 
       // A refresh that fails keeps the answer the open had; the next explicit open asks again.
     }
   }
-  if (state === null) return null
+  if (state === null || !present) return null
   // #1750: the scrim is a sibling in front of the dialog, exactly as the Board draws it, so a click
   // beside the board dismisses it and the shell behind reads as a backdrop rather than more rows.
   return h('div', { className: 'bt-project-overlay' },

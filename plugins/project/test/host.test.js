@@ -64,6 +64,9 @@ test('#2830 apply() installs the Project domain on the core runtime and register
     assert.equal(typeof rt.projectTeam, 'function')
     assert.equal(typeof rt.projectAssistant.create, 'function')
     assert.equal(typeof result.dispose, 'function')
+    // #2877: the browser gate asks `plugins/list` whether this start really attached the domain,
+    // so a successful apply marks the plugin; the core keeps that answer on its runtime.
+    assert.equal(rt.pluginLoaded.has('project'), true)
     // A second apply must not register the tools again (the fake context would keep one entry, but
     // a real ctx.tools.register of the same name throws) and must not install a second domain.
     const again = apply({ flybot: rt.flybot, effect: exec => exec() })
@@ -80,6 +83,7 @@ test('#2830 the owner switch off registers no tool and no seam', () => {
     assert.equal(rt.projectChief, undefined)
     assert.equal(rt.projectTeam, undefined)
     assert.equal(rt.projectAssistant, undefined)
+    assert.equal(rt.pluginLoaded.has('project'), false, 'a switched-off plugin is not attached')
     assert.equal(result.project, undefined)
     // The store keeps its documented fallback: a Project is still created, just without a Chief.
     assert.equal(typeof rt.flybot.projects.read, 'function')

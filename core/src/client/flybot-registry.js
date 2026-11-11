@@ -46,6 +46,11 @@ export function createRegistry() {
       disabled = new Set([...ids])
       changed()
     },
+    // A change that leaves the entries alone (#2877): the Project gate reads the same subscribers,
+    // so the host's answer about the Project plugin redraws the surfaces that ask it.
+    notify() {
+      changed()
+    },
     subscribe(fn) {
       listeners.add(fn)
       return () => listeners.delete(fn)
@@ -63,6 +68,52 @@ export function registry() {
 // The live registry's switches, set from the host's answer at start and from Settings.
 export function setDisabledPlugins(ids = []) {
   registry().setDisabledPlugins(ids)
+}
+
+// #2877: the Project domain is a plugin, but its browser surfaces are the core's own — the slot
+// filter above never sees them, so a switch turned off (or a package that was never installed)
+// left the sidebar row, the Settings page, the board, the `#project=` route and the header seat on
+// screen. `plugins/list` answers per plugin whether this start really attached the package
+// (`loaded`); "the Project is here" is the owner's switch on **and** that package attached, and
+// every Project surface asks this one selector instead of deciding for itself.
+const PROJECT_PLUGIN = 'project'
+// Before the host answers, every surface keeps drawing what it drew before the gate existed: an
+// older host has no `loaded` and cannot be guessed at, and the answer, when it lands, takes the
+// surfaces away (`setPluginAnswer`). It is the host's answer that hides them, never a default.
+let projectPresence = { enabled: true, loaded: true }
+
+export function projectPresent() {
+  return projectPresence.enabled !== false && projectPresence.loaded !== false
+}
+
+// One answer from `plugins/list` feeds both halves of the gate: the slot entries a switched-off
+// plugin registered, and whether the core's own Project surfaces belong here. `plugins/set` answers
+// the switches only, so it moves the Project half alone and leaves both the slot filter and
+// `loaded` as the last `plugins/list` said — the slot filter is the start's one read (#2878: the
+// bundles a disabled plugin registered were dropped before anything drew them, and a flip only
+// reaches the host at the next start), and a switch flipped on for a package that is not installed
+// must not bring the surfaces back.
+export function setPluginAnswer(answer = {}) {
+  const plugins = Array.isArray(answer?.plugins) ? answer.plugins : []
+  if (plugins.some(plugin => typeof plugin?.loaded === 'boolean')) {
+    setDisabledPlugins(plugins.filter(plugin => plugin?.enabled === false).map(plugin => plugin.id))
+  }
+  const project = plugins.find(plugin => plugin?.id === PROJECT_PLUGIN)
+  if (project !== undefined) {
+    projectPresence = {
+      enabled: typeof project.enabled === 'boolean' ? project.enabled : projectPresence.enabled,
+      loaded: typeof project.loaded === 'boolean' ? project.loaded : projectPresence.loaded,
+    }
+  }
+  registry().notify()
+  return projectPresent()
+}
+
+// The two facts on their own, for a test or a surface that knows better than `plugins/list`.
+export function setProjectPresence({ enabled = true, loaded = true } = {}) {
+  projectPresence = { enabled: enabled !== false, loaded: loaded !== false }
+  registry().notify()
+  return projectPresent()
 }
 
 export const pluginOfSlot = ownerOf

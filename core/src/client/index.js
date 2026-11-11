@@ -1,6 +1,6 @@
 import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, call as flybotCall, createClientApi as createFlyBotClient } from './flybot-slots.js'
 import { createElement as h } from 'react'
-import { registry as flybotSlots, setDisabledPlugins } from './flybot-registry.js'
+import { projectPresent, registry as flybotSlots, setPluginAnswer } from './flybot-registry.js'
 import { TURN_FAILURES_CSS, TurnFailures } from './turn-failures.js'
 import { call } from './api.js'
 import { isHex } from './inks.js'
@@ -67,10 +67,12 @@ export function apply(ctx) {
   ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
   // A plugin the owner switched off (#2564) still loads its browser bundle, so the
   // switch is read once and its slot entries are dropped before anything draws them.
+  // Since #2877 the same answer carries `loaded` (did this start attach the package?), which the
+  // core's own Project surfaces ask before they draw themselves.
   ctx.effect(() => {
     let live = true
     flybotCall('plugins/list')
-      .then(answer => { if (live) setDisabledPlugins((answer?.plugins ?? []).filter(plugin => plugin.enabled === false).map(plugin => plugin.id)) })
+      .then(answer => { if (live) setPluginAnswer(answer) })
       .catch(() => { /* an older host has no switch: every plugin stays visible */ })
     return () => { live = false }
   }, 'ds-bot: plugin switches')
@@ -951,7 +953,8 @@ export function apply(ctx) {
     shadow('shell.overlay', { id: 'bot-toast', order: 60, inject: face }, ErrorToast),
     shadow('shell.overlay', { id: 'flybot-approvals', order: 58, inject: face }, FlyBotApprovals),
     // The board's rows open the Tasks board a task lives on, which only `actions` can do (#1701).
-    shadow('shell.overlay', { id: 'project-board', order: 57, inject: face }, ProjectBoardOverlay),
+    // #2877: with the Project plugin off or absent there is no board to install.
+    projectPresent() ? shadow('shell.overlay', { id: 'project-board', order: 57, inject: face }, ProjectBoardOverlay) : null,
   ]
   const installConversation = () => [
     installCompiledStyles(CONVERSATION_CSS, 'conversation'),

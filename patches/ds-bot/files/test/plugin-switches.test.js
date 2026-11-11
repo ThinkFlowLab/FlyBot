@@ -73,6 +73,38 @@ test('plugins/list answers all five switches and plugins/set persists a flip', a
   }
 })
 
+// #2877: the switch says the owner left the feature on; only the plugin says the package is here
+// and its apply() really ran. The browser needs that second bit to stop drawing the Project
+// surfaces an absent package cannot back, so `plugins/list` reports it — `enabled` keeps its own
+// meaning, and `plugins/set` keeps the shape Settings → Plugins already reads.
+test('plugins/list says whether this start really attached each plugin', async () => {
+  const { dir, rt } = runtime()
+  try {
+    const listed = await rt.flybotEndpoint('plugins/list')
+    assert.deepEqual(listed.plugins.map(plugin => [plugin.id, plugin.enabled, plugin.loaded]), [
+      ['social', true, false], ['tree', true, false], ['timeline', true, false], ['workflow', true, false], ['project', true, false],
+    ], 'on, and not attached: nothing marked itself')
+
+    assert.equal(rt.flybot.markPluginLoaded('project'), true)
+    const after = await rt.flybotEndpoint('plugins/list')
+    assert.deepEqual(after.plugins.filter(plugin => plugin.loaded).map(plugin => plugin.id), ['project'])
+    assert.equal(after.plugins.find(plugin => plugin.id === 'project').enabled, true, 'loading does not change the switch')
+    // A plugin that is not on the list cannot answer for one that is.
+    assert.equal(rt.flybot.markPluginLoaded('not-a-plugin'), false)
+    assert.equal(rt.flybot.markPluginLoaded(''), false)
+
+    // Switching it off keeps the answer it attached; the two facts are independent.
+    const saved = await rt.flybotEndpoint('plugins/set', { id: 'project', enabled: false })
+    const project = saved.plugins.find(plugin => plugin.id === 'project')
+    assert.equal(project.enabled, false)
+    assert.deepEqual(Object.keys(project).sort(), ['enabled', 'id', 'name', 'package', 'purpose'], 'plugins/set answers what it always did')
+    const off = await rt.flybotEndpoint('plugins/list')
+    assert.deepEqual([off.plugins.find(plugin => plugin.id === 'project').enabled, off.plugins.find(plugin => plugin.id === 'project').loaded], [false, true])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('a disabled plugin keeps no slot entry visible, and the other plugins stay', () => {
   const slots = createRegistry()
   slots.register('flybot.sidebar.section', { id: 'social' })

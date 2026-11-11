@@ -1642,10 +1642,10 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,81 @@
+@@ -1,44 +1,83 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, call as flybotCall, createClientApi as createFlyBotClient } from './flybot-slots.js'
 +import { createElement as h } from 'react'
-+import { registry as flybotSlots, setDisabledPlugins } from './flybot-registry.js'
++import { projectPresent, registry as flybotSlots, setPluginAnswer } from './flybot-registry.js'
 +import { TURN_FAILURES_CSS, TurnFailures } from './turn-failures.js'
  import { call } from './api.js'
 -import { isHex, inkText, paintCss } from './inks.js'
@@ -1723,10 +1723,12 @@ diff --git a/src/client/index.js b/src/client/index.js
 +  ctx.effect(() => installBrandChrome(), 'ds-bot: brand chrome')
 +  // A plugin the owner switched off (#2564) still loads its browser bundle, so the
 +  // switch is read once and its slot entries are dropped before anything draws them.
++  // Since #2877 the same answer carries `loaded` (did this start attach the package?), which the
++  // core's own Project surfaces ask before they draw themselves.
 +  ctx.effect(() => {
 +    let live = true
 +    flybotCall('plugins/list')
-+      .then(answer => { if (live) setDisabledPlugins((answer?.plugins ?? []).filter(plugin => plugin.enabled === false).map(plugin => plugin.id)) })
++      .then(answer => { if (live) setPluginAnswer(answer) })
 +      .catch(() => { /* an older host has no switch: every plugin stays visible */ })
 +    return () => { live = false }
 +  }, 'ds-bot: plugin switches')
@@ -2104,7 +2106,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,50 @@ export function apply(ctx) {
+@@ -752,33 +752,51 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -2143,7 +2145,8 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('shell.overlay', { id: 'bot-toast', order: 60, inject: face }, ErrorToast),
 +    shadow('shell.overlay', { id: 'flybot-approvals', order: 58, inject: face }, FlyBotApprovals),
 +    // The board's rows open the Tasks board a task lives on, which only `actions` can do (#1701).
-+    shadow('shell.overlay', { id: 'project-board', order: 57, inject: face }, ProjectBoardOverlay),
++    // #2877: with the Project plugin off or absent there is no board to install.
++    projectPresent() ? shadow('shell.overlay', { id: 'project-board', order: 57, inject: face }, ProjectBoardOverlay) : null,
    ]
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, 'conversation'),

@@ -280,7 +280,7 @@ diff --git a/src/client/secret-card.js b/src/client/secret-card.js
 diff --git a/src/client/settings.js b/src/client/settings.js
 --- a/src/client/settings.js
 +++ b/src/client/settings.js
-@@ -2,29 +2,34 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
+@@ -2,29 +2,35 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
  import { ACCENT_INKS, INKS } from './inks.js'
  import { isMainOf } from './sources.js'
  import { allThemes } from './themes.js'
@@ -293,6 +293,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 -import { useEscape } from './overlay-hooks.js'
 -import { BotSettingsForm } from './bot-settings.js'
 +import { SettingsPageSlot, useSettingsPages, call } from './flybot-slots.js'
++import { projectPresent, setPluginAnswer } from './flybot-registry.js'
 +import { useDialogFocus, useEscape } from './overlay-hooks.js'
 +import { BotSettingsForm, SwitchRow } from './bot-settings.js'
  import { Segmented, useGlide } from './motion.js'
@@ -347,7 +348,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +  }, [])
 +  const flip = (id, enabled) => {
 +    call('plugins/set', { id, enabled })
-+      .then(value => { setAnswer(value ?? null); setError('') })
++      .then(value => { setPluginAnswer(value ?? {}); setAnswer(value ?? null); setError('') })
 +      .catch(failure => setError(failure?.message ?? String(failure)))
 +  }
 +  const plugins = answer?.plugins ?? []
@@ -471,7 +472,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
                  admin ? h('span', { className: 'bt-tag bt-tag-admin' }, h(AdminStar), admin.name) : null,
                  room.hidden ? h('span', { className: 'bt-tag' }, t('Hidden')) : null),
                h('span', { className: 'bt-chevron' }, h(ChevronRightIcon)))
-@@ -153,15 +153,23 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -153,15 +153,25 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
    const [error, setError] = useState('')
    const close = useCallback(() => actions.closeSettings(), [])
    useEscape(close)
@@ -488,7 +489,9 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 -  const shown = SETTINGS_PAGES.some(([key]) => key === page) ? page : 'general'
 +  // Plugin pages (flybot.settings.page) sit after Connectors; a page whose plugin is gone falls back to General.
 +  const extra = useSettingsPages().map(entry => ({ entry, key: `plugin:${entry.id}` }))
-+  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'connectors' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item]))
++  // #2877: the Projects page is a Project surface like the sidebar row; with the plugin off or
++  // absent it is not in the list, so a page asked for by name falls back to General below.
++  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'connectors' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item])).filter(([key]) => key !== 'projects' || projectPresent())
 +  const shown = pages.some(([key]) => key === page) ? page : 'general'
 +  const pluginPage = extra.find(({ key }) => key === shown)?.entry
    const usageFocus = shown === 'usage' && id ? id : null
