@@ -47,7 +47,13 @@ test('#396: bad input is refused, and a secret is never logged', async (t) => {
   const { home, tool, stop } = await boot({ decisions: true })
   t.after(stop)
   assert.match(await tool('record_decision', { option: '   ', choice: 'used' }), /Write the option/)
-  await assert.rejects(tool('record_decision', { option: 'x', choice: 'maybe' }))
+  // #2858: the refusal the Bot reads is part of the contract — the schema names the choices it
+  // accepts, not a generic failure. Pinned from the base run, word for word.
+  await assert.rejects(tool('record_decision', { option: 'x', choice: 'maybe' }), {
+    name: 'ToolArgsError',
+    code: 'INVALID_ARGS',
+    message: 'invalid arguments: "choice" must be one of ["used","rejected"]',
+  })
   const key = `sk-${'abcdefghijklmnopqrstuv'}`
   assert.match(await tool('record_decision', { option: `Leak ${key}`, choice: 'used' }), /never holds a key/)
   assert.equal(existsSync(join(home, 'decisions.jsonl')), false)
