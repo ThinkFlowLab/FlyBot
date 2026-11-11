@@ -76,7 +76,7 @@ Central authorization in `core/src/host/authz.js`, installed after member-auth:
   put on a copy's source and an edit's own Session — so another owner's task stays out, and so does
   an actor-less call while scoping is on; with nobody signed in the list answers the whole host, as
   it always did. The `schedule-*` writes keep their Session and target gates unchanged.
-  `core/src/host/project-assistant.js` sends the assistant's owner with its own `schedule-create`,
+  `plugins/project/src/project-assistant.js` sends the assistant's owner with its own `schedule-create`,
   because the host reads that answer back to learn the id of the row it just wrote.
 - `create-bot` stamps `ownerId` from the actor; `view()` and `live()` narrow to the actor — per-session entries (`questions`, `exchangeTurns`) keep the actor's own, deployment-wide surfaces (agents, secrets, connectors, memory reviews) stay visible while a single member exists and hide with more than one, the same rule as the shared writes. `create-room` refuses a request with neither a member Bot nor any participant (a room with nothing in it would belong to nobody); view() also keeps the shared rooms the actor belongs to and the Bots in them (#50).
 - Watch item: `set-main` lets an owner promote their own Bot to a Main Bot. Main rights inside the Bot team are a shipped product concept; how they compose with multi-human authority is still a team-mode question (not #16 — that issue decided tree child creation). Revisit before team mode turns on.
