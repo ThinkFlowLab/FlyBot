@@ -85,11 +85,32 @@ test('the memory journal keeps its newest lines, like the state journal', async 
   assert.equal(read().includes('Note number 0'), false, 'the oldest changes are folded away, not kept')
   const first = JSON.parse(kept[0])
   assert.equal(first.op, 'truncated', 'the folded changes are named by one record at the top')
-  assert.ok(first.dropped > 0, `the folded record counts what it replaced (got ${first.dropped})`)
+  // 600 changes, the newest 500 kept with one fold line among them: exactly 101 were replaced.
+  assert.equal(first.dropped, 101, `the folded record counts exactly what it replaced (got ${first.dropped})`)
+  assert.equal(first.dropped + kept.length - 1, 600, 'every change is either kept or counted')
 
   // Trimming keeps the newest side: a change made after the prune is on disk.
   await tool('remember', { text: 'Note number last' }, 'b2')
   const after = lines()
   assert.ok(after.length <= KEPT, `the journal still keeps at most ${KEPT} lines (it keeps ${after.length})`)
   assert.match(after.at(-1), /Note number last/, 'the newest change is still recorded after a prune')
+})
+
+test('a second fold keeps the tally without counting its own fold line', async (t) => {
+  const { tool, lines, stop } = start()
+  t.after(() => stop())
+
+  // 800 changes: the journal folded twice. The second fold line replaces the first one, and a line
+  // that is itself a fold is not a change of its own, so it is not counted as one again (#2816).
+  // The newest 500 lines are kept with one fold line among them, so exactly 301 were replaced.
+  for (let i = 0; i < 400; i++) {
+    await tool('remember', { text: `Note number ${i}` }, 'b2')
+    await tool('forget', { entry: `Note number ${i}` }, 'b2')
+  }
+  const kept = lines()
+  assert.ok(kept.length <= KEPT, `the journal keeps at most ${KEPT} lines (it keeps ${kept.length})`)
+  const first = JSON.parse(kept[0])
+  assert.equal(first.op, 'truncated', 'the folded changes are still named by one record at the top')
+  assert.equal(first.dropped, 301, `the second fold counts exactly what it replaced (got ${first.dropped})`)
+  assert.equal(first.dropped + kept.length - 1, 800, 'every change is either kept or counted, across folds')
 })
