@@ -1,0 +1,1 @@
+`docs/subsystems/workflow.md` now says how a run frozen by a whole-workflow Reset that could not release every Bot gets its deadline back — the next graph save arms it, and the deadline releases the remaining Bots again ([#2888](https://github.com/ThinkFlowLab/FlyBot/issues/2888)).
