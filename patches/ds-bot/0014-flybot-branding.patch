@@ -2261,10 +2261,24 @@ diff --git a/test/store.test.js b/test/store.test.js
      autoRoomName: () => 'Room',
      retitleRoom: async () => {},
      warn: (...args) => warnings.push(args),
-@@ -61,6 +61,75 @@ function runtime(t, saved) {
+@@ -61,6 +61,89 @@ function runtime(t, saved) {
    return { rt, home, statePath, warnings, dispose }
  }
  
++// The one sentence a save that refuses to write answers with. A temp name that is a directory, a
++// symbol link or a hard link all reach the same guard, so the sentence is written once and checked
++// word for word: it is what a Bot, and through it the user, reads to learn why nothing was saved.
++const TEMP_REFUSAL = 'is not a plain file of its own, so the Bot team was not written there.'
++
++function refusedTempName(statePath) {
++  return (error) => {
++    assert.equal(error.name, 'Error', 'the refusal is a plain Error')
++    assert.equal(error.code, undefined, 'the refusal carries no code')
++    assert.equal(error.message, `Not saved: ${statePath}.${process.pid}.tmp ${TEMP_REFUSAL}`)
++    return true
++  }
++}
++
 +// P-556 (Chief's ruling: no write-through): the store never writes through a link. The rename
 +// replaces the name, link included, so the target keeps every byte and its last write time, and the
 +// path a person opened is a regular file of this home's own from that save on.
@@ -2342,7 +2356,7 @@ diff --git a/test/store.test.js b/test/store.test.js
    fs.mkdirSync(`${statePath}.${process.pid}.tmp`)
    rt.state.prefs.marker = 'not saved'
 -  await assert.rejects(rt.save(), { code: 'EISDIR' })
-+  await assert.rejects(rt.save())
++  await assert.rejects(rt.save(), refusedTempName(statePath))
    assert.deepEqual(fs.readFileSync(statePath), original)
  })
  
@@ -2499,7 +2513,7 @@ diff --git a/test/store.test.js b/test/store.test.js
 +  fs.writeFileSync(outside, 'OUTSIDE\n')
 +  fs.symlinkSync(outside, `${statePath}.${process.pid}.tmp`)
 +  rt.state.prefs.sweep = 'not saved'
-+  await assert.rejects(rt.save())
++  await assert.rejects(rt.save(), refusedTempName(statePath))
 +  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the file behind the temp link is not written through')
 +  assert.equal(fs.lstatSync(statePath).isSymbolicLink(), false, 'the state file is still a plain file')
 +  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).prefs.sweep, undefined, 'the refused save did not land')
@@ -2536,7 +2550,7 @@ diff --git a/test/store.test.js b/test/store.test.js
 +  fs.writeFileSync(outside, 'OUTSIDE\n')
 +  fs.linkSync(outside, `${statePath}.${process.pid}.tmp`)
 +  rt.state.prefs.sweep = 'not saved'
-+  await assert.rejects(rt.save())
++  await assert.rejects(rt.save(), refusedTempName(statePath))
 +  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n', 'the shared inode keeps its bytes')
 +  assert.equal(fs.lstatSync(outside).nlink, 2, 'the outside file still carries the temp name')
 +  assert.equal(fs.readFileSync(statePath, 'utf8'), before, 'the state file kept what it had')
