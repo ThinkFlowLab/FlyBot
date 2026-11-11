@@ -1049,8 +1049,15 @@ export function install(rt) {
       const lines = kept.slice(-ROOM_READ_MAX)
       if (lines.length === 0) return `"${room.name}" has no messages yet.`
       // A cut read says how much it left out, so a missing message does not read as never said (#2780).
-      const older = kept.length - lines.length
-      return `Latest in "${room.name}" (${older > 0 ? `newest ${lines.length} of ${kept.length}, ` : ''}oldest first):\n${transcript(lines)}`
+      // `kept.length` is only what the log still holds: the store is capped (60 here, 200 in
+      // room-membership.js) while `room.seq` counts every line ever appended, so a room that had
+      // said 500 lines read as "newest 30 of 60" with 440 of them silently gone (#2838). The
+      // dropped lines sit below the oldest retained one, so they count from the reader's floor to
+      // that point, never the lines before the reader joined.
+      const dropped = Math.max(0, (room.seq ?? 0) - (room.log ?? []).length)
+      const total = kept.length + Math.max(0, dropped - Math.max(0, from - 1))
+      const older = total - lines.length
+      return `Latest in "${room.name}" (${older > 0 ? `newest ${lines.length} of ${total}, ` : ''}oldest first):\n${transcript(lines)}`
     },
   }))
 
