@@ -15,13 +15,18 @@ test('a Chinese query finds a Chinese entry, with no word split', () => {
   assert.ok(!searchIndex(index, 'noodles').some(hit => hit.doc.key === 'seat'))
 })
 
-test('a word stem matches across endings, and ranking is deterministic', () => {
+test('a word stem matches across endings, and the ranking is deterministic', () => {
   const docs = [{ key: 'a', ref: 'The user books flights' }, { key: 'b', ref: 'Likes strong coffee' }]
-  const first = searchIndex(buildIndex(docs), 'flight bookings').map(hit => hit.doc.key)
-  assert.deepEqual(first, ['a'])
-  // The same index and query give the same order every time.
-  const index = buildIndex(docs)
-  assert.deepEqual(searchIndex(index, 'flight bookings').map(hit => hit.doc.key), searchIndex(index, 'flight bookings').map(hit => hit.doc.key))
+  const ranked = (entries, query = 'flight bookings') => searchIndex(buildIndex(entries), query).map(hit => hit.doc.key)
+  assert.deepEqual(ranked(docs), ['a'])
+  // Two entries that share every term score the same, so the key breaks the tie: the recall list is
+  // the same on every read, and re-reading the files in another order does not reorder it.
+  const tied = [{ key: 'b', ref: 'the window seat' }, { key: 'a', ref: 'the window seat' }, { key: 'c', ref: 'nothing here' }]
+  assert.deepEqual(ranked(tied, 'window seat'), ['a', 'b'])
+  assert.deepEqual(ranked([...tied].reverse(), 'window seat'), ['a', 'b'])
+  // An entry matching both query words ranks above one that matches a single word.
+  const partial = [{ key: 'only-window', ref: 'window' }, { key: 'both', ref: 'window seat' }]
+  assert.deepEqual(ranked(partial, 'window seat'), ['both', 'only-window'])
 })
 
 test('an empty query, and a tokenization with nothing to keep, return no hits', () => {
