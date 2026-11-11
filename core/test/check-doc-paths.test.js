@@ -4,7 +4,7 @@
 // inline paths relative to their own package or to the runtime home, so judging them against the repo
 // root reports paths that are not broken. #1403 allows narrowing the file list; it forbids an allowlist.
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -48,6 +48,49 @@ export function docPathMisses(root = ROOT, documents = DOCUMENTS) {
   return misses
 }
 
+// Subsystem docs name repo files too, and those rot the same way: on 2026-11-11 ten backticked paths
+// across four docs still named files #2830 had moved into `plugins/project/`, and nothing read them
+// (#2895). Judging every backticked token against the repo root is not the answer — `docs/**` also
+// writes paths relative to its own package, to the runtime home, to another repository and as
+// examples, and #1403 forbids an allowlist. So a token claims a repo path only when it opens with one
+// of the top-level code directories and ends in a code or document extension; that rule found exactly
+// those ten misses when it was written and nothing else on the tree.
+const CODE_ROOTS = ['core', 'plugins', 'patches']
+const FILE_ENDING = /\.(?:js|mjs|cjs|json|md|ts|yml|yaml|sh|css|html|patch|txt)$/
+
+export function isDocRepoPath(token) {
+  if (!token.includes('/') || /\s/.test(token)) return false
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(token)) return false // URL
+  if (/[*<>{}[\]`]/.test(token)) return false // glob or placeholder
+  const [first] = token.split('/')
+  return CODE_ROOTS.includes(first) && FILE_ENDING.test(token)
+}
+
+export function docTreeDocuments(root = ROOT) {
+  return readdirSync(join(root, 'docs'), { recursive: true })
+    .filter(name => String(name).endsWith('.md'))
+    .map(name => `docs/${String(name).split('\\').join('/')}`)
+    .sort()
+}
+
+// Every backticked token outside a fenced block that claims a repo path but misses on disk.
+export function docTreeMisses(root = ROOT, documents = docTreeDocuments(root)) {
+  const misses = []
+  for (const file of documents) {
+    let fenced = false
+    readFileSync(join(root, file), 'utf8').split('\n').forEach((line, index) => {
+      if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; return }
+      if (fenced) return
+      for (const [, token] of line.matchAll(/`([^`]+)`/g)) {
+        const path = token.trim().replace(/\/+$/, '')
+        if (!isDocRepoPath(path) || existsSync(join(root, path))) continue
+        misses.push(`${file}:${index + 1}: ${token.trim()}`)
+      }
+    })
+  }
+  return misses
+}
+
 test('every repo path named in inline code on the root READMEs exists on disk', () => {
   assert.deepEqual(docPathMisses(), [])
 })
@@ -70,4 +113,30 @@ test('the tokenizer skips refs, URLs, globs, placeholders, npm scopes and absolu
     'One miss: `dev/nope`.',
   ].join('\n'))
   assert.deepEqual(docPathMisses(root, ['README.md']), ['README.md:9: dev/nope'])
+})
+
+test('every repo path a subsystem doc names under core/, plugins/ or patches/ exists on disk', () => {
+  assert.deepEqual(docTreeMisses(), [])
+})
+
+test('the doc scan keeps the four shapes that are not repo paths, and names a real miss', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'doc-tree-paths-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  mkdirSync(join(root, 'core', 'test'), { recursive: true })
+  mkdirSync(join(root, 'docs', 'subsystems'), { recursive: true })
+  writeFileSync(join(root, 'core', 'test', 'here.test.js'), '// here\n')
+  writeFileSync(join(root, 'docs', 'subsystems', 'core.md'), [
+    'A fenced block is prose, not a claim:',
+    '```',
+    'core/test/gone-in-a-fence.test.js',
+    '```',
+    'Real: `core/test/here.test.js`, `plugins/project/src/project-board.js` (missing).',
+    'Package-relative, so not a repo path: `scripts/check-arch-docs.mjs`.',
+    'Tool names and branch names: `plugins/list`, `dev/bench.sh`.',
+    'Another repository: `docs/FACE_ROOMS.md`.',
+    'An example of a traversal: `decisions/../outside.md`.',
+  ].join('\n'))
+  assert.deepEqual(docTreeMisses(root, ['docs/subsystems/core.md']), [
+    'docs/subsystems/core.md:5: plugins/project/src/project-board.js',
+  ])
 })
