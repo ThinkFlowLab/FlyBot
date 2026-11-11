@@ -1,1 +1,0 @@
-The source comments, plugin README and subsystem pages that describe the Project domain as its own plugin now cite [#2830](https://github.com/ThinkFlowLab/FlyBot/issues/2830) instead of an unrelated workflow-store fix; no behavior changed. See [#2843](https://github.com/ThinkFlowLab/FlyBot/issues/2843).

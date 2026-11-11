@@ -1,1 +1,0 @@
-The repo-path guard now reads the docs tree: a backticked `core/`, `plugins/` or `patches/` path with a code or document extension that does not exist on disk fails the suite, so a subsystem doc that keeps pointing at a moved file is caught instead of read.

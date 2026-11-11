@@ -1,1 +1,0 @@
-`check-pack.mjs` now packs `@flybot/project`, so the Docker image and the release tarballs carry the plugin the tree already runs; a test compares the pack list with `plugins/*` so a new plugin cannot silently drop out of both again.

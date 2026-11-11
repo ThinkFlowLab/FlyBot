@@ -1,1 +1,0 @@
-A Project board with no Project yet no longer says "create one" in a read-only window: it names the empty state and says why the window cannot create, and only a writable window keeps the create sentence ([#2882](https://github.com/ThinkFlowLab/FlyBot/issues/2882)).
