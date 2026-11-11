@@ -556,7 +556,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
 -import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
-+import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
++import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
  import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
 +import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
@@ -763,7 +763,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
    const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
 -  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map(block => block.text)
 +  const person = typedBy(roster, sessionId, data.turn)
-+  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter(text => text.trim() !== '')
++  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text, botNames(roster)) : block.text).filter(text => text.trim() !== '')
    const running = data.status === 'running'
    // A streaming reply stands in for the activity row.
    useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts.length > 0 ? { text: true } : null)
@@ -935,7 +935,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  const files = Array.isArray(source.attachments) ? source.attachments : []
 +  // #2123: a route with no words of its own is no line, unless it carries files a person can open. The
 +  // empty bubble is dropped on its own too, so an attachment-only line keeps its header and files.
-+  const words = stripTrace(text)
++  const words = stripTrace(text, botNames(roster))
 +  if (String(words ?? '').trim() === '' && files.length === 0) return null
 +  // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
 +  // person's, with their name and a person mark, and the Bot that carried it only named as the route.
@@ -1528,7 +1528,7 @@ diff --git a/src/client/exchange.js b/src/client/exchange.js
  import { createElement as h, Fragment, useEffect, useState } from 'react'
  import { inkText } from './inks.js'
 -import { dayLabel } from './text.js'
-+import { dayLabel, stripTrace } from './text.js'
++import { botNames, dayLabel, stripTrace } from './text.js'
  import { colorOf, BotMark } from './mark.js'
  import { Bubbles } from './cells.js'
 +import { stripFence } from '../shared/preview.js'
@@ -1541,7 +1541,7 @@ diff --git a/src/client/exchange.js b/src/client/exchange.js
 +// leading `Chief → 助手` delegation trace and, for a remote writer, an `<untrusted-message …>` fence.
 +// Neither is content, so the sheet reads the line the way a sidebar row does (#1347) — except that a
 +// reply is not one line: the paragraph breaks are the writer's own and stay exactly as stored.
-+export function exchangeText(text) {
++export function exchangeText(text, names = []) {
 +  if (typeof text !== 'string') return ''
 +  const CLOSE = '</untrusted-message>'
 +  let body = text
@@ -1557,14 +1557,14 @@ diff --git a/src/client/exchange.js b/src/client/exchange.js
 +  }
 +  // The trace can sit above the wrap or just inside it, after the fence's newline; stripFence
 +  // catches the leftover fragments. A trace on a sentence is prose, and stripTrace leaves it.
-+  return stripFence(stripTrace(body.replace(/^\s+/, ''))).trim()
++  return stripFence(stripTrace(body.replace(/^\s+/, ''), names)).trim()
 +}
 +
 +// One stored exchange turn: the same cleaned text reaches the bubble and the message tools' copy.
 +export function ExchangeLine({ entry, roster, actions }) {
 +  const bot = roster.byId[entry.from] ?? { id: entry.from, name: t('You'), color: 'gray' }
 +  // #2123: a stored line that is only routing (a delegation trace, a fence) has no words for a person.
-+  const body = exchangeText(entry.text)
++  const body = exchangeText(entry.text, botNames(roster))
 +  if (body === '') return null
 +  return h('div', { className: 'bt-group-msg' },
 +    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name),

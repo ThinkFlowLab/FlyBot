@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
-import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
+import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { botByName, rosterBot } from './sources.js'
@@ -254,7 +254,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const closing = useClosingText(node, useTurnData)
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
   const person = typedBy(roster, sessionId, data.turn)
-  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter(text => text.trim() !== '')
+  const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map((block, index) => index === 0 ? stripTrace(block.text, botNames(roster)) : block.text).filter(text => text.trim() !== '')
   const running = data.status === 'running'
   // A streaming reply stands in for the activity row.
   useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts.length > 0 ? { text: true } : null)
@@ -442,7 +442,7 @@ export function RemoteMessage({ source, text, roster, actions, sessionId, msgKey
   const files = Array.isArray(source.attachments) ? source.attachments : []
   // #2123: a route with no words of its own is no line, unless it carries files a person can open. The
   // empty bubble is dropped on its own too, so an attachment-only line keeps its header and files.
-  const words = stripTrace(text)
+  const words = stripTrace(text, botNames(roster))
   if (String(words ?? '').trim() === '' && files.length === 0) return null
   // The friend typed this line themselves (Bot Social attested it; the host set `typedBy`): it is the
   // person's, with their name and a person mark, and the Bot that carried it only named as the route.

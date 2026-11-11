@@ -2577,12 +2577,15 @@ function reminderPrompts(text2) {
   }
 }
 var stripHeader = (text2) => text2.replace(HEADER, "");
-var TRACE = /^[ \t]*[^\n→]{1,60}(?:[ \t]*→[ \t]*[^\n→]{1,60})+[ \t]*\n+/;
-function stripTrace(text2) {
+function stripTrace(text2, names = []) {
   if (typeof text2 !== "string") return text2;
-  const line2 = text2.match(TRACE)?.[0];
-  if (!line2 || /[.!?。！？:：,，]/.test(line2.replace(/[^\S\n]*\n+$/, "").replace(/→/g, ""))) return text2;
-  return text2.slice(line2.length).replace(/^\s+/, "");
+  const cut2 = text2.indexOf("\n");
+  const head = (cut2 < 0 ? text2 : text2.slice(0, cut2)).trim();
+  const line2 = dropKnownTrace(head, names);
+  if (line2 === head) return text2;
+  const rest = cut2 < 0 ? "" : text2.slice(cut2 + 1);
+  return line2 === "" ? rest.replace(/^\s+/, "") : `${line2}
+${rest}`;
 }
 var COPY_FENCE = /untrusted-(?:message|file)\b/i;
 var escapeName = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -2783,10 +2786,10 @@ function previewOf(list, id, hiddenTurns = [], unsentTurns = [], names = []) {
   return "";
 }
 function readableLine(text2, names = []) {
-  return dropKnownTrace(collapsedLine(text2), names);
+  return collapsedLine(text2, names);
 }
-function collapsedLine(text2) {
-  return visibleText(stripTrace(stripHeader(`${text2}`)).replace(/\s+/g, " ").trim());
+function collapsedLine(text2, names = []) {
+  return dropKnownTrace(visibleText(stripHeader(`${text2}`)), names);
 }
 function dropKnownTrace(line2, names) {
   const known = [...new Set((Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter((name) => name !== ""))].sort((a, b) => b.length - a.length);
@@ -7240,7 +7243,7 @@ function AssistantCell({ node, groupPart, sessionId, openFile, fileMentions, use
   const closing = useClosingText(node, useTurnData);
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn);
   const person = typedBy(roster, sessionId, data.turn);
-  const texts2 = groupPart === "reasoning" ? [] : data.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "").map((block, index) => index === 0 ? stripTrace(block.text) : block.text).filter((text2) => text2.trim() !== "");
+  const texts2 = groupPart === "reasoning" ? [] : data.blocks.filter((block) => block.kind === "text" && block.text.trim() !== "").map((block, index) => index === 0 ? stripTrace(block.text, botNames(roster)) : block.text).filter((text2) => text2.trim() !== "");
   const running = data.status === "running";
   useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts2.length > 0 ? { text: true } : null);
   if (hidden) return null;
@@ -7408,7 +7411,7 @@ function RemoteMessage({ source, text: text2, roster, actions, sessionId, msgKey
   const face = room2?.origin === "face-to-face";
   const { bot, member, name, handle, carrier, chatId } = remoteSpeaker(source, roster, sessionId);
   const files = Array.isArray(source.attachments) ? source.attachments : [];
-  const words = stripTrace(text2);
+  const words = stripTrace(text2, botNames(roster));
   if (String(words ?? "").trim() === "" && files.length === 0) return null;
   const person = typeof source.remote.typedBy === "string" ? source.remote.typedBy : "";
   if (person) {
@@ -16431,7 +16434,7 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
 // src/client/exchange.js
 var import_react35 = require("react");
 var SHEET_EXIT_MS = 220;
-function exchangeText(text2) {
+function exchangeText(text2, names = []) {
   if (typeof text2 !== "string") return "";
   const CLOSE = "</untrusted-message>";
   let body = text2;
@@ -16443,11 +16446,11 @@ function exchangeText(text2) {
     const inner = close > open ? body.slice(body.indexOf(">", open) + 1, close) : body;
     body = stripFence(body.slice(0, open) + inner + (close > open ? body.slice(close + CLOSE.length) : ""));
   }
-  return stripFence(stripTrace(body.replace(/^\s+/, ""))).trim();
+  return stripFence(stripTrace(body.replace(/^\s+/, ""), names)).trim();
 }
 function ExchangeLine({ entry, roster, actions }) {
   const bot = roster.byId[entry.from] ?? { id: entry.from, name: t("You"), color: "gray" };
-  const body = exchangeText(entry.text);
+  const body = exchangeText(entry.text, botNames(roster));
   if (body === "") return null;
   return (0, import_react35.createElement)(
     "div",
