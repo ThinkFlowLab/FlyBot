@@ -19,6 +19,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 ## Owns
 
 - `core/src/host/hooks.js` — host-side plugin hooks.
+- The plugin switches as an endpoint (#2564, #2868): `plugins/list` answers the five rows from `plugins.js` with `enabled` (the owner's switch in `state.json`) and `installed` (whether `dsh.profile.bundles` lists the package), read fresh from the profile DSH exposes as `profileContext.dir` on every call; `plugins/set` writes one known id and answers the same rows. `installed: false` wins the reading: the row is a switch for a domain this process does not have. Tests: `core/test/plugin-switches.test.js`, `core/test/plugins-list-installed.test.js`.
 - `core/src/host/flybot-feed.js` — the team activity feed (`turn.*`, `tool.*`, `exchange.delivered`, `decision`) folded from `session/event` (#241).
 - `core/src/client/flybot-slots.js` — client slot registry.
 - `core/src/client/flybot-registry.js` — plugin discovery/registration.

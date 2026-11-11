@@ -8,7 +8,12 @@
 // it is off — tools, slots, endpoints and prompt text all come from that call, so they
 // disappear together and come back together. That is why a flip applies at the next
 // start: nothing unloads from a running session.
+//
+// `enabled` is only the owner's wish. Whether the package is in this profile at all is a
+// second fact, read from the profile itself (#2868): a switch can be on for a plugin that
+// was never installed, and then the domain does not exist in the process whatever the row says.
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 export const FEATURE_PLUGINS = Object.freeze([
   { id: 'social', name: 'Bot Social', package: '@flybot/social', purpose: "Chat with a friend's Bots on a Bot Social server." },
@@ -22,22 +27,43 @@ export const FEATURE_PLUGIN_IDS = Object.freeze(FEATURE_PLUGINS.map(plugin => pl
 
 const known = id => FEATURE_PLUGIN_IDS.includes(id)
 
-// The switches as the Settings page shows them: on unless state.json says off.
-export function pluginSwitches(state) {
+// The bundles this profile loads, as dsh reads them (dsh.profile.bundles) — the one list
+// that says a plugin's code is here. `undefined` means there is no profile to ask: a test
+// host or an embedder. Then a row keeps its old shape instead of claiming a plugin is gone,
+// because that answer would be a guess (#2868).
+export function profileBundles(profileDir) {
+  if (typeof profileDir !== 'string' || profileDir === '') return undefined
+  try {
+    const profile = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))
+    const bundles = profile?.dsh?.profile?.bundles
+    return new Set(Array.isArray(bundles) ? bundles.filter(bundle => typeof bundle === 'string') : [])
+  } catch {
+    return undefined
+  }
+}
+
+// The switches as the Settings page shows them: on unless state.json says off. `installed`
+// is the profile's answer, not the switch's: an owner can ask for a plugin this profile
+// never got, and then the row says both — asked for, and not here.
+export function pluginSwitches(state, bundles) {
   const saved = state?.flybot?.plugins ?? {}
-  return FEATURE_PLUGINS.map(plugin => ({ ...plugin, enabled: saved[plugin.id]?.enabled !== false }))
+  return FEATURE_PLUGINS.map(plugin => ({
+    ...plugin,
+    enabled: saved[plugin.id]?.enabled !== false,
+    ...(bundles instanceof Set ? { installed: bundles.has(plugin.package) } : {}),
+  }))
 }
 
 // Writes one switch into the state the next save persists. Only these ids are accepted,
 // so a typo cannot grow a switch nobody reads.
-export function setPluginSwitch(state, id, enabled) {
+export function setPluginSwitch(state, id, enabled, bundles) {
   const name = String(id ?? '')
   if (!known(name)) throw new Error(`flybot: unknown plugin ${JSON.stringify(name)}`)
   if (typeof enabled !== 'boolean') throw new Error('flybot: a plugin switch takes true or false')
   state.flybot ??= {}
   state.flybot.plugins ??= {}
   state.flybot.plugins[name] = { enabled }
-  return pluginSwitches(state)
+  return pluginSwitches(state, bundles)
 }
 
 // Read at the plugin's own apply(), which runs before the host has loaded the team:

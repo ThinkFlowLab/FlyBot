@@ -24,7 +24,7 @@ import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
-import { FEATURE_PLUGIN_IDS, pluginEnabledAtStart, pluginSwitches, setPluginSwitch } from './plugins.js'
+import { FEATURE_PLUGIN_IDS, pluginEnabledAtStart, pluginSwitches, profileBundles, setPluginSwitch } from './plugins.js'
 import { projectHost as createProjectHost } from './project-host.js'
 import { codePoints } from './text.js'
 import { cut } from '../shared/text-boundary.js'
@@ -1114,15 +1114,25 @@ export function install(rt) {
   // Since #2877 each row also answers `loaded`: whether this start really attached the package.
   // A switch left on over a package that is not installed reads `enabled: true, loaded: false`,
   // which is the difference the browser needs before it draws a plugin's own surfaces.
+  // Since #2868 a row also answers `installed`, and that one is the profile's answer rather
+  // than this start's: a package can be installed and not attached (the switch is off, or its
+  // apply() failed), so `loaded` alone cannot say whether the code is here at all.
   const loadedPlugins = () => {
     rt.pluginLoaded ??= new Set()
     return rt.pluginLoaded
   }
-  const pluginRows = () => pluginSwitches(state).map(plugin => ({ ...plugin, loaded: loadedPlugins().has(plugin.id) }))
+  // Whether a plugin is installed is the profile's answer (#2868), read fresh so a
+  // plugin installed while this host runs stops being reported as missing.
+  const profileDir = () => {
+    const dir = ctx.get?.('profileContext')?.dir
+    return typeof dir === 'string' && dir !== '' ? dir : undefined
+  }
+  const switches = () => pluginSwitches(state, profileBundles(profileDir()))
+  const pluginRows = () => switches().map(plugin => ({ ...plugin, loaded: loadedPlugins().has(plugin.id) }))
   api.handle('plugins/list', async () => ({ plugins: pluginRows(), pendingRestart: rt.pluginSwitchPending === true }), { read: true })
   api.handle('plugins/set', async (body = {}) => {
-    const before = pluginSwitches(state).find(plugin => plugin.id === body.id)
-    const plugins = setPluginSwitch(state, body.id, body.enabled)
+    const before = switches().find(plugin => plugin.id === body.id)
+    const plugins = setPluginSwitch(state, body.id, body.enabled, profileBundles(profileDir()))
     if (before !== undefined && before.enabled !== body.enabled) rt.pluginSwitchPending = true
     await rt.save()
     return { plugins, pendingRestart: rt.pluginSwitchPending === true }
