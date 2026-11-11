@@ -260,12 +260,22 @@ export function install(rt) {
     }
     // The Session that is now the chat's own was opened for another row's handle, and a turn runs on
     // the Session's own route (parts.js:965-968) while `forward` sends to the handle in it: without
-    // this, the next line typed here is sent for a handle that no longer has a row.
-    if (typeof rt.selectSessionModel === 'function' && survivor.remote?.handle) {
-      await rt.selectSessionModel(survivor.sessionId, { provider: REMOTE_PROVIDER, model: survivor.remote.handle })
-        .catch(error => warn('ds-bot: route for the merged chat %s not applied: %s', survivor.name, error))
-    }
+    // this, the next line typed here is sent for a handle that no longer has a row. The values it
+    // needs are taken here, because the rows go before the await below.
+    const route = typeof rt.selectSessionModel === 'function' && survivor.remote?.handle
+      ? { sessionId: survivor.sessionId, handle: survivor.remote.handle, name: survivor.name }
+      : undefined
+    // The rows go before that await, not after it: `sync` and `deliver` both call this function and
+    // do not serialise each other (`hooks.js` publishes `remoteChats.sync` without awaiting it while
+    // the inbox loop delivers), so a caller that arrived during the select would still see two rows
+    // and the whole write would run a second time — appending the same boundaries and Sessions to the
+    // survivor again, which is a line shown twice on disk after a restart. Deleting them first stops
+    // that second caller at the top check with one row, before it writes anything.
     for (const bot of ordered.slice(1)) delete state.bots[bot.id]
+    if (route) {
+      await rt.selectSessionModel(route.sessionId, { provider: REMOTE_PROVIDER, model: route.handle })
+        .catch(error => warn('ds-bot: route for the merged chat %s not applied: %s', route.name, error))
+    }
     return true
   }
   const senders = new Map()

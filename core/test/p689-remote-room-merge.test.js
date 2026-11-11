@@ -26,7 +26,9 @@
 //      here is sent for a handle that no longer has a row;
 //   9. an open question card on a duplicate row stays answerable (it moves to the chat's Session);
 //  10. a room with more than one open card is not merged this round — nothing is written and both
-//      cards stay — and the next sync after one answer joins the room with the card still waiting.
+//      cards stay — and the next sync after one answer joins the room with the card still waiting;
+//  11. a caller that arrives during the merge's one `await` (the route select) finds one row and
+//      writes nothing, so no Session becomes a part twice and no line shows twice.
 //
 // Reading 2 reads the history the way `partsOf` (parts.js:299-308) composes it: the chat's earlier
 // parts, oldest first, then the Session that is current. The sketch keeps every duplicate Session
@@ -136,6 +138,23 @@ function host({ state, sessions }) {
   }
   install(rt)
   return { rt, followups, routes }
+}
+
+// A host whose route select does not answer until the reading lets it go: that select is the one
+// `await` inside the merge, so it is where a second caller can arrive. `enteredGate` resolves the
+// first time one gets there; every caller waits for `release()`.
+function gatedHost({ state, sessions }) {
+  const { rt, followups } = host({ state, sessions })
+  let release
+  let entered
+  const gate = new Promise(resolve => { release = resolve })
+  const enteredGate = new Promise(resolve => { entered = resolve })
+  rt.selectSessionModel = async (sessionId, route) => {
+    entered()
+    await gate
+    return { selected: route }
+  }
+  return { rt, followups, release, enteredGate }
 }
 
 // The survivor's chat, read the way the app composes it (parts.js:299-308): earlier parts oldest
@@ -327,6 +346,52 @@ test('P-689: a room with two open question cards is not merged this round', asyn
   assert.equal(state.questions.s2?.id, 'q1', `the card still waiting is not on the chat's Session: ${JSON.stringify(state.questions)}`)
   assert.equal(state.questions.s1, undefined, 'and no earlier part still claims it')
   assert.equal(state.questions.s2.callId, undefined, 'the card keeps no call that belongs to the old part')
+})
+
+// `sync` and `deliver` do not serialise each other (`hooks.js` publishes `remoteChats.sync` without
+// awaiting it while the inbox loop delivers), and the merge has one `await` in the middle of its
+// writes. A caller that arrives in that await must find one row and write nothing: otherwise the
+// boundaries and Sessions are appended a second time and the copy that reaches the state file is a
+// line shown twice after a restart — #2804's "no line is copied" read backwards.
+test('P-689: a caller that arrives during the route select does not merge the room a second time', async () => {
+  const mergedOnce = async (rt, state, added, what) => {
+    const rows = rt.remoteChats.list().map(row => row.id)
+    assert.deepEqual(rows, ['d1'], `${what}: the room is not one row: ${JSON.stringify(rows)}`)
+    const shown = state.bots.d1
+    const parts = partSessions(shown)
+    const twice = parts.filter((sessionId, index) => parts.indexOf(sessionId) !== index)
+    assert.deepEqual(twice, [], `${what}: a Session is a part more than once, so its lines show twice: ${JSON.stringify(parts)}`)
+    const texts = (await linesOfChat(rt, shown)).map(entry => entry.text)
+    const seen = needle => texts.filter(text => text.includes(needle)).length
+    for (const text of [line(1), line(2), line(3), ...added]) {
+      assert.equal(seen(text), 1, `${what}: ${JSON.stringify(text)} shows ${seen(text)} times: ${JSON.stringify(texts)}`)
+    }
+    assert.equal(texts.length, 3 + added.length, `${what}: ${texts.length} lines for ${3 + added.length} written: ${JSON.stringify(texts)}`)
+  }
+
+  // Two deliveries that overlap on the one await in the merge.
+  {
+    const { state, sessions } = duplicates({ count: 3 })
+    const { rt, release, enteredGate } = gatedHost({ state, sessions })
+    const first = rt.remoteChats.deliver({ ...member(2), plugin: 'social', text: 'first new line' })
+    await enteredGate
+    const second = rt.remoteChats.deliver({ ...member(3), plugin: 'social', text: 'second new line' })
+    release()
+    await Promise.all([first, second])
+    await mergedOnce(rt, state, ['first new line', 'second new line'], 'two overlapping deliveries')
+  }
+
+  // A sync and a delivery, the pair `hooks.js` produces without awaiting the sync.
+  {
+    const { state, sessions } = duplicates({ count: 3 })
+    const { rt, release, enteredGate } = gatedHost({ state, sessions })
+    const syncing = rt.remoteChats.sync('social', members())
+    await enteredGate
+    const delivered = rt.remoteChats.deliver({ ...member(2), plugin: 'social', text: 'a line while syncing' })
+    release()
+    await Promise.all([syncing, delivered])
+    await mergedOnce(rt, state, ['a line while syncing'], 'a sync and a delivery')
+  }
 })
 
 // Controls: #2797's one-row rule for a fresh install, and its two-row controls, stay exactly as
