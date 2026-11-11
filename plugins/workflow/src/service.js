@@ -346,12 +346,18 @@ export function createWorkflowService({
     }, delay)
     // A deadline must never hold the host process open by itself.
     handle?.unref?.()
-    timers.set(key, { runId, nodeId, handle })
+    timers.set(key, { runId, nodeId, handle, delay })
   }
 
   function armDeadline(item, run, nodeId) {
-    if (timers.has(`deadline:${run.id}:${nodeId}`)) return
-    setTimerAt('deadline', run.id, nodeId, stepTimeoutMsOf(item), () => expireStep(item.id, run.id, nodeId))
+    // A save keeps the deadline a live step already has, so a hand-off retry never
+    // pushes it out — unless the value the owner saved changed (#P-715): keeping the
+    // armed one left a run frozen by a failed Stop waiting the old 45-minute default
+    // after the owner had saved five minutes, so nothing happened at five.
+    const armed = timers.get(`deadline:${run.id}:${nodeId}`)
+    const delay = stepTimeoutMsOf(item)
+    if (armed !== undefined && armed.delay === delay) return
+    setTimerAt('deadline', run.id, nodeId, delay, () => expireStep(item.id, run.id, nodeId))
   }
 
   // Give every running step the deadline it started with and drop the timers of
@@ -2140,6 +2146,10 @@ export function createWorkflowService({
         const liveRuns = lane.active.filter(itemRun => itemRun.live === true)
         if (lane.last?.live === true && !liveRuns.some(itemRun => itemRun.id === lane.last.id)) liveRuns.push(lane.last)
         const ids = new Set(next.nodes.map(node => node.id))
+        // The deadline a live run is re-armed with comes from the value this save names, not from
+        // the record it is written to after the loop (#P-715): a save that lowers the timeout used
+        // to arm the old 45-minute one, so nothing happened at the five minutes the owner had set.
+        const timingItem = stepTimeoutMinutes === undefined ? item : { ...item, stepTimeoutMinutes }
         for (const run of liveRuns) {
           // endRun settles the node map against the graph it ran on, so it must
           // see the old nodes; the next graph is applied after this loop.
@@ -2159,7 +2169,7 @@ export function createWorkflowService({
           if (ended) endedRuns.push({ run: nextRun, names })
           else if (lane.active.some(itemRun => itemRun.id === run.id)) storeRun(item.id, nextRun)
           else if (lane.last?.id === run.id) lane.last = nextRun
-          syncTimers(item, nextRun)
+          syncTimers(timingItem, nextRun)
         }
         item.nodes = next.nodes
         item.edges = next.edges

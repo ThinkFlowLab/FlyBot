@@ -51,7 +51,7 @@ function scheduler() {
     }
     for (const entry of queue.values()) entry.due -= left
   }
-  return { setTimer, clearTimer, tick, pending: () => queue.size }
+  return { setTimer, clearTimer, tick, pending: () => queue.size, dues: () => [...queue.values()].map(entry => entry.due) }
 }
 
 function harness({ releaseFails = new Set() } = {}) {
@@ -309,3 +309,21 @@ test('a release that never succeeds ends the run at the retry cap and frees the 
   assert.equal(service.STOP_RELEASE_RETRIES, RETRY_ROUNDS, 'the service exports the number of deadline retries a failed Stop gets')
 })
 
+
+// The graph save that changes `stepTimeoutMinutes` is the one that has to arm the
+// new value: the run a failed Stop froze has no deadline left (the Stop consumed
+// it), so the save re-syncs it, and `syncTimers` ran before the record carried the
+// value the same save wrote — the retry then landed at the old 45-minute default
+// and the lane stayed held while nothing could happen at the five minutes the
+// owner had just saved.
+test('a save that changes the step deadline arms the deadline it names', async () => {
+  const releaseFails = new Set()
+  const { svc, timers, flow } = await stoppedButHeld({ releaseFails })
+
+  assert.deepEqual(timers.dues(), [STEP_DEADLINE_MS], 'the frozen run still carries the deadline it was started with')
+  const item = row(svc.state(), flow.id)
+  const saved = svc.saveGraph({ workflowId: flow.id, nodes: item.nodes, edges: item.edges, stepTimeoutMinutes: 5 })
+  assert.equal(saved.ok, true, JSON.stringify(saved))
+  assert.equal(row(svc.state(), flow.id).stepTimeoutMinutes, 5, 'the save stores the value it was given')
+  assert.deepEqual(timers.dues(), [5 * 60_000], 'and the deadline it arms is that value, not the one the record carried before')
+})
