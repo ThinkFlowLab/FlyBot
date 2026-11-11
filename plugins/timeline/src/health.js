@@ -15,8 +15,14 @@ const round = value => Math.round(value * 1000) / 1000
  * whether it is running now, how many of its requests are unanswered, and flags
  * (`errors` / `busy` / `idle` / `waiting`). `ok` is false when any Bot has an `errors` or
  * `waiting` flag; `unhealthy` names them.
+ *
+ * `exportState` (P-699) is the exporter's streak, `{ failures, lastOkAt, lastError }`; the answer
+ * then carries `export: { enabled: true, failing, failures, lastOkAt, lastError }`, so a broken
+ * collector is visible where the operator looks rather than only in a repeated warning. `null`
+ * means no exporter is configured and reads `export: { enabled: false }`. Left out, the answer has
+ * no `export` key at all, so a caller that reads only the team signals is unchanged.
  */
-export function buildHealth(window = {}) {
+export function buildHealth(window = {}, exportState = undefined) {
   const lanes = new Map((window.lanes ?? []).map(lane => [lane.id, lane]))
   // Unanswered requests per sender Bot: where a Bot's work is waiting on someone else.
   const waitingOn = new Map()
@@ -50,5 +56,11 @@ export function buildHealth(window = {}) {
     }
   })
   const unhealthy = bots.filter(bot => bot.flags.some(flag => flag.code === 'errors' || flag.code === 'waiting')).map(bot => bot.id)
-  return { version: 1, now: window.now ?? null, windowMs: window.windowMs ?? null, live: window.live === true, bots, unhealthy, ok: unhealthy.length === 0 }
+  const health = { version: 1, now: window.now ?? null, windowMs: window.windowMs ?? null, live: window.live === true, bots, unhealthy, ok: unhealthy.length === 0 }
+  if (exportState !== undefined) {
+    health.export = exportState === null
+      ? { enabled: false }
+      : { enabled: true, failing: (exportState.failures ?? 0) > 0, failures: exportState.failures ?? 0, lastOkAt: exportState.lastOkAt ?? null, lastError: exportState.lastError ?? null }
+  }
+  return health
 }
