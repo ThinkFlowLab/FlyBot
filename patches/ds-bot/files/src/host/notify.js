@@ -21,6 +21,13 @@ export const MAX_DELAY_MS = 30_000
 // Reminders remembered after they were sent, so a second call for the same one is not a second
 // message. A long-lived host drops the oldest rather than grow without bound.
 const SENT_KEPT = 1_000
+// Keys remembered as permanently refused, so repeating that send is not a second transport call.
+// The bound matters as much as the memory does (#2808): connectors hand over a fresh key per send,
+// so a channel that is gone would otherwise add one entry per attempt for the life of the process.
+// Its own constant rather than SENT_KEPT: the two tables answer different questions (a sent key is
+// never sent again, a refused key is remembered only so it is not re-attempted), so each bound can
+// move on its own evidence.
+const REFUSED_KEPT = 1_000
 
 const invalid = message => Object.assign(new Error(message), { code: 'notify/invalid' })
 
@@ -113,6 +120,11 @@ export function createNotifier(options = {}) {
       }
       if (answer.permanent) {
         refused.set(key, answer.error)
+        // Same shape as `sent`: the oldest refusal makes room for this one, so a channel that is
+        // gone for good costs one entry, not one per send (#2808). What stays is the answer for the
+        // newest keys; the oldest key is tried again, which fails the same way and is still never
+        // retried inside a single send.
+        while (refused.size > REFUSED_KEPT) refused.delete(refused.keys().next().value)
         log('notify: %s cannot reach %s: %s', key, channel, answer.error)
         return { state: 'failed', error: answer.error, attempts: attempt, permanent: true }
       }
