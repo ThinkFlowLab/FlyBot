@@ -19,6 +19,7 @@ const ZH = {
   'Could not read workflows': '读不到工作流。',
   'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.':
     '工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。',
+  'Not installed in this profile.': '当前 profile 未安装。',
   'Could not copy this workflow': '这个工作流复制不了。',
   'Could not save this workflow': '这个工作流保存不了。',
   'Could not rename this workflow': '这个工作流改不了名。',
@@ -1426,6 +1427,7 @@ const ZH = {
   'Member unbound.': '已解除成员的绑定。',
   'Project Assistant': '项目助手',
   'Project Chief': '项目 Chief',
+  'Project Chief: {error}': '项目 Chief：{error}',
   'Chief of this Project': '本项目的 Chief',
   'Pause the daily digest': '暂停每日摘要',
   'Assistant settings saved.': '助手设置已保存。',

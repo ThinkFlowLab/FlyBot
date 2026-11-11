@@ -323,7 +323,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
  
  function SetSection({ title, children }) {
    return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
-@@ -35,6 +35,48 @@ function SetRow({ label, hint, children }) {
+@@ -35,6 +35,64 @@ function SetRow({ label, hint, children }) {
      children ? h('div', { className: 'bt-set-control' }, children) : null)
  }
  
@@ -336,6 +336,36 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +// Settings → Plugins (#2564): the four feature plugins, each with one switch. The
 +// switch writes FlyBot's state.json; the packages stay installed and the next start
 +// reads the answer, so nothing unloads from the session that flipped it.
++// A plugin this profile does not have is not drawn as a switch (#2869): flipping one would
++// claim a domain the process does not have. The row says so and names the command that
++// installs the package, the way the Workflows page names its own (#1381). Project surfaces
++// themselves are gated by #2877, so this page is the one place that still tells the owner
++// the package is missing.
++export function PluginsView({ answer = null, error = '', onFlip }) {
++  const plugins = answer?.plugins ?? []
++  return h('div', null,
++    h(SetSection, { title: t('Plugins') },
++      error ? h('p', { className: 'bt-set-hint', role: 'alert' }, error) : null,
++      answer === null && !error ? h('p', { className: 'bt-set-hint' }, t('Loading…')) : null,
++      plugins.map(plugin => plugin.installed === false
++        ? h('div', { key: plugin.id, className: 'bt-set-row bt-set-missing', 'data-plugin': plugin.id, 'data-installed': 'false' },
++          h('div', { className: 'bt-set-copy' },
++            h('span', null, plugin.name),
++            h('span', { className: 'bt-set-hint' }, `${plugin.package} — ${t(plugin.purpose)}`),
++            h('span', { className: 'bt-set-hint', role: 'status' }, t('Not installed in this profile.'), ' ',
++              h('code', { className: 'bt-install-command' }, `dsh plugin add ${plugin.package}`))))
++        : h(SwitchRow, {
++          key: plugin.id,
++          label: plugin.name,
++          hint: `${plugin.package} — ${t(plugin.purpose)}`,
++          on: plugin.enabled !== false,
++          onChange: enabled => onFlip?.(plugin.id, enabled),
++        })),
++      h('p', { className: 'bt-set-hint' }, answer?.pendingRestart === true
++        ? t('Restart FlyBot to apply the switches you changed.')
++        : t('A switch takes effect the next time FlyBot starts.'))))
++}
++
 +function PluginsPage({ call }) {
 +  const [answer, setAnswer] = useState(null)
 +  const [error, setError] = useState('')
@@ -351,21 +381,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +      .then(value => { setPluginAnswer(value ?? {}); setAnswer(value ?? null); setError('') })
 +      .catch(failure => setError(failure?.message ?? String(failure)))
 +  }
-+  const plugins = answer?.plugins ?? []
-+  return h('div', null,
-+    h(SetSection, { title: t('Plugins') },
-+      error ? h('p', { className: 'bt-set-hint', role: 'alert' }, error) : null,
-+      answer === null && !error ? h('p', { className: 'bt-set-hint' }, t('Loading…')) : null,
-+      plugins.map(plugin => h(SwitchRow, {
-+        key: plugin.id,
-+        label: plugin.name,
-+        hint: `${plugin.package} — ${t(plugin.purpose)}`,
-+        on: plugin.enabled !== false,
-+        onChange: enabled => flip(plugin.id, enabled),
-+      })),
-+      h('p', { className: 'bt-set-hint' }, answer?.pendingRestart === true
-+        ? t('Restart FlyBot to apply the switches you changed.')
-+        : t('A switch takes effect the next time FlyBot starts.'))))
++  return h(PluginsView, { answer, error, onFlip: flip })
 +}
 +
 +// General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
@@ -500,7 +516,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
    const nav = useGlide(shown, { axis: 'y' })
    // A page enters from the right when it is one level in, from the left when it comes
-@@ -178,38 +178,161 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
+@@ -178,38 +178,168 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
    // rendered state off screen (content-visibility).
    const [usageOpened, setUsageOpened] = useState(shown === 'usage')
    if (shown === 'usage' && !usageOpened) setUsageOpened(true)
@@ -598,19 +614,26 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +        // `project-create`, so it says only that there is none rather than pointing at the
 +        // control it just removed. The shared key stays for the board's own empty state (#2489).
 +        ? h('div', { className: 'bt-set-row' }, h('div', { className: 'bt-set-copy' }, h('span', null, t(locked ? 'No Project yet.' : 'No Project yet — create one.'))))
-+        : projects.map(project => h(SetRow, {
-+          key: project.id, label: project.name,
-+          hint: project.workDir === null || project.workDir === undefined ? undefined : project.workDir,
-+        },
-+        h('div', { className: 'bt-project-row-controls' },
-+          h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openProjectBoard(project.id) }, t('Open board')),
-+          locked ? null : h('select', {
-+            className: 'bt-select', 'aria-label': t('Bind to {name}', { name: project.name }), value: '',
-+            onChange: event => { void bind(event.target.value, project) },
++        : projects.flatMap(project => {
++          const chiefError = typeof project.chief?.error === 'string' ? project.chief.error.trim() : ''
++          const row = h(SetRow, {
++            key: project.id, label: project.name,
++            hint: project.workDir === null || project.workDir === undefined ? undefined : project.workDir,
 +          },
-+          h('option', { value: '' }, t('Bind a Bot or group')),
-+          members.map(member => h('option', { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
-+            `${member.kind === 'group' ? t('Group') : t('Bot')} · ${member.name}`))))))),
++          h('div', { className: 'bt-project-row-controls' },
++            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => openProjectBoard(project.id) }, t('Open board')),
++            locked ? null : h('select', {
++              className: 'bt-select', 'aria-label': t('Bind to {name}', { name: project.name }), value: '',
++              onChange: event => { void bind(event.target.value, project) },
++            },
++            h('option', { value: '' }, t('Bind a Bot or group')),
++            members.map(member => h('option', { key: `${member.kind}:${member.id}`, value: `${member.kind}:${member.id}` },
++              `${member.kind === 'group' ? t('Group') : t('Bot')} · ${member.name}`)))))
++          // The Chief a Project got at creation is stored on the record; a failure is written
++          // there and nothing else ever showed it (#2869), so the row carries the host's words.
++          if (chiefError === '') return [row]
++          return [row, h('div', { key: `${project.id}:chief`, className: 'bt-project-chief-error', role: 'alert' }, t('Project Chief: {error}', { error: chiefError }))]
++        })),
 +    bound.length === 0 ? null : h(SetSection, { key: 'bindings', title: t('Bindings') },
 +      bound.map(member => h(SetRow, {
 +        key: `${member.kind}:${member.id}`, label: member.name,
