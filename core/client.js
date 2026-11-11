@@ -9415,7 +9415,7 @@ function useNow2(ms) {
 function openCard(actions, card) {
   actions.closeInbox();
   if (card?.kind === "workflow") {
-    actions.openSettings("workflows", null, "inbox");
+    actions.openSettings("workflows", card.workflow?.id || null, "inbox");
     return;
   }
   actions.openSession(card.chat);
@@ -17471,7 +17471,7 @@ function DeleteModal({ workflow, onClose, onConfirm }) {
     )
   );
 }
-function WorkflowsPage({ call: call4, roster }) {
+function WorkflowsPage({ call: call4, roster, start }) {
   const readOnly = typeof roster?.readOnly === "string" && roster.readOnly.trim() ? roster.readOnly : "";
   const [phase, setPhase] = (0, import_react38.useState)("loading");
   const [pack, setPack] = (0, import_react38.useState)(null);
@@ -17481,10 +17481,16 @@ function WorkflowsPage({ call: call4, roster }) {
   const [renaming, setRenaming] = (0, import_react38.useState)(null);
   const [deleting, setDeleting] = (0, import_react38.useState)(null);
   const invoke = typeof call4 === "function" ? call4 : () => Promise.reject(new Error("Could not read workflows"));
+  const startId = typeof start === "string" && start ? start : "";
+  const seeded = (0, import_react38.useRef)(false);
   const apply2 = (settled) => {
     setPhase(settled.phase);
     setPack(settled.pack);
     setError(settled.error);
+    if (seeded.current || !startId) return;
+    seeded.current = true;
+    const named = settled.phase === "ready" ? (settled.pack?.workflows ?? []).find((item) => item.id === startId) : null;
+    if (named) setOpened({ source: "own", id: named.id });
   };
   (0, import_react38.useEffect)(() => {
     let gone = false;
@@ -19764,7 +19770,7 @@ function SettingsDialog({ page, id, roster, actions, useUpdate, leaving = false 
           shown === "groups" && !room2 ? (0, import_react43.createElement)(GroupsPage, { roster, actions, run }) : null,
           shown === "projects" ? (0, import_react43.createElement)(ProjectsPage, { roster, actions, run, call: call2 }) : null,
           shown === "connectors" ? (0, import_react43.createElement)(ConnectorsPage, { roster, actions }) : null,
-          shown === "workflows" ? (0, import_react43.createElement)(WorkflowsPage, { call: call2, roster }) : null,
+          shown === "workflows" ? (0, import_react43.createElement)(WorkflowsPage, { call: call2, roster, start: id ?? void 0 }) : null,
           pluginPage ? (0, import_react43.createElement)(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call: call2, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === "capabilities" ? (0, import_react43.createElement)(CapabilitiesPage, { roster, actions, run }) : null,
           shown === "plugins" ? (0, import_react43.createElement)(PluginsPage, { call: call2 }) : null,

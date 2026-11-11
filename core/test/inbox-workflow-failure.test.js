@@ -362,3 +362,40 @@ test('P-599: a later successful run of the same task retires its failed card', (
   const cardsStill = [...still.needs, ...still.progress, ...still.done].filter(card => card.kind === 'workflow')
   assert.deepEqual(cardsStill.map(card => card.run.id), ['run-other'])
 })
+
+// #2874: the card names the graph that failed, and the Inbox is the only place the reader
+// starts from — so the row must carry that id all the way to the page. Today it opens the
+// Workflows page with no id, and the reader lands on the list.
+test('#2874: a failed workflow row opens the graph it names, not just the page', () => {
+  const card = runOf(failedRun.id)[0]
+  assert.equal(card.workflow.id, 'delivery')
+  const calls = []
+  openCard({ closeInbox() {}, openSettings: (...args) => calls.push(args), openSession() {} }, card)
+  assert.deepEqual(plain(calls), [['workflows', 'delivery', 'inbox']])
+
+  // Control: a card whose graph carries no id still opens the page, on its list.
+  const gone = []
+  openCard({ closeInbox() {}, openSettings: (...args) => gone.push(args), openSession() {} },
+    { ...card, workflow: { ...card.workflow, id: '' } })
+  assert.deepEqual(plain(gone), [['workflows', null, 'inbox']])
+})
+
+// Settings reads the second argument as the page's own id (Bots, groups and schedules do);
+// WorkflowsPage has to be handed it too, or the row above still lands on the list.
+test('#2874: Settings hands the graph id to the Workflows page as its start', () => {
+  const startOf = (page, id) => {
+    slots.length = 0
+    hookIndex = 0
+    let props = null
+    const walk = (node) => {
+      if (props || node === null || typeof node !== 'object') return
+      if (Array.isArray(node)) { node.forEach(walk); return }
+      if (node.type?.name === 'WorkflowsPage') { props = node.props; return }
+      walk(node.props?.children)
+    }
+    walk(SettingsDialog({ page, id, roster: settingsRoster, actions: { closeSettings() {}, openSettings() {}, notify() {} }, useUpdate: () => ({}) }))
+    return props
+  }
+  assert.equal(startOf('workflows', 'delivery')?.start, 'delivery', 'the page gets the graph id')
+  assert.equal(startOf('workflows')?.start, undefined, 'a page opened without an id starts on the list')
+})

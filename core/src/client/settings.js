@@ -307,7 +307,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
           shown === 'projects' ? h(ProjectsPage, { roster, actions, run, call }) : null,
           shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
-          shown === 'workflows' ? h(WorkflowsPage, { call, roster }) : null,
+          shown === 'workflows' ? h(WorkflowsPage, { call, roster, start: id ?? undefined }) : null,
           pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
           shown === 'plugins' ? h(PluginsPage, { call }) : null,
