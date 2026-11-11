@@ -19,6 +19,10 @@ import { systemPrompt, withTreeBlock, BLOCK_START } from './prompt.js'
 const DAY = 24 * 60 * 60 * 1000
 // #2751: how long one reorganization job may wait on the host before the queue gives up on it.
 const DEFAULT_JOB_TIMEOUT_MS = 10 * 60 * 1000
+// #2811: Node's `setTimeout` cannot hold a delay above a signed 32-bit millisecond count — it
+// rewrites it to 1ms and prints TimeoutOverflowWarning — so a deadline meant as "effectively none"
+// would give up on the next tick. Anything above the ceiling is clamped to it.
+const MAX_JOB_TIMEOUT_MS = 2_147_483_647
 const DOMAIN_AREA = new Map(DOMAINS.map(d => [d.id, d.area]))
 export const DEFAULT_TIDY = Object.freeze({ idleDays: 14, archiveIdleDays: 30, mergeGraceDays: 1, pinDays: 14, keepRuns: 5 })
 /** Mis-archive rename prefix (Chief update_bot / manual): 归档-Name or Archive-Name. Reorg never writes this. */
@@ -313,7 +317,11 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   // host does not answer in time, the queue records the abandoned job, warns with its id and moves
   // on. The work behind it cannot be cancelled, so it may still write later; the queue no longer
   // waits for it.
-  const jobTimeoutMs = Number.isFinite(timeoutConfig) && timeoutConfig > 0 ? timeoutConfig : DEFAULT_JOB_TIMEOUT_MS
+  const configuredTimeoutMs = Number.isFinite(timeoutConfig) && timeoutConfig > 0 ? timeoutConfig : undefined
+  const jobTimeoutMs = configuredTimeoutMs === undefined ? DEFAULT_JOB_TIMEOUT_MS : Math.min(configuredTimeoutMs, MAX_JOB_TIMEOUT_MS)
+  if (configuredTimeoutMs > MAX_JOB_TIMEOUT_MS) {
+    warn(`flybot-tree: jobTimeoutMs=${configuredTimeoutMs}ms is above Node's ${MAX_JOB_TIMEOUT_MS}ms timer ceiling; using ${MAX_JOB_TIMEOUT_MS}ms`)
+  }
   let queue = Promise.resolve()
   let pending = 0
   let jobSeq = 0
