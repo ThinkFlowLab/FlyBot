@@ -403,7 +403,7 @@ control asked for a row the host never sent. The entry in the owner's own Bot ch
 `ProjectAgentEntry` in the header: the roster already carries `bot.projectId`, the entry reads
 `project-read` once for `assistant.botId` and opens that Session through `actions.openSession`; the
 assistant is not a special case of the board, and the Project page keeps its own row. Tests:
-`core/test/project-board-panels.test.js` and `core/test/project-team.test.js`.
+`core/test/project-board-panels.test.js` and `plugins/project/test/project-team.test.js`.
 
 The pane is registered on the existing `shell.overlay` surface and opens at `#project=<id>`; the overlay
 re-reads the hash on `hashchange`, so an entry that writes it while the overlay is mounted still opens
@@ -440,7 +440,7 @@ not on a healthy tick — since #1910 the ticks after a refused open read do ask
 that lands is the one frozen for the rest of the open. Polling
 pauses while a row's own board is open (the hash no longer names this Project) and while the tab is
 hidden, and a read that lands after the pane closed is dropped. Tests:
-`core/test/project-board-view.test.js`, `core/test/project-board.test.js`,
+`core/test/project-board-view.test.js`, `plugins/project/test/project-board.test.js`,
 `core/test/project-board-entry.test.js`.
 
 The pane draws the three host groups beside the columns (#1768) — `Waiting` with the role and how long
