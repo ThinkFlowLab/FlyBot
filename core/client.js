@@ -12530,7 +12530,9 @@ function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) {
         state.project === null ? (0, import_react22.createElement)(
           "div",
           { className: "bt-project-empty" },
-          (0, import_react22.createElement)("p", null, t("No Project yet — create one.")),
+          locked ? null : (0, import_react22.createElement)("p", null, t("No Project yet — create one.")),
+          locked ? (0, import_react22.createElement)("p", null, t("No Project yet.")) : null,
+          locked ? readOnlyLine(import_react22.createElement, roster, actions, { key: "read-only" }) : null,
           (0, import_react22.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
             close();
             actions?.openSettings?.("projects");
