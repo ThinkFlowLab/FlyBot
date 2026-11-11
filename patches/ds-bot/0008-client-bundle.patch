@@ -242,7 +242,7 @@ diff --git a/client.js b/client.js
    Connectors: "连接器",
    "Search connectors": "搜索连接器",
    "No connectors": "暂无连接器",
-@@ -129,6 +129,59 @@ var ZH = {
+@@ -129,6 +129,62 @@ var ZH = {
    "Connecting…": "正在连接…",
    "Could not connect: {error}": "连接失败：{error}",
    "Connected as {account}": "已连接：{account}",
@@ -274,6 +274,9 @@ diff --git a/client.js b/client.js
 +  "Supports {count} optional features": "支持 {count} 项可选功能",
 +  "Reachability": "连通性",
 +  "Read-only": "只读",
++  // #2883: the receipt a Reload press writes.
++  "Reloaded just now — this window is still read-only.": "刚刷新完——这个窗口仍是只读的。",
++  "Reloaded — this window can write again.": "已刷新——这个窗口可以写了。",
 +  "Another FlyBot window holds this team. Change the server there.": "另一个 FlyBot 窗口正在使用这个团队，请在那里更换服务器。",
 +  "Switch server": "切换服务器",
 +  "Server address": "服务器地址",
@@ -2314,7 +2317,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,3885 +1624,9746 @@ function usageOf(list, ids) {
+@@ -1624,3885 +1624,9750 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -10013,6 +10016,22 @@ diff --git a/client.js b/client.js
 -    ),
 -    onClose ? (0, import_react5.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react5.createElement)(CloseIcon)) : null
 -  );
++function reloadReceipt(before, after) {
++  if (!readOnlySaid(before)) return null;
++  return readOnlySaid(after) ? t("Reloaded just now — this window is still read-only.") : t("Reloaded — this window can write again.");
+ }
+-function SecretCard({ bot, request, roster, actions }) {
+-  const [value, setValue] = (0, import_react5.useState)("");
+-  const [scope, setScope] = (0, import_react5.useState)("all");
+-  const [replacing, setReplacing] = (0, import_react5.useState)(false);
+-  const [busy, setBusy] = (0, import_react5.useState)(false);
+-  const [error, setError] = (0, import_react5.useState)("");
+-  const noteId = (0, import_react5.useId)();
+-  const secret = (roster.secrets ?? []).find((entry) => entry.name === request.name);
+-  const run = (promise) => {
+-    setBusy(true);
+-    setError("");
+-    return Promise.resolve(promise).then(() => setValue(""), (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
 +
 +// src/client/inbox.js
 +var import_react15 = require("react");
@@ -10104,19 +10123,7 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
 +  return workflows;
- }
--function SecretCard({ bot, request, roster, actions }) {
--  const [value, setValue] = (0, import_react5.useState)("");
--  const [scope, setScope] = (0, import_react5.useState)("all");
--  const [replacing, setReplacing] = (0, import_react5.useState)(false);
--  const [busy, setBusy] = (0, import_react5.useState)(false);
--  const [error, setError] = (0, import_react5.useState)("");
--  const noteId = (0, import_react5.useId)();
--  const secret = (roster.secrets ?? []).find((entry) => entry.name === request.name);
--  const run = (promise) => {
--    setBusy(true);
--    setError("");
--    return Promise.resolve(promise).then(() => setValue(""), (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
++}
 +var ownBot = (roster, id) => {
 +  const bot = roster.byId?.[id];
 +  if (bot === void 0 || bot.remote) return void 0;
@@ -26944,7 +26951,7 @@ diff --git a/client.js b/client.js
        if (isAgentSessionId(id)) return actions.openAgentSession(id);
        ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
        setPlain(false);
-@@ -13653,18 +13653,27 @@ function apply(ctx) {
+@@ -13653,18 +13653,31 @@ function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -26967,8 +26974,12 @@ diff --git a/client.js b/client.js
 +    // The read-only banner's Reload: read the whole team again, so a window whose other holder let
 +    // go becomes writable without a page reload that would drop what is in the composer (#2247).
 +    reloadTeam: () => {
++      const before = roster.getSnapshot();
 +      reloading += 1;
-+      return pull({ fresh: true }).finally(() => {
++      return pull({ fresh: true }).then(() => {
++        const receipt = reloadReceipt(before, roster.getSnapshot());
++        if (receipt) actions.notify(receipt);
++      }).finally(() => {
 +        reloading -= 1;
 +      });
 +    },

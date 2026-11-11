@@ -43,6 +43,7 @@ import { STORAGE, migrateStorage } from './storage.js'
 import { friendLineNews } from './friend-lines.js'
 import { groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
 import { installLocale, language, t } from './i18n.js'
+import { reloadReceipt } from './read-only.js'
 import { announceStateLink } from './state-link-notice.js'
 import { noteClientError, noteNavigation, quietly } from './diagnostics.js'
 import { ErrorToast, FEEDBACK_CSS } from './feedback.js'
@@ -489,8 +490,14 @@ export function apply(ctx) {
     // The read-only banner's Reload: read the whole team again, so a window whose other holder let
     // go becomes writable without a page reload that would drop what is in the composer (#2247).
     reloadTeam: () => {
+      const before = roster.getSnapshot()
       reloading += 1
-      return pull({ fresh: true }).finally(() => { reloading -= 1 })
+      return pull({ fresh: true })
+        .then(() => {
+          const receipt = reloadReceipt(before, roster.getSnapshot())
+          if (receipt) actions.notify(receipt)
+        })
+        .finally(() => { reloading -= 1 })
     },
     openNewChat: (mode) => { ui.set(state => ({ ...state, newChat: mode, menu: null, palette: null })) },
     openPalette: (query = '') => { ui.set(state => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null })) },
