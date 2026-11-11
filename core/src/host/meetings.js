@@ -335,9 +335,24 @@ export function install(rt) {
   // P-205: the archive folder is touched before any card exists. Claiming the temp file proves the
   // folder takes a write, so a decide that cannot archive its file fails with no card created,
   // instead of leaving cards behind for the retry to double. The handle is filled once the ids exist.
+  // #2865: the temp name is this write's to create, so it is opened `wx`. `w` followed a link
+  // planted at `<file>.tmp-<suffix>`: the decision's bytes landed outside the folder and the `link`
+  // after them made that link the decision file, while the tool still answered `decided` (#1781
+  // writes before it answers). With `wx` an entry already at the name — a link, a folder, a device
+  // — answers `EEXIST` before a byte lands; that is one name this write may not use, so it takes a
+  // fresh suffix, and a write that finds no free name refuses with the path it tried and archives
+  // nothing. The destination needs no such check: `link` never writes through the name it replaces.
   const claimTemp = async (dir, name) => {
-    const temp = `${join(dir, name)}.tmp-${randomBytes(4).toString('hex')}`
-    return { temp, handle: await open(temp, 'w') }
+    let temp = ''
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      temp = `${join(dir, name)}.tmp-${randomBytes(4).toString('hex')}`
+      try {
+        return { temp, handle: await open(temp, 'wx') }
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error
+      }
+    }
+    throw refuse('exists', `no free temp name left for ${temp}`)
   }
   const dropTemp = async ({ temp, handle }) => {
     try {
