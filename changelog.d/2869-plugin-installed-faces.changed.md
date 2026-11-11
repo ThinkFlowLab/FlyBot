@@ -1,1 +1,0 @@
-Settings → Plugins now draws a plugin this profile never installed as a plain "Not installed in this profile." row with the command that installs it, instead of an ON switch for a domain the running process does not have; a Project whose Chief failed now shows the host's error under its row instead of looking empty. See [#2869](https://github.com/ThinkFlowLab/FlyBot/issues/2869).

@@ -1,1 +1,0 @@
-The Feedback page now says when the error log could not be read instead of claiming nothing was recorded: when the host reports the log unreadable, the empty state names the reason (for example `EACCES`) and says the errors it holds are not shown, while any errors the report does carry are drawn unchanged. See [#2833](https://github.com/ThinkFlowLab/FlyBot/issues/2833).

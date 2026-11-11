@@ -1,1 +1,0 @@
-`plugins/list` now has a test holding its `installed` answer to the profile on every call: a plugin package installed or removed while the host runs is reported as installed or not, instead of freezing what the start read.
