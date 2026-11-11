@@ -7,7 +7,7 @@ import { build } from 'esbuild'
 // The inbound friend conversation's display: trace lines, the thinking row, the remote speaker.
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { stripTrace, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople, RoomAvatar, PersonMark } from './src/client/mark.js'",
+    contents: "export { stripTrace, readableLine, previewOf, nameMentions } from './src/client/text.js'\nexport { remoteSpeaker, RemoteMessage, FirstContact } from './src/client/cells.js'\nexport { lookOf, lookBotForRemote, remoteSeed } from './src/client/characters.js'\nexport { roomAvatarPeople, RoomAvatar, PersonMark } from './src/client/mark.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -25,12 +25,18 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { stripTrace, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople, RoomAvatar, PersonMark } = module.exports
+const { stripTrace, readableLine, previewOf, nameMentions, remoteSpeaker, RemoteMessage, FirstContact, lookOf, lookBotForRemote, remoteSeed, roomAvatarPeople, RoomAvatar, PersonMark } = module.exports
 
 test('a reply opening with a delegation trace shows without it', () => {
-  assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.'), 'Hi Chief! Good to hear from you.')
-  assert.equal(stripTrace('user → 助手\nHi!'), 'Hi!')
-  assert.equal(stripTrace('Chief → 程序员 → 后端\n\nDone.'), 'Done.')
+  const names = ['Chief', '助手', '程序员', '后端']
+  assert.equal(stripTrace('Chief → 助手\n\nHi Chief! Good to hear from you.', names), 'Hi Chief! Good to hear from you.')
+  assert.equal(stripTrace('Chief → 程序员 → 后端\n\nDone.', names), 'Done.')
+  // Routing with words on the same line: the words stay, and the line keeps its own shape.
+  assert.equal(stripTrace('Chief → FlyBot Dev-1: 正文', ['Chief', 'FlyBot Dev-1']), '正文')
+  assert.equal(stripTrace('Chief → FlyBot Dev-1: 正文\n下一行', ['Chief', 'FlyBot Dev-1']), '正文\n下一行')
+  // No roster, no proof: a first line that only looks like routing keeps every word (#1408).
+  assert.equal(stripTrace('user → 助手\nHi!'), 'user → 助手\nHi!')
+  assert.equal(stripTrace('user → 助手\nHi!', names), 'user → 助手\nHi!')
   assert.equal(stripTrace('Use Settings → Models first'), 'Use Settings → Models first')
 })
 
@@ -39,6 +45,18 @@ test('ordinary text that merely mentions an arrow is left alone', () => {
     assert.equal(stripTrace(text), text)
   }
   assert.equal(stripTrace(undefined), undefined)
+})
+
+test('a line that only looks like a trace stays whole unless every hop is a known name', () => {
+  // A reply that opens with `X → Y` and a line under it: the arrow is the person's own text, so
+  // both lines are content. Without a roster, no hop can be proven to be a name, so nothing goes.
+  assert.equal(readableLine('Settings → Models 页面\n细则在这里', ['Chief']), 'Settings → Models 页面 细则在这里')
+  assert.equal(readableLine('Settings → Models 页面\n细则在这里', []), 'Settings → Models 页面 细则在这里')
+  // A real delegation trace still goes, on its own line and flat on a sentence.
+  assert.equal(readableLine('Chief → 助手\n细则在这里', ['Chief', '助手']), '细则在这里')
+  assert.equal(readableLine('Chief → FlyBot Dev-1: 见下\n细则在这里', ['Chief', 'FlyBot Dev-1']), '见下 细则在这里')
+  // Punctuation is no longer the test: the same sentence stays whole with a comma as well.
+  assert.equal(readableLine('Settings → Models，细则在这里', ['Chief']), 'Settings → Models，细则在这里')
 })
 
 test('the sidebar preview drops the trace too', () => {

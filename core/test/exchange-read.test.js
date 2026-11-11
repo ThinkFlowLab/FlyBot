@@ -80,13 +80,14 @@ const byText = (tree, label) => {
 }
 
 const chief = { id: 'chief', name: 'Chief', color: 'green' }
-const roster = { bots: [chief], byId: { chief } }
+const assistant = { id: 'assistant', name: '助手', color: 'gray' }
+const roster = { bots: [chief, assistant], byId: { chief, assistant } }
 const row = (text) => ({ entry: { id: 'e1', from: 'chief', time: 1, text }, roster, actions: {} })
 
 test('exchangeText reads a stored line: no trace, no fence, and the paragraph breaks stay', async () => {
   const { exchangeText } = await bundle()
   // A trace on its own first line is routing the tree prompt asked for.
-  assert.equal(exchangeText('Chief → 助手\n\nB kick test 4 > hello'), 'B kick test 4 > hello')
+  assert.equal(exchangeText('Chief → 助手\n\nB kick test 4 > hello', ['Chief', '助手']), 'B kick test 4 > hello')
   // A complete wrap: the marker is format, the inner text is the message.
   assert.equal(exchangeText('<untrusted-message from="User">\nfirst\n\nsecond\n</untrusted-message>'), 'first\n\nsecond')
   // Fragments of a fence an older write left behind.

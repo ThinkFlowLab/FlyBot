@@ -62,7 +62,8 @@ test('#1347: a preview shows the words of a line, never its fence', () => {
 test('#1347: both sidebar row kinds read their preview through that helper', () => {
   const text = read('text.js')
   const preview = text.slice(text.indexOf('export function previewOf'), text.indexOf('const formatTokens'))
-  assert.match(preview, /return visibleText\(/, 'a Bot row preview is sanitized where it is built')
+  assert.match(preview, /visibleText\(/, 'a Bot row preview is sanitized where it is built')
+  assert.match(preview, /dropKnownTrace\(visibleText\(/, 'and the routing line is read after the fence, through names')
   const sidebar = read('sidebar.js')
   assert.match(sidebar, /nameMentions\(visibleText\(room\.preview\), roster\)/, "a group row sanitizes the host's preview")
   const channel = readFileSync(new URL('../src/host/channel.js', import.meta.url), 'utf8')

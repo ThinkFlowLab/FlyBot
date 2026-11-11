@@ -3086,18 +3086,24 @@ diff --git a/src/client/text.js b/src/client/text.js
  // The prompts in a due scheduled task's message. DSH frames it for the model: one
  // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
  export function reminderPrompts(text) {
-@@ -62,6 +62,107 @@ export function reminderPrompts(text) {
+@@ -62,6 +62,113 @@ export function reminderPrompts(text) {
    }
  }
  export const stripHeader = text => text.replace(HEADER, '')
-+// A reply's leading delegation trace ("Chief → 助手", "user → 助手"): routing the tree
-+// prompt asks for, not content. Display only; the model's own text is unchanged.
-+const TRACE = /^[ \t]*[^\n→]{1,60}(?:[ \t]*→[ \t]*[^\n→]{1,60})+[ \t]*\n+/
-+export function stripTrace(text) {
++// A reply's leading delegation trace ("Chief → 助手"): routing the tree prompt asks for, not
++// content. Display only; the model's own text is unchanged. Only a line whose every hop is a known
++// Bot name is routing — `Settings → Models 页面` is a line someone wrote, and a caller with no
++// roster removes nothing (#1408, #2841).
++export function stripTrace(text, names = []) {
 +  if (typeof text !== 'string') return text
-+  const line = text.match(TRACE)?.[0]
-+  if (!line || /[.!?。！？:：,，]/.test(line.replace(/[^\S\n]*\n+$/, '').replace(/→/g, ''))) return text
-+  return text.slice(line.length).replace(/^\s+/, '')
++  const cut = text.indexOf('\n')
++  const head = (cut < 0 ? text : text.slice(0, cut)).trim()
++  const line = dropKnownTrace(head, names)
++  if (line === head) return text
++  const rest = cut < 0 ? '' : text.slice(cut + 1)
++  // A line that was nothing but routing goes with its line break; words it carried stay.
++  if (line === '') return rest.replace(/^\s+/, '')
++  return rest === '' ? line : `${line}\n${rest}`
 +}
 +
 +// The copy export reads a stored turn the way the drawer's rows read one (#130, #1347): a
@@ -3231,7 +3237,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  // parts) are not events in the chat, nor is a request handed back after its line was
  // already shown: deferred, resumed after a restart, or retried after a tool call
  // written as text.
-@@ -200,18 +200,84 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
+@@ -200,18 +200,86 @@ export function commRunOf(order, peers, turn, hiddenTurns = []) {
  }
  
  // Latest visible line for a sidebar row; Bot-to-Bot exchange turns stay out of it.
@@ -3273,12 +3279,14 @@ diff --git a/src/client/text.js b/src/client/text.js
 +// have a second reading of what a preview shows (#1347). `names` is the conversation's real Bot names,
 +// this one included; with no names nothing that merely looks like a trace is removed (#1408).
 +export function readableLine(text, names = []) {
-+  return dropKnownTrace(collapsedLine(text), names)
++  return collapsedLine(text, names)
 +}
 +
-+// The one sanitized reading of a stored line: no header, no fence, no wrap, one line of words.
-+function collapsedLine(text) {
-+  return visibleText(stripTrace(stripHeader(`${text}`)).replace(/\s+/g, ' ').trim())
++// The one sanitized reading of a stored line: no header, no fence, no wrap, one line of words. The
++// fence goes before the trace — a trace the wrap held is still routing — and only then is the
++// collapsed line read for a trace whose every hop is a name (#1347, #1408, #2841).
++function collapsedLine(text, names = []) {
++  return dropKnownTrace(visibleText(stripHeader(`${text}`)), names)
 +}
 +
 +// The outline flattens a reply to one line, so a delegation trace arrives as a prefix: `Chief → 助手 Hi`

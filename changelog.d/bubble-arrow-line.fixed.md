@@ -1,0 +1,1 @@
+A chat bubble no longer deletes a line that merely starts with an arrow: a leading `X → Y` is dropped only when every hop is one of the conversation's Bot names, so a reply opening `Settings → Models 页面` keeps that line and only a real delegation trace goes ([#2841](https://github.com/ThinkFlowLab/FlyBot/issues/2841)).
