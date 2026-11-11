@@ -2118,7 +2118,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      },
    }))
  
-@@ -539,8 +539,23 @@ export function install(rt) {
+@@ -539,8 +539,26 @@ export function install(rt) {
        const { room, error } = rt.pickRoom(args.group, self)
        if (error) return error
        ensureRoomLog(room)
@@ -2133,11 +2133,14 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      if (lines.length === 0) return `"${room.name}" has no messages yet.`
 +      // A cut read says how much it left out, so a missing message does not read as never said (#2780).
 +      // `kept.length` is only what the log still holds: the store is capped (60 here, 200 in
-+      // room-membership.js) while `room.seq` counts every line ever appended, so a room that had
++      // room-membership.js) while `room.seq` counts every number issued, so a room that had
 +      // said 500 lines read as "newest 30 of 60" with 440 of them silently gone (#2838). The
 +      // dropped lines sit below the oldest retained one, so they count from the reader's floor to
-+      // that point, never the lines before the reader joined.
-+      const dropped = Math.max(0, (room.seq ?? 0) - (room.log ?? []).length)
++      // that point, never the lines before the reader joined. A co-seat mention reserves one of those
++      // numbers and writes no line here (#1126), and `room.reserved` counts them, so the cut is
++      // measured between the lines the room said and the lines it kept (#2855).
++      const reserved = Math.max(0, Number(room.reserved) || 0)
++      const dropped = Math.max(0, (room.seq ?? 0) - (room.log ?? []).length - reserved)
 +      const total = kept.length + Math.max(0, dropped - Math.max(0, from - 1))
 +      const older = total - lines.length
 +      return `Latest in "${room.name}" (${older > 0 ? `newest ${lines.length} of ${total}, ` : ''}oldest first):\n${transcript(lines)}`

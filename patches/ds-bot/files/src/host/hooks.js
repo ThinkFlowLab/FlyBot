@@ -1244,15 +1244,21 @@ export function install(rt) {
           } : {}),
         }))
       },
-      // #1126: the next share seq for a mention. Same counter a stored line uses (`room.seq`), so a
-      // second mention is a new remote line instead of a redelivery of seq 0.
+      // #1126: the next share seq for a mention. The mention is stored on the home it is addressed to,
+      // so this room writes no line — but the number still comes from `room.seq`: a second counter
+      // hands the reservation and the next line written here the same number, and a receiving home
+      // keys its one-bubble rule on that number, so the real line is taken for a redelivery (#2863).
+      // `room.reserved` counts the numbers issued that never became a line here, so the room read can
+      // still report the lines the room holds instead of a cut that never happened (#2855).
       takeLineSeq(roomId) {
         const room = rt.roomOf?.(String(roomId ?? ''))
         if (!room) return 1
         if (typeof room.seq !== 'number' || !Number.isFinite(room.seq) || room.seq < 0) {
           room.seq = Array.isArray(room.log) ? room.log.length : 0
         }
+        if (typeof room.reserved !== 'number' || !Number.isFinite(room.reserved) || room.reserved < 0) room.reserved = 0
         room.seq += 1
+        room.reserved += 1
         void Promise.resolve(rt.save?.()).catch(() => {})
         return room.seq
       },
