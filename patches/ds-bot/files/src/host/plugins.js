@@ -66,15 +66,34 @@ export function setPluginSwitch(state, id, enabled, bundles) {
   return pluginSwitches(state, bundles)
 }
 
+// The five switches in one read, as they answer at a start: the plugin's own apply() and
+// the restart banner ask the same file, so they cannot disagree. A missing or unreadable
+// file means "on", the same as a fresh install.
+export function pluginSwitchesAtStart(statePath) {
+  let saved = {}
+  try {
+    saved = JSON.parse(readFileSync(statePath, 'utf8'))?.flybot?.plugins ?? {}
+  } catch {
+    saved = {}
+  }
+  const atStart = {}
+  for (const id of FEATURE_PLUGIN_IDS) atStart[id] = saved?.[id]?.enabled !== false
+  return atStart
+}
+
+// Which switches no longer answer what this start read. Only those need a restart: a
+// flip that comes back to the start value leaves nothing for the next start to load.
+export function pluginSwitchesPending(state, atStart) {
+  const pending = {}
+  for (const plugin of pluginSwitches(state)) pending[plugin.id] = plugin.enabled !== atStart?.[plugin.id]
+  return pending
+}
+
 // Read at the plugin's own apply(), which runs before the host has loaded the team:
 // the file the last run wrote is the answer, and a missing or unreadable file means
 // "on", the same as a fresh install. An id this list does not know is left alone, so a
 // plugin added later without a switch here keeps loading.
 export function pluginEnabledAtStart(statePath, id) {
   if (!known(id)) return true
-  try {
-    return JSON.parse(readFileSync(statePath, 'utf8'))?.flybot?.plugins?.[id]?.enabled !== false
-  } catch {
-    return true
-  }
+  return pluginSwitchesAtStart(statePath)[id]
 }
