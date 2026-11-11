@@ -115,6 +115,18 @@ test('buildInstallCommands: core, social, tree, workflow and project; timeline o
 test('runDoctor: the real repository passes on a Node version at the floor', () => {
   const report = runDoctor({ root: defaultRoot(), nodeVersion: 'v22.19.0' })
   assert.equal(report.ok, true)
+  // An empty check list reads as "ok" too: pin the checks themselves, not only that they passed.
+  const labels = report.checks.map(check => check.label)
+  assert.equal(labels.length, 7, 'the doctor checks the Node floor and every package the install commands cover')
+  assert.deepEqual([...labels].sort(), [
+    'Node v22.19.0 meets the floor 22.19.0',
+    'core is a plugin package named ds-bot',
+    'plugins/project is a plugin package named @flybot/project',
+    'plugins/social is a plugin package named @flybot/social',
+    'plugins/timeline is a plugin package named @flybot/timeline',
+    'plugins/tree is a plugin package named @flybot/tree',
+    'plugins/workflow is a plugin package named @flybot/workflow',
+  ].sort())
   assert.equal(report.checks.every(check => check.ok), true)
 })
 
