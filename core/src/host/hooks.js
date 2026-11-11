@@ -1244,23 +1244,23 @@ export function install(rt) {
           } : {}),
         }))
       },
-      // #1126: the next share seq for a mention. A reservation writes no line, so it must not move
-      // `room.seq`: that counter is how many lines the room said, and the room read subtracts the
-      // retained log from it to report what the cap dropped — a reservation on the same counter read
-      // as a line that had been cut (#2855). `shareSeq` starts above everything already said, so a
-      // second mention is still a new remote line instead of a redelivery of seq 0.
+      // #1126: the next share seq for a mention. The mention is stored on the home it is addressed to,
+      // so this room writes no line — but the number still comes from `room.seq`: a second counter
+      // hands the reservation and the next line written here the same number, and a receiving home
+      // keys its one-bubble rule on that number, so the real line is taken for a redelivery (#2863).
+      // `room.reserved` counts the numbers issued that never became a line here, so the room read can
+      // still report the lines the room holds instead of a cut that never happened (#2855).
       takeLineSeq(roomId) {
         const room = rt.roomOf?.(String(roomId ?? ''))
         if (!room) return 1
-        if (typeof room.shareSeq !== 'number' || !Number.isFinite(room.shareSeq) || room.shareSeq < 0) {
-          const said = typeof room.seq === 'number' && Number.isFinite(room.seq) && room.seq >= 0
-            ? room.seq
-            : Array.isArray(room.log) ? room.log.length : 0
-          room.shareSeq = said
+        if (typeof room.seq !== 'number' || !Number.isFinite(room.seq) || room.seq < 0) {
+          room.seq = Array.isArray(room.log) ? room.log.length : 0
         }
-        room.shareSeq += 1
+        if (typeof room.reserved !== 'number' || !Number.isFinite(room.reserved) || room.reserved < 0) room.reserved = 0
+        room.seq += 1
+        room.reserved += 1
         void Promise.resolve(rt.save?.()).catch(() => {})
-        return room.shareSeq
+        return room.seq
       },
       removeParticipant: (roomId, ref) => rt.removeRoomParticipant?.(roomId, ref),
       upsertFace: spec => rt.upsertFaceRoom?.(spec),
