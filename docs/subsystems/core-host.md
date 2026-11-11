@@ -819,7 +819,12 @@ no second store, no UI-only path and no cron.
   sha256 of the bytes archived. The archive folder is claimed (a temp file opened) before any card
   exists, so a folder that refuses the write fails the decide with no card created, and an attempt
   that died after the cards leaves their ids on the meeting record so a retry keeps them rather
-  than creating a second card.
+  than creating a second card. Since #2865 the temp name is opened `wx`: a link, a folder or a
+  device already at `<file>.tmp-<suffix>` answers `EEXIST` before a byte lands, so the decision
+  takes a fresh suffix instead of writing through it — `w` followed a planted link, put the
+  decision's bytes outside the folder and made that link the decision file while the tool still
+  answered `decided` (#1781 writes before it answers) — and a write that finds no free temp name
+  refuses `exists`, naming the path it tried, with no decision file archived.
 - **Who may close.** A Project Assistant (`role: 'Project Assistant'`) may be invited and record a
   position under its own name; it may not write the decision file or close the meeting, which is
   refused `forbidden`.
