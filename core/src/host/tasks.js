@@ -319,7 +319,10 @@ export function install(rt) {
   }
   const commitTasks = async (before) => {
     try {
-      await rt.save()
+      // P-673: a save that wrote nothing (a stopped host, a team another dsh holds, a team file this
+      // host cannot write) is a refusal too — `save()` only *rejects* when it tried and failed, and
+      // the silent paths used to leave the batch in memory and let the caller post its claim line.
+      await rt.saveOrRefuse()
     } catch (error) {
       restoreTasks(before)
       throw error
