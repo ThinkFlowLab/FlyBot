@@ -30,7 +30,7 @@ function start(state, { config = {}, services } = {}) {
 
 // Listeners run, and tools are listed, in the order they are registered.
 // The Project tools (`project_state`, `project_digest`) are registered by @flybot/project's own
-// apply() since #2684, so they are not in the core's list; plugins/project/test/host.test.js holds
+// apply() since #2830, so they are not in the core's list; plugins/project/test/host.test.js holds
 // that half.
 test('apply registers listeners, tools, and effects in a fixed order', (t) => {
   const { ctx, stop, applyResult } = start()

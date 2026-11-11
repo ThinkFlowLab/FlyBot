@@ -1,4 +1,4 @@
-// The natural day a timestamp falls in, in the caller's time zone (#2684). `en-CA` prints ISO
+// The natural day a timestamp falls in, in the caller's time zone (#2830). `en-CA` prints ISO
 // order, which is what the comparison needs; an unknown zone throws here, so a caller that takes
 // one from outside (a board read) resolves it with `resolveTimeZone` first.
 //

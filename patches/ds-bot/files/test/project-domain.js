@@ -1,4 +1,4 @@
-// The Project domain, applied to a runtime the way a profile has it (#2684).
+// The Project domain, applied to a runtime the way a profile has it (#2830).
 //
 // The domain — Project State, the board, the Project's own Chief, the team dossier, the metrics
 // and the assistant — lives in `plugins/project` now, and it installs its seams in its own

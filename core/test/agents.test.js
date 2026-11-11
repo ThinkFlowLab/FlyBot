@@ -91,7 +91,7 @@ function start(team, { config = {} } = {}) {
     return register(options)
   }
   apply(ctx, { home, ...config })
-  // The Project domain is a peer plugin (#2684): a profile mounts it next to the core, and the
+  // The Project domain is a peer plugin (#2830): a profile mounts it next to the core, and the
   // team tools below include the two it registers.
   applyProject({ flybot: ctx.flybot })
   const call = async (endpoint, payload) => {

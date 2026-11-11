@@ -1,5 +1,5 @@
 // The FlyBot feature plugins and the owner's switch for each (#2564). The Project domain is one
-// of them since #2684: its code lives in plugins/project and this switch is how an owner turns
+// of them since #2830: its code lives in plugins/project and this switch is how an owner turns
 // the whole domain (tools, board, Chief, assistant) off without uninstalling anything.
 //
 // The switch does not install or uninstall anything: the packages stay in the DSH

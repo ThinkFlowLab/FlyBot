@@ -1,4 +1,4 @@
-// The Project domain's host seam (#2684). The domain — Project State, the board, the Project's own
+// The Project domain's host seam (#2830). The domain — Project State, the board, the Project's own
 // Chief, the team dossier, the metrics and the assistant — moved to `plugins/project`, which ships
 // as its own package and therefore cannot import `core/src/*`. The core hands it the two things it
 // cannot get by itself: the runtime it puts its seams on, and the pure helpers the two packages

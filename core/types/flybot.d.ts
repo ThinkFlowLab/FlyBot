@@ -380,7 +380,7 @@ export interface ModelAsk {
 }
 export type ModelAnswer = { ok: true; text: string } | { ok: false; code: string }
 
-/** What `flybot.projectHost()` answers: the core runtime and the shared pure helpers (#2684). */
+/** What `flybot.projectHost()` answers: the core runtime and the shared pure helpers (#2830). */
 export interface ProjectHost {
   runtime: Record<string, unknown>
   helpers: Record<string, unknown>
@@ -397,7 +397,7 @@ export interface FlyBot {
   /** True while another dsh holds the team: no polling, no writes. */
   readOnly(): boolean
   /**
-   * The Project domain host seam (#2684), for `plugins/project` only: the runtime the domain
+   * The Project domain host seam (#2830), for `plugins/project` only: the runtime the domain
    * installs its seams on (`rt.projectBoard`, `rt.projectChief`, `rt.projectTeam`,
    * `rt.projectAssistant`) and the pure helpers the two packages share. `undefined` on a host
    * without it. Not a stable surface for third-party plugins, and absent is not an error: the

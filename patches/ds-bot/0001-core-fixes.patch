@@ -9628,7 +9628,7 @@ diff --git a/test/agents.test.js b/test/agents.test.js
      return register(options)
    }
    apply(ctx, { home, ...config })
-+  // The Project domain is a peer plugin (#2684): a profile mounts it next to the core, and the
++  // The Project domain is a peer plugin (#2830): a profile mounts it next to the core, and the
 +  // team tools below include the two it registers.
 +  applyProject({ flybot: ctx.flybot })
    const call = async (endpoint, payload) => {
@@ -12929,7 +12929,7 @@ diff --git a/test/install.test.js b/test/install.test.js
  
  // Listeners run, and tools are listed, in the order they are registered.
 +// The Project tools (`project_state`, `project_digest`) are registered by @flybot/project's own
-+// apply() since #2684, so they are not in the core's list; plugins/project/test/host.test.js holds
++// apply() since #2830, so they are not in the core's list; plugins/project/test/host.test.js holds
 +// that half.
  test('apply registers listeners, tools, and effects in a fixed order', (t) => {
    const { ctx, stop, applyResult } = start()

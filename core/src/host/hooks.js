@@ -1161,7 +1161,7 @@ export function install(rt) {
     // apply(), and registers nothing when this answers false. Read from the state file
     // the last run wrote, because plugins load before the team is loaded.
     pluginEnabled: id => pluginEnabledAtStart(rt.statePath, id),
-    // The Project domain's host (#2684): plugins/project implements Project State, the board, the
+    // The Project domain's host (#2830): plugins/project implements Project State, the board, the
     // Chief, the dossier, the metrics and the assistant, and cannot import core/src/*. It asks for
     // the runtime and the shared pure helpers once, in its own apply(); a core without the plugin
     // never calls this and keeps the store's existing fallbacks.

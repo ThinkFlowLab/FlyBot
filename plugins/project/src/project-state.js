@@ -159,7 +159,7 @@ export async function readListedFile(dir, path) {
   return { ok: true, path, bytes: bytes.length, sha256: sha256(bytes), mtime: new Date(info.mtimeMs).toISOString(), text: bytes.toString('utf8') }
 }
 
-// The Session's working folder moved to `core/src/host/work-dir.js` (#2684): the meetings module
+// The Session's working folder moved to `core/src/host/work-dir.js` (#2830): the meetings module
 // needs it too, and the plugin takes it back through the host seam. Re-exported so a caller of
 // this reader (`project_state`, the board) keeps importing it from the same module.
 export { workDirFor }

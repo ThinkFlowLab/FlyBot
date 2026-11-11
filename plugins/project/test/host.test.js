@@ -1,4 +1,4 @@
-// The plugin's own half (#2684): what `apply()` puts on a core runtime, and what the owner switch
+// The plugin's own half (#2830): what `apply()` puts on a core runtime, and what the owner switch
 // takes away. The domain's behavior is covered by the tests next to this file, which moved here
 // from `core/test/project-*.test.js`; this one pins the plugin boundary itself:
 //
@@ -55,7 +55,7 @@ const tools = ctx => [...ctx.registeredTools.keys()].sort()
 // Project domain adds and the seams it installs.
 const projectTools = ctx => tools(ctx).filter(name => name.startsWith('project_'))
 
-test('#2684 apply() installs the Project domain on the core runtime and registers its tools', () => {
+test('#2830 apply() installs the Project domain on the core runtime and registers its tools', () => {
   const { ctx, rt, result, stop } = boot()
   try {
     assert.deepEqual(projectTools(ctx), ['project_digest', 'project_state'])
@@ -72,7 +72,7 @@ test('#2684 apply() installs the Project domain on the core runtime and register
   } finally { stop() }
 })
 
-test('#2684 the owner switch off registers no tool and no seam', () => {
+test('#2830 the owner switch off registers no tool and no seam', () => {
   const { ctx, rt, result, stop } = boot({ projectEnabled: false })
   try {
     assert.deepEqual(projectTools(ctx), [])
@@ -86,7 +86,7 @@ test('#2684 the owner switch off registers no tool and no seam', () => {
   } finally { stop() }
 })
 
-test('#2684 project_state answers the Project State listing it always did', async () => {
+test('#2830 project_state answers the Project State listing it always did', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'flybot-project-state-'))
   mkdirSync(join(dir, '.git'))
   writeFileSync(join(dir, 'PROJECT.md'), '# Project\n')
@@ -101,7 +101,7 @@ test('#2684 project_state answers the Project State listing it always did', asyn
   } finally { stop(); rmSync(dir, { recursive: true, force: true, maxRetries: 5 }) }
 })
 
-test('#2684 the plugin binds exactly the helpers the core seam names', () => {
+test('#2830 the plugin binds exactly the helpers the core seam names', () => {
   // `test/host-bind.js` bound the core's own implementations for the pure-function tests; the names
   // the plugin insists on and the names the core hands over are one list.
   assert.deepEqual([...REQUIRED].sort(), [...HELPER_NAMES].sort())

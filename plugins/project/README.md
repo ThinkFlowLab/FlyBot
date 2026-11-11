@@ -5,7 +5,7 @@ The Project domain of FlyBot as a peer plugin (built on ds-bot / DeepSeek Harnes
 ## English
 
 ### What it does
-- **The Project domain, out of the core (#2684).** Project State, the Project board, the Project's
+- **The Project domain, out of the core (#2830).** Project State, the Project board, the Project's
   own Chief, the team dossier, the Project metrics and the Project Assistant used to be
   `core/src/host/project-*.js`. They are this package now: `apply()` installs them on the core
   runtime through `ctx.flybot.projectHost()`, so `rt.projectBoard`, `rt.projectChief`,
@@ -70,7 +70,7 @@ integration cases that read a Project through the store, the channel and the cli
 ## 中文
 
 ### 做什么
-- **Project 域整体搬出 core（#2684）**：Project State、项目看板、项目自己的 Chief、团队档案、
+- **Project 域整体搬出 core（#2830）**：Project State、项目看板、项目自己的 Chief、团队档案、
   项目指标和项目助理原本是 `core/src/host/project-*.js`，现在是这个包。`apply()` 通过
   `ctx.flybot.projectHost()` 把它们装回 core 运行时，所以 `rt.projectBoard`、`rt.projectChief`、
   `rt.projectTeam`、`rt.projectAssistant` 仍是 core 的 store、meetings 与 channel 调用的那几个接缝。
