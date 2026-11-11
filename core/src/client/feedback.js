@@ -106,6 +106,10 @@ export function FeedbackPage({ roster, actions, run, Section, Row }) {
   const browserErrors = report ? clientErrors().map(entry => ({ ...entry, source: 'browser' })) : []
   const entries = [...(report?.entries ?? []), ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time))
   const total = (report?.total ?? 0) + browserErrors.length
+  // The host's additive read failure (#2604): `entries` and `total` are 0 when the log could not
+  // be opened, which is not the same as a log with nothing in it. The reason is the host's own
+  // short word (EACCES), and it explains the empty list rather than any row in it.
+  const unread = typeof report?.unread === 'string' ? report.unread : undefined
   // The list opens with eight errors; anything past them waits behind one control, so a
   // burst of failures does not push the download and clear buttons off the page.
   const shown = allErrors ? entries : entries.slice(0, 8)
@@ -127,7 +131,12 @@ export function FeedbackPage({ roster, actions, run, Section, Row }) {
       issueLink ? [' ', h('a', { key: 'link', href: issueLink, target: '_blank', rel: 'noopener noreferrer' }, t('Open the issue'))] : null) : null,
     h(Section, { key: 'errors', title: report ? t('Recent errors · {count}', { count: total }) : t('Recent errors') },
       shown.length === 0
-        ? h(Row, { label: t('No errors recorded.'), hint: t('Failed model calls and FlyBot problems show here, newest first.') })
+        ? h(Row, {
+            label: unread === undefined
+              ? t('No errors recorded.')
+              : t('The error log could not be read ({reason}); the errors it holds are not shown.', { reason: unread }),
+            hint: t('Failed model calls and FlyBot problems show here, newest first.'),
+          })
         : shown.map((entry, index) => h('div', { key: `${entry.time}-${index}`, className: 'bt-set-row bt-fb-entry', title: entry.text },
             h('span', { className: 'bt-fb-dot', 'data-level': entry.level, 'aria-hidden': true }),
             h('div', { className: 'bt-set-copy' },

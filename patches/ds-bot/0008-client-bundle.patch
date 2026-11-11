@@ -804,7 +804,7 @@ diff --git a/client.js b/client.js
    "Report on GitHub": "在 GitHub 上报告",
    "Copied the diagnostics.": "已复制诊断信息。",
    "Could not copy. Select the text below and copy it.": "无法复制。请选中下面的文字手动复制。",
-@@ -785,10 +785,12 @@ var ZH = {
+@@ -785,10 +785,13 @@ var ZH = {
    "Opened a new GitHub issue. Copy the diagnostics below into it.": "已打开新的 GitHub issue。请把下面的诊断信息复制进去。",
    "Downloaded the log. Keys, tokens, and your home folder are hidden in it.": "已下载日志。里面的密钥、令牌和用户目录都已隐藏。",
    "Cleared the error log.": "已清空错误日志。",
@@ -814,6 +814,7 @@ diff --git a/client.js b/client.js
    "Recent errors · {count}": "最近的错误 · {count}",
    "No errors recorded.": "没有错误记录。",
 -  "Failed model calls and DS Bot problems show here, newest first.": "模型调用失败和 DS Bot 的问题会显示在这里，最新的在前。",
++  "The error log could not be read ({reason}); the errors it holds are not shown.": "错误日志读不出来（{reason}）；里面的错误没有显示。",
 +  "Failed model calls and FlyBot problems show here, newest first.": "模型调用失败和 FlyBot 的问题会显示在这里，最新的在前。",
    "Model call": "模型调用",
    "This window": "这个窗口",
@@ -23085,7 +23086,7 @@ diff --git a/client.js b/client.js
    const openIssue = () => {
      const win = window.open("", "_blank");
      if (win !== null) win.opener = null;
-@@ -10307,69 +10307,83 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
+@@ -10307,69 +10307,87 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
        if (!inline && !copied) setPreview(true);
      }));
    };
@@ -23105,6 +23106,7 @@ diff --git a/client.js b/client.js
    const entries2 = [...report?.entries ?? [], ...browserErrors].sort((a, b) => new Date(b.time) - new Date(a.time));
    const total = (report?.total ?? 0) + browserErrors.length;
 -  const shown = entries2.slice(0, 8);
++  const unread = typeof report?.unread === "string" ? report.unread : void 0;
 +  const shown = allErrors ? entries2 : entries2.slice(0, 8);
    return [
 -    (0, import_react26.createElement)(
@@ -23162,7 +23164,10 @@ diff --git a/client.js b/client.js
        Section,
        { key: "errors", title: report ? t("Recent errors · {count}", { count: total }) : t("Recent errors") },
 -      shown.length === 0 ? (0, import_react26.createElement)(Row3, { label: t("No errors recorded."), hint: t("Failed model calls and DS Bot problems show here, newest first.") }) : shown.map((entry, index) => (0, import_react26.createElement)(
-+      shown.length === 0 ? (0, import_react40.createElement)(Row4, { label: t("No errors recorded."), hint: t("Failed model calls and FlyBot problems show here, newest first.") }) : shown.map((entry, index) => (0, import_react40.createElement)(
++      shown.length === 0 ? (0, import_react40.createElement)(Row4, {
++        label: unread === void 0 ? t("No errors recorded.") : t("The error log could not be read ({reason}); the errors it holds are not shown.", { reason: unread }),
++        hint: t("Failed model calls and FlyBot problems show here, newest first.")
++      }) : shown.map((entry, index) => (0, import_react40.createElement)(
          "div",
          { key: `${entry.time}-${index}`, className: "bt-set-row bt-fb-entry", title: entry.text },
 -        (0, import_react26.createElement)("span", { className: "bt-fb-dot", "data-level": entry.level, "aria-hidden": true }),
