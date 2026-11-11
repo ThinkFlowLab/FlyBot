@@ -1,0 +1,1 @@
+The room read's `newest N of M` total now has a test for the boundary where a co-seat mention's reserved number sits above the reader's join floor and the log has been trimmed ([#2886](https://github.com/ThinkFlowLab/FlyBot/issues/2886)).
