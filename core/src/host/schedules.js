@@ -287,6 +287,9 @@ export function install(rt) {
     const entry = runningRuns.get(sessionId)
     if (entry !== undefined && names.length > 0) entry.failed = `${names.join(', ')} could not answer: the model call failed`
   }
+  // The task ids a Session is running right now, read-only (#2818): approvals.js asks this to tell
+  // a reminder turn, which has nobody to answer a card, from the owner's own turn. No new storage.
+  const scheduledRunOf = sessionId => [...(runningRuns.get(sessionId)?.ids ?? [])]
 
   // A due task DSH has not delivered: seen due at one check and still due MISSED_MS later
   // (DSH delivers a time missed while the app was closed as soon as it starts).
@@ -733,6 +736,7 @@ export function install(rt) {
     scheduleEndpoint: (endpoint, body, actor) => endpoints[endpoint](body ?? {}, actor),
     pauseBotSchedules,
     moveSchedules,
+    scheduledRunOf,
     scheduleRunStarted: runStarted,
     scheduleRunEnded: runEnded,
     scheduleRoundFailed: roundFailed,

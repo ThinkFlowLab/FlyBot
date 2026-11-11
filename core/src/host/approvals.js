@@ -3,8 +3,10 @@
 // the group chat. A Bot's own chat keeps DSH's card; its requests are only noted, so
 // the team view can say who is waiting.
 import { randomUUID } from 'node:crypto'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
 import { OWNER, settled } from './turn-origin.js'
+import { SOURCE_KIND } from './constants.js'
 import { cut } from './text.js'
 
 const OUTCOMES = { allow: 'allowed-once', reject: 'rejected', 'always-bot': 'allowed-once', 'always-room': 'allowed-once' }
@@ -65,14 +67,16 @@ export function install(rt) {
     }
     const step = ephemeralToolVerdict(bot, String(request.toolName ?? ''), request.reason)
     if (step !== undefined) return step
-    if (standingCovers(sessionId, botId, owner?.roomId, approvalKind(String(request.toolName ?? ''), request.reason))) return 'allowed-once'
+    const tool = String(request.toolName ?? '')
+    const kind = approvalKind(tool, request.reason)
+    if (standingCovers(sessionId, botId, owner?.roomId, kind)) return 'allowed-once'
     const id = randomUUID()
     const entry = {
       id,
       sessionId,
       botId,
       ...(owner ? { roomId: owner.roomId } : {}),
-      tool: String(request.toolName ?? ''),
+      tool,
       reason: cut(String(request.reason ?? ''), 500).text,
       detail: rt.callDetail?.(sessionId, request.callId) ?? {},
       at: Date.now(),
@@ -83,7 +87,18 @@ export function install(rt) {
       pending.delete(id)
       rt.noteApproval?.(sessionId, undefined)
     }
-    if (owner === undefined) return Promise.resolve(next()).finally(settled)
+    if (owner === undefined) {
+      // A scheduled run (#2818) has nobody at the keyboard, and DSH's ask() has no timeout: the
+      // card would leave the turn and `state.scheduleRuns` on `running` forever, stacking the next
+      // delivery behind it. A grant this turn could use answered above (`standingCovers`); one it
+      // cannot use is no licence to run unattended, so the only direction here is deny.
+      const scheduled = sessionId === undefined ? [] : rt.scheduledRunOf?.(sessionId) ?? []
+      if (scheduled.length > 0) {
+        rt.warn?.('ds-bot: denied %s in a scheduled run of %s: nobody can approve it', kind, sessionId)
+        return denyScheduledRun(sessionId, kind, tool).finally(settled)
+      }
+      return Promise.resolve(next()).finally(settled)
+    }
     rt.yieldRoomTurn?.(sessionId)
     return new Promise((resolve) => {
       entry.answer = (outcome) => {
@@ -95,6 +110,25 @@ export function install(rt) {
       request.signal?.addEventListener('abort', () => entry.answer('cancelled'), { once: true })
     })
   }, { prepend: true })
+
+  // The sentence a denied reminder leaves in the Session the run already owns (#2818): a job that
+  // quietly does one thing less is the same failure as the hang, just quieter. `inject` is the
+  // running turn's own context path — it opens no new turn, and `role: 'mention'` is nobody's
+  // request (turn-origin.js), so the standing-approval verdict of the rest of the turn is unchanged.
+  async function denyScheduledRun(sessionId, kind, tool) {
+    try {
+      const agent = await rt.resolveAgent(sessionId)
+      const named = kind === tool ? `\`${tool}\`` : `\`${tool}\` (${kind})`
+      agent.inject(createUserMessage({
+        content: [{ type: 'text', text: `A scheduled run asked to use ${named}, but nobody is here to approve it, so it was skipped — run it yourself in this chat, or add a standing approval for \`${tool}\`.` }],
+        source: { kind: SOURCE_KIND, form: 'relay', role: 'mention', exchangeId: randomUUID(), hop: 0 },
+      }))
+      await ctx.sessions.flush(agent.session)
+    } catch (error) {
+      rt.warn?.('ds-bot: the denied scheduled run could not be shown in %s: %s', sessionId, error?.message ?? error)
+    }
+    return 'rejected'
+  }
 
   // A group grant covers the owner's Bots working in that group: the Bot it was granted
   // from and any other Bot of the same owner. Before anyone signs in there is one person,
