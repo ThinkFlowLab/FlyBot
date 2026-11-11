@@ -11,8 +11,8 @@ import { join } from 'node:path'
 import { cut } from './text.js'
 import { defineTool } from './tool-schema.js'
 import { output } from './tools.js'
-import { workDirFor } from './project-state.js'
-import { ASSISTANT_ROLE } from './project-assistant.js'
+import { workDirFor } from './work-dir.js'
+import { ASSISTANT_ROLE } from './constants.js'
 
 // The Project Assistant takes a position like anyone else, but it does not write the decision
 // file and does not close the meeting (the Chief or the owner does).

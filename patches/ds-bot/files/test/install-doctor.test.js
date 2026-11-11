@@ -97,18 +97,19 @@ test('checkPluginPackage: a numeric dsh.bundle.patch fails without throwing', ()
   }
 })
 
-test('buildInstallCommands: core, social, tree and workflow; timeline only on request (#281)', () => {
+test('buildInstallCommands: core, social, tree, workflow and project; timeline only on request (#281)', () => {
   const commands = buildInstallCommands()
-  assert.equal(commands.length, 4)
+  assert.equal(commands.length, 5)
   assert.ok(commands.every(command => command.includes('0.2.1-rc.2')))
   assert.ok(commands[0].includes('path:/core'))
   assert.ok(commands[1].includes('path:/plugins/social'))
   assert.ok(commands[2].includes('path:/plugins/tree'))
   assert.ok(commands[3].includes('path:/plugins/workflow'))
+  assert.ok(commands[4].includes('path:/plugins/project'))
   assert.equal(commands.some(command => command.includes('timeline')), false)
   const all = buildInstallCommands({ timeline: true })
-  assert.equal(all.length, 5)
-  assert.ok(all[4].includes('path:/plugins/timeline'))
+  assert.equal(all.length, 6)
+  assert.ok(all[5].includes('path:/plugins/timeline'))
 })
 
 test('runDoctor: the real repository passes on a Node version at the floor', () => {
@@ -129,7 +130,7 @@ test('runDoctor: an empty root fails the plugin checks', () => {
     const report = runDoctor({ root: dir, nodeVersion: 'v22.19.0' })
     assert.equal(report.ok, false)
     const pluginChecks = report.checks.filter(check => check.label.includes('plugin package'))
-    assert.equal(pluginChecks.length, 5)
+    assert.equal(pluginChecks.length, 6)
     assert.ok(pluginChecks.every(check => !check.ok))
   } finally {
     rmSync(dir, { recursive: true, force: true })

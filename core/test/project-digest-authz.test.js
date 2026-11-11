@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { installProjectDomain } from './project-domain.js'
 
 // One member has signed in (#1846): that single line is what turns `authzEnforced()` on, and it is
 // the only difference from `project-assistant.test.js`'s seed. `owner-1` and `owner-2` own the two
@@ -70,6 +71,7 @@ async function start() {
     sessions: { flush: async () => {} },
   })
   const rt = createRuntime(ctx, { home })
+  installProjectDomain(rt)
   await rt.load()
   rt.connectorsView = () => [{ id: 'github', name: 'GitHub', state: 'ready', account: 'Birfy' }]
   rt.deliver = async () => {}

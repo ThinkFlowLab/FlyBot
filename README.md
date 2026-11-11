@@ -111,7 +111,7 @@ npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add "github:ThinkFlowLab
 ```
 
 The first line is the FlyBot core (package `ds-bot`); the two plugins are what turn it into a team. Add
-`/plugins/workflow` or `/plugins/timeline` the same way if you want them.
+`/plugins/workflow`, `/plugins/timeline` or `/plugins/project` the same way if you want them.
 
 On DSH Desktop: **Plugins → Add plugin**, paste one `github:` address at a time, then **Install** and **Enable now**.
 
@@ -153,7 +153,8 @@ old credentials are kept as a backup. Details: [social subsystem](docs/subsystem
 
 - Core options, models and updates: [`core/README.md`](core/README.md)
 - Plugins: [`tree`](plugins/tree/README.md), [`social`](plugins/social/README.md),
-  [`workflow`](plugins/workflow/README.md), [`timeline`](plugins/timeline/README.md)
+  [`workflow`](plugins/workflow/README.md), [`timeline`](plugins/timeline/README.md),
+  [`project`](plugins/project/README.md)
 - Architecture and subsystem pages: [docs/architecture.md](docs/architecture.md),
   [docs/subsystems/](docs/subsystems/README.md)
 - Known issues: [docs/known-issues.md](docs/known-issues.md)

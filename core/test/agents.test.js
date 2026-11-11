@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
+import { apply as applyProject } from '../../plugins/project/index.js'
 import { TEAM_TOOLS } from '../src/host/constants.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -90,6 +91,9 @@ function start(team, { config = {} } = {}) {
     return register(options)
   }
   apply(ctx, { home, ...config })
+  // The Project domain is a peer plugin (#2684): a profile mounts it next to the core, and the
+  // team tools below include the two it registers.
+  applyProject({ flybot: ctx.flybot })
   const call = async (endpoint, payload) => {
     const response = await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))
     return response.json()

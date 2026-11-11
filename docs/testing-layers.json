@@ -56,6 +56,15 @@
       "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
     },
     {
+      "id": "plugins/project",
+      "layer": "L1",
+      "paths": [
+        "plugins/project/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plugins/project test",
+      "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
+    },
+    {
       "id": "plugins/timeline",
       "layer": "L1",
       "paths": [

@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { installProjectDomain } from './project-domain.js'
 
 const team = () => ({
   version: 2,
@@ -37,6 +38,7 @@ async function boot() {
     sessions: { flush: async () => {} },
   })
   const rt = createRuntime(ctx, { home })
+  installProjectDomain(rt)
   await rt.load()
   const dir = mkdtempSync(join(tmpdir(), 'ds-bot-meetings-work-'))
   const exec = (id = 'a') => ({ agent: { id, session: { header: { cwd: dir } } } })
@@ -268,7 +270,7 @@ test('#1861: a severe decision is refused when its only agree position is a prox
 test('#1861: the decision card exposes the participants and their proxies', async (t) => {
   const { rt, open, meeting, stop } = await boot()
   t.after(stop)
-  const { decisionCardOf } = await import('../src/host/project-board.js')
+  const { decisionCardOf } = await import('../../plugins/project/src/project-board.js')
   const id = await open('Who holds the storage decision?', ['Chief', 'Owner'])
   await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'ship it', speaksFor: 'Owner' })
   const card = decisionCardOf(rt.state.meetings[id])

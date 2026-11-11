@@ -80,6 +80,7 @@ The tables below are generated: edit `docs/testing-layers.json`, then run
 | `core` | L1 | `core/test/**/*.test.js` | `npm --prefix core test` |
 | `plugins/social` | L1 | `plugins/social/test/**/*.test.js` | `npm --prefix plugins/social test` |
 | `plugins/tree` | L1 | `plugins/tree/test/**/*.test.js` | `npm --prefix plugins/tree test` |
+| `plugins/project` | L1 | `plugins/project/test/**/*.test.js` | `npm --prefix plugins/project test` |
 | `plugins/timeline` | L1 | `plugins/timeline/test/**/*.test.js` | `npm --prefix plugins/timeline test` |
 | `plugins/workflow` | L1 | `plugins/workflow/test/**/*.test.js` | `npm --prefix plugins/workflow test` |
 | `scripts` | L1 | `.github/scripts/*.test.mjs`<br>`policy/*.test.mjs` | `node --test ".github/scripts/*.test.mjs" "policy/*.test.mjs"` |

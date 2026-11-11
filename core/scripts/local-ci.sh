@@ -65,3 +65,7 @@ echo "=== $step ==="
 step="plugin tests (workflow)"
 echo "=== $step ==="
 (cd ../plugins/workflow && npm test)
+
+step="plugin tests (project)"
+echo "=== $step ==="
+(cd ../plugins/project && npm test)

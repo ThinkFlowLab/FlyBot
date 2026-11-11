@@ -12,7 +12,7 @@
 // Whose turn it is comes from turns.js's recorded verdict (turn-origin.js): `owner` is the user's
 // own message or a line they wrote in a group; everything else — `scheduled`, `other`, or a turn
 // whose messages carried no verdict — is system-started and waits for the counter to reset.
-import { dayKey } from './project-metrics.js'
+import { dayKey } from './day-key.js'
 import { OWNER } from './turn-origin.js'
 
 // The cap a fresh team starts with, and the day a team counted in before it had a zone of its own.

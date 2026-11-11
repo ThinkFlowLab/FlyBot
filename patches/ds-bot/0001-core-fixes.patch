@@ -9512,7 +9512,13 @@ diff --git a/src/shared/mentions.js b/src/shared/mentions.js
 diff --git a/test/agents.test.js b/test/agents.test.js
 --- a/test/agents.test.js
 +++ b/test/agents.test.js
-@@ -9,6 +9,12 @@ import { fakeContext } from './fake-ctx.js'
+@@ -4,11 +4,18 @@ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ import { test } from 'node:test'
+ import { apply } from '../index.js'
++import { apply as applyProject } from '../../plugins/project/index.js'
+ import { TEAM_TOOLS } from '../src/host/constants.js'
+ import { fakeContext } from './fake-ctx.js'
  
  const flush = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve() }
  
@@ -9560,6 +9566,16 @@ diff --git a/test/agents.test.js b/test/agents.test.js
          archived.push(sessionId)
        },
      },
+@@ -65,6 +65,9 @@ function start(team, { config = {} } = {}) {
+     return register(options)
+   }
+   apply(ctx, { home, ...config })
++  // The Project domain is a peer plugin (#2684): a profile mounts it next to the core, and the
++  // team tools below include the two it registers.
++  applyProject({ flybot: ctx.flybot })
+   const call = async (endpoint, payload) => {
+     const response = await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))
+     return response.json()
 @@ -74,7 +74,7 @@ function start(team, { config = {} } = {}) {
      await ctx.dispose()
      rmSync(home, { recursive: true, force: true, maxRetries: 5 })
@@ -12850,7 +12866,15 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -34,9 +34,15 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -29,14 +29,23 @@ function start(state, { config = {}, services } = {}) {
+ }
+ 
+ // Listeners run, and tools are listed, in the order they are registered.
++// The Project tools (`project_state`, `project_digest`) are registered by @flybot/project's own
++// apply() since #2684, so they are not in the core's list; plugins/project/test/host.test.js holds
++// that half.
+ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+   const { ctx, stop, applyResult } = start()
    t.after(stop)
    assert.equal(applyResult, undefined)
    assert.deepEqual(ctx.calls, [
@@ -12874,12 +12898,11 @@ diff --git a/test/install.test.js b/test/install.test.js
      'tool list_models',
      'tool create_group',
      'tool update_group',
-@@ -60,11 +60,18 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -60,11 +60,17 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'tool delete_capability',
      'tool attach_capability',
      'tool detach_capability',
 +    'tool track_tasks',
-+    'tool project_state',
 +    'tool meeting',
      'effect ds-bot: chat index',
 +    'effect ds-bot: external room participants',
@@ -12907,7 +12930,7 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on llm/stream',
      'on agent/status',
      'tool request_secret',
-@@ -91,12 +91,24 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+@@ -91,12 +91,23 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
      'on llm/stream',
      'effect ds-bot: load secrets',
      'effect ds-bot: connectors',
@@ -12918,7 +12941,6 @@ diff --git a/test/install.test.js b/test/install.test.js
      'effect ds-bot: capabilities',
 +    'effect ds-bot: missed scheduled runs',
 +    'tool bot_schedules',
-+    'tool project_digest',
 +    'effect ds-bot: automation tasks default',
      'effect ds-bot: usage ledger',
      'on llm/stream',

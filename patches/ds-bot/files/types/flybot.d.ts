@@ -380,6 +380,12 @@ export interface ModelAsk {
 }
 export type ModelAnswer = { ok: true; text: string } | { ok: false; code: string }
 
+/** What `flybot.projectHost()` answers: the core runtime and the shared pure helpers (#2684). */
+export interface ProjectHost {
+  runtime: Record<string, unknown>
+  helpers: Record<string, unknown>
+}
+
 export interface FlyBot {
   version: 1
   /** Plugin this handle is scoped to; 'shared' for the unscoped service. */
@@ -390,6 +396,14 @@ export interface FlyBot {
   ready(): Promise<void>
   /** True while another dsh holds the team: no polling, no writes. */
   readOnly(): boolean
+  /**
+   * The Project domain host seam (#2684), for `plugins/project` only: the runtime the domain
+   * installs its seams on (`rt.projectBoard`, `rt.projectChief`, `rt.projectTeam`,
+   * `rt.projectAssistant`) and the pure helpers the two packages share. `undefined` on a host
+   * without it. Not a stable surface for third-party plugins, and absent is not an error: the
+   * core's Project endpoints keep their fallbacks.
+   */
+  projectHost?(): ProjectHost
   /**
    * A Bot's own memory, for a plugin the host allows (#450 item 1). Off unless the host names the
    * plugin in config.flybot.memoryPlugins: `read` returns `[]` otherwise, and `append` resolves

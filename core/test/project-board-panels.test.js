@@ -15,6 +15,7 @@ import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { installProjectDomain } from './project-domain.js'
 
 // The entry carries the dictionary beside the panels: `t` and `hostText` reach the panel only
 // through the same copy of `i18n.js`, and that is true inside one bundle and nowhere else.
@@ -128,6 +129,7 @@ async function startHost(t, state = seed()) {
     sessions: { flush: async () => {} },
   })
   const rt = createRuntime(ctx, { home })
+  installProjectDomain(rt)
   await rt.load()
   t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
   return rt

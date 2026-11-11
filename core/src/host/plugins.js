@@ -1,4 +1,6 @@
-// The four FlyBot feature plugins and the owner's switch for each (#2564).
+// The FlyBot feature plugins and the owner's switch for each (#2564). The Project domain is one
+// of them since #2684: its code lives in plugins/project and this switch is how an owner turns
+// the whole domain (tools, board, Chief, assistant) off without uninstalling anything.
 //
 // The switch does not install or uninstall anything: the packages stay in the DSH
 // profile as they are, and the answer lives in FlyBot's own state.json. A plugin reads
@@ -13,20 +15,21 @@ export const FEATURE_PLUGINS = Object.freeze([
   { id: 'tree', name: 'Tree', package: '@flybot/tree', purpose: 'Run Bots as a tree under a coordinator.' },
   { id: 'timeline', name: 'Timeline', package: '@flybot/timeline', purpose: 'Read the team activity as a timeline.' },
   { id: 'workflow', name: 'Workflow', package: '@flybot/workflow', purpose: 'Run workflow graphs across several Bots.' },
+  { id: 'project', name: 'Project', package: '@flybot/project', purpose: 'Run a Project: Project State, its board, its own Chief, its team and its assistant.' },
 ])
 
 export const FEATURE_PLUGIN_IDS = Object.freeze(FEATURE_PLUGINS.map(plugin => plugin.id))
 
 const known = id => FEATURE_PLUGIN_IDS.includes(id)
 
-// The four switches as the Settings page shows them: on unless state.json says off.
+// The switches as the Settings page shows them: on unless state.json says off.
 export function pluginSwitches(state) {
   const saved = state?.flybot?.plugins ?? {}
   return FEATURE_PLUGINS.map(plugin => ({ ...plugin, enabled: saved[plugin.id]?.enabled !== false }))
 }
 
-// Writes one switch into the state the next save persists. Only these four ids are
-// accepted, so a typo cannot grow a fifth switch nobody reads.
+// Writes one switch into the state the next save persists. Only these ids are accepted,
+// so a typo cannot grow a switch nobody reads.
 export function setPluginSwitch(state, id, enabled) {
   const name = String(id ?? '')
   if (!known(name)) throw new Error(`flybot: unknown plugin ${JSON.stringify(name)}`)

@@ -25,6 +25,7 @@ import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
 import { pluginEnabledAtStart, pluginSwitches, setPluginSwitch } from './plugins.js'
+import { projectHost as createProjectHost } from './project-host.js'
 import { codePoints } from './text.js'
 import { cut } from '../shared/text-boundary.js'
 import { EPHEMERAL_DENIED_TOOLS } from './tools.js'
@@ -1160,6 +1161,11 @@ export function install(rt) {
     // apply(), and registers nothing when this answers false. Read from the state file
     // the last run wrote, because plugins load before the team is loaded.
     pluginEnabled: id => pluginEnabledAtStart(rt.statePath, id),
+    // The Project domain's host (#2684): plugins/project implements Project State, the board, the
+    // Chief, the dossier, the metrics and the assistant, and cannot import core/src/*. It asks for
+    // the runtime and the shared pure helpers once, in its own apply(); a core without the plugin
+    // never calls this and keeps the store's existing fallbacks.
+    projectHost: () => createProjectHost(rt),
     plugin,
     scope: build,
     bot: {

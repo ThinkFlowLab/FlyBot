@@ -29,6 +29,9 @@ function start(state, { config = {}, services } = {}) {
 }
 
 // Listeners run, and tools are listed, in the order they are registered.
+// The Project tools (`project_state`, `project_digest`) are registered by @flybot/project's own
+// apply() since #2684, so they are not in the core's list; plugins/project/test/host.test.js holds
+// that half.
 test('apply registers listeners, tools, and effects in a fixed order', (t) => {
   const { ctx, stop, applyResult } = start()
   t.after(stop)
@@ -68,7 +71,6 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'tool attach_capability',
     'tool detach_capability',
     'tool track_tasks',
-    'tool project_state',
     'tool meeting',
     'effect ds-bot: chat index',
     'effect ds-bot: external room participants',
@@ -117,7 +119,6 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'effect ds-bot: capabilities',
     'effect ds-bot: missed scheduled runs',
     'tool bot_schedules',
-    'tool project_digest',
     'effect ds-bot: automation tasks default',
     'effect ds-bot: usage ledger',
     'on llm/stream',
