@@ -818,32 +818,49 @@ test('#2762: a kill -9 inside the write leaves the previous complete definition,
 
   // The window a crash has to land in: the truncating writer has already left the old length, or the
   // atomic one has a temp name growing beside the untouched target.
+  // An empty window is normal (#2814): the writer renames its temp away, so a name the scan listed
+  // can be gone by the time it is looked at, and that sample simply has nothing in flight.
+  const sizeOf = (name) => {
+    try {
+      return statSync(join(dir, name)).size
+    } catch (error) {
+      if (error.code === 'ENOENT') return undefined
+      throw error
+    }
+  }
   const inWindow = () => {
     for (const name of readdirSync(dir)) {
       if (!name.startsWith('big.json.') || !name.endsWith('.tmp')) continue
-      if (statSync(join(dir, name)).size > 0) return { temp: name }
+      const size = sizeOf(name)
+      if (size === undefined) return false
+      if (size > 0) return { temp: name }
     }
-    if (!existsSync(file)) return { target: 'missing' }
-    const size = statSync(file).size
+    const size = sizeOf('big.json')
+    if (size === undefined) return { target: 'missing' }
     return size !== oldText.length ? { target: size } : undefined
   }
 
   let cut
   let left = ''
+  let samplesWithWindow = 0
   for (let attempt = 0; attempt < 3 && (left === '' || (left !== oldText && left !== newText)); attempt += 1) {
     const run = childProcess(WRITER, [dir, join(root, 'input.json'), join(root, 'input.json'), '1'])
     const deadline = Date.now() + 30_000
     cut = undefined
-    while (cut === undefined && Date.now() < deadline && !run.exited) {
+    while (!cut && Date.now() < deadline && !run.exited) {
       cut = inWindow()
-      if (cut === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+      if (cut) samplesWithWindow += 1
+      else await new Promise((resolve) => setTimeout(resolve, 1))
     }
     assert.ok(cut, `the writer never showed a write in flight\nstdout: ${run.output}\nstderr: ${run.errors}`)
     run.child.kill('SIGKILL')
     await run.closed
     left = readFileSync(file, 'utf8')
   }
-  t.diagnostic(`cut the write inside the window: ${JSON.stringify(cut)}`)
+  // The loop above already fails without a window; the count makes the requirement explicit rather
+  // than a side effect of `cut` (#2814: an empty window is a sample to skip, never a reason to stop).
+  assert.ok(samplesWithWindow > 0, 'at least one sample saw the write in flight')
+  t.diagnostic(`cut the write inside the window: ${JSON.stringify(cut)} after ${samplesWithWindow} samples`)
 
   let onDisk
   assert.doesNotThrow(() => { onDisk = JSON.parse(left) }, 'the killed write left a complete definition behind')
