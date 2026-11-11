@@ -13056,7 +13056,7 @@ diff --git a/client.js b/client.js
  @keyframes bt-update-pop{from{opacity:0;transform:scale(.96);filter:blur(4px)}}
  .bt-update-title{font-size:14px;line-height:20px;font-weight:600}
  .bt-update-text{margin-top:2px;font-size:12.5px;line-height:18px;color:var(--bt-ink-2)}
-@@ -5491,1679 +5491,2811 @@ var SIDEBAR_CSS = `
+@@ -5491,1679 +5491,2813 @@ var SIDEBAR_CSS = `
  .bt-agent-sub[data-open] .bt-agent-sub-row{animation:bt-agent-row-in .24s ease both;animation-delay:calc(var(--i, 0)*30ms)}
  @keyframes bt-agent-row-in{from{opacity:0;filter:blur(4px)}to{opacity:1;filter:blur(0)}}
  @media (prefers-reduced-motion:reduce){.bt-agent-sub{transition:none}.bt-agent-sub .bt-agent-sub-row{animation:none}}
@@ -14925,7 +14925,9 @@ diff --git a/client.js b/client.js
 +        state.project === null ? (0, import_react22.createElement)(
 +          "div",
 +          { className: "bt-project-empty" },
-+          (0, import_react22.createElement)("p", null, t("No Project yet — create one.")),
++          locked ? null : (0, import_react22.createElement)("p", null, t("No Project yet — create one.")),
++          locked ? (0, import_react22.createElement)("p", null, t("No Project yet.")) : null,
++          locked ? readOnlyLine(import_react22.createElement, roster, actions, { key: "read-only" }) : null,
 +          (0, import_react22.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
 +            close();
 +            actions?.openSettings?.("projects");

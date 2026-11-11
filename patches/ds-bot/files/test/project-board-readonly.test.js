@@ -121,3 +121,30 @@ test('a writable window still draws the same four writes', async () => {
   const nodes = await openSettings({ actions: {}, call: boardCall })
   assert.deepEqual(writeControls(nodes), WRITES, 'a writable window keeps every write it had')
 })
+
+// #2882: the empty state of a board with no Project yet. In a read-only window the scrim covers the
+// sidebar's banner, so "No Project yet — create one." promised the one act this window cannot take
+// and named no reason. The locked board now says the state and the why, with the shared Reload; a
+// writable window keeps the sentence it always had.
+const SENTENCE = 'This window is read-only: the team is shared with you.'
+const emptyCall = async (name) => (name === 'projects' ? { projects: [] } : {})
+
+const emptyBoard = async (roster) => {
+  win.location.hash = '#project'
+  const { tree } = await mount({ actions: {}, call: emptyCall, ...(roster === undefined ? {} : { useRoster: select => select(roster) }) })
+  return all(tree).map(textOf).join(' ')
+}
+
+test('#2882: a read-only window\'s empty board does not invite a create', async () => {
+  const text = await emptyBoard({ readOnly: SENTENCE })
+  assert.match(text, /No Project yet\./, 'the state is still named')
+  assert.doesNotMatch(text, /create one/, 'a read-only window promises no create')
+  assert.match(text, new RegExp(SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), "the host's sentence says why")
+  assert.match(text, /Reload/, 'the one recovery keeps its entry')
+})
+
+test('#2882: a writable window\'s empty board keeps the create sentence', async () => {
+  const text = await emptyBoard(undefined)
+  assert.match(text, /No Project yet — create one\./)
+  assert.doesNotMatch(text, /No Project yet\.(?![^]*create one)/, 'the plain sentence alone is the locked copy')
+})

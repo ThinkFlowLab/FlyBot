@@ -1137,8 +1137,15 @@ export function ProjectBoardOverlay({ actions, call: request, useRoster } = {}) 
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-project-close', autoFocus: true, onClick: close }, t('Close'))),
       h('div', { className: 'bt-project-body' },
         state.project === null
+          // #2882: an empty board in a window that holds the team read-only cannot create anything,
+          // and the scrim covers the sidebar's banner, so the copy said "create one" and then said
+          // nothing about why nothing happens. The sentence names the state, the shared read-only
+          // line says why (with its one Reload), and **Open Projects in Settings** stays: the page
+          // it opens is a read, and a writable window's copy is unchanged.
           ? h('div', { className: 'bt-project-empty' },
-            h('p', null, t('No Project yet — create one.')),
+            locked ? null : h('p', null, t('No Project yet — create one.')),
+            locked ? h('p', null, t('No Project yet.')) : null,
+            locked ? readOnlyLine(h, roster, actions, { key: 'read-only' }) : null,
             h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { close(); actions?.openSettings?.('projects') } }, t('Open Projects in Settings')))
           // A row opens the board its task lives on, carried by `#task=<id>`: the Tasks board reads
           // that hash and lands on the Bot or group the task belongs to.

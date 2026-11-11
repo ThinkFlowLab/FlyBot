@@ -359,7 +359,11 @@ reads the roster it is injected with through `lockedWindow` (`schedules.js`) and
 the panel opens with the host's own sentence in one `role="status"` line with the shared Reload beside it (`readOnlyLine`, `client/read-only.js`; the overlay hands the panel its `actions`) and **Back to board** instead of
 **Bind**/**Unbind**, the digest box and its **Save**, and the memory box and **Save memory** — the four
 controls behind `project-bind`, `project-assistant-owner` and `project-memory-write`, which the host
-refuses there. The board around it, the **Members** panel and the record keep reading, and a writable
+refuses there. Since #2882 the empty state follows the same rule: a board with no Project in a locked window
+draws `No Project yet.` and the host's sentence with its one Reload instead of `No Project yet — create one.`
+— the scrim covers the sidebar's banner, so the copy was the only thing left promising a creation this window
+cannot make — while **Open Projects in Settings** stays (the page it opens is a read), and a writable window
+keeps the shared sentence unchanged, the same pair the Settings Projects page already draws (#2489). The board around it, the **Members** panel and the record keep reading, and a writable
 window draws the panel exactly as before. Tests: `core/test/project-board-readonly.test.js`.
 
 The **Members** panel lists every owner and every member the board names, and since #1859 also the
