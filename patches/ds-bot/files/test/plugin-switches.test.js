@@ -12,10 +12,10 @@ import { createRegistry, pluginOfSlot, registry, setDisabledPlugins } from '../s
 import { fakeContext } from './fake-ctx.js'
 
 const home = () => mkdtempSync(join(tmpdir(), 'dsb-plugins-'))
-const runtime = (state) => {
+const runtime = (state, services) => {
   const dir = home()
   if (state !== undefined) writeFileSync(join(dir, 'state.json'), JSON.stringify(state))
-  const ctx = fakeContext()
+  const ctx = fakeContext({ services })
   const rt = createRuntime(ctx, { home: dir, diagnosticsFile: false })
   return { dir, rt, ctx }
 }
@@ -138,4 +138,70 @@ test('the live registry is the one Settings flips', () => {
   setDisabledPlugins(['workflow'])
   assert.equal(registry().entries('flybot.sidebar.section').length, 0)
   setDisabledPlugins([])
+})
+
+// P-710: the restart banner compares each switch with the value this start read, so a flip
+// that ends where the start was needs no restart and must clear the banner.
+test('P-710: switching a plugin off and back on leaves no restart pending', async () => {
+  const { dir, rt } = runtime()
+  try {
+    const off = await rt.flybotEndpoint('plugins/set', { id: 'workflow', enabled: false })
+    assert.equal(off.pendingRestart, true, 'the running session did not load what this start read')
+    const back = await rt.flybotEndpoint('plugins/set', { id: 'workflow', enabled: true })
+    assert.equal(back.pendingRestart, false, 'the switch answers what this start read again, so nothing needs a restart')
+    const listed = await rt.flybotEndpoint('plugins/list')
+    assert.equal(listed.pendingRestart, false, 'and the list agrees')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// P-710: the same comparison from the other side — a plugin that started off, turned on, then off.
+test('P-710: a switch that started off is pending only while it differs from that start', async () => {
+  // A team file this store accepts, with the switch already off: the shape a start loads
+  // when the owner turned the plugin off before this process began.
+  const dir = home()
+  try {
+    writeFileSync(join(dir, 'state.json'), JSON.stringify({
+      version: 2, mainBotIds: [], members: {}, bots: {},
+      flybot: { plugins: { tree: { enabled: false } } },
+    }))
+    const rt = createRuntime(fakeContext(), { home: dir, diagnosticsFile: false })
+    const listed = await rt.flybotEndpoint('plugins/list')
+    assert.equal(listed.pendingRestart, false, 'nothing changed since this start')
+    const on = await rt.flybotEndpoint('plugins/set', { id: 'tree', enabled: true })
+    assert.equal(on.pendingRestart, true, 'the next start would load what this one did not')
+    const off = await rt.flybotEndpoint('plugins/set', { id: 'tree', enabled: false })
+    assert.equal(off.pendingRestart, false, 'back to the value this start read')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// P-710: the restart answer comes from the same rows Settings reads. A flip must keep the
+// profile's `installed` answer (and the list's `loaded`), so the new comparison cannot
+// rebuild the rows from the snapshot alone and drop what the profile said (#2868).
+test('P-710: a flip keeps the profile installed answer on every row it answers', async () => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'dsb-profile-'))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+    name: 'dsh-profile-test', private: true, dependencies: {},
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'ds-bot', '@flybot/workflow'] } },
+  }))
+  const { dir, rt } = runtime(undefined, { profileContext: { name: 'test', dir: profileDir } })
+  try {
+    const off = await rt.flybotEndpoint('plugins/set', { id: 'workflow', enabled: false })
+    assert.equal(off.plugins.find(plugin => plugin.id === 'workflow').installed, true, 'a flip answers the profile too')
+    assert.equal(off.pendingRestart, true)
+    const back = await rt.flybotEndpoint('plugins/set', { id: 'workflow', enabled: true })
+    assert.equal(back.plugins.find(plugin => plugin.id === 'workflow').installed, true)
+    assert.equal(back.plugins.find(plugin => plugin.id === 'project').installed, false, 'and the package this profile never got')
+    assert.equal(back.pendingRestart, false)
+    const listed = await rt.flybotEndpoint('plugins/list')
+    assert.equal(listed.plugins.find(plugin => plugin.id === 'workflow').installed, true)
+    assert.equal(listed.plugins.find(plugin => plugin.id === 'workflow').loaded, false)
+    assert.equal(listed.pendingRestart, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(profileDir, { recursive: true, force: true })
+  }
 })

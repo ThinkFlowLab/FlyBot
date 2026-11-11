@@ -24,7 +24,7 @@ import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
-import { FEATURE_PLUGIN_IDS, pluginEnabledAtStart, pluginSwitches, profileBundles, setPluginSwitch } from './plugins.js'
+import { FEATURE_PLUGIN_IDS, pluginEnabledAtStart, pluginSwitches, pluginSwitchesAtStart, pluginSwitchesPending, profileBundles, setPluginSwitch } from './plugins.js'
 import { projectHost as createProjectHost } from './project-host.js'
 import { codePoints } from './text.js'
 import { cut } from '../shared/text-boundary.js'
@@ -107,6 +107,9 @@ export function toParameterMap(parameters) {
 
 export function install(rt) {
   const { ctx, state, config } = rt
+  // The switch values this start read, once: each plugin's own apply() reads the same
+  // file moments later, so the restart banner compares against what they really loaded.
+  const pluginsAtStart = pluginSwitchesAtStart(rt.statePath)
   // config.flybot.bypass: { <middleware that asks>: [<middleware names it may skip>] }
   const bypassGrants = config?.flybot?.bypass ?? {}
   // Plugins the host allows to read and write a Bot's own memory (#450 item 1). Empty by default.
@@ -1111,6 +1114,8 @@ export function install(rt) {
 
   // The owner's plugin switches (#2564). A flip only writes state.json: the plugins
   // already loaded keep running until the next start, and `pendingRestart` says so.
+  // It compares each switch with the value this start read, so turning one back to what
+  // the plugins really loaded needs no restart and clears the answer (P-710).
   // Since #2877 each row also answers `loaded`: whether this start really attached the package.
   // A switch left on over a package that is not installed reads `enabled: true, loaded: false`,
   // which is the difference the browser needs before it draws a plugin's own surfaces.
@@ -1129,13 +1134,14 @@ export function install(rt) {
   }
   const switches = () => pluginSwitches(state, profileBundles(profileDir()))
   const pluginRows = () => switches().map(plugin => ({ ...plugin, loaded: loadedPlugins().has(plugin.id) }))
-  api.handle('plugins/list', async () => ({ plugins: pluginRows(), pendingRestart: rt.pluginSwitchPending === true }), { read: true })
+  // The switches answer the value this start loaded, not whether the last write changed
+  // anything: a flip that comes back to the start value leaves nothing to restart for.
+  const pendingRestart = () => Object.values(pluginSwitchesPending(state, pluginsAtStart)).some(Boolean)
+  api.handle('plugins/list', async () => ({ plugins: pluginRows(), pendingRestart: pendingRestart() }), { read: true })
   api.handle('plugins/set', async (body = {}) => {
-    const before = switches().find(plugin => plugin.id === body.id)
     const plugins = setPluginSwitch(state, body.id, body.enabled, profileBundles(profileDir()))
-    if (before !== undefined && before.enabled !== body.enabled) rt.pluginSwitchPending = true
     await rt.save()
-    return { plugins, pendingRestart: rt.pluginSwitchPending === true }
+    return { plugins, pendingRestart: pendingRestart() }
   })
   async function endpoint(name, payload, { actor } = {}) {
     await rt.load()
