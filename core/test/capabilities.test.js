@@ -88,10 +88,15 @@ async function setup({ state = team(), secret, beforeLoad } = {}) {
   }
 }
 
+const NAME_REFUSAL = 'Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.'
+
 test('capability names use the MCP and skill validator intersection', () => {
   assert.equal(validateCapabilityName('a'), 'a')
   assert.equal(validateCapabilityName('web-search-1'), 'web-search-1')
-  for (const name of ['github', 'composio', 'with_underscore', 'with--dash', '1tool', 'A', 'a'.repeat(33)]) assert.throws(() => validateCapabilityName(name))
+  for (const name of ['github', 'composio', 'with_underscore', 'with--dash', '1tool', 'A', 'a'.repeat(33)]) {
+    assert.throws(() => validateCapabilityName(name))
+    assert.throws(() => validateCapabilityName(name), { message: NAME_REFUSAL })
+  }
 })
 
 test('packs expand only to MCP and skill items', () => {
