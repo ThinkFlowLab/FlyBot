@@ -1,4 +1,4 @@
-// #2564: the owner's switch for the four feature plugins. The switch lives in FlyBot's
+// #2564: the owner's switch for the five feature plugins. The switch lives in FlyBot's
 // own state.json, is read at the plugin's apply() on start, and hides that plugin's slot
 // entries in the interface.
 import assert from 'node:assert/strict'
@@ -51,7 +51,7 @@ test('the host reads the switch from the file the last run wrote', () => {
   }
 })
 
-test('plugins/list answers all four switches and plugins/set persists a flip', async () => {
+test('plugins/list answers all five switches and plugins/set persists a flip', async () => {
   const { dir, rt } = runtime()
   try {
     const listed = await rt.flybotEndpoint('plugins/list')
@@ -89,7 +89,7 @@ test('a disabled plugin keeps no slot entry visible, and the other plugins stay'
   assert.equal(slots.entries('flybot.sidebar.section').length, 4)
 })
 
-test('every id the four plugin bundles register maps to its own plugin', () => {
+test('every id the five plugin bundles register maps to its own plugin', () => {
   // The ids the plugin client bundles use today; a new one here has to map too, which is
   // what keeps the filter honest when a plugin grows a panel.
   const known = {
