@@ -3,8 +3,9 @@
 Every version is one pull request on `ThinkFlowLab/FlyBot`, opened from a branch on the current
 `main`, and it lands the way every other pull request lands: through the merge queue. The tag goes on
 that pull request's **merge commit**, and pushing the tag starts the `Release` workflow there, which
-publishes the release and its four assets. Nothing is published from the fork, and nothing requires
-the protection on `main` to be switched off for a moment: there is no window in this flow.
+publishes the release and one tarball per package: `ds-bot` plus one per directory under `plugins/`.
+Nothing is published from the fork, and nothing requires the protection on `main` to be switched off
+for a moment: there is no window in this flow.
 
 This page is the sequence, written down so a run does not depend on the Bot that ran it last.
 `#1004` (v0.2.6, 2026-10-24) is the worked example of all of it: a release PR opened upstream, merged
@@ -66,10 +67,11 @@ if (r.status !== 201) process.exit(1)
 ```
 
 Pushing the tag starts `release.yml` on that commit. It waits for a green `Test` run on the tagged
-commit, checks the tag against `core/package.json` (`check-release-version.mjs`), packs the four
-assets, and creates the release from the `CHANGELOG.md` section for that version. Read it back before
-reporting: the tag's commit is `C`, four assets are attached, `latest` is this version, and
-`core/package.json` on `main` carries it.
+commit, checks the tag against `core/package.json` (`check-release-version.mjs`), packs every
+package's tarball, and creates the release from the `CHANGELOG.md` section for that version. Read it
+back before reporting: the tag's commit is `C`, every package's tarball is attached (`ds-bot` plus one
+per directory under `plugins/`), `latest` is this version, and `core/package.json` on `main` carries
+it.
 
 A tag on a later `main` would publish different bytes under the same version number — the same
 version twice, with two answers, which is worse than a missing release. That is why the tag target is
@@ -163,7 +165,7 @@ then, and do not delete a release or a tag to make the picture look clean.
 
 Until `v0.2.5` a version was published twice: the fork `Birfy/FlyBot` cut it, and upstream was
 fast-forwarded to the fork's `main` inside a short ruleset window (one window per version), then
-released upstream with the same four assets. That flow needed the protection on `main` switched off
+released upstream with the same tarballs. That flow needed the protection on `main` switched off
 and a read-back proving the restore; `node .github/scripts/upstream-sync.mjs --check` and
 `--commits` were its dry run, and `Birfy/FlyBot` was the publishing step rather than an archive.
 

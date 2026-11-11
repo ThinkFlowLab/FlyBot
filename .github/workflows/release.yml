@@ -1,8 +1,9 @@
 name: Release
 
-# Pushing a v* tag publishes a GitHub Release with the packed ds-bot, social and tree
-# tarballs and that version's CHANGELOG.md section. It waits for the Test run on the tagged
-# commit to pass first. Only GITHUB_TOKEN is used.
+# Pushing a v* tag publishes a GitHub Release with one tarball per package — the packed
+# ds-bot and one per directory under plugins/ (social, tree, timeline, workflow) — and that
+# version's CHANGELOG.md section. It waits for the Test run on the tagged commit to pass first.
+# Only GITHUB_TOKEN is used.
 # Normally the tag must match core/package.json's version; an allowlisted product tag may
 # differ when CHANGELOG.md documents the current core pin. Packing still uses each package's
 # own package.json version, and the release notes come from CHANGELOG's [VERSION] section.
