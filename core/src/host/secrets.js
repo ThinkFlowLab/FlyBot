@@ -162,12 +162,22 @@ export function install(rt) {
     const snapshot = JSON.stringify({ version: 1, secrets: [...secrets.values()] }, null, 2)
     const job = writing.then(async () => {
       await mkdir(home, { recursive: true })
-      const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+      // The test bench holds the uuid still (`config.tempUuid`) to plant a name at the temp
+      // path; nothing in production sets it.
+      const tempUuid = typeof rt.config?.tempUuid === 'function' ? rt.config.tempUuid : randomUUID
+      const temp = `${path}.${process.pid}.${tempUuid()}.tmp`
       try {
-        await writeFile(temp, snapshot, { encoding: 'utf8', mode: 0o600 })
+        // The temp name belongs to this write alone (#2724), so a name planted there is not one
+        // this code wrote. O_EXCL refuses it (EEXIST) before the first byte instead of following a
+        // link or writing into a directory: the uuid is 122 bits, so this is shape, not a race.
+        await writeFile(temp, snapshot, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
         await chmod(temp, 0o600)
         await rename(temp, path)
       } catch (error) {
+        if (error?.code === 'EEXIST') {
+          // Nothing was written and the name is not ours to remove.
+          throw new Error(`Not saved: ${temp} already exists, so the secrets were not written through it`)
+        }
         await unlink(temp).catch(() => { /* the temp file may already be gone */ })
         throw error
       }

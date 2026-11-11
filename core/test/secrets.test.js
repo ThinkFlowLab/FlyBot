@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -57,6 +57,60 @@ test('a short key (4 to 7 characters) is replaced only where it stands alone', (
   assert.equal(redact('中文4821中文'), '中文4821中文')
 })
 
+// secrets.json lands through `<file>.<pid>.<uuid>.tmp` and is renamed into place. The uuid is 122
+// random bits, so a test cannot guess the name; `fixed-uuid.js` holds it still and these three
+// cases plant a name there. The guard is about shape, not a reachable attack (#2864).
+const secretTemp = (home, uuid) => join(home, `secrets.json.${process.pid}.${uuid}.tmp`)
+const plantedLink = 'planted-link'
+const plantedDir = 'planted-dir'
+
+test('a link planted at the temp name is refused before the first byte (#2864)', async (t) => {
+  const bench = start({ tempUuid: () => plantedLink })
+  t.after(bench.stop)
+  const outside = join(bench.home, 'outside.json')
+  writeFileSync(outside, 'PRE-EXISTING BYTES\n')
+  const temp = secretTemp(bench.home, plantedLink)
+  symlinkSync(outside, temp)
+
+  const result = await bench.call('secret-set', { name: 'PLANTED_LINK', value: 'v'.repeat(12) })
+
+  assert.equal(result.ok, false, 'the save is refused instead of writing through the planted link')
+  assert.match(String(result.error.message), /already exists/)
+  assert.ok(String(result.error.message).includes(temp), 'the refusal names the temp path')
+  assert.equal(readFileSync(outside, 'utf8'), 'PRE-EXISTING BYTES\n', 'the file behind the link keeps its bytes')
+  assert.equal(lstatSync(temp).isSymbolicLink(), true, 'the planted link is left alone')
+  assert.equal(readlinkSync(temp), outside, 'and still names the same file')
+  assert.equal(existsSync(join(bench.home, 'secrets.json')), false, 'nothing is renamed over the secrets file')
+})
+
+test('a directory planted at the temp name is refused (#2864)', async (t) => {
+  const bench = start({ tempUuid: () => plantedDir })
+  t.after(bench.stop)
+  const temp = secretTemp(bench.home, plantedDir)
+  mkdirSync(temp)
+
+  const result = await bench.call('secret-set', { name: 'PLANTED_DIR', value: 'v'.repeat(12) })
+
+  assert.equal(result.ok, false, 'the save is refused instead of writing into the planted directory')
+  assert.match(String(result.error.message), /already exists/)
+  assert.ok(String(result.error.message).includes(temp), 'the refusal names the temp path')
+  assert.equal(lstatSync(temp).isDirectory(), true, 'the planted directory is left alone')
+  assert.equal(existsSync(join(bench.home, 'secrets.json')), false, 'nothing is renamed over the secrets file')
+})
+
+test('an unplanted temp name still writes the file, at 0600 (#2864)', async (t) => {
+  const bench = start({ tempUuid: () => 'own-temp' })
+  t.after(bench.stop)
+
+  const result = await bench.call('secret-set', { name: 'OWN_TEMP', value: 'v'.repeat(12) })
+
+  assert.equal(result.ok, true, JSON.stringify(result.error))
+  const file = join(bench.home, 'secrets.json')
+  assert.equal(statSync(file).mode & 0o777, 0o600, 'the file is private, as the host made it (#2698)')
+  assert.equal(readFileSync(file, 'utf8').includes('OWN_TEMP'), true)
+  assert.equal(existsSync(secretTemp(bench.home, 'own-temp')), false, 'the temp name is renamed away')
+})
+
 const TEAM = {
   version: 1,
   mainBotIds: ['m1'],
@@ -74,7 +128,7 @@ const TEAM = {
   questions: {},
 }
 
-function start({ secrets, team = TEAM } = {}) {
+function start({ secrets, team = TEAM, tempUuid } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-secrets-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify(team))
   if (secrets !== undefined) writeFileSync(join(home, 'secrets.json'), JSON.stringify({ version: 1, secrets }))
@@ -106,7 +160,7 @@ function start({ secrets, team = TEAM } = {}) {
   }
   let route
   ctx.connection.fetch.register = (options) => { route = options; return () => {} }
-  apply(ctx, { home })
+  apply(ctx, { home, ...(tempUuid === undefined ? {} : { tempUuid }) })
   const call = async (endpoint, payload) => {
     const response = await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))
     return response.json()
