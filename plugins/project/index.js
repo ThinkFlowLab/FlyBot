@@ -27,6 +27,11 @@ export function apply(ctx) {
   }
   bindHost(seam.helpers)
   const project = installProjectDomain(seam.runtime)
+  // #2877: the switch says the owner left the Project feature on; this says the package is here and
+  // its apply() really ran. `plugins/list` hands that answer to the browser, whose own Project
+  // surfaces (sidebar row, Settings page, board overlay, `#project=` route, header seat) draw
+  // nothing without it.
+  ctx.flybot?.markPluginLoaded?.('project')
   // Nothing here polls or holds a timer: every answer is built when it is asked for, and the one
   // background beat (the 09:00 digest) is a DSH schedule on the assistant's own Session.
   const dispose = () => {}

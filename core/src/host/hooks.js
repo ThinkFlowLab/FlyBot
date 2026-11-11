@@ -24,7 +24,7 @@ import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
-import { pluginEnabledAtStart, pluginSwitches, setPluginSwitch } from './plugins.js'
+import { FEATURE_PLUGIN_IDS, pluginEnabledAtStart, pluginSwitches, setPluginSwitch } from './plugins.js'
 import { projectHost as createProjectHost } from './project-host.js'
 import { codePoints } from './text.js'
 import { cut } from '../shared/text-boundary.js'
@@ -116,6 +116,9 @@ export function install(rt) {
   const modelAsk = createPluginModel(rt, { allow: config?.flybot?.modelPlugins ?? [], models: config?.flybot?.modelFor ?? {} })
   const warn = (...args) => rt.warn?.(...args)
   const emit = (name, payload) => { try { ctx.emit?.(name, payload) } catch (error) { warn('flybot: %s listener failed: %s', name, error) } }
+  // The feature plugins this start attached (#2877): a plugin marks itself in its own apply(), and
+  // `plugins/list` reports it beside the owner's switch. Empty until a plugin says it loaded.
+  rt.pluginLoaded ??= new Set()
 
   // ---------------------------------------------------------------- events
   const listeners = { 'change': new Set(), 'bot.created': new Set(), 'bot.removed': new Set(), 'bot.grants': new Set(), ...Object.fromEntries(FEED_EVENTS.map(name => [name, new Set()])) }
@@ -1108,7 +1111,15 @@ export function install(rt) {
 
   // The owner's plugin switches (#2564). A flip only writes state.json: the plugins
   // already loaded keep running until the next start, and `pendingRestart` says so.
-  api.handle('plugins/list', async () => ({ plugins: pluginSwitches(state), pendingRestart: rt.pluginSwitchPending === true }), { read: true })
+  // Since #2877 each row also answers `loaded`: whether this start really attached the package.
+  // A switch left on over a package that is not installed reads `enabled: true, loaded: false`,
+  // which is the difference the browser needs before it draws a plugin's own surfaces.
+  const loadedPlugins = () => {
+    rt.pluginLoaded ??= new Set()
+    return rt.pluginLoaded
+  }
+  const pluginRows = () => pluginSwitches(state).map(plugin => ({ ...plugin, loaded: loadedPlugins().has(plugin.id) }))
+  api.handle('plugins/list', async () => ({ plugins: pluginRows(), pendingRestart: rt.pluginSwitchPending === true }), { read: true })
   api.handle('plugins/set', async (body = {}) => {
     const before = pluginSwitches(state).find(plugin => plugin.id === body.id)
     const plugins = setPluginSwitch(state, body.id, body.enabled)
@@ -1161,6 +1172,15 @@ export function install(rt) {
     // apply(), and registers nothing when this answers false. Read from the state file
     // the last run wrote, because plugins load before the team is loaded.
     pluginEnabled: id => pluginEnabledAtStart(rt.statePath, id),
+    // The answer to the other half of that switch (#2877): a feature plugin calls this once its
+    // apply() has really registered everything, and `plugins/list` then says `loaded: true`. Only
+    // the five ids the Settings page lists may answer, so a plugin cannot claim another's place.
+    markPluginLoaded: (id) => {
+      const name = String(id ?? '')
+      if (!FEATURE_PLUGIN_IDS.includes(name)) return false
+      loadedPlugins().add(name)
+      return true
+    },
     // The Project domain's host (#2830): plugins/project implements Project State, the board, the
     // Chief, the dossier, the metrics and the assistant, and cannot import core/src/*. It asks for
     // the runtime and the shared pure helpers once, in its own apply(); a core without the plugin

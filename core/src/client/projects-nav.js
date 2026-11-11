@@ -8,6 +8,7 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 import { createPortal } from 'react-dom'
 import { call as callHost } from './api.js'
 import { t } from './i18n.js'
+import { useProjectPresent } from './project-presence.js'
 import { roleText } from './role-labels.js'
 
 // #1854: `projects` and `project-role` are core endpoints, dispatched by bare name in
@@ -132,6 +133,9 @@ export function ProjectRoleMenu({ project, x, y, onPick, onClose }) {
 
 export function ProjectsNav({ wide = true, request, onOpen } = {}) {
   const read = request ?? callHost
+  // #2877: with the Project plugin off or absent there is no Projects concept, so the row and the
+  // folder mark that opens it are not drawn at all.
+  const present = useProjectPresent()
   const open = useCallback((id) => {
     if (onOpen) { onOpen(id); return }
     if (typeof window !== 'undefined') window.location.hash = projectHash(id)
@@ -162,6 +166,7 @@ export function ProjectsNav({ wide = true, request, onOpen } = {}) {
     setExpanded(value => !value)
   }
   const listed = expanded && wide
+  if (!present) return null
   return h('div', { className: 'bt-projects' },
     h('button', {
       type: 'button', className: 'bt-row bt-projects-row', 'aria-expanded': listed ? 'true' : 'false',
