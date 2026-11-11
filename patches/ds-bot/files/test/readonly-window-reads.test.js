@@ -68,7 +68,11 @@ const seed = work => ({
 // A row's payload may be a function of the answers above it, because opening a decision reads a
 // name the board itself listed (#2041), not one this file made up.
 const READS = [
-  ['tasks', {}, a => a.ok === true && a.value.some(task => task.id === 'task-1')],
+  // The list itself, not "the card is somewhere in it": one row, and the fields that row paints.
+  // `some()` stayed green on a list of duplicates and on a row the view had stripped to its id.
+  ['tasks', {}, a => a.ok === true && Array.isArray(a.value) && a.value.length === 1
+    && a.value[0].id === 'task-1' && a.value[0].title === 'Read the board'
+    && a.value[0].column === 'waiting' && a.value[0].queueRole === 'Dev' && a.value[0].status === 'open'],
   ['projects', {}, a => a.ok === true && a.value.projects.some(project => project.id === 'project-p1')],
   ['project-read', { id: 'project-p1' }, a => a.ok === true && a.value.project?.id === 'project-p1'],
   ['project-of', { kind: 'bot', id: 'a' }, a => a.ok === true && a.value.project?.id === 'project-p1'],
@@ -79,6 +83,10 @@ const READS = [
     && a.value.counts?.waiting === 1 && a.value.counts.inflight === 0 && a.value.counts.blocked === 0
     // A host with no GitHub credential says so and reads `null`, never 0 (#1829).
     && a.value.metrics?.ok === false && a.value.metrics.reason === 'no-credentials'
+    // Every metric row the header draws has to be there: `Object.values(...).every(null)` is
+    // vacuously true on `{}`, so a `metrics: {}` answer drew an empty table and stayed green.
+    && Object.keys(a.value.metrics.metrics).sort().join(',')
+      === 'issueCloseMedianMs,issuesClosedToday,issuesOpenedToday,prMergeMedianMs,prsMergedToday,prsOpenedToday,taskDoneMedianMs'
     && Object.values(a.value.metrics.metrics).every(value => value === null)],
   // The dossier's rows are the Project's people (#1864): the Chief slot first. `{ rows: [] }` and
   // `{ rows: [null, null] }` both passed a shape-only check while the panel drew nobody.
