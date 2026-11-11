@@ -13,6 +13,7 @@ FlyBot is a team of long-lived Bots built on DeepSeek Harness (DSH). Two parts s
 | `plugins/tree/` | `@flybot/tree` — knowledge-tree plugin. |
 | `plugins/timeline/` | `@flybot/timeline` — where time goes across the local Bot team (swimlanes, communication map, utilization). |
 | `plugins/workflow/` | `@flybot/workflow` — a group-shaped chat of local Bots, with a flowchart and task assignment. |
+| `plugins/project/` | `@flybot/project` — the Project domain: Project State, its board, the Project's own Chief, the team dossier, metrics and the assistant. |
 | `app/` | Desktop app (Windows/macOS) for the DSH + plugin. |
 
 ## Subsystems

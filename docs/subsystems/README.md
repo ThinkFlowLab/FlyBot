@@ -11,6 +11,7 @@ Detail pages for each FlyBot subsystem. Each page lists `owned_paths`, what the 
 | tree | [tree.md](tree.md) | `plugins/tree/` |
 | timeline | [timeline.md](timeline.md) | `plugins/timeline/` |
 | workflow | [workflow.md](workflow.md) | `plugins/workflow/` |
+| project | [project.md](project.md) | `plugins/project/` |
 | social | [social.md](social.md) | `plugins/social/` |
 | install | [install.md](install.md) | `core/scripts/`, arch-doc tests, `plugins/README.md`, the container image (`Dockerfile`, `compose.yaml`, `docker/`) |
 | team | [team.md](team.md) | `docs/subsystems/team.md` — **planned contract only** (no code paths; multi-human is not shipped) |
