@@ -1244,17 +1244,23 @@ export function install(rt) {
           } : {}),
         }))
       },
-      // #1126: the next share seq for a mention. Same counter a stored line uses (`room.seq`), so a
-      // second mention is a new remote line instead of a redelivery of seq 0.
+      // #1126: the next share seq for a mention. A reservation writes no line, so it must not move
+      // `room.seq`: that counter is how many lines the room said, and the room read subtracts the
+      // retained log from it to report what the cap dropped — a reservation on the same counter read
+      // as a line that had been cut (#2855). `shareSeq` starts above everything already said, so a
+      // second mention is still a new remote line instead of a redelivery of seq 0.
       takeLineSeq(roomId) {
         const room = rt.roomOf?.(String(roomId ?? ''))
         if (!room) return 1
-        if (typeof room.seq !== 'number' || !Number.isFinite(room.seq) || room.seq < 0) {
-          room.seq = Array.isArray(room.log) ? room.log.length : 0
+        if (typeof room.shareSeq !== 'number' || !Number.isFinite(room.shareSeq) || room.shareSeq < 0) {
+          const said = typeof room.seq === 'number' && Number.isFinite(room.seq) && room.seq >= 0
+            ? room.seq
+            : Array.isArray(room.log) ? room.log.length : 0
+          room.shareSeq = said
         }
-        room.seq += 1
+        room.shareSeq += 1
         void Promise.resolve(rt.save?.()).catch(() => {})
-        return room.seq
+        return room.shareSeq
       },
       removeParticipant: (roomId, ref) => rt.removeRoomParticipant?.(roomId, ref),
       upsertFace: spec => rt.upsertFaceRoom?.(spec),

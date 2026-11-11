@@ -95,3 +95,20 @@ test('P-684 guard: a room under the cap is byte-identical', async (t) => {
   const out = await host.tool('read_group_chat', { group: 'Ops' }, 'gb')
   assert.equal(out, `Latest in "Ops" (oldest first):\n${said.map(l => `${l.who}: ${l.text}`).join('\n')}`)
 })
+
+// RED today (#2855): `takeLineSeq` reserves a remote line number for a co-seat mention and never writes
+// a line, so a gap the counter opened is read as a line the cap dropped and every reservation adds one
+// phantom line to the header. A read must not report a cut that never happened.
+test('#2855: a share-seq reservation writes no line, so the read is byte-identical', async (t) => {
+  const said = lines(5)
+  const host = await start(t, said)
+  const before = await host.tool('read_group_chat', { group: 'Ops' }, 'gb')
+  assert.equal(before, `Latest in "Ops" (oldest first):\n${said.map(l => `${l.who}: ${l.text}`).join('\n')}`)
+  const reserved = host.rt.flybot.rooms.takeLineSeq('r1')
+  assert.equal(reserved, 6, 'the reservation continues the room counter')
+  const after = await host.tool('read_group_chat', { group: 'Ops' }, 'gb')
+  assert.equal(after, before, 'a reservation writes no line, so nothing was left out')
+  // A second reservation stays above the first and still writes nothing.
+  assert.equal(host.rt.flybot.rooms.takeLineSeq('r1'), 7)
+  assert.equal(await host.tool('read_group_chat', { group: 'Ops' }, 'gb'), before)
+})
