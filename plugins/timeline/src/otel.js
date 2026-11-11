@@ -173,10 +173,16 @@ export function otlpPayload(spans, { serviceName = 'flybot', serviceVersion = SC
  * is never sent twice. A send failure is reported through `warn` and the cursor stays put, so the
  * next push retries. `exportNames` off (the default) sends ids only, never Bot or room names.
  */
-export function createExporter({ send, serviceName = 'flybot', serviceVersion = SCOPE_VERSION, warn = () => {}, minRecords = 1, exportNames = false } = {}) {
+export function createExporter({ send, serviceName = 'flybot', serviceVersion = SCOPE_VERSION, warn = () => {}, minRecords = 1, exportNames = false, now = Date.now } = {}) {
   let lastT = -1
   let carried = []
   const emitted = new Set()
+  // P-699: a dead collector used to warn once per tick, so a 5 s interval wrote 17,280 lines a day
+  // and the operator could not tell one outage from many. The streak is counted here: one warning
+  // when it opens, one when it closes, and the running count is read through `stats()`.
+  let failures = 0
+  let lastOkAt = null
+  let lastError = null
   const remember = (spanId) => {
     emitted.add(spanId)
     if (emitted.size > 5000) emitted.delete(emitted.values().next().value)
@@ -206,11 +212,21 @@ export function createExporter({ send, serviceName = 'flybot', serviceVersion = 
         for (const span of spans) remember(span.spanId)
         carried = nextCarried
         lastT = nextT
+        if (failures > 0) {
+          warn(`flybot-timeline: OTLP export recovered after ${failures} failed attempt(s) (last error: ${lastError})`)
+          failures = 0
+          lastError = null
+        }
+        lastOkAt = now()
         return spans.length
       } catch (error) {
-        warn('flybot-timeline: OTLP export failed: %s', error?.message ?? error)
+        const message = error?.message ?? String(error)
+        failures += 1
+        lastError = message
+        if (failures === 1) warn(`flybot-timeline: OTLP export failed: ${message}; later failures stay quiet until it recovers (timeline/health carries the count)`)
         return 0
       }
     },
+    stats() { return { failures, lastOkAt, lastError } },
   }
 }

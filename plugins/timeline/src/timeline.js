@@ -38,8 +38,10 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   // OTLP export is opt-in: without an `exporter` (send + intervalMs) nothing leaves the host.
   let exportTimer
   let exportNow
+  let exportCursor
   if (exporter && typeof exporter.send === 'function') {
     const cursor = createExporter({ send: exporter.send, serviceName: exporter.serviceName, serviceVersion: exporter.serviceVersion, exportNames: exporter.exportNames === true, warn: adapter.warn })
+    exportCursor = cursor
     exportNow = async () => { try { return await cursor.push(trace.records(), trace.names()) } catch (error) { adapter.warn('flybot-timeline: export failed: %s', error?.message ?? error); return 0 } }
     const configuredIntervalMs = Number.isFinite(exporter.intervalMs) && exporter.intervalMs > 0 ? exporter.intervalMs : undefined
     const intervalMs = configuredIntervalMs === undefined ? DEFAULT_EXPORT_MS : Math.min(configuredIntervalMs, MAX_EXPORT_INTERVAL_MS)
@@ -70,7 +72,7 @@ export function createTimeline(adapter, { dir, persist = true, now = Date.now, e
   const exportWindow = (body = {}) => otlpPayload(spansFrom(trace.records(), { names: body?.names === true ? trace.names() : {} }), { serviceName: body?.serviceName })
   const offExport = adapter.handle(EXPORT_ENDPOINT, exportWindow)
   // Team health (#357): the same window, reduced to per-Bot signals and flags. Read-only.
-  const health = (body = {}) => buildHealth(window(body))
+  const health = (body = {}) => buildHealth(window(body), exportCursor ? exportCursor.stats() : null)
   const offHealth = adapter.handle(HEALTH_ENDPOINT, health)
   // Durable alerts (#584): the same window, folded across reads so a condition opens once and
   // resolves when it clears. Read-only and in memory; nothing new reaches the trace.

@@ -1,0 +1,1 @@
+A timeline export that keeps failing now warns once when the streak opens and once when it recovers, instead of once per tick, and `timeline/health` reports the exporter state (`failures`, `lastOkAt`, `lastError`) so a broken collector is visible without reading the log.
