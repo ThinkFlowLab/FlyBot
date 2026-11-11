@@ -86,14 +86,18 @@ export function projectPresent() {
   return projectPresence.enabled !== false && projectPresence.loaded !== false
 }
 
-// One answer from `plugins/list` (or `plugins/set`) feeds both halves of the gate: the slot entries
-// a switched-off plugin registered, and whether the core's own Project surfaces belong here. A
-// reply that carries no `loaded` — `plugins/set` answers with the switches only — leaves that half
-// as the last `plugins/list` said, so flipping a switch on for a package that is not installed
-// cannot bring the surfaces back.
+// One answer from `plugins/list` feeds both halves of the gate: the slot entries a switched-off
+// plugin registered, and whether the core's own Project surfaces belong here. `plugins/set` answers
+// the switches only, so it moves the Project half alone and leaves both the slot filter and
+// `loaded` as the last `plugins/list` said — the slot filter is the start's one read (#2878: the
+// bundles a disabled plugin registered were dropped before anything drew them, and a flip only
+// reaches the host at the next start), and a switch flipped on for a package that is not installed
+// must not bring the surfaces back.
 export function setPluginAnswer(answer = {}) {
   const plugins = Array.isArray(answer?.plugins) ? answer.plugins : []
-  setDisabledPlugins(plugins.filter(plugin => plugin?.enabled === false).map(plugin => plugin.id))
+  if (plugins.some(plugin => typeof plugin?.loaded === 'boolean')) {
+    setDisabledPlugins(plugins.filter(plugin => plugin?.enabled === false).map(plugin => plugin.id))
+  }
   const project = plugins.find(plugin => plugin?.id === PROJECT_PLUGIN)
   if (project !== undefined) {
     projectPresence = {

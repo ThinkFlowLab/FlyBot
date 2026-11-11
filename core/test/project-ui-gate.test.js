@@ -23,7 +23,7 @@ const { outputFiles } = await build({
       "export { ProjectsNav } from './src/client/projects-nav.js'",
       "export { SettingsDialog } from './src/client/settings.js'",
       "export { ProjectBoardOverlay, ProjectAgentEntry } from './src/client/project-board.js'",
-      "export { projectPresent, setPluginAnswer, setProjectPresence } from './src/client/flybot-registry.js'",
+      "export { projectPresent, registry, setDisabledPlugins, setPluginAnswer, setProjectPresence } from './src/client/flybot-registry.js'",
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
@@ -71,7 +71,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { ProjectsNav, SettingsDialog, ProjectBoardOverlay, ProjectAgentEntry, projectPresent, setPluginAnswer, setProjectPresence } = module.exports
+const { ProjectsNav, SettingsDialog, ProjectBoardOverlay, ProjectAgentEntry, projectPresent, registry, setDisabledPlugins, setPluginAnswer, setProjectPresence } = module.exports
 
 // A first draw of one component: a clean hook state, the way a fresh mount starts.
 const draw = (component, props) => { slots = []; effects = []; index = 0; return component(props) }
@@ -212,4 +212,28 @@ test('#2877 flipping the switch hides the surfaces without a reload', () => {
   // An answer with no Project row at all (an older host) leaves every surface as it was.
   setProjectPresence({ enabled: true, loaded: true })
   assert.equal(projectPresent(), true)
+})
+
+test('#2878 a flipped switch does not re-filter the slots mid-session', () => {
+  // The slot filter is the start's one read: the entries a switched-off plugin registered were
+  // dropped before anything drew them, and a flip only reaches the host at the next start. The
+  // `plugins/set` reply carries `enabled` only, so it must move the Project half alone.
+  const dispose = registry().register('flybot.sidebar.section', { id: 'social-section', label: 'Social' })
+  try {
+    setPluginAnswer({ plugins: [{ id: 'social', enabled: false, loaded: false }, { id: 'project', enabled: true, loaded: true }] })
+    assert.deepEqual(Array.from(registry().entries('flybot.sidebar.section'), entry => entry.id), [], 'the start read drops the switched-off plugin entry')
+    // Settings → Plugins flips social on: the entry must stay hidden until the next start.
+    setPluginAnswer({ plugins: [{ id: 'social', enabled: true }, { id: 'project', enabled: true }] })
+    assert.deepEqual(Array.from(registry().entries('flybot.sidebar.section'), entry => entry.id), [], 'a flip does not bring the slot back before the restart')
+
+    // The Project half does follow the same reply: the core draws these surfaces itself.
+    assert.equal(projectPresent(), true, 'still on and still loaded from the last plugins/list')
+    setPluginAnswer({ plugins: [{ id: 'social', enabled: true }, { id: 'project', enabled: false }] })
+    assert.equal(projectPresent(), false, 'off is immediate')
+    setPluginAnswer({ plugins: [{ id: 'social', enabled: true }, { id: 'project', enabled: true }] })
+    assert.equal(projectPresent(), true, 'on again reads the loaded the last plugins/list gave')
+  } finally {
+    dispose()
+    setDisabledPlugins([])
+  }
 })

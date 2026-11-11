@@ -2031,7 +2031,9 @@ function projectPresent() {
 }
 function setPluginAnswer(answer = {}) {
   const plugins = Array.isArray(answer?.plugins) ? answer.plugins : [];
-  setDisabledPlugins(plugins.filter((plugin) => plugin?.enabled === false).map((plugin) => plugin.id));
+  if (plugins.some((plugin) => typeof plugin?.loaded === "boolean")) {
+    setDisabledPlugins(plugins.filter((plugin) => plugin?.enabled === false).map((plugin) => plugin.id));
+  }
   const project = plugins.find((plugin) => plugin?.id === PROJECT_PLUGIN);
   if (project !== void 0) {
     projectPresence = {

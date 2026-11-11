@@ -1175,7 +1175,7 @@ diff --git a/client.js b/client.js
        markNoted(error);
      }
      throw error;
-@@ -1097,6 +1097,450 @@ var call = async (endpoint, payload, signal) => {
+@@ -1097,6 +1097,452 @@ var call = async (endpoint, payload, signal) => {
    return result.value;
  };
  
@@ -1453,7 +1453,9 @@ diff --git a/client.js b/client.js
 +}
 +function setPluginAnswer(answer = {}) {
 +  const plugins = Array.isArray(answer?.plugins) ? answer.plugins : [];
-+  setDisabledPlugins(plugins.filter((plugin) => plugin?.enabled === false).map((plugin) => plugin.id));
++  if (plugins.some((plugin) => typeof plugin?.loaded === "boolean")) {
++    setDisabledPlugins(plugins.filter((plugin) => plugin?.enabled === false).map((plugin) => plugin.id));
++  }
 +  const project = plugins.find((plugin) => plugin?.id === PROJECT_PLUGIN);
 +  if (project !== void 0) {
 +    projectPresence = {
