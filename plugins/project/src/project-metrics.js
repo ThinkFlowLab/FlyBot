@@ -51,7 +51,7 @@ export function resolveTimeZone(timeZone = 'UTC') {
   }
 }
 
-// The day boundary this module compares in moved to `core/src/host/day-key.js` (#2684): the
+// The day boundary this module compares in moved to `core/src/host/day-key.js` (#2830): the
 // core's turn budget needs the same key, and the plugin takes it back through the host seam.
 // Re-exported so a test of the board's numbers reads it from the same module.
 export { dayKey }

@@ -1,4 +1,4 @@
-// The Project domain on the host runtime (#2684). The core used to install these six modules
+// The Project domain on the host runtime (#2830). The core used to install these six modules
 // from `core/src/host/project-*.js`; it now hands the plugin its runtime through
 // `flybot.projectHost()` and this file puts the same seams on it in the same order, so the core's
 // store, meetings and channel call `rt.projectBoard`, `rt.projectChief`, `rt.projectTeam` and

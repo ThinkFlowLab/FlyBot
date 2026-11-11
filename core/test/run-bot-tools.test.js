@@ -56,7 +56,7 @@ async function start(config = {}) {
     sessions: { flush: async () => {} },
   })
   apply(ctx, { home, ...config })
-  // The Project domain is a peer plugin (#2684): a profile mounts it next to the core, and the
+  // The Project domain is a peer plugin (#2830): a profile mounts it next to the core, and the
   // team tools below include the two it registers.
   applyProject({ flybot: ctx.flybot })
   // A fresh Session per run Bot, the way workflows.js gets one.

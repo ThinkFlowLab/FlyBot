@@ -1,4 +1,4 @@
-// The helpers this package takes from its host (#2684). The Project plugin ships as its own
+// The helpers this package takes from its host (#2830). The Project plugin ships as its own
 // package, so its code cannot import `core/src/*`; the core hands the few pure helpers the two
 // packages share over through `flybot.projectHost()` in the plugin's `apply()`.
 //

@@ -1,7 +1,7 @@
 // @flybot/project host plugin (dsh / cordis plugin shape, same as ds-bot: name + inject + apply).
 // The Project domain — Project State, the board, the Project's own Chief, its team dossier, its
 // metrics and its assistant — lives in src/, moved out of the core's `src/host/project-*.js`
-// (#2684). The core owns the runtime and the few pure helpers the two packages share; this
+// (#2830). The core owns the runtime and the few pure helpers the two packages share; this
 // plugin asks for them through `flybot.projectHost()` and installs the same seams on that
 // runtime the core used to install itself, so `rt.projectBoard`, `rt.projectChief`,
 // `rt.projectTeam`, `rt.projectAssistant` and the `project_state` / `project_digest` tools are
@@ -22,7 +22,7 @@ export function apply(ctx) {
   // store keeps its own fallback (a Project is created without a Chief or an assistant), which is
   // the behavior that core has when its domain modules are not installed at all.
   if (seam === undefined || seam.runtime === undefined) {
-    ctx.flybot?.warn?.('flybot-project: this core has no Project host seam, so none of the Project domain is registered (#2684)')
+    ctx.flybot?.warn?.('flybot-project: this core has no Project host seam, so none of the Project domain is registered (#2830)')
     return { project: undefined, dispose() {} }
   }
   bindHost(seam.helpers)

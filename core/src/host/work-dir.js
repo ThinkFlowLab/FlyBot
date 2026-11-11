@@ -1,4 +1,4 @@
-// The Session's working folder (#2684): the cwd its Agent runs in, else the folder the Bot or room
+// The Session's working folder (#2830): the cwd its Agent runs in, else the folder the Bot or room
 // is set to work in, else the team workspace. Undefined only when none of them is known.
 //
 // This lived in `project-state.js` while that reader was the only caller; the meetings module
