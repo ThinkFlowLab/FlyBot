@@ -688,7 +688,7 @@ diff --git a/src/client/feedback.js b/src/client/feedback.js
 diff --git a/src/client/i18n.js b/src/client/i18n.js
 --- a/src/client/i18n.js
 +++ b/src/client/i18n.js
-@@ -5,6 +5,60 @@
+@@ -5,6 +5,61 @@
  export const NAMESPACE = 'ds-bot'
  
  const ZH = {
@@ -706,6 +706,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Could not read workflows': '读不到工作流。',
 +  'The Workflow plugin is not installed or not enabled. A default install includes @flybot/workflow.':
 +    '工作流插件没有安装，或没有启用。默认安装包含 @flybot/workflow。',
++  'Not installed in this profile.': '当前 profile 未安装。',
 +  'Could not copy this workflow': '这个工作流复制不了。',
 +  'Could not save this workflow': '这个工作流保存不了。',
 +  'Could not rename this workflow': '这个工作流改不了名。',
@@ -1623,7 +1624,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -838,6 +838,87 @@ const ZH = {
+@@ -838,6 +838,88 @@ const ZH = {
    'Up one level': '上一级',
    'No folders inside.': '里面没有文件夹。',
    'Some folders are not shown.': '还有一些文件夹没有显示。',
@@ -1680,6 +1681,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Member unbound.': '已解除成员的绑定。',
 +  'Project Assistant': '项目助手',
 +  'Project Chief': '项目 Chief',
++  'Project Chief: {error}': '项目 Chief：{error}',
 +  'Chief of this Project': '本项目的 Chief',
 +  'Pause the daily digest': '暂停每日摘要',
 +  'Assistant settings saved.': '助手设置已保存。',
