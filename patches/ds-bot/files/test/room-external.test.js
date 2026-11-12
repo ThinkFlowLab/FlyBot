@@ -1,9 +1,26 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { cleanExternal, createExternalRoomParticipant } from '../src/host/room-participant-external.js'
+
+// Closing a participant is asynchronous: `endChild` writes the stop line and lets SIGTERM follow
+// after TERM_GRACE_MS, so the child can still create entries while the hook that closed it has
+// already returned. One pass over the directory then raises ENOTEMPTY out of a test whose
+// assertions passed, which is what booted the merge queue on #2955 (#2957): retry the removal,
+// bounded, until the directory is gone.
+const removeExternalDir = async (dir, { attempts = 40, waitMs = 25 } = {}) => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (error?.code !== 'ENOTEMPTY' || attempt >= attempts) throw error
+      await new Promise(resolve => setTimeout(resolve, waitMs))
+    }
+  }
+}
 
 // The child protocol: one JSON object per line, `{ text }` answers the turn it was given.
 const ANSWER = (reply) => `let b='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))!==-1){const l=b.slice(0,i);b=b.slice(i+1);const m=JSON.parse(l);if(m.type==='turn')process.stdout.write(JSON.stringify({text:${JSON.stringify(reply)} + m.text})+'\\n')}})`
@@ -24,7 +41,7 @@ function fixture(t, dir) {
   t.after(() => { controller.abort(); driver.close() })
   // The children write into the test's temp dir, so it is removed only after the close hook above
   // has taken them with it (#2726).
-  if (dir !== undefined) t.after(() => rmSync(dir, { recursive: true, force: true }))
+  if (dir !== undefined) t.after(() => removeExternalDir(dir))
   const run = (member, text = 'hello') => driver.runTurn({
     room, member, sessionId: `external:ops:${member.id}`, text, note: 'your turn',
     signal: controller.signal, started: [], by: 'chief', exchangeId: `x-${member.id}`,
@@ -98,6 +115,28 @@ test('a stop is asked for on the protocol before the signal, and a shell is not 
   const lines = readFileSync(seen, 'utf8').split('\n').filter(Boolean)
   assert.match(lines[0], /"type":"turn"/)
   assert.match(lines[1], /"type":"stop"/)
+})
+
+test('the temp dir is removed while the child that filled it is still finishing (#2957)', async (t) => {
+  // Closing a participant is asynchronous: the stop line goes out at once and SIGTERM only after
+  // TERM_GRACE_MS, so the child can still be writing into the test's temp dir after the hook that
+  // closed it returned. One recursive pass then raised ENOTEMPTY out of a test whose assertions
+  // had passed, which is what booted the merge queue on #2955.
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  for (let i = 0; i < 300; i += 1) writeFileSync(join(dir, `seed-${i}`), '')
+  // It ignores SIGTERM, so only the driver's SIGKILL ends it: until then it keeps adding entries
+  // to the directory the teardown is removing.
+  const LINGER = `const fs=require('node:fs');let n=0;
+process.on('SIGTERM',()=>{});
+process.stdin.resume();
+setInterval(()=>fs.writeFileSync(process.env.DIR+'/f'+(n++),'x'),1)`
+  const { driver, room } = fixture(t, dir)
+  const member = { id: 'writes', name: 'Writes', external: { driver: 'subprocess', command: [process.execPath, '-e', LINGER], env: { DIR: dir } } }
+  await driver.open({ room, member })
+  await waitFor(() => readdirSync(dir).length > 300)
+  driver.close()
+  await removeExternalDir(dir)
+  assert.equal(existsSync(dir), false, 'a temp dir outlived the assertions that used it')
 })
 
 test('a stop the child obeys is not reported to the room as a crash (#198)', async (t) => {
