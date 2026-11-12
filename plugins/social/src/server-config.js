@@ -57,25 +57,38 @@ const showAddress = (value, max) => {
   return `${text.slice(0, max - 1 - tail.length)}…${tail}`
 }
 
+// The name of a server inside a refusal (#2975). A host alone names two servers the same, which is the
+// case the page fixed in #2967: https is the default and stays out of the name, any other scheme is
+// kept, the trailing slash goes, the path stays, so `social.example/team-b` and `social.example/team-c`
+// read apart. Deliberately not `showAddress`: that one bounds a stored address for display, while a
+// refusal is a sentence and is never cut.
+const serverLabel = (address) => {
+  try {
+    const url = new URL(address)
+    const path = url.pathname.replace(/\/+$/, '')
+    return `${url.protocol !== 'https:' ? `${url.protocol}//` : ''}${url.host}${path}`
+  } catch { return 'that server' }
+}
+
 // GET <server>/v1/platform: what the server is and which optional features it lists. A redirect is a
 // refusal (the address saved is the address checked), and so is anything that does not look like Bot Social.
 export async function probeServer(server, { fetch: fetchImpl = socialFetch, timeoutMs = PROBE_MS } = {}) {
-  const host = (() => { try { return new URL(server).host } catch { return 'that server' } })()
+  const label = serverLabel(server)
   let response
   try {
     response = await fetchImpl(`${server}/v1/platform`, { method: 'GET', headers: { accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
   } catch (error) {
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError'
     const why = timedOut ? 'it did not answer in time' : cleanLine(error?.cause?.code ?? error?.code ?? 'the connection failed', 60)
-    throw refused(`Could not reach ${host}: ${why}.`, 'unreachable')
+    throw refused(`Could not reach ${label}: ${why}.`, 'unreachable')
   }
-  if (response.status >= 300 && response.status < 400) throw refused(`${host} redirects somewhere else. Enter the address it redirects to.`, 'redirect')
-  if (!response.ok) throw refused(`${host} answered HTTP ${response.status}. Is this a Bot Social server?`, 'not_social')
+  if (response.status >= 300 && response.status < 400) throw refused(`${label} redirects somewhere else. Enter the address it redirects to.`, 'redirect')
+  if (!response.ok) throw refused(`${label} answered HTTP ${response.status}. Is this a Bot Social server?`, 'not_social')
   let info
   try { info = JSON.parse((await response.text()).slice(0, 262_144)) } catch { info = undefined }
   const isObject = info !== null && typeof info === 'object' && !Array.isArray(info)
   if (!isObject || (typeof info.name !== 'string' && info.platform_key === undefined && !Array.isArray(info.features))) {
-    throw refused(`${host} did not answer like a Bot Social server.`, 'not_social')
+    throw refused(`${label} did not answer like a Bot Social server.`, 'not_social')
   }
   const features = (Array.isArray(info.features) ? info.features : []).map(item => cleanLine(item, 40)).filter(Boolean).slice(0, 40)
   return { name: cleanLine(info.name, 60) || 'Bot Social', version: cleanLine(info.version, 30) || undefined, features }
