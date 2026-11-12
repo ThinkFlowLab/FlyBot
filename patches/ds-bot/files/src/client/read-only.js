@@ -27,3 +27,15 @@ export function readOnlyLine(h, roster, actions, { key, className, style, reload
         }, t('Reload'))
       : null)
 }
+
+// #2883: pressing Reload is an act, and an act with no answer reads as a click that did nothing.
+// The host's sentence stays the same whether the reload changed nothing or freed the slot, so the
+// two outcomes have to be named: a window that is still locked hears that it is still locked, and a
+// window that can write again hears that too. A writable window's reload has no receipt to write —
+// there was no lock to report on, and the change it made is whatever the reader pressed for.
+export function reloadReceipt(before, after) {
+  if (!readOnlySaid(before)) return null
+  return readOnlySaid(after)
+    ? t('Reloaded just now — this window is still read-only.')
+    : t('Reloaded — this window can write again.')
+}

@@ -313,6 +313,9 @@ const ZH = {
   'Supports {count} optional features': '支持 {count} 项可选功能',
   'Reachability': '连通性',
   'Read-only': '只读',
+  // #2883: the receipt a Reload press writes.
+  'Reloaded just now — this window is still read-only.': '刚刷新完——这个窗口仍是只读的。',
+  'Reloaded — this window can write again.': '已刷新——这个窗口可以写了。',
   'Another FlyBot window holds this team. Change the server there.': '另一个 FlyBot 窗口正在使用这个团队，请在那里更换服务器。',
   'Switch server': '切换服务器',
   'Server address': '服务器地址',
