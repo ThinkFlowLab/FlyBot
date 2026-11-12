@@ -1148,6 +1148,45 @@ test('a DSH home inside the OS home keeps what tells two paths apart (#2956)', a
   assert.match(readOnlyRow(report), /close the other one and reload\.$/, 'the advice survives the bound')
 })
 
+// #2964: a home nested deep enough fills the row's own bound, and #2960 made that visible — the
+// nested home keeps `~/.local/share/...` whole, so the 200-character bound lands on the advice and
+// the row ends `… close the other one and`. The advice is what the reader acts on, and the level
+// the other sentence names is the last one: a path too deep for the bound gives up its middle, so
+// the scope stays and the last level stays.
+test('a deep DSH home gives up its middle so the Read-only advice keeps its end (#2964)', async (t) => {
+  const osHome = mkdtempSync(join(tmpdir(), 'ds-bot-diag-deep-'))
+  const home = join(osHome, '.local', 'share', 'deepseek-harness', 'teams', 'flybot-dev')
+  mkdirSync(home, { recursive: true })
+  writeFileSync(join(home, 'state.json'), JSON.stringify({ version: 2 }))
+  // The same layout rule as the #2956 case above: the report abbreviates against the OS home the
+  // process answers, so this test holds the deep layout instead of hoping for it on the runner.
+  const original = os.homedir
+  os.homedir = () => osHome
+  syncBuiltinESMExports()
+  t.mock.method(console, 'error', () => {})
+  const rt = host(home, { statePath: join(home, 'state.json') })
+  t.after(async () => {
+    os.homedir = original
+    syncBuiltinESMExports()
+    await rt.dispose()
+    rmSync(osHome, { recursive: true, force: true, maxRetries: 5 })
+  })
+  const sentence = `The Bot team in ${home} is open in another dsh (Web or Desktop, pid 1 on host). This window shows the team but cannot change it; close the other one and reload.`
+  assert.ok(sentence.length > 200, 'the fixture sentence is over the row bound')
+  rt.readOnly = () => sentence
+
+  const report = await rt.diagnostics.report({})
+  const shown = readOnlyRow(report)
+
+  assert.ok(shown.length <= 200, `the row keeps the 200 bound: ${shown.length} ${JSON.stringify(shown)}`)
+  assert.equal(shown, sentence.replace(home, '~/.local/…/flybot-dev'), 'the home keeps its scope and its last level')
+  assert.match(shown, /close the other one and reload\.$/, 'the advice keeps its own words, never a cut')
+  assert.equal(shown.split('…').length - 1, 1, `one ellipsis, inside the home: ${JSON.stringify(shown)}`)
+  assert.equal(shown.includes(osHome), false, 'the row never carries the home folder')
+  // Text inside its own bound is untouched: the file row keeps the whole path it always printed.
+  assert.match(report.markdown, /^state file: ~\/\.local\/share\/deepseek-harness\/teams\/flybot-dev\/state\.json \(/m, 'a short row keeps its whole path')
+})
+
 
 test('a writable window has no Read-only row', async (t) => {
   const { report } = await realHost(t)
