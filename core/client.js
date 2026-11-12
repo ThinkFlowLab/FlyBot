@@ -2451,10 +2451,23 @@ var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"
 var fitsAt = (text2, at, word) => text2.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text2.slice(at + word.length));
 var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
 var stripInvisible = (value) => String(value ?? "").replace(/\p{Cf}/gu, "");
-var NOT_DRAWN = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu;
+var NOT_DRAWN_RANGES = [
+  [847, 847],
+  [4447, 4448],
+  [6068, 6069],
+  [6155, 6157],
+  [6159, 6159],
+  [10240, 10240],
+  [12644, 12644],
+  [65440, 65440],
+  [65024, 65039],
+  [917760, 917999]
+];
+var NOT_DRAWN = new RegExp(`[${NOT_DRAWN_RANGES.map(([from, to]) => `\\u{${from.toString(16)}}${to === from ? "" : `-\\u{${to.toString(16)}}`}`).join("")}]`, "gu");
+var DRAWS_NOTHING = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu;
 function nameProblem(name) {
   const text2 = stripInvisible(name).trim();
-  if (text2 === "" || text2.replace(NOT_DRAWN, "").trim() === "") return "A Bot needs a name";
+  if (text2 === "" || text2.replace(DRAWS_NOTHING, "").trim() === "") return "A Bot needs a name";
   if (/[@`\r\n]/.test(text2)) return "A Bot name cannot contain @, ` or a line break";
   if (ALL_WORDS.includes(text2.toLowerCase())) return `"${text2}" calls everyone in a group, so it cannot be a Bot name`;
   return void 0;
@@ -8774,6 +8787,7 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 
 // src/shared/identity.js
 var nameKey = (value) => stripInvisible(String(value ?? "").normalize("NFC")).trim().toLowerCase().normalize("NFC");
+var drawnKey = (value) => nameKey(value).replace(NOT_DRAWN, "");
 
 // src/shared/task-board.js
 var COLUMNS = ["not-started", "in-progress", "done"];

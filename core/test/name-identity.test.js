@@ -150,7 +150,9 @@ test('#2879 a rename to a name that draws nothing is refused, and a drawn rename
 // #2935: "draws something, plus a character the screen does not draw" is still two Bots reading
 // one name. `\p{Cf}` is gone before the key is built, but a combining grapheme joiner, a braille
 // blank and the Hangul fillers survive it and `trim()`, so `Dev\u034f` keeps the key `dev\u034f`
-// beside `dev` while both rows read `Dev` — and `@Dev` can only ever reach the key `dev`.
+// beside `dev` while both rows read `Dev` — and `@Dev` can only ever reach the key `dev`. These are
+// the code points with no glyph of their own, listed one by one; a combining mark is not one of
+// them, because the letter under it draws it.
 const DRAWN_SAME_AS_DEV = [
   'Dev\u034f', // COMBINING GRAPHEME JOINER (Mn, zero width)
   'Dev\u2800', // BRAILLE PATTERN BLANK beside a drawn name
@@ -165,6 +167,22 @@ test('#2935 the drawn key drops what draws nothing, and keeps a mark NFC compose
   // of the name and not one of the characters this key removes.
   assert.equal(nameKey('Cafe\u0301'), nameKey('Caf\u00e9'))
   assert.equal(drawnKey('Cafe\u0301'), 'caf\u00e9')
+  // A combining mark that does not compose is drawn with the letter it sits on, so it stays in the
+  // drawn form: the vowel in these two Thai names is visible, and they are two names (#2935).
+  assert.equal(drawnKey('\u0e01\u0e34'), '\u0e01\u0e34')
+  assert.notEqual(drawnKey('\u0e01\u0e34'), drawnKey('\u0e01\u0e35'))
+})
+
+// The counter-control for the narrowing: the fix may refuse only names that draw the same, so a
+// combining mark — which draws on its letter — must leave two names apart. A class-wide `\p{Mn}`
+// strip would collapse these two onto one drawn form and refuse the second as "already exists".
+test('#2935 a combining mark is drawn with its letter, so both spellings are names', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  const first = await rt.createBot({ name: '\u0e01\u0e34', pickModel: true })
+  const second = await rt.createBot({ name: '\u0e01\u0e35', pickModel: true })
+  assert.equal(state().bots[first.id].name, '\u0e01\u0e34')
+  assert.equal(state().bots[second.id].name, '\u0e01\u0e35', 'the vowel is drawn, so this is a second drawn name')
 })
 
 test('#2935 the create path refuses a name whose drawn form is already taken', async (t) => {
