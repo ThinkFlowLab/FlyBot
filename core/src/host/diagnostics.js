@@ -25,10 +25,18 @@ const quote = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 // The folders one line may name, longest first (#2944): this host's own home can sit outside the
 // OS home, and a row that shortened one of them disagreed with the row beside it. The longer folder
-// goes first, so a team file under both reads `~/state.json`, not `~/.dsh/bot/.../state.json`.
-const homeFolders = home => [...new Set((Array.isArray(home) ? home : [home])
-  .filter(folder => typeof folder === 'string' && folder.length > 1))]
-  .sort((a, b) => b.length - a.length)
+// goes first so a prefix that is not a folder of its own never eats part of the longer name.
+// A folder inside another listed folder is left to the outer one (#2956): the outer home shortens to
+// `~` first, so a home under it keeps `~/.dsh/bot` and two different files can never print one
+// string. Otherwise the inner folder would shorten to bare `~` as well, exactly like the OS home.
+const inside = (folder, folderOf) => folderOf.some(other => other !== folder
+  && (folder.startsWith(`${other}/`) || folder.startsWith(`${other}\\`)))
+
+const homeFolders = home => {
+  const folders = [...new Set((Array.isArray(home) ? home : [home])
+    .filter(folder => typeof folder === 'string' && folder.length > 1))]
+  return folders.filter(folder => !inside(folder, folders)).sort((a, b) => b.length - a.length)
+}
 
 // Shapes of credentials that are not saved keys: provider keys, bearer tokens, and
 // token or key parameters in addresses (the Web login address carries one).
