@@ -54,7 +54,8 @@ const NOTIFY_KINDS = [
 // claim a domain the process does not have. The row says so and names the command that
 // installs the package, the way the Workflows page names its own (#1381). Project surfaces
 // themselves are gated by #2877, so this page is the one place that still tells the owner
-// the package is missing.
+// the package is missing. The command names the profile too (#2926): `dsh` refuses a plugin
+// command without one, and `web` is the profile this page is served from (docker/profile.mjs).
 export function PluginsView({ answer = null, error = '', onFlip }) {
   const plugins = answer?.plugins ?? []
   return h('div', null,
@@ -67,7 +68,7 @@ export function PluginsView({ answer = null, error = '', onFlip }) {
             h('span', null, plugin.name),
             h('span', { className: 'bt-set-hint' }, `${plugin.package} — ${t(plugin.purpose)}`),
             h('span', { className: 'bt-set-hint', role: 'status' }, t('Not installed in this profile.'), ' ',
-              h('code', { className: 'bt-install-command' }, `dsh plugin add ${plugin.package}`))))
+              h('code', { className: 'bt-install-command' }, `dsh plugin --profile web add ${plugin.package}`))))
         : h(SwitchRow, {
           key: plugin.id,
           label: plugin.name,

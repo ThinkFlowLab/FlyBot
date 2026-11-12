@@ -1,0 +1,1 @@
+The Plugins row for a package this profile does not have prints an install command `dsh` accepts: it now names the profile (`dsh plugin --profile web add @flybot/<id>`) instead of leaving it out, which `dsh` refused with `error: required option '--profile <name>' not specified` ([#2926](https://github.com/ThinkFlowLab/FlyBot/issues/2926)).

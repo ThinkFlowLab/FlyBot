@@ -14,7 +14,7 @@ npm run install:doctor
 ```
 
 It checks the Node floor and the packages in the repository
-(`core`, `plugins/social`, `plugins/tree`, `plugins/workflow`, `plugins/timeline`, `plugins/project`) and prints the `dsh plugin add`
+(`core`, `plugins/social`, `plugins/tree`, `plugins/workflow`, `plugins/timeline`, `plugins/project`) and prints the `dsh plugin --profile web add`
 commands for the clean-profile install: `path:/core`, `path:/plugins/social`, `path:/plugins/tree`, `path:/plugins/workflow` and `path:/plugins/project`.
 `@flybot/timeline` is opt-in (off by default), so its command is not in that list; see the README. It reads the filesystem only: no network, no tokens,
 no `~/.dsh`.

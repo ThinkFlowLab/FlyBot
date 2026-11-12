@@ -19458,7 +19458,7 @@ function PluginsView({ answer = null, error = "", onFlip }) {
             { className: "bt-set-hint", role: "status" },
             t("Not installed in this profile."),
             " ",
-            (0, import_react43.createElement)("code", { className: "bt-install-command" }, `dsh plugin add ${plugin.package}`)
+            (0, import_react43.createElement)("code", { className: "bt-install-command" }, `dsh plugin --profile web add ${plugin.package}`)
           )
         )
       ) : (0, import_react43.createElement)(SwitchRow, {
