@@ -38,7 +38,10 @@ const CREDENTIALS = [
   [/(["']?(?:api[_-]?key|authorization|x-api-key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
 ]
 
-export function cleanText(text, { redact = value => value, home = homedir() } = {}) {
+// The bound is taken here, after the home folder has been abbreviated to `~` (#2936): a bound taken
+// on the raw text measures a path that is about to shrink, so a sentence could end mid-word with no
+// mark at all. One function decides both, so the `…` has exactly one owner and never doubles.
+export function cleanText(text, { redact = value => value, home = homedir(), max = TEXT_MAX } = {}) {
   let out = redact(String(text ?? ''))
   for (const [pattern, replacement] of CREDENTIALS) out = out.replace(pattern, replacement)
   if (home && home.length > 1) {
@@ -49,8 +52,13 @@ export function cleanText(text, { redact = value => value, home = homedir() } = 
     const doubled = home.replace(/\\/g, '\\\\')
     if (doubled !== home) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
   }
-  const kept = cut(out, TEXT_MAX)
-  return kept.cut ? `${kept.text}…` : out
+  const kept = cut(out, max)
+  if (!kept.cut) return out
+  // A cut that lands inside a word drops the word it was cut in, and the reader cannot tell what
+  // is missing: back off to the last whole word, and mark the cut once, at the end.
+  const next = out[kept.text.length]
+  const words = next !== undefined && !/\s/.test(next) ? kept.text.replace(/\s+\S*$/, '') : kept.text
+  return `${(words || kept.text).trimEnd()}…`
 }
 
 const errorText = error => `${error.name && error.name !== 'Error' ? `${error.name}: ` : ''}${error.message}`
@@ -152,7 +160,7 @@ export function install(rt) {
   let fileFailed = false
   let fileFailure
 
-  const clean = text => cleanText(text, { redact: rt.redactSecrets })
+  const clean = (text, options) => cleanText(text, { redact: rt.redactSecrets, ...options })
 
   // Entries from earlier runs, read once; new ones are kept apart until then. A read that failed
   // (`EACCES`, `EISDIR`, a name this host may not open) is not a log without errors (#2604): the
@@ -410,7 +418,7 @@ export function install(rt) {
       // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
       // report must not compress both into "another dsh holds the team".
-      readOnly: readOnly ? clean(cut(readOnly, 200).text) : undefined,
+      readOnly: readOnly ? clean(readOnly, { max: 200 }) : undefined,
       // The writer opens on the first save that got past `writable()` (#2351), so a window that
       // has not saved yet never read or repaired the file: `recording` there promises a line
       // nobody asked for, and `opened: false` says so instead. A window another dsh keeps
@@ -439,7 +447,7 @@ export function install(rt) {
   }
 
   const sanitizeClient = (client) => {
-    const pick = (value, max) => (typeof value === 'string' ? clean(cut(value, max).text) : undefined)
+    const pick = (value, max) => (typeof value === 'string' ? clean(value, { max }) : undefined)
     return {
       surface: pick(client?.surface, 40),
       language: pick(client?.language, 20),
@@ -448,7 +456,7 @@ export function install(rt) {
   }
   const sanitizeClientEntries = list => (Array.isArray(list) ? list : []).slice(-20).flatMap((item) => {
     if (typeof item?.text !== 'string' || typeof item.time !== 'number') return []
-    return [{ time: item.time, level: item.level === 'warn' ? 'warn' : 'error', source: 'browser', text: clean(cut(item.text, 500).text), ...(typeof item.code === 'string' ? { code: clean(cut(item.code, 40).text) } : {}) }]
+    return [{ time: item.time, level: item.level === 'warn' ? 'warn' : 'error', source: 'browser', text: clean(item.text, { max: 500 }), ...(typeof item.code === 'string' ? { code: clean(item.code, { max: 40 }) } : {}) }]
   })
 
   async function report(body = {}) {

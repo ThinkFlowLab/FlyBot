@@ -897,7 +897,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
    const again = host(home)
    assert.deepEqual((await again.diagnostics.entries()).map(entry => entry.code), ['EACCES', 'RATE_LIMIT'])
    assert.match(await again.diagnostics.logText(), /\n {4}at TestContext/)
-@@ -84,6 +84,111 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
+@@ -84,6 +84,112 @@ test('warnings are kept, cleaned, written to the log, and read back after a rest
    quiet.mock.restore()
  })
  
@@ -966,7 +966,8 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  assert.equal(line.isWellFormed(), true)
 +  assert.equal(line.includes('\ufffd'), false)
 +  assert.ok(line.includes('x'.repeat(499)), 'the text keeps its whole-character prefix')
-+  assert.ok(line.includes(`[${'y'.repeat(39)}]`), `expected the code prefix, got ${line}`)
++  // The cut backs off the emoji and now says it was cut (#2936): the mark belongs to the bound.
++  assert.ok(line.includes(`[${'y'.repeat(39)}…]`), `expected the code prefix, got ${line}`)
 +})
 +
 +// #1919: the stack summary in the report is bounded too, and its bound is a code-unit one:
@@ -1033,7 +1034,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  test('diagnostics append fallback redacts an error message', async (t) => {
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
    t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
-@@ -133,6 +133,751 @@ test('diagnostics append fallback redacts an error message', async (t) => {
+@@ -133,6 +133,798 @@ test('diagnostics append fallback redacts an error message', async (t) => {
    assert.match(stderr.join('\n'), /api_key=\[hidden\]/)
  })
  
@@ -1447,8 +1448,13 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +// and a report that calls a newer or unreadable team file "another dsh holds the team" sends the
 +// reader to close a host that is not running. These four build the real store and the real
 +// diagnostics on one runtime, so the sentence is the one the host actually produces.
-+async function realHost(t, { saved, locked = false, prepare } = {}) {
-+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-ro-'))
++async function realHost(t, { saved, locked = false, prepare, statePathLength } = {}) {
++  const base = mkdtempSync(join(tmpdir(), 'ds-bot-diag-ro-'))
++  // A home of a length this test chose, not the runner's (#2936): the bound under test is the
++  // sentence's, so a short /tmp must not decide whether the test can see it.
++  const home = statePathLength === undefined ? base
++    : join(base, 'h'.repeat(Math.max(1, statePathLength - base.length - '/state.json'.length - 1)))
++  if (home !== base) mkdirSync(home)
 +  const statePath = join(home, 'state.json')
 +  prepare?.(statePath)
 +  if (saved === 'dir') mkdirSync(statePath)
@@ -1476,7 +1482,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  installDiagnostics(rt)
 +  t.after(async () => {
 +    await Promise.all(disposers.splice(0).map(dispose => dispose()))
-+    rmSync(home, { recursive: true, force: true, maxRetries: 5 })
++    rmSync(base, { recursive: true, force: true, maxRetries: 5 })
 +  })
 +  return { home, statePath, rt, readOnly: rt.readOnly(), report: await rt.diagnostics.report({}) }
 +}
@@ -1756,17 +1762,59 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  assert.match(report.markdown, /^state file: ~\/state\.json \(\d+ bytes, last written .+\)$/m)
 +})
 +
++// #2936: the report bounds the Read-only sentence after it has been abbreviated, so a cut lands
++// between two words and carries exactly one `…` at the end. The bound under test is the sentence's,
++// so the fixture builds a state path of a length this test chose: a short /tmp on the runner must
++// not decide whether the test can see a cut (#2167 never could).
++const LONG_STATE_PATH = 110
++
++const readOnlyRow = (report) => {
++  const found = report.markdown.match(/^\| Read-only \| (.*) \|$/m)
++  assert.ok(found, `the report carries a Read-only row: ${report.markdown}`)
++  return found[1]
++}
++
++function assertCutBetweenWords(shown, sentence) {
++  assert.ok(shown.endsWith('…'), `a cut sentence says it was cut, got ${JSON.stringify(shown)}`)
++  assert.equal(shown.split('…').length - 1, 1, `exactly one ellipsis, at the end: ${JSON.stringify(shown)}`)
++  const kept = shown.slice(0, -1)
++  assert.ok(sentence.startsWith(kept), `the shown text is the sentence's own prefix: ${JSON.stringify(shown)}`)
++  assert.equal(sentence[kept.length], ' ', `the cut lands between words, not inside one: ${JSON.stringify(shown)}`)
++  assert.equal(kept, kept.trimEnd(), 'no space is left before the ellipsis')
++}
++
 +test('the Read-only row says a newer team file needs an update, not that another dsh holds the team (#2167)', async (t) => {
-+  const { home, readOnly, report } = await realHost(t, { saved: { version: 99 } })
++  const { statePath, readOnly, report } = await realHost(t, { saved: { version: 99 }, statePathLength: LONG_STATE_PATH })
++  assert.ok(statePath.length >= LONG_STATE_PATH, 'the fixture home is long enough to bound the sentence')
++  const sentence = `The Bot team file ${statePath} could not be read (saved by a newer FlyBot; update FlyBot). FlyBot does not change it; fix or move the file and reload.`
++  assert.equal(readOnly, sentence, 'the store still answers the whole sentence')
 +  assert.match(readOnly, /update FlyBot/)
-+  assert.ok(report.markdown.includes(`| Read-only | The Bot team file ${join(home, 'state.json')} could not be read (saved by a newer FlyBot; update FlyBot). FlyBot does not change it; fix or move the file and reload. |`), report.markdown)
++  const shown = readOnlyRow(report)
++  assert.ok(shown.length <= 201, `the row keeps the 200 bound plus the mark: ${shown.length}`)
++  assert.match(shown, /update FlyBot/)
++  assertCutBetweenWords(shown, sentence)
 +  assert.doesNotMatch(report.markdown, /another dsh holds the team/)
 +})
 +
 +test('the Read-only row says an unreadable team file could not be read, not that another dsh holds the team (#2167)', async (t) => {
-+  const { report } = await realHost(t, { saved: 'dir' })
-+  assert.match(report.markdown, /^\| Read-only \| The Bot team file .* could not be read \(EISDIR\)\. FlyBot does not change it; fix or move the file and reload\. \|$/m)
++  const { statePath, report } = await realHost(t, { saved: 'dir', statePathLength: LONG_STATE_PATH })
++  const sentence = `The Bot team file ${statePath} could not be read (EISDIR). FlyBot does not change it; fix or move the file and reload.`
++  const shown = readOnlyRow(report)
++  assert.ok(shown.length <= 201, `the row keeps the 200 bound plus the mark: ${shown.length}`)
++  assert.match(shown, /could not be read \(EISDIR\)/)
++  assertCutBetweenWords(shown, sentence)
 +  assert.doesNotMatch(report.markdown, /another dsh holds the team/)
++})
++
++// The other half of the same rule: a sentence inside the bound is left exactly as it was written —
++// no ellipsis invented for text that was never cut.
++test('a Read-only sentence inside the bound is shown unchanged, with no ellipsis (#2936)', async (t) => {
++  const { rt } = await realHost(t)
++  const sentence = 'Another dsh (pid 1 on host) holds the team'
++  rt.readOnly = () => sentence
++  const shown = readOnlyRow(await rt.diagnostics.report({}))
++  assert.equal(shown, sentence)
++  assert.equal(shown.includes('…'), false)
 +})
 +
 +test('the Read-only row keeps the other-dsh wording when a live lock names it (#2167)', async (t) => {
