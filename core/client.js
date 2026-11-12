@@ -472,6 +472,8 @@ var ZH = {
   About: "简介",
   "Show less": "收起",
   "Show more": "展开",
+  "Showing {shown} of {count}": "显示 {shown} / {count}",
+  "Showing all {count}": "显示全部 {count}",
   "Admin leads": "管理员主持",
   "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
   Everyone: "所有人",
@@ -19194,6 +19196,11 @@ function FeedbackPage({ roster, actions, run, Section, Row: Row4 }) {
       entries2.length > 8 ? (0, import_react41.createElement)(
         "div",
         { key: "more", className: "bt-set-row bt-fb-more-row" },
+        (0, import_react41.createElement)(
+          "span",
+          { className: "bt-set-hint bt-fb-count" },
+          allErrors ? t("Showing all {count}", { count: entries2.length }) : t("Showing {shown} of {count}", { shown: shown.length, count: entries2.length })
+        ),
         (0, import_react41.createElement)("button", {
           type: "button",
           className: "bt-soft bt-soft-sm bt-fb-more",

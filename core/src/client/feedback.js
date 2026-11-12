@@ -145,6 +145,10 @@ export function FeedbackPage({ roster, actions, run, Section, Row }) {
             entry.code ? h('span', { className: 'bt-tag bt-fb-code' }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null)),
       entries.length > 8
         ? h('div', { key: 'more', className: 'bt-set-row bt-fb-more-row' },
+            h('span', { className: 'bt-set-hint bt-fb-count' },
+              allErrors
+                ? t('Showing all {count}', { count: entries.length })
+                : t('Showing {shown} of {count}', { shown: shown.length, count: entries.length })),
             h('button', {
               type: 'button', className: 'bt-soft bt-soft-sm bt-fb-more', 'aria-expanded': allErrors,
               onClick: () => setAllErrors(!allErrors),

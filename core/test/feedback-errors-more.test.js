@@ -155,15 +155,18 @@ async function mount({ entries, total } = {}) {
   const find = predicate => all(tree).find(predicate)
   const rows = () => all(tree).filter(node => node.props?.className === 'bt-set-row bt-fb-entry')
   const more = () => find(node => typeof node.props?.className === 'string' && node.props.className.split(' ').includes('bt-fb-more'))
+  const count = () => find(node => typeof node.props?.className === 'string' && node.props.className.split(' ').includes('bt-fb-count'))
   const text = (node) => [node?.props?.children].flat(Infinity).filter(child => typeof child === 'string' || typeof child === 'number').join('')
   const deepText = (node) => all(node).map(part => text(part)).filter(Boolean).join(' ')
   const heading = () => find(node => node.type === 'h3' && text(node).startsWith('Recent errors'))
   return {
     get rows() { return rows() },
     get more() { return more() },
+    get count() { return count() },
     get heading() { return heading() },
     text, deepText,
     title: () => text(heading()),
+    countText: () => text(count()),
     async click() { more().props.onClick({}); await settle() },
   }
 }
@@ -200,4 +203,26 @@ test('#2266: eight or fewer errors draw no control and keep the title as it was'
   assert.equal(exact.title(), 'Recent errors · 8')
   assert.equal(exact.rows.length, 8)
   assert.equal(exact.more, undefined, 'exactly eight rows are all drawn, so no control')
+})
+
+// #2884: `Show more` was an unlabelled way out — a reader with more than eight errors
+// could not tell whether the list was cut or complete from the page itself, and wrote
+// bug reports from the eight rows it showed. The control row now carries the count of
+// what is drawn against what is loaded: `Showing 8 of 50` while folded, `Showing all 50`
+// once open. A report of eight or fewer rows draws neither, exactly as before.
+test('#2884: a list cut at eight rows says how many rows of how many it draws', async () => {
+  const page = await mount({ entries: errorEntries(50), total: 60 })
+  assert.equal(page.countText(), 'Showing 8 of 50', 'the folded list says it is drawing eight of the fifty rows it holds')
+  assert.equal(page.text(page.more).trim(), 'Show more')
+  await page.click()
+  assert.equal(page.countText(), 'Showing all 50', 'open, the panel says every loaded row is drawn')
+  assert.equal(page.rows.length, 50)
+  await page.click()
+  assert.equal(page.countText(), 'Showing 8 of 50', 'folded again, the count returns to eight')
+})
+
+test('#2884: eight or fewer rows draw no count line', async () => {
+  const page = await mount({ entries: errorEntries(8), total: 8 })
+  assert.equal(page.count, undefined, 'nothing is hidden, so nothing counts it')
+  assert.equal(page.rows.length, 8)
 })
