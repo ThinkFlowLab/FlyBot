@@ -5509,10 +5509,14 @@ test('#90: hide-remote returns the filtered roster without waiting for a refresh
   await social.registerAll()
   await call('flybot/social/remote-bots', { fresh: true })
   assert.equal(fetches, 1)
-  const hidden = await Promise.race([
-    call('flybot/social/hide-remote', { handle: '@coder.bob.home' }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('hide-remote waited for the roster refresh')), 200)),
-  ])
+  // The held roster fetch is the only thing hide-remote could wait for, so the call must return while
+  // it is still held. This bound only turns a hang into a failure; a wall-clock budget here measured
+  // the runner's scheduling instead, and on a loaded runner it failed a correct call (#2965).
+  let returned = false
+  const pending = call('flybot/social/hide-remote', { handle: '@coder.bob.home' })
+    .then((result) => { returned = true; return result })
+  await waitUntil(() => returned, { timeout: 10000 })
+  const hidden = await pending
   assert.equal(hidden.ok, true, hidden.error?.message)
   assert.equal(hidden.value.hidden, true)
   assert.equal(hidden.value.homes[0].bots.some(b => b.handle === '@coder.bob.home'), false)
