@@ -99,14 +99,23 @@ test('a plugin the profile does not have is drawn as not installed, with no swit
   const page = text(nodes)
   assert.match(page, /Not installed in this profile/)
   // #2926: DSH refuses `dsh plugin add` on its own (`error: required option '--profile <name>'
-  // not specified`), so the row has to name the profile as well; `web` is the profile this page
-  // runs in (docker/profile.mjs), not a placeholder the reader would have to fill.
-  assert.match(page, /dsh plugin --profile web add @flybot\/project/)
+  // not specified`), so the row has to name the profile too. #2931: it must be the profile this
+  // runtime is in, not the `web` #2928 guessed — profiles/desktop is a sibling of profiles/web.
+  // A host that answers no profile gets the literal placeholder, never a made-up `web`.
+  assert.match(page, /dsh plugin --profile <profile> add @flybot\/project/)
   assert.doesNotMatch(page, /dsh plugin add /, 'the command never leaves the profile out')
+  assert.doesNotMatch(page, /--profile web/, 'a host with no profile is not the web profile')
   assert.equal(switches(nodes).length, 1, 'only the installed plugin draws a switch')
   assert.equal(switches(nodes)[0].props['aria-checked'], true)
   const missing = nodes.find(node => node?.props?.['data-plugin'] === 'project')
   assert.equal(missing?.props?.['data-installed'], 'false')
+})
+
+test('the install command names the profile the host answered, never a guessed one (#2931)', () => {
+  const command = profile => text(draw(PluginsView({ answer: { profile, plugins: [plugin({ installed: false })] } })))
+  assert.match(command('deskprobe'), /dsh plugin --profile deskprobe add @flybot\/project/)
+  assert.match(command('web'), /dsh plugin --profile web add @flybot\/project/)
+  assert.notEqual(command('deskprobe'), command('web'), 'two profiles draw two different commands')
 })
 
 test('a plugin the profile has keeps today\'s switch (#2869)', () => {

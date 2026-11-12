@@ -19438,6 +19438,7 @@ var NOTIFY_KINDS = [
 ];
 function PluginsView({ answer = null, error = "", onFlip }) {
   const plugins = answer?.plugins ?? [];
+  const profile = typeof answer?.profile === "string" && answer.profile !== "" ? answer.profile : "<profile>";
   return (0, import_react43.createElement)(
     "div",
     null,
@@ -19459,7 +19460,7 @@ function PluginsView({ answer = null, error = "", onFlip }) {
             { className: "bt-set-hint", role: "status" },
             t("Not installed in this profile."),
             " ",
-            (0, import_react43.createElement)("code", { className: "bt-install-command" }, `dsh plugin --profile web add ${plugin.package}`)
+            (0, import_react43.createElement)("code", { className: "bt-install-command" }, `dsh plugin --profile ${profile} add ${plugin.package}`)
           )
         )
       ) : (0, import_react43.createElement)(SwitchRow, {

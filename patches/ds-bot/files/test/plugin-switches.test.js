@@ -76,7 +76,7 @@ test('plugins/list answers all five switches and plugins/set persists a flip', a
 // #2877: the switch says the owner left the feature on; only the plugin says the package is here
 // and its apply() really ran. The browser needs that second bit to stop drawing the Project
 // surfaces an absent package cannot back, so `plugins/list` reports it — `enabled` keeps its own
-// meaning, and `plugins/set` keeps the shape Settings → Plugins already reads.
+// meaning, and `plugins/set` answers the same rows, `loaded` included (P-721).
 test('plugins/list says whether this start really attached each plugin', async () => {
   const { dir, rt } = runtime()
   try {
@@ -97,7 +97,8 @@ test('plugins/list says whether this start really attached each plugin', async (
     const saved = await rt.flybotEndpoint('plugins/set', { id: 'project', enabled: false })
     const project = saved.plugins.find(plugin => plugin.id === 'project')
     assert.equal(project.enabled, false)
-    assert.deepEqual(Object.keys(project).sort(), ['enabled', 'id', 'name', 'package', 'purpose'], 'plugins/set answers what it always did')
+    assert.equal(project.loaded, true, 'a flip answers the row the list answered, loaded included (P-721)')
+    assert.deepEqual(Object.keys(project).sort(), ['enabled', 'id', 'loaded', 'name', 'package', 'purpose'], 'plugins/set answers the same row shape as plugins/list')
     const off = await rt.flybotEndpoint('plugins/list')
     assert.deepEqual([off.plugins.find(plugin => plugin.id === 'project').enabled, off.plugins.find(plugin => plugin.id === 'project').loaded], [false, true])
   } finally {
