@@ -41,7 +41,21 @@ export function parseServerUrl(input) {
   return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
 }
 
-const cleanLine = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f<>]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const flatten = value => String(value ?? '').replace(/[\u0000-\u001f\u007f<>]+/g, ' ').replace(/\s+/g, ' ').trim()
+const cleanLine = (value, max) => flatten(value).slice(0, max)
+
+// A stored address for display (#2968). An address that fits comes back byte for byte. Past the bound
+// the middle goes, not just the tail: a plain cut with no mark made two saved servers one string
+// (#2958), and a `199 + …` cut still would, so the last path segment — the part that tells `/one`
+// from `/two` — is kept. Honest limit: two addresses whose only difference sits in the dropped middle
+// cannot be told apart at this length, and no rendering can fix that in one line.
+const showAddress = (value, max) => {
+  const text = flatten(value)
+  if (text.length <= max) return text
+  const slash = text.lastIndexOf('/')
+  const tail = slash > 0 && text.length - slash <= max - 2 ? text.slice(slash) : ''
+  return `${text.slice(0, max - 1 - tail.length)}…${tail}`
+}
 
 // GET <server>/v1/platform: what the server is and which optional features it lists. A redirect is a
 // refusal (the address saved is the address checked), and so is anything that does not look like Bot Social.
@@ -130,7 +144,7 @@ export function createServerController({ base: configured, flybot, start, regist
       // saved choice was refused and why, instead of showing "Profile default" and saying nothing. A
       // refusal is a sentence, and the page puts it before a '.', so the trailing one is dropped here.
       const reason = cleanLine(failure?.message ?? failure, 200).replace(/\.$/, '')
-      return { unusable: { address: cleanLine(saved.server, MAX_URL), problem: reason || 'not a usable server address' } }
+      return { unusable: { address: showAddress(saved.server, MAX_URL), problem: reason || 'not a usable server address' } }
     }
   }
   const effective = () => {
