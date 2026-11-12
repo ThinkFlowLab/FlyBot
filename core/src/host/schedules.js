@@ -428,7 +428,9 @@ export function install(rt) {
   // The row write itself. `put`, `get` and the `tasks` row shape are the same private API
   // `moveSchedules` documents above; a renamed `put` or `get` throws here and copies nothing.
   async function copyRow(fromSession, sourceId, toSession) {
-    await service.serialize(async () => {
+    // The id must leave `serialize`: the caller hands it to `noteTargetReach`, which refuses a
+    // non-string and then saves nothing, so the copy keeps no reach-at-set (#2951).
+    return await service.serialize(async () => {
       const tasks = (await service.getDomain()).table('tasks')
       const source = tasks.get(sourceId)
       if (source === undefined || source.sessionId !== fromSession) throw invalid('No such task')

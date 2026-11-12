@@ -1140,3 +1140,33 @@ test('#2930 b: an edit re-stores the reach at the edit, so the marker stops lyin
   assert.deepEqual(row.carriedAtSet, ['github', 'composio'], 'the reader saved it with both on, so both are what it was set with')
   assert.deepEqual(row.carried, ['github', 'composio'])
 })
+
+// #2951: a copy is a new task, so it is set at the copy — with the target's reach at that moment.
+// The copy path hands the new row's id to the same `noteTargetReach` create uses, so when
+// `copyRow` drops that id the set is never written, `rt.save()` never runs, and the card can never
+// say the reach moved since it was set.
+test('#2951: a copy stores the reach the target has when it is copied, so the card can say it moved', async (t) => {
+  const { rt, call } = await reachSetup(t)
+  rt.state.bots.w1.connectors = { composio: false }
+  const made = await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const [source] = made.value.tasks
+  assert.deepEqual(source.carriedAtSet, ['github'], 'the source was set while Composio was off')
+
+  // The Bot's reach moves before the copy: Composio is on when the copy is made, so the copy is
+  // set with both — the source's stored set is not the copy's set.
+  rt.state.bots.w1.connectors = {}
+  const copied = await call('schedule-create', { target: 'm1', copyFrom: { sessionId: source.sessionId, id: source.id } })
+  assert.equal(copied.ok, true, JSON.stringify(copied))
+  const copy = copied.value.tasks.find(task => task.id !== source.id)
+  assert.equal(copy.botId, 'm1', 'the copy is listed under the target Bot')
+  assert.deepEqual(copy.carriedAtSet, ['github', 'composio'], 'the copy is set with the reach the target has now')
+  assert.deepEqual(copy.carried, ['github', 'composio'], 'nothing has moved yet, so now and set agree')
+
+  // The set reached the saved state, not only the reply: turning a connector off afterwards must
+  // leave the stored set alone and move only what the run would carry now.
+  rt.state.bots.m1.connectors = { composio: false }
+  const later = (await call('schedules', {})).value.tasks.find(task => task.id === copy.id)
+  assert.deepEqual(later.carriedAtSet, ['github', 'composio'], 'the stored set does not move when the reach changes after the copy')
+  assert.deepEqual(later.carried, ['github'], 'what the run would carry now is the reach the target has now')
+})
