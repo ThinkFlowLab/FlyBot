@@ -2628,6 +2628,10 @@ function reminderPrompts(text2) {
     return [];
   }
 }
+function cutText(value, max) {
+  const points = [...String(value ?? "")];
+  return points.length > max ? `${points.slice(0, max).join("")}…` : points.join("");
+}
 var stripHeader = (text2) => text2.replace(HEADER, "");
 function stripTrace(text2, names = []) {
   if (typeof text2 !== "string") return text2;
@@ -7711,10 +7715,10 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
     }
     if (source.kind === "schedule") {
       const prompts = reminderPrompts(contentText(data.content));
-      return (0, import_react10.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
+      return (0, import_react10.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: cutText(prompts.join(" · "), 80) }) : t("Routine started"));
     }
     if (source.kind === "user-question-reply") return null;
-    return (0, import_react10.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
+    return (0, import_react10.createElement)("div", { className: "bt-event" }, cutText(contentText(data.content), 80) || t("Update"));
   }
 }
 function NewDivider() {

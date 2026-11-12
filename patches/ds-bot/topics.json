@@ -58,7 +58,8 @@
     "test/steward-retry.test.js",
     "test/i18n.test.js",
     "src/host/text.js",
-    "test/text.test.js"
+    "test/text.test.js",
+    "test/trigger-line-cuts.test.js"
   ],
   "0002-flybot-api-host": [
     "index.js",

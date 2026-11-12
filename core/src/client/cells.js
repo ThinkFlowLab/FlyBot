@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
-import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, isPluginTool } from './text.js'
+import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, cutText, isPluginTool } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { botByName, rosterBot } from './sources.js'
@@ -732,10 +732,10 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     }
     if (source.kind === 'schedule') {
       const prompts = reminderPrompts(contentText(data.content))
-      return h('div', { className: 'bt-event' }, prompts.length > 0 ? t('Scheduled task: {text}', { text: prompts.join(' · ').slice(0, 80) }) : t('Routine started'))
+      return h('div', { className: 'bt-event' }, prompts.length > 0 ? t('Scheduled task: {text}', { text: cutText(prompts.join(' · '), 80) }) : t('Routine started'))
     }
     if (source.kind === 'user-question-reply') return null
-    return h('div', { className: 'bt-event' }, contentText(data.content).slice(0, 80) || t('Update'))
+    return h('div', { className: 'bt-event' }, cutText(contentText(data.content), 80) || t('Update'))
   }
 }
 
