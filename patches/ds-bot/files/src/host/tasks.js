@@ -1613,6 +1613,9 @@ export function install(rt) {
         if (task === undefined) throw stale(`no task ${String(body.id ?? '')}`)
         requireRequester(task, actor)
         transition(task, 'accepted', actor)
+        // #2988: accepting from the Inbox is the Done move of the board, so the card finishes at
+        // 100 here too; otherwise the same result-ready card reads 60% or 100% by which door took it.
+        task.progress = 100
         settleOverall(task)
         closeRework(task, actor)
         requestWriteBack(task, 'accepted', undefined, actor)
