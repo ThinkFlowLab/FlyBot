@@ -9389,6 +9389,20 @@ test('#2946: with no saved server file the page gains no saved fact', async (t) 
   assert.equal(Object.hasOwn(status, 'saved'), false)
 })
 
+test('#2950: the plain-http reason reaches the page whole, not cut at the name cap', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' } })
+  writeFileSync(join(home, 'flybot-social-server.json'), JSON.stringify({ server: 'http://social.example' }))
+  await applySocial(ctx, { server: 'https://a.test', credentialsPath: join(home, 'flybot-social.json'), fetch: servers.fetch, inboxPollMs: 0 })
+  const status = (await call('flybot/social/server', {})).value
+  assert.equal(status.server, 'https://a.test')
+  assert.equal(status.saved?.address, 'http://social.example')
+  // The host's own reason for a plain-http address is 99 characters; it must not be shortened here.
+  assert.equal(status.saved?.problem, 'The address must start with https://. Plain http:// is only accepted for localhost, for development')
+  assert.equal(status.saved.problem.length, 99)
+})
+
 // state order in SocialServerSettings: view, loadError, live, form, address, name, checked, busy, error, circle, circleError, shareBots
 const serverView = (extra = {}) => ({ server: 'https://a.test', source: 'config', defaultServer: 'https://a.test', displayName: 'Me', state: 'connected', handle: '@me.home', error: null, canChange: true, known: [], ...extra })
 const pageProps = { Section: 'section', Row: 'row', t: (text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')) }
@@ -9480,6 +9494,31 @@ test('#2946: Settings names a saved server the profile cannot use, and says noth
     assert.match(paint, /exists but does not parse as JSON/)
     assert.equal(nodeBy(nodes, 'server-saved-unusable'), undefined)
     assert.doesNotMatch(paint, /cannot be used|Using the profile default/)
+  }
+})
+
+test('#2950: the saved-server sentence draws the reason whole, and a longer one is cut at a word', () => {
+  const draw = (extra) => {
+    const { plugin, all, text } = clientPlugin([serverView({ defaultServer: 'http://127.0.0.1:1', ...extra }), null, null])
+    return text(nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-saved-unusable'))
+  }
+  {
+    // The name cap (80) used to cut this 99-character reason to "… for localho"; it is a sentence.
+    const plainHttp = 'The address must start with https://. Plain http:// is only accepted for localhost, for development'
+    const sentence = draw({ saved: { address: 'http://social.example', problem: plainHttp } })
+    assert.ok(sentence.endsWith(`cannot be used: ${plainHttp}. Using the profile default (http://127.0.0.1:1).`), sentence)
+    assert.doesNotMatch(sentence, /…|localho\./)
+  }
+  {
+    // Longer than any reason this host writes: cut at a word boundary with a visible ellipsis, never
+    // mid-word. The cap falls inside "alp" here, so a mid-word cut would leave "alp…".
+    const long = `${'alpha '.repeat(40)}Supercalifragilisticexpialidocious and more`
+    assert.doesNotMatch(long[200], /\s/, 'the cap must fall inside a word for this test to mean anything')
+    const sentence = draw({ saved: { address: 'http://social.example', problem: long } })
+    const shown = sentence.slice(sentence.indexOf('cannot be used: ') + 'cannot be used: '.length, sentence.indexOf('…'))
+    assert.equal(shown, `${'alpha '.repeat(32)}alpha`)
+    assert.match(sentence, /… Using the profile default \(http:\/\/127\.0\.0\.1:1\)\.$/)
+    assert.doesNotMatch(sentence, /…\./)
   }
 })
 

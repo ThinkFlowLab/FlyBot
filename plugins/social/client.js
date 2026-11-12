@@ -3712,7 +3712,18 @@ window.__ModuleLoader__.load({
     // only shows in the tooltip, with the raw ids, for diagnostics.
     const FEATURE_WORDS = { typed_by_owner: 'typing as you', mentions: '@mentions', presence: 'online status' }
     // A peer name on this page is one line: the overview already cleans it, and a value that skipped that still cannot break the row (#1074).
-    const settingsName = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    const settingsLine = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim()
+    const settingsName = (value) => settingsLine(value).slice(0, 80)
+    // A refusal is a sentence, not a name: the name cap above cuts the host's own plain-http reason
+    // mid-word (#2946). A reason is drawn whole up to the host's 200-character cap
+    // (`server-config.js`) and, past that, shortened at a word boundary with a visible ellipsis.
+    const settingsSentence = (value, max = 200) => {
+      const clean = settingsLine(value)
+      if (clean.length <= max) return clean
+      const head = clean.slice(0, max)
+      const space = head.lastIndexOf(' ')
+      return `${(space > 0 ? head.slice(0, space) : head).replace(/[\s,;:.!?]+$/, '')}…`
+    }
     const friendLabel = (friend) => {
       const name = settingsName(friend?.name)
       const owner = settingsName(friend?.owner)
@@ -3839,6 +3850,13 @@ window.__ModuleLoader__.load({
             ? settingsRow({ flybot: 'settings-friends-status', kind: 'empty', label: t('No friends yet.') })
             : null
       const orderedBots = (shareBots ?? []).slice().sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name))
+      // A reason is a sentence: drawn whole, or cut at a word boundary with '…' when it is longer than
+      // any reason this host writes. The address stays a name (#2946).
+      const savedReason = view.saved ? settingsSentence(view.saved.problem) : ''
+      const savedLine = view.saved ? settingsRow({
+        flybot: 'server-saved-unusable',
+        hint: `The server saved here (${settingsName(view.saved.address)}) cannot be used: ${savedReason}${savedReason.endsWith('…') ? '' : '.'} ${view.defaultServer ? `Using the profile default (${view.defaultServer}).` : 'No profile default is set.'}`,
+      }) : null
       return h('div', { 'data-flybot': 'social-server' },
         h(Section, { title: t('Bot Social server') },
           h(Row, { label: view.server ?? t('No server'), hint: status },
@@ -3847,10 +3865,7 @@ window.__ModuleLoader__.load({
           // A saved address this build refuses is named, not silently read as "Profile default" (#2946).
           // English like the refusal it quotes: the sentence carries the host's own reason, and the two
           // lines above this page are in the host's dictionary, which this card does not move.
-          view.saved ? settingsRow({
-            flybot: 'server-saved-unusable',
-            hint: `The server saved here (${settingsName(view.saved.address)}) cannot be used: ${settingsName(view.saved.problem)}. ${view.defaultServer ? `Using the profile default (${view.defaultServer}).` : 'No profile default is set.'}`,
-          }) : null,
+          savedLine,
           platform ? h(Row, { label: t('Features'), hint: featureLine(platform.features, t) }, null) : null,
           live && !live.ok ? h(Row, { label: t('Reachability'), hint: live.error }, null) : null,
           !view.canChange ? h(Row, { label: t('Read-only'), hint: t('Another FlyBot window holds this team. Change the server there.') }, null) : null),
