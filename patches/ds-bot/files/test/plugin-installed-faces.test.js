@@ -98,7 +98,11 @@ test('a plugin the profile does not have is drawn as not installed, with no swit
   }))
   const page = text(nodes)
   assert.match(page, /Not installed in this profile/)
-  assert.match(page, /dsh plugin add @flybot\/project/)
+  // #2926: DSH refuses `dsh plugin add` on its own (`error: required option '--profile <name>'
+  // not specified`), so the row has to name the profile as well; `web` is the profile this page
+  // runs in (docker/profile.mjs), not a placeholder the reader would have to fill.
+  assert.match(page, /dsh plugin --profile web add @flybot\/project/)
+  assert.doesNotMatch(page, /dsh plugin add /, 'the command never leaves the profile out')
   assert.equal(switches(nodes).length, 1, 'only the installed plugin draws a switch')
   assert.equal(switches(nodes)[0].props['aria-checked'], true)
   const missing = nodes.find(node => node?.props?.['data-plugin'] === 'project')
