@@ -25,8 +25,10 @@ export const stripInvisible = value => String(value ?? '').replace(/\p{Cf}/gu, '
 // What draws nothing is wider than what `stripInvisible` removes: a braille blank, a Hangul
 // filler, a combining grapheme joiner, a no-break space and the other default-ignorable code
 // points survive both `\p{Cf}` and `trim()`, so a name made of them would render as an empty
-// name. A name is refused on them, but they are never stripped out of a name that draws.
-const NOT_DRAWN = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu
+// name. A name is refused on them, but they are never stripped out of a stored name. The drawn
+// form of a name does remove them, for comparison only (#2935, `drawnKey`), so matched with
+// `replace` alone — never with `test` or `exec`, which would carry `lastIndex` between callers.
+export const NOT_DRAWN = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu
 
 // What a Bot may be named: something "@" can call without a second reading. A name made
 // only of characters that draw nothing reads as no name at all (#2879).
