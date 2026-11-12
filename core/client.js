@@ -2451,9 +2451,10 @@ var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"
 var fitsAt = (text2, at, word) => text2.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text2.slice(at + word.length));
 var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
 var stripInvisible = (value) => String(value ?? "").replace(/\p{Cf}/gu, "");
+var NOT_DRAWN = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu;
 function nameProblem(name) {
   const text2 = stripInvisible(name).trim();
-  if (text2 === "") return "A Bot needs a name";
+  if (text2 === "" || text2.replace(NOT_DRAWN, "").trim() === "") return "A Bot needs a name";
   if (/[@`\r\n]/.test(text2)) return "A Bot name cannot contain @, ` or a line break";
   if (ALL_WORDS.includes(text2.toLowerCase())) return `"${text2}" calls everyone in a group, so it cannot be a Bot name`;
   return void 0;

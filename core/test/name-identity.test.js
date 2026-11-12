@@ -94,6 +94,54 @@ test('#2691 a name of only invisible characters is refused as empty', () => {
   assert.equal(nameProblem('Dev\u200b'), undefined)
 })
 
+// #2879: `\p{Cf}` and `trim()` cover only part of what draws nothing. A braille blank, a Hangul
+// filler and a combining grapheme joiner are neither, so a name made only of them renders as an
+// empty name everywhere it is shown. Every entry point refuses it with the same sentence.
+const DRAWS_NOTHING = [
+  '\u2800', // BRAILLE PATTERN BLANK (So)
+  '\u3164', // HANGUL FILLER (Lo, Default_Ignorable_Code_Point)
+  '\u115f', // HANGUL CHOSEONG FILLER (Lo, Default_Ignorable_Code_Point)
+  '\u034f', // COMBINING GRAPHEME JOINER (Mn)
+  ' \u2800 ', // a blank the trim() at either end cannot see
+  '\u2800\u034f', // two of them together
+  '\u00a0\u2800', // a no-break space (which trim() does remove) around one it does not
+]
+const codePoints = name => JSON.stringify([...name].map(character => character.codePointAt(0).toString(16)))
+
+test('#2879 a name that draws nothing is refused as empty, whichever characters hide it', () => {
+  for (const name of DRAWS_NOTHING) {
+    assert.equal(nameProblem(name), 'A Bot needs a name', codePoints(name))
+  }
+  const blank = '\u2800'
+  // A name that draws something keeps the character and is still a name.
+  assert.equal(nameProblem(`De${blank}v`), undefined)
+  assert.equal(nameProblem('Dev\u2800'), undefined, 'a trailing blank after a drawn name is allowed')
+  for (const name of ['Dev2', '新 Bot', 'De\u200bv']) assert.equal(nameProblem(name), undefined)
+})
+
+test('#2879 the create path refuses a name that draws nothing and stores none of them', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  for (const name of DRAWS_NOTHING) {
+    await assert.rejects(rt.createBot({ name, pickModel: true }), /A Bot needs a name/, codePoints(name))
+  }
+  assert.deepEqual(Object.keys(state().bots).sort(), ['cafe', 'chief', 'dev', 'ops'], 'a refused create leaves no record behind')
+  const created = await rt.createBot({ name: 'De\u2800v', pickModel: true })
+  assert.equal(created.name, 'De\u2800v', 'a blank between two drawn characters is part of the name')
+  assert.equal(state().bots[created.id].name, 'De\u2800v')
+})
+
+test('#2879 a rename to a name that draws nothing is refused, and a drawn rename still lands', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  for (const name of DRAWS_NOTHING) {
+    await assert.rejects(rt.updateBot('dev', { name }), /A Bot needs a name/, codePoints(name))
+  }
+  assert.equal(state().bots.dev.name, 'Dev', 'a refused rename leaves the stored name alone')
+  await rt.updateBot('dev', { name: 'De\u2800vOps' })
+  assert.equal(state().bots.dev.name, 'De\u2800vOps')
+})
+
 test('#2691 a stored name is found by either canonical spelling or with an invisible character', async (t) => {
   const { rt } = setup(t)
   await rt.load()

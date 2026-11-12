@@ -22,11 +22,17 @@ const overlaps = (spans, start, end) => spans.some(span => start < span.end && s
 // (#2691) drops them, and a stored name drops them too, so what is saved is what is shown.
 export const stripInvisible = value => String(value ?? '').replace(/\p{Cf}/gu, '')
 
+// What draws nothing is wider than what `stripInvisible` removes: a braille blank, a Hangul
+// filler, a combining grapheme joiner, a no-break space and the other default-ignorable code
+// points survive both `\p{Cf}` and `trim()`, so a name made of them would render as an empty
+// name. A name is refused on them, but they are never stripped out of a name that draws.
+const NOT_DRAWN = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu
+
 // What a Bot may be named: something "@" can call without a second reading. A name made
-// only of invisible characters reads as no name at all.
+// only of characters that draw nothing reads as no name at all (#2879).
 export function nameProblem(name) {
   const text = stripInvisible(name).trim()
-  if (text === '') return 'A Bot needs a name'
+  if (text === '' || text.replace(NOT_DRAWN, '').trim() === '') return 'A Bot needs a name'
   if (/[@`\r\n]/.test(text)) return 'A Bot name cannot contain @, ` or a line break'
   if (ALL_WORDS.includes(text.toLowerCase())) return `"${text}" calls everyone in a group, so it cannot be a Bot name`
   return undefined
