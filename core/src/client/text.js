@@ -114,6 +114,13 @@ export function reminderPrompts(text) {
     return []
   }
 }
+// A bound on a line of someone's own text: cut on code points, so a bound that lands inside an emoji
+// keeps the whole character instead of leaving a lone surrogate (which renders as U+FFFD), and mark
+// the cut with `…` so a dropped tail is never silent (#2972).
+export function cutText(value, max) {
+  const points = [...String(value ?? '')]
+  return points.length > max ? `${points.slice(0, max).join('')}…` : points.join('')
+}
 export const stripHeader = text => text.replace(HEADER, '')
 // A reply's leading delegation trace ("Chief → 助手"): routing the tree prompt asks for, not
 // content. Display only; the model's own text is unchanged. Only a line whose every hop is a known

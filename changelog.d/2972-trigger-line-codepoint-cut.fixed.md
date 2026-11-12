@@ -1,0 +1,1 @@
+The chat's `Scheduled task:` and `Update` lines now cut on whole characters and end in `…` when something was dropped. An emoji at the 80-character bound stays one character instead of showing a replacement square, and a cut prompt no longer reads as the whole one. See [#2972](https://github.com/ThinkFlowLab/FlyBot/issues/2972).

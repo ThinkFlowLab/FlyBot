@@ -2148,11 +2148,15 @@ diff --git a/client.js b/client.js
    try {
      const prompts = [...one ? [JSON.parse(one[1])] : [], ...batch ? JSON.parse(batch[1]).map((entry) => entry.reminder_prompt) : []];
      return prompts.filter((prompt) => typeof prompt === "string" && prompt.trim() !== "");
-@@ -1493,38 +1493,125 @@ function reminderPrompts(text) {
+@@ -1493,38 +1493,129 @@ function reminderPrompts(text) {
      return [];
    }
  }
 -var stripHeader = (text) => text.replace(HEADER, "");
++function cutText(value, max) {
++  const points = [...String(value ?? "")];
++  return points.length > max ? `${points.slice(0, max).join("")}…` : points.join("");
++}
 +var stripHeader = (text2) => text2.replace(HEADER, "");
 +function stripTrace(text2, names = []) {
 +  if (typeof text2 !== "string") return text2;
@@ -8122,10 +8126,10 @@ diff --git a/client.js b/client.js
 +    }
 +    if (source.kind === "schedule") {
 +      const prompts = reminderPrompts(contentText(data.content));
-+      return (0, import_react10.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: prompts.join(" · ").slice(0, 80) }) : t("Routine started"));
++      return (0, import_react10.createElement)("div", { className: "bt-event" }, prompts.length > 0 ? t("Scheduled task: {text}", { text: cutText(prompts.join(" · "), 80) }) : t("Routine started"));
 +    }
 +    if (source.kind === "user-question-reply") return null;
-+    return (0, import_react10.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
++    return (0, import_react10.createElement)("div", { className: "bt-event" }, cutText(contentText(data.content), 80) || t("Update"));
 +  }
 +}
 +function NewDivider() {

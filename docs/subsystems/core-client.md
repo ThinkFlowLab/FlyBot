@@ -115,6 +115,10 @@ The overlay (`flybot-slots.js` `FlyBotApprovals`) is the fallback, not a second 
 
 - `Bubbles` (`src/client/cells.js`) drops an empty or whitespace-only text before it maps rows, so a turn that ended in tool calls only, or whose reply a card elsewhere carries, draws nothing under its trace row — no bubble and no avatar. `GroupMessage` and `PersonMessage` (a group chat's line) and `ExchangeLine` (the exchange sheet, after `exchangeText` strips the routing) draw no row for the same shape, and `RemoteMessage` drops the bubble but keeps its header and its files. Covered by `core/test/empty-message-cell.test.js`.
 
+### A bounded line keeps whole characters and says it was cut (#2972)
+
+- `cutText(value, max)` in `core/src/client/text.js` cuts on code points (`[...String(value)]`) and appends `…` only when something was dropped. The chat’s `Scheduled task:` line and its `Update` line (`TriggerCell` in `cells.js`) use it at 80, so an emoji at the bound stays one character instead of leaving a lone surrogate that draws as `U+FFFD`, and a cut prompt no longer reads as the whole one. Several prompts joined with ` · ` are bounded as one string. Tests: `core/test/trigger-line-cuts.test.js`.
+
 ### A bubble in an earlier part is a message too (P-393)
 
 - The messages the chat loads above the current part (`EarlierParts` in `src/client/cells.js`) are drawn with the identity they were said under, so the toolbar on them works: the host stamps every bot line of a page with its part's `sessionId`, its `turn` and its `seq` (`core/src/host/parts.js` `displayItems`), and the panel passes one key per text to `Bubbles` (`msgKeys`), because the lines of a page are merged into one bubble stack and a place in that stack moves as older pages arrive. A reaction is stored under the message (`<part>:<turn>:<seq>`) rather than under a shifting index, and the toolbar's **Reply** quotes into the open chat (`sessionId`), so the composer shows the quote. A live bubble keeps its single `msgKey` plus its index, unchanged. Tests: `core/test/earlier-message-actions.test.js`.
