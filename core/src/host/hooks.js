@@ -118,6 +118,11 @@ export function install(rt) {
   // A per-plugin default model (#579): a call from a plugin named here uses it unless it names one.
   const modelAsk = createPluginModel(rt, { allow: config?.flybot?.modelPlugins ?? [], models: config?.flybot?.modelFor ?? {} })
   const warn = (...args) => rt.warn?.(...args)
+  // An off feature plugin returns from its own apply() before registering anything, so to a
+  // user holding only a log a missing Project surface and a switch look the same. One line
+  // names the switches this start left off (#2939); a start with every switch on stays silent.
+  const offAtStart = FEATURE_PLUGIN_IDS.filter(id => pluginsAtStart[id] === false)
+  if (offAtStart.length > 0) warn('flybot: feature plugins off at start: %s', offAtStart.join(', '))
   const emit = (name, payload) => { try { ctx.emit?.(name, payload) } catch (error) { warn('flybot: %s listener failed: %s', name, error) } }
   // The feature plugins this start attached (#2877): a plugin marks itself in its own apply(), and
   // `plugins/list` reports it beside the owner's switch. Empty until a plugin says it loaded.
