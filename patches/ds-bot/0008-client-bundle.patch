@@ -383,7 +383,14 @@ diff --git a/client.js b/client.js
    "Add to group chat": "加入群聊",
    "Message Bot": "给 Bot 发消息",
    "To:": "发给：",
-@@ -187,9 +187,24 @@ var ZH = {
+@@ -182,14 +182,31 @@ var ZH = {
+   About: "简介",
+   "Show less": "收起",
+   "Show more": "展开",
++  "Showing {shown} of {count}": "显示 {shown} / {count}",
++  "Showing all {count}": "显示全部 {count}",
+   "Admin leads": "管理员主持",
+   "Plain messages go to the admin, who calls others with @Name.": "普通消息先给管理员，由管理员用 @名字 点名其他成员。",
    Everyone: "所有人",
    "Every member answers in turn, admin first.": "每位成员轮流回答，管理员先说。",
    "Members · {count}": "成员 · {count}",
@@ -21199,7 +21206,7 @@ diff --git a/client.js b/client.js
      )
    );
  }
--
+ 
 -// src/client/group-settings.js
 -var import_react23 = require("react");
 -var ROOM_MODES = [
@@ -21210,7 +21217,6 @@ diff --git a/client.js b/client.js
 -function roomSubtitle(room2, roster) {
 -  const admin = roster.byId[room2.admin];
 -  return [t("{count} members", { count: room2.members.length }), admin ? t("Admin {name}", { name: admin.name }) : t("No admin")].join(" · ");
-+
 +// src/client/workflows.js
 +var import_react38 = require("react");
 +var READ_MS = 8e3;
@@ -21252,7 +21258,24 @@ diff --git a/client.js b/client.js
 +    const timer = setTimeout(() => finish(settleWorkflowRead(null)), timeoutMs);
 +    Promise.resolve().then(() => call4("workflow/state")).then((value) => finish(settleWorkflowRead(value))).catch((failure) => finish({ phase: "error", error: workflowCallError(failure), pack: null }));
 +  });
-+}
+ }
+-function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
+-  const [adding, setAdding] = (0, import_react23.useState)(false);
+-  const [confirming, setConfirming] = (0, import_react23.useState)(false);
+-  (0, import_react23.useEffect)(() => {
+-    if (!confirming) return void 0;
+-    const timer = setTimeout(() => setConfirming(false), 4e3);
+-    return () => clearTimeout(timer);
+-  }, [confirming]);
+-  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+-  const outside = roster.bots.filter((bot) => !room2.members.includes(bot.id));
+-  const admin = roster.byId[room2.admin];
+-  const mode = shownMode(room2, roster);
+-  const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? "";
+-  const update = (patch) => run(actions.updateRoom(room2.id, patch));
+-  const openBot = (id) => {
+-    actions.closeSettings();
+-    actions.openSession(id);
 +function moveNode(nodes, id, x, y) {
 +  return nodes.map((node) => node.id === id ? { ...node, x, y } : node);
 +}
@@ -21271,7 +21294,14 @@ diff --git a/client.js b/client.js
 +  return {
 +    nodes: nodes.filter((node) => node.id !== id),
 +    edges: edges.filter((edge) => edge.from !== id && edge.to !== id)
-+  };
+   };
+-  const remove = () => {
+-    if (!confirming) {
+-      setConfirming(true);
+-      return;
+-    }
+-    void Promise.resolve(run(actions.deleteRoom(room2.id))).then((done) => {
+-      if (done) onDeleted?.();
 +}
 +function chainOf(item) {
 +  if (typeof item?.chain === "string" && item.chain) return item.chain;
@@ -21336,24 +21366,7 @@ diff --git a/client.js b/client.js
 +    level += dir * WIRE_LANE;
 +  }
 +  return level;
- }
--function GroupSettingsForm({ room: room2, roster, actions, run, onDeleted }) {
--  const [adding, setAdding] = (0, import_react23.useState)(false);
--  const [confirming, setConfirming] = (0, import_react23.useState)(false);
--  (0, import_react23.useEffect)(() => {
--    if (!confirming) return void 0;
--    const timer = setTimeout(() => setConfirming(false), 4e3);
--    return () => clearTimeout(timer);
--  }, [confirming]);
--  const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
--  const outside = roster.bots.filter((bot) => !room2.members.includes(bot.id));
--  const admin = roster.byId[room2.admin];
--  const mode = shownMode(room2, roster);
--  const modeHint = ROOM_MODES.find(([id]) => id === mode)?.[2] ?? "";
--  const update = (patch) => run(actions.updateRoom(room2.id, patch));
--  const openBot = (id) => {
--    actions.closeSettings();
--    actions.openSession(id);
++}
 +function rowGap(boxes, box, dir) {
 +  const edge = dir < 0 ? box.top : box.bottom;
 +  const others = boxes.filter((one) => one.id !== box.id && (dir < 0 ? one.bottom <= box.top + 1 : one.top >= box.bottom - 1));
@@ -21417,7 +21430,7 @@ diff --git a/client.js b/client.js
 +      key: `${item.from.id}>${item.to.id}`,
 +      back: false,
 +      d: straight ? `M ${x1} ${y1} L ${x1} ${y2}` : `M ${x1} ${y1} L ${x1} ${yA} L ${lane} ${yA} L ${lane} ${yB} L ${x2} ${yB} L ${x2} ${y2}`
-+    });
+     });
 +  }
 +  return routes;
 +}
@@ -21460,10 +21473,7 @@ diff --git a/client.js b/client.js
 +    right: centre + reach * scale,
 +    scrollWidth: Math.max(width + pad2, centre + reach * scale)
    };
--  const remove = () => {
--    if (!confirming) {
--      setConfirming(true);
--      return;
+-  return (0, import_react23.createElement)(
 +}
 +function measureCanvasWidth(el) {
 +  const width = el?.clientWidth;
@@ -21532,12 +21542,8 @@ diff --git a/client.js b/client.js
 +      const x = Number.isFinite(event.offsetX) ? Math.round(event.offsetX / scale) : 24;
 +      const y = Number.isFinite(event.offsetY) ? Math.round(event.offsetY / scale) : 24;
 +      onCommit?.({ nodes: dropBot(nodes, current.bot, x, y), edges });
-     }
--    void Promise.resolve(run(actions.deleteRoom(room2.id))).then((done) => {
--      if (done) onDeleted?.();
--    });
-   };
--  return (0, import_react23.createElement)(
++    }
++  };
 +  return (0, import_react38.createElement)(
      "div",
 -    { className: "bt-bs" },
@@ -23444,7 +23450,7 @@ diff --git a/client.js b/client.js
    const openIssue = () => {
      const win = window.open("", "_blank");
      if (win !== null) win.opener = null;
-@@ -10307,69 +10307,87 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
+@@ -10307,69 +10307,92 @@ function FeedbackPage({ actions, run, Section, Row: Row3 }) {
        if (!inline && !copied) setPreview(true);
      }));
    };
@@ -23547,6 +23553,11 @@ diff --git a/client.js b/client.js
 +      entries2.length > 8 ? (0, import_react41.createElement)(
 +        "div",
 +        { key: "more", className: "bt-set-row bt-fb-more-row" },
++        (0, import_react41.createElement)(
++          "span",
++          { className: "bt-set-hint bt-fb-count" },
++          allErrors ? t("Showing all {count}", { count: entries2.length }) : t("Showing {shown} of {count}", { shown: shown.length, count: entries2.length })
++        ),
 +        (0, import_react41.createElement)("button", {
 +          type: "button",
 +          className: "bt-soft bt-soft-sm bt-fb-more",
