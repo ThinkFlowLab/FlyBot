@@ -3844,6 +3844,13 @@ window.__ModuleLoader__.load({
           h(Row, { label: view.server ?? t('No server'), hint: status },
             h('span', { className: 'fs-tag' }, source),
             view.canChange && !form ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-flybot': 'server-change', onClick: () => open() }, t('Change server')) : null),
+          // A saved address this build refuses is named, not silently read as "Profile default" (#2946).
+          // English like the refusal it quotes: the sentence carries the host's own reason, and the two
+          // lines above this page are in the host's dictionary, which this card does not move.
+          view.saved ? settingsRow({
+            flybot: 'server-saved-unusable',
+            hint: `The server saved here (${settingsName(view.saved.address)}) cannot be used: ${settingsName(view.saved.problem)}. ${view.defaultServer ? `Using the profile default (${view.defaultServer}).` : 'No profile default is set.'}`,
+          }) : null,
           platform ? h(Row, { label: t('Features'), hint: featureLine(platform.features, t) }, null) : null,
           live && !live.ok ? h(Row, { label: t('Reachability'), hint: live.error }, null) : null,
           !view.canChange ? h(Row, { label: t('Read-only'), hint: t('Another FlyBot window holds this team. Change the server there.') }, null) : null),

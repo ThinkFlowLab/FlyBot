@@ -9350,6 +9350,45 @@ test('server controller: per-server files, a hung start is replaced and its late
   }
 })
 
+test('#2946: a saved server address that cannot be used is named, not discarded', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' }, 'https://b.test': { token: 'tok-b' } })
+  const credentialsPath = join(home, 'flybot-social.json')
+  const savedPath = join(home, 'flybot-social-server.json')
+  writeFileSync(savedPath, JSON.stringify({ server: 'http://not-allowed.example' }))
+  await applySocial(ctx, { server: 'https://a.test', credentialsPath, fetch: servers.fetch, inboxPollMs: 0 })
+  const status = (await call('flybot/social/server', {})).value
+  // Not used: the chosen address does not parse as a server, so the profile default is what runs.
+  assert.equal(status.server, 'https://a.test')
+  assert.equal(status.source, 'config')
+  // Not discarded either: the page can say which saved address was refused, and why.
+  assert.equal(status.saved?.address, 'http://not-allowed.example')
+  assert.equal(typeof status.saved?.problem, 'string')
+  assert.ok(status.saved.problem.length > 0)
+  // The client's sentence ends with '.', so the reason is a phrase and does not carry one of its own.
+  assert.doesNotMatch(status.saved.problem, /\.$/)
+  assert.doesNotMatch(status.saved.problem, /\uFFFD/)
+  // Nothing here deletes or rewrites the file the owner can fix by hand.
+  assert.equal(JSON.parse(readFileSync(savedPath, 'utf8')).server, 'http://not-allowed.example')
+  // A usable switch replaces the choice, and the saved-but-unusable fact goes with the file.
+  const switched = await call('flybot/social/server-set', { server: 'https://b.test', confirm: true })
+  assert.equal(switched.ok, true, JSON.stringify(switched))
+  assert.equal(switched.value.source, 'settings')
+  assert.equal(switched.value.saved, undefined)
+  assert.equal(JSON.parse(readFileSync(savedPath, 'utf8')).server, 'https://b.test')
+})
+
+test('#2946: with no saved server file the page gains no saved fact', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const servers = fleet({ 'https://a.test': { token: 'tok-a' } })
+  await applySocial(ctx, { server: 'https://a.test', credentialsPath: join(home, 'flybot-social.json'), fetch: servers.fetch, inboxPollMs: 0 })
+  const status = (await call('flybot/social/server', {})).value
+  assert.equal(status.server, 'https://a.test')
+  assert.equal(Object.hasOwn(status, 'saved'), false)
+})
+
 // state order in SocialServerSettings: view, loadError, live, form, address, name, checked, busy, error, circle, circleError, shareBots
 const serverView = (extra = {}) => ({ server: 'https://a.test', source: 'config', defaultServer: 'https://a.test', displayName: 'Me', state: 'connected', handle: '@me.home', error: null, canChange: true, known: [], ...extra })
 const pageProps = { Section: 'section', Row: 'row', t: (text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')) }
@@ -9411,6 +9450,28 @@ test('Settings → Bot Social page: shows server, source and status; the switch 
     const nodes = all(plugin.SocialServerSettings(pageProps))
     assert.equal(nodeBy(nodes, 'server-change'), undefined)
     assert.ok(nodes.some(node => node.type === 'row' && node.props.label === 'Read-only'))
+  }
+})
+
+test('#2946: Settings names a saved server the profile cannot use, and says nothing when none was saved', () => {
+  {
+    const { plugin, all, text } = clientPlugin([serverView({ saved: { address: 'http://not-allowed.example', problem: 'The address must start with https://' } }), null, null])
+    const row = nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-saved-unusable')
+    assert.ok(row, 'the page names the saved server it could not use')
+    assert.equal(text(row), 'The server saved here (http://not-allowed.example) cannot be used: The address must start with https://. Using the profile default (https://a.test).')
+  }
+  {
+    // No saved file, no `saved` fact: the page says nothing extra.
+    const { plugin, all } = clientPlugin([serverView(), null, null])
+    assert.equal(nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-saved-unusable'), undefined)
+  }
+  {
+    // The other state on this page: the file itself is refused (#2945). That load fails, so the page
+    // draws the refusal and no saved-server line — the two states never draw together.
+    const { plugin, all, text } = clientPlugin([null, 'The Bot Social server chosen in Settings at ./flybot-social-server.json exists but does not parse as JSON.'])
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    assert.match(text(nodes[0]), /exists but does not parse as JSON/)
+    assert.equal(nodeBy(nodes, 'server-saved-unusable'), undefined)
   }
 })
 
