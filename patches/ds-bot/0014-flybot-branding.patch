@@ -135,6 +135,14 @@ diff --git a/src/client/about.js b/src/client/about.js
 diff --git a/src/client/diagnostics.js b/src/client/diagnostics.js
 --- a/src/client/diagnostics.js
 +++ b/src/client/diagnostics.js
+@@ -1,6 +1,7 @@
+ // What went wrong in this browser, for Settings → Feedback and the report it builds.
+ // Calls whose failures the interface swallows (polls, previews) still land here.
+ import { t, language } from './i18n.js'
++import { cutText } from './text.js'
+ 
+ const MAX = 30
+ // The same failure again within this window bumps a count instead of a new line.
 @@ -32,6 +32,17 @@ export function noteClientError(where, error) {
    if (entries.length > MAX) entries.splice(0, entries.length - MAX)
  }
@@ -153,7 +161,7 @@ diff --git a/src/client/diagnostics.js b/src/client/diagnostics.js
  // A catch handler that keeps the failure without bothering the user.
  export const quietly = where => error => noteClientError(where, error)
  
-@@ -63,14 +63,19 @@ const FAILURES = {
+@@ -63,18 +63,23 @@ const FAILURES = {
  
  export function failureLabel(code, message) {
    if (FAILURES[code]) return t(FAILURES[code])
@@ -176,6 +184,11 @@ diff --git a/src/client/diagnostics.js b/src/client/diagnostics.js
  
  export function issueUrl(base, { what = '', diagnostics }) {
    const text = what.trim().slice(0, WHAT_MAX)
+-  const title = text.split('\n')[0].slice(0, 80)
++  const title = cutText(text.split('\n')[0], 80)
+   const build = body => `${base}?${new URLSearchParams({ template: 'bug.yml', ...(title ? { title } : {}), ...(text ? { what: text } : {}), diagnostics: body })}`
+   const full = build(diagnostics)
+   if (full.length <= URL_LIMIT) return { url: full, inline: true }
 diff --git a/src/client/secret-card.js b/src/client/secret-card.js
 --- a/src/client/secret-card.js
 +++ b/src/client/secret-card.js

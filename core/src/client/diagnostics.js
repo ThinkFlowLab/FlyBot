@@ -1,6 +1,7 @@
 // What went wrong in this browser, for Settings → Feedback and the report it builds.
 // Calls whose failures the interface swallows (polls, previews) still land here.
 import { t, language } from './i18n.js'
+import { cutText } from './text.js'
 
 const MAX = 30
 // The same failure again within this window bumps a count instead of a new line.
@@ -90,7 +91,7 @@ const REST_NOTE = 'The recent errors do not fit in the link. FlyBot copied the d
 
 export function issueUrl(base, { what = '', diagnostics }) {
   const text = what.trim().slice(0, WHAT_MAX)
-  const title = text.split('\n')[0].slice(0, 80)
+  const title = cutText(text.split('\n')[0], 80)
   const build = body => `${base}?${new URLSearchParams({ template: 'bug.yml', ...(title ? { title } : {}), ...(text ? { what: text } : {}), diagnostics: body })}`
   const full = build(diagnostics)
   if (full.length <= URL_LIMIT) return { url: full, inline: true }
