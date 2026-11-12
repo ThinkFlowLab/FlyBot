@@ -29,6 +29,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { carriedIds } from '../shared/connector-reach.js'
 import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 import { defineTool } from './tool-schema.js'
 import { codePoints, cut, textOf } from './text.js'
@@ -245,6 +246,48 @@ export function install(rt) {
     if (ids.length > RUNS_KEPT) for (const old of ids.slice(0, ids.length - RUNS_KEPT)) delete all[old]
     void rt.save().catch(() => {})
   }
+  // The reach a task was set with (#2930), by task id: the connector ids the reader agreed to when
+  // they created it or last saved it. It lives beside `scheduleRuns`, so a pause, a resume and a part
+  // hand-off (which keep the id, or copy it across) keep the set with the row; deleting the task
+  // drops it. Nothing here pins a run: DSH has no hook before a delivery, so the run takes the Bot's
+  // current reach, and the card is the only surface that can say the two moved apart.
+  const reachAtSet = () => {
+    if (state.scheduleCarriedAtSet === null || typeof state.scheduleCarriedAtSet !== 'object' || Array.isArray(state.scheduleCarriedAtSet)) state.scheduleCarriedAtSet = {}
+    return state.scheduleCarriedAtSet
+  }
+  // What the run would take now, by the same predicate the card reads (#2344, shared/connector-reach.js).
+  const carriedNow = (botId) => {
+    const bot = botId === undefined ? undefined : state.bots?.[botId]
+    return bot === undefined ? undefined : carriedIds(bot, rt.connectorsView?.() ?? [])
+  }
+  const storedReach = (id) => {
+    if (typeof id !== 'string' || !Object.hasOwn(reachAtSet(), id)) return undefined
+    return Array.isArray(reachAtSet()[id]) ? reachAtSet()[id] : undefined
+  }
+  const noteReachAtSet = (id, botId) => {
+    const ids = carriedNow(botId)
+    if (typeof id !== 'string' || ids === undefined) return false
+    reachAtSet()[id] = ids
+    return true
+  }
+  const forgetReachAtSet = (id) => {
+    if (typeof id !== 'string' || !Object.hasOwn(reachAtSet(), id)) return false
+    delete reachAtSet()[id]
+    return true
+  }
+  // A target names a Bot or a group chat (`contentOf` proved one of them): only a Bot can carry
+  // connectors, so a row that moves to a room has no set to compare and loses the stored one.
+  const noteTargetReach = (id, target) => {
+    const bot = state.bots?.[target]
+    return bot === undefined ? forgetReachAtSet(id) : noteReachAtSet(id, bot.id)
+  }
+  // The two halves a row answers: what the run would carry now, and what it carried when it was set.
+  const rowReach = (owner, id) => {
+    const now = owner.botId === undefined ? undefined : carriedNow(owner.botId)
+    const then = storedReach(id)
+    return { ...(Array.isArray(now) ? { carried: now } : {}), ...(then === undefined ? {} : { carriedAtSet: then }) }
+  }
+
   // What a row shows: FlyBot's record, or DSH's newer delivery the Bot has not taken up yet.
   // A run still marked running from before this start has no known end: it shows as a run.
   const startedAt = Date.now()
@@ -376,8 +419,9 @@ export function install(rt) {
     // let through because FlyBot cannot know its next fire (`quietUnchecked`, #1166).
     refuseDuringQuietHours(timingPart(request), request.daily?.time_zone ?? request.weekly?.time_zone ?? request.cron?.time_zone)
     const toSession = sessionFor(targetBot !== undefined ? { botId: targetBot.id } : { roomId: targetRoom.id })
-    if (held !== undefined) await service.create(toSession, request)
-    else await copyRow(sourceSession, sourceId, toSession)
+    // A copy is a new task, so it is set now: the target Bot's reach at this moment is its set.
+    const createdId = held !== undefined ? (await service.create(toSession, request))?.id : await copyRow(sourceSession, sourceId, toSession)
+    if (noteTargetReach(createdId, body.target)) await rt.save()
     return schedulesView(actor)
   }
 
@@ -390,6 +434,7 @@ export function install(rt) {
       if (source === undefined || source.sessionId !== fromSession) throw invalid('No such task')
       const id = copyId(tasks)
       await tasks.put(id, { sessionId: toSession, record: { ...source.record, id }, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false } })
+      return id
     })
   }
 
@@ -422,14 +467,14 @@ export function install(rt) {
       if (!known(owner)) continue
       if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
       const lastRun = lastRunOf(entry)
-      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
+      tasks.push({ ...entry, ...owner, ...rowReach(owner, entry.id), ...(lastRun ? { lastRun } : {}) })
     }
     for (const entry of Object.values(paused())) {
       const owner = ownerOf(entry.sessionId)
       if (!known(owner)) continue
       if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
       const lastRun = lastRunOf({ id: entry.id })
-      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
+      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...rowReach(owner, entry.id), ...(lastRun ? { lastRun } : {}) })
     }
     // #1166: a repeat rule can still fire inside the window — the page says so instead of
     // claiming a silence FlyBot cannot keep.
@@ -452,6 +497,7 @@ export function install(rt) {
       const timing = keep ? timingPart(requestOf(held.record) ?? {}) : selectorOf(body.when)
       if (!keep) refuseDuringQuietHours(timing, body.when?.timeZone)
       paused()[id] = { ...held, sessionId: content.sessionId, record: { title: content.title, prompt: content.prompt, ...timingOf(timing) } }
+      noteTargetReach(id, body.target)
       await rt.save()
       return schedulesView(actor)
     }
@@ -467,11 +513,16 @@ export function install(rt) {
       const same = JSON.stringify(timingPart(stored)) === JSON.stringify(timing)
       const result = await service.update({ sessionId, id, expected: active, title: content.title, prompt: content.prompt, ...(same ? {} : { change: changeOf(timing) }) })
       if (result?.record === undefined) throw invalid(UPDATE_MISSES[result?.code] ?? result?.message ?? 'The task could not be saved')
+      // Saving the form is the reader agreeing again, so the stored set becomes the reach at this
+      // edit — otherwise the row would keep saying "changed" after the reader has seen and kept it.
+      if (noteTargetReach(id, body.target)) await rt.save()
       return schedulesView(actor)
     }
     if (timing.at !== undefined && Date.parse(timing.at) <= Date.now()) throw invalid('Pick a time in the future')
-    await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
+    const created = await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
     await service.delete({ sessionId, id })
+    const noted = noteTargetReach(created?.id, body.target)
+    if (forgetReachAtSet(id) || noted) await rt.save()
     return schedulesView(actor)
   }
 
@@ -559,8 +610,13 @@ export function install(rt) {
     const request = requestOf(held.record)
     if (request === null) throw invalid('No such task')
     if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Its time has passed. Edit the task to pick a new one')
-    await service.create(sessionFor(owner), request)
+    const kept = storedReach(held.id)
+    const created = await service.create(sessionFor(owner), request)
     delete paused()[held.id]
+    forgetReachAtSet(held.id)
+    // A resume re-arms the same task, so it keeps the reach it was set with (#2930): it is not a new
+    // set. A row that never had one (written before this field) stays unknown rather than guessed.
+    if (kept !== undefined && typeof created?.id === 'string') reachAtSet()[created.id] = kept
     await rt.save()
     return schedulesView(actor)
   }
@@ -657,7 +713,9 @@ export function install(rt) {
       const { sessionId, title, prompt } = contentOf(body)
       const timing = selectorOf(body.when)
       refuseDuringQuietHours(timing, body.when?.timeZone)
-      await service.create(sessionId, { title, prompt, ...timing })
+      const created = await service.create(sessionId, { title, prompt, ...timing })
+      // The set is the reach this Bot has at the moment the reader writes the task (#2930).
+      if (noteTargetReach(created?.id, body.target)) await rt.save()
       return schedulesView(actor)
     },
     'schedule-update': (body, actor) => updateSchedule(body, actor),
@@ -669,10 +727,12 @@ export function install(rt) {
       if (ownerOf(body.sessionId) === undefined) throw invalid('No such task')
       if (pausedEntry(body.sessionId, body.id) !== undefined) {
         delete paused()[body.id]
+        forgetReachAtSet(body.id)
         await rt.save()
         return schedulesView(actor)
       }
       await service.delete({ sessionId: body.sessionId, id: body.id })
+      if (forgetReachAtSet(body.id)) await rt.save()
       return schedulesView(actor)
     },
   }
