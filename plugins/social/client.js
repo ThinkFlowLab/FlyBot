@@ -3851,11 +3851,15 @@ window.__ModuleLoader__.load({
             : null
       const orderedBots = (shareBots ?? []).slice().sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name))
       // A reason is a sentence: drawn whole, or cut at a word boundary with '…' when it is longer than
-      // any reason this host writes. The address stays a name (#2946).
+      // any reason this host writes. The address is not a name either (#2958): the name cap cut it at
+      // 80 with no mark, so two addresses that differ after it drew one sentence, and an empty one
+      // drew `()`. The host sends the whole address up to its own 200-character bound, so the page
+      // draws that much of it and marks only a cut beyond it.
+      const savedAddress = view.saved ? settingsSentence(view.saved.address) : ''
       const savedReason = view.saved ? settingsSentence(view.saved.problem) : ''
       const savedLine = view.saved ? settingsRow({
         flybot: 'server-saved-unusable',
-        hint: `The server saved here (${settingsName(view.saved.address)}) cannot be used: ${savedReason}${savedReason.endsWith('…') ? '' : '.'} ${view.defaultServer ? `Using the profile default (${view.defaultServer}).` : 'No profile default is set.'}`,
+        hint: `The server saved here${savedAddress ? ` (${savedAddress})` : ''} cannot be used: ${savedReason}${savedReason.endsWith('…') ? '' : '.'} ${view.defaultServer ? `Using the profile default (${view.defaultServer}).` : 'No profile default is set.'}`,
       }) : null
       return h('div', { 'data-flybot': 'social-server' },
         h(Section, { title: t('Bot Social server') },
