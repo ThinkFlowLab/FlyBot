@@ -383,6 +383,18 @@ export function createWorkflowService({
     for (const nodeId of running) armDeadline(item, run, nodeId)
   }
 
+  // A release that failed freezes the run as `paused` + `releasePending`, and a
+  // whole-lane Reset has already cleared the run's timers before it released, so
+  // the deadline of every node still `running` is the only retry the run gets
+  // (P-716). A Stop of one run keeps the deadline it had, and `armDeadline`
+  // leaves an identical one alone, so nothing is pushed out here.
+  function armHeldDeadlines(item, runs) {
+    for (const run of runs) {
+      if (run.status !== 'running') continue
+      for (const nodeId of orderedIds(item, run.nodeStatus, 'running')) armDeadline(item, run, nodeId)
+    }
+  }
+
   // A Stop whose release failed froze the run on purpose (#1476), and `hold()`
   // writes those flags without syncing timers, so the deadline of the node it was
   // on is the only retry the run gets. `expireStep()` used to return at `paused`
@@ -2028,6 +2040,7 @@ export function createWorkflowService({
             run.updatedAt = now()
             push(workflowId, [{ kind: 'system', tone: 'bad', text: `停止失败：还有 ${failed.length} 个 Bot 没释放，再点一次停止。` }], now())
             write()
+            armHeldDeadlines(item, [run])
           }
           return { ok: true, ids, stop, hold }
         }
@@ -2080,6 +2093,7 @@ export function createWorkflowService({
           }
           push(item.id, [{ kind: 'system', tone: 'bad', text: `重置失败：还有 ${failed.length} 个 Bot 没释放，再点一次重置。` }], now())
           write()
+          armHeldDeadlines(item, lane.active)
         }
         return { ok: true, ids, resetLane, hold }
       }
