@@ -3841,6 +3841,11 @@ window.__ModuleLoader__.load({
       const status = (STATE_TEXT[view.state] ?? STATE_TEXT.connecting)(t, view)
       const quick = [...(view.defaultServer && view.source === 'settings' ? [view.defaultServer] : []), ...view.known].filter((item, at, all) => all.indexOf(item) === at)
       const connected = view.state === 'connected'
+      // A name typed for the server already in use is a save, not a switch (#2971): the host's check
+      // says `same`, and its `server-set` parks and reads that same home back when a name comes with
+      // it (#729). The action row drew only `Check` there, so the name went nowhere. The save is
+      // offered only for a name the home does not carry already — a save that changes nothing is not.
+      const nameChanged = name.trim() !== '' && name.trim() !== (view.displayName ?? '')
       const friendHint = (friend, kind) => {
         const handle = settingsName(friend?.handle)
         if (kind === 'friend') return handle || undefined
@@ -3900,8 +3905,8 @@ window.__ModuleLoader__.load({
             error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null,
             h('div', { className: 'fs-srv-actions' },
               h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: close }, t('Cancel')),
-              checked && !checked.same
-                ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'data-flybot': 'server-confirm', onClick: () => void change() }, busy ? t('Switching…') : t('Switch to this server'))
+              checked && (!checked.same || nameChanged)
+                ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'data-flybot': 'server-confirm', onClick: () => void change() }, checked.same ? (busy ? t('Saving…') : t('Save changes')) : busy ? t('Switching…') : t('Switch to this server'))
                 : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || address.trim() === '', 'data-flybot': 'server-check', onClick: () => void check() }, busy ? t('Checking…') : t('Check')))))
           : null,
         connected ? h(Section, { title: t('Friends') },
