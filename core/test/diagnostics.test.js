@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import fsp from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
-import { homedir, hostname, tmpdir } from 'node:os'
+import os, { homedir, hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { ISSUES_URL, cleanText, install as installDiagnostics, reportMarkdown } from '../src/host/diagnostics.js'
@@ -18,9 +18,12 @@ test('cleanText hides keys, tokens and the home folder', () => {
   const out = cleanText(text, { home, redact: value => value.replaceAll('VALUE1234', '[secret:DEMO]') })
   assert.equal(out, 'key sk-[hidden] and Bearer [hidden] at http://h:1/?token=[hidden]&x=1 in ~/.dsh/bot, "api_key": "[hidden]", saved [secret:DEMO]')
   assert.equal(cleanText('C:\\Users\\Shared\\x and C:/Users/Shared/y', { home: 'C:\\Users\\Shared' }), '~\\x and ~/y')
-  // #2944: one line may abbreviate more than one folder, and the longer one wins, so a team file
-  // under both the OS home and this host's own reads `~/state.json` whichever order they arrive in.
-  assert.equal(cleanText('/home/user/.dsh/bot/state.json', { home: [home, '/home/user/.dsh/bot'] }), '~/state.json')
+  // #2944: one line may abbreviate more than one folder. #2956: when one folder sits inside the
+  // other, the outer one shortens first and the inner one keeps the part that tells it apart, so the
+  // same line can never print one string for a file at the OS-home root and one inside the nested
+  // home — whichever order the two arrive in.
+  assert.equal(cleanText('/home/user/.dsh/bot/state.json', { home: [home, '/home/user/.dsh/bot'] }), '~/.dsh/bot/state.json')
+  assert.equal(cleanText('/home/user/.dsh/bot/state.json', { home: ['/home/user/.dsh/bot', home] }), '~/.dsh/bot/state.json')
   assert.equal(cleanText('/srv/data/x and /home/user/y', { home: [home, '/srv/data'] }), '~/x and ~/y')
   assert.ok(cleanText('x'.repeat(5000)).length < 2100)
 })
@@ -1102,6 +1105,49 @@ test('no row of the report carries this host\'s home folder (#2944)', async (t) 
   assert.ok(shown.includes('The Bot team in ~ is open in another dsh'), `the sentence names the home as ~: ${shown}`)
   assert.match(shown, /close the other one and reload\.?$/, 'the advice survives the bound')
 })
+
+// #2956: the normal layout puts the DSH home under the OS home, and abbreviating both to `~` made
+// two different files print one string — the `state file:` row of a file at the OS-home root and a
+// path inside the DSH home. The outer folder shortens first, so the nested one keeps what tells it
+// apart: the Read-only row, the file rows and a browser line all read the pair differently, and the
+// advice at the end of the sentence still survives.
+test('a DSH home inside the OS home keeps what tells two paths apart (#2956)', async (t) => {
+  const osHome = mkdtempSync(join(tmpdir(), 'ds-bot-diag-os-'))
+  const home = join(osHome, '.dsh', 'bot')
+  mkdirSync(home, { recursive: true })
+  const atRoot = join(osHome, 'state.json')
+  const nested = join(home, 'state.json')
+  writeFileSync(nested, JSON.stringify({ version: 2 }))
+  // The report abbreviates against the OS home the process answers (#2944), so this test holds the
+  // layout the bug needs instead of hoping the runner's own home is not `/tmp`.
+  const original = os.homedir
+  os.homedir = () => osHome
+  syncBuiltinESMExports()
+  t.mock.method(console, 'error', () => {})
+  const rt = host(home, { statePath: nested })
+  t.after(async () => {
+    os.homedir = original
+    syncBuiltinESMExports()
+    await rt.dispose()
+    rmSync(osHome, { recursive: true, force: true, maxRetries: 5 })
+  })
+  const sentence = `The Bot team in ${home} is open in another dsh (Web or Desktop, pid 1 on host). This window shows the team but cannot change it; close the other one and reload.`
+  rt.readOnly = () => sentence
+
+  // A browser line arrives raw, so the report is where it is abbreviated — the other shape the bug
+  // showed the string in.
+  const report = await rt.diagnostics.report({ clientErrors: [{ time: Date.now(), text: `cannot open ${atRoot} and ${nested}` }] })
+
+  assert.equal(report.markdown.includes(osHome), false, `no row carries the OS home folder: ${report.markdown}`)
+  assert.equal(readOnlyRow(report), sentence.replace(home, '~/.dsh/bot'), 'the Read-only row keeps the nested part')
+  assert.match(report.markdown, /^state file: ~\/\.dsh\/bot\/state\.json \(/m, 'the file row keeps the nested part')
+  assert.match(report.markdown, /cannot open ~\/state\.json and ~\/\.dsh\/bot\/state\.json/, 'one line tells the two files apart')
+  // The pair is the pin: both strings appear, and they are two different strings.
+  assert.ok(report.markdown.includes('~/state.json'), 'the file at the OS-home root still reads `~/state.json`')
+  assert.ok(report.markdown.includes('~/.dsh/bot/state.json'), 'the file inside the nested home keeps its own part')
+  assert.match(readOnlyRow(report), /close the other one and reload\.$/, 'the advice survives the bound')
+})
+
 
 test('a writable window has no Read-only row', async (t) => {
   const { report } = await realHost(t)
