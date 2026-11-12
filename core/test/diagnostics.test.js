@@ -18,6 +18,10 @@ test('cleanText hides keys, tokens and the home folder', () => {
   const out = cleanText(text, { home, redact: value => value.replaceAll('VALUE1234', '[secret:DEMO]') })
   assert.equal(out, 'key sk-[hidden] and Bearer [hidden] at http://h:1/?token=[hidden]&x=1 in ~/.dsh/bot, "api_key": "[hidden]", saved [secret:DEMO]')
   assert.equal(cleanText('C:\\Users\\Shared\\x and C:/Users/Shared/y', { home: 'C:\\Users\\Shared' }), '~\\x and ~/y')
+  // #2944: one line may abbreviate more than one folder, and the longer one wins, so a team file
+  // under both the OS home and this host's own reads `~/state.json` whichever order they arrive in.
+  assert.equal(cleanText('/home/user/.dsh/bot/state.json', { home: [home, '/home/user/.dsh/bot'] }), '~/state.json')
+  assert.equal(cleanText('/srv/data/x and /home/user/y', { home: [home, '/srv/data'] }), '~/x and ~/y')
   assert.ok(cleanText('x'.repeat(5000)).length < 2100)
 })
 
@@ -1022,26 +1026,41 @@ function assertCutBetweenWords(shown, sentence) {
 }
 
 test('the Read-only row says a newer team file needs an update, not that another dsh holds the team (#2167)', async (t) => {
-  const { statePath, readOnly, report } = await realHost(t, { saved: { version: 99 }, statePathLength: LONG_STATE_PATH })
+  const { home, statePath, readOnly, report } = await realHost(t, { saved: { version: 99 }, statePathLength: LONG_STATE_PATH })
   assert.ok(statePath.length >= LONG_STATE_PATH, 'the fixture home is long enough to bound the sentence')
   const sentence = `The Bot team file ${statePath} could not be read (saved by a newer FlyBot; update FlyBot). FlyBot does not change it; fix or move the file and reload.`
   assert.equal(readOnly, sentence, 'the store still answers the whole sentence')
   assert.match(readOnly, /update FlyBot/)
   const shown = readOnlyRow(report)
-  assert.ok(shown.length <= 201, `the row keeps the 200 bound plus the mark: ${shown.length}`)
-  assert.match(shown, /update FlyBot/)
-  assertCutBetweenWords(shown, sentence)
+  // #2944: the sentence is abbreviated before the bound, so a long home no longer cuts its end; the
+  // fixture keeps its length to hold that, and the sentence reads `~/state.json` throughout.
+  assert.equal(shown, sentence.replace(statePath, '~/state.json'))
+  assert.equal(shown.includes(home), false, 'the row never carries the home folder')
+  assert.match(shown, /fix or move the file and reload\.$/, 'the advice survives the bound')
   assert.doesNotMatch(report.markdown, /another dsh holds the team/)
 })
 
 test('the Read-only row says an unreadable team file could not be read, not that another dsh holds the team (#2167)', async (t) => {
-  const { statePath, report } = await realHost(t, { saved: 'dir', statePathLength: LONG_STATE_PATH })
+  const { home, statePath, report } = await realHost(t, { saved: 'dir', statePathLength: LONG_STATE_PATH })
   const sentence = `The Bot team file ${statePath} could not be read (EISDIR). FlyBot does not change it; fix or move the file and reload.`
   const shown = readOnlyRow(report)
-  assert.ok(shown.length <= 201, `the row keeps the 200 bound plus the mark: ${shown.length}`)
-  assert.match(shown, /could not be read \(EISDIR\)/)
-  assertCutBetweenWords(shown, sentence)
+  assert.equal(shown, sentence.replace(statePath, '~/state.json'))
+  assert.equal(shown.includes(home), false, 'the row never carries the home folder')
+  assert.match(shown, /fix or move the file and reload\.$/, 'the advice survives the bound')
   assert.doesNotMatch(report.markdown, /another dsh holds the team/)
+})
+
+// #2936 still holds for a path the report cannot shorten: a sentence over the bound is cut between
+// two words with exactly one `…` at the end, whatever the text says.
+test('a Read-only sentence over the bound is still cut between words (#2936)', async (t) => {
+  const { rt } = await realHost(t)
+  const elsewhere = `/srv/shared-team-data/${'a'.repeat(120)}/state.json`
+  const sentence = `The Bot team file ${elsewhere} could not be read (EISDIR). FlyBot does not change it; fix or move the file and reload.`
+  assert.ok(sentence.length > 200, 'the fixture sentence is over the bound')
+  rt.readOnly = () => sentence
+  const shown = readOnlyRow(await rt.diagnostics.report({}))
+  assert.ok(shown.length <= 201, `the row keeps the 200 bound plus the mark: ${shown.length}`)
+  assertCutBetweenWords(shown, sentence)
 })
 
 // The other half of the same rule: a sentence inside the bound is left exactly as it was written —
@@ -1060,6 +1079,28 @@ test('the Read-only row keeps the other-dsh wording when a live lock names it (#
   assert.ok(report.markdown.includes('open in another dsh (Web or Desktop, pid 1 on '), report.markdown)
   assert.match(report.markdown, /This window shows the team but cannot change it; close the other one and reload\./)
   assert.doesNotMatch(report.markdown, /could not be read/)
+})
+
+// #2944: the log lines the report prints agree with the rows above them. The host keeps the folder in
+// its own log and stderr — a warning names a place the person can open — so the report is where the
+// second home is abbreviated, and a line written before this change reads the same way.
+test('a log line the report prints names the home as ~ (#2944)', async (t) => {
+  const { home, rt } = await realHost(t)
+  rt.warn('ds-bot: the log leaf is at %s', join(home, 'logs', 'diagnostics.jsonl'))
+  const report = await rt.diagnostics.report({})
+  assert.equal(report.markdown.includes(home), false, `the line never carries the home folder: ${report.markdown}`)
+  assert.match(report.markdown, /the log leaf is at ~\/logs\/diagnostics\.jsonl/)
+})
+
+// #2944: the report abbreviates this host's own home, not only the process's. A DSH home outside the
+// OS home stood in full in the Read-only row while the file rows beside it said `~`, and on a long
+// home the 200 bound then cut the reload advice off the sentence's end.
+test('no row of the report carries this host\'s home folder (#2944)', async (t) => {
+  const { home, report } = await realHost(t, { locked: true })
+  const shown = readOnlyRow(report)
+  assert.equal(report.markdown.includes(home), false, `no row carries the home folder: ${report.markdown}`)
+  assert.ok(shown.includes('The Bot team in ~ is open in another dsh'), `the sentence names the home as ~: ${shown}`)
+  assert.match(shown, /close the other one and reload\.?$/, 'the advice survives the bound')
 })
 
 test('a writable window has no Read-only row', async (t) => {

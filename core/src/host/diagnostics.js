@@ -23,6 +23,13 @@ export const ISSUES_URL = 'https://github.com/ThinkFlowLab/FlyBot/issues/new'
 
 const quote = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+// The folders one line may name, longest first (#2944): this host's own home can sit outside the
+// OS home, and a row that shortened one of them disagreed with the row beside it. The longer folder
+// goes first, so a team file under both reads `~/state.json`, not `~/.dsh/bot/.../state.json`.
+const homeFolders = home => [...new Set((Array.isArray(home) ? home : [home])
+  .filter(folder => typeof folder === 'string' && folder.length > 1))]
+  .sort((a, b) => b.length - a.length)
+
 // Shapes of credentials that are not saved keys: provider keys, bearer tokens, and
 // token or key parameters in addresses (the Web login address carries one).
 const CREDENTIALS = [
@@ -42,16 +49,17 @@ const CREDENTIALS = [
 // The bound is taken here, after the home folder has been abbreviated to `~` (#2936): a bound taken
 // on the raw text measures a path that is about to shrink, so a sentence could end mid-word with no
 // mark at all. One function decides both, so the `…` has exactly one owner and never doubles.
+// `home` is one folder or the set this host prints under `~` (#2944).
 export function cleanText(text, { redact = value => value, home = homedir(), max = TEXT_MAX } = {}) {
   let out = redact(String(text ?? ''))
   for (const [pattern, replacement] of CREDENTIALS) out = out.replace(pattern, replacement)
-  if (home && home.length > 1) {
-    out = out.replace(new RegExp(quote(home), 'g'), '~')
+  for (const folder of homeFolders(home)) {
+    out = out.replace(new RegExp(quote(folder), 'g'), '~')
     // JSON and Windows paths spell the same folder with doubled or forward slashes.
-    const slashes = home.replace(/\\/g, '/')
-    if (slashes !== home) out = out.replace(new RegExp(quote(slashes), 'g'), '~')
-    const doubled = home.replace(/\\/g, '\\\\')
-    if (doubled !== home) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
+    const slashes = folder.replace(/\\/g, '/')
+    if (slashes !== folder) out = out.replace(new RegExp(quote(slashes), 'g'), '~')
+    const doubled = folder.replace(/\\/g, '\\\\')
+    if (doubled !== folder) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
   }
   const kept = cut(out, max)
   if (!kept.cut) return out
@@ -162,7 +170,14 @@ export function install(rt) {
   let fileFailed = false
   let fileFailure
 
+  // What this host writes to its own log and stderr is cleaned against the process's home alone:
+  // that text is for the person at this machine, and a warning names the folder they can open.
   const clean = (text, options) => cleanText(text, { redact: rt.redactSecrets, ...options })
+  // What the report and the downloaded log print is cleaned against both folders (#2944): this
+  // host's own home can sit outside the OS home, and then one row of the report said `~` while the
+  // row beside it carried the folder in full.
+  const reportHomes = [homedir(), home]
+  const show = (text, options) => cleanText(text, { redact: rt.redactSecrets, home: reportHomes, ...options })
 
   // Entries from earlier runs, read once; new ones are kept apart until then. A read that failed
   // (`EACCES`, `EISDIR`, a name this host may not open) is not a log without errors (#2604): the
@@ -269,8 +284,8 @@ export function install(rt) {
     const old = (await earlier).filter(entry => entry.time > cleared)
     const list = [...old, ...fresh].slice(-KEEP).map(entry => ({
       ...entry,
-      text: clean(entry.text),
-      ...(entry.stack ? { stack: clean(entry.stack) } : {}),
+      text: show(entry.text),
+      ...(entry.stack ? { stack: show(entry.stack) } : {}),
     }))
     // A log this host could not read is not an empty one (#2604): the answer carries the reason
     // beside the entries, so a caller that would show "no entries" can say why instead. It is a
@@ -311,9 +326,10 @@ export function install(rt) {
       return NOT_PLAIN
     }
   }
-  // A path is cleaned with this host's own home, not the process's: a machine shows `~/.dsh/...`
-  // and a test's temporary home shows `~/...`, so no report carries the folder a person lives in.
-  const cleanPath = text => cleanText(text, { home, redact: rt.redactSecrets })
+  // A path is cleaned like every other text (#2944): this host's own home first, the process's too,
+  // so a machine shows `~/.dsh/...` and a test's temporary home shows `~/...` — no report carries
+  // the folder a person lives in.
+  const cleanPath = text => show(text)
   const fileFact = async (path, { missing, notPlain }) => {
     if (path === undefined) return undefined
     try {
@@ -434,7 +450,7 @@ export function install(rt) {
       // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
       // report must not compress both into "another dsh holds the team".
-      readOnly: readOnly ? clean(readOnly, { max: 200 }) : undefined,
+      readOnly: readOnly ? show(readOnly, { max: 200 }) : undefined,
       plugins: plugins(),
       // The writer opens on the first save that got past `writable()` (#2351), so a window that
       // has not saved yet never read or repaired the file: `recording` there promises a line
@@ -444,7 +460,7 @@ export function install(rt) {
       stateJournal: journal === undefined ? undefined
         : journal.recording ? (readOnly ? 'paused (this window is read-only)'
           : journal.opened === false ? 'not started (opens with the first save)' : 'recording')
-          : `stopped (${clean(journal.because)})`,
+          : `stopped (${show(journal.because)})`,
       // The file that sentence is about, in the same shape (#2388): the path with the home as `~`
       // and its size and last write time, `none yet` before the first save creates it, or the one
       // sentence for a leaf this host would not read. A host without the journal says nothing.
@@ -456,15 +472,15 @@ export function install(rt) {
       // reasons are read as they stand now, not as the stderr latches left them (#2383). The
       // start-up read is the third (#2604): a log this host could not open leaves every earlier
       // line out of the list, so `recording` alone would claim a read that never happened.
-      diagnosticsLog: !toFile ? undefined : logState(),
+      diagnosticsLog: !toFile ? undefined : show(logState()),
       // The read's own reason, so the report's text can say the earlier lines are missing without
       // reading it back out of the sentence above (#2604).
-      diagnosticsLogUnread: !toFile ? undefined : earlierFailure,
+      diagnosticsLogUnread: !toFile ? undefined : (earlierFailure === undefined ? undefined : show(earlierFailure)),
     }
   }
 
   const sanitizeClient = (client) => {
-    const pick = (value, max) => (typeof value === 'string' ? clean(value, { max }) : undefined)
+    const pick = (value, max) => (typeof value === 'string' ? show(value, { max }) : undefined)
     return {
       surface: pick(client?.surface, 40),
       language: pick(client?.language, 20),
@@ -473,7 +489,7 @@ export function install(rt) {
   }
   const sanitizeClientEntries = list => (Array.isArray(list) ? list : []).slice(-20).flatMap((item) => {
     if (typeof item?.text !== 'string' || typeof item.time !== 'number') return []
-    return [{ time: item.time, level: item.level === 'warn' ? 'warn' : 'error', source: 'browser', text: clean(item.text, { max: 500 }), ...(typeof item.code === 'string' ? { code: clean(item.code, { max: 40 }) } : {}) }]
+    return [{ time: item.time, level: item.level === 'warn' ? 'warn' : 'error', source: 'browser', text: show(item.text, { max: 500 }), ...(typeof item.code === 'string' ? { code: show(item.code, { max: 40 }) } : {}) }]
   })
 
   async function report(body = {}) {
