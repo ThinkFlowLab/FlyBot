@@ -9399,6 +9399,55 @@ test('#2946: with no saved server file the page gains no saved fact', async (t) 
   assert.equal(Object.hasOwn(status, 'saved'), false)
 })
 
+// #2968: the host, not the page, has to tell two saved servers apart. `cleanLine(saved.server, 200)`
+// cut at the bound with no mark, so two 203-character addresses that agree through character 200
+// arrived as one string; a plain `199 + …` cut would still merge them. The display form keeps a head
+// prefix and the last path segment (`…/one` vs `…/two`), and an address that fits is untouched.
+test('#2968: an over-long saved address keeps its last path segment, so two servers read apart', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'flybot-social-mark-'))
+  const fly = () => ({ bot: { list: () => [], get: () => undefined }, fields: { get: () => undefined, set() {} }, grants: { of: () => [], set: async () => {} }, readOnly: () => false })
+  const base = { server: 'https://a.test', credentialsPath: join(home, 'flybot-social.json'), displayName: 'Me' }
+  const start = async () => ({ home: { handle: '@me.home' }, dispose: () => {} })
+  const probe = async server => ({ name: 'Bot Social', features: [], server })
+  const savedPath = join(home, 'flybot-social-server.json')
+  const namedSaved = async (server) => {
+    writeFileSync(savedPath, JSON.stringify({ server }))
+    const controller = createServerController({ base, flybot: fly(), start, probe, startTimeoutMs: 20 })
+    try {
+      await controller.ready()
+      return controller.status()
+    } finally { controller.dispose() }
+  }
+  try {
+    const stem = `http://social.example/${'a'.repeat(177)}`
+    const one = `${stem}/one`
+    const two = `${stem}/two`
+    assert.equal(one.length, 203)
+    assert.equal(two.length, 203)
+    assert.equal(one.slice(0, 200), two.slice(0, 200), 'the two addresses agree through the old bound')
+    const first = await namedSaved(one)
+    const second = await namedSaved(two)
+    // The profile default runs, and the saved choice is still named (#2946).
+    assert.equal(first.server, 'https://a.test')
+    assert.equal(first.source, 'config')
+    assert.notEqual(first.saved?.address, second.saved?.address, `two servers render as one: ${first.saved?.address}`)
+    for (const [address, tail] of [[first.saved.address, '/one'], [second.saved.address, '/two']]) {
+      assert.ok(address.length <= 200, `over the bound: ${address.length}`)
+      assert.ok(address.includes('…'), `the cut is marked: ${address}`)
+      assert.ok(address.endsWith(tail), `its own path segment survives: ${address}`)
+      assert.equal(address.split('…').length - 1, 1, `exactly one ellipsis: ${address}`)
+      assert.ok([one, two].some(stored => stored.startsWith(address.slice(0, address.indexOf('…')))), 'the head is a stored prefix')
+    }
+    // At or under the bound: byte for byte the stored value, with no mark.
+    const exact = `http://social.example/${'b'.repeat(178)}`
+    assert.equal(exact.length, 200)
+    assert.equal((await namedSaved(exact)).saved.address, exact)
+    assert.equal((await namedSaved('http://short.example')).saved.address, 'http://short.example')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('#2950: the plain-http reason reaches the page whole, not cut at the name cap', async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
@@ -9534,8 +9583,9 @@ test('#2950: the saved-server sentence draws the reason whole, and a longer one 
 
 // #2958: the address is not a name either. `settingsName` cut it at 80 with no mark, so two saved
 // addresses that agree through character 80 drew one byte-identical sentence, and an empty address
-// drew `The server saved here () cannot be used: …`. The host sends the whole address (`MAX_URL`,
-// 200), so the page draws it to that bound and marks only a cut beyond it.
+// drew `The server saved here () cannot be used: …`. The host now sends a display form of its own
+// (#2968: a head prefix, one `…` and the last path segment, never over 200), so the page draws what
+// it gets and its own cut never fires on real data.
 test('#2958: the saved-server sentence draws the address whole, and never an empty pair of brackets', () => {
   const problem = 'Only https:// is accepted here'
   const draw = (extra) => {
@@ -9555,18 +9605,23 @@ test('#2958: the saved-server sentence draws the address whole, and never an emp
     assert.equal(second, `The server saved here (${two}) cannot be used: ${problem}. Using the profile default (http://127.0.0.1:1).`)
   }
   {
-    // An address the host would have capped at 200: drawn up to that bound, then marked once at a
-    // word boundary. This text is 246 characters and the cap falls inside `alpha`.
-    const long = `https://social.example/${'alpha '.repeat(40)}tail`
-    assert.ok(long.length > 200 && !/\s/.test(long[200]), 'the cap must fall inside a word for this test to mean anything')
-    const sentence = draw({ saved: { address: long, problem } })
-    const shown = sentence.slice('The server saved here ('.length, sentence.indexOf(') cannot be used'))
-    assert.ok(shown.endsWith('…'), `a shortened address says it was cut: ${shown}`)
-    assert.equal(shown.split('…').length - 1, 1, `exactly one ellipsis: ${shown}`)
-    const kept = shown.slice(0, -1)
-    assert.ok(long.startsWith(kept), 'the shown address is the address\'s own prefix')
-    assert.equal(long[kept.length], ' ', `the cut lands between words: ${JSON.stringify(shown)}`)
-    assert.doesNotMatch(sentence, /…\./, 'the address mark never doubles with the sentence dot')
+    // What the host sends for an over-long address is a 200-character display form: a head prefix,
+    // one `…` in the middle and the last path segment (#2968). The page draws it unchanged — its
+    // own cut never fires at 200 — and the segment that tells two servers apart survives. These are
+    // the two strings the host-side case pins. The old block fed a synthetic 246-character address
+    // the host cannot emit, so it proved the page's dead-on-real-data cut, not the user's sentence.
+    const kept = `https://social.example/${'a'.repeat(172)}`
+    const hostOne = `${kept}…/one`
+    const hostTwo = `${kept}…/two`
+    assert.equal(hostOne.length, 200)
+    assert.equal(hostTwo.length, 200)
+    const first = draw({ saved: { address: hostOne, problem } })
+    const second = draw({ saved: { address: hostTwo, problem } })
+    assert.notEqual(first, second, `two servers draw one sentence: ${first}`)
+    assert.equal(first, `The server saved here (${hostOne}) cannot be used: ${problem}. Using the profile default (http://127.0.0.1:1).`)
+    assert.equal(second, `The server saved here (${hostTwo}) cannot be used: ${problem}. Using the profile default (http://127.0.0.1:1).`)
+    assert.equal(first.split('…').length - 1, 1, `the page adds no second mark: ${first}`)
+    assert.doesNotMatch(first, /…\./, 'the address mark never doubles with the sentence dot')
   }
   {
     // An empty address is not bracketed: there is no address to name.
