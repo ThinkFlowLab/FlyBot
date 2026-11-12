@@ -286,6 +286,14 @@ A row in the `error` state offers **Copy error** beside **Try again** (#2027): i
 
 `src/client/feedback.js` reads the window lock once per render (`lockedWindow`, `schedules.js`, the same function the other locked screens call) and draws no **Clear** while the window only reads: Clear calls `diagnosticsClear`, which truncates the shared `<home>/logs/diagnostics.jsonl` on the host — the evidence a bug report is supposed to carry — and a reading host refuses it with `bot/read-only`. **Download**, **Show**, **Copy** and **Report on GitHub** stay; a writable window keeps Clear exactly as before, including its `disabled` state. Settings mounts the page with the roster (`settings.js`, `shown === 'feedback'`), the way the neighbouring pages already do. Tests: `core/test/feedback-readonly-clear.test.js`.
 
+### A read-only window's Reload answers (#2883)
+
+Every screen that draws the lock's own sentence — the sidebar banner, the Settings header, the task board, the Project settings panel, both New chat sites, the Inbox, the Memory panel and the Bot overview — carries one **Reload** beside it, and a view draws at most one. Pressing it asks the host for the team again without a page reload, so whatever is in the composer stays there; a window that cannot write can still ask whether it can now.
+
+The press used to finish silently, which made "the other window closed" and "it is still open" look the same. It now answers in one line: `Reloaded just now — this window is still read-only.` while the lock is still there, and `Reloaded — this window can write again.` once the slot is free. A window that was not read-only gets no line, because there was no lock to report on. When the read itself fails, the failure goes to the client's usual error surface and the lock's sentence stays, so the button never claims a reload that did not happen. The receipt does not name who holds the slot: the sentence beside it already says so, in the host's own words.
+
+Tests: `core/test/readonly-reload-lines.test.js` covers the sentences; the receipt has its own test in the same folder.
+
 ### Clear says what it did (#2360)
 
 `src/client/feedback.js` used to say `Cleared the error log.` whatever the host answered, because
