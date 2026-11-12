@@ -52,6 +52,13 @@ export function install(rt) {
     return Object.keys(avatar).length > 0 ? avatar : undefined
   }
 
+  // Every name row draws with `white-space: nowrap`, which collapses a run of whitespace to one
+  // space: `Dev  Ops` and `Dev Ops` read as the same row while `nameKey` keeps them apart, so
+  // `@Dev Ops` reaches only the single-space Bot and the other can be seen and never called
+  // (#2986). A stored name folds the run, the way `cleanRoomName` already does. A line break is
+  // left as it is, because `nameProblem` refuses it by name rather than folding it into a space.
+  const foldSpaces = value => String(value ?? '').replace(/[^\S\r\n\u2028\u2029]+/g, ' ')
+
   const freshName = (base) => {
     const stem = base.slice(0, 34)
     if (!rt.findBot(stem)) return stem
@@ -73,7 +80,7 @@ export function install(rt) {
   async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId, hidden, ephemeral }) {
     // The stored name is the visible one: the invisible characters a name can carry would
     // make two Bots read the same on screen while the key still tells them apart (#2691).
-    const cleanName = cut(stripInvisible(String(botName ?? '')).trim(), 40).text
+    const cleanName = cut(foldSpaces(stripInvisible(String(botName ?? ''))).trim(), 40).text
     // A friend's Bot (remote-chat.js) keeps its own name: it is not a team member, so
     // team names never clash with it and creating it starts no turn.
     const isRemote = typeof remote?.handle === 'string'
@@ -202,7 +209,7 @@ export function install(rt) {
     const moving = patch.workDir !== undefined
     const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
     if (patch.name !== undefined) {
-      const next = cut(stripInvisible(String(patch.name)).trim(), 40).text
+      const next = cut(foldSpaces(stripInvisible(String(patch.name))).trim(), 40).text
       const clash = rt.findBot(next)
       // A name saved before the rule stays usable until it changes.
       const changed = next !== bot.name

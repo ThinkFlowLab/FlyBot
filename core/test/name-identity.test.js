@@ -249,6 +249,49 @@ test('#2691 the duplicate guard refuses a second Bot and a second room with the 
   await assert.rejects(rt.createRoom({ name: 'Cafe\u0301', members: ['chief', 'dev'] }), /already called/)
 })
 
+// #2986: a run of whitespace draws as one space — every name row is `white-space: nowrap` — so
+// `Dev  Ops` and `Dev Ops` read as the same row while their keys differ, and an `@` reaches only
+// the single-space Bot. A stored name folds the run, the way the group-name rule already does.
+test('#2986 a run of spaces in a name folds to one space, so the second Bot is refused', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  const first = await rt.createBot({ name: 'Dev Ops', pickModel: true })
+  assert.equal(state().bots[first.id].name, 'Dev Ops')
+  await assert.rejects(rt.createBot({ name: 'Dev  Ops', pickModel: true }), /^Error: A Bot named Dev Ops already exists$/)
+  assert.deepEqual(Object.keys(state().bots).sort(), ['cafe', 'chief', 'dev', 'ops', first.id].sort(), 'a refused create leaves no record behind')
+})
+
+test('#2986 a rename to a run of spaces folds too, and the taken name is refused', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  await rt.createBot({ name: 'Dev Ops', pickModel: true })
+  await assert.rejects(rt.updateBot('ops', { name: 'Dev  Ops' }), /^Error: Name Dev Ops is not available$/)
+  assert.equal(state().bots.ops.name, 'Ops', 'a refused rename leaves the stored name alone')
+  // A run of spaces nobody holds is a name of its own, stored folded (#2986).
+  await rt.updateBot('ops', { name: 'Dev\tOps Two' })
+  assert.equal(state().bots.ops.name, 'Dev Ops Two')
+})
+
+test('#2986 a name with a run of spaces is stored with one space', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  const created = await rt.createBot({ name: 'Dev  Ops', pickModel: true })
+  assert.equal(created.name, 'Dev Ops')
+  assert.equal(state().bots[created.id].name, 'Dev Ops')
+})
+
+test('#2986 a run of whitespace folds, but a line break is still refused as a line break', async (t) => {
+  const { rt } = setup(t)
+  await rt.load()
+  await rt.createBot({ name: 'Dev Ops', pickModel: true })
+  // A tab, a no-break space and a full-width space all fold to the one space the stored name has.
+  for (const name of ['Dev\tOps', 'Dev\u00a0Ops', 'Dev\u3000Ops']) {
+    await assert.rejects(rt.createBot({ name, pickModel: true }), /A Bot named Dev Ops already exists/, codePoints(name))
+  }
+  await assert.rejects(rt.createBot({ name: 'Dev\nOps', pickModel: true }), /A Bot name cannot contain @, ` or a line break/)
+  assert.equal(nameProblem('Dev\nOps'), 'A Bot name cannot contain @, ` or a line break', 'a line break stays a line break, not a space')
+})
+
 test('#2691 a name is stored without the invisible characters it was written with', async (t) => {
   const { rt, state } = setup(t)
   await rt.load()
