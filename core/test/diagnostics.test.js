@@ -1068,6 +1068,76 @@ test('a writable window has no Read-only row', async (t) => {
   assert.doesNotMatch(report.markdown, /^\| Read-only \|/m)
 })
 
+// #2940: the owner can switch a feature plugin off, so a report about "Projects is gone" has to
+// say whether it was switched off here: the facts table gains one row naming every switch that is
+// off, in FEATURE_PLUGINS order, and says nothing at all while every switch is on. The row carries
+// switch values only — `loaded` and `installed` are two other facts (#2868), and a report is not
+// where they belong.
+const PLUGINS_ROW = /^\| Plugins \| (.*) \|$/m
+
+const switchedOff = (...ids) => Object.fromEntries(ids.map(id => [id, { enabled: false }]))
+
+test('the diagnostics report says which feature plugin is switched off (#2940)', async (t) => {
+  const { rt, statePath } = await realHost(t)
+  rt.readOnly = () => 'Another dsh (pid 1 on host) holds the team'
+  rt.state.flybot = { plugins: switchedOff('project') }
+  // The file this host started from says the same, so no restart is waiting.
+  writeFileSync(statePath, JSON.stringify({ version: 2, flybot: { plugins: switchedOff('project') } }))
+
+  const report = await rt.diagnostics.report({})
+  const found = report.markdown.match(PLUGINS_ROW)
+  assert.ok(found, `the report carries a Plugins row: ${report.markdown}`)
+  assert.equal(found[1], 'project off')
+  assert.equal(report.facts.plugins, 'project off')
+  assert.match(report.markdown, /^\| Read-only \| [^\n]* \|\n\| Plugins \| project off \|$/m, 'the row follows the Read-only row')
+  assert.equal(/loaded|installed/.test(found[1]), false, 'the row carries switch values only')
+})
+
+// One entry per switched-off id, in the list's own order — `timeline` before `project`, whatever
+// order the switches were written in — so two hosts with the same switches print the same row.
+test('the Plugins row lists the ids in FEATURE_PLUGINS order (#2940)', async (t) => {
+  const { rt, statePath } = await realHost(t)
+  rt.state.flybot = { plugins: switchedOff('project', 'timeline') }
+  writeFileSync(statePath, JSON.stringify({ version: 2, flybot: { plugins: switchedOff('project', 'timeline') } }))
+  assert.equal((await rt.diagnostics.report({})).facts.plugins, 'timeline, project off')
+})
+
+// A flip is applied at the next start, so a switch that no longer answers what this start read is
+// exactly what the person reading the report needs to see: the row says the restart is still
+// needed. `pluginSwitchesAtStart(statePath)` is that start's own file, the pair Settings → Plugins
+// answers `pendingRestart` with.
+test('the Plugins row says a switched-off plugin waits for a restart (#2940)', async (t) => {
+  const { rt, statePath } = await realHost(t)
+  rt.state.flybot = { plugins: switchedOff('project') }
+  // This host started while `project` was still on: the running plugins have not changed yet.
+  writeFileSync(statePath, JSON.stringify({ version: 2 }))
+
+  const pending = await rt.diagnostics.report({})
+  assert.equal(pending.facts.plugins, 'project off (restart pending)')
+  assert.match(pending.markdown, /^\| Plugins \| project off \(restart pending\) \|$/m)
+
+  // A flip that comes back to the start value leaves nothing for the next start to load.
+  writeFileSync(statePath, JSON.stringify({ version: 2, flybot: { plugins: switchedOff('project') } }))
+  const settled = await rt.diagnostics.report({})
+  assert.equal(settled.facts.plugins, 'project off')
+  assert.doesNotMatch(settled.markdown, /restart pending/)
+})
+
+// The control: a host with every switch on, and a state with no `flybot.plugins` at all, are the
+// report of today — byte for byte. The second is a team file an older build wrote, and the first is
+// the owner who never touched the switches, so neither may change the report.
+test('a host with every plugin switch on keeps the report of today (#2940)', async (t) => {
+  const { rt } = await realHost(t)
+  const none = await rt.diagnostics.report({})
+  assert.equal(none.facts.plugins, undefined)
+  assert.doesNotMatch(none.markdown, /Plugins/)
+
+  rt.state.flybot = { plugins: { social: { enabled: true }, tree: { enabled: true }, timeline: { enabled: true }, workflow: { enabled: true }, project: { enabled: true } } }
+  const allOn = await rt.diagnostics.report({})
+  assert.equal(allOn.facts.plugins, undefined)
+  assert.equal(allOn.markdown, none.markdown, 'every switch on is the report of today, byte for byte')
+})
+
 test('reportMarkdown says when nothing went wrong', () => {
   const text = reportMarkdown({ facts: { botVersion: '0.1.0', os: 'linux' } })
   assert.match(text, /No host errors recorded\./)

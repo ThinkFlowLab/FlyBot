@@ -10,6 +10,7 @@ import { arch, homedir, platform, release } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format } from 'node:util'
+import { pluginSwitches, pluginSwitchesAtStart, pluginSwitchesPending } from './plugins.js'
 import { fileKind } from './real-dir.js'
 import { cut } from './text.js'
 
@@ -94,6 +95,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
     row('Team', facts.team),
     row('Models', facts.models),
     row('Read-only', facts.readOnly),
+    row('Plugins', facts.plugins),
   ].filter(Boolean)
   const recent = entries.slice(-REPORT_ENTRIES)
   // The team file, right after the table that counts the team (#2394): a report about a team has to
@@ -393,6 +395,20 @@ export function install(rt) {
     return [written, read].filter(Boolean).join(', ') || 'recording'
   }
 
+  // The owner's switches, read once (#2940): a report about "Projects is gone" has to say whether
+  // the Project plugin was switched off on this host, not only what the host is running. Values
+  // only — `loaded` and `installed` are other facts (#2868) and belong to Settings → Plugins. A
+  // switch that no longer answers what this start read is what the next restart loads, so the row
+  // says so too; `pluginSwitchesAtStart(statePath)` is the same pair `pendingRestart` uses, and a
+  // flip that comes back to the start value leaves nothing pending.
+  const plugins = () => {
+    const off = pluginSwitches(rt.state).filter(plugin => !plugin.enabled)
+    if (off.length === 0) return undefined
+    const pending = pluginSwitchesPending(rt.state, pluginSwitchesAtStart(statePath))
+    const names = off.map(plugin => plugin.id).join(', ')
+    return `${names} off${off.some(plugin => pending[plugin.id]) ? ' (restart pending)' : ''}`
+  }
+
   const facts = async () => {
     const bots = Object.values(rt.state.bots)
     const models = [...new Set(bots.map(bot => bot.model ?? bot.appliedModel).filter(Boolean))]
@@ -419,6 +435,7 @@ export function install(rt) {
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
       // report must not compress both into "another dsh holds the team".
       readOnly: readOnly ? clean(readOnly, { max: 200 }) : undefined,
+      plugins: plugins(),
       // The writer opens on the first save that got past `writable()` (#2351), so a window that
       // has not saved yet never read or repaired the file: `recording` there promises a line
       // nobody asked for, and `opened: false` says so instead. A window another dsh keeps
