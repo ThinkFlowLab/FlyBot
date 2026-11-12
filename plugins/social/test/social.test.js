@@ -9456,9 +9456,15 @@ test('Settings → Bot Social page: shows server, source and status; the switch 
 test('#2946: Settings names a saved server the profile cannot use, and says nothing when none was saved', () => {
   {
     const { plugin, all, text } = clientPlugin([serverView({ saved: { address: 'http://not-allowed.example', problem: 'The address must start with https://' } }), null, null])
-    const row = nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-saved-unusable')
+    const nodes = all(plugin.SocialServerSettings(pageProps))
+    const row = nodeBy(nodes, 'server-saved-unusable')
     assert.ok(row, 'the page names the saved server it could not use')
     assert.equal(text(row), 'The server saved here (http://not-allowed.example) cannot be used: The address must start with https://. Using the profile default (https://a.test).')
+    // Same first paint, the other state on this panel (#2945): a damaged file refuses with its own
+    // whole sentence. This view has a saved fact, so that refusal must not be drawn beside it.
+    const paint = text(nodes[0])
+    assert.doesNotMatch(paint, /does not parse as JSON|cannot be read/)
+    assert.doesNotMatch(paint, /Social is not running:/)
   }
   {
     // No saved file, no `saved` fact: the page says nothing extra.
@@ -9470,8 +9476,10 @@ test('#2946: Settings names a saved server the profile cannot use, and says noth
     // draws the refusal and no saved-server line — the two states never draw together.
     const { plugin, all, text } = clientPlugin([null, 'The Bot Social server chosen in Settings at ./flybot-social-server.json exists but does not parse as JSON.'])
     const nodes = all(plugin.SocialServerSettings(pageProps))
-    assert.match(text(nodes[0]), /exists but does not parse as JSON/)
+    const paint = text(nodes[0])
+    assert.match(paint, /exists but does not parse as JSON/)
     assert.equal(nodeBy(nodes, 'server-saved-unusable'), undefined)
+    assert.doesNotMatch(paint, /cannot be used|Using the profile default/)
   }
 })
 
