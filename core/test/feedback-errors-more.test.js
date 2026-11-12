@@ -207,18 +207,41 @@ test('#2266: eight or fewer errors draw no control and keep the title as it was'
 
 // #2884: `Show more` was an unlabelled way out — a reader with more than eight errors
 // could not tell whether the list was cut or complete from the page itself, and wrote
-// bug reports from the eight rows it showed. The control row now carries the count of
-// what is drawn against what is loaded: `Showing 8 of 50` while folded, `Showing all 50`
-// once open. A report of eight or fewer rows draws neither, exactly as before.
+// bug reports from the eight rows it showed. The control row carries the count of what
+// is drawn against the whole log: `Showing 8 of 60` while folded, `Showing 50 of 60` once
+// open (#2932). A report of eight or fewer rows draws neither, exactly as before.
 test('#2884: a list cut at eight rows says how many rows of how many it draws', async () => {
   const page = await mount({ entries: errorEntries(50), total: 60 })
-  assert.equal(page.countText(), 'Showing 8 of 50', 'the folded list says it is drawing eight of the fifty rows it holds')
+  assert.equal(page.countText(), 'Showing 8 of 60', 'the folded list says it is drawing eight of the sixty errors in the log')
   assert.equal(page.text(page.more).trim(), 'Show more')
   await page.click()
-  assert.equal(page.countText(), 'Showing all 50', 'open, the panel says every loaded row is drawn')
+  assert.equal(page.countText(), 'Showing 50 of 60', 'open, the panel says every loaded row is drawn of the sixty the log holds')
   assert.equal(page.rows.length, 50)
   await page.click()
-  assert.equal(page.countText(), 'Showing 8 of 50', 'folded again, the count returns to eight')
+  assert.equal(page.countText(), 'Showing 8 of 60', 'folded again, the count returns to eight')
+})
+
+// #2932: `#2884` counted the rows on screen as the denominator, so the same panel said
+// `Recent errors · 60` in its title and `Showing all 50` underneath: ten errors had no
+// way out and the page claimed to hold everything. The count line divides by the log the
+// title counts, so a long log reads as a part of it even when every loaded row is drawn.
+test('#2932: the count line divides by the log, not by the rows the host sent', async () => {
+  const page = await mount({ entries: errorEntries(50), total: 200 })
+  assert.equal(page.title(), 'Recent errors · 200', 'the title reports the whole log')
+  await page.click()
+  assert.equal(page.countText(), 'Showing 50 of 200', 'open, the fifty drawn are a part of two hundred, not "all"')
+  assert.equal(page.rows.length, 50)
+  await page.click()
+  assert.equal(page.countText(), 'Showing 8 of 200', 'folded, the denominator is the log')
+})
+
+// #2932: a log that fits in the payload has nothing beyond the rows drawn, so opening it
+// still says every row is drawn — the words it had before, unchanged.
+test('#2932: a log that fits in the payload still says all of its rows are drawn', async () => {
+  const page = await mount({ entries: errorEntries(50), total: 50 })
+  assert.equal(page.countText(), 'Showing 8 of 50', 'folded, eight of the fifty errors in the log')
+  await page.click()
+  assert.equal(page.countText(), 'Showing all 50', 'open, all fifty rows in the log are drawn')
 })
 
 test('#2884: eight or fewer rows draw no count line', async () => {
