@@ -24,6 +24,16 @@ the layer is a promise about what it can catch, not about how much it runs.
   plugins/social test && npm --prefix plugins/tree test && npm --prefix plugins/timeline test && node
   --test ".github/scripts/*.test.mjs" && npm run test:interop`
 
+Documentation is checked in the same run: a backticked path under `docs/` that opens with `core/`,
+`plugins/` or `patches/` and ends in a code or document extension must exist on disk, and the two root
+READMEs are read by the same test with the wider rule that a token whose first segment is an entry at
+the repo root must exist. A miss is reported as `docs/<page>.md:<line>: <path>`. A path relative to a
+package, a tool or branch name (`plugins/list`, `dev/bench.sh`), another repository's path, a glob or
+placeholder, a URL, an npm scope, an absolute or home path and anything inside a fenced block are not
+claims, so the scan needs no allowlist. Point a miss at the file's current home, or — when the token
+was never a repo path — write it so it cannot be read as one: deleting the backticks silences the
+check and hides the path instead (#2895, #2906).
+
 ## L2 — merge / queue
 
 - **What it must be able to catch:** everything a merge must not break, at the exact commit being
