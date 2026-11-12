@@ -5482,21 +5482,29 @@ test('#666: a relationship removal event drops the cached roster instead of serv
   assert.deepEqual(after.homes, [], 'the next read asks the server instead of the roster the event invalidated')
 })
 
-test('#90: hide-remote returns the filtered roster without waiting for a refresh', async (t) => {
+test('#90: hide-remote returns the filtered roster without waiting for a refresh', { timeout: 20_000 }, async (t) => {
   const { ctx, call, home, stop } = await team()
   t.after(stop)
   const server = mockServer()
+  // The judgement is the latch, not a stopwatch: the roster refresh hide-remote starts stays blocked
+  // here, so a call that returns has plainly not waited for it. A fixed 200 ms budget measured the
+  // runner's scheduling instead, and failed a correct implementation under merge-queue load (#2965).
+  let released = false
   let release
-  const held = new Promise(resolve => { release = resolve })
+  const held = new Promise(resolve => { release = () => { released = true; resolve() } })
   t.after(() => release?.())
-  let fetches = 0
+  let refreshes = 0
+  let refreshStarted
+  let refreshDone
+  const started = new Promise(resolve => { refreshStarted = resolve })
+  const refreshed = new Promise(resolve => { refreshDone = resolve })
   const inner = server.fetch
   server.fetch = async (url, init) => {
     let name
     try { name = JSON.parse(init?.body ?? '{}')?.params?.name } catch { name = undefined }
     if (name === 'list_remote_bots') {
-      fetches += 1
-      if (fetches > 1) await held
+      refreshes += 1
+      if (refreshes > 1) { refreshStarted(); await held; refreshDone() }
     }
     return inner(url, init)
   }
@@ -5508,16 +5516,18 @@ test('#90: hide-remote returns the filtered roster without waiting for a refresh
   await grantTeam(ctx.flybot)
   await social.registerAll()
   await call('flybot/social/remote-bots', { fresh: true })
-  assert.equal(fetches, 1)
-  const hidden = await Promise.race([
-    call('flybot/social/hide-remote', { handle: '@coder.bob.home' }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('hide-remote waited for the roster refresh')), 200)),
-  ])
+  assert.equal(refreshes, 1)
+  const hidden = await call('flybot/social/hide-remote', { handle: '@coder.bob.home' })
   assert.equal(hidden.ok, true, hidden.error?.message)
   assert.equal(hidden.value.hidden, true)
   assert.equal(hidden.value.homes[0].bots.some(b => b.handle === '@coder.bob.home'), false)
   assert.equal(hidden.value.homes[0].bots.some(b => b.handle === '@writer.bob.home'), true)
+  // The refresh this call started is now blocked on the latch, and the call has already returned.
+  await started
+  assert.equal(released, false, 'hide-remote waited for the roster refresh to finish')
   release()
+  await refreshed
+  assert.equal(refreshes, 2, 'exactly one roster refresh follows a hide-remote')
 })
 
 test('#90: hide-remote leaves independent rooms in parallel and does not wait for them', async (t) => {
