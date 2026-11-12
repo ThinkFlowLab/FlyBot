@@ -11,7 +11,7 @@ import { BotAvatar, RoomAvatar } from './mark.js'
 import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
 import { Segmented } from './motion.js'
 import { dateLocale, hostText, t } from './i18n.js'
-import { connectedConnectors, isOn } from './connector-bots.js'
+import { carriedConnectors } from '../shared/connector-reach.js'
 
 const POLL_MS = 30_000
 
@@ -121,20 +121,25 @@ export function lastRunText(run) {
 
 // What an unattended run carries (#2323): the Bot's reach at the moment the task fires, not a copy
 // stored with the task, so turning a connector on today changes what a task written weeks ago will
-// use. A room task (no `botId`) has no single Bot's switch, and a Bot the roster no longer carries
-// says nothing rather than guessing. `connectedConnectors` drops a sender and a webhook-only
-// channel, which have neither tools nor a way in; `isOn` keeps only what this Bot may use. Only a
-// `ready` connection gives the run tools (#2354): the host unmounts a failed connection before it
-// writes `error`, and a `connecting` one has none yet — `connectedConnectors` still names both so
-// the Connectors page can draw the switch that reconnects them.
+// use. `carriedConnectors` is that one predicate (#2344/#2930). A room task (no `botId`) has no
+// single Bot's switch, and a Bot the roster no longer carries says nothing rather than guessing.
 export function reachText(task, roster) {
   if (!task?.botId) return ''
   const bot = roster?.byId?.[task.botId] ?? (roster?.bots ?? []).find(entry => entry.id === task.botId)
   if (bot === undefined) return ''
-  const names = connectedConnectors(roster)
-    .filter(connector => connector.state === 'ready' && isOn(bot, connector.id))
-    .map(connector => connector.name)
+  const names = carriedConnectors(bot, roster?.connectors).map(connector => connector.name)
   return names.length === 0 ? t('Runs with no connectors') : t('Runs with {names}', { names: names.join(', ') })
+}
+
+// #2930: the host stores the reach a task was set with (`carriedAtSet`) beside the one it would take
+// now (`carried`). When the two moved apart the row says so — the run itself still uses the current
+// reach, because DSH has no hook before a delivery to pin either. An order change is not a change,
+// and a row the host stored no set for (one written before this field existed) is not a guess.
+export const reachMoved = (task) => {
+  const now = task?.carried
+  const then = task?.carriedAtSet
+  if (!Array.isArray(now) || !Array.isArray(then)) return false
+  return now.length !== then.length || now.some(id => !then.includes(id))
 }
 
 // The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
@@ -176,7 +181,8 @@ function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locke
   const room = task.roomId ? roster.roomsById[task.roomId] : undefined
   // The hint reads as one line: timing, the room, then the reach. Each part stays its own string so
   // the timing half is still exactly what `timingText` answers (#1651).
-  const hint = [timingText(task), room ? t('in {name}', { name: room.name }) : '', reachText(task, roster)].filter(Boolean)
+  const reach = reachText(task, roster)
+  const hint = [timingText(task), room ? t('in {name}', { name: room.name }) : '', reach, reach !== '' && reachMoved(task) ? t('changed since it was set') : ''].filter(Boolean)
   const stoppable = task.status === 'active' || task.status === 'paused'
   const failed = task.lastRun?.result === 'failed'
   const last = lastRunText(task.lastRun)

@@ -1,5 +1,10 @@
 import { createElement as h } from 'react'
+import { isOn, offersReach } from '../shared/connector-reach.js'
 import { t } from './i18n.js'
+
+// The per-Bot switch predicate is shared with the host's stored set (#2930); this module keeps
+// exporting it because its own callers import it from here.
+export { isOn }
 
 // Which of the owner's Bots may use a connector (#335, #369, #601). One switch per Bot and
 // connector, on by default, so a connected connector works in every Bot at once and on every turn,
@@ -15,12 +20,7 @@ export function ownBots(roster) {
 // Connectors that give a Bot tools or a way in. A sender (#1263) has neither: a per-Bot switch for it
 // would be a choice that never changes anything, so it is not offered. A channel (#1266) offers the
 // switch only in app mode: a webhook-only Feishu row is today's sender and has nothing to share.
-export const connectedConnectors = roster => (roster?.connectors ?? []).filter(connector => connector.state !== 'off'
-  && connector.kind !== 'sender'
-  && !(connector.kind === 'channel' && connector.mode !== 'app'))
-
-// Only an explicit false turns it off; no record means on.
-export const isOn = (bot, id) => bot.connectors?.[id] !== false
+export const connectedConnectors = roster => (roster?.connectors ?? []).filter(connector => connector.state !== 'off' && offersReach(connector))
 
 function ownHint(bot, id) {
   return isOn(bot, id) ? t('On. This Bot can use it on every turn.') : t('Off. This Bot will not use it.')

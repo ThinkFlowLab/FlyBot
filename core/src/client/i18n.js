@@ -1289,6 +1289,7 @@ const ZH = {
   'Last run {time} · Failed: {reason}': '上次运行 {time} · 失败：{reason}',
   'Runs with {names}': '运行时带上 {names}',
   'Runs with no connectors': '运行时不带任何连接器',
+  'changed since it was set': '自设置后已变化',
   'Run the task once now': '现在运行一次这个任务',
   'Run now': '现在运行',
   'DSH could not deliver it': 'DSH 没能送达',

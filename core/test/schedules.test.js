@@ -1091,3 +1091,52 @@ test('#2112: with nobody signed in nothing is narrowed, so no hidden flag is set
   assert.deepEqual(listed.tasks.map(task => task.title), ['Standup'])
   assert.equal(listed.someHidden, undefined, 'the whole host is readable, so nothing is hidden')
 })
+
+// #2930: a task runs with whatever reach its Bot has when it fires, and nothing remembered the
+// reach it had when it was set. The host now stores that set at create and edit, and each row
+// answers both: `carriedAtSet` (what the reader agreed to) and `carried` (what the run would take
+// now). The card is the only surface that can say the two moved apart; DSH has no hook before a
+// delivery to pin either.
+const TWO_CONNECTORS = [
+  { id: 'github', name: 'GitHub', state: 'ready' },
+  { id: 'composio', name: 'Composio', state: 'ready' },
+]
+async function reachSetup(t) {
+  const schedule = scheduleService()
+  const { ctx, home, rt, call } = setup({ schedule })
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await rt.load()
+  rt.connectorsView = () => TWO_CONNECTORS
+  return { schedule, rt, call }
+}
+
+test('#2930 a: create stores the reach it was set with, beside the reach the row has now', async (t) => {
+  const { rt, call } = await reachSetup(t)
+  // Composio is off for this Bot when the task is written, so the set the reader agreed to is GitHub.
+  rt.state.bots.w1.connectors = { composio: false }
+  const made = await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const [row] = made.value.tasks
+  assert.deepEqual(row.carriedAtSet, ['github'], 'the stored set is the reach at the moment it was set')
+  assert.deepEqual(row.carried, ['github'], 'now: the same reach')
+
+  // Turning Composio on changes what a later run will carry, and never the stored set.
+  rt.state.bots.w1.connectors = {}
+  const later = (await call('schedules', {})).value.tasks[0]
+  assert.deepEqual(later.carriedAtSet, ['github'], 'the stored set does not move when a connector is turned on')
+  assert.deepEqual(later.carried, ['github', 'composio'], 'what the run would carry now is both')
+})
+
+test('#2930 b: an edit re-stores the reach at the edit, so the marker stops lying after a save', async (t) => {
+  const { rt, call } = await reachSetup(t)
+  rt.state.bots.w1.connectors = { composio: false }
+  await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  const task = (await call('schedules', {})).value.tasks[0]
+  rt.state.bots.w1.connectors = {}
+  const edited = await call('schedule-update', { sessionId: task.sessionId, id: task.id, target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
+  assert.equal(edited.ok, true, JSON.stringify(edited))
+  const [row] = edited.value.tasks
+  assert.equal(row.id, task.id, 'the edit updated the same row')
+  assert.deepEqual(row.carriedAtSet, ['github', 'composio'], 'the reader saved it with both on, so both are what it was set with')
+  assert.deepEqual(row.carried, ['github', 'composio'])
+})

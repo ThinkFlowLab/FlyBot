@@ -954,3 +954,31 @@ test('P-590: a read-only window draws no Run now either', () => {
   const writable = render(SchedulesPage({ roster: ROSTER, actions: scheduleActions(), start: null }))
   assert.deepEqual(runControls(writable).map(button => text(button).join('').trim()), ['Run now', 'Run now'], 'a writable window draws Run now on both')
 })
+
+// #2930: nothing recorded the reach a task was set with, so a row could only ever say what it
+// carries now. The host answers both sets — `carriedAtSet` (what the reader agreed to) and
+// `carried` (what the run would take now) — and the row says the reach moved when they differ.
+// The sentence itself still reads the current reach: there is no hook to pin the run.
+const CHANGED = 'changed since it was set'
+const rowLines = (task) => {
+  seeded.push({ available: true, tasks: [task] }, null)
+  return text(render(BotSchedules({ bot: { id: 'b1' }, roster: reachRoster({ id: 'b1', name: 'B' }), actions: spy() })))
+}
+
+test('#2930 a: a row whose reach moved since it was set says so', () => {
+  const lines = rowLines({ ...ACTIVE, carried: ['composio'], carriedAtSet: ['github'] })
+  assert.ok(lines.includes(CHANGED), `the marker is missing, saw ${lines.join('|')}`)
+  assert.equal(reachOf(lines), 'Runs with GitHub, Composio', 'the sentence still reads the reach it has now, never the stored one')
+})
+
+test('#2930 b: equal sets, in any order, draw no marker', () => {
+  const lines = rowLines({ ...ACTIVE, carried: ['github', 'composio'], carriedAtSet: ['composio', 'github'] })
+  assert.ok(!lines.includes(CHANGED), `an unchanged reach still says it moved, saw ${lines.join('|')}`)
+  assert.equal(reachOf(lines), 'Runs with GitHub, Composio')
+})
+
+test('#2930 c: a row the host stored no set for draws no marker', () => {
+  // Tasks written before this change carry no `carriedAtSet`; claiming they moved would be a guess.
+  const lines = rowLines({ ...ACTIVE, carried: ['github', 'composio'] })
+  assert.ok(!lines.includes(CHANGED), `an unknown set is not a changed one, saw ${lines.join('|')}`)
+})

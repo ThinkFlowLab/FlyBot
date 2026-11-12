@@ -1555,7 +1555,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Once, {time}': '一次，{time}',
    'Every day at {time}': '每天 {time}',
    'Every {days} at {time}': '每{days} {time}',
-@@ -784,8 +784,27 @@ const ZH = {
+@@ -784,8 +784,28 @@ const ZH = {
    'Every weekend at {time}': '每个周末 {time}',
    'On the schedule {expression}': '按计划 {expression}',
    'Next: {time}': '下次 {time}',
@@ -1565,6 +1565,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Last run {time} · Failed: {reason}': '上次运行 {time} · 失败：{reason}',
 +  'Runs with {names}': '运行时带上 {names}',
 +  'Runs with no connectors': '运行时不带任何连接器',
++  'changed since it was set': '自设置后已变化',
 +  'Run the task once now': '现在运行一次这个任务',
 +  'Run now': '现在运行',
 +  'DSH could not deliver it': 'DSH 没能送达',
@@ -2425,7 +2426,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +import { ClockIcon, DuplicateIcon, PencilIcon, PlusIcon, TrashIcon } from './icons.js'
  import { Segmented } from './motion.js'
  import { dateLocale, hostText, t } from './i18n.js'
-+import { connectedConnectors, isOn } from './connector-bots.js'
++import { carriedConnectors } from '../shared/connector-reach.js'
  
  const POLL_MS = 30_000
  
@@ -2503,7 +2504,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
      case 'every': return everyText(task.everySeconds)
      case 'daily': return `${t('Every day at {time}', { time: clock(task.time) })}${zone}`
      case 'weekly': {
-@@ -70,11 +70,56 @@ export function timingText(task) {
+@@ -70,11 +70,61 @@ export function timingText(task) {
      default: return ''
    }
  }
@@ -2531,27 +2532,32 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +
 +// What an unattended run carries (#2323): the Bot's reach at the moment the task fires, not a copy
 +// stored with the task, so turning a connector on today changes what a task written weeks ago will
-+// use. A room task (no `botId`) has no single Bot's switch, and a Bot the roster no longer carries
-+// says nothing rather than guessing. `connectedConnectors` drops a sender and a webhook-only
-+// channel, which have neither tools nor a way in; `isOn` keeps only what this Bot may use. Only a
-+// `ready` connection gives the run tools (#2354): the host unmounts a failed connection before it
-+// writes `error`, and a `connecting` one has none yet — `connectedConnectors` still names both so
-+// the Connectors page can draw the switch that reconnects them.
++// use. `carriedConnectors` is that one predicate (#2344/#2930). A room task (no `botId`) has no
++// single Bot's switch, and a Bot the roster no longer carries says nothing rather than guessing.
 +export function reachText(task, roster) {
 +  if (!task?.botId) return ''
 +  const bot = roster?.byId?.[task.botId] ?? (roster?.bots ?? []).find(entry => entry.id === task.botId)
 +  if (bot === undefined) return ''
-+  const names = connectedConnectors(roster)
-+    .filter(connector => connector.state === 'ready' && isOn(bot, connector.id))
-+    .map(connector => connector.name)
++  const names = carriedConnectors(bot, roster?.connectors).map(connector => connector.name)
 +  return names.length === 0 ? t('Runs with no connectors') : t('Runs with {names}', { names: names.join(', ') })
++}
+ 
+-function TaskRow({ task, actions, onView, showBot, roster }) {
++// #2930: the host stores the reach a task was set with (`carriedAtSet`) beside the one it would take
++// now (`carried`). When the two moved apart the row says so — the run itself still uses the current
++// reach, because DSH has no hook before a delivery to pin either. An order change is not a change,
++// and a row the host stored no set for (one written before this field existed) is not a guess.
++export const reachMoved = (task) => {
++  const now = task?.carried
++  const then = task?.carriedAtSet
++  if (!Array.isArray(now) || !Array.isArray(then)) return false
++  return now.length !== then.length || now.some(id => !then.includes(id))
 +}
 +
 +// The window lock, read the way the rest of the client reads it (#2232): the Settings header draws
 +// the sentence, and this page draws no write the host would refuse.
 +export const lockedWindow = roster => typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
- 
--function TaskRow({ task, actions, onView, showBot, roster }) {
++
 +function TaskRow({ task, actions, onView, onEdit, onCopy, showBot, roster, locked }) {
    const [confirming, setConfirming] = useState(false)
    const [busy, setBusy] = useState(false)
@@ -2562,7 +2568,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
    useEffect(() => {
      if (!confirming) return undefined
      const timer = setTimeout(() => setConfirming(false), 3000)
-@@ -83,17 +83,50 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
+@@ -83,17 +83,51 @@ function TaskRow({ task, actions, onView, showBot, roster }) {
    const remove = () => {
      if (!confirming) { setConfirming(true); return }
      setBusy(true)
@@ -2588,7 +2594,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 -  return h('div', { className: 'bt-set-row bt-task', 'data-done': task.status === 'active' ? undefined : '', 'data-busy': busy || undefined },
 +  // The hint reads as one line: timing, the room, then the reach. Each part stays its own string so
 +  // the timing half is still exactly what `timingText` answers (#1651).
-+  const hint = [timingText(task), room ? t('in {name}', { name: room.name }) : '', reachText(task, roster)].filter(Boolean)
++  const reach = reachText(task, roster)
++  const hint = [timingText(task), room ? t('in {name}', { name: room.name }) : '', reach, reach !== '' && reachMoved(task) ? t('changed since it was set') : ''].filter(Boolean)
 +  const stoppable = task.status === 'active' || task.status === 'paused'
 +  const failed = task.lastRun?.result === 'failed'
 +  const last = lastRunText(task.lastRun)
@@ -2624,8 +2631,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
 -const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
 +const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
- 
--function TaskForm({ roster, actions, start, onDone, onCancel }) {
++
 +// A stored instant as the value of a datetime-local input, in this browser's zone.
 +function localInput(ms) {
 +  const date = new Date(ms)
@@ -2649,7 +2655,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    timeZone: task?.timeZone || localZone(),
 +  }
 +}
-+
+ 
+-function TaskForm({ roster, actions, start, onDone, onCancel }) {
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -7773,7 +7780,7 @@ diff --git a/src/host/resume.js b/src/host/resume.js
 diff --git a/src/host/schedules.js b/src/host/schedules.js
 --- a/src/host/schedules.js
 +++ b/src/host/schedules.js
-@@ -5,8 +5,43 @@
+@@ -5,8 +5,44 @@
  // them. A group chat's task lives on the group's own Session, so the reminder reaches
  // the group like a message from the user (see reminderText). DSH 0.2.0 mounts the service only with its Automation tasks bundle on, so
  // the service is optional and every endpoint reports whether it is there.
@@ -7801,6 +7808,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +
 +import { randomUUID } from 'node:crypto'
 +import { createUserMessage } from '@deepseek-ai/dsh-llm'
++import { carriedIds } from '../shared/connector-reach.js'
 +import { quietHoursOf, inQuietHours, clockIn, quietError } from '../shared/quiet-hours.js'
 +import { defineTool } from './tool-schema.js'
 +import { codePoints, cut, textOf } from './text.js'
@@ -7904,7 +7912,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
    }
    if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
    else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
-@@ -89,63 +89,569 @@ export function install(rt) {
+@@ -89,63 +89,628 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -7976,6 +7984,48 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    if (ids.length > RUNS_KEPT) for (const old of ids.slice(0, ids.length - RUNS_KEPT)) delete all[old]
 +    void rt.save().catch(() => {})
 +  }
++  // The reach a task was set with (#2930), by task id: the connector ids the reader agreed to when
++  // they created it or last saved it. It lives beside `scheduleRuns`, so a pause, a resume and a part
++  // hand-off (which keep the id, or copy it across) keep the set with the row; deleting the task
++  // drops it. Nothing here pins a run: DSH has no hook before a delivery, so the run takes the Bot's
++  // current reach, and the card is the only surface that can say the two moved apart.
++  const reachAtSet = () => {
++    if (state.scheduleCarriedAtSet === null || typeof state.scheduleCarriedAtSet !== 'object' || Array.isArray(state.scheduleCarriedAtSet)) state.scheduleCarriedAtSet = {}
++    return state.scheduleCarriedAtSet
++  }
++  // What the run would take now, by the same predicate the card reads (#2344, shared/connector-reach.js).
++  const carriedNow = (botId) => {
++    const bot = botId === undefined ? undefined : state.bots?.[botId]
++    return bot === undefined ? undefined : carriedIds(bot, rt.connectorsView?.() ?? [])
++  }
++  const storedReach = (id) => {
++    if (typeof id !== 'string' || !Object.hasOwn(reachAtSet(), id)) return undefined
++    return Array.isArray(reachAtSet()[id]) ? reachAtSet()[id] : undefined
++  }
++  const noteReachAtSet = (id, botId) => {
++    const ids = carriedNow(botId)
++    if (typeof id !== 'string' || ids === undefined) return false
++    reachAtSet()[id] = ids
++    return true
++  }
++  const forgetReachAtSet = (id) => {
++    if (typeof id !== 'string' || !Object.hasOwn(reachAtSet(), id)) return false
++    delete reachAtSet()[id]
++    return true
++  }
++  // A target names a Bot or a group chat (`contentOf` proved one of them): only a Bot can carry
++  // connectors, so a row that moves to a room has no set to compare and loses the stored one.
++  const noteTargetReach = (id, target) => {
++    const bot = state.bots?.[target]
++    return bot === undefined ? forgetReachAtSet(id) : noteReachAtSet(id, bot.id)
++  }
++  // The two halves a row answers: what the run would carry now, and what it carried when it was set.
++  const rowReach = (owner, id) => {
++    const now = owner.botId === undefined ? undefined : carriedNow(owner.botId)
++    const then = storedReach(id)
++    return { ...(Array.isArray(now) ? { carried: now } : {}), ...(then === undefined ? {} : { carriedAtSet: then }) }
++  }
++
 +  // What a row shows: FlyBot's record, or DSH's newer delivery the Bot has not taken up yet.
 +  // A run still marked running from before this start has no known end: it shows as a run.
 +  const startedAt = Date.now()
@@ -8074,7 +8124,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    if (prompt === '') throw invalid('Say what the Bot should do')
 +    return { sessionId: bot ? rt.chatOf(bot.id) : room.id, title, prompt }
 +  }
-+
+ 
+-  async function schedulesView() {
+-    if (service === null) return { available: false, tasks: [] }
 +  // One stored task as DSH has it, active or finished, or undefined.
 +  const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
 +
@@ -8107,8 +8159,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    // let through because FlyBot cannot know its next fire (`quietUnchecked`, #1166).
 +    refuseDuringQuietHours(timingPart(request), request.daily?.time_zone ?? request.weekly?.time_zone ?? request.cron?.time_zone)
 +    const toSession = sessionFor(targetBot !== undefined ? { botId: targetBot.id } : { roomId: targetRoom.id })
-+    if (held !== undefined) await service.create(toSession, request)
-+    else await copyRow(sourceSession, sourceId, toSession)
++    // A copy is a new task, so it is set now: the target Bot's reach at this moment is its set.
++    const createdId = held !== undefined ? (await service.create(toSession, request))?.id : await copyRow(sourceSession, sourceId, toSession)
++    if (noteTargetReach(createdId, body.target)) await rt.save()
 +    return schedulesView(actor)
 +  }
 +
@@ -8121,6 +8174,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      if (source === undefined || source.sessionId !== fromSession) throw invalid('No such task')
 +      const id = copyId(tasks)
 +      await tasks.put(id, { sessionId: toSession, record: { ...source.record, id }, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false } })
++      return id
 +    })
 +  }
 +
@@ -8133,9 +8187,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    }
 +    throw invalid('The task could not be copied. Try again')
 +  }
- 
--  async function schedulesView() {
--    if (service === null) return { available: false, tasks: [] }
++
 +  // `actor` narrows the rows to that caller's own; the page asks every 30 seconds with the
 +  // member's session, so the answer is the list a member may read, not the host's catalog. A row
 +  // is read exactly as a task's source is read (`sourceOf`): unenforced, the whole host answers as
@@ -8156,21 +8208,22 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 -      tasks.push({ ...entry, ...owner })
 +      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
 +      const lastRun = lastRunOf(entry)
-+      tasks.push({ ...entry, ...owner, ...(lastRun ? { lastRun } : {}) })
++      tasks.push({ ...entry, ...owner, ...rowReach(owner, entry.id), ...(lastRun ? { lastRun } : {}) })
 +    }
 +    for (const entry of Object.values(paused())) {
 +      const owner = ownerOf(entry.sessionId)
 +      if (!known(owner)) continue
 +      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
 +      const lastRun = lastRunOf({ id: entry.id })
-+      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...(lastRun ? { lastRun } : {}) })
-+    }
++      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...rowReach(owner, entry.id), ...(lastRun ? { lastRun } : {}) })
+     }
+-    return { available: true, tasks }
 +    // #1166: a repeat rule can still fire inside the window — the page says so instead of
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
 +    return { available: true, tasks, quietHours, ...(someHidden ? { someHidden: true } : {}), ...(unchecked ? { quietUnchecked: true } : {}) }
-+  }
-+
+   }
+ 
 +  // Edit: a paused task stays paused with its new content; an active one is updated in
 +  // place on the same Session, otherwise created anew before the old one is deleted.
 +  // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
@@ -8186,6 +8239,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      const timing = keep ? timingPart(requestOf(held.record) ?? {}) : selectorOf(body.when)
 +      if (!keep) refuseDuringQuietHours(timing, body.when?.timeZone)
 +      paused()[id] = { ...held, sessionId: content.sessionId, record: { title: content.title, prompt: content.prompt, ...timingOf(timing) } }
++      noteTargetReach(id, body.target)
 +      await rt.save()
 +      return schedulesView(actor)
 +    }
@@ -8201,15 +8255,19 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      const same = JSON.stringify(timingPart(stored)) === JSON.stringify(timing)
 +      const result = await service.update({ sessionId, id, expected: active, title: content.title, prompt: content.prompt, ...(same ? {} : { change: changeOf(timing) }) })
 +      if (result?.record === undefined) throw invalid(UPDATE_MISSES[result?.code] ?? result?.message ?? 'The task could not be saved')
++      // Saving the form is the reader agreeing again, so the stored set becomes the reach at this
++      // edit — otherwise the row would keep saying "changed" after the reader has seen and kept it.
++      if (noteTargetReach(id, body.target)) await rt.save()
 +      return schedulesView(actor)
-     }
--    return { available: true, tasks }
++    }
 +    if (timing.at !== undefined && Date.parse(timing.at) <= Date.now()) throw invalid('Pick a time in the future')
-+    await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
++    const created = await service.create(content.sessionId, { title: content.title, prompt: content.prompt, ...timing })
 +    await service.delete({ sessionId, id })
++    const noted = noteTargetReach(created?.id, body.target)
++    if (forgetReachAtSet(id) || noted) await rt.save()
 +    return schedulesView(actor)
-   }
- 
++  }
++
 +  // Pause: the record is saved in FlyBot's state before DSH lets the task go, so a
 +  // failed delete leaves it running and never loses it.
 +  async function pauseSchedule(body, actor) {
@@ -8294,8 +8352,13 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    const request = requestOf(held.record)
 +    if (request === null) throw invalid('No such task')
 +    if (request.at !== undefined && Date.parse(request.at) <= Date.now()) throw invalid('Its time has passed. Edit the task to pick a new one')
-+    await service.create(sessionFor(owner), request)
++    const kept = storedReach(held.id)
++    const created = await service.create(sessionFor(owner), request)
 +    delete paused()[held.id]
++    forgetReachAtSet(held.id)
++    // A resume re-arms the same task, so it keeps the reach it was set with (#2930): it is not a new
++    // set. A row that never had one (written before this field) stays unknown rather than guessed.
++    if (kept !== undefined && typeof created?.id === 'string') reachAtSet()[created.id] = kept
 +    await rt.save()
 +    return schedulesView(actor)
 +  }
@@ -8405,7 +8468,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      const { sessionId, title, prompt } = contentOf(body)
 +      const timing = selectorOf(body.when)
 +      refuseDuringQuietHours(timing, body.when?.timeZone)
-+      await service.create(sessionId, { title, prompt, ...timing })
++      const created = await service.create(sessionId, { title, prompt, ...timing })
++      // The set is the reach this Bot has at the moment the reader writes the task (#2930).
++      if (noteTargetReach(created?.id, body.target)) await rt.save()
 +      return schedulesView(actor)
      },
 -    async 'schedule-delete'(body) {
@@ -8419,11 +8484,13 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
        if (ownerOf(body.sessionId) === undefined) throw invalid('No such task')
 +      if (pausedEntry(body.sessionId, body.id) !== undefined) {
 +        delete paused()[body.id]
++        forgetReachAtSet(body.id)
 +        await rt.save()
 +        return schedulesView(actor)
 +      }
        await service.delete({ sessionId: body.sessionId, id: body.id })
 -      return schedulesView()
++      if (forgetReachAtSet(body.id)) await rt.save()
 +      return schedulesView(actor)
      },
    }
@@ -15330,7 +15397,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,882 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,931 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -16212,6 +16279,55 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  const listed = await rt.scheduleEndpoint('schedules', {}, null)
 +  assert.deepEqual(listed.tasks.map(task => task.title), ['Standup'])
 +  assert.equal(listed.someHidden, undefined, 'the whole host is readable, so nothing is hidden')
++})
++
++// #2930: a task runs with whatever reach its Bot has when it fires, and nothing remembered the
++// reach it had when it was set. The host now stores that set at create and edit, and each row
++// answers both: `carriedAtSet` (what the reader agreed to) and `carried` (what the run would take
++// now). The card is the only surface that can say the two moved apart; DSH has no hook before a
++// delivery to pin either.
++const TWO_CONNECTORS = [
++  { id: 'github', name: 'GitHub', state: 'ready' },
++  { id: 'composio', name: 'Composio', state: 'ready' },
++]
++async function reachSetup(t) {
++  const schedule = scheduleService()
++  const { ctx, home, rt, call } = setup({ schedule })
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  await rt.load()
++  rt.connectorsView = () => TWO_CONNECTORS
++  return { schedule, rt, call }
++}
++
++test('#2930 a: create stores the reach it was set with, beside the reach the row has now', async (t) => {
++  const { rt, call } = await reachSetup(t)
++  // Composio is off for this Bot when the task is written, so the set the reader agreed to is GitHub.
++  rt.state.bots.w1.connectors = { composio: false }
++  const made = await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  assert.equal(made.ok, true, JSON.stringify(made))
++  const [row] = made.value.tasks
++  assert.deepEqual(row.carriedAtSet, ['github'], 'the stored set is the reach at the moment it was set')
++  assert.deepEqual(row.carried, ['github'], 'now: the same reach')
++
++  // Turning Composio on changes what a later run will carry, and never the stored set.
++  rt.state.bots.w1.connectors = {}
++  const later = (await call('schedules', {})).value.tasks[0]
++  assert.deepEqual(later.carriedAtSet, ['github'], 'the stored set does not move when a connector is turned on')
++  assert.deepEqual(later.carried, ['github', 'composio'], 'what the run would carry now is both')
++})
++
++test('#2930 b: an edit re-stores the reach at the edit, so the marker stops lying after a save', async (t) => {
++  const { rt, call } = await reachSetup(t)
++  rt.state.bots.w1.connectors = { composio: false }
++  await call('schedule-create', { target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  const task = (await call('schedules', {})).value.tasks[0]
++  rt.state.bots.w1.connectors = {}
++  const edited = await call('schedule-update', { sessionId: task.sessionId, id: task.id, target: 'w1', title: 'Briefing', prompt: 'Sum up', when: DAILY })
++  assert.equal(edited.ok, true, JSON.stringify(edited))
++  const [row] = edited.value.tasks
++  assert.equal(row.id, task.id, 'the edit updated the same row')
++  assert.deepEqual(row.carriedAtSet, ['github', 'composio'], 'the reader saved it with both on, so both are what it was set with')
++  assert.deepEqual(row.carried, ['github', 'composio'])
 +})
 diff --git a/test/session-identity.test.js b/test/session-identity.test.js
 --- a/test/session-identity.test.js
