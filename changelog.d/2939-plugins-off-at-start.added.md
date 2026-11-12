@@ -1,0 +1,1 @@
+A start with one or more feature plugins switched off now writes one line — `flybot: feature plugins off at start: <ids>` — naming every plugin this process left off, so a missing Project surface in a pasted log can be told apart from a switch. A start with every switch on stays silent ([#2939](https://github.com/ThinkFlowLab/FlyBot/issues/2939)).
