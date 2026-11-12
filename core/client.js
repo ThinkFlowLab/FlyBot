@@ -19194,13 +19194,13 @@ function FeedbackPage({ roster, actions, run, Section, Row: Row4 }) {
         ),
         entry.code ? (0, import_react41.createElement)("span", { className: "bt-tag bt-fb-code" }, entry.status ? `${entry.code} ${entry.status}` : entry.code) : null
       )),
-      entries2.length > 8 ? (0, import_react41.createElement)(
+      total > 8 ? (0, import_react41.createElement)(
         "div",
         { key: "more", className: "bt-set-row bt-fb-more-row" },
         (0, import_react41.createElement)(
           "span",
           { className: "bt-set-hint bt-fb-count" },
-          allErrors ? t("Showing all {count}", { count: entries2.length }) : t("Showing {shown} of {count}", { shown: shown.length, count: entries2.length })
+          allErrors && entries2.length === total ? t("Showing all {count}", { count: total }) : t("Showing {shown} of {count}", { shown: shown.length, count: total })
         ),
         (0, import_react41.createElement)("button", {
           type: "button",
