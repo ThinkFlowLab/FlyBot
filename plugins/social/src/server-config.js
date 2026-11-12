@@ -125,12 +125,23 @@ export function createServerController({ base: configured, flybot, start, regist
   const readOverride = () => {
     const saved = readJson(overridePath, 'The Bot Social server chosen in Settings')
     if (typeof saved?.server !== 'string') return undefined
-    try { return { server: parseServerUrl(saved.server), displayName: cleanLine(saved.displayName, 40) || undefined } } catch { return undefined }
+    try { return { server: parseServerUrl(saved.server), displayName: cleanLine(saved.displayName, 40) || undefined } } catch (failure) {
+      // Present but unusable is not absent (#2946): the address stays named so the page can say which
+      // saved choice was refused and why, instead of showing "Profile default" and saying nothing. A
+      // refusal is a sentence, and the page puts it before a '.', so the trailing one is dropped here.
+      const reason = cleanLine(failure?.message ?? failure, 200).replace(/\.$/, '')
+      return { unusable: { address: cleanLine(saved.server, MAX_URL), problem: reason || 'not a usable server address' } }
+    }
   }
   const effective = () => {
     const override = readOverride()
-    if (override) return { ...override, source: 'settings' }
-    return { server: base.server ? String(base.server) : undefined, displayName: undefined, source: base.server ? 'config' : 'none' }
+    if (override?.server) return { ...override, source: 'settings' }
+    return {
+      server: base.server ? String(base.server) : undefined,
+      displayName: undefined,
+      source: base.server ? 'config' : 'none',
+      ...(override?.unusable ? { saved: override.unusable } : {}),
+    }
   }
   // The default server keeps its files; any other server gets its own beside them.
   const configFor = ({ server, displayName }) => {
@@ -149,6 +160,9 @@ export function createServerController({ base: configured, flybot, start, regist
   }
 
   let current = effective()
+  // The saved choice the file names but this build cannot use (#2946). It is a fact about the file,
+  // so it is dropped wherever the file is written or removed, not carried with the running server.
+  let savedUnusable = current.saved
   let social
   let unavailableOff
   let state = current.server ? 'connecting' : 'not-configured'
@@ -250,6 +264,7 @@ export function createServerController({ base: configured, flybot, start, regist
     }
   }
   const writeOverride = (target) => {
+    savedUnusable = undefined
     if (target.server && serverKey(target.server) !== defaultKey) writePrivate(overridePath, { server: target.server, ...(target.displayName ? { displayName: target.displayName } : {}), savedAt: new Date().toISOString() })
     else rmSync(overridePath, { force: true })
   }
@@ -291,6 +306,7 @@ export function createServerController({ base: configured, flybot, start, regist
     error: error ?? null,
     canChange: flybot.readOnly?.() !== true,
     known: knownServers(),
+    ...(savedUnusable ? { saved: savedUnusable } : {}),
     ...(lastProbe && serverKey(lastProbe.server) === serverKey(current.server) ? { platform: lastProbe.info } : {}),
   })
 
