@@ -9522,6 +9522,50 @@ test('#2950: the saved-server sentence draws the reason whole, and a longer one 
   }
 })
 
+// #2958: the address is not a name either. `settingsName` cut it at 80 with no mark, so two saved
+// addresses that agree through character 80 drew one byte-identical sentence, and an empty address
+// drew `The server saved here () cannot be used: …`. The host sends the whole address (`MAX_URL`,
+// 200), so the page draws it to that bound and marks only a cut beyond it.
+test('#2958: the saved-server sentence draws the address whole, and never an empty pair of brackets', () => {
+  const problem = 'Only https:// is accepted here'
+  const draw = (extra) => {
+    const { plugin, all, text } = clientPlugin([serverView({ defaultServer: 'http://127.0.0.1:1', ...extra }), null, null])
+    return text(nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-saved-unusable'))
+  }
+  {
+    // Two 99-character addresses that differ only after character 80: the cap made them one sentence.
+    const stem = `https://social.example/${'a'.repeat(60)}`
+    const one = `${stem}/one`
+    const two = `${stem}/two`
+    assert.ok(one.length > 80 && one.slice(0, 80) === two.slice(0, 80), 'the two addresses agree through the old cap')
+    const first = draw({ saved: { address: one, problem } })
+    const second = draw({ saved: { address: two, problem } })
+    assert.notEqual(first, second, `two different addresses draw one sentence: ${first}`)
+    assert.equal(first, `The server saved here (${one}) cannot be used: ${problem}. Using the profile default (http://127.0.0.1:1).`)
+    assert.equal(second, `The server saved here (${two}) cannot be used: ${problem}. Using the profile default (http://127.0.0.1:1).`)
+  }
+  {
+    // An address the host would have capped at 200: drawn up to that bound, then marked once at a
+    // word boundary. This text is 246 characters and the cap falls inside `alpha`.
+    const long = `https://social.example/${'alpha '.repeat(40)}tail`
+    assert.ok(long.length > 200 && !/\s/.test(long[200]), 'the cap must fall inside a word for this test to mean anything')
+    const sentence = draw({ saved: { address: long, problem } })
+    const shown = sentence.slice('The server saved here ('.length, sentence.indexOf(') cannot be used'))
+    assert.ok(shown.endsWith('…'), `a shortened address says it was cut: ${shown}`)
+    assert.equal(shown.split('…').length - 1, 1, `exactly one ellipsis: ${shown}`)
+    const kept = shown.slice(0, -1)
+    assert.ok(long.startsWith(kept), 'the shown address is the address\'s own prefix')
+    assert.equal(long[kept.length], ' ', `the cut lands between words: ${JSON.stringify(shown)}`)
+    assert.doesNotMatch(sentence, /…\./, 'the address mark never doubles with the sentence dot')
+  }
+  {
+    // An empty address is not bracketed: there is no address to name.
+    const sentence = draw({ saved: { address: '', problem } })
+    assert.equal(sentence, `The server saved here cannot be used: ${problem}. Using the profile default (http://127.0.0.1:1).`)
+    assert.doesNotMatch(sentence, /\(\)/)
+  }
+})
+
 test('Settings → Bot Social page: a checked server shows the identity warning and a confirm; a known one says it comes back', () => {
   const checked = { server: 'https://b.test', name: 'Bot Social', version: '0.2.0', features: ['presence', 'mentions'], same: false, known: false }
   {
