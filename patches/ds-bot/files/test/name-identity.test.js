@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
 import { nameProblem } from '../src/shared/mentions.js'
+import { drawnKey, nameKey } from '../src/shared/identity.js'
 import { normalize } from '../src/host/text.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -120,7 +121,11 @@ test('#2879 a name that draws nothing is refused as empty, whichever characters 
 })
 
 test('#2879 the create path refuses a name that draws nothing and stores none of them', async (t) => {
-  const { rt, state } = setup(t)
+  const seed = TEAM()
+  // No Bot draws the `De\u2800v` spelling created below: a blank beside drawn characters is a name,
+  // but it may not sit next to the same drawn name (#2935).
+  seed.bots.dev.name = 'Devx'
+  const { rt, state } = setup(t, seed)
   await rt.load()
   for (const name of DRAWS_NOTHING) {
     await assert.rejects(rt.createBot({ name, pickModel: true }), /A Bot needs a name/, codePoints(name))
@@ -140,6 +145,80 @@ test('#2879 a rename to a name that draws nothing is refused, and a drawn rename
   assert.equal(state().bots.dev.name, 'Dev', 'a refused rename leaves the stored name alone')
   await rt.updateBot('dev', { name: 'De\u2800vOps' })
   assert.equal(state().bots.dev.name, 'De\u2800vOps')
+})
+
+// #2935: "draws something, plus a character the screen does not draw" is still two Bots reading
+// one name. `\p{Cf}` is gone before the key is built, but a combining grapheme joiner, a braille
+// blank and the Hangul fillers survive it and `trim()`, so `Dev\u034f` keeps the key `dev\u034f`
+// beside `dev` while both rows read `Dev` — and `@Dev` can only ever reach the key `dev`. These are
+// the code points with no glyph of their own, listed one by one; a combining mark is not one of
+// them, because the letter under it draws it.
+const DRAWN_SAME_AS_DEV = [
+  'Dev\u034f', // COMBINING GRAPHEME JOINER (Mn, zero width)
+  'Dev\u2800', // BRAILLE PATTERN BLANK beside a drawn name
+  'De\u3164v', // HANGUL FILLER (Default_Ignorable_Code_Point, Lo)
+  'De\u115fv', // HANGUL CHOSEONG FILLER (Default_Ignorable_Code_Point, Lo)
+]
+
+test('#2935 the drawn key drops what draws nothing, and keeps a mark NFC composes', () => {
+  for (const name of DRAWN_SAME_AS_DEV) assert.equal(drawnKey(name), 'dev', codePoints(name))
+  assert.equal(drawnKey('Dev'), 'dev')
+  // NFC runs inside `nameKey`, so an accent a canonical composition draws with its letter is part
+  // of the name and not one of the characters this key removes.
+  assert.equal(nameKey('Cafe\u0301'), nameKey('Caf\u00e9'))
+  assert.equal(drawnKey('Cafe\u0301'), 'caf\u00e9')
+  // A combining mark that does not compose is drawn with the letter it sits on, so it stays in the
+  // drawn form: the vowel in these two Thai names is visible, and they are two names (#2935).
+  assert.equal(drawnKey('\u0e01\u0e34'), '\u0e01\u0e34')
+  assert.notEqual(drawnKey('\u0e01\u0e34'), drawnKey('\u0e01\u0e35'))
+})
+
+// The counter-control for the narrowing: the fix may refuse only names that draw the same, so a
+// combining mark — which draws on its letter — must leave two names apart. A class-wide `\p{Mn}`
+// strip would collapse these two onto one drawn form and refuse the second as "already exists".
+test('#2935 a combining mark is drawn with its letter, so both spellings are names', async (t) => {
+  const { rt, state } = setup(t)
+  await rt.load()
+  const first = await rt.createBot({ name: '\u0e01\u0e34', pickModel: true })
+  const second = await rt.createBot({ name: '\u0e01\u0e35', pickModel: true })
+  assert.equal(state().bots[first.id].name, '\u0e01\u0e34')
+  assert.equal(state().bots[second.id].name, '\u0e01\u0e35', 'the vowel is drawn, so this is a second drawn name')
+})
+
+test('#2935 the create path refuses a name whose drawn form is already taken', async (t) => {
+  const { rt, state, home } = setup(t)
+  await rt.load()
+  const before = readFileSync(join(home, 'state.json'))
+  for (const name of DRAWN_SAME_AS_DEV) {
+    await assert.rejects(rt.createBot({ name, pickModel: true }), /A Bot named .* already exists/, codePoints(name))
+  }
+  assert.deepEqual(readFileSync(join(home, 'state.json')), before, 'a refused create writes nothing')
+  assert.deepEqual(Object.keys(state().bots).sort(), ['cafe', 'chief', 'dev', 'ops'], 'a refused create leaves no record behind')
+})
+
+test('#2935 the rename path refuses a drawn name that is taken, and a free drawn name lands', async (t) => {
+  const { rt, state, home } = setup(t)
+  await rt.load()
+  const before = readFileSync(join(home, 'state.json'))
+  for (const name of DRAWN_SAME_AS_DEV) {
+    await assert.rejects(rt.updateBot('ops', { name }), /Name .* is not available/, codePoints(name))
+  }
+  assert.deepEqual(readFileSync(join(home, 'state.json')), before, 'a refused rename writes nothing')
+  assert.equal(state().bots.ops.name, 'Ops', 'a refused rename leaves the stored name alone')
+  await rt.updateBot('ops', { name: 'De\u2800vOps' })
+  assert.equal(state().bots.ops.name, 'De\u2800vOps', 'a drawn form no Bot holds is still a name')
+})
+
+test('#2935 a drawn blank beside drawn characters is a name, and it takes that drawn form', async (t) => {
+  const seed = TEAM()
+  seed.bots.dev.name = 'Devx'
+  const { rt, state } = setup(t, seed)
+  await rt.load()
+  const created = await rt.createBot({ name: 'De\u2800v', pickModel: true })
+  assert.equal(state().bots[created.id].name, 'De\u2800v', 'no Bot draws De\u2800v yet, so it is created')
+  // Once that row exists, its drawn form is taken: a plain `Dev` would read as the same row and
+  // no `@` can tell the two apart, so it is refused from either side.
+  await assert.rejects(rt.createBot({ name: 'Dev', pickModel: true }), /A Bot named Dev already exists/)
 })
 
 test('#2691 a stored name is found by either canonical spelling or with an invisible character', async (t) => {

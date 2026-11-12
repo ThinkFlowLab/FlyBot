@@ -22,17 +22,34 @@ const overlaps = (spans, start, end) => spans.some(span => start < span.end && s
 // (#2691) drops them, and a stored name drops them too, so what is saved is what is shown.
 export const stripInvisible = value => String(value ?? '').replace(/\p{Cf}/gu, '')
 
-// What draws nothing is wider than what `stripInvisible` removes: a braille blank, a Hangul
-// filler, a combining grapheme joiner, a no-break space and the other default-ignorable code
-// points survive both `\p{Cf}` and `trim()`, so a name made of them would render as an empty
-// name. A name is refused on them, but they are never stripped out of a name that draws.
-const NOT_DRAWN = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu
+// What draws nothing wherever it sits is an explicit list, not a Unicode class (#2935): a
+// combining mark is drawn by the letter it sits on — `กิ` and `กี` are two names on screen — so
+// only the code points with no glyph of their own belong here: the combining grapheme joiner, the
+// Hangul fillers (U+115F, U+1160, U+3164, and the halfwidth U+FFA0), the Khmer inherent vowels, the
+// Mongolian free variation selectors (U+180B–U+180D, U+180F), the braille blank, and the variation
+// selectors (U+FE00–U+FE0F, U+E0100–U+E01EF). The format characters (Cf) go earlier, in
+// `stripInvisible`. These characters are never stripped out of a stored name; the drawn form of a
+// name removes them for comparison only (#2935, `drawnKey`). The ranges are numbers rather than a
+// character class of their own, so a combining mark in the source cannot merge with a neighbour.
+const NOT_DRAWN_RANGES = [
+  [0x034f, 0x034f], [0x115f, 0x1160], [0x17b4, 0x17b5], [0x180b, 0x180d], [0x180f, 0x180f],
+  [0x2800, 0x2800], [0x3164, 0x3164], [0xffa0, 0xffa0], [0xfe00, 0xfe0f], [0xe0100, 0xe01ef],
+]
+// Matched with `replace` alone — never `test` or `exec`, which would carry `lastIndex` between
+// callers.
+export const NOT_DRAWN = new RegExp(`[${NOT_DRAWN_RANGES.map(([from, to]) =>
+  `\\u{${from.toString(16)}}${to === from ? '' : `-\\u{${to.toString(16)}}`}`).join('')}]`, 'gu')
+
+// What a name may not consist of (#2879): `NOT_DRAWN` plus the marks and separators that draw
+// nothing on their own, which `stripInvisible` and `trim()` may keep. Wider than `drawnKey` on
+// purpose — a mark beside a letter draws, but a name made only of marks draws nothing.
+const DRAWS_NOTHING = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu
 
 // What a Bot may be named: something "@" can call without a second reading. A name made
 // only of characters that draw nothing reads as no name at all (#2879).
 export function nameProblem(name) {
   const text = stripInvisible(name).trim()
-  if (text === '' || text.replace(NOT_DRAWN, '').trim() === '') return 'A Bot needs a name'
+  if (text === '' || text.replace(DRAWS_NOTHING, '').trim() === '') return 'A Bot needs a name'
   if (/[@`\r\n]/.test(text)) return 'A Bot name cannot contain @, ` or a line break'
   if (ALL_WORDS.includes(text.toLowerCase())) return `"${text}" calls everyone in a group, so it cannot be a Bot name`
   return undefined

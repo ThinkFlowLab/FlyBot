@@ -159,7 +159,7 @@ diff --git a/src/host/home-lock.js b/src/host/home-lock.js
 diff --git a/src/host/roster.js b/src/host/roster.js
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
-@@ -2,9 +2,12 @@
+@@ -2,9 +2,13 @@
  // the first Main Bot of a new team.
  import { mkdir } from 'node:fs/promises'
  import { join } from 'node:path'
@@ -168,6 +168,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +import { COLORS, EXTRA_COLORS, MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
 +import { currentColor, cut, isColor, stripInvisible, unquote } from './text.js'
  import { nameProblem } from '../shared/mentions.js'
++import { drawnKey } from '../shared/identity.js'
 +import { cleanExternal } from './room-participant-external.js'
 +import { currentParticipants, implicitRoomOwner, syncMembers } from './room-membership.js'
 +import { ownEntry } from './store.js'
@@ -183,7 +184,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      state.workspaceId = workspace.id
      await rt.save()
      return workspace.id
-@@ -56,69 +56,105 @@ export function install(rt) {
+@@ -56,69 +56,114 @@ export function install(rt) {
      return `${stem} ${index}`
    }
  
@@ -194,6 +195,14 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    const problem = nameProblem(cleanName)
 -    if (problem !== undefined) throw new Error(problem)
 -    if (rt.findBot(cleanName)) throw new Error(`A Bot named ${cleanName} already exists`)
++  // Two names that draw the same read as one Bot on screen, and an `@` only ever reaches the one
++  // whose `nameKey` matches: the other row can be seen and never called. A stored name keeps the
++  // characters that draw nothing (#2879), so the guard compares the drawn form as well (#2935).
++  const drawnClash = (name, exceptId) => {
++    const drawn = drawnKey(name)
++    return Object.values(state.bots).find(bot => bot.remote === undefined && bot.id !== exceptId && drawnKey(bot.name) === drawn)
++  }
++
 +  // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
 +  // Bot made when no model is served.
 +  async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId, hidden, ephemeral }) {
@@ -207,6 +216,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      const problem = nameProblem(cleanName)
 +      if (problem !== undefined) throw new Error(problem)
 +      if (rt.findBot(cleanName)) throw new Error(`A Bot named ${cleanName} already exists`)
++      if (drawnClash(cleanName) !== undefined) throw new Error(`A Bot named ${cleanName} already exists`)
 +    } else if (cleanName === '') throw new Error('A friend\'s Bot needs a name')
      const cleanAvatarValue = cleanAvatar(avatar)
 +    // Validated before the Session exists: a record that cannot be run leaves nothing behind (#198).
@@ -358,16 +368,19 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      })
    }
  
-@@ -166,29 +166,39 @@ export function install(rt) {
+@@ -166,29 +166,40 @@ export function install(rt) {
      const moving = patch.workDir !== undefined
      const workDir = moving ? await rt.cleanWorkDir(patch.workDir ?? '') : undefined
      if (patch.name !== undefined) {
 -      const next = String(patch.name).trim().slice(0, 40)
 +      const next = cut(stripInvisible(String(patch.name)).trim(), 40).text
        const clash = rt.findBot(next)
-       if (next === '' || (clash && clash.id !== id)) throw new Error(`Name ${next} is not available`)
+-      if (next === '' || (clash && clash.id !== id)) throw new Error(`Name ${next} is not available`)
        // A name saved before the rule stays usable until it changes.
-       const problem = next === bot.name ? undefined : nameProblem(next)
+-      const problem = next === bot.name ? undefined : nameProblem(next)
++      const changed = next !== bot.name
++      if (next === '' || (clash && clash.id !== id) || (changed && drawnClash(next, id) !== undefined)) throw new Error(`Name ${next} is not available`)
++      const problem = changed ? nameProblem(next) : undefined
        if (problem !== undefined) throw new Error(problem)
 -      bot.name = next
 +      // The title write is the one step here that can refuse, so the record moves only after
@@ -708,7 +721,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,14 +417,45 @@ export function install(rt) {
+@@ -417,12 +417,43 @@ export function install(rt) {
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -718,9 +731,9 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    }
      state.mainBotIds = next
 +    rt.syncDesignatedChief()
-     await rt.save()
-   }
- 
++    await rt.save()
++  }
++
 +  // #638: retire a Bot instead of deleting it. The tree already reads fields['flybot-tree'].retired:
 +  // adoption skips the record and it no longer counts against maxChildren, while its chat, its parts
 +  // and its memory stay where they are. `hidden` keeps it out of the default Bot list the way the
@@ -751,13 +764,11 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      delete state.grants[id]
 +      await rt.reachChanged?.(id)
 +    }
-+    await rt.save()
+     await rt.save()
 +    return { bot, freed }
-+  }
-+
+   }
+ 
    async function deleteBot(id) {
-     const bot = rt.botOf(id)
-     if (bot === undefined) throw new Error('Unknown Bot')
 @@ -434,22 +434,54 @@ export function install(rt) {
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.

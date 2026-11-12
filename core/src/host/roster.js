@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { COLORS, EXTRA_COLORS, MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
 import { currentColor, cut, isColor, stripInvisible, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
+import { drawnKey } from '../shared/identity.js'
 import { cleanExternal } from './room-participant-external.js'
 import { currentParticipants, implicitRoomOwner, syncMembers } from './room-membership.js'
 import { ownEntry } from './store.js'
@@ -59,6 +60,14 @@ export function install(rt) {
     return `${stem} ${index}`
   }
 
+  // Two names that draw the same read as one Bot on screen, and an `@` only ever reaches the one
+  // whose `nameKey` matches: the other row can be seen and never called. A stored name keeps the
+  // characters that draw nothing (#2879), so the guard compares the drawn form as well (#2935).
+  const drawnClash = (name, exceptId) => {
+    const drawn = drawnKey(name)
+    return Object.values(state.bots).find(bot => bot.remote === undefined && bot.id !== exceptId && drawnKey(bot.name) === drawn)
+  }
+
   // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
   // Bot made when no model is served.
   async function createBot({ name: botName, role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, pickModel = false, systemPrompt, fields, remote, external, ownerId: explicitOwnerId, hidden, ephemeral }) {
@@ -72,6 +81,7 @@ export function install(rt) {
       const problem = nameProblem(cleanName)
       if (problem !== undefined) throw new Error(problem)
       if (rt.findBot(cleanName)) throw new Error(`A Bot named ${cleanName} already exists`)
+      if (drawnClash(cleanName) !== undefined) throw new Error(`A Bot named ${cleanName} already exists`)
     } else if (cleanName === '') throw new Error('A friend\'s Bot needs a name')
     const cleanAvatarValue = cleanAvatar(avatar)
     // Validated before the Session exists: a record that cannot be run leaves nothing behind (#198).
@@ -194,9 +204,10 @@ export function install(rt) {
     if (patch.name !== undefined) {
       const next = cut(stripInvisible(String(patch.name)).trim(), 40).text
       const clash = rt.findBot(next)
-      if (next === '' || (clash && clash.id !== id)) throw new Error(`Name ${next} is not available`)
       // A name saved before the rule stays usable until it changes.
-      const problem = next === bot.name ? undefined : nameProblem(next)
+      const changed = next !== bot.name
+      if (next === '' || (clash && clash.id !== id) || (changed && drawnClash(next, id) !== undefined)) throw new Error(`Name ${next} is not available`)
+      const problem = changed ? nameProblem(next) : undefined
       if (problem !== undefined) throw new Error(problem)
       // The title write is the one step here that can refuse, so the record moves only after
       // it has: a refused rename leaves the Bot, its rooms and the store as they were (#2622).
