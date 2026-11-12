@@ -54,6 +54,21 @@ const CREDENTIALS = [
   [/(["']?(?:api[_-]?key|authorization|x-api-key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
 ]
 
+// A path under a home can be deeper than the bound is long (#2964): `~/.local/share/deepseek-harness/
+// teams/x` is 49 characters on its own, so a 200-character sentence around it has no room for the
+// advice that follows the path. Such a path gives up its middle instead — the scope stays and the
+// last level stays, which is the level a sentence like `fix or move the file` names — so the bound
+// lands on the path and the words after it survive. A path with nothing to remove, or one whose
+// shortened form is no shorter, is left alone.
+const HOME_PATH = /~(?:[\\/][^\s<>|"'`()[\],;:]+)+/g
+const shortenHome = text => text.replace(HOME_PATH, (token) => {
+  const separator = token.includes('\\') ? '\\' : '/'
+  const levels = token.split(/[\\/]/)
+  if (levels.length < 4) return token
+  const shortened = `${levels[0]}${separator}${levels[1]}${separator}…${separator}${levels[levels.length - 1]}`
+  return shortened.length < token.length ? shortened : token
+})
+
 // The bound is taken here, after the home folder has been abbreviated to `~` (#2936): a bound taken
 // on the raw text measures a path that is about to shrink, so a sentence could end mid-word with no
 // mark at all. One function decides both, so the `…` has exactly one owner and never doubles.
@@ -69,8 +84,16 @@ export function cleanText(text, { redact = value => value, home = homedir(), max
     const doubled = folder.replace(/\\/g, '\\\\')
     if (doubled !== folder) out = out.replace(new RegExp(quote(doubled), 'g'), '~')
   }
-  const kept = cut(out, max)
+  let kept = cut(out, max)
   if (!kept.cut) return out
+  // A path too deep for the bound takes its middle out first (#2964): the words behind it are the
+  // advice the reader acts on, so the shortening has to happen before the bound is applied.
+  const shorter = shortenHome(out)
+  if (shorter !== out) {
+    out = shorter
+    kept = cut(out, max)
+    if (!kept.cut) return out
+  }
   // A cut that lands inside a word drops the word it was cut in, and the reader cannot tell what
   // is missing: back off to the last whole word, and mark the cut once, at the end.
   const next = out[kept.text.length]
