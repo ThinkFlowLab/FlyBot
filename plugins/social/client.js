@@ -3707,7 +3707,17 @@ window.__ModuleLoader__.load({
       'not-configured': t => t('No server set. Friends and sharing are off until you set one.'),
       error: (t, view) => t('Could not connect: {error}', { error: view.error ?? '' }),
     }
-    const serverHost = (address) => { try { return new URL(address).host } catch { return String(address ?? '') } }
+    // A host alone names two servers the same: the host keeps protocol and path as the server's own
+    // identity (`server-config.js` puts both in the key), so the page draws them too (#2963). https is
+    // the default and stays out of the label; anything else keeps its scheme, which tells
+    // `http://localhost:8787` from `https://localhost:8787` without comparing two addresses.
+    const serverLabel = (address) => {
+      try {
+        const url = new URL(address)
+        const path = url.pathname.replace(/\/+$/, '')
+        return `${url.protocol !== 'https:' ? `${url.protocol}//` : ''}${url.host}${path}`
+      } catch { return String(address ?? '') }
+    }
     // Bot Social capability ids in words (#421). An id FlyBot does not know stays out of the line and
     // only shows in the tooltip, with the raw ids, for diagnostics.
     const FEATURE_WORDS = { typed_by_owner: 'typing as you', mentions: '@mentions', presence: 'online status' }
@@ -3876,10 +3886,10 @@ window.__ModuleLoader__.load({
         form ? h(Section, { title: t('Switch server') },
           h('div', { className: 'fs-srv-form' },
             h('input', { className: 'bt-input', value: address, spellCheck: false, autoFocus: true, 'aria-label': t('Server address'), placeholder: 'https://social.example', 'data-flybot': 'server-address', onChange: e => { setAddress(e.target.value); setChecked(null); setError(null) }, onKeyDown: e => { if (e.key === 'Enter' && address.trim() && !busy) void check() } }),
-            quick.length ? h('div', { className: 'fs-srv-quick' }, h('span', { className: 'bt-set-hint' }, t('Used before:')), quick.map(item => h('button', { key: item, type: 'button', className: 'fs-link', onClick: () => { setAddress(item); void check(item) } }, item === view.defaultServer ? t('{host} (profile default)', { host: serverHost(item) }) : serverHost(item)))) : null,
+            quick.length ? h('div', { className: 'fs-srv-quick' }, h('span', { className: 'bt-set-hint' }, t('Used before:')), quick.map(item => h('button', { key: item, type: 'button', className: 'fs-link', onClick: () => { setAddress(item); void check(item) } }, item === view.defaultServer ? t('{host} (profile default)', { host: serverLabel(item) }) : serverLabel(item)))) : null,
             h('input', { className: 'bt-input', value: name, spellCheck: false, 'aria-label': t('Name for your home (optional)'), placeholder: t('Name for your home (optional)'), maxLength: 40, onChange: e => setName(e.target.value) }),
             checked ? h('div', { className: 'fs-srv-checked', 'data-flybot': 'server-checked' },
-              h('div', { className: 'fs-status' }, `${checked.name}${checked.version ? ` ${checked.version}` : ''} · ${serverHost(checked.server)}`),
+              h('div', { className: 'fs-status' }, `${checked.name}${checked.version ? ` ${checked.version}` : ''} · ${serverLabel(checked.server)}`),
               h('div', { className: 'fs-status' }, featureLine(checked.features, t))) : null,
             checked && !checked.same ? h('div', { className: 'fs-srv-warn', role: 'alert', 'data-flybot': 'server-warning' },
               h('strong', null, t('Switching servers changes who you are')),

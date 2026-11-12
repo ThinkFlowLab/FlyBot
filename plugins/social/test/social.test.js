@@ -9566,6 +9566,39 @@ test('#2958: the saved-server sentence draws the address whole, and never an emp
   }
 })
 
+// #2963: the host alone named two different servers the same. The server's own identity is protocol
+// + host + path (`server-config.js` keeps both in its key), so the Used-before buttons and the Checked
+// summary draw it the same way: two servers on one host read differently, and a root address still
+// draws the host alone.
+test('#2963: a server label keeps the path, so two servers on one host read differently', () => {
+  const quickLabels = (view) => {
+    const { plugin, all, text } = clientPlugin([view, null, null, true])
+    const quick = all(plugin.SocialServerSettings(pageProps)).find(node => node.props?.className === 'fs-srv-quick')
+    assert.ok(quick, 'the Used-before row is drawn')
+    return all(quick).filter(node => node.type === 'button').map(text)
+  }
+  {
+    const labels = quickLabels(serverView({ source: 'settings', defaultServer: '', known: ['https://social.example/team-b', 'https://social.example/team-c'] }))
+    assert.deepEqual(labels, ['social.example/team-b', 'social.example/team-c'])
+    assert.notEqual(labels[0], labels[1], 'two servers on one host read differently')
+  }
+  {
+    const labels = quickLabels(serverView({ source: 'settings', defaultServer: '', known: ['https://social.example'] }))
+    assert.deepEqual(labels, ['social.example'], 'a root address draws the host alone')
+  }
+  {
+    // The same label on the Checked summary, beside the profile-default suffix the button keeps.
+    const checked = { server: 'https://social.example/staging', name: 'Bot Social', version: '0.2.0', features: [], same: false, known: true }
+    const { plugin, all, text } = clientPlugin([serverView(), null, null, true, 'https://social.example/staging', '', checked])
+    assert.match(text(nodeBy(all(plugin.SocialServerSettings(pageProps)), 'server-checked')), /Bot Social 0\.2\.0 · social\.example\/staging/)
+  }
+  {
+    // https is the default and stays out; another scheme keeps it, so the two are not one label.
+    const labels = quickLabels(serverView({ source: 'settings', defaultServer: '', known: ['http://localhost:8787', 'https://localhost:8787'] }))
+    assert.deepEqual(labels, ['http://localhost:8787', 'localhost:8787'])
+  }
+})
+
 test('Settings → Bot Social page: a checked server shows the identity warning and a confirm; a known one says it comes back', () => {
   const checked = { server: 'https://b.test', name: 'Bot Social', version: '0.2.0', features: ['presence', 'mentions'], same: false, known: false }
   {
