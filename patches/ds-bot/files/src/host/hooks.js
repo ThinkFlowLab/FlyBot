@@ -1132,16 +1132,36 @@ export function install(rt) {
     const dir = ctx.get?.('profileContext')?.dir
     return typeof dir === 'string' && dir !== '' ? dir : undefined
   }
+  // The profile's own name, for the one sentence Settings → Plugins prints (#2931): the
+  // install command needs `--profile <name>` (dsh refuses it without one, #2926), and a name
+  // written into the client is only right in one profile — profiles/desktop is a sibling of
+  // profiles/web. A host with no profileContext has no name to give, so the field stays out
+  // rather than a guess the client cannot check.
+  const profileName = () => {
+    const name = ctx.get?.('profileContext')?.name
+    return typeof name === 'string' && name !== '' ? name : undefined
+  }
   const switches = () => pluginSwitches(state, profileBundles(profileDir()))
   const pluginRows = () => switches().map(plugin => ({ ...plugin, loaded: loadedPlugins().has(plugin.id) }))
   // The switches answer the value this start loaded, not whether the last write changed
   // anything: a flip that comes back to the start value leaves nothing to restart for.
   const pendingRestart = () => Object.values(pluginSwitchesPending(state, pluginsAtStart)).some(Boolean)
-  api.handle('plugins/list', async () => ({ plugins: pluginRows(), pendingRestart: pendingRestart() }), { read: true })
+  // One answer for both endpoints (P-721): `set` used to answer the bare switches, so a row
+  // it returned lost `loaded` — and `installed` — while the same row from `list` had both,
+  // although docs/subsystems/plugin-runtime.md says the two answer the same rows.
+  const pluginAnswer = () => {
+    const name = profileName()
+    return {
+      plugins: pluginRows(),
+      pendingRestart: pendingRestart(),
+      ...(name === undefined ? {} : { profile: name }),
+    }
+  }
+  api.handle('plugins/list', async () => pluginAnswer(), { read: true })
   api.handle('plugins/set', async (body = {}) => {
-    const plugins = setPluginSwitch(state, body.id, body.enabled, profileBundles(profileDir()))
+    setPluginSwitch(state, body.id, body.enabled, profileBundles(profileDir()))
     await rt.save()
-    return { plugins, pendingRestart: pendingRestart() }
+    return pluginAnswer()
   })
   async function endpoint(name, payload, { actor } = {}) {
     await rt.load()

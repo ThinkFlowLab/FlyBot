@@ -55,9 +55,12 @@ const NOTIFY_KINDS = [
 // installs the package, the way the Workflows page names its own (#1381). Project surfaces
 // themselves are gated by #2877, so this page is the one place that still tells the owner
 // the package is missing. The command names the profile too (#2926): `dsh` refuses a plugin
-// command without one, and `web` is the profile this page is served from (docker/profile.mjs).
+// command without one, and only the host knows which profile this runtime is in (#2931) — a
+// Desktop profile is not `web` — so the name comes from `answer.profile` and a host that
+// answers none leaves the literal `<profile>` placeholder instead of guessing one.
 export function PluginsView({ answer = null, error = '', onFlip }) {
   const plugins = answer?.plugins ?? []
+  const profile = typeof answer?.profile === 'string' && answer.profile !== '' ? answer.profile : '<profile>'
   return h('div', null,
     h(SetSection, { title: t('Plugins') },
       error ? h('p', { className: 'bt-set-hint', role: 'alert' }, error) : null,
@@ -68,7 +71,7 @@ export function PluginsView({ answer = null, error = '', onFlip }) {
             h('span', null, plugin.name),
             h('span', { className: 'bt-set-hint' }, `${plugin.package} — ${t(plugin.purpose)}`),
             h('span', { className: 'bt-set-hint', role: 'status' }, t('Not installed in this profile.'), ' ',
-              h('code', { className: 'bt-install-command' }, `dsh plugin --profile web add ${plugin.package}`))))
+              h('code', { className: 'bt-install-command' }, `dsh plugin --profile ${profile} add ${plugin.package}`))))
         : h(SwitchRow, {
           key: plugin.id,
           label: plugin.name,
