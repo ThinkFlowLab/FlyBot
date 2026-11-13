@@ -352,6 +352,13 @@ opens that one file under the row: `ProjectBoardRecord` keeps one open path, ask
 (a `pre` for the body, the host's own sentence for `absent` / `too large` / `not listed`, never markup
 the answer carries). Activating the same row again closes it, another row replaces it, and closing
 reads nothing ([#2041](https://github.com/ThinkFlowLab/FlyBot/issues/2041)).
+An empty section's line is interface copy, not a host sentence (#2984): `projectBoardRecord` carries
+`decisions.emptyText` / `meetings.emptyText` as `{ key, params }` — the folder rides as `{dir}` — and
+`ProjectBoardRecord` draws it through `t()`, so a zh window reads 决策/会议 empty states in Chinese
+instead of English prose that `t()` found no entry for; the host's `empty.key` names the case it
+found (`no working folder: this Project names none`, `no decision file in any folder the record
+names`), and only a failed read (`unreadable: …`) stays the host's own sentence, drawn through
+`hostText`. Tests: `core/test/project-board-panels.test.js`.
 
 The **Project settings** panel (#1749) saves through the three host write paths it draws — `project-bind`,
 `project-assistant-owner` and `project-memory-write` — and through no fourth. Its **Pause the daily digest**

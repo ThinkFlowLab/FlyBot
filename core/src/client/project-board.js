@@ -225,6 +225,25 @@ const meetingOf = (meeting, status) => {
 
 const listOf = (value) => (Array.isArray(value) ? value.map(item => decisionOf(item)).filter(item => item !== null) : [])
 
+// #2984: an empty record section is the page's copy, so it travels as a key and its parameters
+// instead of an English sentence: the folder is a parameter, and a sentence joined at runtime can
+// never be a dictionary key. The host names the case it found; only a read that failed
+// (`unreadable: …`) stays the host's own sentence and goes through `hostText`.
+const NO_WORKING_FOLDER = 'no working folder: this Project names none'
+const DECISIONS_IN_FOLDER = 'no decision file in {dir}/decisions'
+const NO_MEETING = 'no meeting of this Project is recorded'
+
+const emptyLineOf = (record, fallbackKey, fallbackParams) => {
+  const named = record?.empty
+  if (named !== null && typeof named === 'object') {
+    const key = text(named.key)
+    if (key !== '') return named.params !== null && typeof named.params === 'object' ? { key, params: named.params } : { key }
+  }
+  const prose = text(record?.reason)
+  if (prose.startsWith('unreadable: ')) return { host: prose }
+  return fallbackParams === undefined ? { key: fallbackKey } : { key: fallbackKey, params: fallbackParams }
+}
+
 // The record beside the cards (#1767). A section with nothing in it still says which folder was
 // read and why it holds no file, because an empty box reads as "there is nothing to decide", and
 // a Project naming no folder is a different answer from a folder with no decision in it.
@@ -249,7 +268,7 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
       total: decisionsTotal,
       hidden: hiddenOf(decisionsTotal, files.length),
       empty: files.length === 0,
-      emptyText: text(decisions?.reason) || (dir === null ? 'This Project names no working folder.' : `No decision file in ${dir}/decisions.`),
+      emptyText: emptyLineOf(decisions, dir === null ? NO_WORKING_FOLDER : DECISIONS_IN_FOLDER, dir === null ? undefined : { dir }),
     },
     meetings: {
       decided,
@@ -260,7 +279,7 @@ export function projectBoardRecord({ decisions, meetings } = {}) {
       decidedHidden: hiddenOf(decidedTotal, decided.length),
       pendingHidden: hiddenOf(pendingTotal, pending.length),
       empty: decided.length === 0 && pending.length === 0,
-      emptyText: text(meetings?.reason) || 'No meeting of this Project is recorded.',
+      emptyText: emptyLineOf(meetings, NO_MEETING),
     },
   }
 }
@@ -624,6 +643,9 @@ function ProjectBoardRecord({ record, projectId, call }) {
   const moreLine = (hidden, key) => (hidden > 0
     ? h('div', { key, className: 'bt-project-more' }, t('{count} more not shown', { count: hidden }))
     : null)
+  // #2984: a host sentence about a failed read is drawn as it came; everything else is a key the
+  // dictionary answers, so a zh window reads it in Chinese.
+  const emptyLine = state => (text(state?.host) !== '' ? hostText(state.host) : t(state?.key ?? '', state?.params))
   return h('section', {
     className: 'bt-project-record',
     // `data-decisions` stays "rows drawn"; the total rides beside it so the view can be asserted.
@@ -632,10 +654,10 @@ function ProjectBoardRecord({ record, projectId, call }) {
     'data-meetings': String(meetings.count),
   },
     h('h4', null, t('Decisions')),
-    decisions.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, t(decisions.emptyText)) : decisionRows,
+    decisions.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, emptyLine(decisions.emptyText)) : decisionRows,
     moreLine(decisions.hidden, 'decisions-more'),
     h('h4', null, t('Meetings')),
-    meetings.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, t(meetings.emptyText)) : decidedRows,
+    meetings.empty ? h('div', { className: 'bt-project-empty bt-project-record-empty' }, emptyLine(meetings.emptyText)) : decidedRows,
     moreLine(meetings.decidedHidden, 'decided-more'),
     meetings.pending.length === 0 ? null : h('h5', null, t('Not decided')),
     meetings.pending.length === 0 ? null : pendingRows,

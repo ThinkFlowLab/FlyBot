@@ -1512,6 +1512,12 @@ var ZH = {
   "Open my agent": "打开我的项目助手",
   "Open {name}'s dossier": "打开 {name} 的档案",
   "No cards yet.": "还没有卡片。",
+  // #2984: the Project board's two empty record sections. The folder is a parameter, so the
+  // sentence is a dictionary key instead of a line joined at runtime.
+  "no decision file in {dir}/decisions": "{dir}/decisions 里还没有决策文件",
+  "no working folder: this Project names none": "这个 Project 没有指定工作文件夹",
+  "no decision file in any folder the record names": "记录里指定的文件夹都没有决策文件",
+  "no meeting of this Project is recorded": "这个 Project 还没有会议记录",
   "Open Projects in Settings": "在设置中打开项目"
 };
 var HOST_ERRORS = [
@@ -11626,6 +11632,19 @@ var meetingOf = (meeting, status) => {
   };
 };
 var listOf = (value) => Array.isArray(value) ? value.map((item) => decisionOf(item)).filter((item) => item !== null) : [];
+var NO_WORKING_FOLDER = "no working folder: this Project names none";
+var DECISIONS_IN_FOLDER = "no decision file in {dir}/decisions";
+var NO_MEETING = "no meeting of this Project is recorded";
+var emptyLineOf = (record, fallbackKey, fallbackParams) => {
+  const named = record?.empty;
+  if (named !== null && typeof named === "object") {
+    const key = text(named.key);
+    if (key !== "") return named.params !== null && typeof named.params === "object" ? { key, params: named.params } : { key };
+  }
+  const prose = text(record?.reason);
+  if (prose.startsWith("unreadable: ")) return { host: prose };
+  return fallbackParams === void 0 ? { key: fallbackKey } : { key: fallbackKey, params: fallbackParams };
+};
 function projectBoardRecord({ decisions, meetings } = {}) {
   const dir = text(decisions?.dir) || null;
   const files = listOf(decisions?.files);
@@ -11644,7 +11663,7 @@ function projectBoardRecord({ decisions, meetings } = {}) {
       total: decisionsTotal,
       hidden: hiddenOf(decisionsTotal, files.length),
       empty: files.length === 0,
-      emptyText: text(decisions?.reason) || (dir === null ? "This Project names no working folder." : `No decision file in ${dir}/decisions.`)
+      emptyText: emptyLineOf(decisions, dir === null ? NO_WORKING_FOLDER : DECISIONS_IN_FOLDER, dir === null ? void 0 : { dir })
     },
     meetings: {
       decided,
@@ -11655,7 +11674,7 @@ function projectBoardRecord({ decisions, meetings } = {}) {
       decidedHidden: hiddenOf(decidedTotal, decided.length),
       pendingHidden: hiddenOf(pendingTotal, pending.length),
       empty: decided.length === 0 && pending.length === 0,
-      emptyText: text(meetings?.reason) || "No meeting of this Project is recorded."
+      emptyText: emptyLineOf(meetings, NO_MEETING)
     }
   };
 }
@@ -11994,6 +12013,7 @@ function ProjectBoardRecord({ record, projectId, call: call4 }) {
     (0, import_react21.createElement)("span", { className: "bt-project-status" }, meeting.status)
   ));
   const moreLine = (hidden, key) => hidden > 0 ? (0, import_react21.createElement)("div", { key, className: "bt-project-more" }, t("{count} more not shown", { count: hidden })) : null;
+  const emptyLine = (state) => text(state?.host) !== "" ? hostText(state.host) : t(state?.key ?? "", state?.params);
   return (0, import_react21.createElement)(
     "section",
     {
@@ -12004,10 +12024,10 @@ function ProjectBoardRecord({ record, projectId, call: call4 }) {
       "data-meetings": String(meetings.count)
     },
     (0, import_react21.createElement)("h4", null, t("Decisions")),
-    decisions.empty ? (0, import_react21.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(decisions.emptyText)) : decisionRows,
+    decisions.empty ? (0, import_react21.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, emptyLine(decisions.emptyText)) : decisionRows,
     moreLine(decisions.hidden, "decisions-more"),
     (0, import_react21.createElement)("h4", null, t("Meetings")),
-    meetings.empty ? (0, import_react21.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, t(meetings.emptyText)) : decidedRows,
+    meetings.empty ? (0, import_react21.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, emptyLine(meetings.emptyText)) : decidedRows,
     moreLine(meetings.decidedHidden, "decided-more"),
     meetings.pending.length === 0 ? null : (0, import_react21.createElement)("h5", null, t("Not decided")),
     meetings.pending.length === 0 ? null : pendingRows,
