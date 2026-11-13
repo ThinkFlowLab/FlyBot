@@ -2464,7 +2464,34 @@ window.__ModuleLoader__.load({
       // (#1638). A card the dock never draws keeps the line, because there the sentence is true.
       const roomCards = approvalsForOpenChat((room?.pendingApprovals ?? []).filter(item => !item.inline), session)
       const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && roomCards.length === 0 && (room?.pendingCount ?? 0) > 0
-      if (!mine.length && !waitingOthers) return null
+      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
+      // (`status: 'pending'`). A failed hold is not approved; it is retried.
+      const waiting = entry => !entry.status || entry.status === 'pending'
+      // #3016: a hold that sits in another chat is still this person's, and this dock is the surface
+      // that can open every chat. When this chat draws no card of its own, the dock lists what waits
+      // elsewhere: the overlay can only point at such a hold, never say how many or to whom.
+      // Both polls answer first, or the count would grow one 5 s beat later (#1607).
+      const mineIds = new Set(mine.map(item => item.id))
+      const elsewhere = statusLoaded && listLoaded ? held.filter(item => !mineIds.has(item.id) && waiting(item)) : []
+      // The chat that draws that card is where the row leads, the same place approvalsForOpenChat
+      // puts it: a friend's chat once it is listed (#278), else the sending Bot's own (#371).
+      const chatOfHold = (item) => {
+        if (item.kind === 'face_room_message' && item.roomId) return item.roomId
+        const friend = listedFriendChat(roster, typeof item.to === 'object' && item.to ? item.to.handle : item.to)
+        if (friend?.id) return friend.id
+        const own = item.fromId ? (roster?.byId?.[item.fromId] ?? (roster?.bots ?? []).find(bot => bot.id === item.fromId)) : undefined
+        return own?.id ?? item.roomId ?? item.sessionId
+      }
+      const list = elsewhere.length
+        ? h(PendingApprovals, {
+          items: elsewhere,
+          onOpen: item => {
+            const id = chatOfHold(item)
+            if (id && typeof actions?.openSession === 'function') actions.openSession(id)
+          },
+        })
+        : null
+      if (!mine.length && !waitingOthers && !list) return null
       const decide = async (item, decision) => {
         setBusy(item.id)
         setError('')
@@ -2500,7 +2527,6 @@ window.__ModuleLoader__.load({
       }
       // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
       // (`status: 'pending'`). A failed hold is not approved; it is retried.
-      const waiting = entry => !entry.status || entry.status === 'pending'
       const approveAll = async () => {
         for (const item of mine.filter(waiting)) await decide(item, 'approve')
       }
@@ -2540,6 +2566,7 @@ window.__ModuleLoader__.load({
       }
       if (waitingOthers) {
         return h('div', { 'data-flybot': 'chat-approvals' },
+          list,
           h(ChatApproval, {
             item: { id: 'waiting', place: waitingPlace() }, canDecide: false, t,
             onOpen: chatId => actions?.openSession?.(chatId),
@@ -2551,8 +2578,10 @@ window.__ModuleLoader__.load({
         return mine.length
           ? h('div', { 'data-flybot': 'chat-approvals' },
             h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval-readonly', role: 'status' }, locked))
-          : null
+          : list
       }
+      // Another chat's hold is only a way to get there: this chat draws no decision for it (#3016).
+      if (!mine.length) return list
       return h('div', { 'data-flybot': 'chat-approvals' },
         mine.length > 1 && mine.some(waiting)
           ? h('div', { className: 'fs-chat-actions' },
