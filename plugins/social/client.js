@@ -2535,6 +2535,9 @@ window.__ModuleLoader__.load({
         : null
       if (!mine.length && !waitingOthers && !list) return null
       const decide = async (item, decision) => {
+        // #3044: one decision at a time. A card drawn while another send is in flight cannot start
+        // a second one, so two replies never race each other's `setBusy`/`setError`.
+        if (busy) return false
         setBusy(item.id)
         setError('')
         try {
@@ -2643,7 +2646,8 @@ window.__ModuleLoader__.load({
           : null,
         error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
         mine.map(item => h(ChatApproval, {
-          key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide, t,
+          // #3044: a decision in flight locks every card, not only its own.
+          key: item.id, item, canDecide: true, busy: !!busy, onDecide: decide, t,
         })))
     }
 
