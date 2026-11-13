@@ -4414,6 +4414,26 @@ test('#3011: Approve all says how many holds it sends and to whom', () => {
   assert.equal(all.props.title, '3 条 · to Eve, Bob', `the title names each person once, saw ${JSON.stringify(all.props.title)}`)
 })
 
+test('#3015: Approve all counts the holds it sends, not a failed one drawn beside them', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const friend = { id: 'r1', name: 'Eve', remote: { handle: '@eve.home', owner: 'Eve' } }
+  const roster = { bots: [friend] }
+  // One hold still waiting and one already failed, both for the same chat: the dock draws a failed hold
+  // beside a waiting one, so `mine` holds two while only one of them can be sent.
+  const waiting = { id: 'w1', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@eve.home', toName: 'Eve', text: 'still waiting' }
+  const failed = { id: 'f1', kind: 'outbound_message', source: 'local', status: 'failed', error: 'file changed after approval', from: 'Chief', to: '@eve.home', toName: 'Eve', text: 'already failed' }
+  const tree = walk(pluginOf([[waiting], [failed], '']).ChatApprovalDock({ bot: friend, roster }))
+  assert.equal(tree.filter(node => node.props['data-flybot'] === 'chat-approval').length, 2, 'the failed hold is drawn beside the waiting one')
+  const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
+  assert.ok(all, 'Approve all is offered while one hold is waiting')
+  assert.deepEqual(all.children, ['Approve all (1)'], `the count is the holds the click sends, saw ${JSON.stringify(all.children)}`)
+  assert.equal(all.props.title, '1 条 · to Eve', `the title names only the person it sends to, saw ${JSON.stringify(all.props.title)}`)
+  await all.props.onClick()
+  const decisions = calls.filter(([endpoint]) => endpoint === 'social/decide-approval' || endpoint === 'decide')
+  assert.deepEqual(decisions.map(([endpoint, payload]) => [endpoint, payload.approvalId ?? payload.id]), [['social/decide-approval', 'w1']], `only the waiting hold is sent, saw ${JSON.stringify(decisions)}`)
+})
+
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
