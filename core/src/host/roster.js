@@ -3,7 +3,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { COLORS, EXTRA_COLORS, MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
-import { currentColor, cut, isColor, stripInvisible, unquote } from './text.js'
+import { currentColor, cut, foldSpaces, isColor, stripInvisible, unquote } from './text.js'
 import { nameProblem } from '../shared/mentions.js'
 import { drawnKey } from '../shared/identity.js'
 import { cleanExternal } from './room-participant-external.js'
@@ -52,13 +52,6 @@ export function install(rt) {
     return Object.keys(avatar).length > 0 ? avatar : undefined
   }
 
-  // Every name row draws with `white-space: nowrap`, which collapses a run of whitespace to one
-  // space: `Dev  Ops` and `Dev Ops` read as the same row while `nameKey` keeps them apart, so
-  // `@Dev Ops` reaches only the single-space Bot and the other can be seen and never called
-  // (#2986). A stored name folds the run, the way `cleanRoomName` already does. A line break is
-  // left as it is, because `nameProblem` refuses it by name rather than folding it into a space.
-  const foldSpaces = value => String(value ?? '').replace(/[^\S\r\n\u2028\u2029]+/g, ' ')
-
   const freshName = (base) => {
     const stem = base.slice(0, 34)
     if (!rt.findBot(stem)) return stem
@@ -69,10 +62,11 @@ export function install(rt) {
 
   // Two names that draw the same read as one Bot on screen, and an `@` only ever reaches the one
   // whose `nameKey` matches: the other row can be seen and never called. A stored name keeps the
-  // characters that draw nothing (#2879), so the guard compares the drawn form as well (#2935).
+  // characters that draw nothing (#2879), so the guard compares the drawn form as well (#2935) —
+  // folded, because a name saved before the run-of-spaces rule can still carry one (#2986, #2992).
   const drawnClash = (name, exceptId) => {
-    const drawn = drawnKey(name)
-    return Object.values(state.bots).find(bot => bot.remote === undefined && bot.id !== exceptId && drawnKey(bot.name) === drawn)
+    const drawn = drawnKey(foldSpaces(name))
+    return Object.values(state.bots).find(bot => bot.remote === undefined && bot.id !== exceptId && drawnKey(foldSpaces(bot.name)) === drawn)
   }
 
   // `pickModel` leaves the model to the user: the chat opens on a model card. So does a

@@ -8749,7 +8749,7 @@ diff --git a/src/host/text.js b/src/host/text.js
  
  // A color id saved under its legacy name reads as the current one.
  export const currentColor = color => (typeof color === 'string' && Object.hasOwn(LEGACY_COLORS, color) ? LEGACY_COLORS[color] : color)
-@@ -17,17 +17,36 @@ export const textOf = content => (Array.isArray(content) ? content : [])
+@@ -17,17 +17,41 @@ export const textOf = content => (Array.isArray(content) ? content : [])
    .join('\n')
    .trim()
  
@@ -8757,6 +8757,11 @@ diff --git a/src/host/text.js b/src/host/text.js
 +// The identity key for a name (#2691, #2692): one function in `shared/identity.js`, so the tree's
 +// sibling names, a role label and a memory topic compare by the same rule as a Bot name does.
 +export const normalize = nameKey
++
++// A run of horizontal whitespace draws as one space in a name row (`white-space: nowrap`), so a
++// stored name folds the run and so does every comparison that asks what the screen shows (#2986).
++// A line break is left alone: `nameProblem` refuses it by name rather than turning it into a space.
++export const foldSpaces = value => String(value ?? '').replace(/[^\S\r\n\u2028\u2029]+/g, ' ')
  
  export const unquote = text => String(text ?? '').trim().replace(/^["'“”「『《]+|["'“”」』》]+$/g, '').trim()
  
