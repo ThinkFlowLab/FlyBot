@@ -6854,12 +6854,23 @@ diff --git a/src/host/memory.js b/src/host/memory.js
      },
      output,
      async execute(args, exec) {
-@@ -856,34 +856,70 @@ export function install(rt) {
-         const topic = cleanTopic(args.topic)
+@@ -852,38 +852,78 @@ export function install(rt) {
+       const { scopes, error } = readScopes(args.scope, self)
+       if (error) return error
+       const loaded = scopes.map(scope => ({ scope, tag: tagOf(scope, self), label: labelOf(scope, self), files: loadScope(scope) }))
+-      if (args.topic !== undefined && String(args.topic).trim() !== '') {
+-        const topic = cleanTopic(args.topic)
++      // A name that cannot be a topic file is refused by name (#3042). Cleaning it to
++      // `undefined` here used to match MEMORY.md's own pseudo-file, so the answer was the
++      // whole entry point instead of the reason the name cannot be read.
++      const { topic: wanted, error: topicError } = topicArg(args.topic)
++      if (topicError) return topicError
++      if (wanted !== undefined) {
          for (const { label, files } of loaded) {
-           const file = files.find(item => item.topic === topic)
+-          const file = files.find(item => item.topic === topic)
 -          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content.length)}):\n${file.content.trim() || '(empty)'}`
-+          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content)}):\n${file.content.trim() || '(empty)'}`
++          const file = files.find(item => item.topic === wanted)
++          if (file !== undefined) return `Topic [[${wanted}]] in ${label} (${sizeNote(file, file.content)}):\n${file.content.trim() || '(empty)'}`
          }
          const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
          return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`
@@ -13617,7 +13628,7 @@ diff --git a/test/memory.test.js b/test/memory.test.js
  
  test('remember saves one entry with its source, and forget removes it, both in the journal', async (t) => {
    const { tool, read, journal, stop } = start()
-@@ -218,6 +218,39 @@ test('topics hold details, linked from MEMORY.md, and go when their last entry d
+@@ -218,6 +218,59 @@ test('topics hold details, linked from MEMORY.md, and go when their last entry d
    assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n')
  })
  
@@ -13636,6 +13647,26 @@ diff --git a/test/memory.test.js b/test/memory.test.js
 +  assert.match(await tool('remember', { text: 'Prefers window seats', topic: '\u1100\u1161' }, 'b2'), /in topic \[\[\uac00\]\] \(\uac00\.md: \d+ of 16000 characters\)/)
 +  assert.deepEqual(readdirSync(join(home, 'memory', 'bots', 'b2')).sort(), ['MEMORY.md', '\uac00.md'])
 +  assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n- [[\uac00]]\n')
++})
++
++// #3042: a name that cannot be a topic file cleaned to `undefined`, which is the topic of
++// MEMORY.md's own pseudo-file, so `recall` answered with the whole entry point instead of saying
++// the name is not one it can read. Only a name that is merely unknown is "no such topic".
++test('#3042 recall refuses a name that cannot be a topic, instead of reading MEMORY.md', async (t) => {
++  const { tool, read, stop } = start()
++  t.after(() => stop())
++  await tool('remember', { text: 'Flies from Hangzhou', topic: 'travel' }, 'b2')
++  const main = read('bots', 'b2', 'MEMORY.md')
++  for (const bad of ['../x', 'a/b', 'back\\slash']) {
++    const out = await tool('recall', { topic: bad }, 'b2')
++    assert.match(out, /cannot be a topic name: use a short word or two/, bad)
++    assert.doesNotMatch(out, /Flies from Hangzhou|\[\[undefined\]\]/, `${bad} must not read a file`)
++  }
++  // An empty name is no topic at all: the listing, as before.
++  assert.match(await tool('recall', { topic: '' }, 'b2'), /^Your memory: MEMORY\.md has 0 entries/)
++  // A name that is only unknown still says so, and lists the topics it knows.
++  assert.match(await tool('recall', { topic: 'nonexistent_topic_xyz' }, 'b2'), /^No topic \[\[nonexistent_topic_xyz\]\] there\. Topics: \[\[travel\]\] \(yours\)\.$/)
++  assert.equal(read('bots', 'b2', 'MEMORY.md'), main, 'a refused read changes nothing')
 +})
 +
 +// A topic file written before this change keeps the spelling it was written with. The key is
