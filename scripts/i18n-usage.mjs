@@ -326,11 +326,22 @@ function copyTables(list) {
 }
 
 // A value drawn as copy but with no zh entry at all: the bug #3002 found. The positions are the
-// ones a plugin actually reads copy from — a `*_COPY` / `*_TEXT` table value, and the props it hands
-// copy through: `text:` (below) and the two props a component draws as a sentence of its own. A
-// value that is already translated (`t('…')`, `tr('…')`), a comparison operand, an object key and
-// the `', '` join delimiter are data, not copy, and stay out.
-const MISSING_ATTRS = new Set(['label', 'hint'])
+// ones a plugin actually reads copy from — a `*_COPY` / `*_TEXT` table value, `text:` (below), and
+// the `h(...)` copy attributes. The attribute set is one definition, not a second hand-copied list:
+// every COPY_ATTRS member plus `hint`, the caption a card or field draws under itself (#3007).
+// Widening from `label`+`hint` to the full set added 27 pins on main 3caf20dc — title 11,
+// aria-label 15, placeholder 3, and 0 for alt, aria-description and aria-placeholder; the
+// per-attribute total of 29 overcounts by two, because two sentences are drawn through two
+// attributes at once and pin once (#3009).
+//
+// Two `placeholder` values on main name an example of the expected input rather than a sentence a
+// reader translates (`https://social.example`, `github, composio`); those are data, not copy. The
+// set is exactly these two literals, so a future example-looking placeholder is still reported
+// instead of being swallowed by a pattern. A value that is already translated (`t('…')`,
+// `tr('…')`), a comparison operand, an object key and the `', '` join delimiter stay out for the
+// same reason.
+const MISSING_ATTRS = new Set([...COPY_ATTRS, 'hint'])
+const EXAMPLE_PLACEHOLDERS = new Set(['https://social.example', 'github, composio'])
 
 const copyValue = (list, at) => {
   const previous = list[at - 1]
@@ -360,6 +371,7 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     if (inTable && !(before?.type === 'punct' && before.value === ':')) continue
     const key = token.type === 'string' ? token.value : bound.get(token.value)
     if (key === undefined || key === '' || key === ', ') continue
+    if (token.prop === 'placeholder' && EXAMPLE_PLACEHOLDERS.has(key)) continue
     if (Object.hasOwn(dictionary, key)) continue
     entries.push({ file, line: token.line, key })
   }
