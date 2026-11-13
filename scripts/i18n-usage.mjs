@@ -343,6 +343,13 @@ function copyTables(list) {
 const MISSING_ATTRS = new Set([...COPY_ATTRS, 'hint'])
 const EXAMPLE_PLACEHOLDERS = new Set(['https://social.example', 'github, composio'])
 
+// A decorative literal is a shape, not a sentence: the `×` on a close button, the `▾` on a
+// disclosure, a bare `1`, a ` · ` separator. Copy a reader translates always carries a letter, so
+// the test is "no letter at all" — one shape rule, not a list of glyphs that a new one escapes and
+// not a length pattern that would also swallow `Ok` (#3028). The same rule applies to every draw,
+// table, `text:` and attribute alike, and no pin on main is a letterless value.
+const decoration = key => !/\p{L}/u.test(key)
+
 const copyValue = (list, at) => {
   const previous = list[at - 1]
   const key = list[at - 2]
@@ -366,12 +373,18 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     if (token.obj > 0 && after?.type === 'punct' && after.value === ':') continue
     const inTable = tables.some(body => at > body.start && at < body.end)
     const inProps = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
-    if (!inTable && !inProps && !copyValue(list, at)) continue
+    // An `h()` child node is copy the same way an attribute is: `h('button', { … }, 'Decline')`
+    // draws the label a reader sees, and the attribute half of the scan already pins the same
+    // sentence when it is spelled `title:`. `renderChild` is the one definition, shared with
+    // `bareCopy`, so the two views cannot drift (#3028).
+    const inChild = renderChild(token)
+    if (!inTable && !inProps && !copyValue(list, at) && !inChild) continue
     // Inside a table only a direct value counts; a nested call or function body is not one.
     if (inTable && !(before?.type === 'punct' && before.value === ':')) continue
     const key = token.type === 'string' ? token.value : bound.get(token.value)
     if (key === undefined || key === '' || key === ', ') continue
     if (token.prop === 'placeholder' && EXAMPLE_PLACEHOLDERS.has(key)) continue
+    if (decoration(key)) continue
     if (Object.hasOwn(dictionary, key)) continue
     entries.push({ file, line: token.line, key })
   }
