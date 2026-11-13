@@ -181,6 +181,9 @@ window.__ModuleLoader__.load({
 .fs-pending .fs-label{padding:0}
 .fs-pending-item{display:flex;align-items:center;gap:8px;width:100%;max-width:100%;min-width:0;padding:4px 4px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;flex-wrap:nowrap}
 .fs-pending-item:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-pending-row{display:flex;align-items:center;gap:6px;min-width:0}
+.fs-pending-row .fs-pending-item{flex:1 1 auto;min-width:0}
+.fs-pending-row .fs-btn{flex:0 0 auto}
 .fs-pending-item .fs-text{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:row;align-items:baseline;gap:8px}
 .fs-pending-item .fs-name{flex:0 1 auto;max-width:40%;min-width:0}
 .fs-pending-one{flex:1 1 auto;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -614,19 +617,44 @@ window.__ModuleLoader__.load({
       return item.from || item.to || item.toName ? `${from} → ${to}` : (to || 'Outbound reply')
     }
 
-    // Compact jump list. Approve / Reject live on the in-chat card.
-    function PendingApprovals({ items, onOpen }) {
+    // Compact jump list. Approve / Reject live on the in-chat card. #P796: a failed hold lists here too,
+    // so the list carries two states and every head counts only its own rows — a failed send is never
+    // read as one more message waiting for approval.
+    function PendingApprovals({ items, onOpen, onRetry, busy }) {
       if (!items?.length) return null
-      return h('div', { className: 'fs-pending', 'data-flybot': 'pending-approvals', role: 'region', 'aria-label': 'Messages waiting for your approval' },
-        h('div', { className: 'fs-label' }, 'Waiting for your approval', h('span', { className: 'fs-count' }, String(items.length))),
-        items.map(item => h('button', {
+      const rowOf = (item) => {
+        const failed = item.status === 'failed'
+        // #P796: a failed hold sitting in another chat is still the owner's, so it lists here too, with
+        // the same Retry its in-chat card offers — and only while the shared canRetry() allows one.
+        const retry = failed && typeof onRetry === 'function' && canRetry(item)
+        const row = h('button', {
           key: item.id, type: 'button', className: 'fs-pending-item', 'data-flybot': 'pending-item',
+          ...(failed ? { 'data-state': 'failed' } : {}),
           title: oneLine(item.text || item.summary || pendingTitle(item)),
           onClick: () => onOpen?.(item),
         },
           h('span', { className: 'fs-text' },
             h('span', { className: 'fs-name' }, pendingTitle(item)),
-            h('span', { className: 'fs-pending-one' }, oneLine(item.text || item.summary || ''))))))
+            h('span', { className: 'fs-pending-one' }, failed ? oneLine(item.error || tr('Not sent')) : oneLine(item.text || item.summary || ''))))
+        if (!retry) return row
+        return h('div', { key: item.id, className: 'fs-pending-row', 'data-flybot': 'pending-row' },
+          row,
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'pending-retry',
+            disabled: busy === item.id, onClick: () => onRetry(item),
+          }, tr('Retry')))
+      }
+      const failedItems = items.filter(item => item.status === 'failed')
+      const waitingItems = items.filter(item => item.status !== 'failed')
+      const waitingHead = waitingItems.length ? tr('Waiting for your approval') : null
+      const failedHead = failedItems.length ? tr('Not sent') : null
+      const group = (head, rows) => rows.length
+        ? [h('div', { key: `head-${head}`, className: 'fs-label' }, head, h('span', { className: 'fs-count' }, String(rows.length))), ...rows.map(rowOf)]
+        : []
+      return h('div', {
+        className: 'fs-pending', 'data-flybot': 'pending-approvals', role: 'region',
+        'aria-label': failedItems.length ? [waitingHead, failedHead].filter(Boolean).join(' · ') : tr('Messages waiting for your approval'),
+      }, [...group(waitingHead, waitingItems), ...group(failedHead, failedItems)])
     }
 
     const STOP_JOIN = /6-digit|no longer valid|Too many (failed )?attempts|signed you out/i
@@ -2470,13 +2498,17 @@ window.__ModuleLoader__.load({
       // #3016: a hold that sits in another chat is still this person's, and this dock is the surface
       // that can open every chat. When this chat draws no card of its own, the dock lists what waits
       // elsewhere: the overlay can only point at such a hold, never say how many or to whom.
+      // #P796: a failed hold counts here too — never approved, but its row is the only way to the chat
+      // that offers its Retry, and dropping it from this list hid it from every chat but its own.
       // Both polls answer first, or the count would grow one 5 s beat later (#1607).
       const mineIds = new Set(mine.map(item => item.id))
-      const elsewhere = statusLoaded && listLoaded ? held.filter(item => !mineIds.has(item.id) && waiting(item)) : []
+      const elsewhere = statusLoaded && listLoaded
+        ? held.filter(item => !mineIds.has(item.id) && (waiting(item) || item.status === 'failed'))
+        : []
       // The chat that draws that card is where the row leads, the same place approvalsForOpenChat
       // puts it: a friend's chat once it is listed (#278), else the sending Bot's own (#371).
       const chatOfHold = (item) => {
-        // #3034: a room hold names the room by its face/wire id, while a chat opens by the room's local
+        // #P795: a room hold names the room by its face/wire id, while a chat opens by the room's local
         // session id (`approvalsForOpenChat` matches the same pair). A room this window has not seen
         // falls back to the id the hold carries, which is all there is to go on.
         if (item.kind === 'face_room_message' && item.roomId) {
@@ -2491,10 +2523,14 @@ window.__ModuleLoader__.load({
       const list = elsewhere.length
         ? h(PendingApprovals, {
           items: elsewhere,
+          busy,
           onOpen: item => {
             const id = chatOfHold(item)
             if (id && typeof actions?.openSession === 'function') actions.openSession(id)
           },
+          // One decision path, the dock's own: the in-chat card's Retry is the same `decide`. While that
+          // one is in flight a second click is dropped here too, not only disabled on the button (#P796).
+          onRetry: item => { if (busy) return; decide(item, 'retry') },
         })
         : null
       if (!mine.length && !waitingOthers && !list) return null

@@ -4540,6 +4540,86 @@ test('#3034: a room hold row opens the room\'s local session, not the face id it
   assert.deepEqual(opened, ['local-777'], 'the row opens the room it was held in, not the face id the hold carries')
 })
 
+test('#3036: a failed hold in another chat is one row with Retry, and the row opens that chat', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  // The room's local session id is what a chat opens by; the failed hold still names the wire id.
+  const roster = { bots: [], roomsById: { 'local-777': { id: 'local-777', name: 'Research', face: { roomId: 'face-777' } } } }
+  const hold = { id: 'apr-failed', source: 'local', kind: 'face_room_message', status: 'failed', from: 'Chief', roomId: 'face-777', text: 'ship the branch', error: 'the send failed' }
+  const opened = []
+  const tree = walk(pluginOf([[], [hold], true, true])
+    .ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster, actions: { openSession: id => opened.push(id) } }))
+  const rows = tree.filter(node => node.props['data-flybot'] === 'pending-item')
+  assert.equal(rows.length, 1, 'a failed hold sitting in another chat is still the owner\'s, so this chat lists it')
+  const retry = tree.find(node => node.props['data-flybot'] === 'pending-retry')
+  assert.ok(retry, 'a failed row offers Retry')
+  await retry.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide').map(([, payload]) => [payload.id, payload.decision]), [['apr-failed', 'retry']], 'Retry is the core decide retry, not a second path')
+  rows[0].props.onClick()
+  assert.deepEqual(opened, ['local-777'], 'the row opens the chat the failed hold belongs to, not the face id it carries')
+})
+
+test('#3036: a failed hold that can never succeed lists its row but no Retry', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const hold = { id: 'apr-dead', source: 'local', kind: 'outbound_message', status: 'failed', retry: false, from: 'Chief', to: '@bob.alice.home', toName: 'Bob', text: 'x', error: 'Bot Social refused this send' }
+  const tree = walk(pluginOf([[], [hold], true, true])
+    .ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster: { bots: [] } }))
+  assert.equal(tree.filter(node => node.props['data-flybot'] === 'pending-item').length, 1, 'the row still names the failed hold')
+  assert.equal(tree.some(node => node.props['data-flybot'] === 'pending-retry'), false, 'no Retry on a failure that cannot succeed')
+})
+
+test('#3036: the list head names the failed row Not sent instead of counting it as a wait', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const roster = {
+    bots: [
+      { id: 'remote-bob', name: 'Bob', remote: { handle: '@bob.alice.home' } },
+      { id: 'remote-eve', name: 'Eve', remote: { handle: '@eve.alice.home' } },
+    ],
+  }
+  const waiting = { id: 'apr-bob', source: 'local', status: 'pending', from: 'Chief', to: '@bob.alice.home', toName: 'Bob', text: 'I can review that' }
+  const failed = { id: 'apr-failed', source: 'local', kind: 'outbound_message', status: 'failed', from: 'Chief', to: '@eve.alice.home', toName: 'Eve', text: 'x', error: 'the send failed' }
+  const dock = (local) => walk(pluginOf([[], local, true, true]).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster }))
+  // Two states in one list, so no single "waiting for your approval" head may count both rows.
+  const mixed = dock([waiting, failed])
+  const heads = mixed.filter(node => node.props.className === 'fs-label')
+  assert.deepEqual(heads.map(node => node.children[0]), ['Waiting for your approval', 'Not sent'], 'each group names its own state')
+  assert.deepEqual(mixed.filter(node => node.props.className === 'fs-count').map(node => node.children), [['1'], ['1']], 'each head counts only its own rows')
+  const region = mixed.find(node => node.props['data-flybot'] === 'pending-approvals')
+  assert.match(region.props['aria-label'], /Waiting for your approval/)
+  assert.match(region.props['aria-label'], /Not sent/, 'the region says a failed row is not a wait')
+  // A waiting-only list keeps the wording it always had: only the mixed shape is new.
+  const waitingOnly = dock([waiting])
+  const same = waitingOnly.find(node => node.props['data-flybot'] === 'pending-approvals')
+  assert.equal(same.props['aria-label'], 'Messages waiting for your approval', 'a list of only waiting holds keeps its own label')
+  assert.deepEqual(waitingOnly.filter(node => node.props.className === 'fs-label').map(node => node.children[0]), ['Waiting for your approval'], 'and its one head')
+  // A list of failed rows alone never claims a wait.
+  const only = dock([failed])
+  assert.equal(only.some(node => node.props.className === 'fs-label' && node.children[0] === 'Waiting for your approval'), false, 'no waiting head over a row that already failed')
+  assert.deepEqual(only.filter(node => node.props.className === 'fs-count').map(node => node.children), [['1']])
+})
+
+test('#3036: a failed hold in this chat stays its card, never a row besides it', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const friend = { id: 'remote-eve', name: 'Eve', remote: { handle: '@eve.alice.home' } }
+  const hold = { id: 'f9', source: 'local', kind: 'outbound_message', status: 'failed', from: 'Chief', to: '@eve.alice.home', toName: 'Eve', text: 'x', error: 'the send failed' }
+  const tree = walk(pluginOf([[], [hold], true, true]).ChatApprovalDock({ bot: friend, roster: { bots: [friend] } }))
+  assert.equal(tree.some(node => node.props['data-flybot'] === 'pending-approvals'), false, 'its own chat draws the card, not a jump row too')
+  assert.equal(tree.filter(node => node.props['data-flybot'] === 'chat-approval').length, 1, 'one card, in the chat that owns the hold')
+  assert.ok(tree.some(node => node.props['data-flybot'] === 'hold-retry'), 'the card keeps the Retry')
+})
+
+test('#3036: a Retry already in flight is disabled and a second click sends nothing', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const hold = { id: 'apr-failed', source: 'local', kind: 'outbound_message', status: 'failed', from: 'Chief', to: '@bob.alice.home', toName: 'Bob', text: 'x', error: 'the send failed' }
+  // busy holds that row's id: the click that started this retry is still in flight.
+  const tree = walk(pluginOf([[], [hold], true, true, 'apr-failed']).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster: { bots: [] } }))
+  const retry = tree.find(node => node.props['data-flybot'] === 'pending-retry')
+  assert.equal(retry?.props.disabled, true, 'the row that is still sending draws its Retry disabled')
+  await retry.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide'), [], 'a second click while that one is in flight sends nothing')
+})
+
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
