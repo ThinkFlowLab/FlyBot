@@ -1062,7 +1062,13 @@ export function install(rt) {
       // carries only `room.reserved`, and keeps the room-wide discount it had.
       const reserved = Math.max(0, Number(room.reserved) || 0)
       const booked = Array.isArray(room.reservedSeqs) ? room.reservedSeqs : []
-      const below = Math.min(reserved, Math.max(0, from - 1), booked.filter(seq => Number(seq) < from).length)
+      // A list shorter than the count cannot place the room's bookings: a room that kept only its
+      // count and recorded one number afterwards names that one while `reserved` still counts them
+      // all, so the unrecorded ones must not be counted as if every one sat inside the window.
+      // Unknown keeps the room-wide discount (#3046).
+      const below = reserved > booked.length
+        ? 0
+        : Math.min(reserved, Math.max(0, from - 1), booked.filter(seq => Number(seq) < from).length)
       const dropped = Math.max(0, (room.seq ?? 0) - (room.log ?? []).length - reserved)
       const total = kept.length + Math.max(0, dropped - Math.max(0, from - 1) + below)
       const older = total - lines.length
