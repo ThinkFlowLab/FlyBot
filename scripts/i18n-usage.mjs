@@ -326,10 +326,12 @@ function copyTables(list) {
 }
 
 // A value drawn as copy but with no zh entry at all: the bug #3002 found. The positions are the
-// ones a plugin actually reads copy from — a `*_COPY` / `*_TEXT` table value, and a `text:` property
-// (a status line handed to the renderer, or an `h(...)` prop). A value that is already translated
-// (`t('…')`, `tr('…')`), a comparison operand, an object key and the `', '` join delimiter are data,
-// not copy, and stay out.
+// ones a plugin actually reads copy from — a `*_COPY` / `*_TEXT` table value, and the props it hands
+// copy through: `text:` (below) and the two props a component draws as a sentence of its own. A
+// value that is already translated (`t('…')`, `tr('…')`), a comparison operand, an object key and
+// the `', '` join delimiter are data, not copy, and stay out.
+const MISSING_ATTRS = new Set(['label', 'hint'])
+
 const copyValue = (list, at) => {
   const previous = list[at - 1]
   const key = list[at - 2]
@@ -352,7 +354,8 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     if (after?.type === 'punct' && COMPARISONS.has(after.value)) continue
     if (token.obj > 0 && after?.type === 'punct' && after.value === ':') continue
     const inTable = tables.some(body => at > body.start && at < body.end)
-    if (!inTable && !copyValue(list, at)) continue
+    const inProps = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    if (!inTable && !inProps && !copyValue(list, at)) continue
     // Inside a table only a direct value counts; a nested call or function body is not one.
     if (inTable && !(before?.type === 'punct' && before.value === ':')) continue
     const key = token.type === 'string' ? token.value : bound.get(token.value)
