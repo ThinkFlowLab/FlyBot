@@ -23,8 +23,10 @@
 // pin is a sentence that already existed on main untranslated, and each leaves the baseline when
 // its zh entry lands — never by editing the baseline. A new untranslated draw still fails.
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { baselineOf, missingCopy, scanMissing } from '../../scripts/i18n-usage.mjs'
 
 const baselineFile = new URL('./i18n-missing-entries.baseline.json', import.meta.url)
@@ -103,4 +105,25 @@ test('the widened scan names every copy attribute and skips placeholder examples
     missingCopy("h('input', { placeholder: 'https://example.org/room/42' })", 'plugins/sample/client.js').map(entry => entry.key),
     ['https://example.org/room/42'],
   )
+})
+
+// The same sentence drawn twice at one position — title: and aria-label: on one line — is one pin,
+// because `baselineOf` keys a draw by `file:line:key`. The tail line is what a reader compares with
+// the baseline file, so it must report that identity, the same number `--missing --json` prints and
+// `--write` pins, not the raw draw array. On main the raw count reads 63 while the JSON and the
+// file hold 61 (#3017).
+test('--missing prints the identity count, not the raw draw count', () => {
+  const script = fileURLToPath(new URL('../../scripts/i18n-usage.mjs', import.meta.url))
+  const run = (...args) => {
+    const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout
+  }
+  const counted = JSON.parse(run('--missing', '--json')).entries.length
+  const tail = run('--missing').trimEnd().split('\n').at(-1)
+  assert.equal(Number.parseInt(tail, 10), counted, `the summary line must report what --json holds: ${tail}`)
+  // Two draws, one pin: that is why the raw array and the identity disagree on main.
+  const draws = missingCopy("h(Button, { title: 'A new untranslated line.', 'aria-label': 'A new untranslated line.' })", 'plugins/sample/client.js')
+  assert.equal(draws.length, 2)
+  assert.equal(baselineOf(draws).length, 1)
 })

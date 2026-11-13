@@ -466,9 +466,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const missing = process.argv.includes('--missing')
   const entries = missing ? scanMissing() : scanPlugins()
   const identity = missing ? baselineOf : drawBaselineOf
+  // One identity for every reader of this run: `--json` prints it, `--write` pins it and the tail
+  // line counts it, so the count can never disagree with the file a reader compares it with. The
+  // walk still lists each draw (two attributes on one line are two draws); the count is pins, and a
+  // `file:line:key` is pinned once (#3017).
+  const counted = identity(entries)
   const write = flagValue('--write')
   if (process.argv.includes('--json')) {
-    console.log(JSON.stringify({ version: 1, entries: identity(entries) }, null, 2))
+    console.log(JSON.stringify({ version: 1, entries: counted }, null, 2))
   } else if (write) {
     const result = writeBaseline(write, entries, { force: process.argv.includes('--force'), identity })
     if (!result.written) {
@@ -482,6 +487,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   } else {
     for (const entry of entries) console.log(`${entry.file}:${entry.line}: ${JSON.stringify(entry.key)}`)
     const what = missing ? 'drawn copy strings with no zh entry' : 'bare draws'
-    console.log(`${entries.length} ${what} in ${new Set(entries.map(entry => entry.file)).size} files`)
+    console.log(`${counted.length} ${what} in ${new Set(entries.map(entry => entry.file)).size} files`)
   }
 }
