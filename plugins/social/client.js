@@ -2520,24 +2520,36 @@ window.__ModuleLoader__.load({
           setItems(drop)
           setLocal(drop)
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
+          return true
         } catch (failure) {
           // A stale or failed hold must say why, never swallow the click.
           setError(String(failure?.message ?? failure).slice(0, 200))
         } finally { setBusy('') }
       }
-      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
-      // (`status: 'pending'`). A failed hold is not approved; it is retried.
-      const approveAll = async () => {
-        for (const item of mine.filter(waiting)) await decide(item, 'approve')
-      }
-      // #3011: the button says what it will send and to whom, so the blast radius of a click that
-      // cannot be undone is readable before it. One entry per person, in draw order; a hold whose
-      // person never resolved keeps the title at the count alone rather than inventing a name.
-      const toApprove = mine.filter(waiting)
-      const approveRecipients = toApprove.reduce((people, item) => {
+      // #3011/#3029: one entry per person, in draw order; a hold whose person never resolved keeps the
+      // count alone rather than inventing a name.
+      const recipientNames = items => items.reduce((people, item) => {
         const name = typeof item.toName === 'string' ? item.toName.trim() : ''
         return name && !people.includes(name) ? [...people, name] : people
       }, [])
+      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
+      // (`status: 'pending'`). A failed hold is not approved; it is retried.
+      // #3029: the click sends several holds and they leave the dock at once, so the tail reports what
+      // actually went out — one receipt for the people reached, and none when every send failed (those
+      // cards keep their own error line).
+      const approveAll = async () => {
+        const tr = (text, params) => (typeof t === 'function'
+          ? t(text, params)
+          : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+        const sent = []
+        for (const item of mine.filter(waiting)) if (await decide(item, 'approve')) sent.push(item)
+        const reached = recipientNames(sent)
+        if (reached.length) actions?.notify?.(tr('Sent to {to}', { to: reached.join(tr(', ')) }))
+      }
+      // #3011: the button says what it will send and to whom, so the blast radius of a click that
+      // cannot be undone is readable before it.
+      const toApprove = mine.filter(waiting)
+      const approveRecipients = recipientNames(toApprove)
       const approveAllLabel = `Approve all (${toApprove.length})`
       const approveAllTitle = approveRecipients.length
         ? `${toApprove.length} 条 · to ${approveRecipients.join(', ')}`

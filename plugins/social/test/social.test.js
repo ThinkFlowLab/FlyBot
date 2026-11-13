@@ -13,6 +13,7 @@ import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAge
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
 import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from '../../../core/src/client/room-invite-preview.js'
+import { DICTIONARY } from '../../../core/src/client/i18n.js'
 import { canRetry } from '../../../core/src/shared/held-retry.js'
 import { REMOTE_FAILURE_NOTICES } from '../../../core/src/host/turns.js'
 import { encodeFaceHuman } from '../src/face-rooms.js'
@@ -4432,6 +4433,49 @@ test('#3015: Approve all counts the holds it sends, not a failed one drawn besid
   await all.props.onClick()
   const decisions = calls.filter(([endpoint]) => endpoint === 'social/decide-approval' || endpoint === 'decide')
   assert.deepEqual(decisions.map(([endpoint, payload]) => [endpoint, payload.approvalId ?? payload.id]), [['social/decide-approval', 'w1']], `only the waiting hold is sent, saw ${JSON.stringify(decisions)}`)
+})
+
+test('#3029: Approve all confirms what it sent, once, naming the people it reached', async () => {
+  const calls = []
+  const notes = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    return { approvalId: payload.approvalId, status: 'approved' }
+  })
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  // The same card #3011 draws: three waiting holds, two people, the first one twice.
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob'), hold('h3', '@eve.home', 'Eve')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  const dock = (extra = {}) => walk(pluginOf([items, [], true, true]).ChatApprovalDock({
+    bot: { id: 'mine' }, roster: { bots: [] }, room, actions: { notify: text => notes.push(text) }, ...extra,
+  }))
+  await dock().find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.equal(calls.filter(([endpoint]) => endpoint === 'social/decide-approval').length, 3, 'three holds are sent')
+  assert.deepEqual(notes, ['Sent to Eve, Bob'], 'one receipt after the click, each person once, in draw order')
+  // The host's zh words, through the same translator the dock is handed (#3029): no second English sentence.
+  const zh = DICTIONARY.zh
+  const t = (key, params) => String(zh[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+  notes.length = 0
+  await dock({ t }).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.deepEqual(notes, ['已发给 Eve、Bob'], 'the receipt is the dictionary sentence, not English in a zh window')
+})
+
+test('#3029: Approve all claims nothing when every send fails, and the failure keeps its own line', async () => {
+  const notes = []
+  const { walk, pluginOf } = loadSocialClient(async () => { throw new Error('the hold is stale') })
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob'), hold('h3', '@eve.home', 'Eve')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  const dock = (states = [items, [], true, true]) => walk(pluginOf(states).ChatApprovalDock({
+    bot: { id: 'mine' }, roster: { bots: [] }, room, actions: { notify: text => notes.push(text) },
+  }))
+  await dock().find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.deepEqual(notes, [], 'nothing left, so no receipt says something did')
+  // The error line the failed click leaves is the existing one, drawn from the dock's own error state.
+  const failed = dock([items, [], true, true, '', 'the hold is stale'])
+  const line = failed.find(node => node.props['data-flybot'] === 'chat-approval-error')
+  assert.ok(line, 'a failed send still says why')
+  assert.deepEqual(line.children, ['the hold is stale'])
 })
 
 test('#3016: a chat with no card of its own lists the holds waiting in the other chats', () => {
