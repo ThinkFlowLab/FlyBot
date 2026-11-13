@@ -6,7 +6,7 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
-## [0.2.32] - 2026-11-14
+## [0.2.32] - 2026-11-13
 
 ### Fixed
 
