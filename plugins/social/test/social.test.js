@@ -4523,6 +4523,23 @@ test('#3016: the first row opens the chat that draws that hold', () => {
   assert.deepEqual(opened, ['remote-bob'], 'the first row opens the chat that draws that hold')
 })
 
+test('#3034: a room hold row opens the room\'s local session, not the face id it carries', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  // The room's local session id is what a chat is opened by; `face.roomId` is the wire id the hold names.
+  const roster = {
+    bots: [],
+    roomsById: { 'local-777': { id: 'local-777', name: 'Research', face: { roomId: 'face-777' } } },
+  }
+  const hold = { id: 'apr-face', kind: 'face_room_message', status: 'pending', from: 'Chief', roomId: 'face-777', text: 'ship the branch' }
+  const opened = []
+  const tree = walk(pluginOf([[hold], [], true, true])
+    .ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster, actions: { openSession: id => opened.push(id) } }))
+  const rows = tree.filter(n => n.props['data-flybot'] === 'pending-item')
+  assert.equal(rows.length, 1, 'the room hold waiting elsewhere is listed')
+  rows[0].props.onClick()
+  assert.deepEqual(opened, ['local-777'], 'the row opens the room it was held in, not the face id the hold carries')
+})
+
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })

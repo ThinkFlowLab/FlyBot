@@ -2476,7 +2476,13 @@ window.__ModuleLoader__.load({
       // The chat that draws that card is where the row leads, the same place approvalsForOpenChat
       // puts it: a friend's chat once it is listed (#278), else the sending Bot's own (#371).
       const chatOfHold = (item) => {
-        if (item.kind === 'face_room_message' && item.roomId) return item.roomId
+        // #3034: a room hold names the room by its face/wire id, while a chat opens by the room's local
+        // session id (`approvalsForOpenChat` matches the same pair). A room this window has not seen
+        // falls back to the id the hold carries, which is all there is to go on.
+        if (item.kind === 'face_room_message' && item.roomId) {
+          const room = Object.values(roster?.roomsById ?? {}).find(one => one?.id && one.face?.roomId === item.roomId)
+          return room?.id ?? item.roomId
+        }
         const friend = listedFriendChat(roster, typeof item.to === 'object' && item.to ? item.to.handle : item.to)
         if (friend?.id) return friend.id
         const own = item.fromId ? (roster?.byId?.[item.fromId] ?? (roster?.bots ?? []).find(bot => bot.id === item.fromId)) : undefined
