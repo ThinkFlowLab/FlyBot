@@ -105,3 +105,20 @@ test('P-707 guard: a room with no recorded booking numbers reads as it did befor
   assert.equal(shownLines(out).length, 30, 'the read shows the newest 30 lines of the window')
   assert.match(out, /^Latest in "Ops" \(newest 30 of 201, oldest first\):$/m, `no recorded numbers means the old room-wide discount: ${out.split('\n')[0]}`)
 })
+
+// RED today (#3046): a room that took its bookings before the numbers were recorded keeps only the
+// count, and one booking recorded afterwards makes the list look authoritative while `reserved`
+// still counts them all. The ten recorded numbers sit below b's floor, so they are added back, and
+// only the five unrecorded bookings are discounted: 206 where the window holds 196 lines. A list
+// shorter than the count cannot place the room's bookings, so the room-wide discount stays instead.
+test('P-800: a booking list shorter than its count keeps the room-wide discount', async (t) => {
+  const host = await start(t, lines(50, 451), {
+    seq: 510,
+    reserved: 15,
+    reservedSeqs: [31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+    participants: [seat('a', 0), seat('b', 300)],
+  })
+  const out = await host.tool('read_group_chat', { group: 'Ops' }, 'gb')
+  assert.equal(shownLines(out).length, 30, 'the read shows the newest 30 lines of the window')
+  assert.match(out, /^Latest in "Ops" \(newest 30 of 196, oldest first\):$/m, `the list names ten bookings and the room counted fifteen, so its placements are unknown and the room-wide discount stays: ${out.split('\n')[0]}`)
+})
