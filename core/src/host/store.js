@@ -393,7 +393,7 @@ export function install(rt) {
       const folded = foldSpaces(bot.name)
       if (folded === bot.name) continue
       if (Object.values(state.bots).some(other => other !== bot && normalize(other.name) === normalize(folded))) {
-        warn('ds-bot: the saved Bot name %s folds onto %s, which another Bot holds; it keeps the name it was saved with', bot.id, folded)
+        warn('ds-bot: the saved Bot name %s folds onto %s, which another Bot holds; it keeps the name it was saved with', bot.name, folded)
         continue
       }
       bot.name = folded
