@@ -2406,6 +2406,31 @@ diff --git a/src/client/model-menu.js b/src/client/model-menu.js
  .bt-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;height:auto;min-height:32px;padding:4px 8px 4px 10px;border:0;border-radius:8px;background:var(--bt-hover);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .12s ease}
  .bt-model-trigger:hover,.bt-model-trigger[aria-expanded=true]{background:var(--bt-active)}
  .bt-model-trigger:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
+diff --git a/src/client/read-page.js b/src/client/read-page.js
+--- a/src/client/read-page.js
++++ b/src/client/read-page.js
+@@ -97,12 +97,19 @@ export function readPage(limits) {
+     items.push(item)
+     return { item, number: items.length, secret }
+   }
+-  const nameOf = (el, text, secret) => collapse(
++  // This function is serialized, so the code-point cut lives here rather than being imported from
++  // text.js `cutText`: cut whole characters, so a bound inside an emoji keeps it whole, and mark a
++  // dropped tail with `…` (#2978).
++  const cut = (value, max) => {
++    const points = [...String(value ?? '')]
++    return points.length > max ? `${points.slice(0, max).join('')}…` : points.join('')
++  }
++  const nameOf = (el, text, secret) => cut(collapse(
+     el.getAttribute('aria-label') || text
+     || (el.localName === 'input' && !secret && NO_VALUE_TYPES.has(el.type) ? el.value : '')
+     || el.getAttribute('placeholder') || el.title || el.getAttribute('alt')
+     || el.querySelector?.('img[alt]')?.alt || el.getAttribute('name') || '',
+-  ).slice(0, 80)
++  ), 80)
+ 
+   const fenced = (code, lang) => {
+     const longest = Math.max(2, ...(code.match(/`{3,}/g) || []).map(run => run.length))
 diff --git a/src/client/schedules.js b/src/client/schedules.js
 --- a/src/client/schedules.js
 +++ b/src/client/schedules.js

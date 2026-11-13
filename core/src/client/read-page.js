@@ -97,12 +97,19 @@ export function readPage(limits) {
     items.push(item)
     return { item, number: items.length, secret }
   }
-  const nameOf = (el, text, secret) => collapse(
+  // This function is serialized, so the code-point cut lives here rather than being imported from
+  // text.js `cutText`: cut whole characters, so a bound inside an emoji keeps it whole, and mark a
+  // dropped tail with `…` (#2978).
+  const cut = (value, max) => {
+    const points = [...String(value ?? '')]
+    return points.length > max ? `${points.slice(0, max).join('')}…` : points.join('')
+  }
+  const nameOf = (el, text, secret) => cut(collapse(
     el.getAttribute('aria-label') || text
     || (el.localName === 'input' && !secret && NO_VALUE_TYPES.has(el.type) ? el.value : '')
     || el.getAttribute('placeholder') || el.title || el.getAttribute('alt')
     || el.querySelector?.('img[alt]')?.alt || el.getAttribute('name') || '',
-  ).slice(0, 80)
+  ), 80)
 
   const fenced = (code, lang) => {
     const longest = Math.max(2, ...(code.match(/`{3,}/g) || []).map(run => run.length))

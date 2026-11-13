@@ -1638,132 +1638,88 @@ function language() {
 var dateLocale = () => language().startsWith("zh") ? "zh-CN" : "en-US";
 var DICTIONARY = { zh: ZH };
 
-// src/client/diagnostics.js
-var MAX = 30;
-var REPEAT_MS = 5 * 60 * 1e3;
-var entries = [];
-var noted = /* @__PURE__ */ new WeakSet();
-var markNoted = (error) => {
-  if (error !== null && typeof error === "object") noted.add(error);
-  return error;
-};
-function noteClientError(where, error) {
-  if (error !== null && typeof error === "object") {
-    if (noted.has(error)) return;
-    noted.add(error);
-  }
-  const message = String(error?.message ?? error ?? "error").slice(0, 300);
-  const code = typeof error?.code === "string" ? error.code : void 0;
-  const text2 = `${where}: ${message}`;
-  const now = Date.now();
-  const last = entries.at(-1);
-  if (last && last.text === text2 && now - last.time < REPEAT_MS) {
-    last.time = now;
-    last.count = (last.count ?? 1) + 1;
-    return;
-  }
-  entries.push({ time: now, level: "error", text: text2, ...code ? { code } : {} });
-  if (entries.length > MAX) entries.splice(0, entries.length - MAX);
+// src/shared/mentions.js
+var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
+var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
+var ADDRESS_BEFORE = /[a-z0-9_./]/i;
+var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\)/g;
+var fitsAt = (text2, at, word) => text2.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text2.slice(at + word.length));
+var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
+var stripInvisible = (value) => String(value ?? "").replace(/\p{Cf}/gu, "");
+var NOT_DRAWN_RANGES = [
+  [847, 847],
+  [4447, 4448],
+  [6068, 6069],
+  [6155, 6157],
+  [6159, 6159],
+  [10240, 10240],
+  [12644, 12644],
+  [65440, 65440],
+  [65024, 65039],
+  [917760, 917999]
+];
+var NOT_DRAWN = new RegExp(`[${NOT_DRAWN_RANGES.map(([from, to]) => `\\u{${from.toString(16)}}${to === from ? "" : `-\\u{${to.toString(16)}}`}`).join("")}]`, "gu");
+var DRAWS_NOTHING = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu;
+function nameProblem(name) {
+  const text2 = stripInvisible(name).trim();
+  if (text2 === "" || text2.replace(DRAWS_NOTHING, "").trim() === "") return "A Bot needs a name";
+  if (/[@`\r\n]/.test(text2)) return "A Bot name cannot contain @, ` or a line break";
+  if (ALL_WORDS.includes(text2.toLowerCase())) return `"${text2}" calls everyone in a group, so it cannot be a Bot name`;
+  return void 0;
 }
-function noteNavigation(how, target, from) {
-  if (typeof navigator === "undefined" || navigator.userActivation?.isActive !== false) return;
-  const stack = String(new Error().stack ?? "").split("\n").slice(2, 6).map((line2) => line2.trim().replace(/\(?https?:\/\/[^/\s)]+/, "(")).join(" < ");
-  const text2 = `navigation: ${how} to ${String(target).slice(0, 60)}${from ? ` from ${String(from).slice(0, 60)}` : ""} with no click (${stack.slice(0, 300)})`;
-  console.warn(`[flybot] ${text2}`);
-  entries.push({ time: Date.now(), level: "warn", text: text2 });
-  if (entries.length > MAX) entries.splice(0, entries.length - MAX);
-}
-var quietly = (where) => (error) => noteClientError(where, error);
-var clearClientErrors = () => {
-  entries.length = 0;
-};
-var clientErrors = () => entries.map((entry) => entry.count > 1 ? { ...entry, text: `${entry.text} (×${entry.count})` } : { ...entry });
-function clientFacts() {
-  return {
-    surface: window.dshDesktop ? "DSH Desktop" : "DSH Web",
-    language: language(),
-    userAgent: navigator.userAgent
-  };
-}
-var FAILURES = {
-  AUTH: "The API key was rejected",
-  QUOTA: "The account is out of quota",
-  ACCOUNT_QUOTA: "The account is out of quota",
-  RATE_LIMIT: "Too many requests to the model",
-  CONTEXT_WINDOW_EXCEEDED: "The conversation is too long for the model",
-  INVALID_REQUEST: "The model service refused the request",
-  SERVER: "The model service failed",
-  TIMEOUT: "The model took too long to answer",
-  TRANSPORT: "Could not reach the model service",
-  SESSION: "Its group conversation could not open"
-};
-function failureLabel(code, message) {
-  if (FAILURES[code]) return t(FAILURES[code]);
-  const raw = String(message ?? "");
-  if (/api key|no api key|missing (?:api )?key|not configured|no model/i.test(raw)) {
-    return t("This Bot has no model set up yet.");
-  }
-  if (raw || code) return t("This Bot could not answer right now.");
-  return t("Unknown error");
-}
-var URL_LIMIT = 7e3;
-var WHAT_MAX = 2e3;
-var PASTE_NOTE = "FlyBot copied the diagnostics to the clipboard. Paste them here.";
-var REST_NOTE = "The recent errors do not fit in the link. FlyBot copied the diagnostics to the clipboard: paste them below this line.";
-function issueUrl(base, { what = "", diagnostics }) {
-  const text2 = what.trim().slice(0, WHAT_MAX);
-  const title = text2.split("\n")[0].slice(0, 80);
-  const build = (body) => `${base}?${new URLSearchParams({ template: "bug.yml", ...title ? { title } : {}, ...text2 ? { what: text2 } : {}, diagnostics: body })}`;
-  const full2 = build(diagnostics);
-  if (full2.length <= URL_LIMIT) return { url: full2, inline: true };
-  const facts = build(`${diagnostics.split("\n\n")[0]}
-
-${REST_NOTE}`);
-  return { url: facts.length <= URL_LIMIT ? facts : build(PASTE_NOTE), inline: false };
-}
-
-// src/client/api.js
-var ROUTE = "api/bot";
-var REFUSALS = /* @__PURE__ */ new Set(["bot/refused", "bot/invalid", "bot/read-only", "bot/not-found", "bot/browser-off"]);
-var call = async (endpoint, payload, signal) => {
-  let response;
-  try {
-    const headers = { "content-type": "application/json" };
-    try {
-      const token = localStorage.getItem("flybot-member-session");
-      if (token) headers["x-flybot-member-session"] = token;
-    } catch {
+function referenceSpans(text2, labels = []) {
+  const spans = [];
+  for (const label of [...labels].sort((a, b) => b.length - a.length)) {
+    const mention = `@${label}`;
+    for (let at = text2.indexOf(mention); at !== -1; at = text2.indexOf(mention, at + 1)) {
+      const end = at + mention.length;
+      if (at > 0 && ADDRESS_BEFORE.test(text2[at - 1]) || NAME_GOES_ON.test(text2.slice(end)) || overlaps(spans, at, end)) continue;
+      spans.push({ start: at, end, label });
+      break;
     }
-    response = await fetch(ROUTE, {
-      method: "POST",
-      credentials: "same-origin",
-      headers,
-      body: JSON.stringify({ endpoint, payload: payload ?? null }),
-      signal
-    });
-  } catch (error) {
-    if (error?.name === "AbortError") throw error;
-    noteClientError(endpoint, Object.assign(new Error(`network error: ${error?.message ?? error}`), { code: "NETWORK" }));
-    throw markNoted(Object.assign(new Error(t("Could not reach DSH. Check that it is still running.")), { code: "NETWORK", cause: error }));
   }
-  if (!response.ok) {
-    const error = Object.assign(new Error(hostText(`HTTP ${response.status}`)), { code: `HTTP_${response.status}` });
-    noteClientError(endpoint, error);
-    throw error;
+  return spans.sort((a, b) => a.start - b.start);
+}
+function mentionSpans(text2, bots, { references = [] } = {}) {
+  const value = String(text2 ?? "");
+  const skip = [
+    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
+    ...referenceSpans(value, references)
+  ];
+  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
+  const spans = [];
+  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
+    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
+    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
+    const all = bot ? void 0 : ALL_WORDS.find((word) => fitsAt(value, at + 1, word));
+    if (!bot && !all) continue;
+    const end = at + 1 + (bot ? bot.name.length : all.length);
+    spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
+    at = end - 1;
   }
-  const result = await response.json();
-  if (!result.ok) {
-    const code = result.error?.code ?? "bot/error";
-    const message = hostText(result.error?.message || "Request failed");
-    const error = Object.assign(new Error(code === "bot/internal" ? `${message} ${t("Settings → Feedback has the details.")}` : message), { code, details: result.error?.details });
-    if (!REFUSALS.has(code)) {
-      noteClientError(endpoint, Object.assign(new Error(result.error?.message || "Request failed"), { code }));
-      markNoted(error);
+  return spans;
+}
+function unmatchedMentions(text2, bots, { references = [] } = {}) {
+  const value = String(text2 ?? "");
+  const skip = [
+    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
+    ...referenceSpans(value, references)
+  ];
+  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
+  const missing = [];
+  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
+    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
+    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
+    const all = bot ? void 0 : ALL_WORDS.find((word2) => fitsAt(value, at + 1, word2));
+    if (bot || all) {
+      at += 1 + (bot ? bot.name.length : all.length) - 1;
+      continue;
     }
-    throw error;
+    const word = /^[^\s@,，。.!?！？:：;；、()（）"'“”]{1,40}/.exec(value.slice(at + 1))?.[0];
+    if (word) missing.push(`@${word}`);
   }
-  return result.value;
-};
+  return missing;
+}
 
 // src/shared/text-boundary.js
 var isHighSurrogate = (code) => code >= 55296 && code <= 56319;
@@ -1973,6 +1929,506 @@ function faceAliases(participant, name) {
   const names = [name, participant.label, title, ...legacy, handle];
   return [...new Set(names.map(trimmed).filter(Boolean))];
 }
+
+// src/shared/preview.js
+var FENCE_TAG = /<\s*\/?\s*untrusted-(?:message|file)\b[^<>]*>/gi;
+var FENCE_ATTR = /\bfrom\s*=\s*(?:"[^"]*"|'[^']*')\s*>/gi;
+var FENCE_TAIL = /<[^<>]*\buntrusted-(?:message|file)\b[^<>]*$/i;
+var FENCE_BARE = /(?:\/\s*)?untrusted-(?:message|file)\b\s*>?/gi;
+function stripFence(text2) {
+  let out = String(text2 ?? "");
+  for (let previous; previous !== out; ) {
+    previous = out;
+    out = out.replace(FENCE_TAG, "").replace(FENCE_ATTR, "");
+  }
+  return out.replace(FENCE_TAIL, "").replace(FENCE_BARE, "");
+}
+function visibleText(text2) {
+  let out = String(text2 ?? "");
+  for (let previous; previous !== out; ) {
+    previous = out;
+    const open = out.indexOf("<untrusted-message");
+    if (open < 0) break;
+    const close = out.lastIndexOf("</untrusted-message>");
+    const inner = close > open ? out.slice(out.indexOf(">", open) + 1, close) : out;
+    out = stripFence(inner);
+  }
+  return stripFence(out).replace(/\s+/g, " ").trim();
+}
+
+// src/client/text.js
+var MENTION_ORIGIN = "https://bots.local/";
+function linkMentions(text2, bots, selfId) {
+  if (!text2 || !text2.includes("@")) return text2;
+  const ordered = [...bots ?? []].sort((a, b) => Number(Boolean(a?.remote)) - Number(Boolean(b?.remote)));
+  let out = "";
+  let cursor = 0;
+  for (const span of mentionSpans(text2, ordered)) {
+    if (!span.bot || span.bot.id === selfId) continue;
+    out += `${text2.slice(cursor, span.start)}[${text2.slice(span.start + 1, span.end).replace(/[[\]\\]/g, "\\$&")}](${MENTION_ORIGIN}${span.bot.id})`;
+    cursor = span.end;
+  }
+  return cursor === 0 ? text2 : out + text2.slice(cursor);
+}
+function mentionTarget(event) {
+  const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
+  return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
+}
+function nameMentions(text2, roster) {
+  const value = String(text2 ?? "");
+  if (!value.includes("@") || roster === null || typeof roster !== "object") return value;
+  const records = [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []];
+  const names = /* @__PURE__ */ new Map();
+  for (const record of records) {
+    const handle = typeof record?.remote === "object" && record.remote !== null ? record.remote.handle : record?.handle;
+    if (typeof handle === "string" && typeof record?.name === "string" && record.name !== "") names.set(handle.replace(/^@+/, "").toLowerCase(), remoteMentionLabel(record, records));
+  }
+  const handles = [...names.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (handles.length === 0) return value;
+  const source = handles.map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return value.replace(new RegExp(`(^|[^a-z0-9_./])@(${source})(?![a-z0-9_\\-/\\\\])(?!\\.[a-z0-9_-])`, "gi"), (_all, before, handle) => `${before}@${names.get(handle.toLowerCase())}`);
+}
+function clock(ms) {
+  return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
+}
+function dayLabel(ms) {
+  const date = new Date(ms);
+  const today = /* @__PURE__ */ new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  return sameDay ? t("Today {time}", { time: clock(ms) }) : `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric" })} ${clock(ms)}`;
+}
+function relativeShort(ms) {
+  const diff = Math.max(0, Date.now() - ms);
+  if (diff < 6e4) return t("just now");
+  if (diff < 36e5) return t("{n} min", { n: Math.floor(diff / 6e4) });
+  if (diff < 864e5) return t("{n} h", { n: Math.floor(diff / 36e5) });
+  if (diff < 30 * 864e5) return t("{n} d", { n: Math.floor(diff / 864e5) });
+  return new Date(ms).toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
+}
+var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
+var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
+var currentPart = (bot) => bot.sessionId ?? bot.id;
+function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
+  const bot = last ? roster.byId[last.botId] : void 0;
+  const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
+  const main = roster.byId[mainId];
+  const destinations = [
+    bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : void 0,
+    bot && stay ? last.sessionId : void 0,
+    held ? last.sessionId : void 0,
+    main ? currentPart(main) : mainId
+  ].filter((id) => id !== void 0);
+  if (sessions === void 0) return destinations[0];
+  return destinations.find((id) => sessions.byId?.[id] !== void 0);
+}
+function reminderPrompts(text2) {
+  const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
+  const batch = /^reminders_json: (.*)$/m.exec(text2);
+  try {
+    const prompts = [...one ? [JSON.parse(one[1])] : [], ...batch ? JSON.parse(batch[1]).map((entry) => entry.reminder_prompt) : []];
+    return prompts.filter((prompt) => typeof prompt === "string" && prompt.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+function cutText(value, max) {
+  const points = [...String(value ?? "")];
+  return points.length > max ? `${points.slice(0, max).join("")}…` : points.join("");
+}
+var stripHeader = (text2) => text2.replace(HEADER, "");
+function stripTrace(text2, names = []) {
+  if (typeof text2 !== "string") return text2;
+  const cut2 = text2.indexOf("\n");
+  const head = (cut2 < 0 ? text2 : text2.slice(0, cut2)).trim();
+  const line2 = dropKnownTrace(head, names);
+  if (line2 === head) return text2;
+  const rest = cut2 < 0 ? "" : text2.slice(cut2 + 1);
+  if (line2 === "") return rest.replace(/^\s+/, "");
+  return rest === "" ? line2 : `${line2}
+${rest}`;
+}
+var COPY_FENCE = /untrusted-(?:message|file)\b/i;
+var escapeName = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var sortedNames = (names) => (Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter(Boolean).sort((a, b) => b.length - a.length);
+var isTraceLine = (line2, known) => {
+  if (known.length === 0 || /[.!?。！？:：,，]/.test(line2.replace(/→/g, ""))) return false;
+  const hop = `(?:${known.map(escapeName).join("|")})`;
+  return new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*$`).test(line2);
+};
+function stripFlatTrace(text2, names = []) {
+  const body = String(text2 ?? "");
+  const known = sortedNames(names);
+  if (known.length === 0) return body;
+  const hop = `(?:${known.map(escapeName).join("|")})(?=[ \\t→,，.。:：]|$)`;
+  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*(?=\\S)`);
+  const found = trace.exec(body);
+  return found ? body.slice(found[0].length) : body;
+}
+function copyBodyOf(text2, names = []) {
+  let body = String(text2 ?? "");
+  for (let previous; previous !== body; ) {
+    previous = body;
+    body = stripHeader(body);
+  }
+  const lines = [];
+  const known = sortedNames(names);
+  let first = true;
+  for (const raw of body.split("\n")) {
+    if (COPY_FENCE.test(raw)) {
+      const words = visibleText(raw);
+      if (words !== "") {
+        lines.push(first ? stripFlatTrace(words, known) : words);
+        first = false;
+      }
+      continue;
+    }
+    const line2 = raw.trim();
+    if (line2 === "") {
+      lines.push("");
+      continue;
+    }
+    if (isTraceLine(line2, known)) continue;
+    lines.push(first ? stripFlatTrace(line2, known) : line2);
+    first = false;
+  }
+  return lines.join("\n").trim();
+}
+function copyNames(roster) {
+  const names = [];
+  const records = [...Object.values(roster?.byId ?? {}), ...Array.isArray(roster?.bots) ? roster.bots : []];
+  for (const bot of records) {
+    const name = typeof bot?.name === "string" ? bot.name.trim() : "";
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names.sort((a, b) => b.length - a.length);
+}
+function transcriptOf(list, id, name, hiddenTurns = [], names = []) {
+  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+  if (!Array.isArray(outline)) return "";
+  const lines = [];
+  for (const entry of outline) {
+    if (hiddenTurns.includes(entry.turn)) continue;
+    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t("You")}:** ${entry.prompt.trim()}`);
+    if (entry.response) lines.push(`**${name}:** ${copyBodyOf(entry.response, names)}`);
+  }
+  return lines.join("\n\n");
+}
+function latestMemoryChange(news, ids) {
+  const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
+  return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
+}
+function summaryBlocks(text2) {
+  const blocks = [];
+  let paragraph = [];
+  const flush = () => {
+    if (paragraph.length > 0) blocks.push({ kind: "p", text: paragraph.join(" ") });
+    paragraph = [];
+  };
+  for (const raw of String(text2 ?? "").split("\n")) {
+    const line2 = raw.trim().replace(/\*\*|__/g, "");
+    const heading = /^#{1,6}\s+(.+)$/.exec(line2);
+    if (heading) {
+      flush();
+      blocks.push({ kind: "h", text: heading[1].trim() });
+    } else if (line2 === "") {
+      flush();
+    } else {
+      paragraph.push(line2.replace(/^[-*•]\s+/, ""));
+    }
+  }
+  flush();
+  return blocks;
+}
+function typedBy(roster, sessionId, turn) {
+  if (sessionId === void 0 || turn === void 0) return void 0;
+  const name = roster.remoteTypedTurns?.[sessionId]?.[turn];
+  return typeof name === "string" && name ? name : void 0;
+}
+function isHiddenTurn(roster, sessionId, turn) {
+  if (sessionId === void 0 || turn === void 0) return false;
+  return (roster.exchangeTurns[sessionId] ?? []).includes(turn);
+}
+var toolName = (root) => root.name || root.call?.name;
+var pluginTools = /* @__PURE__ */ new Set();
+function setPluginTools(names) {
+  pluginTools = new Set((Array.isArray(names) ? names : []).filter((name) => typeof name === "string"));
+}
+var isPluginTool = (name) => typeof name === "string" && pluginTools.has(name);
+var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
+function toolArgs(root) {
+  if (typeof root.args?.text === "function") {
+    return { text: (key) => root.args.text(key) ?? void 0, value: (key) => typeof root.args.value === "function" ? root.args.value(key) : void 0 };
+  }
+  let parsed;
+  const object = () => {
+    if (parsed === void 0) {
+      try {
+        parsed = JSON.parse(root.argsRaw ?? root.call?.argsRaw ?? "");
+      } catch {
+        parsed = null;
+      }
+      if (typeof parsed !== "object" || Array.isArray(parsed)) parsed = null;
+    }
+    return parsed;
+  };
+  return {
+    text: (key) => {
+      const value = object()?.[key];
+      return typeof value === "string" ? value : void 0;
+    },
+    value: (key) => object()?.[key]
+  };
+}
+var RELAY_ROLES = /* @__PURE__ */ new Set(["request", "reply", "stopped"]);
+var isRelayContext = (data) => {
+  const source = data?.source;
+  if (source === null || typeof source !== "object" || source.kind !== "bot" || source.handoff === true) return false;
+  if (source.deferred === true || source.resumed === true || source.retried === true) return false;
+  return RELAY_ROLES.has(source.role) && typeof source.senderSessionId === "string";
+};
+var stepShows = (step) => (step?.blocks ?? []).some((block) => {
+  if (block === void 0 || block.kind === "tool-call") return false;
+  return block.kind === "text" || block.kind === "reasoning" ? String(block.text ?? "").trim() !== "" : true;
+});
+var stepHasReasoning = (step) => (step?.blocks ?? []).some((block) => block?.kind === "reasoning" && String(block.text ?? "").trim() !== "");
+var relayPart = (data, groupPart) => groupPart === void 0 || (stepHasReasoning(data) ? groupPart === "reasoning" : groupPart === "response");
+function relaysBefore(contexts, steps, step) {
+  const index = steps.findIndex((entry) => entry?.step === step?.step);
+  if (index === -1) return [];
+  let prev = -Infinity;
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    if (stepShows(steps[cursor])) {
+      prev = steps[cursor].time;
+      break;
+    }
+  }
+  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
+}
+function commRunOf(order, peers, turn, hiddenTurns = []) {
+  const turns = [];
+  for (const entry of order) {
+    const peer = peers[entry];
+    const hidden = hiddenTurns.includes(entry);
+    if (hidden && peer === void 0) continue;
+    turns.push({ turn: entry, peer, hidden });
+  }
+  const at = turns.findIndex((entry) => entry.turn === turn);
+  if (at === -1 || turns[at].peer === void 0) return null;
+  const previous = turns[at - 1];
+  if (previous?.peer !== void 0 && previous.hidden) return "folded";
+  let count = 0;
+  const peerIds = [];
+  for (let index = at; index < turns.length; index += 1) {
+    const entry = turns[index];
+    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
+    count += entry.hidden ? 2 : 1;
+    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
+  }
+  return { count, peerIds };
+}
+function heldReplyOf(bot, sessionId, turn) {
+  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : [];
+  let found;
+  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply;
+  return found;
+}
+var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
+function previewOf(list, id, hiddenTurns = [], unsentTurns = [], names = []) {
+  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
+  if (!Array.isArray(outline)) return "";
+  for (let index = outline.length - 1; index >= 0; index -= 1) {
+    const entry = outline[index];
+    if (hiddenTurns.includes(entry.turn)) continue;
+    const text2 = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
+    if (text2 === "") continue;
+    return readableLine(text2, names);
+  }
+  return "";
+}
+function readableLine(text2, names = []) {
+  return collapsedLine(text2, names);
+}
+function collapsedLine(text2, names = []) {
+  return dropKnownTrace(visibleText(stripHeader(`${text2}`)), names);
+}
+function dropKnownTrace(line2, names) {
+  const known = [...new Set((Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter((name) => name !== ""))].sort((a, b) => b.length - a.length);
+  if (known.length === 0 || line2 === "") return line2;
+  const hop = known.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const whole = `(?:${hop})(?=[ \\t→,，.。:：]|$)`;
+  const trace = new RegExp(`^${whole}(?:[ \\t]*→[ \\t]*${whole})+[ \\t]*(?:[,，.。:：][ \\t]*)?(?:\\d{1,2}:\\d{2}Z?[ \\t]*)?`);
+  const match = trace.exec(line2);
+  if (!match) return line2;
+  const rest = line2.slice(match[0].length);
+  return /^[\s,，.。:：]*$/.test(rest) ? "" : rest;
+}
+var botNames = (roster) => [...roster?.bots ?? [], ...roster?.remoteBots ?? [], ...roster?.agents ?? []].map((entry) => entry?.name).filter((name) => typeof name === "string" && name !== "");
+function speechOf(text2, names = []) {
+  return readableLine(text2, names).replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>|~-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
+function usageOf(list, ids) {
+  let input = 0;
+  let cacheRead = 0;
+  let output = 0;
+  for (const id of ids) {
+    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
+    if (!usage) continue;
+    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+    cacheRead += usage.cacheReadTokens ?? 0;
+    output += usage.outputTokens ?? 0;
+  }
+  if (input + output === 0) return "";
+  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
+  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
+}
+function faceRowTitle(title) {
+  const text2 = String(title ?? "");
+  const named = text2.match(/^Face-to-face · (.+) · (\d{6})$/);
+  if (named) return `${named[2]} · ${named[1]}`;
+  return text2.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text2;
+}
+function modelOf(bot, roster) {
+  const ref = bot.model ?? bot.appliedModel;
+  if (!ref) return void 0;
+  const served = (roster.models ?? []).find((model) => model.ref === ref);
+  const [provider, ...rest] = ref.split("/");
+  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
+}
+function botRowTitle(name, model, wide) {
+  if (model) return `${name} · ${model}`;
+  return wide ? void 0 : name;
+}
+function awayGroups(groups, roomsById) {
+  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
+}
+
+// src/client/diagnostics.js
+var MAX = 30;
+var REPEAT_MS = 5 * 60 * 1e3;
+var entries = [];
+var noted = /* @__PURE__ */ new WeakSet();
+var markNoted = (error) => {
+  if (error !== null && typeof error === "object") noted.add(error);
+  return error;
+};
+function noteClientError(where, error) {
+  if (error !== null && typeof error === "object") {
+    if (noted.has(error)) return;
+    noted.add(error);
+  }
+  const message = String(error?.message ?? error ?? "error").slice(0, 300);
+  const code = typeof error?.code === "string" ? error.code : void 0;
+  const text2 = `${where}: ${message}`;
+  const now = Date.now();
+  const last = entries.at(-1);
+  if (last && last.text === text2 && now - last.time < REPEAT_MS) {
+    last.time = now;
+    last.count = (last.count ?? 1) + 1;
+    return;
+  }
+  entries.push({ time: now, level: "error", text: text2, ...code ? { code } : {} });
+  if (entries.length > MAX) entries.splice(0, entries.length - MAX);
+}
+function noteNavigation(how, target, from) {
+  if (typeof navigator === "undefined" || navigator.userActivation?.isActive !== false) return;
+  const stack = String(new Error().stack ?? "").split("\n").slice(2, 6).map((line2) => line2.trim().replace(/\(?https?:\/\/[^/\s)]+/, "(")).join(" < ");
+  const text2 = `navigation: ${how} to ${String(target).slice(0, 60)}${from ? ` from ${String(from).slice(0, 60)}` : ""} with no click (${stack.slice(0, 300)})`;
+  console.warn(`[flybot] ${text2}`);
+  entries.push({ time: Date.now(), level: "warn", text: text2 });
+  if (entries.length > MAX) entries.splice(0, entries.length - MAX);
+}
+var quietly = (where) => (error) => noteClientError(where, error);
+var clearClientErrors = () => {
+  entries.length = 0;
+};
+var clientErrors = () => entries.map((entry) => entry.count > 1 ? { ...entry, text: `${entry.text} (×${entry.count})` } : { ...entry });
+function clientFacts() {
+  return {
+    surface: window.dshDesktop ? "DSH Desktop" : "DSH Web",
+    language: language(),
+    userAgent: navigator.userAgent
+  };
+}
+var FAILURES = {
+  AUTH: "The API key was rejected",
+  QUOTA: "The account is out of quota",
+  ACCOUNT_QUOTA: "The account is out of quota",
+  RATE_LIMIT: "Too many requests to the model",
+  CONTEXT_WINDOW_EXCEEDED: "The conversation is too long for the model",
+  INVALID_REQUEST: "The model service refused the request",
+  SERVER: "The model service failed",
+  TIMEOUT: "The model took too long to answer",
+  TRANSPORT: "Could not reach the model service",
+  SESSION: "Its group conversation could not open"
+};
+function failureLabel(code, message) {
+  if (FAILURES[code]) return t(FAILURES[code]);
+  const raw = String(message ?? "");
+  if (/api key|no api key|missing (?:api )?key|not configured|no model/i.test(raw)) {
+    return t("This Bot has no model set up yet.");
+  }
+  if (raw || code) return t("This Bot could not answer right now.");
+  return t("Unknown error");
+}
+var URL_LIMIT = 7e3;
+var WHAT_MAX = 2e3;
+var PASTE_NOTE = "FlyBot copied the diagnostics to the clipboard. Paste them here.";
+var REST_NOTE = "The recent errors do not fit in the link. FlyBot copied the diagnostics to the clipboard: paste them below this line.";
+function issueUrl(base, { what = "", diagnostics }) {
+  const text2 = what.trim().slice(0, WHAT_MAX);
+  const title = cutText(text2.split("\n")[0], 80);
+  const build = (body) => `${base}?${new URLSearchParams({ template: "bug.yml", ...title ? { title } : {}, ...text2 ? { what: text2 } : {}, diagnostics: body })}`;
+  const full2 = build(diagnostics);
+  if (full2.length <= URL_LIMIT) return { url: full2, inline: true };
+  const facts = build(`${diagnostics.split("\n\n")[0]}
+
+${REST_NOTE}`);
+  return { url: facts.length <= URL_LIMIT ? facts : build(PASTE_NOTE), inline: false };
+}
+
+// src/client/api.js
+var ROUTE = "api/bot";
+var REFUSALS = /* @__PURE__ */ new Set(["bot/refused", "bot/invalid", "bot/read-only", "bot/not-found", "bot/browser-off"]);
+var call = async (endpoint, payload, signal) => {
+  let response;
+  try {
+    const headers = { "content-type": "application/json" };
+    try {
+      const token = localStorage.getItem("flybot-member-session");
+      if (token) headers["x-flybot-member-session"] = token;
+    } catch {
+    }
+    response = await fetch(ROUTE, {
+      method: "POST",
+      credentials: "same-origin",
+      headers,
+      body: JSON.stringify({ endpoint, payload: payload ?? null }),
+      signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    noteClientError(endpoint, Object.assign(new Error(`network error: ${error?.message ?? error}`), { code: "NETWORK" }));
+    throw markNoted(Object.assign(new Error(t("Could not reach DSH. Check that it is still running.")), { code: "NETWORK", cause: error }));
+  }
+  if (!response.ok) {
+    const error = Object.assign(new Error(hostText(`HTTP ${response.status}`)), { code: `HTTP_${response.status}` });
+    noteClientError(endpoint, error);
+    throw error;
+  }
+  const result = await response.json();
+  if (!result.ok) {
+    const code = result.error?.code ?? "bot/error";
+    const message = hostText(result.error?.message || "Request failed");
+    const error = Object.assign(new Error(code === "bot/internal" ? `${message} ${t("Settings → Feedback has the details.")}` : message), { code, details: result.error?.details });
+    if (!REFUSALS.has(code)) {
+      noteClientError(endpoint, Object.assign(new Error(result.error?.message || "Request failed"), { code }));
+      markNoted(error);
+    }
+    throw error;
+  }
+  return result.value;
+};
 
 // src/client/flybot-registry.js
 var SLOTS = ["flybot.sidebar.section", "flybot.sidebar.structure", "flybot.composer.mention", "flybot.bot.details", "flybot.approvals", "flybot.room.overview", "flybot.room.members", "flybot.session.dock", "flybot.new-chat.action", "flybot.account.header", "flybot.settings.page"];
@@ -2442,462 +2898,6 @@ function clusterOrder(people2) {
   const remotes = list.filter(remote);
   if (list.length <= 4) return [...remotes, ...locals];
   return [...locals, ...remotes];
-}
-
-// src/shared/mentions.js
-var ALL_WORDS = ["all", "everyone", "所有人", "全体"];
-var NAME_GOES_ON = /^(?:[a-z0-9_\-/\\]|\.[a-z0-9_-])/i;
-var ADDRESS_BEFORE = /[a-z0-9_./]/i;
-var LITERAL = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\s]*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\)/g;
-var fitsAt = (text2, at, word) => text2.slice(at, at + word.length).toLowerCase() === word.toLowerCase() && !NAME_GOES_ON.test(text2.slice(at + word.length));
-var overlaps = (spans, start, end) => spans.some((span) => start < span.end && span.start < end);
-var stripInvisible = (value) => String(value ?? "").replace(/\p{Cf}/gu, "");
-var NOT_DRAWN_RANGES = [
-  [847, 847],
-  [4447, 4448],
-  [6068, 6069],
-  [6155, 6157],
-  [6159, 6159],
-  [10240, 10240],
-  [12644, 12644],
-  [65440, 65440],
-  [65024, 65039],
-  [917760, 917999]
-];
-var NOT_DRAWN = new RegExp(`[${NOT_DRAWN_RANGES.map(([from, to]) => `\\u{${from.toString(16)}}${to === from ? "" : `-\\u{${to.toString(16)}}`}`).join("")}]`, "gu");
-var DRAWS_NOTHING = /[\p{Mn}\p{Me}\p{Zs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu;
-function nameProblem(name) {
-  const text2 = stripInvisible(name).trim();
-  if (text2 === "" || text2.replace(DRAWS_NOTHING, "").trim() === "") return "A Bot needs a name";
-  if (/[@`\r\n]/.test(text2)) return "A Bot name cannot contain @, ` or a line break";
-  if (ALL_WORDS.includes(text2.toLowerCase())) return `"${text2}" calls everyone in a group, so it cannot be a Bot name`;
-  return void 0;
-}
-function referenceSpans(text2, labels = []) {
-  const spans = [];
-  for (const label of [...labels].sort((a, b) => b.length - a.length)) {
-    const mention = `@${label}`;
-    for (let at = text2.indexOf(mention); at !== -1; at = text2.indexOf(mention, at + 1)) {
-      const end = at + mention.length;
-      if (at > 0 && ADDRESS_BEFORE.test(text2[at - 1]) || NAME_GOES_ON.test(text2.slice(end)) || overlaps(spans, at, end)) continue;
-      spans.push({ start: at, end, label });
-      break;
-    }
-  }
-  return spans.sort((a, b) => a.start - b.start);
-}
-function mentionSpans(text2, bots, { references = [] } = {}) {
-  const value = String(text2 ?? "");
-  const skip = [
-    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
-    ...referenceSpans(value, references)
-  ];
-  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
-  const spans = [];
-  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
-    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
-    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
-    const all = bot ? void 0 : ALL_WORDS.find((word) => fitsAt(value, at + 1, word));
-    if (!bot && !all) continue;
-    const end = at + 1 + (bot ? bot.name.length : all.length);
-    spans.push(bot ? { start: at, end, bot } : { start: at, end, all: true });
-    at = end - 1;
-  }
-  return spans;
-}
-function unmatchedMentions(text2, bots, { references = [] } = {}) {
-  const value = String(text2 ?? "");
-  const skip = [
-    ...[...value.matchAll(LITERAL)].map((match) => ({ start: match.index, end: match.index + match[0].length })),
-    ...referenceSpans(value, references)
-  ];
-  const byLength = bots.filter((bot) => bot?.name).sort((a, b) => b.name.length - a.name.length);
-  const missing = [];
-  for (let at = value.indexOf("@"); at !== -1; at = value.indexOf("@", at + 1)) {
-    if (at > 0 && ADDRESS_BEFORE.test(value[at - 1]) || overlaps(skip, at, at + 1)) continue;
-    const bot = byLength.find((candidate) => fitsAt(value, at + 1, candidate.name));
-    const all = bot ? void 0 : ALL_WORDS.find((word2) => fitsAt(value, at + 1, word2));
-    if (bot || all) {
-      at += 1 + (bot ? bot.name.length : all.length) - 1;
-      continue;
-    }
-    const word = /^[^\s@,，。.!?！？:：;；、()（）"'“”]{1,40}/.exec(value.slice(at + 1))?.[0];
-    if (word) missing.push(`@${word}`);
-  }
-  return missing;
-}
-
-// src/shared/preview.js
-var FENCE_TAG = /<\s*\/?\s*untrusted-(?:message|file)\b[^<>]*>/gi;
-var FENCE_ATTR = /\bfrom\s*=\s*(?:"[^"]*"|'[^']*')\s*>/gi;
-var FENCE_TAIL = /<[^<>]*\buntrusted-(?:message|file)\b[^<>]*$/i;
-var FENCE_BARE = /(?:\/\s*)?untrusted-(?:message|file)\b\s*>?/gi;
-function stripFence(text2) {
-  let out = String(text2 ?? "");
-  for (let previous; previous !== out; ) {
-    previous = out;
-    out = out.replace(FENCE_TAG, "").replace(FENCE_ATTR, "");
-  }
-  return out.replace(FENCE_TAIL, "").replace(FENCE_BARE, "");
-}
-function visibleText(text2) {
-  let out = String(text2 ?? "");
-  for (let previous; previous !== out; ) {
-    previous = out;
-    const open = out.indexOf("<untrusted-message");
-    if (open < 0) break;
-    const close = out.lastIndexOf("</untrusted-message>");
-    const inner = close > open ? out.slice(out.indexOf(">", open) + 1, close) : out;
-    out = stripFence(inner);
-  }
-  return stripFence(out).replace(/\s+/g, " ").trim();
-}
-
-// src/client/text.js
-var MENTION_ORIGIN = "https://bots.local/";
-function linkMentions(text2, bots, selfId) {
-  if (!text2 || !text2.includes("@")) return text2;
-  const ordered = [...bots ?? []].sort((a, b) => Number(Boolean(a?.remote)) - Number(Boolean(b?.remote)));
-  let out = "";
-  let cursor = 0;
-  for (const span of mentionSpans(text2, ordered)) {
-    if (!span.bot || span.bot.id === selfId) continue;
-    out += `${text2.slice(cursor, span.start)}[${text2.slice(span.start + 1, span.end).replace(/[[\]\\]/g, "\\$&")}](${MENTION_ORIGIN}${span.bot.id})`;
-    cursor = span.end;
-  }
-  return cursor === 0 ? text2 : out + text2.slice(cursor);
-}
-function mentionTarget(event) {
-  const anchor = event.target instanceof Element ? event.target.closest(`a[href^="${MENTION_ORIGIN}"]`) : null;
-  return anchor ? anchor.getAttribute("href").slice(MENTION_ORIGIN.length) : null;
-}
-function nameMentions(text2, roster) {
-  const value = String(text2 ?? "");
-  if (!value.includes("@") || roster === null || typeof roster !== "object") return value;
-  const records = [...Array.isArray(roster.remoteBots) ? roster.remoteBots : [], ...Array.isArray(roster.bots) ? roster.bots : []];
-  const names = /* @__PURE__ */ new Map();
-  for (const record of records) {
-    const handle = typeof record?.remote === "object" && record.remote !== null ? record.remote.handle : record?.handle;
-    if (typeof handle === "string" && typeof record?.name === "string" && record.name !== "") names.set(handle.replace(/^@+/, "").toLowerCase(), remoteMentionLabel(record, records));
-  }
-  const handles = [...names.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
-  if (handles.length === 0) return value;
-  const source = handles.map((handle) => handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  return value.replace(new RegExp(`(^|[^a-z0-9_./])@(${source})(?![a-z0-9_\\-/\\\\])(?!\\.[a-z0-9_-])`, "gi"), (_all, before, handle) => `${before}@${names.get(handle.toLowerCase())}`);
-}
-function clock(ms) {
-  return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
-}
-function dayLabel(ms) {
-  const date = new Date(ms);
-  const today = /* @__PURE__ */ new Date();
-  const sameDay = date.toDateString() === today.toDateString();
-  return sameDay ? t("Today {time}", { time: clock(ms) }) : `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric" })} ${clock(ms)}`;
-}
-function relativeShort(ms) {
-  const diff = Math.max(0, Date.now() - ms);
-  if (diff < 6e4) return t("just now");
-  if (diff < 36e5) return t("{n} min", { n: Math.floor(diff / 6e4) });
-  if (diff < 864e5) return t("{n} h", { n: Math.floor(diff / 36e5) });
-  if (diff < 30 * 864e5) return t("{n} d", { n: Math.floor(diff / 864e5) });
-  return new Date(ms).toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
-}
-var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
-var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
-var currentPart = (bot) => bot.sessionId ?? bot.id;
-function landingPart(roster, last, mainId, { stay = false, view = "", sessions } = {}) {
-  const bot = last ? roster.byId[last.botId] : void 0;
-  const held = last !== null && last !== void 0 && (stay || view === last.sessionId) && sessions?.byId?.[last.sessionId] !== void 0;
-  const main = roster.byId[mainId];
-  const destinations = [
-    bot && currentPart(bot) !== last.sessionId ? currentPart(bot) : void 0,
-    bot && stay ? last.sessionId : void 0,
-    held ? last.sessionId : void 0,
-    main ? currentPart(main) : mainId
-  ].filter((id) => id !== void 0);
-  if (sessions === void 0) return destinations[0];
-  return destinations.find((id) => sessions.byId?.[id] !== void 0);
-}
-function reminderPrompts(text2) {
-  const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
-  const batch = /^reminders_json: (.*)$/m.exec(text2);
-  try {
-    const prompts = [...one ? [JSON.parse(one[1])] : [], ...batch ? JSON.parse(batch[1]).map((entry) => entry.reminder_prompt) : []];
-    return prompts.filter((prompt) => typeof prompt === "string" && prompt.trim() !== "");
-  } catch {
-    return [];
-  }
-}
-function cutText(value, max) {
-  const points = [...String(value ?? "")];
-  return points.length > max ? `${points.slice(0, max).join("")}…` : points.join("");
-}
-var stripHeader = (text2) => text2.replace(HEADER, "");
-function stripTrace(text2, names = []) {
-  if (typeof text2 !== "string") return text2;
-  const cut2 = text2.indexOf("\n");
-  const head = (cut2 < 0 ? text2 : text2.slice(0, cut2)).trim();
-  const line2 = dropKnownTrace(head, names);
-  if (line2 === head) return text2;
-  const rest = cut2 < 0 ? "" : text2.slice(cut2 + 1);
-  if (line2 === "") return rest.replace(/^\s+/, "");
-  return rest === "" ? line2 : `${line2}
-${rest}`;
-}
-var COPY_FENCE = /untrusted-(?:message|file)\b/i;
-var escapeName = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-var sortedNames = (names) => (Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter(Boolean).sort((a, b) => b.length - a.length);
-var isTraceLine = (line2, known) => {
-  if (known.length === 0 || /[.!?。！？:：,，]/.test(line2.replace(/→/g, ""))) return false;
-  const hop = `(?:${known.map(escapeName).join("|")})`;
-  return new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*$`).test(line2);
-};
-function stripFlatTrace(text2, names = []) {
-  const body = String(text2 ?? "");
-  const known = sortedNames(names);
-  if (known.length === 0) return body;
-  const hop = `(?:${known.map(escapeName).join("|")})(?=[ \\t→,，.。:：]|$)`;
-  const trace = new RegExp(`^[ \\t]*${hop}(?:[ \\t]*→[ \\t]*${hop})+[ \\t]*(?=\\S)`);
-  const found = trace.exec(body);
-  return found ? body.slice(found[0].length) : body;
-}
-function copyBodyOf(text2, names = []) {
-  let body = String(text2 ?? "");
-  for (let previous; previous !== body; ) {
-    previous = body;
-    body = stripHeader(body);
-  }
-  const lines = [];
-  const known = sortedNames(names);
-  let first = true;
-  for (const raw of body.split("\n")) {
-    if (COPY_FENCE.test(raw)) {
-      const words = visibleText(raw);
-      if (words !== "") {
-        lines.push(first ? stripFlatTrace(words, known) : words);
-        first = false;
-      }
-      continue;
-    }
-    const line2 = raw.trim();
-    if (line2 === "") {
-      lines.push("");
-      continue;
-    }
-    if (isTraceLine(line2, known)) continue;
-    lines.push(first ? stripFlatTrace(line2, known) : line2);
-    first = false;
-  }
-  return lines.join("\n").trim();
-}
-function copyNames(roster) {
-  const names = [];
-  const records = [...Object.values(roster?.byId ?? {}), ...Array.isArray(roster?.bots) ? roster.bots : []];
-  for (const bot of records) {
-    const name = typeof bot?.name === "string" ? bot.name.trim() : "";
-    if (name && !names.includes(name)) names.push(name);
-  }
-  return names.sort((a, b) => b.length - a.length);
-}
-function transcriptOf(list, id, name, hiddenTurns = [], names = []) {
-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
-  if (!Array.isArray(outline)) return "";
-  const lines = [];
-  for (const entry of outline) {
-    if (hiddenTurns.includes(entry.turn)) continue;
-    if (entry.prompt && !HEADER.test(entry.prompt)) lines.push(`**${t("You")}:** ${entry.prompt.trim()}`);
-    if (entry.response) lines.push(`**${name}:** ${copyBodyOf(entry.response, names)}`);
-  }
-  return lines.join("\n\n");
-}
-function latestMemoryChange(news, ids) {
-  const at = (id) => news?.[id]?.seen ? news[id].at ?? 0 : 0;
-  return ids.reduce((best, id) => at(id) > at(best) ? id : best, ids[0] ?? null);
-}
-function summaryBlocks(text2) {
-  const blocks = [];
-  let paragraph = [];
-  const flush = () => {
-    if (paragraph.length > 0) blocks.push({ kind: "p", text: paragraph.join(" ") });
-    paragraph = [];
-  };
-  for (const raw of String(text2 ?? "").split("\n")) {
-    const line2 = raw.trim().replace(/\*\*|__/g, "");
-    const heading = /^#{1,6}\s+(.+)$/.exec(line2);
-    if (heading) {
-      flush();
-      blocks.push({ kind: "h", text: heading[1].trim() });
-    } else if (line2 === "") {
-      flush();
-    } else {
-      paragraph.push(line2.replace(/^[-*•]\s+/, ""));
-    }
-  }
-  flush();
-  return blocks;
-}
-function typedBy(roster, sessionId, turn) {
-  if (sessionId === void 0 || turn === void 0) return void 0;
-  const name = roster.remoteTypedTurns?.[sessionId]?.[turn];
-  return typeof name === "string" && name ? name : void 0;
-}
-function isHiddenTurn(roster, sessionId, turn) {
-  if (sessionId === void 0 || turn === void 0) return false;
-  return (roster.exchangeTurns[sessionId] ?? []).includes(turn);
-}
-var toolName = (root) => root.name || root.call?.name;
-var pluginTools = /* @__PURE__ */ new Set();
-function setPluginTools(names) {
-  pluginTools = new Set((Array.isArray(names) ? names : []).filter((name) => typeof name === "string"));
-}
-var isPluginTool = (name) => typeof name === "string" && pluginTools.has(name);
-var historyLoading = (snapshot) => snapshot?.openState === "cold" || snapshot?.openState === "loading";
-function toolArgs(root) {
-  if (typeof root.args?.text === "function") {
-    return { text: (key) => root.args.text(key) ?? void 0, value: (key) => typeof root.args.value === "function" ? root.args.value(key) : void 0 };
-  }
-  let parsed;
-  const object = () => {
-    if (parsed === void 0) {
-      try {
-        parsed = JSON.parse(root.argsRaw ?? root.call?.argsRaw ?? "");
-      } catch {
-        parsed = null;
-      }
-      if (typeof parsed !== "object" || Array.isArray(parsed)) parsed = null;
-    }
-    return parsed;
-  };
-  return {
-    text: (key) => {
-      const value = object()?.[key];
-      return typeof value === "string" ? value : void 0;
-    },
-    value: (key) => object()?.[key]
-  };
-}
-var RELAY_ROLES = /* @__PURE__ */ new Set(["request", "reply", "stopped"]);
-var isRelayContext = (data) => {
-  const source = data?.source;
-  if (source === null || typeof source !== "object" || source.kind !== "bot" || source.handoff === true) return false;
-  if (source.deferred === true || source.resumed === true || source.retried === true) return false;
-  return RELAY_ROLES.has(source.role) && typeof source.senderSessionId === "string";
-};
-var stepShows = (step) => (step?.blocks ?? []).some((block) => {
-  if (block === void 0 || block.kind === "tool-call") return false;
-  return block.kind === "text" || block.kind === "reasoning" ? String(block.text ?? "").trim() !== "" : true;
-});
-var stepHasReasoning = (step) => (step?.blocks ?? []).some((block) => block?.kind === "reasoning" && String(block.text ?? "").trim() !== "");
-var relayPart = (data, groupPart) => groupPart === void 0 || (stepHasReasoning(data) ? groupPart === "reasoning" : groupPart === "response");
-function relaysBefore(contexts, steps, step) {
-  const index = steps.findIndex((entry) => entry?.step === step?.step);
-  if (index === -1) return [];
-  let prev = -Infinity;
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    if (stepShows(steps[cursor])) {
-      prev = steps[cursor].time;
-      break;
-    }
-  }
-  return (contexts ?? []).filter((data) => isRelayContext(data) && typeof data.time === "number" && data.time >= prev && data.time < step.time);
-}
-function commRunOf(order, peers, turn, hiddenTurns = []) {
-  const turns = [];
-  for (const entry of order) {
-    const peer = peers[entry];
-    const hidden = hiddenTurns.includes(entry);
-    if (hidden && peer === void 0) continue;
-    turns.push({ turn: entry, peer, hidden });
-  }
-  const at = turns.findIndex((entry) => entry.turn === turn);
-  if (at === -1 || turns[at].peer === void 0) return null;
-  const previous = turns[at - 1];
-  if (previous?.peer !== void 0 && previous.hidden) return "folded";
-  let count = 0;
-  const peerIds = [];
-  for (let index = at; index < turns.length; index += 1) {
-    const entry = turns[index];
-    if (entry.peer === void 0 || index > at && !turns[index - 1].hidden) break;
-    count += entry.hidden ? 2 : 1;
-    if (!peerIds.includes(entry.peer)) peerIds.push(entry.peer);
-  }
-  return { count, peerIds };
-}
-function heldReplyOf(bot, sessionId, turn) {
-  const list = Array.isArray(bot?.heldReplies) ? bot.heldReplies : [];
-  let found;
-  for (const reply of list) if (reply.sessionId === sessionId && String(reply.turn) === String(turn)) found = reply;
-  return found;
-}
-var unsentReplyTurns = (bot, sessionId) => (Array.isArray(bot?.heldReplies) ? bot.heldReplies : []).filter((reply) => reply.sessionId === sessionId && reply.status !== "approved" && reply.status !== "auto").map((reply) => reply.turn);
-function previewOf(list, id, hiddenTurns = [], unsentTurns = [], names = []) {
-  const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
-  if (!Array.isArray(outline)) return "";
-  for (let index = outline.length - 1; index >= 0; index -= 1) {
-    const entry = outline[index];
-    if (hiddenTurns.includes(entry.turn)) continue;
-    const text2 = (unsentTurns.includes(entry.turn) ? "" : entry.response) || entry.prompt || "";
-    if (text2 === "") continue;
-    return readableLine(text2, names);
-  }
-  return "";
-}
-function readableLine(text2, names = []) {
-  return collapsedLine(text2, names);
-}
-function collapsedLine(text2, names = []) {
-  return dropKnownTrace(visibleText(stripHeader(`${text2}`)), names);
-}
-function dropKnownTrace(line2, names) {
-  const known = [...new Set((Array.isArray(names) ? names : []).map((name) => String(name ?? "").trim()).filter((name) => name !== ""))].sort((a, b) => b.length - a.length);
-  if (known.length === 0 || line2 === "") return line2;
-  const hop = known.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const whole = `(?:${hop})(?=[ \\t→,，.。:：]|$)`;
-  const trace = new RegExp(`^${whole}(?:[ \\t]*→[ \\t]*${whole})+[ \\t]*(?:[,，.。:：][ \\t]*)?(?:\\d{1,2}:\\d{2}Z?[ \\t]*)?`);
-  const match = trace.exec(line2);
-  if (!match) return line2;
-  const rest = line2.slice(match[0].length);
-  return /^[\s,，.。:：]*$/.test(rest) ? "" : rest;
-}
-var botNames = (roster) => [...roster?.bots ?? [], ...roster?.remoteBots ?? [], ...roster?.agents ?? []].map((entry) => entry?.name).filter((name) => typeof name === "string" && name !== "");
-function speechOf(text2, names = []) {
-  return readableLine(text2, names).replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>|~-]+/g, " ").replace(/\s+/g, " ").trim();
-}
-var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
-function usageOf(list, ids) {
-  let input = 0;
-  let cacheRead = 0;
-  let output = 0;
-  for (const id of ids) {
-    const usage = list.projectionsBySession?.[id]?.values?.tokenUsage;
-    if (!usage) continue;
-    input += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
-    cacheRead += usage.cacheReadTokens ?? 0;
-    output += usage.outputTokens ?? 0;
-  }
-  if (input + output === 0) return "";
-  const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
-  return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
-}
-function faceRowTitle(title) {
-  const text2 = String(title ?? "");
-  const named = text2.match(/^Face-to-face · (.+) · (\d{6})$/);
-  if (named) return `${named[2]} · ${named[1]}`;
-  return text2.match(/^Face-to-face · (\d{6})$/)?.[1] ?? text2;
-}
-function modelOf(bot, roster) {
-  const ref = bot.model ?? bot.appliedModel;
-  if (!ref) return void 0;
-  const served = (roster.models ?? []).find((model) => model.ref === ref);
-  const [provider, ...rest] = ref.split("/");
-  return { ref, name: served?.name ?? rest.join("/"), provider: served?.providerName ?? provider, served: served !== void 0 };
-}
-function botRowTitle(name, model, wide) {
-  if (model) return `${name} · ${model}`;
-  return wide ? void 0 : name;
-}
-function awayGroups(groups, roomsById) {
-  return (groups ?? []).filter((entry) => roomsById?.[entry.id]?.origin !== "face-to-face");
 }
 
 // src/client/sources.js
@@ -21563,9 +21563,13 @@ function readPage(limits) {
     items.push(item);
     return { item, number: items.length, secret };
   };
-  const nameOf = (el, text3, secret) => collapse(
+  const cut2 = (value, max) => {
+    const points = [...String(value ?? "")];
+    return points.length > max ? `${points.slice(0, max).join("")}…` : points.join("");
+  };
+  const nameOf = (el, text3, secret) => cut2(collapse(
     el.getAttribute("aria-label") || text3 || (el.localName === "input" && !secret && NO_VALUE_TYPES.has(el.type) ? el.value : "") || el.getAttribute("placeholder") || el.title || el.getAttribute("alt") || el.querySelector?.("img[alt]")?.alt || el.getAttribute("name") || ""
-  ).slice(0, 80);
+  ), 80);
   const fenced = (code, lang) => {
     const longest = Math.max(2, ...(code.match(/`{3,}/g) || []).map((run) => run.length));
     const fence = "`".repeat(longest + 1);
