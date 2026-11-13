@@ -4478,6 +4478,21 @@ test('#3029: Approve all claims nothing when every send fails, and the failure k
   assert.deepEqual(line.children, ['the hold is stale'])
 })
 
+test('#3044: no card stays clickable while another decision is in flight', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  // The fifth slot is the dock's `busy`, so this is the frame drawn while h1 is being decided.
+  const tree = walk(pluginOf([items, [], true, true, 'h1']).ChatApprovalDock({ bot: { id: 'mine' }, roster: { bots: [] }, room }))
+  const labels = ['Approve', 'Reject', 'Auto-send from now on']
+  const buttons = tree.filter(node => node.type === 'button' && labels.includes(node.children?.[0]))
+  assert.equal(buttons.length, 6, 'two cards, three decisions each')
+  assert.deepEqual(buttons.map(button => button.props.disabled), Array(6).fill(true),
+    'every decision is disabled while one send is in flight, not only the card being decided')
+  assert.equal(tree.find(node => node.props['data-flybot'] === 'approve-all').props.disabled, true)
+})
+
 test('#3016: a chat with no card of its own lists the holds waiting in the other chats', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const roster = {
