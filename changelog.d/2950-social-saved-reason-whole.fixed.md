@@ -1,1 +1,0 @@
-The Bot Social Settings page now shows the reason a saved server address was refused as a whole sentence instead of cutting it at the name length limit (a plain `http://` address ended at "… for localho"), and a genuinely long reason is shortened at a word boundary with `…` ([#2950](https://github.com/ThinkFlowLab/FlyBot/issues/2950)).

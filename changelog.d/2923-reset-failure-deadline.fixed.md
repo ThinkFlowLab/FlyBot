@@ -1,1 +1,0 @@
-A Reset of the whole workflow whose Bot release fails now arms the step deadline of the run it froze, so the lane slot comes back when that deadline fires instead of waiting for the owner to save the graph again. See [#2923](https://github.com/ThinkFlowLab/FlyBot/issues/2923).

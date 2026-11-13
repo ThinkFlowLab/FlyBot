@@ -1,1 +1,0 @@
-A task copied to another Bot now records the reach that Bot had when it was copied, so its card can say `changed since it was set` once the roster moves. The copy path lost the new task's id on its way out of the write, so the reach-at-set was never stored and the copy looked as if it had always had today's reach. See [#2951](https://github.com/ThinkFlowLab/FlyBot/issues/2951).

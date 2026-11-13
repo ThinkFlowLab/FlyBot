@@ -1,1 +1,0 @@
-A read across a multi-part own chat now has a test for the part index it carries: every part named with its window, the current one ending `now`, and the `read_own_chat with part N` hint that leads back to a closed part's handoff note.

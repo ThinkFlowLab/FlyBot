@@ -1,1 +1,0 @@
-A saved Bot Social server choice that exists but cannot be read or parsed no longer makes the whole plugin look uninstalled: the refusal itself stands, but Settings → Bot Social now shows it with the file's path and reason, and Settings → Feedback keeps one line saying the same thing. See [#2945](https://github.com/ThinkFlowLab/FlyBot/issues/2945).
