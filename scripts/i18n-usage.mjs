@@ -1,20 +1,25 @@
-// Finds the plugin side of the interface dictionary: a string in a plugin's client bundle whose
-// text already has a Chinese entry in core's dictionary, but that the plugin draws as a bare
-// literal instead of passing it through `tr()`. `core/test/i18n.test.js` checks the other
-// direction inside core; this is the check that was missing when four friend-card labels stayed
-// English in a zh window (#2994, #2998).
+// Two lexical scans over the plugin clients, from the two sides of core's zh dictionary.
 //
-// The scan is lexical on purpose: a plugin client is one plain ESM file, and a token walk is
-// enough to find the places that draw copy. Only **render positions** count (#2998 ruling):
+// `bareCopy` finds a string whose text already has a zh entry but that the plugin draws as a bare
+// literal instead of passing it through `tr()` (#2998): `core/test/i18n.test.js` checks the other
+// direction inside core, and this is what was missing when four friend-card labels stayed English
+// in a zh window (#2994).
+//
+// `missingCopy` finds the opposite gap (#3002): copy a plugin draws that the dictionary has no
+// entry for at all, so nothing can translate it. Its positions are the copy a plugin actually
+// reads — a value in a `*_COPY` / `*_TEXT` table, and a `text:` property (a status line handed to
+// the renderer, or an `h(...)` prop). A value already translated, a comparison operand, an object
+// key, a state id, a selector and a URL are data, not copy, and never count in either scan.
+//
+// `bareCopy` only counts **render positions** (#2998 ruling):
 //
 //   1. a string child of `h(...)` (argument 3 and later), or a pure template literal there;
 //   2. the value of a copy attribute in an `h(...)` props object: title, aria-label,
 //      aria-description, aria-placeholder, placeholder, alt, label;
 //   3. an identifier bound once to such a literal (`const NAME = '…'`) and used bare in 1 or 2.
 //
-// Everything else is data, not copy: comparisons (`=== 'done'`, `case 'idle'`), object keys,
-// status ids, selectors and URLs are never counted, and `tr()`/`t()`/`hostText()` arguments are
-// already translated. `', '` is the join delimiter, not copy, and is skipped.
+// Both scans are lexical on purpose: a plugin client is one plain ESM file, and a token walk is
+// enough to find the places that draw copy.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -29,6 +34,26 @@ const REGEX_AFTER = new Set([
   'yield', 'await', '=>',
 ])
 const isIdent = ch => /[A-Za-z0-9_$]/.test(ch)
+
+// A backslash escape is one character to the reader, whatever the source spelling was: a table
+// entry written `FlyBot\u2019s` is the same sentence as `FlyBot’s`, and the dictionary is keyed by
+// what a reader sees.
+const ESCAPES = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', v: '\v', 0: '\0' }
+function escapeAt(source, index) {
+  const ch = source[index + 1]
+  if (ch === undefined) return ['', index + 1]
+  if (ch === 'x') return [String.fromCharCode(parseInt(source.slice(index + 2, index + 4), 16)), index + 4]
+  if (ch === 'u') {
+    if (source[index + 2] === '{') {
+      const close = source.indexOf('}', index + 3)
+      const point = parseInt(source.slice(index + 3, close), 16)
+      return [Number.isFinite(point) ? String.fromCodePoint(point) : '', close + 1]
+    }
+    const point = parseInt(source.slice(index + 2, index + 6), 16)
+    return [Number.isFinite(point) ? String.fromCharCode(point) : '', index + 6]
+  }
+  return [ESCAPES[ch] ?? ch, index + 2]
+}
 
 // Every string / identifier the client could draw, with the call frame it sits in. Strings carry
 // the props key they are the value of, when that can be read lexically.
@@ -90,7 +115,12 @@ export function tokens(source) {
       index += 1
       let value = ''
       while (index < source.length && source[index] !== quote) {
-        if (source[index] === '\\') { value += source[index + 1]; index += 2; continue }
+        if (source[index] === '\\') {
+          const [each, next] = escapeAt(source, index)
+          value += each
+          index = next
+          continue
+        }
         if (source[index] === '\n') line += 1
         value += source[index]
         index += 1
@@ -106,7 +136,12 @@ export function tokens(source) {
       let value = ''
       let substituted = false
       while (index < source.length && source[index] !== '`') {
-        if (source[index] === '\\') { index += 2; continue }
+        if (source[index] === '\\') {
+          const [each, next] = escapeAt(source, index)
+          value += each
+          index = next
+          continue
+        }
         if (source[index] === '$' && source[index + 1] === '{') {
           substituted = true
           let depth = 1
@@ -150,17 +185,23 @@ export function tokens(source) {
     }
     if (ch === ')') { calls.pop(); previous = ')'; index += 1; continue }
     if (ch === ']') { if (current()?.kind === 'other') calls.pop(); previous = ']'; index += 1; continue }
+    // Braces are emitted too, so a copy table can be delimited by its own body rather than by
+    // guessing from the props depth.
     if (ch === '{') {
       const call = current()
+      place({ type: 'punct', value: '{' })
       if (call) call.obj += 1
       previous = '{'
+      lastValue = '{'
       index += 1
       continue
     }
     if (ch === '}') {
       const call = current()
+      place({ type: 'punct', value: '}' })
       if (call && call.obj > 0) { call.obj -= 1; call.key = null }
       previous = '}'
+      lastValue = '}'
       index += 1
       continue
     }
@@ -212,7 +253,9 @@ function constants(list) {
     const value = list[at + 3]
     if (keyword.type !== 'ident' || !['const', 'let', 'var'].includes(keyword.value)) continue
     if (name.type !== 'ident' || equals.type !== 'punct' || equals.value !== '=') continue
-    if (value.type !== 'string') continue
+    // Same props depth as the `=`: `const LOCAL_REFUSAL_COPY = { … }` must not read as a binding
+    // to its first key.
+    if (value.type !== 'string' || value.obj !== equals.obj) continue
     bound.set(name.value, value.value)
   }
   return bound
@@ -251,17 +294,98 @@ export function bareCopy(source, file, dictionary = DICTIONARY.zh) {
   return entries
 }
 
-// Every plugin client, in a stable order, so two runs (and two machines) compare the same list.
-export function scanPlugins(pluginsRoot = new URL('../plugins/', import.meta.url)) {
-  const found = []
+// Copy a plugin keeps in a table: `const LOCAL_REFUSAL_COPY = { … }`, `const FACE_SCAN_COPY = { … }`,
+// `const …_TEXT = { … }`. A table value may be a function (`STATE_TEXT.connected: t => t(…)`), which
+// is already translated, so only a value sitting directly after its key is read.
+const COPY_TABLE = /_(COPY|TEXT)$/
+
+function copyTables(list) {
+  const bodies = []
+  for (let at = 0; at + 3 < list.length; at += 1) {
+    const keyword = list[at]
+    const name = list[at + 1]
+    const equals = list[at + 2]
+    const open = list[at + 3]
+    if (keyword.type !== 'ident' || !['const', 'let', 'var'].includes(keyword.value)) continue
+    if (name.type !== 'ident' || !COPY_TABLE.test(name.value)) continue
+    if (equals.type !== 'punct' || equals.value !== '=') continue
+    if (open.type !== 'punct' || open.value !== '{') continue
+    let depth = 0
+    let end = -1
+    for (let each = at + 3; each < list.length; each += 1) {
+      if (list[each].type !== 'punct') continue
+      if (list[each].value === '{') depth += 1
+      else if (list[each].value === '}') {
+        depth -= 1
+        if (depth === 0) { end = each; break }
+      }
+    }
+    if (end > 0) bodies.push({ start: at + 3, end })
+  }
+  return bodies
+}
+
+// A value drawn as copy but with no zh entry at all: the bug #3002 found. The positions are the
+// ones a plugin actually reads copy from — a `*_COPY` / `*_TEXT` table value, and a `text:` property
+// (a status line handed to the renderer, or an `h(...)` prop). A value that is already translated
+// (`t('…')`, `tr('…')`), a comparison operand, an object key and the `', '` join delimiter are data,
+// not copy, and stay out.
+const copyValue = (list, at) => {
+  const previous = list[at - 1]
+  const key = list[at - 2]
+  if (previous?.type === 'punct' && previous.value === ':' && key && (key.type === 'ident' || key.type === 'string') && key.value === 'text') return true
+  return false
+}
+
+export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
+  const list = tokens(source)
+  const bound = constants(list)
+  const tables = copyTables(list)
+  const entries = []
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'string' && token.type !== 'ident') continue
+    if (translated(token)) continue
+    const before = list[at - 1]
+    const after = list[at + 1]
+    if (before?.type === 'punct' && COMPARISONS.has(before.value)) continue
+    if (after?.type === 'punct' && COMPARISONS.has(after.value)) continue
+    if (token.obj > 0 && after?.type === 'punct' && after.value === ':') continue
+    const inTable = tables.some(body => at > body.start && at < body.end)
+    if (!inTable && !copyValue(list, at)) continue
+    // Inside a table only a direct value counts; a nested call or function body is not one.
+    if (inTable && !(before?.type === 'punct' && before.value === ':')) continue
+    const key = token.type === 'string' ? token.value : bound.get(token.value)
+    if (key === undefined || key === '' || key === ', ') continue
+    if (Object.hasOwn(dictionary, key)) continue
+    entries.push({ file, line: token.line, key })
+  }
+  return entries
+}
+
+function pluginClients(pluginsRoot) {
+  const clients = []
   for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const file = join(fileURLToPath(pluginsRoot), entry.name, 'client.js')
     let source
     try { source = readFileSync(file, 'utf8') } catch { continue }
-    found.push(...bareCopy(source, `plugins/${entry.name}/client.js`))
+    clients.push({ file: `plugins/${entry.name}/client.js`, source })
   }
-  return found.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1))
+  return clients.sort((a, b) => (a.file < b.file ? -1 : 1))
+}
+
+const byPlace = (a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1)
+
+// Every plugin client, in a stable order, so two runs (and two machines) compare the same list.
+export function scanPlugins(pluginsRoot = new URL('../plugins/', import.meta.url)) {
+  return pluginClients(pluginsRoot).flatMap(({ file, source }) => bareCopy(source, file)).sort(byPlace)
+}
+
+// The other half of the same walk: copy a plugin draws that the dictionary has no entry for, so
+// nothing can translate it at all (#3002).
+export function scanMissing(pluginsRoot = new URL('../plugins/', import.meta.url)) {
+  return pluginClients(pluginsRoot).flatMap(({ file, source }) => missingCopy(source, file)).sort(byPlace)
 }
 
 // The baseline is one `file:line:key` string per bare draw, sorted; a fix deletes its entry and
@@ -270,16 +394,23 @@ export function baselineOf(entries) {
   return [...new Set(entries.map(entry => `${entry.file}:${entry.line}:${entry.key}`))].sort()
 }
 
+const flagValue = name => {
+  const at = process.argv.indexOf(name)
+  return at < 0 ? null : process.argv[at + 1]
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const entries = scanPlugins()
+  const missing = process.argv.includes('--missing')
+  const entries = missing ? scanMissing() : scanPlugins()
+  const write = flagValue('--write')
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify({ version: 1, entries: baselineOf(entries) }, null, 2))
-  } else if (process.argv.includes('--write')) {
-    const target = process.argv[process.argv.indexOf('--write') + 1]
-    writeFileSync(target, `${JSON.stringify({ version: 1, entries: baselineOf(entries) }, null, 2)}\n`)
-    console.log(`wrote ${entries.length} entries to ${target}`)
+  } else if (write) {
+    writeFileSync(write, `${JSON.stringify({ version: 1, entries: baselineOf(entries) }, null, 2)}\n`)
+    console.log(`wrote ${entries.length} entries to ${write}`)
   } else {
     for (const entry of entries) console.log(`${entry.file}:${entry.line}: ${JSON.stringify(entry.key)}`)
-    console.log(`${entries.length} bare draws in ${new Set(entries.map(entry => entry.file)).size} files`)
+    const what = missing ? 'drawn copy strings with no zh entry' : 'bare draws'
+    console.log(`${entries.length} ${what} in ${new Set(entries.map(entry => entry.file)).size} files`)
   }
 }
