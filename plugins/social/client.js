@@ -1136,7 +1136,7 @@ window.__ModuleLoader__.load({
           h('button', {
             type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-invite-mint',
             disabled: !!busy || (!!invite?.url && live), onClick: mint,
-          }, invite?.url && live ? 'Link ready' : 'Create link')),
+          }, invite?.url && live ? 'Link ready' : tr('Create link'))),
         invite?.unsupported
           ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, INVITE_UNSUPPORTED)
           : null,
@@ -1923,7 +1923,7 @@ window.__ModuleLoader__.load({
     }
     function faceChipLabel(room) {
       const chip = faceChip(room)
-      if (chip === 'open') return 'Open'
+      if (chip === 'open') return tr('Open')
       if (chip === 'closed') return 'Closed'
       if (chip === 'left') return 'Left'
       if (chip === 'ended') return 'ended'
@@ -2116,7 +2116,7 @@ window.__ModuleLoader__.load({
           // A failure the sender marked as never retryable (#954) offers no Retry: the Bot is gone, so the button
           // could only repeat the same card.
           canRetry(item) ? h('div', { className: 'fs-actions fs-chat-actions' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, 'Retry')) : null)
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, tr('Retry'))) : null)
       }
       const { from, to } = holdParties(item)
       const text = shownHoldText(item.text || item.summary || '', to)
@@ -3219,7 +3219,7 @@ window.__ModuleLoader__.load({
             h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
           h('div', { className: 'fs-line' },
-            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, 'Accept invite'))),
+            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, tr('Accept invite')))),
         h('div', { className: 'fs-label', 'data-flybot': 'invite-heading' }, 'Invite a friend'),
         h('div', { className: 'fs-card', 'data-flybot': 'invite-group' },
           // Which Bot the link shares is a labelled picker on its own line, not a bare `C…`; a name too long

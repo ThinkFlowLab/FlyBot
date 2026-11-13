@@ -78,6 +78,18 @@ const drawn = tree => {
   walk(tree, node => { for (const child of node.children ?? []) if (typeof child === 'string') out.push(child) })
   return out
 }
+
+// The text a `data-flybot` node draws, so a case can name the control it means instead of any
+// string on the card (`Open` is a chip value here, not the word on a button).
+const byFlybot = (tree, name) => {
+  const out = []
+  walk(tree, node => {
+    if (node?.props?.['data-flybot'] !== name) return
+    out.push((node.children ?? []).filter(child => typeof child === 'string').join(' '))
+  })
+  return out
+}
+
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 const runEffects = inst => { for (const [, fn] of inst.effects) fn() }
 
@@ -158,5 +170,60 @@ test('#2973: the room invitation card offers a link in the window’s language',
     const words = drawn(render(app.FaceRoomOverview, inst))
     assert.ok(words.includes(zh['Invite by link']), `expected ${zh['Invite by link']}, saw ${JSON.stringify(words.slice(0, 12))}`)
     assert.ok(!words.includes('Invite by link'), 'the English label is still drawn')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2994: the accept-invite submit says so in the window’s language', async () => {
+  const app = loadApp()
+  fixtures()
+  try {
+    const inst = { hooks: {}, effects: [], props: {} }
+    render(app.AddFriend, inst)
+    runEffects(inst)
+    await tick()
+    const words = drawn(render(app.AddFriend, inst))
+    assert.ok(words.includes(zh['Accept invite']), `expected ${zh['Accept invite']}, saw ${JSON.stringify(words.slice(0, 12))}`)
+    assert.ok(!words.includes('Accept invite'), 'the English submit label is still drawn')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2994: the retry on a failed send says so in the window’s language', async () => {
+  const app = loadApp()
+  fixtures()
+  try {
+    const item = { status: 'failed', from: '@me.home', to: '@eve.home', error: 'boom' }
+    const inst = { hooks: {}, effects: [], props: { item } }
+    const retry = byFlybot(render(app.ChatApproval, inst), 'hold-retry')
+    assert.deepEqual(retry, [zh.Retry], `expected ${JSON.stringify([zh.Retry])}, saw ${JSON.stringify(retry)}`)
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2994: the open room chip says so in the window’s language', async () => {
+  const app = loadApp()
+  fixtures()
+  try {
+    const room = { id: 'r1', origin: 'face-to-face', face: { roomId: 'frm1', status: 'open' }, participants: [] }
+    const inst = { hooks: {}, effects: [], props: { room, roster: { byId: {} }, actions: {} } }
+    render(app.FaceRoomOverview, inst)
+    runEffects(inst)
+    await tick()
+    const chips = byFlybot(render(app.FaceRoomOverview, inst), 'face-status')
+    assert.ok(chips.includes(zh.Open), `expected ${zh.Open}, saw ${JSON.stringify(chips.slice(0, 6))}`)
+    assert.ok(!chips.includes('Open'), 'the English chip is still drawn')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2994: the mint button on the room invite says so in the window’s language', async () => {
+  const app = loadApp()
+  fixtures()
+  try {
+    const room = { id: 'r1', origin: 'face-to-face', face: { roomId: 'frm1', status: 'open' }, participants: [] }
+    const inst = { hooks: {}, effects: [], props: { room, roster: { byId: {} }, actions: {} } }
+    render(app.FaceRoomOverview, inst)
+    runEffects(inst)
+    await tick()
+    const mint = byFlybot(render(app.FaceRoomOverview, inst), 'face-invite-mint')
+    assert.ok(mint.includes(zh['Create link']), `expected ${zh['Create link']}, saw ${JSON.stringify(mint)}`)
+    assert.ok(!mint.includes('Create link'), 'the English mint label is still drawn')
   } finally { delete globalThis.__flybot__ }
 })
