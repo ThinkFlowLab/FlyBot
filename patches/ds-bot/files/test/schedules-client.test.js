@@ -156,9 +156,26 @@ test('a repeat that is not a whole number of minutes reads as seconds, not round
 })
 
 test('whole-minute and whole-hour repeats keep the words they had (#1651 d)', () => {
-  for (const [seconds, want] of [[60, 'Every 1 minutes'], [5400, 'Every 90 minutes'], [3600, 'Every hour'], [7200, 'Every 2 hours'], [86400, 'Every day'], [172800, 'Every 2 days']]) {
+  for (const [seconds, want] of [[60, 'Every minute'], [120, 'Every 2 minutes'], [5400, 'Every 90 minutes'], [3600, 'Every hour'], [7200, 'Every 2 hours'], [86400, 'Every day'], [172800, 'Every 2 days']]) {
     assert.equal(timingText(EVERY(seconds)), want, `${seconds}s`)
   }
+})
+
+// #2979: the shortest repeat DSH allows is 60 s, and only that value hit the plural. The edit
+// form names the unit with the count beside it, so one unit reads singular there too.
+test('the edit form names one unit in the singular and more in the plural (#2979)', () => {
+  const unitLabels = (seconds) => {
+    const task = EVERY(seconds)
+    seeded.push({ available: true, tasks: [task] }, task)
+    const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: spy() }))
+    const form = all(card).find(node => node.type === 'form')
+    assert.ok(form, `${seconds}s: the edited row is a form`)
+    const select = all(form).find(node => node.type === 'select' && node.props['aria-label'] === 'Unit')
+    assert.equal(select.props.value, 'minutes', `${seconds}s`)
+    return all(select).filter(node => node.type === 'option').map(option => text(option).join(''))
+  }
+  assert.deepEqual(unitLabels(60), ['second', 'minute', 'hour', 'day'])
+  assert.deepEqual(unitLabels(120), ['seconds', 'minutes', 'hours', 'days'])
 })
 
 test('the edit form holds a non-whole-minute interval exactly (#1651 a)', () => {

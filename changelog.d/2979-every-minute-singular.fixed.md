@@ -1,0 +1,1 @@
+A 60-second repeat now reads `Every minute` instead of `Every 1 minutes` on the task card and in the form, and the form's unit reads singular beside a count of 1 (`1 minute`) with the four unit words translated. See [#2979](https://github.com/ThinkFlowLab/FlyBot/issues/2979).

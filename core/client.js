@@ -1320,8 +1320,13 @@ var ZH = {
   "Every {count} days": "每 {count} 天",
   "Every hour": "每小时",
   "Every {count} hours": "每 {count} 小时",
+  "Every minute": "每分钟",
   "Every {count} minutes": "每 {count} 分钟",
   "Every {count} seconds": "每 {count} 秒",
+  second: "秒",
+  minute: "分钟",
+  hour: "小时",
+  day: "天",
   "Once, {time}": "一次，{time}",
   "Every day at {time}": "每天 {time}",
   "Every {days} at {time}": "每{days} {time}",
@@ -3873,7 +3878,7 @@ function weekdayNames(days) {
 function everyText(seconds) {
   if (seconds % 86400 === 0) return seconds === 86400 ? t("Every day") : t("Every {count} days", { count: seconds / 86400 });
   if (seconds % 3600 === 0) return seconds === 3600 ? t("Every hour") : t("Every {count} hours", { count: seconds / 3600 });
-  if (seconds % 60 === 0) return t("Every {count} minutes", { count: seconds / 60 });
+  if (seconds % 60 === 0) return seconds === 60 ? t("Every minute") : t("Every {count} minutes", { count: seconds / 60 });
   return t("Every {count} seconds", { count: seconds });
 }
 function timingText(task) {
@@ -4029,7 +4034,7 @@ function inAnHour() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
 }
 var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
-var UNITS = [["seconds", 1, "seconds"], ["minutes", 60, "minutes"], ["hours", 3600, "hours"], ["days", 86400, "days"]];
+var UNITS = [["seconds", 1, "second", "seconds"], ["minutes", 60, "minute", "minutes"], ["hours", 3600, "hour", "hours"], ["days", 86400, "day", "days"]];
 function localInput(ms) {
   const date = new Date(ms);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -4142,7 +4147,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
           (0, import_react4.createElement)(
             "select",
             { className: "bt-select bt-task-unit", value: unit, "aria-label": t("Unit"), onChange: (event) => setUnit(event.target.value) },
-            UNITS.map(([id, , label]) => (0, import_react4.createElement)("option", { key: id, value: id }, t(label)))
+            UNITS.map(([id, , one, many]) => (0, import_react4.createElement)("option", { key: id, value: id }, t(Number(count) === 1 ? one : many)))
           )
         ) : null
       )
