@@ -1966,10 +1966,12 @@ function visibleText(text2) {
   for (let previous; previous !== out; ) {
     previous = out;
     const open = out.indexOf("<untrusted-message");
-    if (open < 0) break;
     const close = out.lastIndexOf("</untrusted-message>");
-    const inner = close > open ? out.slice(out.indexOf(">", open) + 1, close) : out;
-    out = stripFence(inner);
+    if (open < 0 || close <= open) break;
+    const head = out.slice(0, open);
+    const inner = out.slice(out.indexOf(">", open) + 1, close);
+    const tail = out.slice(close + "</untrusted-message>".length);
+    out = stripFence(head) + inner + stripFence(tail);
   }
   return stripFence(out).replace(/\s+/g, " ").trim();
 }
