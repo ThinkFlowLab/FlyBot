@@ -1,1 +1,0 @@
-A server address saved in Settings that this build cannot use is now named on the Bot Social settings page, with the reason, instead of silently reading as `Profile default` — the address still does not take effect and the profile default keeps running, but the page no longer hides that a saved choice was discarded. See [#2946](https://github.com/ThinkFlowLab/FlyBot/issues/2946).

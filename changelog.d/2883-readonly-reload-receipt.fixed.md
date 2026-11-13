@@ -1,1 +1,0 @@
-A read-only window's Reload now answers: the press writes one receipt naming what happened — the window is still read-only, or it can write again ([#2883](https://github.com/ThinkFlowLab/FlyBot/issues/2883)).
