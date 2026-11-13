@@ -2504,6 +2504,18 @@ window.__ModuleLoader__.load({
       const approveAll = async () => {
         for (const item of mine.filter(waiting)) await decide(item, 'approve')
       }
+      // #3011: the button says what it will send and to whom, so the blast radius of a click that
+      // cannot be undone is readable before it. One entry per person, in draw order; a hold whose
+      // person never resolved keeps the title at the count alone rather than inventing a name.
+      const toApprove = mine.filter(waiting)
+      const approveRecipients = toApprove.reduce((people, item) => {
+        const name = typeof item.toName === 'string' ? item.toName.trim() : ''
+        return name && !people.includes(name) ? [...people, name] : people
+      }, [])
+      const approveAllLabel = `Approve all (${toApprove.length})`
+      const approveAllTitle = approveRecipients.length
+        ? `${toApprove.length} 条 · to ${approveRecipients.join(', ')}`
+        : `${toApprove.length} 条`
       // #1640: this card is drawn exactly when the room's own card is decided somewhere this chat does
       // not draw. A held reply is decided on its own bubble here (#418); a Bot's hold is decided in a
       // chat this person can open (#254). A card we cannot place keeps the neutral sentence: the dock
@@ -2544,7 +2556,7 @@ window.__ModuleLoader__.load({
       return h('div', { 'data-flybot': 'chat-approvals' },
         mine.length > 1 && mine.some(waiting)
           ? h('div', { className: 'fs-chat-actions' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll }, 'Approve all'))
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll, title: approveAllTitle }, approveAllLabel))
           : null,
         error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
         mine.map(item => h(ChatApproval, {
