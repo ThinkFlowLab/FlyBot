@@ -388,10 +388,58 @@ export function scanMissing(pluginsRoot = new URL('../plugins/', import.meta.url
   return pluginClients(pluginsRoot).flatMap(({ file, source }) => missingCopy(source, file)).sort(byPlace)
 }
 
-// The baseline is one `file:line:key` string per bare draw, sorted; a fix deletes its entry and
-// the set may only shrink.
+// The missing-entry baseline is one `file:line:key` string per draw, sorted; a fix deletes its
+// entry and the set may only shrink.
 export function baselineOf(entries) {
   return [...new Set(entries.map(entry => `${entry.file}:${entry.line}:${entry.key}`))].sort()
+}
+
+// The bare-draw baseline is keyed by where the copy lives, not by the line it happens to sit on
+// (#3003): `file:key`, and `#n` when one file draws the same key more than once, so the two
+// "Waiting for approval" draws stay two entries. A comment inserted above a draw moves no entry;
+// the line stays in the failure text as a hint and is never stored.
+export function drawEntries(entries) {
+  const ordered = [...entries].sort(byPlace)
+  const totals = new Map()
+  for (const entry of ordered) {
+    const pair = `${entry.file}\u0000${entry.key}`
+    totals.set(pair, (totals.get(pair) ?? 0) + 1)
+  }
+  const seen = new Map()
+  return ordered.map(entry => {
+    const pair = `${entry.file}\u0000${entry.key}`
+    const nth = (seen.get(pair) ?? 0) + 1
+    seen.set(pair, nth)
+    const id = totals.get(pair) > 1 ? `${entry.file}:${entry.key}#${nth}` : `${entry.file}:${entry.key}`
+    return { ...entry, id }
+  })
+}
+
+export function drawBaselineOf(entries) {
+  return [...new Set(drawEntries(entries).map(entry => entry.id))].sort()
+}
+
+// `--write` may shrink the pinned set or replace it with the same size, but never grow it: a
+// larger baseline is exactly what laundering a new bare draw looks like (#3003). `--force` is the
+// explicit way to accept the larger set; a missing baseline file is created, not refused.
+export function writeBaseline(target, entries, { force = false, identity = drawBaselineOf } = {}) {
+  const next = identity(entries)
+  let previous = null
+  try {
+    previous = JSON.parse(readFileSync(target, 'utf8')).entries
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  const before = new Set(previous ?? [])
+  const after = new Set(next)
+  const added = next.filter(entry => !before.has(entry))
+  const removed = (previous ?? []).filter(entry => !after.has(entry))
+  // Growing the set is the laundering shape; replacing one entry with another at the same size is
+  // how a duplicate's survivor renumbers after one of its twins is fixed, and a shrink is a fix,
+  // so only a strictly larger set is refused without `--force`.
+  if (previous !== null && added.length > 0 && next.length > previous.length && !force) return { written: false, added, removed, entries: next }
+  writeFileSync(target, `${JSON.stringify({ version: 1, entries: next }, null, 2)}\n`)
+  return { written: true, added, removed, entries: next }
 }
 
 const flagValue = name => {
@@ -402,12 +450,20 @@ const flagValue = name => {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const missing = process.argv.includes('--missing')
   const entries = missing ? scanMissing() : scanPlugins()
+  const identity = missing ? baselineOf : drawBaselineOf
   const write = flagValue('--write')
   if (process.argv.includes('--json')) {
-    console.log(JSON.stringify({ version: 1, entries: baselineOf(entries) }, null, 2))
+    console.log(JSON.stringify({ version: 1, entries: identity(entries) }, null, 2))
   } else if (write) {
-    writeFileSync(write, `${JSON.stringify({ version: 1, entries: baselineOf(entries) }, null, 2)}\n`)
-    console.log(`wrote ${entries.length} entries to ${write}`)
+    const result = writeBaseline(write, entries, { force: process.argv.includes('--force'), identity })
+    if (!result.written) {
+      for (const entry of result.added) console.log(`  + ${entry}`)
+      for (const entry of result.removed) console.log(`  - ${entry}`)
+      console.log(`refusing to grow the baseline: +${result.added.length}/-${result.removed.length}; pass --force to accept it`)
+      process.exitCode = 1
+    } else {
+      console.log(`wrote ${result.entries.length} entries to ${write} (+${result.added.length}/-${result.removed.length})`)
+    }
   } else {
     for (const entry of entries) console.log(`${entry.file}:${entry.line}: ${JSON.stringify(entry.key)}`)
     const what = missing ? 'drawn copy strings with no zh entry' : 'bare draws'
