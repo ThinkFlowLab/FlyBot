@@ -641,7 +641,9 @@ window.__ModuleLoader__.load({
           row,
           h('button', {
             type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'pending-retry',
-            disabled: busy === item.id, onClick: () => onRetry(item),
+            // #3050: the dock drops every Retry while any decision is in flight, so the list goes
+            // disabled with it — an enabled button whose click is swallowed is a dead click.
+            disabled: !!busy, onClick: () => onRetry(item),
           }, tr('Retry')))
       }
       const failedItems = items.filter(item => item.status === 'failed')
