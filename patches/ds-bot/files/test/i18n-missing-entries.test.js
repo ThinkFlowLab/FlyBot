@@ -3,9 +3,11 @@
 // can draw untranslatable English in a zh window forever while every check stays green.
 //
 // This is the second scan, from the other side: it reads copy a plugin keeps in a `*_COPY` /
-// `*_TEXT` table and a `text:` property it draws (a status line handed to the renderer, or an
-// `h(...)` prop), then compares each value with the dictionary keys. A value with no zh key cannot
-// be translated — it is the gap, and the baseline pins today's gaps as `file:line:key`.
+// `*_TEXT` table and the props it hands copy through — `text:` (a status line handed to the
+// renderer, or an `h(...)` prop) and the copy attributes the sibling scan already reads (`label`,
+// `hint` and the rest of `COPY_ATTRS`) — then compares each value with the dictionary keys. A value
+// with no zh key cannot be translated — it is the gap, and the baseline pins today's gaps as
+// `file:line:key`.
 //
 // The baseline may only shrink: fixing a sentence adds its dictionary entry and deletes its line
 // here; deleting the sentence from the code must delete its line too, or the entry is stale.
@@ -39,7 +41,7 @@ test('a plugin string drawn as copy has a Chinese dictionary entry', () => {
   assert.deepEqual(problems, [], problems.join('\n'))
 })
 
-test('the scan counts copy tables and text props, not data', () => {
+test('the scan counts copy tables and copy props, not data', () => {
   const source = [
     "const REFUSAL_COPY = { expired: 'Too late.', busy: 'Wait a moment.' }",
     "const STATE_TEXT = { connected: t => t('Connected') }",
@@ -47,6 +49,8 @@ test('the scan counts copy tables and text props, not data', () => {
     "setStatus({ tone: 'error', text: 'Enter a 6-digit number.' })",
     "setInvite({ status: { tone: 'error', text: INVITE_UNSUPPORTED } })",
     "h('div', { className: 'fs-status', role: status === 'done' ? 'status' : 'note' }, tr('Member'))",
+    "h(QrImage, { text: qrText, kind: 'face-qr', label: 'QR code for this room', hint: 'Scan this to join' })",
+    "const shape = { hint: 'A shape, not a draw', label: 'so this one is data' }",
     "const picked = row.status === 'done' ? 'done' : 'running'",
   ].join('\n')
   assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), [
@@ -54,5 +58,7 @@ test('the scan counts copy tables and text props, not data', () => {
     'Wait a moment.',
     'Enter a 6-digit number.',
     'Invites need a newer Bot Social.',
+    'QR code for this room',
+    'Scan this to join',
   ])
 })
