@@ -1131,7 +1131,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-invite-head' },
           h('span', { className: 'fs-label-inline' }, tr('Invite by link')),
           invite?.url && !live
-            ? h('span', { className: 'fs-hint', 'data-flybot': 'face-invite-ended' }, 'This link has expired.')
+            ? h('span', { className: 'fs-hint', 'data-flybot': 'face-invite-ended' }, tr('This link has expired.'))
             : null,
           h('button', {
             type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-invite-mint',
@@ -1141,7 +1141,7 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, INVITE_UNSUPPORTED)
           : null,
         invite?.revoked
-          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-revoked', role: 'status' }, 'The link was withdrawn. Nobody can join with it now.')
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-revoked', role: 'status' }, tr('The link was withdrawn. Nobody can join with it now.'))
           : null,
         invite?.error
           ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-fail', 'data-tone': 'error', role: 'status' }, invite.error)
@@ -1154,10 +1154,10 @@ window.__ModuleLoader__.load({
             }),
             h('div', { className: 'fs-invite-link' },
               h('code', { className: 'fs-invite-url', 'data-flybot': 'face-invite-url' }, invite.url),
-              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-copy', onClick: copy }, copied ? 'Copied' : 'Copy link')),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-copy', onClick: copy }, copied ? 'Copied' : tr('Copy link'))),
             h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-count' },
-              invite.expiresAt ? countdown(invite.expiresAt) : 'Anyone with the link can join while the room is open.'),
-            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-revoke', disabled: !!busy, onClick: revoke }, 'Withdraw link'))
+              invite.expiresAt ? countdownLine(countdown(invite.expiresAt)) : 'Anyone with the link can join while the room is open.'),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-revoke', disabled: !!busy, onClick: revoke }, tr('Withdraw link')))
           : null)
     }
     // #876: Invite by link in a local group's Members card. The host makes the link (Bot Social records
@@ -1821,7 +1821,7 @@ window.__ModuleLoader__.load({
               qrOffsetMs: room.clockOffsetMs,
             }),
             h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
-              ? (room.expiresAt ? countdown(room.expiresAt, room.clockOffsetMs) : 'Anyone with the number can still join.')
+              ? (room.expiresAt ? countdownLine(countdown(room.expiresAt, room.clockOffsetMs)) : 'Anyone with the number can still join.')
               : 'The room is open. The number is no longer valid.'),
             h('div', { className: 'fs-wait-body' },
               h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
@@ -2613,15 +2613,18 @@ window.__ModuleLoader__.load({
 
     // Every home counts down to Bot Social's one deadline (#458): `offsetMs` is how far the server's
     // clock runs ahead of this one (0 unless the skew is real).
+    // #2999: the number and the sentence around it are separate, so a zh window can put the same number
+    // inside its own words. `line` is the case with no dictionary entry, drawn as it always was.
     function countdown(expiresAt, offsetMs = 0) {
       const at = Date.parse(expiresAt) - (Number(offsetMs) || 0)
-      if (!Number.isFinite(at)) return 'Anyone with the number can still join'
+      if (!Number.isFinite(at)) return { line: 'Anyone with the number can still join' }
       const left = Math.max(0, at - Date.now())
-      if (left <= 0) return 'Joining has ended'
+      if (left <= 0) return { line: 'Joining has ended' }
       // m:ss, so the line visibly ticks every second (#306); minutes alone looked frozen.
       const total = Math.max(1, Math.ceil(left / 1000))
-      return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} left to join`
+      return { time: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` }
     }
+    const countdownLine = (value) => value.line ?? tr('{time} left to join', { time: value.time })
     // ---- Scanning a room code (#773) -------------------------------------------------
     // No camera, no platform decoder, or a camera the owner refused: one sentence each, and
     // typing the number keeps working. FlyBot never decodes pixels itself.
@@ -2843,7 +2846,7 @@ window.__ModuleLoader__.load({
             qrOffsetMs: snapshot?.clockOffsetMs,
           }),
           h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
-            expiresAt ? countdown(expiresAt, snapshot?.clockOffsetMs) : 'Anyone with the number can still join.'),
+            expiresAt ? countdownLine(countdown(expiresAt, snapshot?.clockOffsetMs)) : 'Anyone with the number can still join.'),
           h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
             facePeople(members, mineMember).map(person => h(FacePersonTile, {
               key: person.key,

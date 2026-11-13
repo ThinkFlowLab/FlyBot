@@ -227,3 +227,103 @@ test('#2994: the mint button on the room invite says so in the window’s langua
     assert.ok(!mint.includes('Create link'), 'the English mint label is still drawn')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #2999: FaceInviteCard is not exported, so the room panel's tree names it: find the function it mounts
+// and drive that with its own hook slots, the way the panel does, so mint/withdraw actually move state.
+function findType(tree, name) {
+  let found = null
+  walk(tree, node => { if (!found && typeof node.type === 'function' && node.type.name === name) found = node.type })
+  return found
+}
+const faceRoom = { id: 'g1', origin: 'face-to-face', face: { roomId: 'frm1', status: 'open' }, participants: [] }
+function inviteCard(t, reply) {
+  globalThis.__flybot__ = {
+    t,
+    call: (endpoint) => {
+      if (endpoint === 'social/face-invite') return Promise.resolve(reply)
+      if (endpoint === 'social/face-invite-revoke') return Promise.resolve({ revoked: true })
+      return Promise.resolve({})
+    },
+  }
+  const app = loadApp()
+  const panel = { hooks: {}, effects: [], props: { room: faceRoom, roster: { byId: {} }, actions: {} } }
+  const Card = findType(render(app.FaceRoomOverview, panel), 'FaceInviteCard')
+  assert.ok(Card, 'the room panel mounts the invite card')
+  const inst = { hooks: {}, effects: [], props: { roomId: 'frm1' } }
+  return { Card, inst }
+}
+const englishT = (text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
+const click = (tree, name) => {
+  let node = null
+  walk(tree, n => { if (!node && n?.props?.['data-flybot'] === name) node = n })
+  assert.ok(node, `the card draws ${name}`)
+  return node.props.onClick()
+}
+const minted = (Card, inst) => render(Card, inst)
+
+test('#2999: an expired face invite says so in the window’s language', async () => {
+  const reply = { url: 'https://s/r/T', ticket: 'T', expiresAt: '2000-01-01T00:00:00.000Z' }
+  const { Card, inst } = inviteCard(hostT, reply)
+  try {
+    render(Card, inst)
+    await click(minted(Card, inst), 'face-invite-mint')
+    await tick()
+    const words = drawn(render(Card, inst))
+    assert.ok(words.includes(zh['This link has expired.']), `expected ${zh['This link has expired.']}, saw ${JSON.stringify(words.slice(0, 8))}`)
+    assert.ok(!words.includes('This link has expired.'), 'the English expired line is still drawn')
+    assert.ok(byFlybot(render(Card, inst), 'face-invite-mint').includes(zh['Create link']), 'the mint button speaks Chinese too')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2999: a live face invite draws copy, countdown and withdraw in the window’s language', async () => {
+  const reply = { url: 'https://s/r/T', ticket: 'T', expiresAt: new Date(Date.now() + 300_000).toISOString() }
+  const { Card, inst } = inviteCard(hostT, reply)
+  try {
+    render(Card, inst)
+    await click(minted(Card, inst), 'face-invite-mint')
+    await tick()
+    const tree = render(Card, inst)
+    const words = drawn(tree)
+    assert.ok(words.includes(zh['Copy link']), `expected ${zh['Copy link']}, saw ${JSON.stringify(words.slice(0, 12))}`)
+    assert.ok(words.includes(zh['Withdraw link']), `expected ${zh['Withdraw link']}, saw ${JSON.stringify(words.slice(0, 12))}`)
+    const [count] = byFlybot(tree, 'face-invite-count')
+    assert.match(String(count), /^还剩 \d+:\d\d 可加入$/, `expected a Chinese countdown, saw ${JSON.stringify(count)}`)
+    assert.ok(!words.includes('Copy link') && !words.includes('Withdraw link'), 'the English controls are still drawn')
+    await click(render(Card, inst), 'face-invite-revoke')
+    await tick()
+    const after = drawn(render(Card, inst))
+    assert.ok(after.includes(zh['The link was withdrawn. Nobody can join with it now.']), `expected the Chinese withdrawn line, saw ${JSON.stringify(after.slice(0, 8))}`)
+    assert.ok(!after.includes('The link was withdrawn. Nobody can join with it now.'), 'the English withdrawn line is still drawn')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#2999: an English window keeps the invite card’s exact bytes', async () => {
+  const expired = { url: 'https://s/r/T', ticket: 'T', expiresAt: '2000-01-01T00:00:00.000Z' }
+  {
+    const { Card, inst } = inviteCard(englishT, expired)
+    try {
+      render(Card, inst)
+      await click(minted(Card, inst), 'face-invite-mint')
+      await tick()
+      const tree = render(Card, inst)
+      assert.ok(drawn(tree).includes('This link has expired.'), 'the English expired line is unchanged')
+      assert.deepEqual(byFlybot(tree, 'face-invite-mint'), ['Create link'], 'the English mint label is unchanged')
+    } finally { delete globalThis.__flybot__ }
+  }
+  {
+    const { Card, inst } = inviteCard(englishT, { url: 'https://s/r/T', ticket: 'T', expiresAt: new Date(Date.now() + 300_000).toISOString() })
+    try {
+      render(Card, inst)
+      await click(minted(Card, inst), 'face-invite-mint')
+      await tick()
+      const tree = render(Card, inst)
+      const words = drawn(tree)
+      assert.ok(words.includes('Copy link') && words.includes('Withdraw link'), `saw ${JSON.stringify(words.slice(0, 12))}`)
+      const [count] = byFlybot(tree, 'face-invite-count')
+      assert.match(String(count), /^\d+:\d\d left to join$/, `saw ${JSON.stringify(count)}`)
+      await click(render(Card, inst), 'face-invite-revoke')
+      await tick()
+      assert.ok(drawn(render(Card, inst)).includes('The link was withdrawn. Nobody can join with it now.'), 'the English withdrawn line is unchanged')
+    } finally { delete globalThis.__flybot__ }
+  }
+})
