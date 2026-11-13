@@ -11,7 +11,7 @@ import { openJournal } from './journal.js'
 import { ensurePrivateDir, ensurePrivateDirSync, stagePrivateFile } from './private-files.js'
 import { tempWritable } from './real-dir.js'
 import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
-import { codePoints, currentColor, cut, normalize, unquote } from './text.js'
+import { codePoints, currentColor, cut, foldSpaces, normalize, unquote } from './text.js'
 
 // The saved team's format version. Version 2 (#47) adds the identity schema: member
 // records, a per-Bot owner binding, and the owner's designated Chief. A version-1 file
@@ -382,6 +382,22 @@ export function install(rt) {
         delete bot.lab
         migrated = true
       }
+    }
+    // A name saved before #2986's fold kept its run of spaces: the row drew as `Dev Ops` while
+    // `@Dev Ops` reached only a Bot whose stored name had the single space, and creating that twin
+    // on top of it was accepted (#2992). Fold the run once here, before the room names below are
+    // derived from the roster. A folded name another Bot already holds is not taken: renaming a Bot
+    // the user can see is worse than the twin it leaves, and one line says which Bot kept it.
+    for (const bot of Object.values(state.bots)) {
+      if (typeof bot.name !== 'string' || bot.remote !== undefined) continue
+      const folded = foldSpaces(bot.name)
+      if (folded === bot.name) continue
+      if (Object.values(state.bots).some(other => other !== bot && normalize(other.name) === normalize(folded))) {
+        warn('ds-bot: the saved Bot name %s folds onto %s, which another Bot holds; it keeps the name it was saved with', bot.id, folded)
+        continue
+      }
+      bot.name = folded
+      migrated = true
     }
     // A team from before several Main Bots were allowed names a single one.
     if (!Array.isArray(state.mainBotIds)) state.mainBotIds = []

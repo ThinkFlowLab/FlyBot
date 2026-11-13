@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { nameProblem } from '../src/shared/mentions.js'
+import { mentionSpans, nameProblem } from '../src/shared/mentions.js'
 import { drawnKey, nameKey } from '../src/shared/identity.js'
 import { normalize } from '../src/host/text.js'
 import { fakeContext } from './fake-ctx.js'
@@ -33,12 +33,13 @@ const TEAM = () => ({
   revision: 1,
 })
 
-function setup(t, seed = TEAM()) {
+function setup(t, seed = TEAM(), { logger } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-name-identity-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify(seed))
   let sessions = 0
   const agents = new Map()
   const ctx = fakeContext()
+  if (logger) ctx.logger = logger
   const agentFor = async (id) => {
     if (!agents.has(id)) agents.set(id, { id, session: { id, seq: 1 }, followup: () => {}, ctx: { tools: { restrict: () => () => {} }, effect: execute => execute() } })
     return agents.get(id)
@@ -290,6 +291,51 @@ test('#2986 a run of whitespace folds, but a line break is still refused as a li
   }
   await assert.rejects(rt.createBot({ name: 'Dev\nOps', pickModel: true }), /A Bot name cannot contain @, ` or a line break/)
   assert.equal(nameProblem('Dev\nOps'), 'A Bot name cannot contain @, ` or a line break', 'a line break stays a line break, not a space')
+})
+
+// #2992: the fold landed on new writes only. A team saved before it still holds `Dev  Ops`, the
+// screen draws that row as `Dev Ops`, and creating the single-space twin was accepted — two rows
+// the eye cannot tell apart while `@Dev Ops` reaches one of them. A saved name folds once on load,
+// and the clash guard folds both sides so no new twin stands next to an old one.
+const legacyTwin = () => {
+  const team = TEAM()
+  team.bots.ops.name = 'Dev  Ops'
+  return team
+}
+
+test('#2992 a saved name folds on load, so an @ with one space reaches it', async (t) => {
+  const { rt, state } = setup(t, legacyTwin())
+  await rt.load()
+  assert.equal(state().bots.ops.name, 'Dev Ops', 'the saved run of spaces is folded once on load')
+  assert.equal(rt.findBot('Dev Ops')?.id, 'ops')
+  assert.deepEqual(mentionSpans('@Dev Ops: look', Object.values(state().bots)).map(span => span.bot.id), ['ops'])
+})
+
+test('#2992 the single-space twin of a saved name cannot be created', async (t) => {
+  const { rt, state } = setup(t, legacyTwin())
+  await rt.load()
+  await assert.rejects(rt.createBot({ name: 'Dev Ops', pickModel: true }), /^Error: A Bot named Dev Ops already exists$/)
+  assert.deepEqual(Object.keys(state().bots).sort(), ['cafe', 'chief', 'dev', 'ops'], 'a refused create leaves no record behind')
+})
+
+test('#2992 a rename to the single-space twin of a saved name is refused', async (t) => {
+  const { rt, state } = setup(t, legacyTwin())
+  await rt.load()
+  await assert.rejects(rt.updateBot('dev', { name: 'Dev Ops' }), /^Error: Name Dev Ops is not available$/)
+  assert.equal(state().bots.dev.name, 'Dev', 'a refused rename leaves the stored name alone')
+})
+
+test('#2992 two saved names that fold onto one keep the spelling they were saved with', async (t) => {
+  const team = TEAM()
+  team.bots.dev.name = 'Dev  Ops'
+  team.bots.ops.name = 'Dev Ops'
+  const warnings = []
+  const { rt, state } = setup(t, team, { logger: { warn: (...args) => warnings.push(args.join(' ')), info: () => {} } })
+  await rt.load()
+  assert.equal(state().bots.ops.name, 'Dev Ops', 'the name already spelled with one space keeps it')
+  assert.equal(state().bots.dev.name, 'Dev  Ops', 'no Bot is renamed under the user to settle the clash')
+  assert.ok(warnings.some(line => line.includes('Dev Ops')), `one line names the clash, saw ${JSON.stringify(warnings)}`)
+  await assert.rejects(rt.createBot({ name: 'Dev Ops', pickModel: true }), /A Bot named Dev Ops already exists/, 'a third row that draws the same is still refused')
 })
 
 test('#2691 a name is stored without the invisible characters it was written with', async (t) => {

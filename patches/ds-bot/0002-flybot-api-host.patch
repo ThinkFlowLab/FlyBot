@@ -166,7 +166,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -import { MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
 -import { currentColor, isColor, unquote } from './text.js'
 +import { COLORS, EXTRA_COLORS, MAX_AVATAR_IMAGE, ROOM_MAX_MEMBERS, ROOM_MODES, ROOM_NAME_MAX, ROOM_NOTICE_MAX } from './constants.js'
-+import { currentColor, cut, isColor, stripInvisible, unquote } from './text.js'
++import { currentColor, cut, foldSpaces, isColor, stripInvisible, unquote } from './text.js'
  import { nameProblem } from '../shared/mentions.js'
 +import { drawnKey } from '../shared/identity.js'
 +import { cleanExternal } from './room-participant-external.js'
@@ -184,21 +184,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
      state.workspaceId = workspace.id
      await rt.save()
      return workspace.id
-@@ -48,6 +48,13 @@ export function install(rt) {
-     return Object.keys(avatar).length > 0 ? avatar : undefined
-   }
- 
-+  // Every name row draws with `white-space: nowrap`, which collapses a run of whitespace to one
-+  // space: `Dev  Ops` and `Dev Ops` read as the same row while `nameKey` keeps them apart, so
-+  // `@Dev Ops` reaches only the single-space Bot and the other can be seen and never called
-+  // (#2986). A stored name folds the run, the way `cleanRoomName` already does. A line break is
-+  // left as it is, because `nameProblem` refuses it by name rather than folding it into a space.
-+  const foldSpaces = value => String(value ?? '').replace(/[^\S\r\n\u2028\u2029]+/g, ' ')
-+
-   const freshName = (base) => {
-     const stem = base.slice(0, 34)
-     if (!rt.findBot(stem)) return stem
-@@ -56,69 +56,114 @@ export function install(rt) {
+@@ -56,69 +56,115 @@ export function install(rt) {
      return `${stem} ${index}`
    }
  
@@ -211,10 +197,11 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    if (rt.findBot(cleanName)) throw new Error(`A Bot named ${cleanName} already exists`)
 +  // Two names that draw the same read as one Bot on screen, and an `@` only ever reaches the one
 +  // whose `nameKey` matches: the other row can be seen and never called. A stored name keeps the
-+  // characters that draw nothing (#2879), so the guard compares the drawn form as well (#2935).
++  // characters that draw nothing (#2879), so the guard compares the drawn form as well (#2935) —
++  // folded, because a name saved before the run-of-spaces rule can still carry one (#2986, #2992).
 +  const drawnClash = (name, exceptId) => {
-+    const drawn = drawnKey(name)
-+    return Object.values(state.bots).find(bot => bot.remote === undefined && bot.id !== exceptId && drawnKey(bot.name) === drawn)
++    const drawn = drawnKey(foldSpaces(name))
++    return Object.values(state.bots).find(bot => bot.remote === undefined && bot.id !== exceptId && drawnKey(foldSpaces(bot.name)) === drawn)
 +  }
 +
 +  // `pickModel` leaves the model to the user: the chat opens on a model card. So does a
@@ -735,7 +722,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        next = others.with(at, id)
      } else if (primary) {
        next = [id, ...others]
-@@ -417,14 +417,45 @@ export function install(rt) {
+@@ -417,12 +417,43 @@ export function install(rt) {
      }
      // The sidebar shows every Main Bot, so a hidden Bot would vanish again once demoted.
      if (main) delete bot.hidden
@@ -745,9 +732,9 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 -    }
      state.mainBotIds = next
 +    rt.syncDesignatedChief()
-     await rt.save()
-   }
- 
++    await rt.save()
++  }
++
 +  // #638: retire a Bot instead of deleting it. The tree already reads fields['flybot-tree'].retired:
 +  // adoption skips the record and it no longer counts against maxChildren, while its chat, its parts
 +  // and its memory stay where they are. `hidden` keeps it out of the default Bot list the way the
@@ -778,13 +765,11 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 +      delete state.grants[id]
 +      await rt.reachChanged?.(id)
 +    }
-+    await rt.save()
+     await rt.save()
 +    return { bot, freed }
-+  }
-+
+   }
+ 
    async function deleteBot(id) {
-     const bot = rt.botOf(id)
-     if (bot === undefined) throw new Error('Unknown Bot')
 @@ -434,22 +434,54 @@ export function install(rt) {
      const current = rt.chatOf(id)
      // Questions and exchange turns are kept per Session, so every part of the chat is cleared.
@@ -883,7 +868,7 @@ diff --git a/src/host/store.js b/src/host/store.js
 +import { ensurePrivateDir, ensurePrivateDirSync, stagePrivateFile } from './private-files.js'
 +import { tempWritable } from './real-dir.js'
 +import { TEAM_TURNS_PER_DAY } from './turn-budget.js'
-+import { codePoints, currentColor, cut, normalize, unquote } from './text.js'
++import { codePoints, currentColor, cut, foldSpaces, normalize, unquote } from './text.js'
 +
 +// The saved team's format version. Version 2 (#47) adds the identity schema: member
 +// records, a per-Bot owner binding, and the owner's designated Chief. A version-1 file
@@ -1215,6 +1200,29 @@ diff --git a/src/host/store.js b/src/host/store.js
        // LEGACY: Bots saved with a lab ran on that lab's default model; the model they
        // last ran on becomes their own, so dropping the lab changes nothing for them.
        if ('lab' in bot) {
+@@ -128,6 +128,22 @@ export function install(rt) {
+         migrated = true
+       }
+     }
++    // A name saved before #2986's fold kept its run of spaces: the row drew as `Dev Ops` while
++    // `@Dev Ops` reached only a Bot whose stored name had the single space, and creating that twin
++    // on top of it was accepted (#2992). Fold the run once here, before the room names below are
++    // derived from the roster. A folded name another Bot already holds is not taken: renaming a Bot
++    // the user can see is worse than the twin it leaves, and one line says which Bot kept it.
++    for (const bot of Object.values(state.bots)) {
++      if (typeof bot.name !== 'string' || bot.remote !== undefined) continue
++      const folded = foldSpaces(bot.name)
++      if (folded === bot.name) continue
++      if (Object.values(state.bots).some(other => other !== bot && normalize(other.name) === normalize(folded))) {
++        warn('ds-bot: the saved Bot name %s folds onto %s, which another Bot holds; it keeps the name it was saved with', bot.id, folded)
++        continue
++      }
++      bot.name = folded
++      migrated = true
++    }
+     // A team from before several Main Bots were allowed names a single one.
+     if (!Array.isArray(state.mainBotIds)) state.mainBotIds = []
+     if ('mainBotId' in state) {
 @@ -152,6 +152,16 @@ export function install(rt) {
        state.prefs.theme = LEGACY_THEMES[state.prefs.theme]
        migrated = true

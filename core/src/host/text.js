@@ -26,6 +26,11 @@ export const textOf = content => (Array.isArray(content) ? content : [])
 // sibling names, a role label and a memory topic compare by the same rule as a Bot name does.
 export const normalize = nameKey
 
+// A run of horizontal whitespace draws as one space in a name row (`white-space: nowrap`), so a
+// stored name folds the run and so does every comparison that asks what the screen shows (#2986).
+// A line break is left alone: `nameProblem` refuses it by name rather than turning it into a space.
+export const foldSpaces = value => String(value ?? '').replace(/[^\S\r\n\u2028\u2029]+/g, ' ')
+
 export const unquote = text => String(text ?? '').trim().replace(/^["'“”「『《]+|["'“”」』》]+$/g, '').trim()
 
 export const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
