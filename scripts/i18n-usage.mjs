@@ -403,10 +403,35 @@ export function scanMissing(pluginsRoot = new URL('../plugins/', import.meta.url
   return pluginClients(pluginsRoot).flatMap(({ file, source }) => missingCopy(source, file)).sort(byPlace)
 }
 
-// The missing-entry baseline is one `file:line:key` string per draw, sorted; a fix deletes its
-// entry and the set may only shrink.
+// The missing-entry baseline is keyed by where the copy lives, not by the line it happens to sit on:
+// `file:key`, plus `#n` when one file draws the same key at more than one position, so a second
+// position stays a second pin. An edit above a draw moves its line and nothing else, and a rebase
+// that only moved lines must leave the pins alone — a line number in the key turned every such
+// rebase into a whole-file rewrite (#3018, #3020). Two draws at one position (title: and
+// aria-label: on one line) still pin once; the line stays in the walk's output as a hint.
+export function missingPins(entries) {
+  const positions = new Map()
+  for (const entry of entries) {
+    const at = `${entry.file}:${entry.line}:${entry.key}`
+    if (!positions.has(at)) positions.set(at, entry)
+  }
+  const ordered = [...positions.values()].sort(byPlace)
+  const totals = new Map()
+  for (const entry of ordered) {
+    const pair = `${entry.file}\u0000${entry.key}`
+    totals.set(pair, (totals.get(pair) ?? 0) + 1)
+  }
+  const seen = new Map()
+  return ordered.map(entry => {
+    const pair = `${entry.file}\u0000${entry.key}`
+    const nth = (seen.get(pair) ?? 0) + 1
+    seen.set(pair, nth)
+    return totals.get(pair) > 1 ? `${entry.file}:${entry.key}#${nth}` : `${entry.file}:${entry.key}`
+  })
+}
+
 export function baselineOf(entries) {
-  return [...new Set(entries.map(entry => `${entry.file}:${entry.line}:${entry.key}`))].sort()
+  return missingPins(entries).sort()
 }
 
 // The bare-draw baseline is keyed by where the copy lives, not by the line it happens to sit on
@@ -468,8 +493,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const identity = missing ? baselineOf : drawBaselineOf
   // One identity for every reader of this run: `--json` prints it, `--write` pins it and the tail
   // line counts it, so the count can never disagree with the file a reader compares it with. The
-  // walk still lists each draw (two attributes on one line are two draws); the count is pins, and a
-  // `file:line:key` is pinned once (#3017).
+  // walk still lists each draw (two attributes on one line are two draws); the count is pins, a
+  // pin is `file:key` with `#n` for a second position, and two draws at one position pin once
+  // (#3017).
   const counted = identity(entries)
   const write = flagValue('--write')
   if (process.argv.includes('--json')) {

@@ -6,7 +6,7 @@
 // `*_TEXT` table, a `text:` prop, and the `h(...)` copy attributes — `COPY_ATTRS` plus `hint` (see
 // `MISSING_ATTRS` in `scripts/i18n-usage.mjs`; one definition, not a second hand-copied list) —
 // then compares each value with the dictionary keys. A value with no zh key cannot be translated —
-// it is the gap, and the baseline pins today's gaps as `file:line:key`. Exactly two `placeholder`
+// it is the gap, and the baseline pins today's gaps by where the copy lives, `file:key`. Exactly two `placeholder`
 // values on main name an example of the expected input (`https://social.example`,
 // `github, composio`); those two literals are data, not copy, and are not reported. The skip is
 // that exact set, not a pattern: any other URL- or list-shaped placeholder is still reported.
@@ -107,11 +107,10 @@ test('the widened scan names every copy attribute and skips placeholder examples
   )
 })
 
-// The same sentence drawn twice at one position — title: and aria-label: on one line — is one pin,
-// because `baselineOf` keys a draw by `file:line:key`. The tail line is what a reader compares with
-// the baseline file, so it must report that identity, the same number `--missing --json` prints and
-// `--write` pins, not the raw draw array. On main the raw count reads 63 while the JSON and the
-// file hold 61 (#3017).
+// The same sentence drawn twice at one position — title: and aria-label: on one line — is one pin.
+// The tail line is what a reader compares with the baseline file, so it must report that identity,
+// the same number `--missing --json` prints and `--write` pins, not the raw draw array. On main the
+// raw count reads 63 while the JSON and the file hold 61 (#3017).
 test('--missing prints the identity count, not the raw draw count', () => {
   const script = fileURLToPath(new URL('../../scripts/i18n-usage.mjs', import.meta.url))
   const run = (...args) => {
@@ -126,4 +125,30 @@ test('--missing prints the identity count, not the raw draw count', () => {
   const draws = missingCopy("h(Button, { title: 'A new untranslated line.', 'aria-label': 'A new untranslated line.' })", 'plugins/sample/client.js')
   assert.equal(draws.length, 2)
   assert.equal(baselineOf(draws).length, 1)
+})
+
+// The baseline is keyed by where the copy lives, not by the line it happens to sit on: an edit above
+// a draw moves every line below it, and a rebase that only moved lines must not rewrite the pins
+// (#3018 and #3020 each re-took a whole 19-line line-number delta). The walk still prints the line
+// as a hint; the stored key does not carry it.
+test('a line shift does not move a baseline pin', () => {
+  const entries = scanMissing()
+  const shifted = entries.map(entry => ({ ...entry, line: entry.line + 1 }))
+  assert.deepEqual(baselineOf(shifted), baselineOf(entries))
+})
+
+// #3003's shape, on the missing side: one file drawing the same sentence at two positions keeps
+// two pins, numbered `#1`/`#2`; the two draws at one position are still one pin. That keeps a second
+// position from disappearing into the first, and keeps a new duplicate a growth `--write` refuses.
+test('one sentence at two positions in a file is two numbered pins', () => {
+  const source = [
+    "h(Button, { title: 'One more untranslated.', 'aria-label': 'One more untranslated.' })",
+    "h(Button, { title: 'One more untranslated.' })",
+  ].join('\n')
+  const draws = missingCopy(source, 'plugins/sample/client.js')
+  assert.equal(draws.length, 3)
+  assert.deepEqual(baselineOf(draws), [
+    'plugins/sample/client.js:One more untranslated.#1',
+    'plugins/sample/client.js:One more untranslated.#2',
+  ])
 })
