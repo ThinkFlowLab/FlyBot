@@ -63,6 +63,8 @@
     "plugins/workflow/client.js:Waiting for a task",
     "plugins/workflow/client.js:Workflow",
     "plugins/workflow/client.js:Workflow graphs",
+    "plugins/workflow/client.js:retry of {id}",
+    "plugins/workflow/client.js:superseded by {id}",
     "plugins/workflow/client.js:until",
     "plugins/workflow/client.js:when",
     "plugins/workflow/client.js:{count} running",

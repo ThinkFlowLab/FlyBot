@@ -45,6 +45,8 @@ window.__ModuleLoader__.load({
       Flow: '流程图',
       Details: 'Details',
       Runs: '运行记录',
+      'superseded by {id}': '已被 {id} 取代',
+      'retry of {id}': '{id} 的重试',
       Running: '运行中',
       Done: '已完成',
       Failed: '失败',
@@ -1129,6 +1131,16 @@ window.__ModuleLoader__.load({
       return rows
     }
 
+    // The other attempt a Runs row names (#3040): the chip beside it already says Done or Failed,
+    // so this line is the only place a row says which attempt it belongs to. It goes through tr()
+    // like the rest of the tab — the English template literals it replaced stayed English under a
+    // zh UI, and the id stays in the tooltip where a reader can still copy the whole one.
+    function attemptLink(row) {
+      if (row?.supersededBy) return tr('superseded by {id}', { id: row.supersededBy })
+      if (row?.retryOf) return tr('retry of {id}', { id: row.retryOf })
+      return ''
+    }
+
     function wireSvgProps(height, width = WIRE_SPAN * 2) {
       return {
         width,
@@ -1439,6 +1451,7 @@ window.__ModuleLoader__.load({
         const chipLabel = item.paused === true ? tr('Paused') : tr(STATUS_KEY[item.status] ?? 'Queued')
         const reason = item.status === 'failed' ? failureText(item) : ''
         const showReason = Boolean(reason) && reason !== chipLabel
+        const link = attemptLink(item)
         const chipClass = item.paused === true ? 'queued'
           : item.status === 'done' ? 'done'
           : item.status === 'running' ? 'running'
@@ -1448,8 +1461,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'wf-hist-task', title: item.task?.title ?? '' }, taskSummary(item.task, item)),
           h('span', { className: 'wf-hist-meta' },
             item.at ? h('span', { className: 'wf-hist-time' }, runTime(item.at)) : null,
-            item.supersededBy ? h('span', { className: 'wf-hist-retry', title: item.supersededBy }, `superseded by ${item.supersededBy}`) : null,
-            item.retryOf ? h('span', { className: 'wf-hist-retry', title: item.retryOf }, `retry of ${item.retryOf}`) : null,
+            link ? h('span', { className: 'wf-hist-retry', title: item.supersededBy ?? item.retryOf }, link) : null,
             showReason ? h('span', { className: 'wf-hist-reason', title: reason }, reason) : null),
           h('span', { className: `wf-chip ${chipClass}` }, chipLabel))
       }))
@@ -2701,6 +2713,7 @@ window.__ModuleLoader__.load({
       name: 'flybot-workflow', inject: ['flybot'], apply, Section, WorkflowSettings,
       tr, columnOf, shortId, stageMessages, taskSummary, wirePath, WIRE_SPAN, NODE_WIRE_OUT,
       runHistoryRows, liveStageRuns, resolveFocusedRun, newestAttempt, parallelFrameStyle, fitPlane,
+      attemptLink, Runs,
       editPlane, flowLayout, flowRows,
       DRAWER_FLOW_W, NODE_W, NODE_H,
       botPaletteSubtitle, botTint, settledCall, firstGlyph, MiniFlowchart,
