@@ -1129,7 +1129,7 @@ window.__ModuleLoader__.load({
       const live = invite?.url && qrJoinable(invite.expiresAt || 'open', Date.now())
       return h('div', { className: 'fs-invite', 'data-flybot': 'face-invite', 'data-tick': tick },
         h('div', { className: 'fs-invite-head' },
-          h('span', { className: 'fs-label-inline' }, 'Invite by link'),
+          h('span', { className: 'fs-label-inline' }, tr('Invite by link')),
           invite?.url && !live
             ? h('span', { className: 'fs-hint', 'data-flybot': 'face-invite-ended' }, 'This link has expired.')
             : null,
@@ -2110,7 +2110,7 @@ window.__ModuleLoader__.load({
         // the core's held-reply card. Approve/Reject on it would answer "already failed" silently.
         const parties = holdParties(item)
         return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': 'failed', 'data-role': 'owner', role: 'status', title: item.error || undefined },
-          h('div', { className: 'fs-label' }, 'Not sent'),
+          h('div', { className: 'fs-label' }, tr('Not sent')),
           item.from || item.to || item.toName ? h('div', { className: 'fs-sub' }, `${parties.from} → ${parties.to}`) : null,
           item.error ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-error' }, item.error) : null,
           // A failure the sender marked as never retryable (#954) offers no Retry: the Bot is gone, so the button
@@ -3201,7 +3201,7 @@ window.__ModuleLoader__.load({
       // labelled with what it does, and Done closes the panel from the bottom (#343).
       return h('div', { className: 'bt-social-add', 'data-flybot': 'add-friend' },
         h('div', { className: 'fs-face-head' },
-          h('div', { className: 'fs-label fs-label-plain' }, 'Add friend')),
+          h('div', { className: 'fs-label fs-label-plain' }, tr('Add friend'))),
         me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, `You are ${me}`) : null,
         h('div', { className: 'fs-label', 'data-flybot': 'accept-heading' }, 'Accept an invite'),
         h('form', { onSubmit: join, className: 'fs-card bt-social-join', 'data-flybot': 'accept-group' },
@@ -3243,7 +3243,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'accept') }, 'Accept'),
               h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'decline') }, 'Decline'))))) : null,
         outgoing.length ? h('div', { className: 'bt-social-outgoing' },
-          h('div', { className: 'fs-label' }, 'Waiting for them to accept'),
+          h('div', { className: 'fs-label' }, tr('Waiting for them to accept')),
           outgoing.map(item => h('div', { key: item.relationshipId ?? item.handle, className: 'fs-row' },
             h(FaceAvatar, { bot: faceLook({ member: { handle: item.handle, displayName: item.name } }), size: 24 }),
             h('span', { className: 'fs-text' },
@@ -3366,7 +3366,7 @@ window.__ModuleLoader__.load({
           : `Revoke ${who}? They lose this Bot.`
       }
       return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
-        h('div', { className: 'fs-name' }, 'People with access'),
+        h('div', { className: 'fs-name' }, tr('People with access')),
         h('div', { className: 'fs-hint fs-face-note' }, note),
         grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
         grants.map((grant) => {
