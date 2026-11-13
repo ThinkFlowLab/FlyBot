@@ -6769,6 +6769,69 @@ test('#138: leaving a face room drops room-only remotes from Friends\' Bots', as
   assert.equal(after.homes.flatMap(entry => entry.bots).some(bot => bot.handle === '@chief.bob.home'), false)
 })
 
+test('#1819: a seat that was published before the face poll leaves Friends\' Bots on face-leave', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  // The roster already lists the Bot the room will seat (a stale share, or the home carried it in
+  // earlier): remote-bots publishes it before the face poll, which is what used to make
+  // markRoomRemote() treat the seat as an ordinary friend.
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief' }],
+    }],
+  })
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: {} }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await social.registerAll()
+  const handles = value => value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  assert.equal(handles((await call('flybot/social/remote-bots', { fresh: true })).value).includes('@chief.bob.home'), true, 'the seat was published before the room')
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
+  const room = server.face.rooms.get(joined.faceRoomId)
+  room.members.push({ bot_id: 'bot_bob', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false })
+  await call('flybot/social/face-rooms', { poll: true })
+  await call('flybot/social/face-leave', { faceRoomId: joined.faceRoomId })
+  assert.equal(handles((await call('flybot/social/remote-bots', { fresh: true })).value).includes('@chief.bob.home'), false, 'a room-only seat left with the room')
+  // The leftover mark keeps a server that still lists the seat from putting it back.
+  assert.equal(handles((await call('flybot/social/remote-bots', { fresh: true })).value).includes('@chief.bob.home'), false, 'the leftover keeps it out on the next fetch')
+})
+
+test('#1819: a person grant outlives the face room it was also seated in', async (t) => {
+  const { ctx, call, home, stop } = await team()
+  t.after(stop)
+  const server = withFaceRooms(mockServer())
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r1',
+      home: { bot_id: 'h2', handle: '@bob.home', display_name: 'Bob', owner_display_name: 'Bob' },
+      bots: [{ bot_id: 'x1', handle: '@chief.bob.home', display_name: 'Chief' }],
+    }],
+  })
+  // A Bot shared with us by a friend we joined: a person grant, not a room-only seat.
+  const settingsPath = join(home, 'flybot-social-settings.json')
+  writeFileSync(settingsPath, JSON.stringify({ inboundBackfilled: true, inboundBots: { '@chief.bob.home': true } }))
+  const social = createSocial(ctx.flybot, { server: 'https://s', token: 'owner-token', fetch: server.fetch, inboxPollMs: 0, autoAccept: false, settingsPath }, {
+    client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }),
+    home: { id: 'h1', handle: '@danyang.home' },
+  })
+  t.after(() => social.dispose())
+  await social.registerAll()
+  const handles = value => value.homes.flatMap(entry => entry.bots).map(bot => bot.handle)
+  const joined = (await call('flybot/social/face-join', { start: true, code: '123456', botId: 'a' })).value
+  const room = server.face.rooms.get(joined.faceRoomId)
+  room.members.push({ bot_id: 'bot_bob', handle: '@chief.bob.home', display_name: 'Chief', owner_name: 'Bob', published: false })
+  await call('flybot/social/face-rooms', { poll: true })
+  await call('flybot/social/face-leave', { faceRoomId: joined.faceRoomId })
+  assert.equal(handles((await call('flybot/social/remote-bots', { fresh: true })).value).includes('@chief.bob.home'), true, 'a granted friend\'s Bot is not a room-only seat')
+})
+
 test('#140: new friends default Auto-send off; settings report false', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
