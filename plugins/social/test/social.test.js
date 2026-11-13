@@ -14894,3 +14894,72 @@ test('#2231: a writable window still ages a hidden remote and drops a settled ac
   assert.equal(saved.hiddenRemotes?.['@gone.bob.home'], undefined, 'a second absence still forgets the hide')
   assert.deepEqual(saved.acceptNotices.map(notice => notice.id), ['n2'], 'the notice whose peer shared a Bot back is still dropped')
 })
+
+test('#3048: a hidden folder refusal names the segment it hit and the copy that works instead', async (t) => {
+  const { ctx, tool, stop, home } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const credentialsPath = join(home, 'bot', 'flybot-social.json')
+  mkdirSync(join(home, 'bot'), { recursive: true })
+  writeFileSync(credentialsPath, '{}')
+  const filesDir = join(home, 'files')
+  mkdirSync(filesDir, { recursive: true })
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0, filesDir, credentialsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  // A hidden folder deep in a work path: the refusal names the segment it hit, never the path it was
+  // handed, and it says how to get the file out instead of leaving "private" as a dead end. The
+  // outermost dot segment is the one that has to be left, so a copy out of `.cache` alone still fails
+  // when the whole bench sits under `.dsh`.
+  mkdirSync(join(home, 'proj', '.cache'), { recursive: true })
+  const hidden = join(home, 'proj', '.cache', 'notes.md')
+  writeFileSync(hidden, 'x')
+  const refused = await tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [hidden] }, 'b').then(() => undefined, error => error)
+  const outermost = hidden.match(/(?:^|\/)(\.[^/]+)/)[1]
+  const reason = refused.message.slice(refused.message.indexOf('cannot be attached: '))
+  assert.ok(reason.startsWith(`cannot be attached: ${outermost} is a hidden file or folder, so it stays private`), reason)
+  assert.match(reason, /copy the file to a folder that is not hidden \(for example your home folder\) and attach that copy/)
+  assert.doesNotMatch(reason, /notes\.md|proj|\.cache\//, 'the segment it hit, not the path')
+  assert.doesNotMatch(reason, /\//, 'the reason names one segment and carries no path')
+  // The way out is real: the same file copied out of the dot folder is either an ordinary document,
+  // or it meets a different, outer dot folder — never the one the refusal just named.
+  const copy = join(home, 'proj', 'notes.md')
+  writeFileSync(copy, 'x')
+  const copied = await tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [copy] }, 'b').then(() => 'accepted', error => error.message)
+  if (copied !== 'accepted') {
+    assert.doesNotMatch(copied, /\.cache/, 'the copy is past the dot folder the refusal named')
+    assert.match(copied, /is a hidden file or folder, so it stays private: copy the file/)
+  }
+  // The three other refusals read exactly as they did.
+  writeFileSync(join(home, 'id_rsa'), 'k')
+  writeFileSync(join(home, 'run.sh'), 'x')
+  writeFileSync(join(filesDir, 'held.md'), 'x')
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [credentialsPath] }, 'b'), /cannot be attached: it looks like a credential$/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [join(filesDir, 'held.md')] }, 'b'), /cannot be attached: it is a private FlyBot file$/)
+  await assert.rejects(tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [join(home, 'run.sh')] }, 'b'), /cannot be attached: only \.txt \.md \.csv \.tsv \.json \.pdf \.png \.jpg \.jpeg \.gif \.webp \.docx \.xlsx \.pptx files$/)
+  // The tool description carries the same route, so a Bot reading only the schema knows it.
+  const described = ctx.registeredTools.get('message_friend_bot').parameters.properties.files.description
+  assert.match(described, /hidden file or folder/)
+  assert.match(described, /copy the file to a folder that is not hidden first, then attach that copy/)
+  // A private FlyBot file that itself lives under a dot folder is still refused as a private file, and
+  // a credential under one is still refused as a credential: the route out is only ever said about a
+  // file whose whole problem is the dot name, so "copy it out and attach the copy" is never advice
+  // about credentials. This instance's own directories are inside `.dsh`, the normal deployment.
+  const hiddenTeam = await team()
+  t.after(hiddenTeam.stop)
+  const dotDir = join(hiddenTeam.home, '.dsh', 'bot')
+  const dotFiles = join(dotDir, 'social-files')
+  mkdirSync(dotFiles, { recursive: true })
+  writeFileSync(join(dotFiles, 'held.md'), 'x')
+  const dotCred = join(dotDir, 'flybot-social.json')
+  writeFileSync(dotCred, '{}')
+  const hiddenServer = mockServer()
+  const dotSocial = createSocial(hiddenTeam.ctx.flybot, { autoAccept: true, inboxPollMs: 0, filesDir: dotFiles, credentialsPath: dotCred }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: hiddenServer.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => dotSocial.dispose())
+  await grantTeam(hiddenTeam.ctx.flybot)
+  await dotSocial.registerAll()
+  const dotTool = (name, args) => hiddenTeam.ctx.registeredTools.get(name).execute(args, { agent: { id: 'b' } })
+  await assert.rejects(dotTool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [join(dotFiles, 'held.md')] }), /cannot be attached: it is a private FlyBot file$/)
+  await assert.rejects(dotTool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [dotCred] }), /cannot be attached: it looks like a credential$/)
+})
