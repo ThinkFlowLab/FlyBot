@@ -71,7 +71,7 @@ function weekdayNames(days) {
 function everyText(seconds) {
   if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
   if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
-  if (seconds % 60 === 0) return t('Every {count} minutes', { count: seconds / 60 })
+  if (seconds % 60 === 0) return seconds === 60 ? t('Every minute') : t('Every {count} minutes', { count: seconds / 60 })
   return t('Every {count} seconds', { count: seconds })
 }
 
@@ -218,7 +218,8 @@ function inAnHour() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
 }
 const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
-const UNITS = [['seconds', 1, 'seconds'], ['minutes', 60, 'minutes'], ['hours', 3600, 'hours'], ['days', 86400, 'days']]
+// The form says one unit with one count ("1 minute"), so each unit carries both words.
+const UNITS = [['seconds', 1, 'second', 'seconds'], ['minutes', 60, 'minute', 'minutes'], ['hours', 3600, 'hour', 'hours'], ['days', 86400, 'day', 'days']]
 
 // A stored instant as the value of a datetime-local input, in this browser's zone.
 function localInput(ms) {
@@ -311,7 +312,7 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
           h('span', { className: 'bt-task-every' }, t('Every')),
           h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
           h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
-            UNITS.map(([id, , label]) => h('option', { key: id, value: id }, t(label))))) : null)),
+            UNITS.map(([id, , one, many]) => h('option', { key: id, value: id }, t(Number(count) === 1 ? one : many))))) : null)),
     error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error)) : null,
     h('div', { className: 'bt-set-row bt-task-foot' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
