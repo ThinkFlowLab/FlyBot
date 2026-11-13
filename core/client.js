@@ -831,6 +831,13 @@ var ZH = {
   "Median of the last 7 days, opened to closed.": "近 7 天中位数，开启到关闭。",
   "Median of the last 7 days, created to done.": "近 7 天中位数，创建到完成。",
   "Metrics unavailable": "指标不可用",
+  "Metrics unavailable: {reason}": "指标不可用：{reason}",
+  "this machine has no GitHub token yet": "这台机器还没有配置 GitHub token",
+  "this machine has no way to read GitHub yet": "这台机器没有可用的抓取能力",
+  "this Project has no source to read yet": "这个 Project 还没有可读的数据源",
+  "the metrics source cannot be read right now": "指标数据源现在读不出来",
+  "reading GitHub failed ({detail})": "读取 GitHub 失败（{detail}）",
+  "this Project has nothing to read yet": "这个 Project 还没有可读的记录",
   "Running tasks": "在跑任务",
   "Claimed for": "已做多久",
   "Last activity": "最近活动",
@@ -11856,11 +11863,32 @@ function metricsView(metrics, { tasks } = {}) {
     emptyText: "No metrics read yet."
   };
 }
+var METRICS_REASON_KEYS = [
+  [/^no-credentials$/, "this machine has no GitHub token yet"],
+  [/^no-fetch$/, "this machine has no way to read GitHub yet"],
+  [/^no-source$/, "this Project has no source to read yet"],
+  [/^source-unavailable$/, "the metrics source cannot be read right now"],
+  [/^no Project: /, "this Project has nothing to read yet"]
+];
+var READ_FAILED = /^read-failed:\s*(.+)$/;
+var READ_DETAIL_MAX = 60;
+var shortDetail = (detail) => {
+  const line2 = text(detail);
+  return line2.length <= READ_DETAIL_MAX ? line2 : line2.slice(0, READ_DETAIL_MAX - 1) + "…";
+};
+function metricsReasonText(reason) {
+  const code = text(reason);
+  if (code === "" || !language().startsWith("zh")) return hostText(code);
+  const readFailed = READ_FAILED.exec(code);
+  if (readFailed !== null) return t("reading GitHub failed ({detail})", { detail: shortDetail(readFailed[1]) });
+  const named = METRICS_REASON_KEYS.find(([pattern]) => pattern.test(code));
+  return named === void 0 ? hostText(code) : t(named[1]);
+}
 function ProjectMetrics({ view }) {
   return (0, import_react21.createElement)(
     "section",
     { className: "bt-project-metrics", "data-available": view.available ? "true" : "false" },
-    view.available || view.reason === null ? null : (0, import_react21.createElement)("p", { className: "bt-project-metrics-note" }, t("Metrics unavailable") + ": " + view.reason),
+    view.available || view.reason === null ? null : (0, import_react21.createElement)("p", { className: "bt-project-metrics-note" }, t("Metrics unavailable: {reason}", { reason: metricsReasonText(view.reason) })),
     (0, import_react21.createElement)(
       "div",
       { className: "bt-project-metric-cards" },

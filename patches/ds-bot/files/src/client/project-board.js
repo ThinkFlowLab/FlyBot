@@ -3,7 +3,7 @@
 // `row.id` is the underlying task id — so opening one opens that task and nothing is copied here.
 import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
 import { call } from './api.js'
-import { dateLocale, hostText, t } from './i18n.js'
+import { dateLocale, hostText, language, t } from './i18n.js'
 import { readOnlyLine } from './read-only.js'
 import { useProjectPresent } from './project-presence.js'
 import { roleText } from './role-labels.js'
@@ -497,9 +497,36 @@ export function metricsView(metrics, { tasks } = {}) {
   }
 }
 
+// #2985: a failed metrics read answers a machine reason, and the note printed it raw beside a
+// translated prefix. A zh window reads a sentence; an English window keeps the host's own token
+// exactly as it did, and a reason this client cannot name stays the host's words rather than a
+// guessed sentence. The detail of `read-failed:` rides in the sentence, cut short.
+const METRICS_REASON_KEYS = [
+  [/^no-credentials$/, 'this machine has no GitHub token yet'],
+  [/^no-fetch$/, 'this machine has no way to read GitHub yet'],
+  [/^no-source$/, 'this Project has no source to read yet'],
+  [/^source-unavailable$/, 'the metrics source cannot be read right now'],
+  [/^no Project: /, 'this Project has nothing to read yet'],
+]
+const READ_FAILED = /^read-failed:\s*(.+)$/
+const READ_DETAIL_MAX = 60
+const shortDetail = (detail) => {
+  const line = text(detail)
+  return line.length <= READ_DETAIL_MAX ? line : line.slice(0, READ_DETAIL_MAX - 1) + '\u2026'
+}
+
+function metricsReasonText(reason) {
+  const code = text(reason)
+  if (code === '' || !language().startsWith('zh')) return hostText(code)
+  const readFailed = READ_FAILED.exec(code)
+  if (readFailed !== null) return t('reading GitHub failed ({detail})', { detail: shortDetail(readFailed[1]) })
+  const named = METRICS_REASON_KEYS.find(([pattern]) => pattern.test(code))
+  return named === undefined ? hostText(code) : t(named[1])
+}
+
 function ProjectMetrics({ view }) {
   return h('section', { className: 'bt-project-metrics', 'data-available': view.available ? 'true' : 'false' },
-    view.available || view.reason === null ? null : h('p', { className: 'bt-project-metrics-note' }, t('Metrics unavailable') + ': ' + view.reason),
+    view.available || view.reason === null ? null : h('p', { className: 'bt-project-metrics-note' }, t('Metrics unavailable: {reason}', { reason: metricsReasonText(view.reason) })),
     h('div', { className: 'bt-project-metric-cards' },
       view.cards.map(card => h('div', { key: card.key, className: 'bt-project-metric', 'data-metric': card.key },
         h('span', { className: 'bt-project-metric-value' }, card.value),

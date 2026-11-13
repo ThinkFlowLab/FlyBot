@@ -534,7 +534,7 @@ diff --git a/client.js b/client.js
    "You have {version}.": "当前版本 {version}。",
    "The update did not finish: {reason}": "更新没有完成：{reason}",
    "What's new": "更新说明",
-@@ -420,8 +420,100 @@ var ZH = {
+@@ -420,8 +420,107 @@ var ZH = {
    "DSH update": "DSH 更新",
    "DSH {version}": "DSH {version}",
    "Restart DSH to start using DSH {version}.": "重启 DSH 后开始使用 DSH {version}。",
@@ -607,6 +607,13 @@ diff --git a/client.js b/client.js
 +  "Median of the last 7 days, opened to closed.": "近 7 天中位数，开启到关闭。",
 +  "Median of the last 7 days, created to done.": "近 7 天中位数，创建到完成。",
 +  "Metrics unavailable": "指标不可用",
++  "Metrics unavailable: {reason}": "指标不可用：{reason}",
++  "this machine has no GitHub token yet": "这台机器还没有配置 GitHub token",
++  "this machine has no way to read GitHub yet": "这台机器没有可用的抓取能力",
++  "this Project has no source to read yet": "这个 Project 还没有可读的数据源",
++  "the metrics source cannot be read right now": "指标数据源现在读不出来",
++  "reading GitHub failed ({detail})": "读取 GitHub 失败（{detail}）",
++  "this Project has nothing to read yet": "这个 Project 还没有可读的记录",
 +  "Running tasks": "在跑任务",
 +  "Claimed for": "已做多久",
 +  "Last activity": "最近活动",
@@ -2118,7 +2125,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,3885 +1624,10329 @@ function usageOf(list, ids) {
+@@ -1624,3885 +1624,10350 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -12519,20 +12526,6 @@ diff --git a/client.js b/client.js
 -      { key: bot.id ?? index, type: "button", onClick: () => onOpen?.(bot) },
 -      (0, import_react6.createElement)(BotMark, { bot, size: 16 }),
 -      bot.name
--    ));
--  });
--  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
--}
--function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
--  const lead = (0, import_react6.createElement)(
--    "button",
--    { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
--    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
--  );
--  return (0, import_react6.createElement)(
--    "div",
--    { className: "bt-group-msg" },
--    (0, import_react6.createElement)(
 +      {
 +        type: "button",
 +        className: "bt-tile",
@@ -12548,7 +12541,20 @@ diff --git a/client.js b/client.js
 +      // The Main Bot's tile gets the same unread dot as a row (#420); a wait shows on its avatar.
 +      unread && !waiting && !active ? (0, import_react19.createElement)("span", { className: "bt-unread bt-tile-unread", "aria-hidden": true }) : null,
 +      bot.role ? (0, import_react19.createElement)("span", { className: "bt-chip" }, bot.role) : null
-+    ));
+     ));
+-  });
+-  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
+-}
+-function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
+-  const lead = (0, import_react6.createElement)(
+-    "button",
+-    { type: "button", className: "bt-lead", "aria-label": t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
+-    (0, import_react6.createElement)(BotMark, { bot, size: 22 })
+-  );
+-  return (0, import_react6.createElement)(
+-    "div",
+-    { className: "bt-group-msg" },
+-    (0, import_react6.createElement)(
 +  }
 +  const unreadMark = wide && waiting && !active ? (0, import_react19.createElement)("span", { className: "bt-unread bt-unread-wait", "aria-hidden": true }) : wide && unread && !active ? (0, import_react19.createElement)("span", { className: "bt-unread", "aria-hidden": true }) : null;
 +  const row = (0, import_react19.createElement)(
@@ -13624,24 +13630,6 @@ diff --git a/client.js b/client.js
 +    if (desktop) openThroughMenu(desktop);
 +    else pressSettingsShortcut();
 +  });
-+}
-+function openHarnessOnboarding(id) {
-+  requestAnimationFrame(() => {
-+    if (openShellOnboarding) openShellOnboarding(id);
-+    else openHarnessSettings();
-+  });
-+}
-+var MODELS_STEP_ID = "flybot-models";
-+var MODELS_STEP_ORDER = 1e3;
-+function ModelsSettingsStep({ explicit, complete, openSection }) {
-+  (0, import_react19.useLayoutEffect)(() => {
-+    if (explicit) openSection("models");
-+    complete();
-+  }, []);
-+  return null;
-+}
-+function openHarnessModels() {
-+  openHarnessOnboarding(MODELS_STEP_ID);
  }
 -function ToolCell({ node, sessionId, useRoster, useUi, useWork, actions }) {
 -  const roster = useRoster((value) => value);
@@ -13658,18 +13646,11 @@ diff --git a/client.js b/client.js
 -  if (drawn.length === 0) return null;
 -  const env = { sessionId, roster, actions, useUi, useWork, findBot };
 -  return (0, import_react6.createElement)(import_react6.Fragment, null, drawn.map((call2, index) => (0, import_react6.createElement)(import_react6.Fragment, { key: call2.callId ?? index }, renderCall(call2, env))));
-+function openThroughMenu(trigger) {
-+  const before = new Set(document.querySelectorAll('[role="menu"]'));
-+  trigger.click();
-+  let frames = 0;
-+  const look = () => {
-+    const menu = [...document.querySelectorAll('[role="menu"]')].find((node) => !before.has(node));
-+    const item = menu?.querySelector('button[role="menuitem"]');
-+    if (item) item.click();
-+    else if (++frames < 30) requestAnimationFrame(look);
-+    else pressSettingsShortcut();
-+  };
-+  requestAnimationFrame(look);
++function openHarnessOnboarding(id) {
++  requestAnimationFrame(() => {
++    if (openShellOnboarding) openShellOnboarding(id);
++    else openHarnessSettings();
++  });
  }
 -
 -// src/client/activity-row.js
@@ -13682,6 +13663,43 @@ diff --git a/client.js b/client.js
 -  if (minutes < 60) return `${Math.max(1, minutes)}m`;
 -  const hours = Math.floor(minutes / 60);
 -  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
++var MODELS_STEP_ID = "flybot-models";
++var MODELS_STEP_ORDER = 1e3;
++function ModelsSettingsStep({ explicit, complete, openSection }) {
++  (0, import_react19.useLayoutEffect)(() => {
++    if (explicit) openSection("models");
++    complete();
++  }, []);
++  return null;
+ }
+-function useRunningHost(active) {
+-  const [host, setHost] = (0, import_react7.useState)(null);
+-  (0, import_react7.useEffect)(() => {
+-    if (!active) {
+-      setHost(null);
+-      return void 0;
+-    }
+-    let frame = 0;
+-    const find = () => {
+-      frame = 0;
+-      const node = document.querySelector("[data-chat-flow] > [data-chat-running]");
+-      setHost((prev) => prev === node ? prev : node);
++function openHarnessModels() {
++  openHarnessOnboarding(MODELS_STEP_ID);
++}
++function openThroughMenu(trigger) {
++  const before = new Set(document.querySelectorAll('[role="menu"]'));
++  trigger.click();
++  let frames = 0;
++  const look = () => {
++    const menu = [...document.querySelectorAll('[role="menu"]')].find((node) => !before.has(node));
++    const item = menu?.querySelector('button[role="menuitem"]');
++    if (item) item.click();
++    else if (++frames < 30) requestAnimationFrame(look);
++    else pressSettingsShortcut();
++  };
++  requestAnimationFrame(look);
++}
 +function pressSettingsShortcut() {
 +  const binding = shellShortcuts?.catalog.getSnapshot().find((row) => row.id === "settings.open")?.binding;
 +  if (!binding) return;
@@ -13696,19 +13714,7 @@ diff --git a/client.js b/client.js
 +    shiftKey: held.has("shift"),
 +    metaKey: held.has("meta")
 +  }));
- }
--function useRunningHost(active) {
--  const [host, setHost] = (0, import_react7.useState)(null);
--  (0, import_react7.useEffect)(() => {
--    if (!active) {
--      setHost(null);
--      return void 0;
--    }
--    let frame = 0;
--    const find = () => {
--      frame = 0;
--      const node = document.querySelector("[data-chat-flow] > [data-chat-running]");
--      setHost((prev) => prev === node ? prev : node);
++}
 +function AccountLauncher({ seat = true, settingsOpen, openSettings, openOnboarding, actions }) {
 +  const [open, setOpen] = (0, import_react19.useState)(false);
 +  (0, import_react19.useLayoutEffect)(() => {
@@ -13973,16 +13979,7 @@ diff --git a/client.js b/client.js
 +    (0, import_react19.createElement)(FlyBotMark, { size: 20 }),
 +    wide ? (0, import_react19.createElement)("span", { className: "bt-return-name" }, t("FlyBot")) : null
 +  );
- }
--
--// src/client/dsh-offer.js
--var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
--var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
--var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
--function showsDshRow(dsh, app) {
--  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
--  if (dsh.kind === "npm") return true;
--  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
++}
 +var RETURN_CSS = `
 +.bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
 +.bt-return:hover{background:rgba(127,127,127,.14)}
@@ -13995,7 +13992,16 @@ diff --git a/client.js b/client.js
 +`;
 +function BrandMark({ size = 24 }) {
 +  return (0, import_react19.createElement)("span", { className: "bt-brand-mark" }, (0, import_react19.createElement)(FlyBotMark, { size }));
-+}
+ }
+-
+-// src/client/dsh-offer.js
+-var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
+-var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
+-var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
+-function showsDshRow(dsh, app) {
+-  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
+-  if (dsh.kind === "npm") return true;
+-  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
 +function BrandName() {
 +  return (0, import_react19.createElement)("span", { style: { fontWeight: 600, fontSize: 14 } }, t("FlyBot"));
  }
@@ -14980,11 +14986,32 @@ diff --git a/client.js b/client.js
 -    }, (0, import_react8.createElement)(CloudDownloadIcon, { done: phase === "installed" }), phase === "failed" || dshPhase === "failed" ? (0, import_react8.createElement)("span", { className: "bt-update-dot", "aria-hidden": true }) : null),
 -    open && box ? (0, import_react_dom3.createPortal)((0, import_react8.createElement)(
 +}
++var METRICS_REASON_KEYS = [
++  [/^no-credentials$/, "this machine has no GitHub token yet"],
++  [/^no-fetch$/, "this machine has no way to read GitHub yet"],
++  [/^no-source$/, "this Project has no source to read yet"],
++  [/^source-unavailable$/, "the metrics source cannot be read right now"],
++  [/^no Project: /, "this Project has nothing to read yet"]
++];
++var READ_FAILED = /^read-failed:\s*(.+)$/;
++var READ_DETAIL_MAX = 60;
++var shortDetail = (detail) => {
++  const line2 = text(detail);
++  return line2.length <= READ_DETAIL_MAX ? line2 : line2.slice(0, READ_DETAIL_MAX - 1) + "…";
++};
++function metricsReasonText(reason) {
++  const code = text(reason);
++  if (code === "" || !language().startsWith("zh")) return hostText(code);
++  const readFailed = READ_FAILED.exec(code);
++  if (readFailed !== null) return t("reading GitHub failed ({detail})", { detail: shortDetail(readFailed[1]) });
++  const named = METRICS_REASON_KEYS.find(([pattern]) => pattern.test(code));
++  return named === void 0 ? hostText(code) : t(named[1]);
++}
 +function ProjectMetrics({ view }) {
 +  return (0, import_react21.createElement)(
 +    "section",
 +    { className: "bt-project-metrics", "data-available": view.available ? "true" : "false" },
-+    view.available || view.reason === null ? null : (0, import_react21.createElement)("p", { className: "bt-project-metrics-note" }, t("Metrics unavailable") + ": " + view.reason),
++    view.available || view.reason === null ? null : (0, import_react21.createElement)("p", { className: "bt-project-metrics-note" }, t("Metrics unavailable: {reason}", { reason: metricsReasonText(view.reason) })),
 +    (0, import_react21.createElement)(
        "div",
 -      { className: "bt-update-pop", role: "dialog", "aria-label": update?.available || phase !== "idle" ? t("DS Bot update") : t("DSH update"), style: box },
