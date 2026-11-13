@@ -1,1 +1,0 @@
-A `recall` of a topic name that cannot be a topic file — `../x`, `a/b`, a name with a backslash — no longer answers with the whole `MEMORY.md`: it is refused with the same sentence `remember` gives, naming the allowed form, while a name that is merely unknown still says so and lists the topics this Bot knows ([#3042](https://github.com/ThinkFlowLab/FlyBot/issues/3042)).
