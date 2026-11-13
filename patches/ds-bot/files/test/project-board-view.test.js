@@ -7,8 +7,15 @@ import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 
+// The entry carries the dictionary beside the view: `t` and `hostText` reach the board only through
+// the same copy of `i18n.js`, and that is true inside one bundle and nowhere else (#2985).
 const bundle = await build({
-  entryPoints: [fileURLToPath(new URL('../src/client/project-board.js', import.meta.url))],
+  stdin: {
+    contents: "export * from './src/client/project-board.js'\nexport { DICTIONARY, hostText, installLocale } from './src/client/i18n.js'",
+    resolveDir: fileURLToPath(new URL('../', import.meta.url)),
+    sourcefile: 'project-board-view-entry.js',
+    loader: 'js',
+  },
   bundle: true, format: 'cjs', platform: 'node', write: false,
   external: ['react', 'react-dom'],
 })
@@ -52,7 +59,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView, metricsView, waitedLabel, METRIC_CARDS, METRIC_DASH, RUNNING_OVERDUE_MS } = module.exports
+const { ProjectBoardOverlay, ProjectBoardPane, projectBoardView, metricsView, waitedLabel, METRIC_CARDS, METRIC_DASH, RUNNING_OVERDUE_MS, installLocale } = module.exports
 const render = (component, props) => { index = 0; return component(props) }
 const flush = async () => {
   const queued = effects
@@ -692,6 +699,53 @@ test('an unavailable read says why and draws no number', () => {
   assert.equal(view.cards.every(card => card.value === METRIC_DASH), true)
   assert.equal(view.running.length, 0)
   assert.equal(metricsView(null).empty, true)
+})
+
+// The dictionary the client binds through `installLocale`: `t` and `hostText` read the active
+// language from the same service, so the note is checked as the reader sees it (#2985).
+function fakeLocale(active) {
+  const dicts = new Map()
+  return {
+    register: (ns, locale, dict) => { dicts.set(`${ns}:${locale}`, dict); return () => dicts.delete(`${ns}:${locale}`) },
+    bind: ns => (key, params) => {
+      const text = (active === 'zh' ? dicts.get(`${ns}:zh`)?.[key] : undefined) ?? key
+      return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
+    },
+    getLocale: () => ({ active }),
+  }
+}
+
+const metricsNote = (metrics) => {
+  const drawn = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows: [], metrics }))
+  const note = drawn.find(node => node.props?.className === 'bt-project-metrics-note')
+  return note ? textOf(note) : ''
+}
+
+// #2985: the note was `t('Metrics unavailable') + ': ' + view.reason`, so the suffix was the host's
+// machine reason and a zh window read 「指标不可用: no-credentials」. The client now names the reason
+// shapes it knows and a zh window reads a sentence; an English window keeps today's line byte for
+// byte, an unavailable read that is fine draws no note, and a reason the client cannot name stays
+// the host's own words rather than a guessed sentence.
+test('#2985: a zh window reads the metrics reason as a sentence, never the host code', () => {
+  const unavailable = reason => ({ ok: false, reason, metrics: {}, running: [] })
+  assert.equal(metricsNote(unavailable('no-credentials')), 'Metrics unavailable: no-credentials', 'an English window is unchanged')
+  assert.equal(metricsNote(unavailable('read-failed: /pulls answered 403')), 'Metrics unavailable: read-failed: /pulls answered 403')
+  assert.equal(metricsNote({ ok: true, metrics: {}, running: [] }), '', 'a read that worked draws no note')
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.equal(metricsNote(unavailable('no-credentials')), '指标不可用：这台机器还没有配置 GitHub token')
+    assert.equal(metricsNote(unavailable('no-fetch')), '指标不可用：这台机器没有可用的抓取能力')
+    assert.equal(metricsNote(unavailable('no-source')), '指标不可用：这个 Project 还没有可读的数据源')
+    assert.equal(metricsNote(unavailable('source-unavailable')), '指标不可用：指标数据源现在读不出来')
+    assert.equal(metricsNote(unavailable('read-failed: /pulls answered 403')), '指标不可用：读取 GitHub 失败（/pulls answered 403）')
+    assert.equal(metricsNote(unavailable('no Project: nothing to read')), '指标不可用：这个 Project 还没有可读的记录')
+    const failedRead = metricsNote(unavailable('read-failed: fetch failed'))
+    assert.ok(!failedRead.includes('no-credentials'), 'a known reason never prints the host code')
+    assert.match(failedRead, /^指标不可用：读取 GitHub 失败（/, 'the read-failed detail rides in the same sentence')
+    assert.equal(metricsNote(unavailable('a token this client has never seen')), '指标不可用：a token this client has never seen', 'an unknown reason keeps the host words, never a guess')
+  } finally {
+    off()
+  }
 })
 
 test('a running row carries who, claim age, source and activity, and opens its board', () => {
