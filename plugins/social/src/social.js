@@ -989,7 +989,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const key = norm(handle)
     if (!key || key === '@') return
     settings.inboundBots ??= {}
-    if (settings.inboundBots[key]) return
+    // A person grant wins over an earlier room-only mark (#1819 / #1821): the seat became a friend.
+    const wasRoomOnly = Boolean(settings.roomBots?.[key])
+    if (wasRoomOnly) delete settings.roomBots[key]
+    if (settings.inboundBots[key]) { if (wasRoomOnly) saveSettings(); return }
     settings.inboundBots[key] = true
     saveSettings()
   }
@@ -1011,8 +1014,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       return parts.length > 2 ? `@${parts.slice(1).join('.')}` : key
     })()
     if (settings.inboundBots?.[key] || settings.inboundBots?.[peerHome]) return
-    // Already a normal friend in the roster — do not reclassify as room-only.
-    if (listedRemoteBots().some(bot => bot.handle === key || bot.home === key || bot.home === peerHome)) return
+    // A person grant on our side is a friend. The *published* list is not evidence (#1819): a seat
+    // that the roster listed for the room was published once, and asking listedRemoteBots() here
+    // classified it as a friend, so face-leave had nothing to drop and the Bot stayed in the sidebar.
+    if (outgoingPeerHandles().has(key)) return
     settings.roomBots ??= {}
     const rec = settings.roomBots[key] ?? { rooms: {} }
     if (rec.rooms?.[room]) return
@@ -1069,6 +1074,12 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const key = norm(bot.handle)
     if (!key) return false
     if (declinedRemotes.has(key)) return false
+    // A room-only seat whose room is gone is not a friend's Bot (#1819). This is checked before
+    // `inboundBots`: a roster that leaked a seat also seeds that map (backfill), so trusting it first
+    // kept the row. A Bot with a real person grant is never marked room-only (markRoomRemote skips it,
+    // and rememberInbound clears an older mark), so a granted friend's Bot still shows (#1821: grant wins).
+    const roomOnly = settings.roomBots?.[key]
+    if (roomOnly && !Object.keys(roomOnly.rooms ?? {}).length) return false
     // A Bot someone shared with us (we joined their invite) always shows, even though the
     // talk-through grant on our own Bot names it as grantee (#178).
     if (settings.inboundBots?.[key]) return true
