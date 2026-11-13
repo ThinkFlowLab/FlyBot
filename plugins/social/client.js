@@ -2122,8 +2122,8 @@ window.__ModuleLoader__.load({
       const text = shownHoldText(item.text || item.summary || '', to)
       const long = text.length > 160 || text.split(/\n/).length > 3
       const reasonLine = holdReasonLine(item.reasons, t)
-      return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': WAITING_OWNER },
-        h('div', { className: 'fs-label' }, WAITING_OWNER),
+      return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': tr(WAITING_OWNER) },
+        h('div', { className: 'fs-label' }, tr(WAITING_OWNER)),
         item.from || item.to || item.toName || item.kind === 'face_room_message'
           ? h('div', { className: 'fs-sub' }, `${from} → ${to}`)
           : null,
@@ -2132,12 +2132,12 @@ window.__ModuleLoader__.load({
         long ? h('button', {
           type: 'button', className: 'fs-hold-more', 'data-flybot': 'hold-expand',
           onClick: () => setOpen(value => !value),
-        }, open ? 'Show less' : 'Show more') : null,
+        }, open ? tr('Show less') : tr('Show more')) : null,
         h('div', { className: 'fs-actions fs-chat-actions' },
           // The two decisions stay together on the right; the standing choice is left of them, or alone above when narrow (#271).
           h('span', { className: 'fs-hold-decide' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, 'Approve'),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, 'Reject')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, tr('Approve')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, tr('Reject'))),
           // Two buttons are the decision; the standing choice is a quiet link, not a third button (#260).
           h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, AUTO_SEND_LINK)))
     }
@@ -2573,13 +2573,13 @@ window.__ModuleLoader__.load({
           if (decision === 'always') actions?.notify?.(autoSendToast(await autoSendPair(callHost, held.id)))
         } finally { setBusy(false) }
       }
-      return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'region', 'aria-label': WAITING_OWNER },
-        h('div', { className: 'fs-label' }, WAITING_OWNER),
+      return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'region', 'aria-label': tr(WAITING_OWNER) },
+        h('div', { className: 'fs-label' }, tr(WAITING_OWNER)),
         h('div', { className: 'fs-sub' }, `${from} → ${to}`),
         h('div', { className: 'fs-actions fs-chat-actions' },
           h('span', { className: 'fs-hold-decide' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: busy, onClick: () => onDecide('approve') }, 'Approve'),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => onDecide('reject') }, 'Reject')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: busy, onClick: () => onDecide('approve') }, tr('Approve')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => onDecide('reject') }, tr('Reject'))),
           h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, AUTO_SEND_LINK)))
     }
 
@@ -3235,7 +3235,7 @@ window.__ModuleLoader__.load({
           inviteControls({ botName: made?.botName || shareName, invite: made, busy, onMint: () => mint(true), onCopy: copyMade, onNew: () => mint(false) })),
         status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone, style: { padding: '2px 10px' } }, status.text) : null,
         incoming.length ? h('div', { className: 'bt-social-requests' },
-          h('div', { className: 'fs-label' }, 'Friend requests', h('span', { className: 'fs-count' }, String(incoming.length))),
+          h('div', { className: 'fs-label' }, tr('Friend requests'), h('span', { className: 'fs-count' }, String(incoming.length))),
           incoming.map(item => h('div', { key: item.relationshipId, className: 'fs-row bt-social-row' },
             h(FaceAvatar, { bot: faceLook({ member: { handle: item.handle, displayName: item.name } }), size: 24 }),
             h('span', { className: 'fs-text' },
@@ -3243,7 +3243,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'fs-sub' }, item.handle),
               item.message ? h('span', { className: 'fs-sub fs-msg' }, item.message) : null),
             h('span', { className: 'fs-actions' },
-              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'accept') }, 'Accept'),
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'accept') }, tr('Accept')),
               h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'decline') }, 'Decline'))))) : null,
         outgoing.length ? h('div', { className: 'bt-social-outgoing' },
           h('div', { className: 'fs-label' }, tr('Waiting for them to accept')),
@@ -3254,7 +3254,7 @@ window.__ModuleLoader__.load({
               item.name ? h('span', { className: 'fs-sub' }, item.handle) : null),
             h('span', { className: 'fs-tag' }, 'pending')))) : null,
         onDone ? h('div', { className: 'fs-line', 'data-flybot': 'add-friend-done', style: { padding: '6px 10px 2px', justifyContent: 'flex-end' } },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, 'Done')) : null)
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, tr('Done'))) : null)
     }
 
     // Which local Bots can be invited to (social/status), cached for the synchronous canInvite.
@@ -3413,7 +3413,7 @@ window.__ModuleLoader__.load({
               h('button', {
                 type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
                 'data-flybot': 'revoke-grant-no', onClick: () => setAsking(''),
-              }, 'Keep'))
+              }, tr('Keep')))
             : h('button', {
               type: 'button', className: 'fs-btn', disabled: Boolean(busy),
               'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
@@ -3488,8 +3488,8 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
             h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? ${keepLine}`),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, 'Remove'),
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, 'Keep'))
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, tr('Remove')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, tr('Keep')))
           : h('button', {
             type: 'button',
             className: 'fs-link',
@@ -3662,7 +3662,7 @@ window.__ModuleLoader__.load({
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone, 'data-flybot': 'share-note', role: 'status' }, note.text) : null,
         listError
           ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'share-list-error', role: 'status' }, listError,
-            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, 'Try again'))
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, tr('Try again')))
           : null)
     }
 
