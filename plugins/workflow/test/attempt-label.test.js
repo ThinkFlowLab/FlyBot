@@ -22,12 +22,13 @@ function load() {
 
 const client = load()
 
-// The host answers a zh UI exactly the way core's `t` does: a known key comes back translated and
-// an unknown one comes back as itself, which is the probe `zhUi()` reads.
-const zhHost = (key) => {
-  if (key === 'Tasks') return '任务'
-  return key === 'superseded by {id}' ? '已被 {id} 取代' : key === 'retry of {id}' ? '{id} 的重试' : key
-}
+// The host answers a zh UI the way core's `t` does: it translates the words it knows and hands an
+// unknown key back as itself — which is the probe `zhUi()` reads. It knows exactly one word here, so
+// the Chinese below can only come from the plugin's own ZH table, the path a zh window really takes
+// for these two keys: the core dictionary has no entry for them (the workflow chrome strings are
+// P-784, on the bundle lane) and the forward scan pins them in
+// core/test/i18n-plugins-missing-zh.baseline.json.
+const zhHost = (key) => (key === 'Tasks' ? '任务' : key)
 
 function withHost(t, host) {
   const prev = globalThis.__flybot__
