@@ -338,6 +338,22 @@ test('#2992 two saved names that fold onto one keep the spelling they were saved
   await assert.rejects(rt.createBot({ name: 'Dev Ops', pickModel: true }), /A Bot named Dev Ops already exists/, 'a third row that draws the same is still refused')
 })
 
+// #3025: the one line that names a kept clash is read by a person, so the name slot holds the
+// spelling as it was saved (`Dev  Ops`), not the record's id (`dev`). The fixture keeps the two
+// different on purpose: an id is never a name.
+test('#3025: the kept-clash line names the saved spelling, not the Bot record id', async (t) => {
+  const team = TEAM()
+  team.bots.dev.name = 'Dev  Ops'
+  team.bots.ops.name = 'Dev Ops'
+  const warnings = []
+  const { rt } = setup(t, team, { logger: { warn: (...args) => warnings.push(args.join(' ')), info: () => {} } })
+  await rt.load()
+  const line = warnings.find(text => text.includes('the saved Bot name'))
+  assert.ok(line, `the clash is reported, saw ${JSON.stringify(warnings)}`)
+  assert.match(line, /the saved Bot name Dev {2}Ops folds onto Dev Ops, which another Bot holds/, `the saved spelling fills the name slot: ${line}`)
+  assert.ok(!/(^|\s)name dev(\s|$)/.test(line), `the id is not printed where the sentence says the name: ${line}`)
+})
+
 test('#2691 a name is stored without the invisible characters it was written with', async (t) => {
   const { rt, state } = setup(t)
   await rt.load()
