@@ -362,13 +362,24 @@ export function install(rt) {
         : folders.length === 1
           ? `no decision file in ${join(folders[0], DECISIONS_DIR)}`
           : 'no decision file in any folder the record names'
+    // #2984: the same empty state, named for the page instead of spelled out: `reason` stays the
+    // host's own sentence (a model reads it), while `empty` is the case and the folder the page
+    // turns into the window's language — `{dir}` is a parameter because a sentence joined at
+    // runtime can never be a dictionary key.
+    const empty = files.length > 0
+      ? null
+      : folders.length === 0
+        ? { key: 'no working folder: this Project names none' }
+        : folders.length === 1
+          ? { key: 'no decision file in {dir}/decisions', params: { dir: folders[0] } }
+          : { key: 'no decision file in any folder the record names' }
     // #2021: the count is taken after the dedup and before the cut, so a reader can tell a complete
     // list from a truncated one instead of reading the cap as the answer.
     // #2033: the un-truncated dedupe of this read, paths only — the meeting lookup below has to
     // tell "fell off the 200-row cut" from "was never here" without asking the disk again.
     // #2041: each name keeps the folder it was read from, because a decided meeting archives to a
     // folder of its own; opening a row reads through this map and nothing else.
-    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason, known: new Map(deduped.map(file => [file.path, file.dir])), cards: cardsOf }
+    return { dir: dir === '' ? null : dir, files, total: deduped.length, reason, empty, known: new Map(deduped.map(file => [file.path, file.dir])), cards: cardsOf }
   }
 
   // #1831: the card's level, who it is addressed to and whether it may advance ride on every
@@ -437,6 +448,9 @@ export function install(rt) {
       decidedTotal: decided.length,
       pendingTotal: pending.length,
       reason: mine.length === 0 ? 'no meeting of this Project is recorded' : '',
+      // #2984: the page's copy beside the host's own sentence, the way the decisions section
+      // carries it.
+      empty: mine.length === 0 ? { key: 'no meeting of this Project is recorded' } : null,
     }
   }
 
@@ -556,7 +570,7 @@ export function install(rt) {
     readings.set(id, { dirs: decisions.known, cards: decisions.cards })
     // `known` is this read's own path set for the meeting lookup (#2033); the page renders
     // `dir`/`files`/`total`/`reason`, so it does not travel with the board.
-    const servedDecisions = { dir: decisions.dir, files: decisions.files, total: decisions.total, reason: decisions.reason }
+    const servedDecisions = { dir: decisions.dir, files: decisions.files, total: decisions.total, reason: decisions.reason, empty: decisions.empty }
     // #1829: the seven numbers ride on the same read as the rows, so the board and its header
     // cannot disagree, and a credential-less host answers `ok: false` (the client paints a dash).
     // #1848: the running table and the done-task median read `mine` — exactly the cards this

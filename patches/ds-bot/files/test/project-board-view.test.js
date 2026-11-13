@@ -257,14 +257,16 @@ test('#1767: an empty record names the folder it read and the missing decision f
     meetings: { decided: [], pending: [], reason: 'no meeting of this Project is recorded' },
   }))
   assert.equal(view.record.decisions.empty, true)
-  assert.equal(view.record.decisions.emptyText, 'no decision file in /team/flybot/decisions')
+  // #2984: the empty line is a key and its parameters, so the folder is no longer spelled into a
+  // sentence the dictionary can never match.
+  assert.deepEqual(view.record.decisions.emptyText, { key: 'no decision file in {dir}/decisions', params: { dir: '/team/flybot' } })
   assert.equal(view.record.meetings.empty, true)
-  assert.equal(view.record.meetings.emptyText, 'no meeting of this Project is recorded')
+  assert.deepEqual(view.record.meetings.emptyText, { key: 'no meeting of this Project is recorded' })
   // The view before this slice still answers: a caller passing no sections reads an empty record,
   // not a thrown one.
   const bare = plain(projectBoardView({ project: { id: 'p', name: 'P' }, rows: [] }))
   assert.equal(bare.record.decisions.count, 0)
-  assert.match(bare.record.decisions.emptyText, /no working folder/)
+  assert.equal(bare.record.decisions.emptyText.key, 'no working folder: this Project names none')
 })
 
 // #1768: the three groups beside the columns and the header counts. The host's read is passed in

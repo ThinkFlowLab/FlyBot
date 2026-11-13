@@ -56,7 +56,7 @@ runInNewContext(bundle.outputFiles[0].text, {
     throw new Error(`no platform module ${name}`)
   },
 })
-const { ProjectBoardPane, ProjectSettingsPanel, ProjectMembersPanel, ProjectDossierPanel, ProjectAgentEntry, projectAgentFor, readProjectBoard, hostText, installLocale } = module.exports
+const { ProjectBoardPane, ProjectSettingsPanel, ProjectMembersPanel, ProjectDossierPanel, ProjectAgentEntry, projectAgentFor, readProjectBoard, hostText, installLocale, DICTIONARY } = module.exports
 
 const render = (component, props) => { index = 0; return component(props) }
 const all = (node, out = []) => {
@@ -724,4 +724,88 @@ test('#1887: the memory box counts code points and disables Save before the clic
   assert.equal(calls, 0, 'neither a disabled nor an over-limit Save calls the endpoint')
   const memory = (await rt.projectEndpoint('project-memory', { id: 'project-1' })).memory
   assert.deepEqual(memory.decisions, [], 'and neither state writes anything')
+})
+
+// #2984: the record's two sections are drawn by the page, so an empty line has to be a dictionary
+// entry rather than the host's prose. It used to be a sentence joined at runtime — `No decision file
+// in ${dir}/decisions.` — that `t()` was then handed as a key, and no dictionary holds that string.
+// The zh realm this file already keeps (a fake locale bound through `installLocale`) is the whole
+// harness these two empty states need.
+const emptyRecord = () => ({
+  decisions: { dir: '/team/flybot', files: [], total: 0, reason: 'no decision file in /team/flybot/decisions' },
+  meetings: { decided: [], pending: [], decidedTotal: 0, pendingTotal: 0, reason: 'no meeting of this Project is recorded' },
+})
+const recordTree = (answer = emptyRecord()) => {
+  resetSlots()
+  return render(ProjectBoardPane, {
+    project: { id: 'project-1', name: 'FlyBot', dir: '/team/flybot', roles: {} },
+    rows: [], done: [], canManage: false, decisions: answer.decisions, meetings: answer.meetings,
+  })
+}
+const recordEmptyLines = (tree) => all(tree)
+  .filter(node => String(node.props?.className ?? '').includes('bt-project-record-empty'))
+  .map(text)
+// Each host element's own text on its own line, so a heading is read as the heading it is.
+const recordText = (tree) => all(tree)
+  .filter(node => typeof node.type === 'string')
+  .map(text)
+  .join('\n')
+
+test('#2984: a zh window says the record headings and empty states in Chinese', () => {
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    const tree = recordTree()
+    const drawn = recordText(tree)
+    assert.match(drawn, /决策/, 'the Decisions heading is its dictionary entry')
+    assert.match(drawn, /会议/, 'and the Meetings heading too')
+    assert.doesNotMatch(drawn, /^Decisions$/m, 'no English heading is left in a zh window')
+    assert.doesNotMatch(drawn, /^Meetings$/m)
+    assert.deepEqual(recordEmptyLines(tree), [
+      '{dir}/decisions 里还没有决策文件'.replace('{dir}', '/team/flybot'),
+      '这个 Project 还没有会议记录',
+    ])
+    // A Project naming no folder is a different empty state, and it is a key too.
+    assert.deepEqual(recordEmptyLines(recordTree({ decisions: { dir: null, files: [] }, meetings: {} })), [
+      '这个 Project 没有指定工作文件夹',
+      '这个 Project 还没有会议记录',
+    ])
+  } finally {
+    off()
+  }
+  assert.equal(DICTIONARY.zh['no decision file in {dir}/decisions'], '{dir}/decisions 里还没有决策文件')
+  assert.equal(DICTIONARY.zh['no meeting of this Project is recorded'], '这个 Project 还没有会议记录')
+})
+
+test('#2984: an English window draws the sentence it drew before', () => {
+  const tree = recordTree()
+  assert.deepEqual(recordEmptyLines(tree), [
+    'no decision file in /team/flybot/decisions',
+    'no meeting of this Project is recorded',
+  ])
+  const drawn = recordText(tree)
+  assert.match(drawn, /^Decisions$/m)
+  assert.match(drawn, /^Meetings$/m)
+  assert.doesNotMatch(drawn, /决策|会议/)
+})
+
+test('#2984: a read that failed stays the host sentence, in the host words', () => {
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    const tree = recordTree({
+      decisions: { dir: '/team/flybot', files: [], total: 0, reason: 'unreadable: EACCES: permission denied' },
+      meetings: { decided: [], pending: [], decidedTotal: 0, pendingTotal: 0, reason: 'unreadable: EACCES: permission denied' },
+    })
+    // The failure is the host's own sentence: it is not dressed up as one of the page's sentences,
+    // and it is not a key the dictionary silently answers.
+    assert.deepEqual(recordEmptyLines(tree), ['unreadable: EACCES: permission denied', 'unreadable: EACCES: permission denied'])
+  } finally {
+    off()
+  }
+})
+
+test('#2984: every empty sentence the board can draw has a Chinese entry', () => {
+  for (const key of ['no decision file in {dir}/decisions', 'no working folder: this Project names none', 'no decision file in any folder the record names', 'no meeting of this Project is recorded']) {
+    assert.equal(typeof DICTIONARY.zh[key], 'string', `missing zh entry: ${key}`)
+    assert.notEqual(DICTIONARY.zh[key], key)
+  }
 })

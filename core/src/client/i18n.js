@@ -1466,6 +1466,12 @@ const ZH = {
   'Open my agent': '打开我的项目助手',
   "Open {name}'s dossier": '打开 {name} 的档案',
   'No cards yet.': '还没有卡片。',
+  // #2984: the Project board's two empty record sections. The folder is a parameter, so the
+  // sentence is a dictionary key instead of a line joined at runtime.
+  'no decision file in {dir}/decisions': '{dir}/decisions 里还没有决策文件',
+  'no working folder: this Project names none': '这个 Project 没有指定工作文件夹',
+  'no decision file in any folder the record names': '记录里指定的文件夹都没有决策文件',
+  'no meeting of this Project is recorded': '这个 Project 还没有会议记录',
   'Open Projects in Settings': '在设置中打开项目',
 }
 

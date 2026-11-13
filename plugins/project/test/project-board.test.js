@@ -463,6 +463,15 @@ test('#1767: a Project without a decisions folder answers an empty list with the
     const served = value(await call('project-board', { id: 'project-p1' }))
     assert.deepEqual(served.decisions.files, [])
     assert.match(served.decisions.reason, /no decision file/)
+    // #2984: the page cannot translate a sentence joined at runtime, so the same empty state also
+    // travels as a key and its folder; the sentence above stays for whoever reads the read model.
+    assert.equal(board.decisions.empty.key, 'no decision file in {dir}/decisions')
+    assert.equal(board.decisions.empty.params.dir, dir)
+    // This Project has a decided meeting, so its section names no empty state.
+    assert.equal(board.meetings.empty, null)
+    assert.deepEqual(noFolder.meetings.empty, { key: 'no meeting of this Project is recorded' })
+    assert.equal(served.decisions.empty.key, 'no decision file in {dir}/decisions')
+    assert.equal(noFolder.decisions.empty.key, 'no working folder: this Project names none')
   } finally {
     await stop()
     rmSync(dir, { recursive: true, force: true })
