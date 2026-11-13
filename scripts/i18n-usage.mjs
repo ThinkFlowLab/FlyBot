@@ -144,6 +144,9 @@ export function tokens(source) {
         }
         if (source[index] === '$' && source[index + 1] === '{') {
           substituted = true
+          // One marker per hole, so the report names the copy a reader sees around it and the
+          // expressions stay out of the key (they are code, not a placeholder name).
+          value += '{}'
           let depth = 1
           index += 2
           while (index < source.length && depth > 0) {
@@ -159,7 +162,7 @@ export function tokens(source) {
         index += 1
       }
       index += 1
-      if (!substituted) place({ type: 'string', value })
+      place(substituted ? { type: 'string', value, substituted: true } : { type: 'string', value })
       previous = 'string'
       lastValue = value
       continue
@@ -255,7 +258,7 @@ function constants(list) {
     if (name.type !== 'ident' || equals.type !== 'punct' || equals.value !== '=') continue
     // Same props depth as the `=`: `const LOCAL_REFUSAL_COPY = { … }` must not read as a binding
     // to its first key.
-    if (value.type !== 'string' || value.obj !== equals.obj) continue
+    if (value.type !== 'string' || value.substituted || value.obj !== equals.obj) continue
     bound.set(name.value, value.value)
   }
   return bound
@@ -276,6 +279,9 @@ export function bareCopy(source, file, dictionary = DICTIONARY.zh) {
   for (let at = 0; at < list.length; at += 1) {
     const token = list[at]
     if (translated(token)) continue
+    // A template literal with a `${}` hole has no dictionary key to compare with: it is reported
+    // by `templateDraws`, and both keyed scans stay exactly as wide as they were (#3040).
+    if (token.substituted) continue
     const before = list[at - 1]
     const after = list[at + 1]
     // A comparison operand (`run.status === 'done'`, `case 'idle'`) or an object key is data,
@@ -366,6 +372,8 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     const token = list[at]
     if (token.type !== 'string' && token.type !== 'ident') continue
     if (translated(token)) continue
+    // See `bareCopy`: a substituted template is `templateDraws`' business, not this scan's.
+    if (token.substituted) continue
     const before = list[at - 1]
     const after = list[at + 1]
     if (before?.type === 'punct' && COMPARISONS.has(before.value)) continue
@@ -414,6 +422,109 @@ export function scanPlugins(pluginsRoot = new URL('../plugins/', import.meta.url
 // nothing can translate it at all (#3002).
 export function scanMissing(pluginsRoot = new URL('../plugins/', import.meta.url)) {
   return pluginClients(pluginsRoot).flatMap(({ file, source }) => missingCopy(source, file)).sort(byPlace)
+}
+
+// The third view of the same walk: copy drawn as a template literal with a `${}` hole, which no
+// dictionary key can name (#3040).
+export function scanTemplateDraws(pluginsRoot = new URL('../plugins/', import.meta.url)) {
+  return pluginClients(pluginsRoot).flatMap(({ file, source }) => templateDraws(source, file)).sort(byPlace)
+}
+
+// Copy a plugin draws through a template literal with a `${}` hole (#3040). `h('span', {}, `superseded
+// by ${id}`)` has no dictionary key the two scans above could match and no `tr()` call to find, so the
+// English stays in a zh window while both checks are green — #3040 shipped that way and only a reader
+// noticed. The draw is reported where copy is read (a child node, a copy attribute, a `text:` prop, a
+// copy table value), with one `{}` per hole, so the fix has one shape: `tr('superseded by {id}', { id })`.
+// A substituted template can reach the reader through a name: `const approveAllTitle = cond ?
+// `…${n} 条 · to ${who}` : `…${n} 条`` is drawn by `h('button', { title: approveAllTitle })`. The
+// literal sits in an assignment, where none of the positions below can place it, and the name is
+// what a reader is told. Only an assignment whose value is a template, or a ternary between
+// templates, binds: `const bars = g.bars.map(bar => h(…))` also carries templates inside it, and
+// none of them is what `bars` draws (#3049).
+const STATEMENT = new Set(['const', 'let', 'var', 'return', 'if', 'for', 'while', 'switch', 'function', 'class', 'case', 'else', 'do', 'try', 'throw'])
+// A line that starts with one of these continues the assignment above it, so the statement walk
+// below must not stop at the line break.
+const CONTINUATION = new Set(['?', ':', '.', '+', '-', '*', '/', '&&', '||', '='])
+
+function templateBindings(list) {
+  const bound = new Map()
+  for (let at = 0; at + 3 < list.length; at += 1) {
+    const keyword = list[at]
+    const name = list[at + 1]
+    const equals = list[at + 2]
+    if (keyword.type !== 'ident' || !['const', 'let', 'var'].includes(keyword.value)) continue
+    if (name.type !== 'ident' || equals.type !== 'punct' || equals.value !== '=') continue
+    const segment = []
+    let depth = 0
+    for (let each = at + 3; each < list.length; each += 1) {
+      const token = list[each]
+      const previous = list[each - 1]
+      if (depth === 0 && each > at + 3 && token.line !== previous.line
+        && !CONTINUATION.has(token.value) && !CONTINUATION.has(previous.value)) break
+      if (token.type === 'punct') {
+        if (token.value === '(' || token.value === '[' || token.value === '{') { segment.push({ token, depth }); depth += 1; continue }
+        if (token.value === ')' || token.value === ']' || token.value === '}') {
+          if (depth === 0) break
+          depth -= 1
+          segment.push({ token, depth })
+          continue
+        }
+        if (depth === 0 && token.value === ',') break
+      }
+      if (depth === 0 && token.type === 'ident' && STATEMENT.has(token.value)) break
+      segment.push({ token, depth })
+    }
+    const question = segment.findIndex(entry => entry.depth === 0 && entry.token.type === 'punct' && entry.token.value === '?')
+    const whole = text => text.type === 'string' && text.substituted
+    if (question < 0) {
+      if (segment.length === 1 && whole(segment[0].token)) bound.set(name.value, [{ line: segment[0].token.line, key: segment[0].token.value }])
+      continue
+    }
+    const branches = segment.slice(question + 1).map(entry => entry.token)
+    const literal = branches.every(token => whole(token) || (token.type === 'punct' && ['?', ':', '(', ')'].includes(token.value)))
+    const values = branches.filter(whole).map(token => ({ line: token.line, key: token.value }))
+    if (literal && values.length) bound.set(name.value, values)
+  }
+  return bound
+}
+
+export function templateDraws(source, file) {
+  const list = tokens(source)
+  const tables = copyTables(list)
+  const bound = templateBindings(list)
+  // The lines a drawn name carries: the literal is copy because the name is drawn, wherever the
+  // assignment happens to sit.
+  const drawnLines = new Set()
+  for (let at = 0; at < list.length && bound.size; at += 1) {
+    const token = list[at]
+    if (token.type !== 'ident' || !bound.has(token.value)) continue
+    const before = list[at - 1]
+    const inTable = tables.some(body => at > body.start && at < body.end)
+    const inProps = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    const inValue = inTable && before?.type === 'punct' && before.value === ':'
+    if (!inProps && !inValue && !renderChild(token)) continue
+    for (const value of bound.get(token.value)) drawnLines.add(value.line)
+  }
+  const entries = []
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'string' || !token.substituted) continue
+    if (translated(token)) continue
+    const before = list[at - 1]
+    const after = list[at + 1]
+    if (before?.type === 'punct' && COMPARISONS.has(before.value)) continue
+    if (after?.type === 'punct' && COMPARISONS.has(after.value)) continue
+    const inTable = tables.some(body => at > body.start && at < body.end)
+    const inProps = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    if (!inTable && !inProps && !copyValue(list, at) && !renderChild(token) && !drawnLines.has(token.line)) continue
+    // Inside a table only a direct value counts, the same rule the missing-entry scan holds.
+    if (inTable && !(before?.type === 'punct' && before.value === ':')) continue
+    // The same shape rule as the scan above: with the holes spelled `{}`, a draw whose literal text
+    // carries no letter is a separator or a figure, not a sentence (`\`${a} · ${b}\``).
+    if (decoration(token.value)) continue
+    entries.push({ file, line: token.line, key: token.value })
+  }
+  return entries
 }
 
 // The missing-entry baseline is keyed by where the copy lives, not by the line it happens to sit on:
@@ -502,8 +613,9 @@ const flagValue = name => {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const missing = process.argv.includes('--missing')
-  const entries = missing ? scanMissing() : scanPlugins()
-  const identity = missing ? baselineOf : drawBaselineOf
+  const templates = process.argv.includes('--template-draws')
+  const entries = templates ? scanTemplateDraws() : missing ? scanMissing() : scanPlugins()
+  const identity = templates || missing ? baselineOf : drawBaselineOf
   // One identity for every reader of this run: `--json` prints it, `--write` pins it and the tail
   // line counts it, so the count can never disagree with the file a reader compares it with. The
   // walk still lists each draw (two attributes on one line are two draws); the count is pins, a
@@ -525,7 +637,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
   } else {
     for (const entry of entries) console.log(`${entry.file}:${entry.line}: ${JSON.stringify(entry.key)}`)
-    const what = missing ? 'drawn copy strings with no zh entry' : 'bare draws'
+    const what = templates ? 'template draws a `${}` hole keeps out of every key' : missing ? 'drawn copy strings with no zh entry' : 'bare draws'
     console.log(`${counted.length} ${what} in ${new Set(entries.map(entry => entry.file)).size} files`)
+    // The two keyed scans stay exactly as wide as they were: what they cannot judge is counted here
+    // rather than silently dropped, so a reader of either report knows the size of the blind spot
+    // (#3049). `--json` and `--write` keep their shape: this line is for a person.
+    if (!templates) console.log(`${baselineOf(scanTemplateDraws()).length} interpolated template draws are out of scope (--template-draws)`)
   }
 }

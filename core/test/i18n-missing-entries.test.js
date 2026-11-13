@@ -119,7 +119,10 @@ test('--missing prints the identity count, not the raw draw count', () => {
     return result.stdout
   }
   const counted = JSON.parse(run('--missing', '--json')).entries.length
-  const tail = run('--missing').trimEnd().split('\n').at(-1)
+  // #3049 adds a last line counting the template draws this scan cannot judge, so the summary is
+  // found by its own sentence rather than by being the last line.
+  const tail = run('--missing').trimEnd().split('\n').find(line => /^\d+ drawn copy strings with no zh entry in \d+ files$/.test(line))
+  assert.ok(tail, 'the --missing summary line is printed')
   assert.equal(Number.parseInt(tail, 10), counted, `the summary line must report what --json holds: ${tail}`)
   // Two draws, one pin: that is why the raw array and the identity disagree on main.
   const draws = missingCopy("h(Button, { title: 'A new untranslated line.', 'aria-label': 'A new untranslated line.' })", 'plugins/sample/client.js')
