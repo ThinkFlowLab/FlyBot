@@ -4394,9 +4394,24 @@ test('#260: Approve all approves Bot Social holds too, not only local ones', asy
   const tree = walk(pluginOf([[item('s1'), item('s2')], [], '']).ChatApprovalDock({ bot: friend, roster }))
   const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
   assert.ok(all, 'Approve all is offered for Bot Social holds (they carry status: pending)')
+  assert.deepEqual(all.children, ['Approve all (2)'], `the label carries the count, saw ${JSON.stringify(all.children)}`)
+  assert.equal(all.props.title, '2 条 · to Bob', `the title names the person, saw ${JSON.stringify(all.props.title)}`)
   await all.props.onClick()
   const decided = calls.filter(([endpoint]) => endpoint === 'social/decide-approval').map(([, payload]) => payload.approvalId)
   assert.deepEqual(decided.sort(), ['s1', 's2'])
+})
+
+test('#3011: Approve all says how many holds it sends and to whom', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  // Three waiting holds, two people, the first one twice: the count is the holds, the title the people.
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob'), hold('h3', '@eve.home', 'Eve')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  const tree = walk(pluginOf([items, [], true, true]).ChatApprovalDock({ bot: { id: 'mine' }, roster: { bots: [] }, room }))
+  const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
+  assert.ok(all, 'Approve all is offered for three waiting holds')
+  assert.deepEqual(all.children, ['Approve all (3)'], `the label carries the count, saw ${JSON.stringify(all.children)}`)
+  assert.equal(all.props.title, '3 条 · to Eve, Bob', `the title names each person once, saw ${JSON.stringify(all.props.title)}`)
 })
 
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
@@ -4624,7 +4639,10 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
     '',
   ])
   const tree = walk(plugin.ChatApprovalDock({ bot: { remote: { handle: '@hsliu.bot' } } }))
-  assert.ok(tree.some(n => n.props['data-flybot'] === 'approve-all' && n.children.includes('Approve all')))
+  const approveAll = tree.find(n => n.props['data-flybot'] === 'approve-all')
+  assert.ok(approveAll, 'Approve all is offered for the two drafts')
+  assert.ok(approveAll.children.includes('Approve all (2)'), `the label carries the count, saw ${JSON.stringify(approveAll.children)}`)
+  assert.equal(approveAll.props.title, '2 条', `with no person named the title is the count alone, saw ${JSON.stringify(approveAll.props.title)}`)
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 2)
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('one')))
   assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Hsliu')))
