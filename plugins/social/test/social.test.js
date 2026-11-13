@@ -4434,6 +4434,51 @@ test('#3015: Approve all counts the holds it sends, not a failed one drawn besid
   assert.deepEqual(decisions.map(([endpoint, payload]) => [endpoint, payload.approvalId ?? payload.id]), [['social/decide-approval', 'w1']], `only the waiting hold is sent, saw ${JSON.stringify(decisions)}`)
 })
 
+test('#3016: a chat with no card of its own lists the holds waiting in the other chats', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const roster = {
+    bots: [
+      { id: 'remote-bob', name: 'Bob', remote: { handle: '@bob.alice.home' } },
+      { id: 'remote-dan', name: 'Dan', remote: { handle: '@dan.alice.home' } },
+    ],
+  }
+  const hold = (id, handle, name) => ({ id, source: 'local', status: 'pending', from: 'Chief', fromId: 'chief', to: handle, toName: name, text: 'I can review that' })
+  const holds = [hold('apr-bob', '@bob.alice.home', 'Bob'), hold('apr-dan', '@dan.alice.home', 'Dan')]
+  const dock = (local, props = {}) => walk(pluginOf([[], local, true, true])
+    .ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster, ...props }))
+  // This chat draws no card of its own, so the dock is where the person learns how many wait elsewhere.
+  const tree = dock(holds)
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'pending-approvals'), 'the dock lists the holds waiting in the other chats, not only a pointer')
+  const count = tree.find(n => n.props.className === 'fs-count')
+  assert.deepEqual(count?.children, ['2'], 'the list says how many hold, not just that one does')
+  assert.equal(tree.filter(n => n.props['data-flybot'] === 'pending-item').length, 2)
+  // A chat that draws its own card is unchanged: no list above it, the card as before.
+  const own = dock([holds[0]], { bot: roster.bots[0] })
+  assert.equal(own.some(n => n.props['data-flybot'] === 'pending-approvals'), false)
+  assert.equal(own.filter(n => n.props['data-flybot'] === 'chat-approval').length, 1)
+  // Both polls answer before a count is drawn: one out would make the number grow a beat later (#1607).
+  const half = walk(pluginOf([[], holds, true, '']).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster }))
+  assert.equal(half.some(n => n.props['data-flybot'] === 'pending-approvals'), false)
+})
+
+test('#3016: the first row opens the chat that draws that hold', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const roster = {
+    bots: [
+      { id: 'remote-bob', name: 'Bob', remote: { handle: '@bob.alice.home' } },
+      { id: 'remote-dan', name: 'Dan', remote: { handle: '@dan.alice.home' } },
+    ],
+  }
+  const hold = (id, handle, name) => ({ id, source: 'local', status: 'pending', from: 'Chief', fromId: 'chief', to: handle, toName: name, text: 'I can review that' })
+  const opened = []
+  const tree = walk(pluginOf([[], [hold('apr-bob', '@bob.alice.home', 'Bob'), hold('apr-dan', '@dan.alice.home', 'Dan')], true, true])
+    .ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster, actions: { openSession: id => opened.push(id) } }))
+  const rows = tree.filter(n => n.props['data-flybot'] === 'pending-item')
+  assert.equal(rows.length, 2, 'the list is what the rows come from')
+  rows[0].props.onClick()
+  assert.deepEqual(opened, ['remote-bob'], 'the first row opens the chat that draws that hold')
+})
+
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
