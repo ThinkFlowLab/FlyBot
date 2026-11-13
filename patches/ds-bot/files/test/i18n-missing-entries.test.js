@@ -152,3 +152,57 @@ test('one sentence at two positions in a file is two numbered pins', () => {
     'plugins/sample/client.js:One more untranslated.#2',
   ])
 })
+
+// #3028: an `h()` child node is copy. The attribute half of the scan pins `title: 'Decline'`, but
+// the visible text of `h('button', { class: … }, 'Decline')` was invisible to `missingCopy` — it
+// accepted a table value, a copy prop and `text:` only — so a bare child string had no pin and no
+// dictionary entry could ever make CI notice it. The child node now reuses `renderChild`, the one
+// definition `bareCopy` already uses, so the two views of "a draw" cannot drift again.
+test('an h() child node is a draw, not just its attributes', () => {
+  const source = "h('div', null, 'Brand new sentence')"
+  assert.equal(missingCopy(source, 'plugins/sample/client.js').length, 1)
+  assert.deepEqual(baselineOf(missingCopy(source, 'plugins/sample/client.js')), [
+    'plugins/sample/client.js:Brand new sentence',
+  ])
+})
+
+// A glyph, a bare digit and a ` · ` separator are shapes, not sentences: copy a reader translates
+// carries a letter. Accepting child nodes without this rule would pin 23 of them across the four
+// plugin clients (#3028), and a new `▾` would keep growing the baseline.
+test('glyphs, bare digits and separators drawn as children are not pins', () => {
+  const source = [
+    "h('span', null, '×')",
+    "h('span', null, '…')",
+    "h('span', null, '1')",
+    "h('span', null, ' · ')",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js'), [])
+})
+
+// The same sentence drawn through an attribute and as a child is two positions in one file, so it
+// keeps two pins in #3026's shape: the attribute `#1`, the child `#2`.
+test('a sentence drawn as an attribute and as a child keeps two pins', () => {
+  const source = [
+    "h(Button, { title: 'Decline' })",
+    "h(Button, null, 'Decline')",
+  ].join('\n')
+  assert.deepEqual(baselineOf(missingCopy(source, 'plugins/sample/client.js')), [
+    'plugins/sample/client.js:Decline#1',
+    'plugins/sample/client.js:Decline#2',
+  ])
+})
+
+// The widening may only add. Every pin the baseline held before is still a sentence it holds, and
+// the only existing pins that change spelling are the two sentences a new position renumbers
+// `#1`: everything else in the 61 stays byte-identical, and no glyph can enter the file.
+test('the widening only adds pins and never admits a glyph', () => {
+  const current = new Set(baselineOf(scanMissing()))
+  for (const entry of [
+    'plugins/timeline/client.js:Timeline#1',
+    'plugins/timeline/client.js:Timeline#2',
+    'plugins/timeline/client.js:Timeline#3',
+    'plugins/tree/client.js:Tree reorganized#1',
+    'plugins/tree/client.js:Tree reorganized#2',
+  ]) assert.ok(current.has(entry), `${entry} is pinned`)
+  for (const pin of current) assert.match(pin, /\p{L}/u, `${pin} names a sentence, not a glyph`)
+})
