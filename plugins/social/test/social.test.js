@@ -15074,3 +15074,90 @@ test('#3048: a hidden folder refusal names the segment it hit and the copy that 
   await assert.rejects(dotTool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [join(dotFiles, 'held.md')] }), /cannot be attached: it is a private FlyBot file$/)
   await assert.rejects(dotTool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [dotCred] }), /cannot be attached: it looks like a credential$/)
 })
+
+// #3075: a batch reported its failures only in the dock's one error line, which the next click clears.
+// The upstream Bot Social hold is still pending after a failed send, so the next 5 s poll drew the card
+// back as an ordinary waiting one — nothing on screen said which send had not gone, and the line was
+// gone by the next click. The dock now keeps its own record per id and draws the failed card from it.
+const p813Setup = (endpoint, payload, calls) => {
+  calls.push([endpoint, payload])
+  if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1') throw new Error('the hold is stale')
+  return { approvalId: payload?.approvalId, status: 'approved' }
+}
+const p813Items = () => [
+  { id: 'h1', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@eve.home', toName: 'Eve', text: 'one' },
+  { id: 'h2', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@bob.home', toName: 'Bob', text: 'two' },
+]
+const p813Props = { bot: { id: 'mine' }, roster: { bots: [] }, room: { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] } }
+const p813H1Calls = calls => calls.filter(([endpoint, payload]) => endpoint === 'social/decide-approval' && payload?.approvalId === 'h1')
+
+test('#3075: a failed send in a batch keeps its card failed, with the reason and a Retry', async () => {
+  const calls = []
+  const { pluginOfLive } = loadSocialClient((endpoint, payload) => p813Setup(endpoint, payload, calls))
+  const { plugin: dock, render: draw, store } = pluginOfLive([p813Items(), [], true, true])
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.equal(store[0].some(item => item.id === 'h2'), false, 'the send that went out left the list as it does today')
+  const tree = draw(dock.ChatApprovalDock, p813Props)
+  const card = tree.find(node => node.props['data-flybot'] === 'chat-approval')
+  assert.equal(card?.props['data-state'], 'failed', 'the failed card is drawn as failed, not as one more message waiting')
+  assert.deepEqual(tree.find(node => node.props['data-flybot'] === 'hold-error')?.children, ['the hold is stale'], 'the card carries the reason the line carried')
+  assert.equal(tree.some(node => node.type === 'button' && (node.children?.[0] === 'Approve' || node.children?.[0] === 'Reject')), false, 'a failed send offers no Approve or Reject')
+  assert.ok(tree.find(node => node.props['data-flybot'] === 'hold-retry'), 'a failed send offers Retry')
+})
+
+test('#3075: the failed card survives the 5 s poll that still sees the hold pending', async () => {
+  const calls = []
+  const { pluginOfLive } = loadSocialClient((endpoint, payload) => p813Setup(endpoint, payload, calls))
+  const { plugin: dock, render: draw, store } = pluginOfLive([p813Items(), [], true, true])
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  // The poll writes the host's own list back: both holds, because the failed one is still pending upstream.
+  store[0] = p813Items()
+  const polled = draw(dock.ChatApprovalDock, p813Props)
+  assert.equal(polled.find(node => node.props['data-flybot'] === 'chat-approval' && node.props['data-state'] === 'failed')?.props['data-role'], 'owner', 'the poll did not turn the failed card back into a waiting one')
+  // Another card's click clears the line; it must not clear the failed card.
+  await polled.find(node => node.type === 'button' && node.children?.[0] === 'Approve').props.onClick()
+  const after = draw(dock.ChatApprovalDock, p813Props)
+  const failed = after.find(node => node.props['data-flybot'] === 'chat-approval' && node.props['data-state'] === 'failed')
+  assert.ok(failed, 'the card is still failed after the poll and the other click')
+  assert.deepEqual(after.find(node => node.props['data-flybot'] === 'hold-error')?.children, ['the hold is stale'], 'its reason is still on it')
+  assert.equal(after.some(node => node.props['data-flybot'] === 'chat-approval-error'), false, 'the line itself is the thing the click cleared')
+})
+
+test('#3075: Retry resends the approval, drops the card and clears the line', async () => {
+  const calls = []
+  let h1Tries = 0
+  const { pluginOfLive } = loadSocialClient((endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1' && ++h1Tries === 1) throw new Error('the hold is stale')
+    return { approvalId: payload?.approvalId, status: 'approved' }
+  })
+  const { plugin: dock, render: draw } = pluginOfLive([p813Items(), [], true, true])
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  const before = p813H1Calls(calls).length
+  const retry = draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'hold-retry')
+  await retry.props.onClick()
+  const sent = p813H1Calls(calls)
+  assert.equal(sent.length, before + 1, 'the Retry sends the hold again, once')
+  assert.equal(sent.at(-1)[1].decision, 'approve', 'Bot Social sends it as an approve: it takes approve or reject only')
+  const after = draw(dock.ChatApprovalDock, p813Props)
+  assert.equal(after.some(node => node.props['data-flybot'] === 'chat-approval'), false, 'the card leaves once it went out')
+  assert.equal(after.some(node => node.props['data-flybot'] === 'chat-approval-error'), false, 'the line is clear after a successful retry')
+})
+
+test('#3075: a Retry click on an id that already went out sends nothing', async () => {
+  const calls = []
+  let h1Tries = 0
+  const { pluginOfLive } = loadSocialClient((endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1' && ++h1Tries === 1) throw new Error('the hold is stale')
+    return { approvalId: payload?.approvalId, status: 'approved' }
+  })
+  const { plugin: dock, render: draw } = pluginOfLive([p813Items(), [], true, true])
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  const before = p813H1Calls(calls).length
+  const retry = draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'hold-retry')
+  await retry.props.onClick()
+  assert.equal(p813H1Calls(calls).length, before + 1, 'the first click resends it')
+  await retry.props.onClick()
+  assert.equal(p813H1Calls(calls).length, before + 1, 'a second click on the card that already went out sends nothing')
+})
