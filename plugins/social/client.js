@@ -2456,6 +2456,8 @@ window.__ModuleLoader__.load({
       // A Retry already sent for an id is not sent again from a card that outlives its own render.
       const retriedIds = useRef(new Set())
       const load = () => {
+        // #3080: a tab that is not on screen has nobody reading these cards; showing it catches up below.
+        if (typeof document !== 'undefined' && document.hidden) return
         call('social/status', {}).then(value => {
           setItems(Array.isArray(value?.approvals) ? value.approvals : [])
           setStatusLoaded(true)
@@ -2470,7 +2472,12 @@ window.__ModuleLoader__.load({
         if (typeof setInterval !== 'function') return undefined
         const timer = setInterval(load, 5000)
         timer?.unref?.()
-        return () => clearInterval(timer)
+        // #3080: a tab that sat in the background catches up the moment it is shown, not one beat later
+        // (the same shape `everySecond` uses above).
+        const onShow = () => { if (typeof document === 'undefined' || !document.hidden) load() }
+        const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+        doc?.addEventListener('visibilitychange', onShow)
+        return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
       }, [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
       // The person who gets it (#418, #498), not the friend's Bot: a local hold already names the person.

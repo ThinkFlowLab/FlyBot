@@ -289,3 +289,72 @@ test('#1640: a room count this dock cannot place keeps the neutral sentence and 
     assert.doesNotMatch(text, /Decide in |Decide on the reply bubble/, 'no destination is invented')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #3080: the dock's 5 s poll ran while the tab was hidden, and a tab that came back to the front waited
+// for the next beat. Both lists are read by one `load()`, so the fixture stubs `document` and the
+// interval: the test drives the visibility event and the beat itself instead of waiting 5 s.
+function pollClock() {
+  const previous = { document: globalThis.document, setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval }
+  const listeners = new Map()
+  const timers = []
+  const doc = {
+    // The rest of the page the bundle may touch is the stub the top of this file installs.
+    ...(previous.document ?? {}),
+    hidden: true,
+    addEventListener: (name, fn) => listeners.set(name, fn),
+    removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name) },
+  }
+  globalThis.document = doc
+  globalThis.setInterval = fn => { timers.push(fn); return { unref() {} } }
+  globalThis.clearInterval = () => {}
+  return {
+    show() { doc.hidden = false; listeners.get('visibilitychange')?.() },
+    hide() { doc.hidden = true },
+    beat() { for (const fn of timers) fn() },
+    listening: () => listeners.has('visibilitychange'),
+    restore() {
+      globalThis.document = previous.document
+      globalThis.setInterval = previous.setInterval
+      globalThis.clearInterval = previous.clearInterval
+    },
+  }
+}
+
+test('#3080: a hidden dock asks neither list, on mount nor on a beat', async () => {
+  const app = loadDock()
+  const clock = pollClock()
+  const { state, inst } = harness()
+  try {
+    render(app.ChatApprovalDock, inst)
+    runEffects(inst)
+    await tick()
+    assert.deepEqual(state.calls, [], 'a hidden tab asks nothing on mount')
+    clock.beat()
+    await tick()
+    assert.deepEqual(state.calls, [], 'a hidden tab asks nothing on the 5 s beat')
+  } finally { clock.restore(); delete globalThis.__flybot__ }
+})
+
+test('#3080: showing the tab reads both lists at once, and one show is one read', async () => {
+  const app = loadDock()
+  const clock = pollClock()
+  const { state, inst } = harness()
+  try {
+    render(app.ChatApprovalDock, inst)
+    runEffects(inst)
+    await tick()
+    assert.deepEqual(state.calls, [], 'still hidden: nothing read')
+    clock.show()
+    await tick()
+    assert.deepEqual(state.calls, ['social/status', 'approvals'], 'one show reads both lists once, with no beat')
+    // The effect is re-run the way a re-render runs it (hidden, so it asks nothing), then stopped:
+    // a stopped dock no longer listens.
+    clock.hide()
+    const stops = inst.effects.map(([, fn]) => fn())
+    stops.forEach(stop => { if (typeof stop === 'function') stop() })
+    const read = state.calls.length
+    clock.show()
+    await tick()
+    assert.equal(state.calls.length, read, 'a stopped dock no longer listens for the tab coming back')
+  } finally { clock.restore(); delete globalThis.__flybot__ }
+})
