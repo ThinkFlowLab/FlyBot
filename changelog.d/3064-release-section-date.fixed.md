@@ -1,0 +1,1 @@
+A release section is dated by the Asia/Shanghai calendar day of the release moment instead of the UTC day, so a release after 16:00Z no longer lands under the previous date (`changelog.mjs release` defaults to it; `--date` still overrides) (#3064).
