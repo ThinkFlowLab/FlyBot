@@ -2,7 +2,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { adminsFor, decide, loadPolicy, parseReport, render } from './review-gate.mjs'
+import { adminsFor, decide, isConclusionSource, loadPolicy, parseReport, render, reportsFrom } from './review-gate.mjs'
+import { stopRequestAt } from './enqueue-rules.mjs'
 
 const HEAD = 'a4d506a1b2c3d4e5f60718293a4b5c6d7e8f9012'
 const OLD = '175328d0c1b2a3d4e5f60718293a4b5c6d7e8f90'
@@ -1007,4 +1008,76 @@ test('#1335: a correction listed before the PASS it withdraws still refuses — 
   const r = decide({ head: HEAD, author: 'opencode-agent', reports: [withdraw({ at: '2026-10-18T02:00:00Z' }), comment('reviewer-agent', report(), '2026-10-18T01:00:00Z')], policy })
   assert.equal(r.ok, false, 'the PASS it withdraws is listed after it, and the withdrawal still refuses')
   assert.match(r.reason, new RegExp(`the PASS at ${HEAD} was withdrawn by Reviewer`))
+})
+
+// #2870: this file's rows had drifted from `enqueue-guard.mjs:67` and `merge-gate.mjs:224`. A review that
+// asks for changes with no body is the whole of what a person types there ("Request changes" is a button),
+// and the queue gate answers it from the review's own `state`; without `state` (and without the row at all,
+// which an empty-body filter dropped) the report here could say PASS while the guard refused the same pull
+// request. These fixtures are GitHub API objects, the shape `reportsFrom` reads.
+const ghReview = (over = {}) => ({
+  id: 9001,
+  state: 'CHANGES_REQUESTED',
+  body: '',
+  submitted_at: '2026-11-11T10:00:00Z',
+  user: { login: 'reviewer-agent', type: 'User' },
+  author_association: 'MEMBER',
+  html_url: 'https://github.com/ThinkFlowLab/FlyBot/pull/6#pullrequestreview-9001',
+  ...over,
+})
+const ghComment = (over = {}) => ({
+  id: 7001,
+  body: 'do not merge this tip',
+  created_at: '2026-11-11T10:00:00Z',
+  user: { login: 'reviewer-agent', type: 'User' },
+  author_association: 'MEMBER',
+  html_url: 'https://github.com/ThinkFlowLab/FlyBot/pull/6#issuecomment-7001',
+  ...over,
+})
+
+test('#2870: a review with no body still arrives as a row, with its id and state', () => {
+  const rows = reportsFrom({ reviews: [ghReview()] })
+  assert.equal(rows.length, 1, 'an empty body must not drop the row (#2119)')
+  assert.equal(rows[0].id, 9001, 'the id is the handle a decision names')
+  assert.equal(rows[0].kind, 'review')
+  assert.equal(rows[0].state, 'CHANGES_REQUESTED', 'the state is what a request written with no sentence says')
+  assert.equal(rows[0].body, '')
+})
+
+test('#2870: the same rows answer the queue gate\'s stop request for a review that asked for changes', () => {
+  const rows = reportsFrom({ reviews: [ghReview()] })
+  const stop = stopRequestAt(rows, { author: 'opencode-agent' })
+  assert.equal(stop?.phrase, 'asked for changes')
+  assert.equal(stop?.because, 'state', 'it is read from the state, not from a body that is empty')
+  assert.equal(stop?.id, 9001)
+})
+
+test('#2870: an APPROVED review with no body keeps its row and changes no conclusion', () => {
+  const rows = reportsFrom({
+    reviews: [ghReview({ id: 9002, state: 'APPROVED' })],
+    comments: [ghComment({ id: 7002, body: report() })],
+  })
+  assert.equal(rows.length, 2, 'both rows are kept')
+  assert.equal(rows.filter(isConclusionSource).length, 2, 'a review is one of the two conclusion faces')
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: rows.filter(isConclusionSource), policy })
+  assert.equal(r.ok, true, r.reason)
+  assert.equal(r.by, 'reviewer-agent', 'the PASS in the comment still decides')
+  assert.equal(stopRequestAt(rows, { author: 'opencode-agent' }), null, 'an approval is not a request')
+})
+
+test('#2870: a comment written on one line of the diff arrives as the third face', () => {
+  const ask = reportsFrom({ reviewComments: [ghComment({ body: 'one more thing — do not merge this tip\n' })] })
+  assert.equal(ask.length, 1, 'the row is built from `pulls/{pr}/comments` (#2091)')
+  assert.equal(ask[0].kind, 'review-comment')
+  assert.equal(ask[0].id, 7001, 'it carries the handle the decision prints')
+  assert.equal(stopRequestAt(ask, { author: 'opencode-agent' })?.phrase, 'do not merge')
+})
+
+test('#2870: a Verdict written in a line comment is not a conclusion', () => {
+  const rows = reportsFrom({ reviewComments: [ghComment({ body: report() })] })
+  assert.equal(rows.length, 1)
+  assert.equal(rows.filter(isConclusionSource).length, 0, 'its Verifier block is not a conclusion (#2091)')
+  const r = decide({ head: HEAD, author: 'opencode-agent', reports: rows.filter(isConclusionSource), policy })
+  assert.equal(r.ok, false, 'no conclusion names the tip')
+  assert.match(r.reason, new RegExp(`no Verifier report names the tip ${HEAD.slice(0, 12)}`))
 })
