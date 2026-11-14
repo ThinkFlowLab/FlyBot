@@ -123,6 +123,7 @@ For a change to the Bot browser, check it in DSH Desktop. On Linux, the scripts 
 - Follow the style of the code around your change. Write a comment only when the reason for the code is not clear from the code itself.
 - Write commit messages in English. Use a short subject in the imperative mood ("Keep group replies visible") and explain the reason in the body.
 - For a change that users can see, add one file `changelog.d/<issue-or-slug>.<kind>.md` (kind: `added`, `changed`, `fixed`, ...; see [changelog.d/README.md](changelog.d/README.md)). Do not edit [CHANGELOG.md](CHANGELOG.md) in a feature PR: the release assembles the fragments, and one file per change means two PRs never conflict there.
+  A change to `core/src/client/**` or `plugins/*/client.js` is user-visible by definition, and `enqueue-guard` checks it at queue entry: the pull request carries a fragment, or its body carries one `changelog-not-needed: <reason>` line saying why the change needs none.
 
 ## Report a problem
 
