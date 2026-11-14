@@ -30,7 +30,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { baselineOf, missingCopy, scanMissing } from '../../scripts/i18n-usage.mjs'
+import { baselineOf, missingCopy, scanMissing, tokens } from '../../scripts/i18n-usage.mjs'
 
 const baselineFile = new URL('./i18n-missing-entries.baseline.json', import.meta.url)
 
@@ -277,4 +277,44 @@ test('a key the plugin table already translates is not a gap', () => {
     "h('span', null, superseded(id))",
   ].join('\n')
   assert.deepEqual(missingCopy(source, 'plugins/sample/client.js'), [])
+})
+
+// The tokenizer opened a bracket on `[` and never closed it, so every depth in this file counted one
+// too many from the first `[…]` onward: `? :` and `||` no longer split at the top level, and a
+// `return` that reads an index — `return list[0] || 'None yet'` — handed back one unsplittable part,
+// which is not a literal, so the sentence was dropped and both i18n checks stayed green. The token is
+// the fix at the source: an opener closes what it opened (Product, round 138).
+test('#3077: the tokenizer closes the bracket it opened', () => {
+  const punct = tokens('const first = list[0]').filter(token => token.type === 'punct').map(token => token.value)
+  assert.deepEqual(punct, ['=', '[', ']'])
+})
+
+// The same walk, from the reader's side: a literal beside an indexed read is copy a zh window still
+// shows in English.
+test('#3077: a literal beside an indexed read is still copy', () => {
+  const source = [
+    "function emptyLabel(list) { return list[0] || 'None yet' }",
+    "h('span', null, emptyLabel(items))",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), ['None yet'])
+})
+
+// A sentence a helper keeps in a local and interpolates into what it draws is read by the person, so
+// the scan has to see the name the hole names. Closing the bracket above turned this pin's old
+// accident off — its `const` sits inside a run that used to overrun the file — so both branches of
+// the sentence are reported instead of one, and neither by an overrun.
+test('#3077: a name a template interpolates is a read, not a dead local', () => {
+  const source = [
+    'function FriendNote({ who, linked, shared }) {',
+    '  const line = shared > 0',
+    '    ? `${who} stays a friend: still shared through ${linked}.`',
+    '    : `Your own Bots stay shared. ${who} can share it again.`',
+    "  return h('span', null, `Remove? ${line}`)",
+    '}',
+    'h(FriendNote, { who, linked, shared })',
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), [
+    '{} stays a friend: still shared through {}.',
+    'Your own Bots stay shared. {} can share it again.',
+  ])
 })

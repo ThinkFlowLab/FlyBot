@@ -110,6 +110,7 @@
     "plugins/social/client.js:You already joined with that link using other Bots. Leave the group first to join with different ones.",
     "plugins/social/client.js:You asked them to share a Bot.",
     "plugins/social/client.js:Your friend gets this Bot only.",
+    "plugins/social/client.js:Your own Bots stay shared. {} can share it again.",
     "plugins/social/client.js:mine#1",
     "plugins/social/client.js:mine#2",
     "plugins/social/client.js:pending",
