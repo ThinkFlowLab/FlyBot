@@ -3593,7 +3593,28 @@ function loadSocialClient(callImpl) {
       useMemo: f => f(),
     }))
   }
-  return { registered, entries, walk, pluginOf, h, sandbox }
+  // #3071: `pluginOf` seeds useState positionally and hands back a no-op setter, so nothing a click
+  // writes can be read afterwards — and a click that writes and then re-renders is exactly what a
+  // batch of decisions does. This variant keeps the slots live, so a test can draw, click, draw again
+  // and read what the component actually stored.
+  const pluginOfLive = (states = []) => {
+    const store = [...states]
+    let slot = 0
+    const plugin = registered[0].factory(() => ({
+      createElement: h, Fragment: 'F',
+      useEffect: () => {},
+      useState: (value) => {
+        const at = slot++
+        if (!(at in store)) store[at] = value
+        return [store[at], next => { store[at] = typeof next === 'function' ? next(store[at]) : next }]
+      },
+      useRef: value => ({ current: value }),
+      useMemo: fn => fn(),
+    }))
+    const render = (Component, props) => { slot = 0; return walk(Component(props)) }
+    return { plugin, render, store }
+  }
+  return { registered, entries, walk, pluginOf, pluginOfLive, h, sandbox }
 }
 
 test('social HTTP keep-alive reuses one Agent', () => {
@@ -4476,6 +4497,41 @@ test('#3029: Approve all claims nothing when every send fails, and the failure k
   const line = failed.find(node => node.props['data-flybot'] === 'chat-approval-error')
   assert.ok(line, 'a failed send still says why')
   assert.deepEqual(line.children, ['the hold is stale'])
+})
+
+test('#3071: a mixed Approve all keeps the reason of the send that failed', async () => {
+  const notes = []
+  const { pluginOfLive } = loadSocialClient(async (endpoint, payload) => {
+    if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1') throw new Error('the hold is stale')
+    return { approvalId: payload?.approvalId, status: 'approved' }
+  })
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  // The send that fails is followed by two that work, so a later success is in a position to wipe the
+  // line the failure wrote. That is the mixed batch: one reason and one receipt in the same click.
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob'), hold('h3', '@bob.home', 'Bob')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  const props = { bot: { id: 'mine' }, roster: { bots: [] }, room, actions: { notify: text => notes.push(text) } }
+  const { plugin, render, store } = pluginOfLive([items, [], true, true])
+  const dock = () => render(plugin.ChatApprovalDock, props)
+  await dock().find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.deepEqual(notes, ['Sent to Bob'], 'the receipt names only the sends that went out')
+  const line = dock().find(node => node.props['data-flybot'] === 'chat-approval-error')
+  assert.ok(line, 'a mixed click still says why one hold did not send')
+  assert.deepEqual(line.children, ['Eve: the hold is stale'], 'the reason and the card it belongs to survive the two sends that worked')
+  assert.equal(store[0].some(item => item.id === 'h1'), true, 'the failed card is still there to read it on')
+  assert.equal(store[0].some(item => item.id === 'h2'), false, 'the sends that went out left as they do today')
+})
+
+test('#3071: one card still says why its own click failed', async () => {
+  const { pluginOfLive } = loadSocialClient(async () => { throw new Error('the hold is stale') })
+  const hold = { id: 'h1', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@eve.home', toName: 'Eve', text: 'hi' }
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }] }
+  const { plugin, render } = pluginOfLive([[hold], [], true, true])
+  const props = { bot: { id: 'mine' }, roster: { bots: [] }, room }
+  const button = render(plugin.ChatApprovalDock, props).find(node => node.type === 'button' && node.children?.[0] === 'Approve')
+  await button.props.onClick()
+  const line = render(plugin.ChatApprovalDock, props).find(node => node.props['data-flybot'] === 'chat-approval-error')
+  assert.deepEqual(line?.children, ['the hold is stale'], 'the single-card path keeps its own reason')
 })
 
 test('#3044: no card stays clickable while another decision is in flight', () => {
