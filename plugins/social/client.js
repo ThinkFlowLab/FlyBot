@@ -2532,7 +2532,7 @@ window.__ModuleLoader__.load({
           },
           // One decision path, the dock's own: the in-chat card's Retry is the same `decide`. While that
           // one is in flight a second click is dropped here too, not only disabled on the button (#P796).
-          onRetry: item => { if (busy) return; decide(item, 'retry') },
+          onRetry: item => { if (busy) return; setError(''); decide(item, 'retry') },
         })
         : null
       if (!mine.length && !waitingOthers && !list) return null
@@ -2541,7 +2541,9 @@ window.__ModuleLoader__.load({
         // a second one, so two replies never race each other's `setBusy`/`setError`.
         if (busy) return false
         setBusy(item.id)
-        setError('')
+        // The line is cleared where the person acted, not here (#3071): a batch calls this once per
+        // hold, so clearing on entry let a send that worked erase the reason the one before it had
+        // just written.
         try {
           const always = decision === 'always'
           const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
@@ -2569,8 +2571,12 @@ window.__ModuleLoader__.load({
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
           return true
         } catch (failure) {
-          // A stale or failed hold must say why, never swallow the click.
-          setError(String(failure?.message ?? failure).slice(0, 200))
+          // A stale or failed hold must say why, never swallow the click. The reason also goes back to
+          // the caller: a batch has to report it after its last send, not lose it to that send's own
+          // clear (#3071).
+          const reason = String(failure?.message ?? failure).slice(0, 200)
+          setError(reason)
+          return { error: reason }
         } finally { setBusy('') }
       }
       // #3011/#3029: one entry per person, in draw order; a hold whose person never resolved keeps the
@@ -2588,10 +2594,23 @@ window.__ModuleLoader__.load({
         const tr = (text, params) => (typeof t === 'function'
           ? t(text, params)
           : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+        // The click is the person acting, so this is where the previous line goes (#3071).
+        setError('')
         const sent = []
-        for (const item of mine.filter(waiting)) if (await decide(item, 'approve')) sent.push(item)
+        const failed = []
+        for (const item of mine.filter(waiting)) {
+          const outcome = await decide(item, 'approve')
+          if (outcome === true) sent.push(item)
+          else if (outcome?.error) {
+            const name = typeof item.toName === 'string' ? item.toName.trim() : ''
+            failed.push(name ? `${name}: ${outcome.error}` : outcome.error)
+          }
+        }
         const reached = recipientNames(sent)
         if (reached.length) actions?.notify?.(tr('Sent to {to}', { to: reached.join(tr(', ')) }))
+        // #3071: written once, after the last send, so no send in the batch can clear it again; the
+        // receipt above still names only the people reached.
+        if (failed.length) setError(failed.join(' '))
       }
       // #3011: the button says what it will send and to whom, so the blast radius of a click that
       // cannot be undone is readable before it.
@@ -2649,7 +2668,8 @@ window.__ModuleLoader__.load({
         error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
         mine.map(item => h(ChatApproval, {
           // #3044: a decision in flight locks every card, not only its own.
-          key: item.id, item, canDecide: true, busy: !!busy, onDecide: decide, t,
+          // #3071: a click on one card clears the previous line here, where the person acted.
+          key: item.id, item, canDecide: true, busy: !!busy, onDecide: (card, decision) => { setError(''); return decide(card, decision) }, t,
         })))
     }
 

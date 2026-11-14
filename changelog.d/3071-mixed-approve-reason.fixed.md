@@ -1,0 +1,1 @@
+"Approve all" no longer loses the reason when a batch is mixed: a hold that fails keeps its own sentence and the card it belongs to ("Eve: the hold is stale") while the holds that did send leave as before, and the receipt still names only the people reached (#3071).
