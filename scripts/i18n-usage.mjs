@@ -11,6 +11,10 @@
 // the renderer, or an `h(...)` prop). A value already translated, a comparison operand, an object
 // key, a state id, a selector and a URL are data, not copy, and never count in either scan.
 //
+// `missingCopy` has a second view over the same file: copy a helper hands back (#P-800), because a
+// helper's answer has no draw position of its own — `return cond ? 'the room' : 'friend'` draws
+// English in a zh window with every check green. That view is described where it is built, below.
+//
 // `bareCopy` only counts **render positions** (#2998 ruling):
 //
 //   1. a string child of `h(...)` (argument 3 and later), or a pure template literal there;
@@ -170,23 +174,25 @@ export function tokens(source) {
     if (isIdent(ch)) {
       let name = ''
       while (index < source.length && isIdent(source[index])) { name += source[index]; index += 1 }
-      if (name === 'tr' || name === 't' || name === 'hostText' || name === 'h') {
-        let next = index
-        while (next < source.length && /\s/.test(source[next])) next += 1
-        if (source[next] === '(') calls.push({ kind: name, arg: 0, obj: 0, key: null })
+      let next = index
+      while (next < source.length && /\s/.test(source[next])) next += 1
+      const called = source[next] === '('
+      if (called && (name === 'tr' || name === 't' || name === 'hostText' || name === 'h')) {
+        calls.push({ kind: name, arg: 0, obj: 0, key: null })
       }
-      place({ type: 'ident', value: name })
+      place({ type: 'ident', value: name, called })
       previous = name
       lastValue = name
       continue
     }
     if (ch === '(' || ch === '[') {
+      place({ type: 'punct', value: ch })
       if (!(previous === 'tr' || previous === 't' || previous === 'hostText' || previous === 'h')) calls.push({ kind: 'other', arg: 0, obj: 0, key: null })
       previous = '('
       index += 1
       continue
     }
-    if (ch === ')') { calls.pop(); previous = ')'; index += 1; continue }
+    if (ch === ')') { place({ type: 'punct', value: ')' }); calls.pop(); previous = ')'; index += 1; continue }
     if (ch === ']') { if (current()?.kind === 'other') calls.pop(); previous = ']'; index += 1; continue }
     // Braces are emitted too, so a copy table can be delimited by its own body rather than by
     // guessing from the props depth.
@@ -396,6 +402,265 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     if (Object.hasOwn(dictionary, key)) continue
     entries.push({ file, line: token.line, key })
   }
+  // One entry point for both views: a copy table is a draw position and so is a helper's answer, and
+  // a caller of this scan wants the gap, not the shape it was written in.
+  return [...entries, ...helperCopy(source, file, dictionary)]
+}
+
+// The third place copy hides: what a helper hands back (main 9b45c95e, measured by Product). The
+// two scans above read a draw position and a table value, `templateDraws` reads a `${}` hole, and
+// none of them can read `return cond ? 'the room' : 'friend'` — five such sites in
+// `plugins/social/client.js` draw English in a zh window while every check is green. The rule here
+// is the one `templateBindings` already applies to a `const`, carried to what a helper yields: a
+// literal, or an expression built from literals by `? :`, `||` and parentheses, is copy. A call's
+// arguments are not a yield — `readableParty(to, 'friend')` hands `'friend'` to another helper, and
+// what that helper does with it is a different question — and nothing nested inside a call is
+// reached, so an `h(...)` full of attributes stays the draw scan's business.
+//
+// A helper counts only when it is **drawn**: its call sits where a reader sees the result (an `h()`
+// child, a copy attribute, a `text:` prop), a local it is assigned to is drawn, or it is rendered as
+// `h(Component, …)`. Without that test the machine ids would pin as untranslated sentences —
+// `faceChip`'s `'closed'` / `'left'`, the SVG path data in workflow's chart builder, timeline's
+// duration units — values a reader never sees as copy. The discriminator is the one `missingCopy`
+// already applies to a table: where the value ends up, not what it looks like.
+//
+// A value of one token — no space, and carrying `- _ . / : #` — is a CSS class, a selector, a URL or
+// an id, not a sentence: `fs-hint`, `remote:{}`, `https://…`. Same reason as `decoration`: a string
+// alone cannot say what it is, its shape can.
+const DECLARES = new Set(['const', 'let', 'var'])
+const CONTINUE_LINE = new Set(['?', ':', '.', '+', '-', '*', '/', '&&', '||', '='])
+const HELPER_TOKEN_SHAPE = /[-_.:/#]/
+const singleToken = key => !/\s/.test(key) && HELPER_TOKEN_SHAPE.test(key)
+
+const matchingBrace = (list, open) => {
+  let depth = 0
+  for (let at = open; at < list.length; at += 1) {
+    if (list[at].type !== 'punct') continue
+    if (list[at].value === '{') depth += 1
+    else if (list[at].value === '}') { depth -= 1; if (depth === 0) return at }
+  }
+  return -1
+}
+
+// The `{` that opens a `function name(…)` body: parens around the parameters are skipped, so a
+// default value's own object literal cannot be mistaken for the body.
+const bodyBrace = (list, from) => {
+  let depth = 0
+  for (let at = from; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'punct') continue
+    if (token.value === '(') depth += 1
+    else if (token.value === ')') depth -= 1
+    else if (token.value === '{' && depth === 0) return at
+  }
+  return -1
+}
+
+// The token after `=>` in `const name = … => …`, or -1 when the initializer is not an arrow.
+const arrowAt = (list, from) => {
+  let depth = 0
+  for (let at = from; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type === 'ident' && depth === 0 && STATEMENT.has(token.value) && at > from) return -1
+    if (token.type !== 'punct') continue
+    if (token.value === '(' || token.value === '[' || token.value === '{') depth += 1
+    else if (token.value === ')' || token.value === ']' || token.value === '}') { depth -= 1; if (depth < 0) return -1 }
+    else if (depth === 0 && (token.value === ';' || token.value === ',')) return -1
+    // `=>` is one token: the walker combines it before it reaches the list.
+    else if (depth === 0 && token.value === '=>') return at + 1
+  }
+  return -1
+}
+
+// A helper a reader can name: `function name(…) { … }` and `const name = (…) => …`. An anonymous
+// callback is not one — nothing else can hand its value to a draw.
+function helperBodies(list) {
+  const bodies = []
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'ident') continue
+    if (token.value === 'function') {
+      let nameAt = at + 1
+      if (list[nameAt]?.value === '*') nameAt += 1
+      const name = list[nameAt]
+      if (name?.type !== 'ident') continue
+      const open = bodyBrace(list, nameAt + 1)
+      if (open < 0) continue
+      const close = matchingBrace(list, open)
+      if (close > 0) bodies.push({ name: name.value, start: open, end: close, expression: false })
+      continue
+    }
+    if (!DECLARES.has(token.value)) continue
+    const name = list[at + 1]
+    if (name?.type !== 'ident' || list[at + 2]?.value !== '=') continue
+    const arrow = arrowAt(list, at + 3)
+    if (arrow < 0) continue
+    if (list[arrow]?.value === '{') {
+      const close = matchingBrace(list, arrow)
+      if (close > 0) bodies.push({ name: name.value, start: arrow, end: close, expression: false })
+    } else {
+      // An expression body ends at its own line, `,` or `;`; `expressionRun` finds that.
+      bodies.push({ name: name.value, start: arrow, end: list.length, expression: true })
+    }
+  }
+  return bodies
+}
+
+// The helpers whose value a reader sees: a call at a draw position, a drawn local it is assigned
+// to, or a component handed to `h(...)`. One level of assignment, because `const usage = roomHint(…)`
+// followed by `usage.text` is how the caller reads it.
+function drawnHelpers(list) {
+  const drawn = new Set()
+  const handed = new Map()
+  for (let at = 0; at + 3 < list.length; at += 1) {
+    if (!DECLARES.has(list[at].value)) continue
+    const name = list[at + 1]
+    if (name?.type !== 'ident' || list[at + 2]?.value !== '=') continue
+    for (let each = at + 3; each < list.length; each += 1) {
+      const token = list[each]
+      if (each > at + 3 && token.line !== list[each - 1].line) break
+      if (token.type === 'ident' && token.called) { handed.set(name.value, token.value); break }
+      if (token.type !== 'ident') break
+    }
+  }
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'ident') continue
+    const inCopyProp = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    const component = token.call === 'h' && token.obj === 0 && token.arg === 0 && !token.called
+    if (renderChild(token) || inCopyProp || copyValue(list, at) || component) drawn.add(token.value)
+  }
+  for (const [local, helper] of handed) if (drawn.has(local)) drawn.add(helper)
+  return drawn
+}
+
+// The expression a statement or an arrow body hands back, up to the end of that statement.
+function expressionRun(list, from, limit) {
+  const run = []
+  let depth = 0
+  for (let at = from; at < limit; at += 1) {
+    const token = list[at]
+    const previous = list[at - 1]
+    if (at > from && depth === 0 && token.line !== previous.line
+      && !CONTINUE_LINE.has(token.value) && !CONTINUE_LINE.has(previous.value)) break
+    if (token.type === 'ident' && depth === 0 && STATEMENT.has(token.value) && at > from) break
+    if (token.type === 'punct') {
+      if (token.value === '(' || token.value === '[' || token.value === '{') depth += 1
+      else if (token.value === ')' || token.value === ']' || token.value === '}') { if (depth === 0) break; depth -= 1 }
+      else if (depth === 0 && (token.value === ';' || token.value === ',')) break
+    }
+    run.push(token)
+  }
+  return run
+}
+
+// Every literal an expression is built from at its own level: `cond ? 'a' : 'b'`, `name || 'b'`,
+// `('You')`. A part that is a call or a member read is not a literal and is skipped rather than
+// opened — that is what keeps a helper's arguments out of this scan.
+function literalsOf(run) {
+  const literals = []
+  const parts = [[]]
+  let depth = 0
+  // `||` and `&&` are two single-character tokens, not one: the walker emits the operator it sees.
+  const split = new Set(['?', ':', '|', '&', '+'])
+  for (let at = 0; at < run.length; at += 1) {
+    const token = run[at]
+    if (token.type === 'punct') {
+      if (token.value === '(' || token.value === '[' || token.value === '{') depth += 1
+      else if (token.value === ')' || token.value === ']' || token.value === '}') depth -= 1
+      // `?.` is optional chaining, not the start of a ternary.
+      else if (depth === 0 && split.has(token.value) && run[at + 1]?.value !== '.') { parts.push([]); continue }
+    }
+    parts[parts.length - 1].push(token)
+  }
+  for (const part of parts) {
+    const bare = part.filter(token => !(token.type === 'punct' && (token.value === '(' || token.value === ')')))
+    if (bare.length === 1 && bare[0].type === 'string') { literals.push(bare[0]); continue }
+    // A parenthesised group is the same expression one level in: `… || (cond ? 'You' : 'Someone')`.
+    if (part.length >= 2 && part[0].value === '(' && part[part.length - 1].value === ')') {
+      literals.push(...literalsOf(part.slice(1, -1)))
+    }
+  }
+  return literals
+}
+
+// Every literal a helper hands back: a `return`, the arrow's expression body, and a `const` the
+// helper reads again afterwards (that is how it builds the sentence: `head + pick.join(', ')`).
+function yieldedLiterals(list, body) {
+  // An expression body is a value, the same way a local is: `friend => friend?.id || 'share'` hands
+  // back a key, so only a sentence counts there. A `return` in a block keeps its bare words — that is
+  // where a helper answers `'Closed'` or `'Joining'`.
+  if (body.expression) {
+    return literalsOf(expressionRun(list, body.start, Math.min(body.start + 400, list.length)))
+      .filter(each => each.substituted || /\s/.test(each.value))
+  }
+  const literals = []
+  for (let at = body.start; at < body.end; at += 1) {
+    const token = list[at]
+    if (token.type === 'ident' && token.value === 'return') {
+      literals.push(...literalsOf(expressionRun(list, at + 1, body.end)))
+      continue
+    }
+    if (!DECLARES.has(token.value)) continue
+    const name = list[at + 1]
+    if (name?.type !== 'ident' || list[at + 2]?.value !== '=') continue
+    const values = literalsOf(expressionRun(list, at + 3, body.end))
+    if (!values.length) continue
+    const rest = list.slice(at + 3, body.end)
+    // The name must be read again — that is how the helper builds its sentence — and must not be
+    // compared: `side === 'below'` says the local holds a machine id, not the words on the label.
+    const used = rest.some(each => each.type === 'ident' && each.value === name.value)
+    const comparedName = rest.some((each, index) => each.type === 'ident' && each.value === name.value
+      && rest[index - 1]?.value !== '.'
+      && ((rest[index - 1]?.type === 'punct' && COMPARISONS.has(rest[index - 1].value))
+        || (rest[index + 1]?.type === 'punct' && COMPARISONS.has(rest[index + 1].value))))
+    // A local is only half a sentence: `|| 'share'` is the last resort key of a lookup, not words on
+    // the screen, so a bare word from a local has to be spelled as a sentence (`'the room'`, a
+    // template with a hole) to count. A helper's own `return 'Closed'` is not filtered this way.
+    const sentence = values.filter(each => each.substituted || /\s/.test(each.value))
+    if (used && !comparedName) literals.push(...sentence)
+  }
+  return literals
+}
+
+// A value the file compares against is a machine value, not copy: timeline's `'below'`, `'right'`
+// and `'left'` decide where a label is printed, and workflow's `'failed'` is a class name, but both
+// are written as a literal a helper hands back. The comparison is the file's own statement that the
+// string is data, so the scan reads it rather than guessing from the spelling.
+function comparedValues(list) {
+  const values = new Set()
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'string') continue
+    const before = list[at - 1]
+    const after = list[at + 1]
+    const compared = (before?.type === 'punct' && COMPARISONS.has(before.value))
+      || (after?.type === 'punct' && COMPARISONS.has(after.value))
+      || (before?.type === 'ident' && before.value === 'case')
+    if (compared) values.add(token.value)
+  }
+  return values
+}
+
+// Copy a helper hands to a reader with no zh entry. Its own view of the same walk, so
+// `missingCopy` keeps reading draw positions only and neither view can rewrite the other.
+function helperCopy(source, file, dictionary = DICTIONARY.zh) {
+  const list = tokens(source)
+  const drawn = drawnHelpers(list)
+  const compared = comparedValues(list)
+  const entries = []
+  for (const body of helperBodies(list)) {
+    if (!drawn.has(body.name)) continue
+    for (const token of yieldedLiterals(list, body)) {
+      const key = token.value
+      if (key === '' || key === ', ') continue
+      if (decoration(key)) continue
+      if (singleToken(key)) continue
+      if (compared.has(key)) continue
+      if (Object.hasOwn(dictionary, key)) continue
+      entries.push({ file, line: token.line, key })
+    }
+  }
   return entries
 }
 
@@ -419,7 +684,8 @@ export function scanPlugins(pluginsRoot = new URL('../plugins/', import.meta.url
 }
 
 // The other half of the same walk: copy a plugin draws that the dictionary has no entry for, so
-// nothing can translate it at all (#3002).
+// nothing can translate it at all (#3002). Two views over one file — a draw position, and what a
+// helper hands back — because a helper's copy has no draw position of its own.
 export function scanMissing(pluginsRoot = new URL('../plugins/', import.meta.url)) {
   return pluginClients(pluginsRoot).flatMap(({ file, source }) => missingCopy(source, file)).sort(byPlace)
 }
