@@ -2449,6 +2449,12 @@ window.__ModuleLoader__.load({
       const [listLoaded, setListLoaded] = useState(false)
       const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
+      // #3075: a Bot Social send that failed leaves the upstream hold pending, so the 5 s poll writes the
+      // card back as if it never failed. The dock keeps its own memory of which sends did not go and why,
+      // keyed by id, and merges it into the cards it draws; `items` and `local` stay the host's lists.
+      const [failures, setFailures] = useState({})
+      // A Retry already sent for an id is not sent again from a card that outlives its own render.
+      const retriedIds = useRef(new Set())
       const load = () => {
         call('social/status', {}).then(value => {
           setItems(Array.isArray(value?.approvals) ? value.approvals : [])
@@ -2473,12 +2479,31 @@ window.__ModuleLoader__.load({
         const from = faceFromLabel(item, room)
         return label || from ? { ...item, ...(label ? { toName: label } : {}), ...(from ? { from } : {}) } : item
       })
+      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
+      // (`status: 'pending'`). A failed hold is not approved; it is retried.
+      const waiting = entry => !entry.status || entry.status === 'pending'
       // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418): no dock draws it.
+      // #3075: the dock's own memory of a failed send is what keeps the card saying so across a poll. Only
+      // a waiting card is cast as failed; one the host already marks failed keeps its own reason (#P796).
+      const withFailures = item => {
+        const reason = failures[item.id]
+        return reason && waiting(item) ? { ...item, status: 'failed', error: reason } : item
+      }
       const held = [
         ...named(items),
         ...named(local.filter(item => !item.inline)),
-      ]
+      ].map(withFailures)
       const mine = approvalsForOpenChat(held, session)
+      // The record goes when its id leaves the two lists (decided here, in another window, or gone), so a
+      // stale line cannot outlive the card it explained.
+      const heldKey = held.map(item => item.id).join(',')
+      useEffect(() => {
+        const live = new Set(held.map(item => item.id))
+        setFailures(previous => {
+          const entries = Object.entries(previous).filter(([id]) => live.has(id))
+          return entries.length === Object.keys(previous).length ? previous : Object.fromEntries(entries)
+        })
+      }, [heldKey])
       // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
       const shownIds = mine.map(item => item.id).join(',')
       useEffect(() => {
@@ -2494,9 +2519,6 @@ window.__ModuleLoader__.load({
       // (#1638). A card the dock never draws keeps the line, because there the sentence is true.
       const roomCards = approvalsForOpenChat((room?.pendingApprovals ?? []).filter(item => !item.inline), session)
       const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && roomCards.length === 0 && (room?.pendingCount ?? 0) > 0
-      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
-      // (`status: 'pending'`). A failed hold is not approved; it is retried.
-      const waiting = entry => !entry.status || entry.status === 'pending'
       // #3016: a hold that sits in another chat is still this person's, and this dock is the surface
       // that can open every chat. When this chat draws no card of its own, the dock lists what waits
       // elsewhere: the overlay can only point at such a hold, never say how many or to whom.
@@ -2540,13 +2562,22 @@ window.__ModuleLoader__.load({
         // #3044: one decision at a time. A card drawn while another send is in flight cannot start
         // a second one, so two replies never race each other's `setBusy`/`setError`.
         if (busy) return false
+        // #3075: a Retry acts on the card that failed, once — a click that arrives after that card's own
+        // send already went out (a stale node one frame behind the render that removed it) sends nothing.
+        // What is spent is the send that went out, not the click: a local retry the host answers with
+        // the same failure returns normally (#3075 review), so the id is only marked after a send.
+        const retry = decision === 'retry'
+        if (retry && retriedIds.current.has(item.id)) return false
         setBusy(item.id)
         // The line is cleared where the person acted, not here (#3071): a batch calls this once per
         // hold, so clearing on entry let a send that worked erase the reason the one before it had
         // just written.
         try {
           const always = decision === 'always'
-          const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
+          // #3075: Bot Social's endpoint takes approve or reject only, and a hold that failed is still
+          // pending upstream — sending it again is an approve. The local host has its own `retry`.
+          const wanted = retry && item.source !== 'local' ? 'approve' : decision
+          const mapped = always || wanted === 'approve' || wanted === 'approved' ? 'approve' : wanted
           let autoSend
           if (item.source === 'local') {
             await call('decide', { id: item.id, decision: mapped })
@@ -2562,12 +2593,21 @@ window.__ModuleLoader__.load({
           } else {
             const result = await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
             autoSend = result?.autoSend
+            // Bot Social's endpoint accepted the send, so this card has nothing left to retry.
+            if (retry) retriedIds.current.add(item.id)
           }
           const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           // The decided card leaves now (#456); the next load agrees.
           const drop = list => list.filter(entry => entry.id !== item.id)
           setItems(drop)
           setLocal(drop)
+          // The card went out, so the dock's own failed record for it is done too.
+          setFailures(previous => {
+            if (!(item.id in previous)) return previous
+            const next = { ...previous }
+            delete next[item.id]
+            return next
+          })
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
           return true
         } catch (failure) {
@@ -2576,6 +2616,11 @@ window.__ModuleLoader__.load({
           // clear (#3071).
           const reason = String(failure?.message ?? failure).slice(0, 200)
           setError(reason)
+          // A retry the host refused may be tried again; the id was never marked spent.
+          if (retry) retriedIds.current.delete(item.id)
+          // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
+          // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
+          if (item.source !== 'local') setFailures(previous => ({ ...previous, [item.id]: reason }))
           return { error: reason }
         } finally { setBusy('') }
       }
@@ -2585,8 +2630,6 @@ window.__ModuleLoader__.load({
         const name = typeof item.toName === 'string' ? item.toName.trim() : ''
         return name && !people.includes(name) ? [...people, name] : people
       }, [])
-      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
-      // (`status: 'pending'`). A failed hold is not approved; it is retried.
       // #3029: the click sends several holds and they leave the dock at once, so the tail reports what
       // actually went out — one receipt for the people reached, and none when every send failed (those
       // cards keep their own error line).
