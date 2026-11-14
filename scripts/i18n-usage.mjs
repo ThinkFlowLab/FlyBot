@@ -139,6 +139,9 @@ export function tokens(source) {
       index += 1
       let value = ''
       let substituted = false
+      // The names a `${}` hole mentions: the hole's code is not tokenised, but a local interpolated
+      // here is read by the reader all the same (`${keepLine}` draws the sentence that local holds).
+      const holes = []
       while (index < source.length && source[index] !== '`') {
         if (source[index] === '\\') {
           const [each, next] = escapeAt(source, index)
@@ -157,6 +160,12 @@ export function tokens(source) {
             if (source[index] === '{') depth += 1
             else if (source[index] === '}') depth -= 1
             else if (source[index] === '\n') line += 1
+            else if (isIdent(source[index])) {
+              let name = ''
+              while (index < source.length && isIdent(source[index])) { name += source[index]; index += 1 }
+              holes.push(name)
+              continue
+            }
             index += 1
           }
           continue
@@ -166,7 +175,7 @@ export function tokens(source) {
         index += 1
       }
       index += 1
-      place(substituted ? { type: 'string', value, substituted: true } : { type: 'string', value })
+      place(substituted ? { type: 'string', value, substituted: true, holes } : { type: 'string', value })
       previous = 'string'
       lastValue = value
       continue
@@ -193,7 +202,7 @@ export function tokens(source) {
       continue
     }
     if (ch === ')') { place({ type: 'punct', value: ')' }); calls.pop(); previous = ')'; index += 1; continue }
-    if (ch === ']') { if (current()?.kind === 'other') calls.pop(); previous = ']'; index += 1; continue }
+    if (ch === ']') { place({ type: 'punct', value: ']' }); if (current()?.kind === 'other') calls.pop(); previous = ']'; index += 1; continue }
     // Braces are emitted too, so a copy table can be delimited by its own body rather than by
     // guessing from the props depth.
     if (ch === '{') {
@@ -609,7 +618,13 @@ function yieldedLiterals(list, body) {
     const rest = list.slice(at + 3, body.end)
     // The name must be read again — that is how the helper builds its sentence — and must not be
     // compared: `side === 'below'` says the local holds a machine id, not the words on the label.
-    const used = rest.some(each => each.type === 'ident' && each.value === name.value)
+    const readPlain = rest.some(each => each.type === 'ident' && each.value === name.value)
+    // A name interpolated into a template is read just as plainly as one passed as an argument:
+    // `${keepLine}` puts the sentence that local holds on the screen. A hole has no room for a bare
+    // word, though — the sentence around it says what the value means — so only a sentence (a
+    // substituted template) counts when the hole is the only place the name is read.
+    const readInHole = rest.some(each => each.type === 'string' && Array.isArray(each.holes) && each.holes.includes(name.value))
+    const used = readPlain || readInHole
     const comparedName = rest.some((each, index) => each.type === 'ident' && each.value === name.value
       && rest[index - 1]?.value !== '.'
       && ((rest[index - 1]?.type === 'punct' && COMPARISONS.has(rest[index - 1].value))
@@ -617,7 +632,7 @@ function yieldedLiterals(list, body) {
     // A local is only half a sentence: `|| 'share'` is the last resort key of a lookup, not words on
     // the screen, so a bare word from a local has to be spelled as a sentence (`'the room'`, a
     // template with a hole) to count. A helper's own `return 'Closed'` is not filtered this way.
-    const sentence = values.filter(each => each.substituted || /\s/.test(each.value))
+    const sentence = values.filter(each => readPlain ? each.substituted || /\s/.test(each.value) : each.substituted)
     if (used && !comparedName) literals.push(...sentence)
   }
   return literals
