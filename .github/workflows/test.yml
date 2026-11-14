@@ -153,8 +153,58 @@ jobs:
       - name: Lint the workflows (actionlint)
         env:
           VERSION: 1.7.7
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz" | tar -xz actionlint
+          set -euo pipefail
+          # #2682: github.com's release redirect answered 504 for an hour and took `package` — and
+          # with it every pull request and the merge queue — down with it. api.github.com served the
+          # same pinned bytes throughout, so it is the first attempt and the direct URL the second.
+          from_api() {
+            asset_id=$(node --input-type=module <<'ACTIONLINT_ASSET_JS'
+              const version = process.env.VERSION
+              const headers = {
+                Authorization: `Bearer ${process.env.GH_TOKEN}`,
+                Accept: "application/vnd.github+json",
+                "User-Agent": "flybot-actionlint",
+              }
+              const release = await fetch(
+                `https://api.github.com/repos/rhysd/actionlint/releases/tags/v${version}`,
+                { headers },
+              )
+              if (!release.ok) {
+                console.error(`actionlint: tag lookup returned ${release.status}`)
+                process.exit(1)
+              }
+              const name = `actionlint_${version}_linux_amd64.tar.gz`
+              const asset = ((await release.json()).assets ?? []).find((entry) => entry.name === name)
+              if (!asset) {
+                console.error(`actionlint: release v${version} has no asset named ${name}`)
+                process.exit(1)
+              }
+              process.stdout.write(String(asset.id))
+          ACTIONLINT_ASSET_JS
+            ) || return 1
+            test -n "${asset_id}" || return 1
+            curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/octet-stream" \
+              -o actionlint.tar.gz \
+              "https://api.github.com/repos/rhysd/actionlint/releases/assets/${asset_id}" || return 1
+            tar -xzf actionlint.tar.gz actionlint || return 1
+          }
+          from_github() {
+            curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz" | tar -xz actionlint
+          }
+          if from_api; then
+            echo "actionlint from api"
+          elif from_github; then
+            echo "actionlint from github.com"
+          else
+            echo "::error::actionlint could not be downloaded from api.github.com or github.com"
+            exit 1
+          fi
+          version_output="$(./actionlint -version)"
+          echo "${version_output}"
+          echo "${version_output}" | grep -Fx "${VERSION}" > /dev/null
           ./actionlint -color
 
   # One check that is green only when the test, plugins (every leg) and package jobs are.
