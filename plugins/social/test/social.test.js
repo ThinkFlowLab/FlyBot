@@ -4635,6 +4635,29 @@ test('#3036: a Retry already in flight is disabled and a second click sends noth
   assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide'), [], 'a second click while that one is in flight sends nothing')
 })
 
+test('#3050: a Retry that another decision would drop never looks clickable', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const hold = (id, to, toName, status) => ({ id, source: 'local', kind: 'outbound_message', status, from: 'Chief', to, toName, text: id })
+  const failed = hold('apr-failed', '@bob.alice.home', 'Bob', 'failed')
+  const deciding = hold('apr-deciding', '@eve.alice.home', 'Eve', 'pending')
+  const dock = (busy) => walk(pluginOf([[], [deciding, failed], true, true, busy]).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster: { bots: [] } }))
+  // The fifth slot is the dock's `busy`: another hold, not this row, is being decided right now.
+  const busyElsewhere = dock('apr-deciding')
+  const retry = busyElsewhere.find(node => node.props['data-flybot'] === 'pending-retry')
+  assert.ok(retry, 'the failed row still offers Retry while a different hold is in flight')
+  assert.equal(busyElsewhere.filter(node => node.props['data-flybot'] === 'pending-retry').length, 1, 'the waiting row in the same list still offers none')
+  await retry.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide'), [], 'the click a drawn-enabled Retry allows sends nothing')
+  assert.equal(retry.props.disabled, true, 'a Retry its own handler drops must not draw enabled')
+  // Nothing in flight: the same row is a real button again, with the same payload.
+  const idle = dock('')
+  const stillThere = idle.find(node => node.props['data-flybot'] === 'pending-retry')
+  assert.equal(stillThere.props.disabled, false, 'an idle row keeps its Retry')
+  await stillThere.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide').map(([, payload]) => [payload.id, payload.decision]), [['apr-failed', 'retry']], 'an idle click is still the one decide retry')
+})
+
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
   const calls = []
   const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })

@@ -1,0 +1,1 @@
+In the Bot Social dock, the **Retry** on a failed send listed from another chat no longer looks clickable while a different hold is being decided: the whole list's Retry goes disabled with the decision that is in flight, because the click there was already being dropped ([#3050](https://github.com/ThinkFlowLab/FlyBot/issues/3050)).
