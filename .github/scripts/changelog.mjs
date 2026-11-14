@@ -5,7 +5,9 @@
 //   node .github/scripts/changelog.mjs preview                     print what the fragments would add (to stdout)
 //   node .github/scripts/changelog.mjs release <version> [--date YYYY-MM-DD] [--dry-run]
 //                                                                  move [Unreleased] and the fragments into "## [version] - date",
-//                                                                  delete the fragment files, leave [Unreleased] empty
+//                                                                  delete the fragment files, leave [Unreleased] empty;
+//                                                                  without --date the date is the Asia/Shanghai calendar day
+//                                                                  of now, as every released section is dated
 //
 // No network, no shell, no environment variables: it reads and writes CHANGELOG.md and changelog.d/ only.
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -131,6 +133,12 @@ export function release(changelog, fragments, version, date) {
   return withLinks(`${changelog.slice(0, afterHeading)}\n${section}${changelog.slice(end)}`, version, previous)
 }
 
+// The released sections are dated by the Asia/Shanghai calendar day of the release moment: after
+// 16:00Z that is already the next day there, which is the day the section must carry.
+export function sectionDate(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(now)
+}
+
 function main(argv) {
   const root = process.env.CHANGELOG_ROOT ?? join(fileURLToPath(import.meta.url), '..', '..', '..')
   const dir = join(root, 'changelog.d')
@@ -150,7 +158,7 @@ function main(argv) {
     } else if (command === 'release') {
       const version = rest.find(a => !a.startsWith('--') && rest[rest.indexOf(a) - 1] !== '--date')
       const dateAt = rest.indexOf('--date')
-      const date = dateAt >= 0 ? rest[dateAt + 1] : new Date().toISOString().slice(0, 10)
+      const date = dateAt >= 0 ? rest[dateAt + 1] : sectionDate()
       if (!version) fail('usage: changelog.mjs release <version> [--date YYYY-MM-DD] [--dry-run]')
       const fragments = readFragments(dir)
       const text = release(readFileSync(file, 'utf8'), fragments, version, date)

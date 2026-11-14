@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { assemble, linkProblems, release, readFragments } from './changelog.mjs'
 
 const CHANGELOG = `# Changelog
@@ -121,6 +122,35 @@ test('release: refuses bad input and a duplicate version', () => {
   assert.throws(() => release(CHANGELOG, [], '0.1.1', 'today'), /not a date/)
   assert.throws(() => release(CHANGELOG, [], '0.1.0', '2026-10-20'), /already has/)
   assert.throws(() => release('## [Unreleased]\n\n## [0.1.0] - x\n', [], '0.1.1', '2026-10-20'), /nothing to release/)
+})
+
+test('sectionDate: the release section belongs to the Asia/Shanghai calendar day', async () => {
+  const { sectionDate } = await import('./changelog.mjs')
+  // 18:00Z is already 02:00 the next day in Asia/Shanghai.
+  assert.equal(sectionDate(new Date('2026-11-13T18:00:00.000Z')), '2026-11-14')
+  assert.equal(sectionDate(new Date('2026-11-13T02:00:00.000Z')), '2026-11-13')
+})
+
+// A release whose clock is loaded before the script, so the default date cannot come from the wall clock.
+const releaseAt = (moment, extra = []) => {
+  const root = tmp()
+  writeFileSync(join(root, 'CHANGELOG.md'), CHANGELOG)
+  fragments(join(root, 'changelog.d'))('7-thing.added.md', 'Thing (#7).\n')
+  const clock = join(root, 'clock.mjs')
+  writeFileSync(clock, `const RealDate = Date\nconst at = Date.parse('${moment}')\nglobalThis.Date = class extends RealDate {\n  constructor(...args) { super(...(args.length ? args : [at])) }\n  static now() { return at }\n}\n`)
+  execFileSync(process.execPath, ['--import', pathToFileURL(clock).href, new URL('./changelog.mjs', import.meta.url).pathname, 'release', '0.2.0', ...extra], { env: { ...process.env, CHANGELOG_ROOT: root }, encoding: 'utf8' })
+  const text = readFileSync(join(root, 'CHANGELOG.md'), 'utf8')
+  rmSync(root, { recursive: true })
+  return text
+}
+
+test('CLI: a release after 16:00Z takes the next Asia/Shanghai day', () => {
+  assert.match(releaseAt('2026-11-13T18:00:00.000Z'), /## \[0\.2\.0\] - 2026-11-14\n/)
+})
+
+test('CLI: a release before 16:00Z keeps its day, and --date still wins', () => {
+  assert.match(releaseAt('2026-11-13T02:00:00.000Z'), /## \[0\.2\.0\] - 2026-11-13\n/)
+  assert.match(releaseAt('2026-11-13T18:00:00.000Z', ['--date', '2026-11-01']), /## \[0\.2\.0\] - 2026-11-01\n/)
 })
 
 test('CLI: check, preview, then release writes the file and removes the fragments', () => {
