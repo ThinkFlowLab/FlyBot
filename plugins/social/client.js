@@ -3707,6 +3707,9 @@ window.__ModuleLoader__.load({
       // its busy flag, and what a fallback refresh removes. A friend without a Bot id keys on the person.
       const friendKey = friend => friend?.peerBotId || friend?.handle || friend?.home || friend?.ownerId || 'share'
       const share = async (friend) => {
+        // #3062: `busy` is one slot for the whole card, so a second share would take the first row's
+        // label over while its grant is still in flight and post two grants at once.
+        if (busy) return
         // #1128: the button is disabled; a click that still arrives says why instead of posting a grant.
         if (friend.removed === true) { setNote({ tone: 'error', text: friend.reason || 'That Bot was removed from that home.' }); return }
         setBusy(friendKey(friend))
@@ -3755,7 +3758,8 @@ window.__ModuleLoader__.load({
             className: 'fs-btn fs-btn-sm',
             // #1128: a row whose Bot the friend's home no longer lists stays visible, with the reason, and
             // is not clickable: the grant would reach nobody.
-            disabled: busy === friendKey(friend) || friend.removed === true,
+            // #3062: one share at a time, so no row invites a click while any share is sending.
+            disabled: !!busy || friend.removed === true,
             'data-flybot': 'share-friend',
             'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
             onClick: () => { void share(friend) },

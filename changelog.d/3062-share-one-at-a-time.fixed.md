@@ -1,0 +1,1 @@
+Sharing a Bot with a friend is one share at a time: while a row is sending, no other row is clickable, so a second click no longer takes the sending row's "Sharing…" over and posts a second grant at the same moment ([#3062](https://github.com/ThinkFlowLab/FlyBot/issues/3062)).

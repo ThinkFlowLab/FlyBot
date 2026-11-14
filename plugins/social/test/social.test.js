@@ -11766,6 +11766,38 @@ test('#973: the panel draws one row per Bot and names the Bot each button shares
   assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.friendBotId === 'pb-writer' && payload.friendName === 'Writer (Bob)'), 'the row label travels with the click (#994)')
 })
 
+// #3062: `busy` is one slot for the whole card, so a click on a second row must not start a second
+// share: it takes the first row's label over (the sending row looks clickable again) and posts a
+// second grant at the same time.
+test('#3062: a second Share cannot start while the first one is still sending', async () => {
+  const calls = []
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const friends = [shareCoder, { home: '@bob.home', handle: '@eve.bob.home', name: 'Eve (Bob)', peerBotId: 'pb-eve' }]
+  const host = sharingHost(async (endpoint, payload) => {
+    if (endpoint === 'social/share-friends') return { friends }
+    if (endpoint === 'social/share-with-friend') { calls.push(payload.friendBotId); await gate; return { message: 'Shared Writer.' } }
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  const rows = () => panel.nodes().filter(n => n.type === 'button' && n.props?.['data-flybot'] === 'share-friend')
+  const label = node => (node?.props?.children ?? []).join('')
+  assert.equal(rows().length, 2, 'two rows to click')
+  rows()[0].props.onClick()
+  // The first row is the one that is sending: it says so, and the other row must not invite a click.
+  const sendingLabel = label(rows()[0])
+  const otherDisabled = rows()[1].props.disabled
+  await rows()[1].props.onClick()
+  const labelAfterSecondClick = label(rows()[0])
+  release()
+  await panel.settle()
+  assert.deepEqual(calls, ['pb-coder'], 'one share at a time: the second click posted nothing')
+  assert.equal(sendingLabel, 'Sharing…', 'the row that is sending says so')
+  assert.equal(otherDisabled, true, 'no second row may look clickable while one share is sending')
+  assert.equal(labelAfterSecondClick, 'Sharing…', 'a click on the other row does not take the sending row\'s label away')
+})
+
 // ---- #773: a room code shown as a QR image, and scanning one back ----------------------
 // The reference matrix comes from an independent encoder (node-qrcode) for the same payload in
 // byte mode, level M: every module is pinned, not just "something was drawn".
