@@ -1,0 +1,1 @@
+A change a user can see now has to carry a `changelog.d/` fragment, or a `changelog-not-needed: <reason>` line in the pull request body, before it may enter the queue; `enqueue-guard` reads the rule on forks too, where the issue and label rules are skipped. (#3066)
