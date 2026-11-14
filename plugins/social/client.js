@@ -2562,11 +2562,12 @@ window.__ModuleLoader__.load({
         // #3044: one decision at a time. A card drawn while another send is in flight cannot start
         // a second one, so two replies never race each other's `setBusy`/`setError`.
         if (busy) return false
-        // #3075: a Retry acts on the card that failed, once. A click that arrives after that card's own
+        // #3075: a Retry acts on the card that failed, once — a click that arrives after that card's own
         // send already went out (a stale node one frame behind the render that removed it) sends nothing.
+        // What is spent is the send that went out, not the click: a local retry the host answers with
+        // the same failure returns normally (#3075 review), so the id is only marked after a send.
         const retry = decision === 'retry'
         if (retry && retriedIds.current.has(item.id)) return false
-        if (retry) retriedIds.current.add(item.id)
         setBusy(item.id)
         // The line is cleared where the person acted, not here (#3071): a batch calls this once per
         // hold, so clearing on entry let a send that worked erase the reason the one before it had
@@ -2592,6 +2593,8 @@ window.__ModuleLoader__.load({
           } else {
             const result = await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
             autoSend = result?.autoSend
+            // Bot Social's endpoint accepted the send, so this card has nothing left to retry.
+            if (retry) retriedIds.current.add(item.id)
           }
           const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           // The decided card leaves now (#456); the next load agrees.
@@ -2613,13 +2616,11 @@ window.__ModuleLoader__.load({
           // clear (#3071).
           const reason = String(failure?.message ?? failure).slice(0, 200)
           setError(reason)
+          // A retry the host refused may be tried again; the id was never marked spent.
+          if (retry) retriedIds.current.delete(item.id)
           // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
           // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
-          if (item.source !== 'local') {
-            setFailures(previous => ({ ...previous, [item.id]: reason }))
-            // A Retry that failed again may be retried again; only the send that went out is spent.
-            if (retry) retriedIds.current.delete(item.id)
-          }
+          if (item.source !== 'local') setFailures(previous => ({ ...previous, [item.id]: reason }))
           return { error: reason }
         } finally { setBusy('') }
       }
