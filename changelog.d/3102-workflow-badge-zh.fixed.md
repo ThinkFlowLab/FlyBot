@@ -1,0 +1,1 @@
+The `Workflow` badge on a workflow row now follows the window's language: a Chinese window reads `工作流` in the sidebar row and in the Hand a task to a Workflow target list, instead of the English word standing beside an already-translated page header ([#3102](https://github.com/ThinkFlowLab/FlyBot/issues/3102)).

@@ -163,7 +163,6 @@
     "plugins/tree/client.js:archived · merged into {}",
     "plugins/tree/client.js:outside the tree",
     "plugins/workflow/client.js:Names the connectors this run Bot may use: github grants mcp__github__*, composio grants the Composio connector. File and shell access is always full, like a normal Bot, and a node that names no connector gets none.",
-    "plugins/workflow/client.js:Workflow",
     "plugins/workflow/client.js:这里填这个节点 Bot 能用的连接器：github 对应 mcp__github__*，composio 对应 Composio 连接器。文件与 shell 权限始终与普通 Bot 相同（完全放开）；不填连接器时这个节点一个都拿不到。"
   ]
 }
