@@ -1,0 +1,1 @@
+The face-to-face room status chip now reads in the window's language in every state — **Open**, **Closed**, **Left**, **Ended**, **Joining** — and an expired matching window says **Ended** instead of printing the internal `ended` status id (#3090).

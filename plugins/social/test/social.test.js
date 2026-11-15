@@ -4371,7 +4371,7 @@ test('an ended matching window sits under Past rooms and opens from its row, not
   const tree = walk(pluginOf([rooms, true]).FaceRooms({}))
   const ended = tree.find(n => n.props['data-flybot'] === 'face-room' && n.props['data-status'] === 'candidate')
   assert.ok(ended?.props['data-past'])
-  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('ended')))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('Ended')))
   assert.ok(tree.some(n => n.props.className === 'fs-face-row' && n.props.role === 'button'))
   assert.equal(tree.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 0)
 })

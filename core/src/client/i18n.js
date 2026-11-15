@@ -1202,6 +1202,10 @@ const ZH = {
   'Source code': '源代码',
   'Release notes': '发布说明',
   Open: '打开',
+  Closed: '已关闭',
+  Left: '已离开',
+  Ended: '已结束',
+  Joining: '加入中',
   // Feedback and errors
   Feedback: '反馈',
   'Report a problem': '报告问题',
