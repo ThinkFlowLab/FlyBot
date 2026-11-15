@@ -7857,6 +7857,7 @@ function movedOnSince(visit, turns, hiddenTurns) {
   return false;
 }
 var settledVisit = (visit) => typeof visit?.seen === "number" && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit;
+var leftSeen = (seen, tail, now = Date.now()) => Math.max(typeof seen === "number" ? seen : 0, typeof tail === "number" ? tail : now);
 function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
   const turn = location2.turn;
   const time = location2.end.time;
@@ -12754,9 +12755,16 @@ function useTranscriptView() {
         divider = at.bottom <= headerBottom ? "above" : at.top >= box.bottom ? "below" : "in-view";
       }
       const composer = parseFloat(getComputedStyle(scroller).getPropertyValue("--dsh-composer-height")) || 152;
+      let tail;
+      for (const row of scroller.querySelectorAll("[data-chat-turn]")) {
+        const turn = Number(row.dataset.chatTurn);
+        const at = row.getBoundingClientRect();
+        if (Number.isFinite(turn) && at.bottom > box.top && at.top < box.bottom && (tail === void 0 || turn > tail)) tail = turn;
+      }
       const next = {
         unpinned: scroller.querySelector('[class*="_toBottomSlot"]>button') !== null,
         divider,
+        tail,
         center: Math.round(box.left + box.width / 2),
         top: Math.round(headerBottom + 8),
         bottom: Math.round(window.innerHeight - box.bottom + composer + 8)
@@ -12793,6 +12801,14 @@ function NewMessagePills({ sessionId, hiddenTurns, useSessions, useUi, useTurnCl
     return count;
   });
   const view = useTranscriptView();
+  const tailAt = useTurnClock((state) => {
+    if (view?.tail === void 0) return null;
+    const entry = state[sessionId]?.[view.tail];
+    return entry?.end ?? entry?.first ?? null;
+  });
+  (0, import_react22.useEffect)(() => {
+    if (tailAt !== null) actions?.noteVisitTail?.(sessionId, tailAt);
+  }, [tailAt, sessionId]);
   const unpinned = view?.unpinned === true;
   const [release, setRelease] = (0, import_react22.useState)({ base: null, dismissed: false });
   const [above, setAbove] = (0, import_react22.useState)({ seen: false, dismissed: false });
@@ -22881,9 +22897,16 @@ function apply(ctx) {
   const setPlain = (plain) => surface.set((state) => state.plain === plain ? state : { ...state, plain });
   const dropPanels = () => ui2.set((state) => state.details || state.renaming ? { ...state, details: null, view: "details", renaming: false, tab: null } : state);
   const seenKey = (id) => roster.getSnapshot().byId?.[id]?.id ?? id;
+  const visitTails = {};
   const leaveVisits = (ids) => {
     const now = Date.now();
-    for (const id of ids) seenAt[seenKey(id)] = now;
+    const visits = ui2.getSnapshot().visits ?? {};
+    for (const id of ids) {
+      const key = seenKey(id);
+      const seen = Math.max(seenAt[key] ?? 0, visits[id]?.seen ?? 0);
+      seenAt[key] = leftSeen(seen, visitTails[key], now);
+      delete visitTails[key];
+    }
     try {
       localStorage.setItem(SEEN_KEY, JSON.stringify(seenAt));
     } catch {
@@ -23406,6 +23429,13 @@ function apply(ctx) {
       const next = settledVisit(visit);
       return next === visit ? state : { ...state, visits: { ...state.visits, [id]: next } };
     }),
+    // The newest turn this visit measured on screen (`useTranscriptView`); a leave writes only
+    // this, and only forward, so what was never on screen stays unread (#3079).
+    noteVisitTail: (id, tail) => {
+      if (typeof tail !== "number" || !Number.isFinite(tail)) return;
+      const key = seenKey(id);
+      if (!(visitTails[key] >= tail)) visitTails[key] = tail;
+    },
     endVisit: (id) => {
       leaveVisits([id]);
       ui2.set((state) => {
