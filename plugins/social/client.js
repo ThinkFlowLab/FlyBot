@@ -1014,6 +1014,14 @@ window.__ModuleLoader__.load({
       }
       return String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
     }
+    // Which language the window is in, for the one thing a translator cannot carry: the order a date is
+    // written in. A plain script cannot import core's `language()`, so it asks the host translator for a
+    // word the zh dictionary surely holds; a host without one keeps English, which is `tr`'s fallback too.
+    const zhUi = () => {
+      const fn = globalThis.__flybot__?.t
+      if (typeof fn !== 'function') return false
+      try { return fn('Tasks') === '任务' } catch { return false }
+    }
     const host = (endpoint, payload) => {
       const fn = globalThis.__flybot__?.host
       if (typeof fn !== 'function') return Promise.reject(Object.assign(new Error('This FlyBot cannot make room links yet.'), { code: 'bot/not-found' }))
@@ -1965,7 +1973,9 @@ window.__ModuleLoader__.load({
     }
     // Past rooms read like the room's tab and sidebar row (#304): `Face-to-face · Alice, Bob · 482913`.
     // People come from every member when the row has them (a stored auto name can miss one), the
-    // number from the row or its stored title, else the time the room was created.
+    // number from the row or its stored title, else the time the room was created. Only the title the
+    // owner reads follows the window's language (#P769b); the rules above and the stored name itself
+    // stay English, because `named` is what the server saved and what the next render parses again.
     function shownFaceTitle(room) {
       const named = String(room?.name || '').trim()
       if (named && named !== 'Face-to-face room' && !named.startsWith('Face-to-face · ')) return named
@@ -1984,24 +1994,39 @@ window.__ModuleLoader__.load({
       const owners = rows.slice(0, 3).map(row => row.owner)
       const stored = named.match(/ · (\d{6})$/)?.[1]
       const code = sixRoomDigits(room?.joinCode || room?.code || stored)
-      const bits = ['Face-to-face']
+      const bits = [tr('Face-to-face')]
       if (owners.length) bits.push(owners.join(', '))
       const storedWhen = named.match(/ · ([A-Z][a-z]{2} \d{1,2} \d{2}:\d{2})$/)?.[1]
       if (code) bits.push(code)
-      else if (storedWhen) bits.push(storedWhen)
+      else if (storedWhen) bits.push(faceStamp(storedWhen))
       else {
         // Created = the joining deadline minus the 10-minute window, never the deadline itself.
         const deadline = Date.parse(room?.expiresAt || '')
         const at = Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : Date.parse(room?.startedAt || ''))
         const when = Number.isFinite(at) ? new Date(at) : new Date()
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        bits.push(`${months[when.getMonth()]} ${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
+        bits.push(`${faceDay(when)} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
       }
       return bits.join(' · ')
     }
     // The time a Past row shows (#304): when the room ended here, else when it started (or was
-    // created). Today reads `14:05`, an earlier day `Oct 19`; the hover text has the full time.
+    // created). Today reads `14:05`, an earlier day `Oct 19` — `10月19日` in a zh window; the hover
+    // text names which of the two it is, in the window's language too (#P769b).
     const FACE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    function faceDayOf(month, day) {
+      return zhUi() ? `${month + 1}月${day}日` : `${FACE_MONTHS[month]} ${day}`
+    }
+    function faceDay(when) {
+      return faceDayOf(when.getMonth(), when.getDate())
+    }
+    // A stored auto title carries its own English stamp (`Oct 19 14:05`). The rebuilt title shows it,
+    // so a zh window writes it the way `faceDay` does; the stored name is never rewritten, and an
+    // English window keeps the stamp's bytes exactly as they were saved.
+    function faceStamp(text) {
+      if (!zhUi()) return text
+      const [month, day, hhmm] = String(text).split(' ')
+      const index = FACE_MONTHS.indexOf(month)
+      return index < 0 || !day || !hhmm ? text : `${faceDayOf(index, day)} ${hhmm}`
+    }
     function faceRowTime(room, today = new Date()) {
       const ended = Date.parse(room?.endedAt || '')
       const deadline = Date.parse(room?.expiresAt || '')
@@ -2010,9 +2035,9 @@ window.__ModuleLoader__.load({
       if (!Number.isFinite(at)) return undefined
       const when = new Date(at)
       const hhmm = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
-      const day = `${FACE_MONTHS[when.getMonth()]} ${when.getDate()}`
+      const day = faceDay(when)
       const sameDay = when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth() && when.getDate() === today.getDate()
-      return { text: sameDay ? hhmm : day, full: `${Number.isFinite(ended) ? 'Ended' : 'Started'} ${day} ${hhmm}` }
+      return { text: sameDay ? hhmm : day, full: `${tr(Number.isFinite(ended) ? 'Ended' : 'Started')} ${day} ${hhmm}` }
     }
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
       const [busy, setBusy] = useState('')
