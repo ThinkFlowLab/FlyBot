@@ -2466,8 +2466,8 @@ window.__ModuleLoader__.load({
       dockRecordChanged()
     }
     // A spent Retry is never dropped because its card left the lists: the send went out, and the poll that
-    // still writes the hold back as failed would otherwise offer that send again (#3082). The set is kept
-    // bounded instead — the oldest spent record goes once there are more than this many.
+    // still writes the hold back as failed would otherwise offer that send again (#3082). The records are
+    // kept bounded instead: once more than this many are spent, the one entered longest ago goes first.
     const DOCK_RETRIED_MAX = 50
     function trimDockRetried() {
       let spent = 0
@@ -2648,6 +2648,18 @@ window.__ModuleLoader__.load({
         // The line is cleared where the person acted, not here (#3071): a batch calls this once per
         // hold, so clearing on entry let a send that worked erase the reason the one before it had
         // just written.
+        // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
+        // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
+        // (#3093) that record is the card's, whatever kind it is — a local hold the host marked failed
+        // draws its own status, and a decision the host refused never reached a send to be described.
+        const notSent = (failure) => {
+          const reason = String(failure?.message ?? failure).slice(0, 200)
+          setError(reason)
+          // A retry the host refused may be tried again; the id was never marked spent.
+          if (retry) unmarkDockRetried(sessionId, item.id)
+          rememberDockFailure(sessionId, item.id, reason)
+          return { error: reason }
+        }
         try {
           const always = decision === 'always'
           // #3075: Bot Social's endpoint takes approve or reject only, and a hold that failed is still
@@ -2656,7 +2668,14 @@ window.__ModuleLoader__.load({
           const mapped = always || wanted === 'approve' || wanted === 'approved' ? 'approve' : wanted
           let autoSend
           if (item.source === 'local') {
-            await call('decide', { id: item.id, decision: mapped })
+            const answer = await call('decide', { id: item.id, decision: mapped })
+            // (#3093) the local host answers a send that failed with the approval its own `release`
+            // saved as failed — status plus error, no throw — so a normal answer is not a send. Counting
+            // it as one dropped the card and let a batch's receipt name people it never reached. A
+            // rejection is the one non-approved answer that is not a failure.
+            if (answer && typeof answer === 'object' && (answer.error || answer.status === 'failed')) {
+              return notSent(String(answer.error ?? 'the send failed'))
+            }
             if (always) {
               // A face-room line turns on Auto-send for the Bot that wrote it only (#457).
               if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') {
@@ -2685,14 +2704,7 @@ window.__ModuleLoader__.load({
           // A stale or failed hold must say why, never swallow the click. The reason also goes back to
           // the caller: a batch has to report it after its last send, not lose it to that send's own
           // clear (#3071).
-          const reason = String(failure?.message ?? failure).slice(0, 200)
-          setError(reason)
-          // A retry the host refused may be tried again; the id was never marked spent.
-          if (retry) unmarkDockRetried(sessionId, item.id)
-          // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
-          // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
-          if (item.source !== 'local') rememberDockFailure(sessionId, item.id, reason)
-          return { error: reason }
+          return notSent(failure)
         } finally { setBusy('') }
       }
       // #3011/#3029: one entry per person, in draw order; a hold whose person never resolved keeps the
