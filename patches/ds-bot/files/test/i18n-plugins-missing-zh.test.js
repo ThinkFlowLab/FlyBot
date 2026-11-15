@@ -18,10 +18,12 @@
 // from a name or a list written here: a fallback pointing at a different table changes this scan in
 // the same commit, and a table the scan cannot read fails loudly instead of quietly widening pins.
 //
-// An entry whose value is the key itself is not a translation: `Workflow: 'Workflow'` in
-// workflow's table draws `Workflow` in a zh window, so it stays a pin. The contract this scan
-// enforces is that no English shows in a zh window, and presence alone would hide exactly the
-// entries the guard exists to catch — 69 pins were 3 real ones and 66 false ones.
+// An entry whose value is the key itself is not a translation: it draws the English key in a zh
+// window, so it stays a pin. The contract this scan enforces is that no English shows in a zh
+// window, and presence alone would hide exactly the entries the guard exists to catch — 69 pins
+// were 3 real ones and 66 false ones. The case is proven on source written for it, never on a
+// plugin file: workflow's own identity entries were translated one by one (P-784's `Workflow`),
+// and a test that reads one of them goes false the day the translation lands.
 //
 // The sibling scans cover the other two directions —
 // `core/test/i18n.test.js` the same direction inside core, `core/test/i18n-plugins.test.js` a
@@ -204,9 +206,8 @@ export function localDictionaryOf(source) {
 }
 
 // The keys that table really translates: an entry whose value is the key itself renders English,
-// so it is not a translation. `Workflow: 'Workflow'` in a plugin's table is the case — a zh window
-// shows `Workflow`, and counting it as translated would hide exactly what this guard exists to
-// catch.
+// so it is not a translation — counting it as translated would hide exactly what this guard
+// exists to catch.
 function translatedByTable(entries) {
   const translated = new Set()
   for (const [key, value] of entries) if (value !== key) translated.add(key)
@@ -373,24 +374,25 @@ test('a key the plugin\'s own table translates is not a missing entry', () => {
 })
 
 test('a local entry whose value is the key itself is not a translation', () => {
-  const source = readFileSync(new URL('../../plugins/workflow/client.js', import.meta.url), 'utf8')
+  const source = [
+    'const WORDS = {',
+    "  Same: 'Same',",
+    "  Kept: '保留',",
+    '}',
+    "const tr = (key) => Object.hasOwn(WORDS, key) ? WORDS[key] : key",
+    "tr('Same'); tr('Kept')",
+  ].join('\n')
   const table = localDictionaryOf(source)
-  assert.equal(table.get('Workflow'), 'Workflow', "workflow's table maps Workflow to itself")
-  assert.equal(Object.hasOwn(DICTIONARY.zh, 'Workflow'), false, 'and core has no entry for it')
-  assert.ok(
-    forwardMissing(source, 'plugins/workflow/client.js').some((entry) => entry.key === 'Workflow'),
-    'so a zh window still draws Workflow, and the scan reports it',
-  )
-  assert.ok(
-    forwardBaselineOf(scanPlugins()).includes('plugins/workflow/client.js:Workflow'),
-    'the pin is the record of that English',
-  )
-  const synthetic = "const WORDS = { Same: 'Same', Kept: '保留' }\ntr('Same'); tr('Kept')"
-  const tr = "const tr = (key) => Object.hasOwn(WORDS, key) ? WORDS[key] : key"
+  assert.equal(table.get('Same'), 'Same', 'a table entry may map a key to itself')
+  assert.notEqual(table.get('Kept'), 'Kept', 'and another entry in the same table may translate')
   assert.deepEqual(
-    forwardMissing(`${synthetic}\n${tr}`, 'plugins/sample/client.js').map((entry) => entry.key),
+    forwardMissing(source, 'plugins/sample/client.js').map((entry) => entry.key),
     ['Same'],
+    'so a zh window still draws Same, and the scan reports it',
   )
+  assert.deepEqual(forwardBaselineOf(forwardMissing(source, 'plugins/sample/client.js')), [
+    'plugins/sample/client.js:Same',
+  ])
 })
 
 test('the local table is the one the fallback names, and a shape it cannot read fails loudly', () => {
