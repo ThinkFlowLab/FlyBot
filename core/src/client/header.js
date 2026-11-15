@@ -137,9 +137,18 @@ function useTranscriptView() {
         divider = at.bottom <= headerBottom ? 'above' : at.top >= box.bottom ? 'below' : 'in-view'
       }
       const composer = parseFloat(getComputedStyle(scroller).getPropertyValue('--dsh-composer-height')) || 152
+      // The newest turn whose row is on screen. Leaving writes only this, so a turn that arrived
+      // below the fold, or after the user scrolled up, stays unseen and its divider comes back (#3079).
+      let tail
+      for (const row of scroller.querySelectorAll('[data-chat-turn]')) {
+        const turn = Number(row.dataset.chatTurn)
+        const at = row.getBoundingClientRect()
+        if (Number.isFinite(turn) && at.bottom > box.top && at.top < box.bottom && (tail === undefined || turn > tail)) tail = turn
+      }
       const next = {
         unpinned: scroller.querySelector('[class*="_toBottomSlot"]>button') !== null,
         divider,
+        tail,
         center: Math.round(box.left + box.width / 2),
         top: Math.round(headerBottom + 8),
         bottom: Math.round(window.innerHeight - box.bottom + composer + 8),
@@ -175,6 +184,15 @@ function NewMessagePills({ sessionId, hiddenTurns, useSessions, useUi, useTurnCl
     return count
   })
   const view = useTranscriptView()
+  // The newest turn on screen, resolved to the time the leave mark compares against (a running
+  // turn has no end yet, so its start counts). A Session with nothing rendered reports nothing,
+  // and the leave keeps the old fallback (#3079).
+  const tailAt = useTurnClock((state) => {
+    if (view?.tail === undefined) return null
+    const entry = state[sessionId]?.[view.tail]
+    return entry?.end ?? entry?.first ?? null
+  })
+  useEffect(() => { if (tailAt !== null) actions?.noteVisitTail?.(sessionId, tailAt) }, [tailAt, sessionId])
   const unpinned = view?.unpinned === true
   const [release, setRelease] = useState({ base: null, dismissed: false })
   const [above, setAbove] = useState({ seen: false, dismissed: false })

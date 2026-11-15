@@ -863,6 +863,13 @@ export function movedOnSince(visit, turns, hiddenTurns) {
 // The unread divider has been on screen and the chat moved on, so nothing from before this visit
 // is new any more: `seen` catches up with `entered` and every divider of the visit goes (#275).
 export const settledVisit = visit => (typeof visit?.seen === 'number' && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit)
+// What leaving a chat writes into the seen mark (#3079): the newest turn the view reported on
+// screen, never the clock, so a turn that arrived below the fold or after the user scrolled up
+// stays unseen and its NEW divider comes back. A Session that never reported a visible turn keeps
+// the old fallback (`now`, a browser's first answer); the mark only moves forward, so an older
+// tail cannot reopen turns that were already read.
+export const leftSeen = (seen, tail, now = Date.now()) =>
+  Math.max(typeof seen === 'number' ? seen : 0, typeof tail === 'number' ? tail : now)
 
 // An entry in DSH's own turn tail, after what other plugins put there (the cards of
 // the files a turn delivered). The tail sits right before the next turn's first row,
