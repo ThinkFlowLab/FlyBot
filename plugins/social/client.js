@@ -2465,18 +2465,37 @@ window.__ModuleLoader__.load({
       else dockRecords.delete(key)
       dockRecordChanged()
     }
+    // A spent Retry is never dropped because its card left the lists: the send went out, and the poll that
+    // still writes the hold back as failed would otherwise offer that send again (#3082). The set is kept
+    // bounded instead — the oldest spent record goes once there are more than this many.
+    const DOCK_RETRIED_MAX = 50
+    function trimDockRetried() {
+      let spent = 0
+      for (const record of dockRecords.values()) if (record.retried) spent++
+      for (const [key, record] of [...dockRecords]) {
+        if (spent <= DOCK_RETRIED_MAX) break
+        if (!record.retried) continue
+        dockRecords.delete(key)
+        spent--
+      }
+    }
     const rememberDockFailure = (sessionId, id, reason) => setDockRecord(sessionId, id, record => ({ ...record, failure: reason }))
     const forgetDockFailure = (sessionId, id) => setDockRecord(sessionId, id, ({ failure, ...record }) => record)
-    const markDockRetried = (sessionId, id) => setDockRecord(sessionId, id, record => ({ ...record, retried: true }))
+    const markDockRetried = (sessionId, id) => {
+      setDockRecord(sessionId, id, record => ({ ...record, retried: true }))
+      trimDockRetried()
+    }
     const unmarkDockRetried = (sessionId, id) => setDockRecord(sessionId, id, ({ retried, ...record }) => record)
     const dockRetried = (sessionId, id) => dockRecordOf(sessionId, id)?.retried === true
-    // The record goes when its id leaves the two lists the dock reads — decided here, in another window,
-    // or gone — so a stale line cannot outlive the card it explained (#3075).
+    // The failure line goes when its id leaves the two lists the dock reads — decided here, in another
+    // window, or gone — so a stale line cannot outlive the card it explained (#3075). A spent Retry is
+    // not a line about a card that is gone, so it stays (`trimDockRetried` bounds it).
     function pruneDockRecords(sessionId, liveIds) {
       const suffix = `:${sessionId}`
       let dropped = false
       for (const key of [...dockRecords.keys()]) {
         if (!key.endsWith(suffix) || liveIds.has(key.slice(0, -suffix.length))) continue
+        if (dockRecords.get(key)?.retried) continue
         dockRecords.delete(key)
         dropped = true
       }
@@ -2552,8 +2571,8 @@ window.__ModuleLoader__.load({
         ...named(local.filter(item => !item.inline)),
       ].map(withFailures)
       const mine = approvalsForOpenChat(held, session)
-      // The record goes when its id leaves the two lists (decided here, in another window, or gone), so a
-      // stale line cannot outlive the card it explained.
+      // A failure line goes when its id leaves the two lists (decided here, in another window, or gone),
+      // so a stale line cannot outlive the card it explained; a spent Retry stays for the poll below.
       const heldKey = held.map(item => item.id).join(',')
       useEffect(() => {
         // Only an answered pair of lists knows a card is gone (#1607); before that, nothing is. A quiet

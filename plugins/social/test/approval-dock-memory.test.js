@@ -215,7 +215,10 @@ test('#3082: a Retry that already went out is not sent a second time after the c
   } finally { delete globalThis.__flybot__ }
 })
 
-test('#3082: a record goes when its hold leaves the lists, so a later card is a wait again', async () => {
+// The reverse of the spent-Retry rule: a record that only explains a failure is not terminal, so it
+// still goes when its card leaves the lists. Keeping every record would trade a duplicate send for a
+// map that never shrinks.
+test('#3082: a failure record still goes when its card does, so a later card is a wait again', async () => {
   const app = loadDock()
   const state = harness()
   try {
@@ -232,5 +235,30 @@ test('#3082: a record goes when its hold leaves the lists, so a later card is a 
     const text = drawn(render(app.ChatApprovalDock, first.inst, state.props()))
     assert.match(text, /Waiting for approval/, 'a card whose record was dropped is a wait again')
     assert.doesNotMatch(text, /Not sent/, 'a stale record never outlives the card it explained')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#3082: a Retry that went out is not sent again by the poll that writes its card back', async () => {
+  const app = loadDock()
+  const state = harness()
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byLabel('Approve')).props.onClick()
+    const failed = render(app.ChatApprovalDock, first.inst, state.props())
+    state.decide = 'ok'
+    await find(failed, byFlybot('hold-retry')).props.onClick()
+    assert.equal(state.sent().length, 2, 'the Retry went out, after the failed Approve before it')
+
+    // The send that worked takes the card off both lists, and this frame runs the prune effect on that now
+    // empty list. The card being gone is not the same fact as the Retry being unspent.
+    state.status = []
+    await frame(app, first.inst, state.props())
+    // Bot Social's own status has not settled yet, so the next 5 s poll writes the same hold back as failed.
+    state.status = [{ ...roomHold(), status: 'failed' }]
+    await frame(app, first.inst, state.props())
+    const again = find(render(app.ChatApprovalDock, first.inst, state.props()), byFlybot('hold-retry'))
+    assert.ok(again, 'the card the poll wrote back as failed still draws its Retry')
+    await again.props.onClick()
+    assert.equal(state.sent().length, 2, 'the poll that writes a spent Retry back sends no second social/decide-approval')
   } finally { delete globalThis.__flybot__ }
 })
