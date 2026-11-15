@@ -142,3 +142,40 @@ test('#2303: the image build is a gate file while the manifest calls it a gate',
     'docker.yml builds the image a packaging change must start before it merges, so it is a gate file',
   )
 })
+
+// #3091: `risk-gate.mjs` is a gate file, but the data it reads and the test that pins its split were
+// not — so a pull request could rewrite `.github/agent/risk-rules.json` (which decides the tier of
+// every later pull request) or `.github/scripts/risk-gate.test.mjs` (which pins where each pattern
+// applies) with no human signature. `policy/` is already covered as a directory entry, so this is
+// only the two files outside it.
+//
+// These cases ask the checker itself rather than the list in this file: `gateFiles()` and `judge()`
+// are what the workflow runs, so a second reading of `policy.gateFiles` here could agree with the
+// list while disagreeing with the gate.
+import { gateFiles as changedGateFiles, judge as judgeSignature } from '../.github/scripts/policy-sign.mjs'
+
+const TIP = 'abcdef0123456789abcdef0123456789abcdef01'
+const signer = [{ id: 4242, user: { login: 'someone', type: 'User' }, body: `signing ${TIP}` }]
+
+test('#3091: the risk-tier data is a gate file', () => {
+  assert.deepEqual(changedGateFiles(['.github/agent/risk-rules.json']), ['.github/agent/risk-rules.json'])
+})
+
+test('#3091: the test that pins where each tier pattern applies is a gate file', () => {
+  assert.deepEqual(changedGateFiles(['.github/scripts/risk-gate.test.mjs']), ['.github/scripts/risk-gate.test.mjs'])
+})
+
+test('#3091: a change to the tier data with no signature line is refused, and one that names a comment is accepted', () => {
+  const files = ['.github/agent/risk-rules.json']
+  const refused = judgeSignature({ files, body: 'Fixes #1\n\nno signature here', author: 'HugoXK', head: TIP, comments: signer })
+  assert.equal(refused.ok, false)
+  assert.match(refused.reason, /risk-rules\.json/)
+  assert.match(refused.reason, /Policy-sign:/)
+  const accepted = judgeSignature({ files, body: 'Policy-sign: 4242', author: 'HugoXK', head: TIP, comments: signer })
+  assert.equal(accepted.ok, true)
+})
+
+test('#3091: the controls — the tier checker is still a gate file, an ordinary client file is not', () => {
+  assert.deepEqual(changedGateFiles(['.github/scripts/risk-gate.mjs']), ['.github/scripts/risk-gate.mjs'])
+  assert.deepEqual(changedGateFiles(['plugins/social/client.js']), [])
+})
