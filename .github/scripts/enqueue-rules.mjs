@@ -212,6 +212,66 @@ const CONDITIONAL = new RegExp(
 // `.` `;` `:` `—` `!` `?` and a line break end a clause; the dash is one here so a sentence's two halves
 // are judged separately, which is what lets "No objections — you may merge" through.
 const CLAUSE = /[.;:!?—–\n]/
+// A first-person plan to hold is an offer, not the request: "If this PR should wait behind other work,
+// say so on the PR and I will hold it; otherwise it is the oldest unanswered T3 request in the queue"
+// (#2520, comment 6860674068) asks the reader to say something, and made itself the stop it offered to
+// act on. Only the hold family is read this way, because "do not merge" and the rest are requests
+// whatever the grammar around them, and a plan that names its own condition still withholds the merge
+// ("I will hold it until the second reader signs off"), so it is still a stop. The cost is accepted and
+// stated: a bare "I will hold it." now reads as a statement rather than a request, which is the shape
+// the exclusion is for.
+const HOLD_FAMILY = /\b(?:on hold|hold off|hold on|hold request|hold this|hold it|hold (?:the )?(?:tip|merge|pr|pull request)|please hold)\b/i
+const ANNOUNCED_HOLD = /\b(?:i will|i['’]ll|we['’]ll|i shall|i would|i['’]d|i['’]m going to)\s+$/i
+const HOLD_CONDITION = /\b(?:until|till|after|once|when|unless|pending|before|only)\b|\bas long as\b|\bsubject to\b/i
+const clauseBounds = (text, index) => {
+  let start = 0
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (CLAUSE.test(text[i])) { start = i + 1; break }
+  }
+  let end = text.length
+  for (let i = index; i < text.length; i += 1) {
+    if (CLAUSE.test(text[i])) { end = i; break }
+  }
+  return [start, end]
+}
+// The phrase is the writer's own announcement when a first-person future or intent sits right before
+// it and no condition follows. Commas do not end a clause, so the offer in #2520 is read whole rather
+// than chopped at "other work,".
+//
+// The condition can also be the clause *after* the phrase: an em dash, a semicolon or a full stop ends
+// the clause but not the sentence, and "I will hold it — until the second reader signs off" is still a
+// plan that withholds the merge (#3088 advisory). Only a clause that *opens* with a condition word
+// counts there: "… I will hold it; otherwise it is the oldest unanswered request" is the offer #2520
+// wrote, and "otherwise" is not a condition on the plan.
+const HOLD_CONDITION_OPENER = /^\s*(?:until|till|after|once|when|unless|pending|before|only|as long as|subject to)\b/i
+const nextClause = (text, end) => {
+  let start = end + 1
+  while (start < text.length && CLAUSE.test(text[start])) start += 1
+  return [start, clauseBounds(text, start)[1]]
+}
+const announcedHoldAt = (text, index, length) => {
+  if (index < 0 || !HOLD_FAMILY.test(text.slice(index, index + length))) return false
+  const [start, end] = clauseBounds(text, index)
+  if (!ANNOUNCED_HOLD.test(text.slice(start, index))) return false
+  if (HOLD_CONDITION.test(text.slice(index + length, end))) return false
+  const [next, nextEnd] = nextClause(text, end)
+  return !HOLD_CONDITION_OPENER.test(text.slice(next, nextEnd))
+}
+// Every phrase is read, not just the first: "I will hold it now; do not merge this tip" announces a
+// plan and still asks not to merge, and a scan that stopped at the announcement would let the request
+// behind it through — a false negative on the one brake a person has.
+const STOP_SCAN = new RegExp(STOP_REQUEST.source, 'gi')
+const stopPhraseIn = (text) => {
+  STOP_SCAN.lastIndex = 0
+  let found = null
+  for (let m = STOP_SCAN.exec(text); m; m = STOP_SCAN.exec(text)) {
+    if (announcedHoldAt(text, m.index, m[0].length)) continue
+    found = m[0]
+    break
+  }
+  STOP_SCAN.lastIndex = 0
+  return found
+}
 // A condition can also sit in the clause *after* the lift: "You may merge this tip — only after the second
 // reader re-runs" cleared the hold that the same words inside the lift's own clause refused, and a dash
 // after the yes is ordinary prose (#2288 review, 2026-11-03). A clause that follows a lift withholds the
@@ -313,7 +373,7 @@ export function stopRequestAt(reports, { author, since } = {}) {
       stateStop = null
       continue
     }
-    const phrase = STOP_REQUEST.exec(text)?.[0] ?? HOLD_LINE.exec(text)?.[0]
+    const phrase = stopPhraseIn(text) ?? HOLD_LINE.exec(text)?.[0]
     if (phrase) {
       written = { id: r.id, login: r.login, at: r.at ?? null, phrase: phrase.trim(), t, i }
       continue
