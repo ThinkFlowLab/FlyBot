@@ -110,8 +110,8 @@ const byFlybot = id => node => node.props?.['data-flybot'] === id
 const room = () => ({ id: 'r1', origin: 'face-to-face', pendingCount: 1, face: { roomId: 'frm1' }, participants: [] })
 const roomHold = () => ({ id: 'a1', kind: 'face_room_message', status: 'pending', roomId: 'frm1', from: 'SelfTest A2', to: 'the room', text: 'hello room' })
 
-function harness({ decide = 'fail' } = {}) {
-  const state = { calls: [], decide, status: [roomHold()], local: [] }
+function harness({ decide = 'fail', sessionId = 's1' } = {}) {
+  const state = { calls: [], decide, status: [roomHold()], local: [], sessionId }
   globalThis.__flybot__ = {
     call: (endpoint) => {
       state.calls.push(endpoint)
@@ -123,7 +123,9 @@ function harness({ decide = 'fail' } = {}) {
       return Promise.resolve({})
     },
   }
-  state.props = () => ({ sessionId: 's1', roster: { bots: [], byId: {} }, room: room(), claim: () => {}, actions: {} })
+  // The session the dock is mounted for is the chat a person has open; a chat switch is a different
+  // session, not another mount of the same one.
+  state.props = (sessionId = state.sessionId) => ({ sessionId, roster: { bots: [], byId: {} }, room: room(), claim: () => {}, actions: {} })
   state.sent = () => state.calls.filter(endpoint => endpoint === 'social/decide-approval')
   return state
 }
@@ -156,6 +158,35 @@ test('#3082: a failed send still says Not sent after the chat is left and opened
     assert.match(text, /Not sent/, 'the way back still says the send did not go')
     assert.match(text, /Bot Social refused this send/, 'the reason survives the chat switch too')
     assert.doesNotMatch(text, /Waiting for approval/, 'a card that failed is never drawn as a fresh wait again')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('#3082: a failed send never paints on another chat', async () => {
+  const app = loadDock()
+  const state = harness()
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byLabel('Approve')).props.onClick()
+    const failed = render(app.ChatApprovalDock, first.inst, state.props())
+    assert.match(drawn(failed), /Not sent/, 'the chat it failed in says so')
+    assert.match(drawn(failed), /Bot Social refused this send/, 'and says why there')
+
+    // The person opens another chat: a fresh dock, another session, the same hold still pending
+    // upstream. The failure belongs to the chat it happened in, so nothing of it may be drawn here.
+    state.sessionId = 's2'
+    const other = await openChat(app, state)
+    const text = drawn(other.tree)
+    assert.match(text, /Waiting for approval/, 'another chat draws the hold as a plain wait')
+    assert.doesNotMatch(text, /Not sent/, 'a failure from a different chat is not painted on this one')
+    assert.doesNotMatch(text, /Bot Social refused this send/, 'nor does its reason follow the person around')
+
+    // Back to the chat it failed in: the record was kept while another chat was open, so the card still
+    // explains itself. Dropping it there is what the record living in the component used to do.
+    state.sessionId = 's1'
+    const back = await openChat(app, state)
+    const again = drawn(back.tree)
+    assert.match(again, /Not sent/, 'the chat it failed in still says the send did not go')
+    assert.doesNotMatch(again, /Waiting for approval/, 'and never offers it as a fresh wait again')
   } finally { delete globalThis.__flybot__ }
 })
 
