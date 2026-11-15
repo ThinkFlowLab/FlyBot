@@ -799,7 +799,7 @@ diff --git a/client.js b/client.js
    Updates: "更新",
    "Check for updates": "检查更新",
    "Checking…": "正在检查…",
-@@ -761,6 +761,13 @@ var ZH = {
+@@ -761,10 +761,21 @@ var ZH = {
    "Update checks are off.": "已关闭更新检查。",
    "Installed from a local folder; update it there.": "从本地文件夹安装，请在那里更新。",
    "Updates are not offered for this install.": "这种安装方式不提供更新。",
@@ -813,6 +813,14 @@ diff --git a/client.js b/client.js
    Links: "链接",
    "Source code": "源代码",
    "Release notes": "发布说明",
+   Open: "打开",
++  Closed: "已关闭",
++  Left: "已离开",
++  Ended: "已结束",
++  Joining: "加入中",
+   // Feedback and errors
+   Feedback: "反馈",
+   "Report a problem": "报告问题",
 @@ -776,7 +776,7 @@ var ZH = {
    Show: "查看",
    Hide: "收起",

@@ -1953,11 +1953,14 @@ window.__ModuleLoader__.load({
     }
     function faceChipLabel(room) {
       const chip = faceChip(room)
+      // #3090: every state this chip can show goes through the translator with the English word as its
+      // key, so a window in another language does not keep four of the five in English. `ended` is the
+      // internal status id; the word this chip shows is `Ended`.
       if (chip === 'open') return tr('Open')
-      if (chip === 'closed') return 'Closed'
-      if (chip === 'left') return 'Left'
-      if (chip === 'ended') return 'ended'
-      if (chip === 'joining') return 'Joining'
+      if (chip === 'closed') return tr('Closed')
+      if (chip === 'left') return tr('Left')
+      if (chip === 'ended') return tr('Ended')
+      if (chip === 'joining') return tr('Joining')
       return chip
     }
     // Past rooms read like the room's tab and sidebar row (#304): `Face-to-face · Alice, Bob · 482913`.
