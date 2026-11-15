@@ -49,6 +49,12 @@ import {
 } from '../src/face-rooms.js'
 import { formatFaceRoomTitle } from '../src/face-title.js'
 
+// The title prints the wall clock of the box that draws it, so a fixture instant is built from
+// local parts: `localIso(2026, 10, 17, 14, 38)` reads as `Oct 17 14:38` in every time zone. A UTC
+// instant only read that way on a UTC box, which is what these fixtures got wrong.
+const localIso = (year, month, day, hour, minute, second = 0) =>
+  new Date(year, month - 1, day, hour, minute, second).toISOString()
+
 test('join code is exactly six digits', () => {
   assert.equal(isJoinCode('123456'), true)
   assert.equal(isJoinCode(' 123456 '), true)
@@ -247,7 +253,7 @@ test('owner-typed face-room lines encode as a human envelope', () => {
   assert.equal(humanFaceWho({ who: 'User' }, 'Alice'), 'Alice')
   assert.equal(formatFaceRoomTitle({ owners: ['BoxA', 'BoxB'], code: '482913' }), 'Face-to-face · BoxA, BoxB · 482913')
   assert.equal(faceRoomTitle({ members: [{ owner_name: 'BoxA' }, { ownerName: 'BoxB' }] }, { code: '482913' }), 'Face-to-face · BoxA, BoxB · 482913')
-  const at = '2026-10-17T14:38:00.000Z'
+  const at = localIso(2026, 10, 17, 14, 38)
   const titleA = faceRoomTitle({ members: [{ owner_name: 'UiB1415', handle: '@b.home' }, { owner_name: 'UiA1415', handle: '@a.home' }], startedAt: at })
   const titleB = faceRoomTitle({ members: [{ ownerName: 'UiA1415', handle: '@a.home' }, { ownerName: 'UiB1415', handle: '@b.home' }], startedAt: at })
   assert.equal(titleA, titleB)
@@ -643,12 +649,14 @@ test('#179: a Bot line can never carry the person-line marker', () => {
 
 test('#194: a face room title shows one time, the creation time, before and after Enter chat', () => {
   const members = [{ ownerName: 'Alice', handle: '@a.home' }]
-  const candidate = faceRoomTitle({ members, expiresAt: '2026-10-17T13:06:00.000Z' })
-  const open = faceRoomTitle({ members, expiresAt: '2026-10-17T13:06:00.000Z', startedAt: '2026-10-17T13:01:30.000Z' })
+  const deadline = localIso(2026, 10, 17, 13, 6)
+  const created = localIso(2026, 10, 17, 12, 40)
+  const candidate = faceRoomTitle({ members, expiresAt: deadline })
+  const open = faceRoomTitle({ members, expiresAt: deadline, startedAt: localIso(2026, 10, 17, 13, 1, 30) })
   assert.equal(candidate, open)
   assert.match(candidate, /12:56$/)
-  assert.equal(faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z', expiresAt: '2026-10-17T13:06:00.000Z' }), faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z' }))
-  assert.notEqual(faceRoomTitle({ members, createdAt: '2026-10-17T12:40:00.000Z', expiresAt: '2026-10-17T13:06:00.000Z' }), candidate)
+  assert.equal(faceRoomTitle({ members, createdAt: created, expiresAt: deadline }), faceRoomTitle({ members, createdAt: created }))
+  assert.notEqual(faceRoomTitle({ members, createdAt: created, expiresAt: deadline }), candidate)
 })
 
 test('a peer line with paragraphs survives being viewed twice (viewFaceRoom then renderFaceEvent, #302)', () => {
