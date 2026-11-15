@@ -6,6 +6,22 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-11-15
+
+### Changed
+
+- `scripts/i18n-usage.mjs` sees copy a helper hands back: a `return` of a sentence — or of a `?:` / `||` expression built from sentences — is reported by `--missing` instead of staying invisible to both i18n checks, as long as the helper is drawn (called at a copy position, or rendered as an `h(Component, …)`). A helper whose value is data — a status id the file compares, a React key, a class name, a URL or a `location.href` template — is not reported. Product measured five such sites in `plugins/social/client.js`; the missing-entry baseline grows by 34 pins of English a reader can still see untranslated, and the bare-draw and template-draw counts are unchanged.
+- `scripts/i18n-usage.mjs` now closes the `]` it opens: an indexed read like `list[0]` no longer leaves the scan inside a bracket it can never close, so a literal beside it (`return list[0] || 'None yet'`) is reported by `--missing` instead of being swallowed along with the rest of the file. The same walk also records the names a `${}` hole interpolates, so a sentence a helper builds from a local counts as read rather than as a dead local. The missing-entry baseline grows by one pin — `Your own Bots stay shared. {} can share it again.`, the other branch of a sentence already pinned — and the bare-draw and template-draw counts are unchanged. See [#3077](https://github.com/ThinkFlowLab/FlyBot/issues/3077).
+- The approval dock no longer reads the server while its tab is hidden; coming back to the tab reads both of its lists at once instead of waiting for the next five-second poll (#3080).
+
+### Fixed
+
+- In the Bot Social dock, the **Retry** on a failed send listed from another chat no longer looks clickable while a different hold is being decided: the whole list's Retry goes disabled with the decision that is in flight, because the click there was already being dropped ([#3050](https://github.com/ThinkFlowLab/FlyBot/issues/3050)).
+- Sharing a Bot with a friend is one share at a time: while a row is sending, no other row is clickable, so a second click no longer takes the sending row's "Sharing…" over and posts a second grant at the same moment ([#3062](https://github.com/ThinkFlowLab/FlyBot/issues/3062)).
+- A release section is dated by the Asia/Shanghai calendar day of the release moment instead of the UTC day, so a release after 16:00Z no longer lands under the previous date (`changelog.mjs release` defaults to it; `--date` still overrides) (#3064).
+- "Approve all" no longer loses the reason when a batch is mixed: a hold that fails keeps its own sentence and the card it belongs to ("Eve: the hold is stale") while the holds that did send leave as before, and the receipt still names only the people reached (#3071).
+- `plugins/social/client.js`: a Bot Social hold whose send failed now keeps a **Not sent** card, with the reason and **Retry**, until it leaves the queue — the dock remembers the failure itself instead of only the one error line the next click clears, so the 5 s poll that still lists the hold as pending can no longer draw it back as waiting. Its **Retry** sends the same approval again (`approve`), once per card that actually went out, and a second click on a card that already went out sends nothing. A local failed hold keeps the host's own retry, which can be tried again while the host keeps answering with a failure.
+
 ## [0.2.32] - 2026-11-14
 
 ### Fixed
@@ -1489,7 +1505,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...HEAD
+[0.2.33]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.31...v0.2.32
 [0.2.31]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.30...v0.2.31
 [0.2.30]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.29...v0.2.30
