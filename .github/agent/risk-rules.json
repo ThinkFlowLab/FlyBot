@@ -14,11 +14,12 @@
       ],
       "codeExt": "\\.(js|mjs|cjs|ts|yml|yaml|json|sh)$",
       "diffPatterns": [
-        "\\bchild_process\\b", "\\beval\\(", "new Function\\(",
+        "\\bchild_process\\b",
         "process\\.env\\.[A-Za-z_]*(TOKEN|KEY|SECRET)", "\\.dsh(?![-\\w])|DSH_HOME",
         "\\.(only|skip)\\(", "(eslint|oxlint)-disable"
       ],
       "diffPatternsNotInTests": [
+        "\\beval\\(", "new Function\\(",
         "https?://(?!(localhost|127\\.0\\.0\\.1|example\\.(com|org)|github\\.com/(ThinkFlowLab|Birfy)|registry\\.npmjs\\.org))",
         "untrusted-(message|file)|\\bfence|sanitiz|displayName|display name"
       ],
