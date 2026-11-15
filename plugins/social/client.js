@@ -2438,6 +2438,74 @@ window.__ModuleLoader__.load({
       return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
     }
 
+    // #3082: a chat's dock is mounted per session (`conversation.input.dock` is `scope: session`), so
+    // opening another chat unmounts it and coming back mounts a new one. What a send that failed says,
+    // and which Retry already went out, cannot live in that component: the way back drew the still
+    // pending hold as a fresh wait again and offered a Retry that had already gone out (#3075 fixed the
+    // card, not the remount). This is the module-level Map + listener shape
+    // `core/src/client/approval-claims.js` uses for claims (#260, #418); the dock only subscribes.
+    // Keyed `${id}:${sessionId}`: one record per hold per chat.
+    const dockRecords = new Map()
+    const dockRecordListeners = new Set()
+    const dockRecordKey = (sessionId, id) => `${id}:${sessionId}`
+    const dockRecordChanged = () => { for (const fn of [...dockRecordListeners]) fn() }
+    const dockRecordOf = (sessionId, id) => dockRecords.get(dockRecordKey(sessionId, id))
+    const dockFailuresOf = (sessionId) => {
+      const out = {}
+      const suffix = `:${sessionId}`
+      for (const [key, record] of dockRecords) {
+        if (record.failure && key.endsWith(suffix)) out[key.slice(0, -suffix.length)] = record.failure
+      }
+      return out
+    }
+    const setDockRecord = (sessionId, id, change) => {
+      const key = dockRecordKey(sessionId, id)
+      const next = change(dockRecords.get(key) ?? {})
+      if (next.failure || next.retried) dockRecords.set(key, next)
+      else dockRecords.delete(key)
+      dockRecordChanged()
+    }
+    // A spent Retry is never dropped because its card left the lists: the send went out, and the poll that
+    // still writes the hold back as failed would otherwise offer that send again (#3082). The set is kept
+    // bounded instead — the oldest spent record goes once there are more than this many.
+    const DOCK_RETRIED_MAX = 50
+    function trimDockRetried() {
+      let spent = 0
+      for (const record of dockRecords.values()) if (record.retried) spent++
+      for (const [key, record] of [...dockRecords]) {
+        if (spent <= DOCK_RETRIED_MAX) break
+        if (!record.retried) continue
+        dockRecords.delete(key)
+        spent--
+      }
+    }
+    const rememberDockFailure = (sessionId, id, reason) => setDockRecord(sessionId, id, record => ({ ...record, failure: reason }))
+    const forgetDockFailure = (sessionId, id) => setDockRecord(sessionId, id, ({ failure, ...record }) => record)
+    const markDockRetried = (sessionId, id) => {
+      setDockRecord(sessionId, id, record => ({ ...record, retried: true }))
+      trimDockRetried()
+    }
+    const unmarkDockRetried = (sessionId, id) => setDockRecord(sessionId, id, ({ retried, ...record }) => record)
+    const dockRetried = (sessionId, id) => dockRecordOf(sessionId, id)?.retried === true
+    // The failure line goes when its id leaves the two lists the dock reads — decided here, in another
+    // window, or gone — so a stale line cannot outlive the card it explained (#3075). A spent Retry is
+    // not a line about a card that is gone, so it stays (`trimDockRetried` bounds it).
+    function pruneDockRecords(sessionId, liveIds) {
+      const suffix = `:${sessionId}`
+      let dropped = false
+      for (const key of [...dockRecords.keys()]) {
+        if (!key.endsWith(suffix) || liveIds.has(key.slice(0, -suffix.length))) continue
+        if (dockRecords.get(key)?.retried) continue
+        dockRecords.delete(key)
+        dropped = true
+      }
+      if (dropped) dockRecordChanged()
+    }
+    function onDockRecords(fn) {
+      dockRecordListeners.add(fn)
+      return () => { dockRecordListeners.delete(fn) }
+    }
+
     function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim, t } = {}) {
       useStyles()
       const locked = readOnlyReason(roster)
@@ -2452,9 +2520,11 @@ window.__ModuleLoader__.load({
       // #3075: a Bot Social send that failed leaves the upstream hold pending, so the 5 s poll writes the
       // card back as if it never failed. The dock keeps its own memory of which sends did not go and why,
       // keyed by id, and merges it into the cards it draws; `items` and `local` stay the host's lists.
-      const [failures, setFailures] = useState({})
-      // A Retry already sent for an id is not sent again from a card that outlives its own render.
-      const retriedIds = useRef(new Set())
+      // #3082: that memory, and a Retry already sent (#3075), outlive this component — a record is read
+      // from the module above, which a new mount of the same chat subscribes to again.
+      const [, bumpRecord] = useState(0)
+      useEffect(() => onDockRecords(() => bumpRecord(value => value + 1)), [sessionId])
+      const failures = dockFailuresOf(sessionId)
       const load = () => {
         // #3080: a tab that is not on screen has nobody reading these cards; showing it catches up below.
         if (typeof document !== 'undefined' && document.hidden) return
@@ -2501,16 +2571,15 @@ window.__ModuleLoader__.load({
         ...named(local.filter(item => !item.inline)),
       ].map(withFailures)
       const mine = approvalsForOpenChat(held, session)
-      // The record goes when its id leaves the two lists (decided here, in another window, or gone), so a
-      // stale line cannot outlive the card it explained.
+      // A failure line goes when its id leaves the two lists (decided here, in another window, or gone),
+      // so a stale line cannot outlive the card it explained; a spent Retry stays for the poll below.
       const heldKey = held.map(item => item.id).join(',')
       useEffect(() => {
-        const live = new Set(held.map(item => item.id))
-        setFailures(previous => {
-          const entries = Object.entries(previous).filter(([id]) => live.has(id))
-          return entries.length === Object.keys(previous).length ? previous : Object.fromEntries(entries)
-        })
-      }, [heldKey])
+        // Only an answered pair of lists knows a card is gone (#1607); before that, nothing is. A quiet
+        // chat never prunes its records, because a card that is missing there may still be loading.
+        if (!statusLoaded || !listLoaded) return
+        pruneDockRecords(sessionId, new Set(held.map(item => item.id)))
+      }, [heldKey, statusLoaded, listLoaded, sessionId])
       // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
       const shownIds = mine.map(item => item.id).join(',')
       useEffect(() => {
@@ -2574,7 +2643,7 @@ window.__ModuleLoader__.load({
         // What is spent is the send that went out, not the click: a local retry the host answers with
         // the same failure returns normally (#3075 review), so the id is only marked after a send.
         const retry = decision === 'retry'
-        if (retry && retriedIds.current.has(item.id)) return false
+        if (retry && dockRetried(sessionId, item.id)) return false
         setBusy(item.id)
         // The line is cleared where the person acted, not here (#3071): a batch calls this once per
         // hold, so clearing on entry let a send that worked erase the reason the one before it had
@@ -2601,7 +2670,7 @@ window.__ModuleLoader__.load({
             const result = await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
             autoSend = result?.autoSend
             // Bot Social's endpoint accepted the send, so this card has nothing left to retry.
-            if (retry) retriedIds.current.add(item.id)
+            if (retry) markDockRetried(sessionId, item.id)
           }
           const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           // The decided card leaves now (#456); the next load agrees.
@@ -2609,12 +2678,7 @@ window.__ModuleLoader__.load({
           setItems(drop)
           setLocal(drop)
           // The card went out, so the dock's own failed record for it is done too.
-          setFailures(previous => {
-            if (!(item.id in previous)) return previous
-            const next = { ...previous }
-            delete next[item.id]
-            return next
-          })
+          forgetDockFailure(sessionId, item.id)
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
           return true
         } catch (failure) {
@@ -2624,10 +2688,10 @@ window.__ModuleLoader__.load({
           const reason = String(failure?.message ?? failure).slice(0, 200)
           setError(reason)
           // A retry the host refused may be tried again; the id was never marked spent.
-          if (retry) retriedIds.current.delete(item.id)
+          if (retry) unmarkDockRetried(sessionId, item.id)
           // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
           // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
-          if (item.source !== 'local') setFailures(previous => ({ ...previous, [item.id]: reason }))
+          if (item.source !== 'local') rememberDockFailure(sessionId, item.id, reason)
           return { error: reason }
         } finally { setBusy('') }
       }
