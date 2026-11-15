@@ -2086,7 +2086,9 @@ window.__ModuleLoader__.load({
           'data-open': openable ? true : undefined,
           onClick: openable ? () => (busy ? undefined : open()) : undefined,
           ...(rowOpens ? {
-            role: 'button', tabIndex: 0, 'aria-label': `Open ${title}`, 'aria-busy': busy ? true : undefined,
+            // The two accessible names on this card are read out, never parsed back, so they take the
+            // dictionary like the visible copy does; the stored room name stays English (#3100).
+            role: 'button', tabIndex: 0, 'aria-label': tr('Open {title}', { title }), 'aria-busy': busy ? true : undefined,
             onKeyDown: (event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return
               event.preventDefault?.()
@@ -2094,7 +2096,7 @@ window.__ModuleLoader__.load({
             },
           } : {}),
         },
-          h('span', { className: 'fs-stack', 'aria-label': 'Members' },
+          h('span', { className: 'fs-stack', 'aria-label': tr('Members') },
             shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
               h(FaceAvatar, { bot: look(m), size: 20 }))),
             extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
