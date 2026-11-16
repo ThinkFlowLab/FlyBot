@@ -1,0 +1,1 @@
+A workflow whose node spells a fact with a space while the edge carries the canonical spelling no longer fails to save: the edge alignment check keys the node lists the same way the rest of the engine does, so `text: draft` on a node and `text:draft` on its edge are one fact.

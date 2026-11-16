@@ -634,7 +634,10 @@ export function validateWorkflow(raw, options = {}) {
     }
     const fromNode = nodeById(def, from.node)
     const toNode = nodeById(def, to.node)
-    if (!fromNode.outputs.includes(from.artifact) || !toNode.inputs.includes(to.artifact)) {
+    // The edge's artifact is canonical and the node lists are not (#2425): key them the way
+    // `producersOf` and `consumersOf` do, or a spelling difference refuses a definition the rest
+    // of the engine can run.
+    if (!canonicalList(fromNode.outputs).includes(from.artifact) || !canonicalList(toNode.inputs).includes(to.artifact)) {
       problems.push(
         message(
           'edge/misaligned',
