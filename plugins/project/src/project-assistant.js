@@ -233,6 +233,13 @@ export function install(rt) {
     const owner = rt.botOf?.(botId)?.ownerId
     const actor = owner === undefined ? undefined : { memberId: owner }
     try {
+      // A digest already on this Session (a hand-created 09:00 task, or a previous write
+      // whose scheduleId was never stored) is adopted, not created again (#1751, #3110).
+      const listed = await rt.scheduleEndpoint('schedules', {}, actor)
+      const existing = (listed?.tasks ?? []).find(task =>
+        task.sessionId === sessionId && task.title === DIGEST_TITLE && task.status !== 'finished')
+      if (typeof existing?.id === 'string') return { scheduleId: existing.id }
+
       const view = await rt.scheduleEndpoint('schedule-create', {
         target: botId,
         title: DIGEST_TITLE,

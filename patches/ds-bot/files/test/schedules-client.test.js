@@ -36,7 +36,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText, schedulesReadFailure, reachText } = module.exports
+const { SchedulesPage, BotSchedules, ScheduleSummary, RoomSchedules, CopyRow, openPlugins, formStart, timingText, schedulesReadFailure, reachText, whenFromForm, wallClockInput, instantFromWallClock, timeZoneOptions } = module.exports
 // Every node and string under a tree; an array (what a page returns) is walked too.
 const all = (node, out = []) => {
   if (Array.isArray(node)) { for (const item of node) all(item, out); return out }
@@ -127,6 +127,9 @@ test('Edit opens the task form filled in, and saving updates that task (#354)', 
   assert.ok(all(form).some(node => node.type === 'textarea' && node.props.value === 'Sum up'))
   assert.ok(text(form).includes('Save changes'))
   assert.equal(all(card).filter(node => node.type === 'form').length, 1)
+  const zone = all(form).find(node => node.props?.['data-flybot'] === 'task-timezone')
+  assert.equal(zone?.props.value, 'Asia/Shanghai')
+  assert.ok(all(zone).some(node => node.props?.value === 'UTC' || node === 'UTC'), 'the picker lists UTC')
   form.props.onSubmit({ preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ sessionId: 'chat-b1', id: 's1', target: 'b1', title: 'Briefing', prompt: 'Sum up', when: { kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' } }])
@@ -139,6 +142,44 @@ test('the form starts from the edited task: repeat interval, one time, cron kept
   assert.deepEqual([once.kind, once.at], ['at', '2030-01-02T07:05'])
   assert.equal(formStart({ kind: 'cron', expression: '0 9 * * 1', timeZone: 'UTC' }).kind, 'cron')
   assert.deepEqual([formStart(undefined).kind, formStart(undefined).title, formStart(undefined).time], ['daily', '', '09:00'])
+  const shanghaiOnce = formStart({ kind: 'at', scheduledAt: '2030-01-02T07:05:00.000Z', timeZone: 'Asia/Shanghai' })
+  assert.equal(shanghaiOnce.at, '2030-01-02T15:05')
+  assert.equal(shanghaiOnce.timeZone, 'Asia/Shanghai')
+})
+
+test('#3110: wall clocks convert through the chosen zone, and daily/weekly send that zone to the host', () => {
+  assert.equal(instantFromWallClock('2030-01-02T15:05', 'Asia/Shanghai'), '2030-01-02T07:05:00.000Z')
+  assert.equal(instantFromWallClock('2030-01-02T07:05', 'UTC'), '2030-01-02T07:05:00.000Z')
+  assert.equal(instantFromWallClock('2030-07-02T09:00', 'America/New_York'), '2030-07-02T13:00:00.000Z')
+  assert.equal(instantFromWallClock('2030-01-02T09:00', 'America/New_York'), '2030-01-02T14:00:00.000Z')
+  assert.equal(wallClockInput(Date.parse('2030-01-02T07:05:00.000Z'), 'Asia/Shanghai'), '2030-01-02T15:05')
+  const asJson = value => JSON.parse(JSON.stringify(value))
+  assert.deepEqual(asJson(whenFromForm({ kind: 'daily', time: '09:00', timeZone: 'America/Los_Angeles' })), {
+    kind: 'daily', time: '09:00', timeZone: 'America/Los_Angeles',
+  })
+  assert.deepEqual(asJson(whenFromForm({ kind: 'weekly', time: '18:30', weekdays: [1, 5], timeZone: 'UTC' })), {
+    kind: 'weekly', time: '18:30', timeZone: 'UTC', weekdays: [1, 5],
+  })
+  const once = asJson(whenFromForm({ kind: 'at', at: '2030-01-02T15:05', timeZone: 'Asia/Shanghai' }))
+  assert.deepEqual(once, { kind: 'at', at: '2030-01-02T07:05:00.000Z', timeZone: 'Asia/Shanghai' })
+  const every = asJson(whenFromForm({ kind: 'every', count: 2, unit: 'hours', timeZone: 'Asia/Shanghai' }))
+  assert.deepEqual(every, { kind: 'every', seconds: 7200 })
+  assert.equal('timeZone' in every, false, 'an interval has no time_zone in the engine')
+  assert.ok(timeZoneOptions('Asia/Shanghai').includes('Asia/Shanghai'))
+  assert.ok(timeZoneOptions('Asia/Shanghai').includes('UTC'))
+  assert.ok(timeZoneOptions('Not/AZone').includes('Not/AZone'), 'a stored zone stays selectable')
+})
+
+test('#3110: the timezone picker is on once/daily/weekly forms and not on a repeat-every form', () => {
+  seeded.push({ available: true, tasks: [ACTIVE] }, ACTIVE)
+  const daily = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: spy() }))
+  const dailyZone = all(daily).find(node => node.props?.['data-flybot'] === 'task-timezone')
+  assert.ok(dailyZone, 'the daily form shows a timezone control')
+  assert.equal(dailyZone.props.value, 'Asia/Shanghai')
+  const everyTask = { id: 'e1', sessionId: 'chat-b1', botId: 'b1', title: 'Ping', prompt: 'Ping', kind: 'every', everySeconds: 3600, scheduledAt: '2030-01-01T01:00:00.000Z', status: 'active' }
+  seeded.push({ available: true, tasks: [everyTask] }, everyTask)
+  const every = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions: spy() }))
+  assert.equal(all(every).some(node => node.props?.['data-flybot'] === 'task-timezone'), false, 'repeat-every has no zone in the engine, so no control')
 })
 
 // #1651 (P-132): an interval that is not a whole number of minutes was shown rounded and
@@ -260,19 +301,21 @@ test('turning quiet hours on saves the default window as the settings write (#11
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ quietHours: { on: true, from: '22:00', to: '07:00' } }])
 })
 
-test('a once task sends its zone, so the host reads its wall clock (#1166)', async () => {
+test('a once task sends its zone, so the host reads its wall clock (#1166, #3110)', async () => {
   const sent = []
   const actions = { ...spy(), scheduleUpdate: async (task) => { sent.push(task); return OFF } }
   const once = { ...ACTIVE, kind: 'at', scheduledAt: '2030-01-02T07:05:00.000Z' }
   seeded.push({ available: true, tasks: [once], quietHours: QUIET }, once)
   const card = render(BotSchedules({ bot: { id: 'b1' }, roster: ROSTER, actions }))
   const form = all(card).find(node => node.type === 'form')
+  const zone = all(form).find(node => node.props?.['data-flybot'] === 'task-timezone')
+  assert.equal(zone?.props.value, 'Asia/Shanghai')
   form.props.onSubmit({ preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))
   const [when] = JSON.parse(JSON.stringify(sent)).map(task => task.when)
   assert.equal(when.kind, 'at')
-  assert.equal(typeof when.timeZone, 'string')
-  assert.notEqual(when.timeZone, '')
+  assert.equal(when.timeZone, 'Asia/Shanghai')
+  assert.equal(when.at, '2030-01-02T07:05:00.000Z', 'the wall clock is read in the chosen zone, not only attached')
 })
 
 test('the repeat-task warning is the view flag, not the page scanning its tasks (#1199)', () => {
@@ -791,7 +834,7 @@ test('#2232: Quiet hours and the form announce a refusal, not only print it', as
   const start = formStart(ACTIVE)
   seeded.push(
     { available: true, tasks: [] }, true, null, false, '', '22:00', '07:00',
-    'b1', start.title, start.prompt, start.kind, start.at, start.time, start.weekdays, start.count, start.unit, false, sentence,
+    'b1', start.title, start.prompt, start.kind, start.at, start.time, start.weekdays, start.count, start.unit, start.timeZone, false, sentence,
   )
   const formShown = render(SchedulesPage({ roster: ROSTER, actions: formActions, start: 'b1' }))
   const formAlerts = alertsOf(formShown)

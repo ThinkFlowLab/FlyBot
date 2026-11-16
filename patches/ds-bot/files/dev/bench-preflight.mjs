@@ -9,7 +9,7 @@
 //
 // Exit 0 when the bench can start, 1 with the remedy on stderr when it cannot, 2 on bad usage.
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -81,6 +81,7 @@ export function main(argv = process.argv.slice(2)) {
   return 1
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Node resolves import.meta.url through symlinks; argv keeps the invoked spelling.
+if (process.argv[1] && existsSync(process.argv[1]) && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   process.exit(main())
 }

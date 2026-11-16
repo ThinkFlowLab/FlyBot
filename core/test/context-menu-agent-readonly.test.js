@@ -92,7 +92,7 @@ const AGENT_WRITES = ['Pin', 'Unpin', 'Remove DSH Agent']
 const SESSION_WRITES = ['Rename', 'Archive']
 
 const actions = () => ({
-  closeMenu: () => {}, markUnread: () => {}, openSettings: () => {}, setFlags: () => {}, renameBot: () => {},
+  closeMenu: () => {}, markUnread: () => {}, clearUnread: () => {}, openSettings: () => {}, setFlags: () => {}, renameBot: () => {},
   duplicateBot: async () => ({ id: 'copy' }), openSession: () => {}, setMain: () => {}, deleteBot: () => {},
   deleteRoom: () => {}, reportError: () => {}, removeAgent: () => {}, beginAgentRename: () => {},
   archiveAgentSession: () => {},
@@ -112,22 +112,24 @@ test('a read-only window offers no write in the DSH Agent menus', () => {
   assert.deepEqual(labels.session.filter(label => SESSION_WRITES.includes(label)), [], 'the session menu still offers a write')
 })
 
-test('a read-only window draws no empty menu box', () => {
-  const menus = menusOf(rosterOf({ readOnly: 'read only' }))
-  for (const [menu, tree] of Object.entries(menus)) assert.equal(tree, null, `the read-only ${menu} menu drew a box`)
+test('a read-only window still offers Mark as Unread, which only touches local UI state', () => {
+  const labels = labelsOf(menusOf(rosterOf({ readOnly: 'read only' })))
+  assert.deepEqual(labels.agent, ['Mark as Unread'])
+  assert.deepEqual(labels.pinned, ['Mark as Unread'])
+  assert.deepEqual(labels.session, ['Mark as Unread'])
 })
 
-test('a writable window keeps every Agent write exactly as it is', () => {
+test('a writable window keeps every Agent write and the unread entry', () => {
   const labels = labelsOf(menusOf(rosterOf()))
-  assert.deepEqual(labels.agent, ['Pin', 'Remove DSH Agent'])
-  assert.deepEqual(labels.pinned, ['Unpin', 'Remove DSH Agent'])
-  assert.deepEqual(labels.session, ['Rename', 'Archive'])
+  assert.deepEqual(labels.agent, ['Pin', 'Mark as Unread', 'Remove DSH Agent'])
+  assert.deepEqual(labels.pinned, ['Unpin', 'Mark as Unread', 'Remove DSH Agent'])
+  assert.deepEqual(labels.session, ['Mark as Unread', 'Rename', 'Archive'])
 })
 
 test('a host sentence that trims to nothing is a writable window', () => {
   for (const readOnly of [undefined, '', '   ']) {
     const labels = labelsOf(menusOf(rosterOf({ readOnly })))
-    assert.deepEqual(labels.agent, ['Pin', 'Remove DSH Agent'], `readOnly ${JSON.stringify(readOnly)} hid the agent writes`)
-    assert.deepEqual(labels.session, ['Rename', 'Archive'], `readOnly ${JSON.stringify(readOnly)} hid the session writes`)
+    assert.deepEqual(labels.agent, ['Pin', 'Mark as Unread', 'Remove DSH Agent'], `readOnly ${JSON.stringify(readOnly)} hid the agent writes`)
+    assert.deepEqual(labels.session, ['Mark as Unread', 'Rename', 'Archive'], `readOnly ${JSON.stringify(readOnly)} hid the session writes`)
   }
 })

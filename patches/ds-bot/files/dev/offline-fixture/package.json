@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "react": "https://registry.npmjs.org/react/-/react-19.3.1.tgz",
+    "react-dom": "https://registry.npmjs.org/react-dom/-/react-dom-19.3.1.tgz",
+    "scheduler": "https://registry.npmjs.org/scheduler/-/scheduler-0.28.0.tgz"
+  }
+}

@@ -1,9 +1,9 @@
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { inkText } from './inks.js'
 import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, cutText, isPluginTool } from './text.js'
-import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
+import { MemoryIcon } from './icons.js'
+import { MessageTools, onMessageContextMenu } from './message-tools.js'
 import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 import { botByName, rosterBot } from './sources.js'
 import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
@@ -18,6 +18,7 @@ import { HeldReplyActions } from './held-reply.js'
 import { call } from './api.js'
 import { failureLabel } from './diagnostics.js'
 import { turnReasoning } from './turn-reasoning.js'
+import { FoldedContent, foldingOf, showsDocumentCard } from './message-fold.js'
 
 // -------------------------------------------------------------------------
 // Chat cells
@@ -57,6 +58,17 @@ function bubbleLinkClick({ actions, subject }) {
 
 // `lead` (a sender avatar in group chats) sits beside the last bubble, in the same
 // row, so it lines up with the bubble whether or not reactions hang below it.
+function bubbleBody({ text, roster, selfId, live, mentions, actions, sessionId }) {
+  const folding = foldingOf(roster?.prefs)
+  const render = shown => h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })
+  if (!live && showsDocumentCard(text, folding)) {
+    return h(FoldedContent, { text, folding, actions, sessionId })
+  }
+  return h('div', { className: 'bt-bubble' },
+    h(FoldedContent, { text, folding, streaming: live, actions, sessionId }, render))
+}
+
+
 export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
   const openLink = bubbleLinkClick({ actions, subject: selfId ?? sessionId })
   const onClick = (event) => {
@@ -78,6 +90,7 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
   // #2123: a message with no text is no message — a turn that ended in tool calls only, or whose reply
   // a card elsewhere carries, leaves nothing to draw. The empty and whitespace-only shapes are one: the
   // row (bubble and its avatar) is drawn only for a text a person can read.
+  const [contextAt, setContextAt] = useState(null)
   const shown = (texts ?? []).filter(text => String(text ?? '').trim() !== '')
   if (shown.length === 0) return null
   return h('div', { className: 'bt-astack', 'data-lead': lead ? '' : undefined, onClickCapture: onClick },
@@ -86,12 +99,15 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
       const picked = key ? (msgKeys ? reactions?.[key] : reactions)?.[reactIndex(index)] ?? [] : []
       const last = index === shown.length - 1
       const live = streaming && last
-      return h('div', { key: index, className: 'bt-msg' },
+      return h('div', { key: index, className: 'bt-msg', onContextMenu: event => onMessageContextMenu(event, at => setContextAt({ ...at, index }), { live }) },
         h('div', { className: 'bt-msg-line' },
           lead && last ? lead : null,
-          h('div', { className: 'bt-bubble' },
-            h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
-          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions })),
+          bubbleBody({ text, roster, selfId, live, mentions, actions, sessionId }),
+          live ? null : h(MessageTools, {
+            text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId,
+            react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined,
+            actions, roster, contextAt: contextAt?.index === index ? contextAt : null,
+          })),
         picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
           key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
         }, emoji))) : null)
@@ -101,8 +117,6 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
 // A held send is shown by its card and the sidebar mark, not by a line in a Face-to-face room's history:
 // older rooms still hold this line from when the social plugin posted it for a direct message (#278).
 const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
-const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
-
 // The closed status line already says who left (#1103). Same rule as
 // plugins/social/src/face-rooms.js leaveNoticeCoveredByClose: the plugin does not post the short
 // line when it already knows the room closed, and a line posted earlier is not drawn beside the banner.
@@ -117,59 +131,6 @@ function leaveNoticeCoveredByClose(room, text) {
     if (name && (who === name || who.endsWith(` (${name})`))) return true
   }
   return false
-}
-
-// Closes a popover on a press outside the given elements or on Escape.
-function useDismiss(open, close, refs) {
-  useEffect(() => {
-    if (!open) return undefined
-    const onDown = (event) => {
-      if (refs.some(ref => ref.current?.contains(event.target))) return
-      close()
-    }
-    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey, true)
-    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey, true) }
-  }, [open])
-}
-
-// The hover toolbar beside a reply bubble: Add reaction, Reply, More.
-function MessageTools({ text, name, sessionId, react, actions }) {
-  const [panel, setPanel] = useState(null)
-  const [place, setPlace] = useState(null)
-  const [copied, setCopied] = useState(false)
-  const tools = useRef(null)
-  const pop = useRef(null)
-  const close = () => setPanel(null)
-  useDismiss(panel !== null, close, [tools, pop])
-  const open = (kind, event) => {
-    if (panel === kind) { close(); return }
-    const rect = event.currentTarget.getBoundingClientRect()
-    const below = rect.bottom + 220 < window.innerHeight
-    setPlace(kind === 'react'
-      ? { left: rect.left + rect.width / 2, top: rect.top - 6, '--bt-origin': 'bottom center' }
-      : { left: Math.min(rect.left, window.innerWidth - 208), ...(below ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4, '--bt-origin': 'bottom left' }) })
-    setPanel(kind)
-  }
-  const copy = () => {
-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
-  }
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }))
-    const link = Object.assign(document.createElement('a'), { href: url, download: `${name}-message.md` })
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
-  const item = (label, Icon, run) => h('button', { key: label, type: 'button', role: 'menuitem', onClick: () => { close(); run() } }, h(Icon), label)
-  return h('div', { ref: tools, className: 'bt-tools', 'data-open': panel !== null || undefined },
-    react ? h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('Add reaction'), title: t('Add reaction'), 'aria-expanded': panel === 'react', onClick: event => open('react', event) }, h(SmileIcon)) : null,
-    sessionId ? h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('Reply'), title: t('Reply'), onClick: () => actions.quote(sessionId, text) }, h(ReplyIcon)) : null,
-    h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('More message actions'), title: t('More'), 'aria-haspopup': 'menu', 'aria-expanded': panel === 'more', onClick: event => open('more', event) }, copied ? h(CheckIcon) : h(DotsIcon)),
-    panel === 'react' ? createPortal(h('div', { ref: pop, className: 'bt-react-strip', role: 'menu', 'aria-label': t('Reactions'), style: place },
-      REACTIONS.map(emoji => h('button', { key: emoji, type: 'button', role: 'menuitem', 'aria-label': emoji, onClick: () => { close(); react(emoji) } }, emoji))), document.body) : null,
-    panel === 'more' ? createPortal(h('div', { ref: pop, className: 'bt-menu', role: 'menu', 'aria-label': t('Message actions'), style: place },
-      item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
 }
 
 // The first line with something on it, inner runs of whitespace squeezed: a folded row shows it, so

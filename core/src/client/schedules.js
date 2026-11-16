@@ -52,6 +52,75 @@ export const schedulesReadFailure = failure => (typeof failure === 'string' && f
   : null)
 
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+// IANA names the form can actually send (#3110). A value already on the task stays listed
+// even if this runtime's Intl set is short.
+export function timeZoneOptions(current) {
+  const supported = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+  const zone = String(current ?? '').trim()
+  // Some runtimes omit UTC from `supportedValuesOf`; it is still a valid IANA name the host accepts.
+  const list = supported.length ? ['UTC', ...supported] : ['UTC', 'Asia/Shanghai']
+  if (zone) list.unshift(zone)
+  return [...new Set(list.filter(Boolean))]
+}
+
+function zoneParts(ms, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || 'UTC',
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(ms))
+  const value = type => Number(parts.find(part => part.type === type)?.value)
+  return Date.UTC(value('year'), value('month') - 1, value('day'), value('hour'), value('minute'), value('second'))
+}
+
+// A stored instant as a datetime-local value in the chosen zone (#3110), not always the browser's.
+export function wallClockInput(ms, timeZone) {
+  const at = Number(ms)
+  if (!Number.isFinite(at)) return ''
+  const zone = String(timeZone ?? '').trim() || localZone()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(new Date(at))
+  const value = type => parts.find(part => part.type === type)?.value
+  if (!value('year')) return ''
+  return `${value('year')}-${value('month')}-${value('day')}T${value('hour')}:${value('minute')}`
+}
+
+// The ISO instant for a wall clock in that zone. DSH stores the instant; daily/weekly send the
+// zone itself. A time that does not exist (a DST gap) is rejected.
+export function instantFromWallClock(wall, timeZone) {
+  const match = String(wall ?? '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/)
+  if (!match) throw new Error('Pick a date and time')
+  const asUtc = Date.UTC(
+    Number(match[1]), Number(match[2]) - 1, Number(match[3]),
+    Number(match[4]), Number(match[5]), Number(match[6] ?? 0),
+  )
+  const zone = String(timeZone ?? '').trim() || 'UTC'
+  let instant = asUtc
+  for (let step = 0; step < 3; step += 1) {
+    const shown = zoneParts(instant, zone)
+    const delta = shown - asUtc
+    if (delta === 0) break
+    instant -= delta
+  }
+  if (zoneParts(instant, zone) === asUtc) return new Date(instant).toISOString()
+  for (const probe of [instant - 3_600_000, instant + 3_600_000, instant - 7_200_000, instant + 7_200_000]) {
+    if (zoneParts(probe, zone) === asUtc) return new Date(probe).toISOString()
+  }
+  throw new Error('Pick a date and time')
+}
 const clock = time => String(time ?? '').slice(0, 5)
 const when = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms)
 function dayAndTime(ms) {
@@ -221,11 +290,6 @@ const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'],
 // The form says one unit with one count ("1 minute"), so each unit carries both words.
 const UNITS = [['seconds', 1, 'second', 'seconds'], ['minutes', 60, 'minute', 'minutes'], ['hours', 3600, 'hour', 'hours'], ['days', 86400, 'day', 'days']]
 
-// A stored instant as the value of a datetime-local input, in this browser's zone.
-function localInput(ms) {
-  const date = new Date(ms)
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
 // What the form starts with: a new task's defaults, or the edited task's own values.
 // A cron rule has no control here, so it is kept unless another kind is picked.
 export function formStart(task) {
@@ -236,13 +300,24 @@ export function formStart(task) {
     title: task?.title ?? '',
     prompt: task?.prompt ?? '',
     kind: once ? 'at' : task?.kind ?? 'daily',
-    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
+    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? wallClockInput(Date.parse(task.scheduledAt), task?.timeZone || localZone()) : inAnHour(),
     time: task?.time ? clock(task.time) : '09:00',
     weekdays: task?.kind === 'weekly' && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
     count: Math.max(1, Math.round(seconds / size)),
     unit,
     timeZone: task?.timeZone || localZone(),
   }
+}
+
+// The form's `when` payload (#3110): the chosen IANA zone is what the host sends to DSH as
+// `time_zone` for daily/weekly, and what a once task uses to turn the wall clock into an instant.
+// Repeat-every has no zone in the schedule engine, so the form does not send one.
+export function whenFromForm({ kind, at, time, weekdays, timeZone, count, unit } = {}) {
+  const zone = String(timeZone ?? '').trim() || localZone()
+  if (kind === 'cron') return { kind: 'keep' }
+  if (kind === 'at') return { kind, at: instantFromWallClock(at, zone), timeZone: zone }
+  if (kind === 'every') return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
+  return { kind, time, timeZone: zone, ...(kind === 'weekly' ? { weekdays } : {}) }
 }
 
 function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
@@ -259,19 +334,10 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const [weekdays, setWeekdays] = useState(first.weekdays)
   const [count, setCount] = useState(first.count)
   const [unit, setUnit] = useState(first.unit)
+  const [timeZone, setTimeZone] = useState(first.timeZone)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const timing = () => {
-    if (kind === 'cron') return { kind: 'keep' }
-    // A once task is an instant; the host reads its wall clock in this zone when quiet
-    // hours are on (#1166). The others carry their zone with the time itself.
-    if (kind === 'at') return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone }
-    // Seconds, not minutes: DSH takes any interval of 60s or more, so a 90s repeat must
-    // survive the form instead of being rounded to two minutes (#1651).
-    if (kind === 'every') return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
-    // An edited task keeps its own time zone; a new one takes this browser's.
-    return { kind, time, timeZone: first.timeZone, ...(kind === 'weekly' ? { weekdays } : {}) }
-  }
+  const timing = () => whenFromForm({ kind, at, time, weekdays, timeZone, count, unit })
   const submit = (event) => {
     event.preventDefault()
     if (busy || target === '') return
@@ -313,6 +379,19 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
           h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
           h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
             UNITS.map(([id, , one, many]) => h('option', { key: id, value: id }, t(Number(count) === 1 ? one : many))))) : null)),
+    // Visible, and submitted, only when the engine uses a zone (#3110). A repeat-every interval
+    // has none; a cron rule is kept as stored unless the kind changes.
+    kind === 'at' || kind === 'daily' || kind === 'weekly'
+      ? h('label', { className: 'bt-set-row bt-bs-row' },
+        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Time zone'))),
+        h('select', {
+          className: 'bt-select bt-task-timezone',
+          'data-flybot': 'task-timezone',
+          value: timeZone,
+          'aria-label': t('Time zone'),
+          onChange: event => setTimeZone(event.target.value),
+        }, timeZoneOptions(timeZone).map(zone => h('option', { key: zone, value: zone }, zone))))
+      : null,
     error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error)) : null,
     h('div', { className: 'bt-set-row bt-task-foot' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),

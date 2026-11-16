@@ -540,3 +540,7 @@ a negative or unreadable count, a count with no generation) and leaves the memor
 carries the pair, `unchanged` included, through the real `ownedLive` whitelist on a signed-in
 deployment) and `core/test/state-link-notice.test.js` (both restart orders, the refresh baseline, said
 once per count, both languages).
+
+## Staged Teamily parity delivery (#3110)
+
+The staged Teamily-parity delivery adds appearance/send-key preferences, non-streaming message folding and document views, memory catalog search, group picking, list filters/unread/pin and message tools. `history-search.js` and `history-hit.js` separate cancellable query and original-context reads; historical rows never call current-chat navigation. A read-only modal identifies the actual segment and renders original text, clearing stale responses on identity/roster changes. Four palette tags and explicit loaded-only fallback remain; this is not full feature parity or browser acceptance. `core/client.js` is rebuilt from source.

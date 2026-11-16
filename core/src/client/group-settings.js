@@ -1,6 +1,6 @@
 import { createElement as h, useEffect, useState } from 'react'
 import { isMainOf } from './sources.js'
-import { PlusIcon, ChevronRightIcon } from './icons.js'
+import { PlusIcon, ChevronRightIcon, SearchIcon } from './icons.js'
 import { AdminStar, BotAvatar, BotMark, PersonMark, RoomAvatar, lookAvoidingLocals, lookBotForRemote, lookKey, lookOf } from './mark.js'
 import { setLocalBots } from './characters.js'
 import { Card, Row, InlineText, SwitchRow } from './bot-settings.js'
@@ -10,7 +10,8 @@ import { FolderMenu } from './folder-menu.js'
 import { hostText, t } from './i18n.js'
 import { StandingApprovalsCard } from './standing-approvals.js'
 import { FlyBotRoomMembers } from './flybot-slots.js'
-import { remoteBotName, remoteBotTitle } from '../shared/remote-label.js'
+import { listedChatBots, pickerBotLabel, remoteBotName, remoteBotTitle, splitRoomPicks } from '../shared/remote-label.js'
+import { canCreateGroup, groupMemberMatches } from '../shared/group-create.js'
 
 export const ROOM_MODES = [
   ['admin', 'Admin leads', 'Plain messages go to the admin, who calls others with @Name.'],
@@ -328,51 +329,141 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
         h('span', { className: 'bt-chevron' }, h(ChevronRightIcon)))))
 }
 
-// A new group chat from Settings: its admin first, then the other members, then a name
-// if the member names will not do.
+// A new group chat from Settings: optional name, searchable member list, selected pane,
+// and Create disabled until a local admin and one more member are picked.
 export function NewGroupForm({ roster, actions, run, onCreated, onCancel }) {
   const [admin, setAdmin] = useState(null)
   const [members, setMembers] = useState([])
   const [name, setName] = useState('')
+  const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
-  const toggle = id => setMembers(list => (list.includes(id) ? list.filter(item => item !== id) : [...list, id]))
-  const pickAdmin = (id) => { setAdmin(id); setMembers(list => list.filter(item => item !== id)) }
   // A read-only window keeps the pickers as a preview and offers no create: the host could only
   // answer `bot/read-only` after the press (#2307's form, P-570).
   const locked = lockedWindow(roster)
+  const bots = listedChatBots(roster)
+  const selectedIds = admin === null ? members : [admin, ...members]
+  const selected = selectedIds.map(id => roster.byId[id]).filter(Boolean)
+  const available = bots.filter(bot => !selectedIds.includes(bot.id) && groupMemberMatches(bot, query))
+  const ready = canCreateGroup(admin, members)
+  const add = (bot) => {
+    if (admin === null && !bot.remote) { setAdmin(bot.id); return }
+    setMembers(list => list.includes(bot.id) ? list : [...list, bot.id])
+  }
+  const remove = (id) => {
+    if (id === admin) {
+      const nextAdmin = members.find(other => !roster.byId[other]?.remote) ?? null
+      setAdmin(nextAdmin)
+      setMembers(list => list.filter(item => item !== nextAdmin))
+      return
+    }
+    setMembers(list => list.filter(item => item !== id))
+  }
+  const pickAdmin = (id) => {
+    if (id === admin || roster.byId[id]?.remote) return
+    setMembers(list => {
+      const without = list.filter(item => item !== id)
+      return admin === null ? without : [...without, admin]
+    })
+    setAdmin(id)
+  }
   const create = async () => {
-    if (locked || busy || admin === null || members.length === 0) return
+    if (locked || busy || !ready) return
     setBusy(true)
     let room
-    const done = await run(actions.createRoom([admin, ...members], { admin, ...(name.trim() ? { name: name.trim() } : {}) }).then((value) => { room = value }))
+    const { members: localIds, remotes } = splitRoomPicks(roster, [admin, ...members])
+    const participants = remotes.length === 0 ? undefined : [
+      ...localIds.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
+      ...remotes,
+    ]
+    const done = await run(actions.createRoom(localIds, {
+      admin,
+      ...(name.trim() ? { name: name.trim() } : {}),
+      ...(participants ? { participants } : {}),
+    }).then((value) => { room = value }))
     if (done && room) onCreated(room)
     else setBusy(false)
   }
-  const chip = (bot, on, onClick, role) => h('button', {
-    key: bot.id, type: 'button', role, className: 'bt-ng-chip', 'aria-checked': on, onClick,
-  }, h(BotAvatar, { bot, size: 22, badge: false, live: false }), h('span', { className: 'bt-ng-name' }, bot.name), on && role === 'radio' ? h(AdminStar) : null)
+  const pickRow = (bot, selectedRow) => h('button', {
+    key: bot.id, type: 'button', className: selectedRow ? 'bt-ng-pick bt-ng-pick-on' : 'bt-ng-pick',
+    'data-bot-id': bot.id,
+    role: selectedRow ? (bot.id === admin ? 'radio' : 'checkbox') : 'option',
+    'aria-checked': selectedRow ? true : undefined,
+    onClick: () => { selectedRow ? remove(bot.id) : add(bot) },
+  },
+    h(BotAvatar, { bot, size: 22, badge: false, live: false }),
+    h('span', { className: 'bt-ng-name' }, pickerBotLabel(bot)),
+    selectedRow && bot.id === admin ? h(AdminStar) : null,
+    selectedRow && bot.id !== admin && !bot.remote
+      ? h('span', {
+          className: 'bt-ng-make-admin', role: 'button', tabIndex: 0,
+          'aria-label': t('Make admin'),
+          onClick: (event) => { event.preventDefault(); event.stopPropagation(); pickAdmin(bot.id) },
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); pickAdmin(bot.id) }
+          },
+        }, h(AdminStar))
+      : null)
+  const availHint = bots.every(bot => selectedIds.includes(bot.id))
+    ? t('No more Bots to add')
+    : t('No Bots match')
   return h('div', { className: 'bt-set-card bt-ng' },
-    h('div', { className: 'bt-set-row bt-bs-row bt-bs-stack' },
-      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label bt-ng-label' }, h(AdminStar), t('Choose the group admin'))),
-      h('div', { className: 'bt-ng-picks', role: 'radiogroup', 'aria-label': t('Group admin') },
-        roster.bots.map(bot => chip(bot, admin === bot.id, () => pickAdmin(bot.id), 'radio')))),
-    admin === null ? null : h('div', { className: 'bt-set-row bt-bs-row bt-bs-stack bt-ng-step' },
-      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Who to chat with…'))),
-      h('div', { className: 'bt-ng-picks', role: 'group', 'aria-label': t('Members') },
-        roster.bots.filter(bot => bot.id !== admin).map(bot => chip(bot, members.includes(bot.id), () => toggle(bot.id), 'checkbox')))),
-    admin === null || members.length === 0 ? null : h('label', { className: 'bt-set-row bt-bs-row bt-ng-step' },
-      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Name'))),
-      h('input', { className: 'bt-bs-input', value: name, maxLength: 60, placeholder: t('Name after members'), onChange: event => setName(event.target.value) })),
+    h('p', { className: 'bt-ng-intro' }, t('Add a name, then pick Bots to chat with.')),
+    h('label', { className: 'bt-ng-name-row' },
+      h('span', { className: 'bt-ng-name-label' }, t('Group name')),
+      h('input', {
+        className: 'bt-ng-name-input', value: name, maxLength: 60,
+        placeholder: t('Group name (optional)'),
+        'aria-label': t('Group name'),
+        onChange: event => setName(event.target.value),
+      })),
+    h('div', { className: 'bt-ng-split' },
+      h('div', { className: 'bt-ng-col' },
+        h('label', { className: 'bt-ng-search' },
+          h(SearchIcon),
+          h('input', {
+            className: 'bt-ng-search-input', type: 'search', value: query,
+            placeholder: t('Search'), 'aria-label': t('Search members'),
+            onChange: event => setQuery(event.target.value),
+          })),
+        available.length === 0
+          ? h('div', { className: 'bt-ng-empty' }, availHint)
+          : h('div', { className: 'bt-ng-list', role: 'listbox', 'aria-label': t('Members') },
+              available.map(bot => pickRow(bot, false)))),
+      h('div', { className: 'bt-ng-col' },
+        h('div', { className: 'bt-ng-sel-head' }, t('Selected {count}', { count: selected.length })),
+        selected.length === 0
+          ? h('div', { className: 'bt-ng-empty' }, t('No members selected'))
+          : h('div', { className: 'bt-ng-list', role: 'group', 'aria-label': t('Selected members') },
+              selected.map(bot => pickRow(bot, true))))),
     h('div', { className: 'bt-set-row bt-task-foot' },
       h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
       locked
         ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly))
-        : h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy || admin === null || members.length === 0, onClick: () => void create() }, t('Create group chat'))))
+        : h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy || !ready, onClick: () => void create() }, t('Create group chat'))))
 }
 
 export const GROUP_SETTINGS_CSS = `
-.bt-ng{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
-.bt-ng-step{animation:bt-veil-in .22s ease-out}
+.bt-ng{padding:16px 16px 8px;animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
+.bt-ng-intro{margin:0 0 14px;color:var(--bt-ink-2);font-size:13px;line-height:18px}
+.bt-ng-name-row{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.bt-ng-name-label{flex:none;min-width:4.5em;font-size:13px;color:var(--bt-ink)}
+.bt-ng-name-input{flex:1;min-width:0;height:36px;box-sizing:border-box;padding:0 12px;border:.5px solid var(--bt-line-2);border-radius:10px;background:var(--bt-main);color:var(--bt-ink);font:inherit;font-size:13px;outline:none}
+.bt-ng-name-input::placeholder{color:var(--bt-ink-3)}
+.bt-ng-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;min-height:220px;margin:0 0 8px}
+.bt-ng-col{display:flex;flex-direction:column;min-width:0;min-height:220px;border:.5px solid var(--bt-line);border-radius:12px;background:var(--bt-main);overflow:hidden}
+.bt-ng-search{display:flex;align-items:center;gap:8px;margin:8px;padding:0 10px;height:32px;border-radius:999px;background:var(--bt-card);border:.5px solid var(--bt-line-2);color:var(--bt-ink-2)}
+.bt-ng-search svg{flex:none;width:14px;height:14px}
+.bt-ng-search-input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;outline:none}
+.bt-ng-sel-head{display:flex;align-items:center;min-height:32px;margin:8px 12px 0;color:var(--bt-ink-2);font-size:13px}
+.bt-ng-list{flex:1;overflow:auto;padding:4px 8px 8px;display:flex;flex-direction:column;gap:2px}
+.bt-ng-empty{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;color:var(--bt-ink-3);font-size:13px;text-align:center}
+.bt-ng-pick{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:inherit;font:inherit;font-size:13px;padding:6px 8px;border-radius:8px;cursor:pointer;text-align:left}
+.bt-ng-pick:hover{background:var(--bt-hover)}
+.bt-ng-pick-on{background:var(--bt-card)}
+.bt-ng-make-admin{display:inline-flex;margin-left:auto;padding:2px;border-radius:999px;color:var(--bt-ink-3)}
+.bt-ng-make-admin:hover{color:var(--bt-ink);background:var(--bt-hover)}
+.bt-ng-pick-on>.bt-admin-star{margin-left:auto}
+.bt-ng-name{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bt-ng-label{display:inline-flex;align-items:center;gap:6px}
 .bt-ng-picks{display:flex;flex-wrap:wrap;gap:6px}
 .bt-ng-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 5px;border-radius:999px;border:.5px solid var(--bt-line);background:var(--bt-card);color:var(--bt-ink-2);font:inherit;font-size:13px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease,scale .3s cubic-bezier(.34,1.56,.64,1)}
@@ -380,8 +471,7 @@ export const GROUP_SETTINGS_CSS = `
 .bt-ng-chip:active{scale:.96}
 .bt-ng-chip[aria-checked=true]{background:var(--bt-active);border-color:var(--bt-line-2);color:var(--bt-ink)}
 .bt-ng-chip .bt-admin-star{animation:bt-check-pop .4s cubic-bezier(.34,1.56,.64,1)}
-.bt-ng-name{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (prefers-reduced-motion:reduce){.bt-ng,.bt-ng-step,.bt-ng-chip .bt-admin-star{animation:none}}
+@media (prefers-reduced-motion:reduce){.bt-ng,.bt-ng-chip .bt-admin-star{animation:none}}
 .bt-gs-member{gap:8px}
 .bt-gs-who{flex:1;display:flex;align-items:center;gap:8px;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .bt-gs-who .bt-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

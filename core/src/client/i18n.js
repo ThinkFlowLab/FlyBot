@@ -199,6 +199,9 @@ const ZH = {
   'Could not create the invite. Use Bot settings → Sharing → Copy invite link for this Bot.': '无法创建邀请。请在 Bot 设置 → Sharing 里使用 Copy invite link for this Bot。',
   'Add friend': '添加好友',
   'Friend requests': '好友请求',
+  'A friend': '一位好友',
+  '{name} requests a share': '{name} 请求分享',
+  '{name} requests {capability}': '{name} 请求 {capability}',
   'Accept or decline incoming requests.': '接受或拒绝收到的请求。',
   'Accept invite': '接受邀请',
   "Paste a friend’s invite link or code.": '粘贴朋友的邀请链接或邀请码。',
@@ -639,12 +642,59 @@ const ZH = {
   'Group chats': '群聊',
   Secrets: '密钥',
   Appearance: '外观',
+  Grove: '林间',
   Theme: '主题',
   'Colors for the whole team, on every device.': '整个团队的配色，所有设备同步。',
   Accent: '强调色',
   'Unread marks, badges, and the brand mark.': '未读标记、徽标和品牌标志。',
   'Theme accent': '主题强调色',
   'Custom accent': '自定义强调色',
+  'Light theme': '浅色',
+  'Dark theme': '深色',
+  Automatic: '自动',
+  'Match system': '跟随系统',
+  'How this window looks: light, dark, automatic, or match the system.': '此窗口的外观：浅色、深色、自动，或跟随系统。',
+  'Automatic switch': '自动切换',
+  'Sunset to sunrise': '日落到日出',
+  'Custom hours': '自定义时段',
+  'Dark from': '深色开始',
+  'Dark until': '深色结束',
+  'Switches about a minute after the chosen time, and not in the middle of a turn.': '到点后约再等一分钟，且不会打断正在进行的回复。',
+  Language: '语言',
+  'Interface language': '界面语言',
+  'Follows the DeepSeek Harness language.': '跟随 DeepSeek Harness 的界面语言。',
+  English: 'English',
+  'Simplified Chinese': '简体中文',
+  Shortcuts: '快捷键',
+  'Send shortcut': '发送快捷键',
+  'Enter to send': 'Enter 发送',
+  'Shift+Enter to send': 'Shift+Enter 发送',
+  'Enter inserts a new line.': 'Enter 换行。',
+  'Shift+Enter inserts a new line.': 'Shift+Enter 换行。',
+  'Message folding': '消息折叠',
+  'Choose how much of a long message to show before it folds.': '选择长消息在对话里折叠前展示多少内容。',
+  Compact: '紧凑',
+  'A very short preview, for scanning a conversation.': '只展示很短的预览。适合以扫读为主的场景。',
+  Standard: '标准',
+  'A moderate preview. Recommended.': '展示适中的预览。推荐。',
+  'No folding': '不折叠',
+  'Show every message in full. Long messages push the conversation off the screen.': '完整展示每条消息。长消息会把对话推离屏幕。',
+  'Collapse long documents into cards': '长文档收成卡片',
+  'Messages with several sections appear as a card you can open beside the conversation.': '含多个章节的消息显示为卡片，可在对话旁边打开阅读，不再铺满屏幕。',
+  'Open beside the conversation': '在对话旁打开',
+  'Opened beside the conversation.': '已在对话旁打开。',
+  'Close document': '关闭文档',
+  '{count} sections': '{count} 个章节',
+  Document: '文档',
+  Channels: '渠道',
+  'No channels yet.': '还没有渠道。',
+  'Only integrations FlyBot already has appear here.': '这里只列出 FlyBot 已经接入的渠道。',
+  'Conversation settings': '会话设置',
+  Attach: '附件',
+  'Reference a chat is available in a Bot or group chat.': '在 Bot 或群聊里才能引用另一段对话。',
+  'A read-only window cannot create a scheduled task.': '只读窗口不能创建定时任务。',
+  'Invite link copied': '邀请链接已复制',
+  'Could not copy the invite link': '无法复制邀请链接',
   On: '开',
   None: '无',
   'Bots · {count}': 'Bot · {count}',
@@ -814,7 +864,22 @@ const ZH = {
   Messages: '消息',
   Commands: '命令',
   'Search Bots, chats and messages': '搜索 Bot、对话和消息',
+  'Search Bots, chats, and loaded messages': '搜索 Bot、对话和已加载的消息',
   'Clear search': '清除搜索',
+  'Search filters': '搜索筛选',
+  Chats: '对话',
+  'Search chats and messages': '搜索对话和消息',
+  'Type a Bot name, a group name, or words from a loaded message': '输入 Bot 名、群名，或已加载消息里的词',
+  'Try a Bot name, a group name, or words from a loaded message': '试试 Bot 名、群名，或已加载消息里的词',
+  'Type at least two characters to search messages already loaded': '至少输入两个字符，搜索已加载的消息',
+  'Clear unread mark': '清除手动未读标记',
+  'Estimated night hours (time-zone based)': '估算夜间时段（按时区，非实际日落时间）',
+  'Could not copy message': '未能复制消息，请重试或手动选择文字复制',
+  'Could not download message': '未能下载消息，请重试或复制正文',
+  'Clipboard unavailable': '剪贴板不可用，请手动选择文字复制',
+  'Show message text': '显示消息正文',
+  'Hide message text': '收起消息正文',
+  'Mark as Read': '标为已读',
   Results: '结果',
   'No results': '没有结果',
   'Try a Bot name or words from a message': '试试 Bot 名字或消息里的词',
@@ -1026,6 +1091,16 @@ const ZH = {
   "Manage {name}'s memory": '管理 {name} 的记忆',
   "{name}'s memory": '{name} 的记忆',
   'Memory summary': '记忆摘要',
+  Overview: '总览',
+  'Memory directory': '记忆目录',
+  'Search memory': '搜索记忆',
+  'Hide directory': '收起目录',
+  'Show directory': '显示目录',
+  'Main memory': '主记忆',
+  '1 topic': '1 个主题',
+  '{count} topics': '{count} 个主题',
+  'No entries match "{query}"': '没有与“{query}”相符的记忆',
+  'Try a different word, or clear the search to see every entry.': '换个词试试，或清空搜索查看全部记忆。',
   'All entries': '全部记忆',
   'Memory options': '记忆选项',
   'Close memory': '关闭记忆',
@@ -1266,6 +1341,20 @@ const ZH = {
   'Who to chat with…': '想和谁聊…',
   'Add at least one more Bot': '再至少添加一个 Bot',
   Members: '成员',
+  'Add a name, then pick Bots to chat with.': '添加名称，然后选择要一起聊天的 Bot。',
+  'Group name (optional)': '输入群组名称（可选）',
+  'Search members': '搜索成员',
+  'Selected {count}': '已选 {count}',
+  'Selected members': '已选成员',
+  'No members selected': '还没有选择成员',
+  'No more Bots to add': '没有更多可添加的 Bot',
+  // Session list filters (kinds the sidebar already has)
+  'Session filter': '会话筛选',
+  'Direct chats': '单聊',
+  Unread: '未读',
+  'No group chats': '没有群聊',
+  'No direct chats': '没有单聊',
+  'No unread chats': '没有未读会话',
   // Connectors and scheduled tasks
   'Choose Bots': '选择 Bot',
   'Off for every Bot. Choose which Bots may use it.': '所有 Bot 都未开启。选择哪些 Bot 可以使用。',
@@ -1337,6 +1426,7 @@ const ZH = {
   'Sum up what changed since yesterday and what needs me today.': '总结一下昨天以来的变化，以及今天需要我处理的事。',
   When: '什么时候',
   'Date and time': '日期和时间',
+  'Time zone': '时区',
   Days: '星期',
   Time: '时间',
   Every: '每',
@@ -1566,6 +1656,10 @@ const HOST_ZH = {
   'Only a Main Bot can be replaced': '只能替换主 Bot',
   'A Main Bot cannot be deleted; remove its Main Bot role first': '主 Bot 不能删除，请先取消它的主 Bot 身份',
   'Unknown theme': '未知主题',
+  'Appearance must be light, dark, auto or system': '外观必须是浅色、深色、自动或跟随系统',
+  'Send shortcut must be Enter or Shift+Enter': '发送快捷键必须是 Enter 或 Shift+Enter',
+  'Message folding must be compact, standard or none': '消息折叠必须是紧凑、标准或不折叠',
+  'Document cards must be on or off': '长文档卡片必须开或关',
   'Accent must be a #rrggbb color': '强调色必须是 #rrggbb 格式',
   'Type the key first': '请先输入密钥',
   'Choose every Bot or a list of Bots': '请选择所有 Bot 或指定的 Bot',
@@ -1583,6 +1677,41 @@ const HOST_ZH = {
   'No FlyBot core update is available': '没有可用的 FlyBot 核心更新',
   'saved by a newer FlyBot; update FlyBot': '由更新的 FlyBot 保存；请更新 FlyBot',
 }
+Object.assign(ZH, {
+  "Local Bot chat history": "本机 Bot 对话历史",
+  "Earlier part; opens current chat": "较早分段；打开当前对话",
+  "History; opens current chat": "历史记录；打开当前对话",
+  "Search chats and local Bot history": "搜索对话和本机 Bot 历史",
+  "History: your local Bots in this instance. Other chats: loaded messages only.": "历史范围：本实例中你拥有的本机 Bot。其他对话仅搜索已加载消息。",
+  "History unavailable; searching loaded messages only.": "历史检索不可用，仅搜索已加载消息。",
+  "History query is limited to 256 characters.": "历史搜索词最多 256 个字符。",
+  "Searching history…": "正在搜索历史…",
+  "History query failed; showing loaded messages only.": "历史查询失败，以下仅为已加载消息。",
+  "Some history could not be read; results are incomplete.": "部分历史无法读取，结果不完整。",
+  "History search reached a safety limit; narrow your query.": "历史检索已达到安全上限，请缩小搜索范围。",
+  "Search more history": "继续搜索历史",
+  "More history remains to be searched": "还有历史尚未检索",
+  "Enter text to search local Bot history; other chats use loaded messages.": "输入文字搜索本机 Bot 历史；其他对话只查已加载消息。"
+})
+Object.assign(ZH, { 'No matches in the searched portion': '已检索部分没有匹配项' })
+Object.assign(ZH, {
+  "Read-only history match": "只读历史命中",
+  "Back to search": "返回搜索",
+  "This is segment history, not the current chat. No Bot is activated.": "这里是分段历史，不是当前聊天；不会激活 Bot。",
+  "Loading authorized history…": "正在读取有权查看的历史…",
+  "History changed, expired, or is no longer accessible. Search again.": "历史已变化、结果已过期或无权访问，请重新搜索。",
+  "Segment {part} of {count}": "分段 {part} / {count}",
+  "History session": "历史会话",
+  "Matched message": "命中消息",
+  "Nearby message": "相邻消息",
+  "Sequence": "序号",
+  "Turn": "轮次",
+  "Text truncated by the byte limit; this is not complete history.": "正文已按字节上限截断，不是完整历史。",
+  "Reload history context": "重新读取历史上下文",
+  "Earlier part; view read-only history": "较早分段；查看只读历史",
+  "View read-only history": "查看只读历史"
+})
+Object.assign(ZH, { 'Shows the match and up to two nearby visible messages on each side.': '仅显示命中消息，以及前后各最多两条有权查看的相邻消息。' })
 Object.assign(ZH, HOST_ZH)
 
 const fill = (text, params) => (params
@@ -1622,6 +1751,19 @@ export function hostText(message) {
 export function language() {
   const active = service?.getLocale?.().active
   return typeof active === 'string' ? active : 'en'
+}
+
+export function canSetLocale() {
+  return typeof service?.setLocale === 'function'
+}
+
+export function setInterfaceLocale(tag) {
+  if (typeof service?.setLocale !== 'function') return undefined
+  return service.setLocale(tag)
+}
+
+export function languageLabel() {
+  return language().startsWith('zh') ? 'Simplified Chinese' : 'English'
 }
 
 export const dateLocale = () => (language().startsWith('zh') ? 'zh-CN' : 'en-US')

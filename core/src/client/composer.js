@@ -5,6 +5,10 @@ import { BotMark, markBotForMention } from './mark.js'
 import { useLinger } from './motion.js'
 import { t } from './i18n.js'
 import { lockedWindow } from './schedules.js'
+import {
+  composerCardOf, composerFieldOf, findSendButton, handleComposerSendKey,
+  insertComposerNewline, sendKeyOf,
+} from './appearance.js'
 
 // -------------------------------------------------------------------------
 // Composer: dictation mic and the voice-chat button. The shell's send
@@ -13,6 +17,29 @@ import { lockedWindow } from './schedules.js'
 
 export const speechApi = () => window.SpeechRecognition ?? window.webkitSpeechRecognition
 const keepComposerFocus = event => event.preventDefault()
+
+// The shell's composer sends on Enter. When the team chose Shift+Enter to send,
+// this capture-phase listener flips that: Enter inserts a newline, Shift+Enter
+// presses the card's send button. The default Enter-to-send path is left alone.
+export function installSendShortcut(useRoster) {
+  const onKey = (event) => {
+    if (event.defaultPrevented) return
+    const field = composerFieldOf(event)
+    if (!field) return
+    const card = composerCardOf(field)
+    if (!card) return
+    const snapshot = useRoster?.getSnapshot?.()
+    if (lockedWindow(snapshot) || field.disabled || field.readOnly || field.getAttribute?.('aria-readonly') === 'true') return
+    const prefs = snapshot?.prefs ?? {}
+    handleComposerSendKey(event, sendKeyOf(prefs), {
+      send: () => { const button = findSendButton(card); if (button && !button.disabled && button.getAttribute?.('aria-disabled') !== 'true') button.click() },
+      insertNewline: () => insertComposerNewline(field),
+    })
+  }
+  window.addEventListener('keydown', onKey, true)
+  return () => window.removeEventListener('keydown', onKey, true)
+}
+
 
 export function useDictation(onText) {
   const [listening, setListening] = useState(false)
@@ -165,7 +192,18 @@ export function ComposerPlus({ sessionId, inputActions, useRoster, actions }) {
       ref: menu, className: 'bt-menu bt-menu-up bt-plus-menu', role: 'menu', 'aria-label': t('Add'),
       style: { left: shown.left, bottom: shown.bottom }, 'data-leaving': leaving || undefined,
     },
-    h('button', { type: 'button', role: 'menuitem', onClick: attach }, h(PaperclipIcon), h('span', { className: 'bt-menu-label' }, t('Add files'))),
-    canReference ? h('button', { type: 'button', role: 'menuitem', onMouseDown: keepComposerFocus, onClick: reference }, h(ChatsIcon), h('span', { className: 'bt-menu-label' }, t('Reference a chat'))) : null,
-    locked ? null : h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(null); actions.openSettings('schedules', target) } }, h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task')))), document.body) : null)
+    h('div', { className: 'bt-plus-group', role: 'group', 'aria-label': t('Attach') },
+      h('button', { type: 'button', role: 'menuitem', onClick: attach }, h(PaperclipIcon), h('span', { className: 'bt-menu-label' }, t('Add files')))),
+    h('div', { className: 'bt-plus-group', role: 'group', 'aria-label': t('Reference a chat') },
+      canReference
+        ? h('button', { type: 'button', role: 'menuitem', onMouseDown: keepComposerFocus, onClick: reference }, h(ChatsIcon), h('span', { className: 'bt-menu-label' }, t('Reference a chat')))
+        : h('button', { type: 'button', role: 'menuitem', disabled: true, title: t('Reference a chat is available in a Bot or group chat.') },
+          h(ChatsIcon), h('span', { className: 'bt-menu-label' }, t('Reference a chat')),
+          h('span', { className: 'bt-menu-hint' }, t('Reference a chat is available in a Bot or group chat.')))),
+    h('div', { className: 'bt-plus-group', role: 'group', 'aria-label': t('Scheduled tasks') },
+      locked
+        ? h('button', { type: 'button', role: 'menuitem', disabled: true, title: t('A read-only window cannot create a scheduled task.') },
+          h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task')),
+          h('span', { className: 'bt-menu-hint' }, t('A read-only window cannot create a scheduled task.')))
+        : h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(null); actions.openSettings('schedules', target) } }, h(ClockIcon), h('span', { className: 'bt-menu-label' }, t('Scheduled task'))))), document.body) : null)
 }

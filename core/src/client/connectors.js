@@ -278,22 +278,43 @@ function ConnectorRow({ connector, roster, actions }) {
     error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
 }
 
-// Settings → Connectors: one row per connector.
-export function ConnectorsPage({ roster, actions }) {
+function connectorsOf(roster, kind) {
   const list = roster?.connectors ?? []
+  return kind ? list.filter(connector => connector.kind === kind) : list
+}
+
+// Settings → Connectors: one row per connector. Channels is the same list
+// filtered to kind === 'channel' (today: Feishu), never a catalogue of
+// messaging apps FlyBot has not wired up.
+export function ConnectorsPage({ roster, actions, kind, empty, hint }) {
+  const list = connectorsOf(roster, kind)
+  const vacant = empty ?? t('No connectors')
+  const note = hint ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, hint)) : null
   // Every connect, disconnect and send is refused in a read-only window, so the page says
   // what each connector is doing instead of drawing its row (#2474).
   if (lockedWindow(roster)) {
     return h('section', { className: 'bt-set-section' },
-      h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
-        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
-        : list.map(connector => h('div', { key: connector.id, className: 'bt-set-row' },
-          h('span', { className: 'bt-set-copy' },
-            h('span', { className: 'bt-bs-label' }, connector.name),
-            h('span', { className: 'bt-set-hint' }, statusText(connector)))))))
+      h('div', { className: 'bt-set-card bt-connectors-card' },
+        note,
+        list.length === 0
+          ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, vacant))
+          : list.map(connector => h('div', { key: connector.id, className: 'bt-set-row' },
+            h('span', { className: 'bt-set-copy' },
+              h('span', { className: 'bt-bs-label' }, connector.name),
+              h('span', { className: 'bt-set-hint' }, statusText(connector)))))))
   }
   return h('section', { className: 'bt-set-section' },
-    h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
-      ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
-      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, roster, actions }))))
+    h('div', { className: 'bt-set-card bt-connectors-card' },
+      note,
+      list.length === 0
+        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, vacant))
+        : list.map(connector => h(ConnectorRow, { key: connector.id, connector, roster, actions }))))
+}
+
+export function ChannelsPage({ roster, actions }) {
+  return h(ConnectorsPage, {
+    roster, actions, kind: 'channel',
+    empty: t('No channels yet.'),
+    hint: t('Only integrations FlyBot already has appear here.'),
+  })
 }

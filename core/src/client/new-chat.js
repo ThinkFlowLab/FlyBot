@@ -1,3 +1,4 @@
+import { shouldSendOnKey, sendKeyOf } from './appearance.js'
 import { createElement as h, useRef, useState } from 'react'
 import { PlusIcon, PeopleIcon, ArrowUpIcon, BotIcon, ChatIcon, TerminalIcon } from './icons.js'
 import { AdminStar, BotMark } from './mark.js'
@@ -20,6 +21,7 @@ export function NewChat({ mode, roster, actions }) {
   const [compose, setCompose] = useState(mode !== 'new')
   // A new group chat picks its admin first, then the other members.
   const [admin, setAdmin] = useState(null)
+  const [name, setName] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -137,7 +139,7 @@ export function NewChat({ mode, roster, actions }) {
       ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
       ...remotes,
     ]
-    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
+    const room = await actions.createRoom(members, { admin, ...(name.trim() ? { name: name.trim() } : {}), ...(participants ? { participants } : {}) })
     if (text) await actions.send(room.id, text)
     actions.openSession(room.id)
     close()
@@ -244,23 +246,31 @@ export function NewChat({ mode, roster, actions }) {
           placeholder: mode === 'search' ? t('Search Bots…') : choosingAdmin ? t('Choose the group admin') : group ? t('Who to chat with…') : t('Start a chat with…'),
           onChange: (event) => { setQuery(event.target.value); setCursor(0) },
           onKeyDown: (event) => {
-            if (event.nativeEvent.isComposing) return
+            if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return
             if (event.key === 'ArrowDown') { event.preventDefault(); setCursor(Math.min(active + 1, options.length - 1)) }
             else if (event.key === 'ArrowUp') { event.preventDefault(); setCursor(Math.max(active - 1, 0)) }
             else if (event.key === 'Enter' && options[active]) { event.preventDefault(); options[active].run() }
             else if (event.key === 'Backspace' && query === '') unpick()
           },
         }),
-        group && admin !== null ? (locked
+        group ? (locked
           ? readOnlyLine(h, roster, actions, { key: 'readonly-admin' })
           : h('button', {
-            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
-            title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
+            type: 'button', className: 'bt-send bt-to-create', disabled: busy || admin === null || picked.length === 0,
+            title: admin === null || picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
           }, t('Create group chat'))) : null,
         h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Close new chat'), onClick: close }, '×')),
+      group ? h('label', { className: 'bt-ng-name-row bt-nc-name' },
+        h('span', { className: 'bt-ng-name-label' }, t('Group name')),
+        h('input', {
+          className: 'bt-ng-name-input', value: name, maxLength: 60, readOnly: locked,
+          placeholder: t('Group name (optional)'),
+          'aria-label': t('Group name'),
+          onChange: event => setName(event.target.value),
+        })) : null,
       h('div', { ref: drop, className: 'bt-drop' }, h('div', { ref: glide.box, role: 'listbox', 'aria-label': t('Recipients'), className: 'bt-drop-list' },
         h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
-        options.length === 0 ? h('div', { className: 'bt-hint' }, mode === 'search' ? t('No Bots match') : t('Type a name to create a Bot'))
+        options.length === 0 ? h('div', { className: 'bt-hint' }, mode === 'search' || group ? t('No Bots match') : t('Type a name to create a Bot'))
           : options.map((option, index) => h('button', {
               key: option.key, type: 'button', role: 'option', className: 'bt-option', 'aria-selected': index === active, 'data-flip': option.key,
               onMouseEnter: () => setCursor(index), onClick: option.run,
@@ -291,14 +301,14 @@ export function NewChat({ mode, roster, actions }) {
         h('div', { className: 'bt-nc-card' },
           h('span', { className: 'bt-nc-plus', 'aria-hidden': true }, h(PlusIcon)),
           h('textarea', {
-            rows: 1, value: message, placeholder, 'aria-label': placeholder,
+            rows: 1, value: message, placeholder, readOnly: locked, 'aria-label': placeholder,
             onChange: event => setMessage(event.target.value),
             onKeyDown: (event) => {
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
+              if (!locked && shouldSendOnKey(event, sendKeyOf(roster.prefs))) { event.preventDefault(); sendMessage() }
             },
           }),
           locked
-            ? (group && admin !== null
+            ? (group
               ? null
               : readOnlyLine(h, roster, actions, { key: 'readonly-compose' }))
             : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))

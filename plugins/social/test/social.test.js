@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { apply as applyDsBot } from 'ds-bot'
 import { fakeContext } from './fake-ctx.js'
 import { apply as applySocial, inject, name } from '../index.js'
-import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFaceAutoSend, holdIsBlanket, homeHandleOf, isTurnFailureNotice, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, TURN_FAILURE_NOTICES, unavailableMessage } from '../src/social.js'
+import { approvalDraftText, approvalView, AUTO_APPROVE_CANCELLED, AUTO_APPROVE_FAILED, AUTO_APPROVE_FROZEN, AUTO_APPROVE_REVOKED, createSocial, draftText, grantRequestSentence, holdAllowsFaceAutoSend, holdIsBlanket, homeHandleOf, isTurnFailureNotice, onboard, onboardHome, nextOnboardDisplayName, mapAutoApproveError, mapJoinInviteError, mapShareFriendError, parseInviteInput, inviteLink, registerUnavailable, startSocial, TURN_FAILURE_NOTICES, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
@@ -39,6 +39,8 @@ function mockServer({ token = 'owner-token', friends = true } = {}) {
       if (a.code === 'USED') throw Object.assign(new Error('Bot Social join_invite: invite is used'), { code: 'invite_used' })
       if (a.code === 'UNAVAIL') throw Object.assign(new Error('Bot Social join_invite: invite_unavailable'), { code: 'invite_unavailable' })
       if (a.code === 'EXISTS') throw Object.assign(new Error('Bot Social join_invite: relationship_exists'), { code: 'relationship_exists', peer: { handle: '@bob.home', display_name: 'Bob' }, bot: { handle: '@coder.bob.home', display_name: 'Coder' } })
+      if (a.code === 'FROZEN') throw Object.assign(new Error('Bot Social join_invite: bot is frozen (emergency stop)'), { code: 'bot_frozen' })
+      if (a.code === 'REVOKEDBOT') throw Object.assign(new Error('Bot Social join_invite: this bot identity was revoked'), { code: 'bot_revoked' })
       if (a.code === 'REGRANT') return { relationship_id: 'r1', status: 'active', regranted: true, inviter: { handle: 'bob.home', display_name: 'Bob' }, bot: { handle: '@coder.bob.home', display_name: 'Coder' } }
       return a.code === 'NEEDSOK'
         ? { relationship_id: 'r9', status: 'pending_requester_owner', awaiting: 'your_owner_approval', approval_id: 'apr9', inviter: { handle: 'eve.home', display_name: 'Eve' }, bot: { handle: '@helper.eve.home', display_name: 'Helper' } }
@@ -1430,6 +1432,95 @@ test('#227: an owner line whose approve call failed is finished by the poll, nev
   await waitUntil(() => server.queue.length === 0)
 })
 
+test('#3110: Auto-send that fails because a Bot is stopped leaves a waiting card with plain words', async (t) => {
+  const { ctx, call, tool, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  const decide = server.tools.decide_approval
+  server.tools.decide_approval = () => {
+    throw Object.assign(new Error('Bot Social decide_approval: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  await call('flybot/social/auto-send', { botId: chief.id, home: '@bob.home', on: true })
+  await tool('message_friend_bot', { to: '@coder.bob.home', message: 'goes now' }, chief.id)
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1)
+  const card = status.approvals[0]
+  assert.equal(card.status, 'pending')
+  assert.equal(card.autoApproveError, AUTO_APPROVE_FROZEN)
+  assert.equal(card.autoApproveCode, 'bot/frozen')
+  assert.doesNotMatch(String(card.autoApproveError), /bot_frozen|decide_approval/)
+  assert.equal(card.error, undefined, 'this is still a waiting card, not a failed send')
+  const again = (await call('flybot/social/status', {})).value
+  assert.equal(again.approvals[0].autoApproveError, AUTO_APPROVE_FROZEN, 'the sentence stays until the card leaves')
+  server.tools.decide_approval = decide
+  const decided = (await call('flybot/social/decide-approval', { approvalId: card.id, decision: 'approve' })).value
+  assert.equal(decided.status, 'approved')
+  const after = (await call('flybot/social/status', {})).value
+  assert.equal(after.pendingApprovals, 0)
+  assert.equal((after.approvals ?? []).some(item => item.autoApproveError), false)
+})
+
+test('#3110: an owner-typed line whose silent approve hits a stopped Bot becomes a card with plain words', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  server.tools.decide_approval = () => {
+    throw Object.assign(new Error('Bot Social decide_approval: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'hi' }), '')
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1, 'the line is no longer hidden as an owner auto-retry')
+  assert.equal(status.approvals[0].status, 'pending')
+  assert.equal(status.approvals[0].autoApproveError, AUTO_APPROVE_FROZEN)
+  assert.doesNotMatch(String(status.approvals[0].autoApproveError), /bot_frozen|decide_approval/)
+})
+
+test('#3110: a hold not listed yet is not shown as an Auto-send failure', async (t) => {
+  const { ctx, call, tool, stop } = await team()
+  t.after(stop)
+  const server = holdingServer()
+  let listed = false
+  server.tools.list_approvals = () => ({ approvals: listed ? server.queue : [] })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const chief = ctx.flybot.bot.list().find(bot => bot.name === 'Chief')
+  await call('flybot/social/auto-send', { botId: chief.id, home: '@bob.home', on: true })
+  await tool('message_friend_bot', { to: '@coder.bob.home', message: 'goes now' }, chief.id)
+  listed = true
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1)
+  assert.equal(status.approvals[0].autoApproveError, undefined)
+})
+
+test('#3110: joining an invite that needs this owner is worded when the silent approve hits a stopped Bot', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.decide_approval = () => {
+    throw Object.assign(new Error('Bot Social decide_approval: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const result = await call('flybot/social/join-invite', { code: 'NEEDSOK' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error?.code, 'bot/frozen')
+  assert.match(String(result.error?.message || result.error), /stopped on Bot Social\. Resume it, then try the invite again/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /bot_frozen|decide_approval|Try again/)
+})
+
 test('#847: a room envelope clears Bot Social\'s blanket hold: the add click is the consent', async (t) => {
   const { ctx, call, stop } = await team()
   t.after(stop)
@@ -1805,6 +1896,185 @@ test('decide-approval (#69): owner click approves or rejects via Bot Social', as
   assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 0)
   assert.equal((await call('flybot/social/decide-approval', { approvalId: 'apr-hold-1', decision: 'maybe' })).ok, false)
   assert.equal(server.calls.some(c => c.name === 'set_auto_approve'), false)
+})
+
+// After Bot Social #776, approving a card that waited while a Bot was stopped or removed
+// is refused and the card stays pending. FlyBot must say what to do next, not a raw
+// tool line or "try again", and must not drop the card as if the decision went through.
+// grant_request is listed in social/status.grantRequests (and in the pending count),
+// not in the outbound-message dock (`approvals`). It is decided through decide-approval.
+const heldGrantRequest = {
+  approval_id: 'apr-grant-1',
+  kind: 'grant_request',
+  status: 'pending',
+  summary: 'Share Chief with EveHome',
+  bot_id: 'm1',
+}
+
+test('decide-approval: a late approve after a Bot is stopped keeps the card and says to resume', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let queue = [{ ...heldOutbound }]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    throw Object.assign(new Error('Bot Social decide_approval: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 1)
+  const result = await call('flybot/social/decide-approval', { approvalId: 'apr-hold-1', decision: 'approve' })
+  assert.equal(result.ok, false, 'the click is refused, not reported as approved')
+  assert.match(String(result.error?.message || result.error), /stopped on Bot Social\. Resume it, then approve again/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /Try again|decide_approval|bot_frozen/)
+  assert.equal(result.error?.code, 'bot/frozen')
+  assert.equal(queue.length, 1, 'Bot Social still holds the card')
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 1, 'the dock still lists the card')
+  assert.deepEqual(server.calls.filter(c => c.name === 'decide_approval').map(c => c.args.confirm_code), [undefined, 'C0DE02'], 'the confirm handshake ran, then the server refused')
+})
+
+test('decide-approval: a late approve after a Bot is removed keeps the card and does not invite a retry', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let queue = [{ ...heldOutbound, approval_id: 'apr-hold-2' }]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    throw Object.assign(new Error('Bot Social decide_approval: this bot identity was revoked'), { code: 'bot_revoked' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const result = await call('flybot/social/decide-approval', { approvalId: 'apr-hold-2', decision: 'approve' })
+  assert.equal(result.ok, false)
+  assert.match(String(result.error?.message || result.error), /removed from Bot Social, so it cannot be approved/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /Try again|bot_revoked/)
+  assert.equal(result.error?.code, 'bot/revoked')
+  assert.equal((await call('flybot/social/status', {})).value.pendingApprovals, 1)
+})
+
+test('grant_request is listed for the owner in the Social section, not on the message dock', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_approvals = () => ({ approvals: [heldGrantRequest] })
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1, 'the waiting count includes the grant request')
+  assert.equal((status.approvals ?? []).length, 0, 'the outbound-message dock does not list it')
+  assert.equal(status.grantRequests?.length, 1)
+  assert.equal(status.grantRequests[0].id, 'apr-grant-1')
+  assert.equal(status.grantRequests[0].kind, 'grant_request')
+  assert.match(status.grantRequests[0].text, /Share Chief with EveHome/)
+})
+
+test('decide-approval: a late grant_request card is named in plain words and stays in the Social list', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_approvals = () => ({ approvals: [heldGrantRequest] })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    throw Object.assign(new Error('Bot Social decide_approval: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 1)
+  assert.equal(status.grantRequests?.length, 1)
+  const result = await call('flybot/social/decide-approval', { approvalId: 'apr-grant-1', decision: 'approve' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error?.code, 'bot/frozen')
+  assert.match(String(result.error?.message || result.error), /stopped on Bot Social\. Resume it, then approve again/)
+  const after = (await call('flybot/social/status', {})).value
+  assert.equal(after.pendingApprovals, 1, 'the refused card stays until Bot Social drops it')
+  assert.equal(after.grantRequests?.length, 1)
+})
+
+test('decide-approval: approving a grant_request clears it from the Social list', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  let queue = [{ ...heldGrantRequest }]
+  server.tools.list_approvals = () => ({ approvals: queue })
+  server.tools.decide_approval = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE02' }
+    queue = []
+    return { approval_id: a.approval_id, decision: a.decision, status: a.decision }
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const result = await call('flybot/social/decide-approval', { approvalId: 'apr-grant-1', decision: 'approve' })
+  assert.equal(result.ok, true)
+  const status = (await call('flybot/social/status', {})).value
+  assert.equal(status.pendingApprovals, 0)
+  assert.deepEqual(status.grantRequests, [])
+})
+
+test('grantRequestSentence prefers the server summary and otherwise names the requester and capability', () => {
+  assert.equal(grantRequestSentence({ kind: 'grant_request', summary: 'Share Chief with EveHome' }), 'Share Chief with EveHome')
+  const card = {
+    kind: 'grant_request',
+    grant_request: { capability: 'chat.public', from: { display_name: 'Helper', handle: '@helper.eve.home' } },
+  }
+  assert.equal(grantRequestSentence(card), 'Helper requests chat.public')
+  const viewed = approvalView({
+    approval_id: 'apr-g',
+    kind: 'grant_request',
+    status: 'pending',
+    grant_request: { capability: 'chat.public', from: { display_name: 'Helper' } },
+  })
+  assert.equal(viewed.kind, 'grant_request')
+  assert.equal(viewed.capability, 'chat.public')
+  assert.equal(viewed.from, 'Helper')
+  assert.equal(viewed.text, 'Helper requests chat.public')
+  assert.equal(grantRequestSentence({ kind: 'outbound_message', summary: 'hello' }), '')
+})
+
+test('respond: accepting a request after a Bot is stopped says to resume, and does not mark the request accepted', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.respond_friend_request = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE01' }
+    throw Object.assign(new Error('Bot Social respond_friend_request: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const result = await call('flybot/social/respond', { relationshipId: 'r5', decision: 'accept' })
+  assert.equal(result.ok, false)
+  assert.match(String(result.error?.message || result.error), /stopped on Bot Social\. Resume it, then accept again/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /Try again|respond_friend_request|bot_frozen/)
+  assert.equal(result.error?.code, 'bot/frozen')
+})
+
+test('respond: accepting a request after a Bot is removed says so, and does not mark the request accepted', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.respond_friend_request = a => {
+    if (a.confirm_code === undefined) return { status: 'confirmation_required', confirm_code: 'C0DE01' }
+    throw Object.assign(new Error('Bot Social respond_friend_request: this bot identity was revoked'), { code: 'bot_revoked' })
+  }
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const result = await call('flybot/social/respond', { relationshipId: 'r5', decision: 'accept' })
+  assert.equal(result.ok, false)
+  assert.match(String(result.error?.message || result.error), /removed from Bot Social, so it cannot be accepted/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /Try again|respond_friend_request|bot_revoked/)
+  assert.equal(result.error?.code, 'bot/revoked')
 })
 
 test('#737: Auto-send clears the Bot Social hold on the same send, so the line leaves and no card is left behind', async (t) => {
@@ -4438,6 +4708,29 @@ test('#371: a local Bot\'s hold shows in its own chat when the friend\'s chat is
   assert.equal(fresh().holdReasonLine(['commitment', 'pii.phone', 'money', 'mystery'], undefined), 'Held for your approval: contains commitment language, a phone number, a money amount')
   assert.equal(fresh().holdReasonLine(['mystery'], undefined), '')
   assert.equal(fresh().holdReasonLine([], undefined), '')
+})
+
+test('#3110: an Auto-send failure stays on the waiting card in plain words, not as a failed send', () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const hold = {
+    id: 'apr-3110', kind: 'outbound_message', status: 'pending', fromId: 'chief', from: 'Chief', to: '@coder.bob.home', toName: 'Bob',
+    text: 'hello',
+    autoApproveError: AUTO_APPROVE_FROZEN,
+  }
+  const sender = { id: 'chief', name: 'Chief' }
+  const tree = walk(pluginOf([[hold], [], '']).ChatApprovalDock({ bot: sender, roster: { bots: [] } }))
+  const line = tree.find(n => n.props['data-flybot'] === 'auto-approve-error')
+  assert.ok(line, 'the waiting card shows why Auto-send did not finish')
+  assert.deepEqual(line.children, [AUTO_APPROVE_FROZEN])
+  assert.equal(tree.some(n => n.props['data-state'] === 'failed'), false)
+  assert.equal(tree.some(n => n.props['data-flybot'] === 'hold-error' || n.props['data-flybot'] === 'chat-approval-error'), false)
+  assert.ok(tree.some(n => n.type === 'button' && n.children?.[0] === 'Approve'), 'Approve stays available after Resume')
+  const plugin = pluginOf([[], [], ''])
+  const rows = []
+  const walkCard = node => { if (node && typeof node === 'object') { rows.push(node); (node.children ?? []).forEach(walkCard) } }
+  walkCard(plugin.PendingApprovals({ items: [hold] }))
+  const one = rows.find(n => n.props.className === 'fs-pending-one')
+  assert.match(String(one?.children ?? ''), /stopped on Bot Social/)
 })
 
 test('#260: Approve all approves Bot Social holds too, not only local ones', async () => {
@@ -9465,6 +9758,8 @@ test('#310: join_invite errors read as plain sentences, never as raw codes', asy
   assert.equal(plain(new Error('Bot Social join_invite: cannot join your own invite')), "That's your own invite. Send it to a friend instead.")
   assert.equal(plain(new Error('Bot Social join_invite: relationship is blocked')), "You can't add this friend.")
   assert.equal(plain(new Error('Bot Social join_invite: rate_limited')), 'Too many tries. Wait a moment and try again.')
+  assert.equal(plain(Object.assign(new Error('Bot Social join_invite: bot is frozen (emergency stop)'), { code: 'bot_frozen' })), 'The Bot this invite names is stopped. Ask its owner to resume it; the same link will work again then.')
+  assert.equal(plain(Object.assign(new Error('Bot Social join_invite: this bot identity was revoked'), { code: 'bot_revoked' })), 'The Bot this invite names was removed. Ask its owner for a new invite to one of their Bots.')
   const other = new Error('Bot Social is not connected')
   assert.equal(mapJoinInviteError(other), other)
 
@@ -10565,6 +10860,70 @@ test('#336: the "Share this Bot?" card has only buttons: Share opens that Bot\'s
   assert.deepEqual(opened, [['bots', 'b']])
   buttons[0].props.onClick()
   assert.deepEqual(dismissed, ['evt1'])
+})
+
+test('a grant_request card in the Social section Approves or Rejects through decide-approval', () => {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call: async () => ({}) }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+  assert.equal(plugin.GrantRequests({ items: [] }), null)
+  const decided = []
+  const tree = plugin.GrantRequests({
+    items: [{ id: 'apr-grant-1', kind: 'grant_request', from: 'Helper', text: 'Share Chief with EveHome' }],
+    onDecide: (item, decision) => decided.push([item.id, decision]),
+  })
+  const all = []
+  const walk = node => { if (node && typeof node === 'object') { all.push(node); (node.children ?? []).forEach(walk) } }
+  walk(tree)
+  const text = all.find(n => n.props['data-flybot'] === 'grant-request-text')
+  assert.equal(text.children.join(''), 'Share Chief with EveHome')
+  const buttons = all.filter(n => n.type === 'button')
+  assert.deepEqual(buttons.map(n => n.children.join('')), ['Reject', 'Approve'])
+  buttons[1].props.onClick()
+  buttons[0].props.onClick()
+  assert.deepEqual(decided, [['apr-grant-1', 'approve'], ['apr-grant-1', 'reject']])
+  const locked = plugin.GrantRequests({
+    items: [{ id: 'apr-grant-1', kind: 'grant_request', text: 'Share Chief with EveHome' }],
+    locked: true,
+    onDecide: (item, decision) => decided.push([item.id, decision]),
+  })
+  const lockedNodes = []
+  const walkLocked = node => { if (node && typeof node === 'object') { lockedNodes.push(node); (node.children ?? []).forEach(walkLocked) } }
+  walkLocked(locked)
+  assert.equal(lockedNodes.filter(n => n.type === 'button').length, 0, 'a read-only window does not offer Approve or Reject')
+})
+
+test('#3110: a grant_request fallback sentence is translated, and a custom summary is kept', () => {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  sandbox.globalThis = sandbox
+  const table = {
+    'A friend': '一位好友',
+    '{name} requests a share': '{name} 请求分享',
+    '{name} requests {capability}': '{name} 请求 {capability}',
+    Approve: '批准',
+    Reject: '拒绝',
+  }
+  sandbox.__flybot__ = {
+    slots: { register: () => () => {} },
+    call: async () => ({}),
+    t: (key, params) => String(table[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? '')),
+  }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const h = (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat() })
+  const plugin = registered[0].factory(() => ({ createElement: h, Fragment: 'F', useEffect() {}, useState: v => [v, () => {}], useRef: v => ({ current: v }), useMemo: f => f() }))
+  const walk = (node, out = []) => { if (node && typeof node === 'object') { out.push(node); (node.children ?? []).forEach(child => walk(child, out)) } return out }
+  const line = (items) => walk(plugin.GrantRequests({ items })).find(n => n.props['data-flybot'] === 'grant-request-text')?.children.join('')
+  assert.equal(line([{ id: 'g1', kind: 'grant_request', from: 'Helper', capability: 'chat.public' }]), 'Helper 请求 chat.public')
+  assert.equal(line([{ id: 'g2', kind: 'grant_request', from: 'Helper', capability: 'chat.public', text: 'Helper requests chat.public' }]), 'Helper 请求 chat.public', 'the English fallback from the host is translated')
+  assert.equal(line([{ id: 'g3', kind: 'grant_request', from: 'Helper', text: 'Share Chief with EveHome' }]), 'Share Chief with EveHome')
+  assert.equal(line([{ id: 'g4', kind: 'grant_request' }]), '一位好友 请求分享')
+  const buttons = walk(plugin.GrantRequests({ items: [{ id: 'g1', kind: 'grant_request', from: 'Helper' }] })).filter(n => n.type === 'button').map(n => n.children.join(''))
+  assert.deepEqual(buttons, ['拒绝', '批准'])
 })
 
 // #1054: B accepted A's Chief invite. Bot Social keeps the grant one-way (B sees Friend's Bot; A does
@@ -14834,6 +15193,138 @@ test('#1128: a Bot the other home no longer lists is not shared, and the row say
   // The client branches on the code, so the code is part of the API contract, not just the sentence (#1139).
   assert.equal(result.error?.code, 'bot/removed-bot', 'the refusal carries a real code, not bot/refused')
   assert.equal(granted.length, 0, 'no grant is sent to a Bot that is gone')
+})
+
+// After Bot Social #776, a stopped or removed Bot is refused at grant time (403 bot_frozen /
+// bot_revoked). FlyBot must say what to do next, not "try again", and must not report a share.
+test('share-with-friend: a stopped Bot is refused with a resume sentence, not try-again', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const granted = []
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [{ relationship_id: 'r-eve', status: 'active', peer: { bot_id: 'pb-eve', handle: '@eve.home', display_name: 'EveHome', owner_display_name: 'Eve' } }],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r-eve',
+      home: { bot_id: 'h2', handle: '@eve.home', display_name: 'Eve', owner_display_name: 'Eve' },
+      bots: [{ bot_id: 'pb-eve', handle: '@eve.home', display_name: 'EveHome' }],
+    }],
+  })
+  server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+  server.tools.grant_bot_to_friend = (a) => {
+    granted.push(a)
+    throw Object.assign(new Error('Bot Social grant_bot_to_friend: bot is frozen (emergency stop)'), { code: 'bot_frozen' })
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const result = await call('flybot/social/share-with-friend', {
+    botId: chief.id, home: '@eve.home', peerBotId: 'pb-eve', friendName: 'EveHome (Eve)',
+  })
+  assert.equal(result.ok, false, 'the share is refused, not reported as done')
+  assert.match(String(result.error?.message || result.error), /stopped on Bot Social\. Resume it, then share again/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /Try again/)
+  assert.equal(result.error?.code, 'bot/frozen')
+  assert.equal(granted.length, 1, 'the grant was attempted and the server refused it')
+})
+
+test('share-with-friend: a removed Bot is refused without inviting a retry', async (t) => {
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  server.tools.list_friends = () => ({
+    bot: { handle: '@danyang.home' },
+    friends: [{ relationship_id: 'r-eve', status: 'active', peer: { bot_id: 'pb-eve', handle: '@eve.home', display_name: 'EveHome', owner_display_name: 'Eve' } }],
+    pending_incoming: [],
+    pending_outgoing: [],
+  })
+  server.tools.list_remote_bots = () => ({
+    homes: [{
+      relationship_id: 'r-eve',
+      home: { bot_id: 'h2', handle: '@eve.home', display_name: 'Eve', owner_display_name: 'Eve' },
+      bots: [{ bot_id: 'pb-eve', handle: '@eve.home', display_name: 'EveHome' }],
+    }],
+  })
+  server.tools.list_bot_grants = ({ bot_id }) => ({ bot: { bot_id }, grants: [] })
+  server.tools.grant_bot_to_friend = () => {
+    throw Object.assign(new Error('Bot Social grant_bot_to_friend: this bot identity was revoked'), { code: 'bot_revoked' })
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const result = await call('flybot/social/share-with-friend', {
+    botId: chief.id, home: '@eve.home', peerBotId: 'pb-eve', friendName: 'EveHome (Eve)',
+  })
+  assert.equal(result.ok, false)
+  assert.match(String(result.error?.message || result.error), /removed from Bot Social, so it cannot be shared/)
+  assert.doesNotMatch(String(result.error?.message || result.error), /Try again/)
+  assert.equal(result.error?.code, 'bot/revoked')
+})
+
+test('mapShareFriendError and mapJoinInviteError name a stopped or removed Bot in plain words', () => {
+  const frozenGrant = Object.assign(new Error('Bot Social POST /v1/bots/m1/grants: HTTP 403 bot_frozen'), { code: 'bot_frozen', status: 403 })
+  const frozenShare = mapShareFriendError(frozenGrant)
+  assert.equal(frozenShare.code, 'bot/frozen')
+  assert.equal(frozenShare.message, 'One of the Bots in this share is stopped on Bot Social. Resume it, then share again.')
+  const revokedShare = mapShareFriendError(Object.assign(new Error('Bot Social grant_bot_to_friend: this bot identity was revoked'), { code: 'bot_revoked' }))
+  assert.equal(revokedShare.code, 'bot/revoked')
+  assert.equal(revokedShare.message, 'One of the Bots in this share was removed from Bot Social, so it cannot be shared.')
+  const generic = mapShareFriendError(new Error('Bot Social grant_bot_to_friend: MCP error -32603: boom'))
+  assert.match(generic.message, /Try again, or use an invite link/)
+  assert.equal(mapJoinInviteError(Object.assign(new Error('Bot Social join_invite: bot is frozen (emergency stop)'), { code: 'bot_frozen' })).code, 'bot/frozen')
+  assert.equal(mapJoinInviteError(Object.assign(new Error('Bot Social join_invite: this bot identity was revoked'), { code: 'bot_revoked' })).code, 'bot/revoked')
+})
+
+test('#3110: mapAutoApproveError names a stopped or removed Bot, and keeps raw codes off the card', () => {
+  const frozen = mapAutoApproveError(Object.assign(new Error('Bot Social decide_approval: a Bot in this relationship is frozen (emergency stop)'), { code: 'bot_frozen' }))
+  assert.equal(frozen.code, 'bot/frozen')
+  assert.equal(frozen.message, AUTO_APPROVE_FROZEN)
+  assert.doesNotMatch(frozen.message, /bot_frozen|decide_approval/)
+  const revoked = mapAutoApproveError(Object.assign(new Error('Bot Social decide_approval: this bot identity was revoked'), { code: 'bot_revoked' }))
+  assert.equal(revoked.code, 'bot/revoked')
+  assert.equal(revoked.message, AUTO_APPROVE_REVOKED)
+  const cancelled = mapAutoApproveError(Object.assign(new Error('Bot Social decide_approval: approval is cancelled'), { code: 'invalid_state' }))
+  assert.equal(cancelled.code, 'invalid_state')
+  assert.equal(cancelled.message, AUTO_APPROVE_CANCELLED)
+  assert.equal(mapAutoApproveError(new Error('network down')), undefined, 'a transient miss is retried, not shown as a card')
+  assert.equal(mapAutoApproveError(new Error('hold not listed yet')), undefined)
+  const generic = mapAutoApproveError(new Error('Bot Social decide_approval: boom'), { allowGeneric: true })
+  assert.equal(generic.code, 'bot/auto-approve-failed')
+  assert.equal(generic.message, AUTO_APPROVE_FAILED)
+  assert.doesNotMatch(generic.message, /decide_approval|boom/)
+})
+
+test('join-invite: a stopped or removed inviter Bot is named, not a raw code', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const social = createSocial(ctx.flybot, { autoAccept: false, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  const frozen = await call('flybot/social/join-invite', { code: 'FROZEN' })
+  assert.equal(frozen.ok, false)
+  assert.equal(frozen.error?.code, 'bot/frozen')
+  assert.match(String(frozen.error?.message || frozen.error), /stopped\. Ask its owner to resume it/)
+  assert.doesNotMatch(String(frozen.error?.message || frozen.error), /bot_frozen|Try again/)
+  const revoked = await call('flybot/social/join-invite', { code: 'REVOKEDBOT' })
+  assert.equal(revoked.ok, false)
+  assert.equal(revoked.error?.code, 'bot/revoked')
+  assert.match(String(revoked.error?.message || revoked.error), /was removed\. Ask its owner for a new invite/)
+  assert.doesNotMatch(String(revoked.error?.message || revoked.error), /bot_revoked/)
 })
 
 // #1128: the row keeps its place in the panel with the reason and a disabled button. A click that reaches

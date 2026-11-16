@@ -88,7 +88,7 @@ function chipBot(roster, text) {
     useRoster: select => select(roster),
     actions: { openSession() {} },
   })
-  const marks = find(expand(cell, ['UserText']), node => node.type?.name === 'BotMark')
+  const marks = find(expand(cell, ['UserText', 'FoldedContent', 'MessageTools']), node => node.type?.name === 'BotMark')
   assert.equal(marks.length, 1)
   return marks[0].props.bot
 }
@@ -121,7 +121,7 @@ test('a face-room @ row and mention chip draw the stored friend look, not the ha
     sessionId: 'room',
     useRoster: select => select(roster),
     actions: { openSession() {} },
-  }), ['UserText'])
+  }), ['UserText', 'FoldedContent', 'MessageTools'])
   const button = find(cell, node => node.props?.className === 'bt-umention')[0]
   assert.match(JSON.stringify(button.children), /Chief \(SelfA1025\)/)
 })

@@ -95,7 +95,7 @@ const WRITES = ['Pin', 'Unpin', 'Duplicate', 'Make Main Bot', 'Remove Main Bot r
 const KEEPS = ['Mark as Unread', 'Copy conversation ID']
 
 const actions = () => ({
-  closeMenu: () => {}, markUnread: () => {}, openSettings: () => {}, setFlags: () => {}, renameBot: () => {},
+  closeMenu: () => {}, markUnread: () => {}, clearUnread: () => {}, openSettings: () => {}, setFlags: () => {}, renameBot: () => {},
   duplicateBot: async () => ({ id: 'copy' }), openSession: () => {}, setMain: () => {}, deleteBot: () => {},
   deleteRoom: () => {}, reportError: () => {},
 })
@@ -140,4 +140,28 @@ test('a host sentence that trims to nothing is a writable window', () => {
     assert.ok(labels.bot.includes('Delete'), `readOnly ${JSON.stringify(readOnly)} hid the writes`)
     assert.ok(labels.room.includes('Delete group'), `readOnly ${JSON.stringify(readOnly)} hid the room writes`)
   }
+})
+
+test('a manually unread chat offers Clear unread mark, which clears the local mark', () => {
+  const calls = []
+  const actionsOf = { ...actions(), markUnread: id => calls.push(['unread', id]), clearUnread: id => calls.push(['read', id]) }
+  const tree = draw(() => ContextMenu({
+    menu: { kind: 'bot', id: 'writer', x: 10, y: 10 },
+    roster: rosterOf(), actions: actionsOf, unread: { writer: true }, leaving: false,
+  }))
+  const items = menuItems(tree)
+  assert.ok(items.includes('Clear unread mark'))
+  assert.equal(items.includes('Mark as Unread'), false)
+  const row = (function find(node) {
+    if (!node || typeof node !== 'object') return null
+    if (node.props?.role === 'menuitem' && textOf(node) === 'Clear unread mark') return node
+    for (const child of node.children ?? []) {
+      const hit = find(child)
+      if (hit) return hit
+    }
+    return null
+  })(tree)
+  assert.ok(row)
+  row.props.onClick()
+  assert.deepEqual(calls, [['read', 'writer']])
 })

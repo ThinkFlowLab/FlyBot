@@ -1,3 +1,5 @@
+import { HistoryHitDialog } from './history-hit.js'
+import { useHistorySearch } from './history-search.js'
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { isMainOf } from './sources.js'
@@ -9,18 +11,25 @@ import { QUICK_EDGES, useFlip, useGlide } from './motion.js'
 import { t } from './i18n.js'
 import { isListedRemoteChat, pickerBotLabel } from '../shared/remote-label.js'
 import { seatedCount } from './group-settings.js'
+import { PALETTE_FILTERS, PALETTE_MESSAGE_MIN, paletteEmptyKind, paletteFilterAllows } from '../shared/palette-search.js'
 
-// Search is a command palette: a 560px dialog, a search header, and 49px
-// rows (24px avatar, title, subtitle). Bots and groups match on name and role; past
-// messages match on their text, read by `readableLine`, the same reader `previewOf` uses — a header,
-// a delegation trace and a fence are routing or data, never the row (#1347).
+// Four real categories: names, commands, loaded outlines, and (when supported)
+// owner-scoped local Bot history via a bounded read-only host query. Group/remote
+// history remains loaded-only. No all-instance or filesystem search is implied.
+
 const paletteText = (raw, names) => readableLine(String(raw ?? ''), names)
 const PALETTE_EXIT_MS = 160
 export function CommandPalette({ start, token, roster, actions, useSessions }) {
   const [query, setQuery] = useState(start ?? '')
   const [cursor, setCursor] = useState(0)
   const [leaving, setLeaving] = useState(false)
+  const [filter, setFilter] = useState('all')
+  const [selectedHit, setSelectedHit] = useState(null)
+  const history = useHistorySearch(!selectedHit && paletteFilterAllows(filter, 'messages') ? actions.searchMessages : undefined, query.trim())
+  const historyEnabled = typeof actions.searchMessages === 'function'
+  const historyVisible = paletteFilterAllows(filter, 'messages')
   const wanted = query.trim().toLowerCase()
+  const emptyKind = paletteEmptyKind(query, filter)
   const close = () => {
     if (leaving) return
     setLeaving(true)
@@ -30,7 +39,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
   const ids = [...roster.bots.map(currentPart), ...roster.rooms.map(item => item.id)]
   const names = botNames(roster)
   const found = useSessions((list) => {
-    if (wanted.length < 2) return '[]'
+    if (wanted.length < PALETTE_MESSAGE_MIN) return '[]'
     const hits = []
     for (const id of ids) {
       const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
@@ -65,14 +74,22 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
       run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
     })),
   ]
-  if (people.length) sections.push([t('Bots'), people])
+  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'chats') && people.length) sections.push([t('Bots'), people])
   const agents = (roster.agents ?? []).filter(() => matchesName('DSH Agent')).map(agent => ({
     key: agent.id, avatar: h('span', { className: 'bt-palette-agent' }, h(FishLogo, { size: 18 })), title: 'DSH Agent',
     subtitle: t('Plain dsh session'),
     run: () => actions.openAgent(agent.id),
   }))
-  if (agents.length) sections.push(['DSH Agent', agents])
-  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
+  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'chats') && agents.length) sections.push(['DSH Agent', agents])
+  const historyRows = history.items.filter(hit => roster.byId[hit.botId]).map(hit => ({
+    key: `history:${hit.sessionId}:${hit.seq}`, title: roster.byId[hit.botId].name, subtitle: hit.snippet,
+    avatar: h(BotAvatar, { bot: roster.byId[hit.botId], size: 24, badge: false, live: false }),
+    badge: t(hit.earlier ? 'Earlier part; view read-only history' : 'View read-only history'),
+    keepOpen: true,
+    run: () => setSelectedHit({ botId: hit.botId, sessionId: hit.sessionId, hitToken: hit.hitToken }),
+  }))
+  if (emptyKind !== 'empty' && historyVisible && historyRows.length) sections.push([t('Local Bot chat history'), historyRows])
+  const messages = JSON.parse(found).filter(([id, turn]) => !history.items.some(hit => hit.sessionId === id && hit.turn === turn)).map(([id, turn, snippet]) => {
     const bot = roster.byId[id]
     const room = roster.roomsById[id]
     return {
@@ -81,14 +98,14 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
       run: () => actions.openSession(id),
     }
   })
-  if (messages.length) sections.push([t('Messages'), messages])
+  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'messages') && messages.length) sections.push([t('Messages'), messages])
   const commands = [
     { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
     { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
     { key: 'cmd:group', icon: h(PeopleIcon), title: t('Create group chat'), run: () => actions.openNewChat('group') },
     { key: 'cmd:settings', icon: h(GearIcon), title: t('Settings'), run: () => actions.openSettings('general') },
   ].filter(command => matchesName(command.title))
-  if (commands.length) sections.push([t('Commands'), commands])
+  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'commands') && commands.length) sections.push([t('Commands'), commands])
   const rows = sections.flatMap(([, items]) => items)
   const active = Math.min(cursor, Math.max(rows.length - 1, 0))
   const shown = rows.map(row => row.key).join('\n')
@@ -101,8 +118,9 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
   const choose = (row) => {
     if (!row || leaving) return
     void Promise.resolve(row.run()).catch(error => actions.reportError(error, 'menu'))
-    close()
+    if (!row.keepOpen) close()
   }
+  if (selectedHit) return h(HistoryHitDialog, { key: selectedHit.hitToken, hit: selectedHit, roster, actions, onBack: () => setSelectedHit(null) })
   let index = -1
   return h('div', { className: 'bt-palette-layer', 'data-leaving': leaving || undefined },
     h('div', { className: 'bt-backdrop', onMouseDown: close }),
@@ -110,7 +128,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
       h('div', { className: 'bt-palette-head' },
         h('span', { className: 'bt-palette-glyph', 'aria-hidden': true }, h(SearchIcon)),
         h('input', {
-          autoFocus: true, value: query, placeholder: t('Search Bots, chats and messages'), 'aria-label': t('Search'),
+          autoFocus: true, value: query, placeholder: t(historyEnabled ? 'Search chats and local Bot history' : 'Search Bots, chats, and loaded messages'), 'aria-label': t('Search'),
           role: 'combobox', 'aria-expanded': true, 'aria-controls': 'bt-palette-list',
           onChange: (event) => { setQuery(event.target.value); setCursor(0) },
           onKeyDown: (event) => {
@@ -120,14 +138,42 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
             else if (event.key === 'Enter') { event.preventDefault(); choose(rows[active]) }
           },
         }),
-        query ? h('button', { type: 'button', className: 'bt-palette-clear', 'aria-label': t('Clear search'), onClick: () => { setQuery(''); setCursor(0) } }, h(CloseIcon)) : null),
+        h('button', { type: 'button', className: 'bt-palette-clear', 'aria-label': t('Close'), onClick: close }, h(CloseIcon))),
+      h('div', { className: 'bt-palette-filters', role: 'tablist', 'aria-label': t('Search filters') },
+        PALETTE_FILTERS.map(id => h('button', {
+          key: id, type: 'button', role: 'tab', className: 'bt-palette-filter',
+          'data-filter': id, 'aria-selected': filter === id,
+          tabIndex: filter === id ? 0 : -1,
+          onKeyDown: event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const index = PALETTE_FILTERS.indexOf(filter)
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? PALETTE_FILTERS.length - 1
+              : (index + (event.key === 'ArrowRight' ? 1 : -1) + PALETTE_FILTERS.length) % PALETTE_FILTERS.length
+            setFilter(PALETTE_FILTERS[next]); setCursor(0)
+            event.currentTarget.parentElement?.querySelectorAll('[role=tab]')?.[next]?.focus()
+          }, onClick: () => { setFilter(id); setCursor(0) },
+        }, t(id === 'all' ? 'All' : id === 'chats' ? 'Chats' : id === 'messages' ? 'Messages' : 'Commands')))),
+      historyVisible ? h('div', { className: 'bt-palette-history' },
+        h('p', { className: 'bt-palette-scope' }, t(historyEnabled ? 'History: your local Bots in this instance. Other chats: loaded messages only.' : 'History unavailable; searching loaded messages only.')),
+        h('span', { role: 'status', 'aria-live': 'polite' },
+          [...query].length > 256 ? t('History query is limited to 256 characters.')
+            : history.status === 'loading' ? t('Searching history…')
+              : history.status === 'error' ? t('History query failed; showing loaded messages only.')
+                : history.incomplete ? t('Some history could not be read; results are incomplete.') : '',
+          history.limited ? t('History search reached a safety limit; narrow your query.') : ''),
+        history.cursor ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: history.status === 'loading', onClick: history.more }, t('Search more history')) : null) : null,
       h('div', { ref: listRef, id: 'bt-palette-list', className: 'bt-palette-list', role: 'listbox', 'aria-label': t('Results') },
         h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
         rows.length === 0
           ? h('div', { className: 'bt-palette-empty' },
               h('span', { className: 'bt-palette-empty-icon', 'aria-hidden': true }, h(SearchIcon)),
-              h('span', { className: 'bt-palette-empty-label' }, t('No results')),
-              h('span', { className: 'bt-palette-empty-hint' }, t('Try a Bot name or words from a message')))
+              h('span', { className: 'bt-palette-empty-label' }, historyVisible && history.status === 'loading' ? t('Searching history…') : historyVisible && history.cursor ? t('More history remains to be searched') : historyVisible && (history.incomplete || history.limited) ? t('No matches in the searched portion') : emptyKind === 'none' ? t('No results') : t('Search chats and messages')),
+              h('span', { className: 'bt-palette-empty-hint' },
+                historyEnabled && historyVisible ? t('Enter text to search local Bot history; other chats use loaded messages.')
+                  : emptyKind === 'short' ? t('Type at least two characters to search messages already loaded')
+                  : emptyKind === 'none' ? t('Try a Bot name, a group name, or words from a loaded message')
+                    : t('Type a Bot name, a group name, or words from a loaded message')))
           : sections.map(([title, items]) => h(Fragment, { key: title },
               h('div', { className: 'bt-palette-section', role: 'presentation', 'data-flip': `section:${title}` }, title),
               items.map((row) => {

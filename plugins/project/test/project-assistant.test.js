@@ -350,6 +350,31 @@ test('project-create retries the digest for an assistant it did not create (#175
   }
 })
 
+test('reconcile adopts a 09:00 digest already on the Session and does not create a second (#1751)', async () => {
+  const { rt, service, attachSchedule, stop } = await start({ schedule: false })
+  try {
+    const project = await created(rt, { name: 'Hand', ownerUserId: 'owner-1' })
+    assert.equal(project.assistant.scheduleId, undefined)
+    const sessionId = project.assistant.sessionId
+    const record = await service.create(sessionId, {
+      title: '09:00 Project digest',
+      prompt: "Build today's Project digest: call project_digest once. It answers whether today already has one.",
+      daily: { time: '09:00:00', time_zone: 'Asia/Shanghai' },
+    })
+    assert.equal(service.created.length, 1)
+
+    attachSchedule()
+    await rt.projectAssistant.reconcile()
+    assert.equal(service.created.length, 1, 'an existing digest is not written again')
+    assert.equal(service.tasks.size, 1)
+    const saved = rt.readProject(project.id).assistant
+    assert.equal(saved.scheduleId, record.id)
+    assert.equal(saved.error, undefined)
+  } finally {
+    await stop()
+  }
+})
+
 test('buildDigest is pure: the same rows answer the same four sections', () => {
   const project = { id: 'project-1', name: 'Pure' }
   const rows = [

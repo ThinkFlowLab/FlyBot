@@ -9,6 +9,17 @@ export const MOBILE_MAX_WIDTH = 640
 
 export const MOBILE_CSS = `
 @media (max-width:${MOBILE_MAX_WIDTH}px){
+.bt-appearance-seg{flex-wrap:wrap}
+.bt-appearance-seg button{height:auto;min-height:36px;white-space:normal;overflow-wrap:anywhere}
+.bt-ng-split{grid-template-columns:minmax(0,1fr);min-height:0}
+.bt-mem-shell{flex-direction:column}
+.bt-mem-nav{width:auto;max-height:36vh;border-right:0;border-bottom:.5px solid var(--bt-line)}
+.bt-menu{max-width:calc(100vw - 16px)}
+.bt-message-note{white-space:normal;overflow-wrap:anywhere;padding:6px 8px;max-width:220px}
+.bt-utools,.bt-tools{opacity:1;visibility:visible}
+.bt-umsg{flex-wrap:wrap}
+.bt-menu-reacts{flex-wrap:wrap}
+
 .bt-held-actions{max-width:100%}
 .bt-held-card{padding:10px 12px}
 :is(.bt-held-card,.bt-flybot-approval) .bt-flybot-approval-actions{gap:8px;margin-top:8px}

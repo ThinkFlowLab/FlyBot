@@ -551,14 +551,17 @@ diff --git a/src/client/capability-settings.js b/src/client/capability-settings.
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -2,12 +2,20 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
- import { createPortal } from 'react-dom'
+@@ -1,108 +1,177 @@
+ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+-import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
 -import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
-+import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, cutText, isPluginTool } from './text.js'
- import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
+-import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
++import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, cutText, isPluginTool } from './text.js'
++import { MemoryIcon } from './icons.js'
++import { MessageTools, onMessageContextMenu } from './message-tools.js'
 +import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 +import { botByName, rosterBot } from './sources.js'
  import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
@@ -573,8 +576,10 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +import { call } from './api.js'
  import { failureLabel } from './diagnostics.js'
  import { turnReasoning } from './turn-reasoning.js'
++import { FoldedContent, foldingOf, showsDocumentCard } from './message-fold.js'
  
-@@ -16,37 +16,101 @@ import { turnReasoning } from './turn-reasoning.js'
+ // -------------------------------------------------------------------------
+ // Chat cells
  
  const mdLabels = () => ({ code: { copyLabel: t('Copy'), copiedLabel: t('Copied') }, footnotes: t('Footnotes') })
  
@@ -612,6 +617,17 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // `lead` (a sender avatar in group chats) sits beside the last bubble, in the same
  // row, so it lines up with the bubble whether or not reactions hang below it.
 -export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, useUi, lead, mentions }) {
++function bubbleBody({ text, roster, selfId, live, mentions, actions, sessionId }) {
++  const folding = foldingOf(roster?.prefs)
++  const render = shown => h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })
++  if (!live && showsDocumentCard(text, folding)) {
++    return h(FoldedContent, { text, folding, actions, sessionId })
++  }
++  return h('div', { className: 'bt-bubble' },
++    h(FoldedContent, { text, folding, streaming: live, actions, sessionId }, render))
++}
++
++
 +export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
 +  const openLink = bubbleLinkClick({ actions, subject: selfId ?? sessionId })
    const onClick = (event) => {
@@ -634,6 +650,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  // #2123: a message with no text is no message — a turn that ended in tool calls only, or whose reply
 +  // a card elsewhere carries, leaves nothing to draw. The empty and whitespace-only shapes are one: the
 +  // row (bubble and its avatar) is drawn only for a text a person can read.
++  const [contextAt, setContextAt] = useState(null)
 +  const shown = (texts ?? []).filter(text => String(text ?? '').trim() !== '')
 +  if (shown.length === 0) return null
    return h('div', { className: 'bt-astack', 'data-lead': lead ? '' : undefined, onClickCapture: onClick },
@@ -646,13 +663,19 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +      const picked = key ? (msgKeys ? reactions?.[key] : reactions)?.[reactIndex(index)] ?? [] : []
 +      const last = index === shown.length - 1
        const live = streaming && last
-       return h('div', { key: index, className: 'bt-msg' },
+-      return h('div', { key: index, className: 'bt-msg' },
++      return h('div', { key: index, className: 'bt-msg', onContextMenu: event => onMessageContextMenu(event, at => setContextAt({ ...at, index }), { live }) },
          h('div', { className: 'bt-msg-line' },
            lead && last ? lead : null,
-           h('div', { className: 'bt-bubble' },
-             h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
+-          h('div', { className: 'bt-bubble' },
+-            h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
 -          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(msgKey, index, emoji) : undefined, actions })),
-+          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions })),
++          bubbleBody({ text, roster, selfId, live, mentions, actions, sessionId }),
++          live ? null : h(MessageTools, {
++            text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId,
++            react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined,
++            actions, roster, contextAt: contextAt?.index === index ? contextAt : null,
++          })),
          picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
 -          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(msgKey, index, emoji),
 +          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
@@ -660,11 +683,43 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      }))
  }
  
+-const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
+-
+-// Closes a popover on a press outside the given elements or on Escape.
+-function useDismiss(open, close, refs) {
+-  useEffect(() => {
+-    if (!open) return undefined
+-    const onDown = (event) => {
+-      if (refs.some(ref => ref.current?.contains(event.target))) return
+-      close()
+-    }
+-    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }
+-    window.addEventListener('mousedown', onDown)
+-    window.addEventListener('keydown', onKey, true)
+-    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey, true) }
+-  }, [open])
+-}
+-
+-// The hover toolbar beside a reply bubble: Add reaction, Reply, More.
+-function MessageTools({ text, name, sessionId, react, actions }) {
+-  const [panel, setPanel] = useState(null)
+-  const [place, setPlace] = useState(null)
+-  const [copied, setCopied] = useState(false)
+-  const tools = useRef(null)
+-  const pop = useRef(null)
+-  const close = () => setPanel(null)
+-  useDismiss(panel !== null, close, [tools, pop])
+-  const open = (kind, event) => {
+-    if (panel === kind) { close(); return }
+-    const rect = event.currentTarget.getBoundingClientRect()
+-    const below = rect.bottom + 220 < window.innerHeight
+-    setPlace(kind === 'react'
+-      ? { left: rect.left + rect.width / 2, top: rect.top - 6, '--bt-origin': 'bottom center' }
+-      : { left: Math.min(rect.left, window.innerWidth - 208), ...(below ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4, '--bt-origin': 'bottom left' }) })
+-    setPanel(kind)
 +// A held send is shown by its card and the sidebar mark, not by a line in a Face-to-face room's history:
 +// older rooms still hold this line from when the social plugin posted it for a direct message (#278).
 +const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
- const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
- 
 +// The closed status line already says who left (#1103). Same rule as
 +// plugins/social/src/face-rooms.js leaveNoticeCoveredByClose: the plugin does not post the short
 +// line when it already knows the room closed, and a line posted earlier is not drawn beside the banner.
@@ -677,17 +732,18 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +    if (participant?.remote !== true || participant.leftSeq === undefined) continue
 +    const name = String(participant.ownerName || participant.displayName || participant.name || '').trim()
 +    if (name && (who === name || who.endsWith(` (${name})`))) return true
-+  }
+   }
+-  const copy = () => {
+-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
+-  }
+-  const download = () => {
+-    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }))
+-    const link = Object.assign(document.createElement('a'), { href: url, download: `${name}-message.md` })
+-    link.click()
+-    setTimeout(() => URL.revokeObjectURL(url), 1000)
 +  return false
 +}
 +
- // Closes a popover on a press outside the given elements or on Escape.
- function useDismiss(open, close, refs) {
-   useEffect(() => {
-@@ -100,9 +100,45 @@ function MessageTools({ text, name, sessionId, react, actions }) {
-       item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
- }
- 
 +// The first line with something on it, inner runs of whitespace squeezed: a folded row shows it, so
 +// the row never reads as an empty frame while the text it names sits behind the caret (#1624).
 +const PEEK_MAX = 160
@@ -707,7 +763,16 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  for (const part of graphemes(line)) {
 +    if (kept.length + part.length > PEEK_MAX - CUT.length) break
 +    kept += part
-+  }
+   }
+-  const item = (label, Icon, run) => h('button', { key: label, type: 'button', role: 'menuitem', onClick: () => { close(); run() } }, h(Icon), label)
+-  return h('div', { ref: tools, className: 'bt-tools', 'data-open': panel !== null || undefined },
+-    react ? h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('Add reaction'), title: t('Add reaction'), 'aria-expanded': panel === 'react', onClick: event => open('react', event) }, h(SmileIcon)) : null,
+-    sessionId ? h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('Reply'), title: t('Reply'), onClick: () => actions.quote(sessionId, text) }, h(ReplyIcon)) : null,
+-    h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('More message actions'), title: t('More'), 'aria-haspopup': 'menu', 'aria-expanded': panel === 'more', onClick: event => open('more', event) }, copied ? h(CheckIcon) : h(DotsIcon)),
+-    panel === 'react' ? createPortal(h('div', { ref: pop, className: 'bt-react-strip', role: 'menu', 'aria-label': t('Reactions'), style: place },
+-      REACTIONS.map(emoji => h('button', { key: emoji, type: 'button', role: 'menuitem', 'aria-label': emoji, onClick: () => { close(); react(emoji) } }, emoji))), document.body) : null,
+-    panel === 'more' ? createPortal(h('div', { ref: pop, className: 'bt-menu', role: 'menu', 'aria-label': t('Message actions'), style: place },
+-      item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
 +  return kept + CUT
 +}
 +// Nothing but markup: a line count still says something, where a fence fragment says nothing (#1642).
@@ -718,8 +783,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  const lines = text.split('\n').map((part) => part.replace(/\s+/g, ' ').trim()).filter((part) => part !== '')
 +  const prose = lines.find((line) => !isMarkup(line))
 +  return prose === undefined ? onlyMarkup(lines) : clip(prose)
-+}
-+
+ }
+ 
  function ThinkingRow({ text }) {
 +  // Folded by default; the caret shows there is something inside. Nothing to show, no row.
 +  if (typeof text !== 'string' || text.trim() === '') return null
@@ -1359,17 +1424,20 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 --- a/src/client/context-menu.js
 +++ b/src/client/context-menu.js
-@@ -4,6 +4,9 @@ import { currentPart } from './text.js'
+@@ -4,14 +4,19 @@ import { currentPart } from './text.js'
  import { GearIcon, PinIcon, UnreadIcon, PencilIcon, StarLineIcon, CopyIcon, HideIcon, TrashIcon, DuplicateIcon } from './icons.js'
  import { useEscape } from './overlay-hooks.js'
  import { t } from './i18n.js'
 +import { useSidebarStructure } from './flybot-slots.js'
 +import { pluginItems } from './flybot-registry.js'
 +import { LinkIcon } from './icons.js'
++import { isManuallyUnread } from '../shared/session-unread.js'
  
- export function ContextMenu({ menu, roster, actions, leaving = false }) {
+-export function ContextMenu({ menu, roster, actions, leaving = false }) {
++export function ContextMenu({ menu, roster, actions, unread, leaving = false }) {
    useEscape(() => actions.closeMenu())
-@@ -12,6 +12,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+   useEffect(() => {
+     const onDown = (event) => { if (!(event.target instanceof Element) || !event.target.closest('.bt-menu')) actions.closeMenu() }
      window.addEventListener('mousedown', onDown)
      return () => window.removeEventListener('mousedown', onDown)
    }, [])
@@ -1377,7 +1445,20 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
    const ref = useRef(null)
    const [place, setPlace] = useState({ left: menu.x, top: menu.y })
    useLayoutEffect(() => {
-@@ -27,28 +27,44 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+@@ -19,36 +19,56 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+     if (!box) return
+     setPlace({ left: Math.max(8, Math.min(menu.x, window.innerWidth - box.width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - box.height - 8)) })
+   }, [menu.x, menu.y])
+-  if (menu.kind === 'agent' || menu.kind === 'agent-session') return h(AgentMenu, { menu, roster, actions, leaving })
++  if (menu.kind === 'agent' || menu.kind === 'agent-session') return h(AgentMenu, { menu, roster, actions, unread, leaving })
+   const bot = roster.byId[menu.id]
+   const room = roster.roomsById[menu.id]
+   const entry = bot ?? room
+   if (entry === undefined) return null
++  const marked = isManuallyUnread(unread, menu.id)
++  const unreadItem = marked
++    ? [t('Clear unread mark'), UnreadIcon, () => actions.clearUnread(menu.id)]
++    : [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)]
    const isMainBot = isMainOf(roster, menu.id)
    const isTile = roster.mainBotId === menu.id
    const mainCount = (roster.mainBotIds ?? []).length
@@ -1407,7 +1488,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +  const groups = bot?.remote
 +    ? [
 +        [
-+          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
++          unreadItem,
 +        ],
 +        [
 +          [t('Bot settings'), GearIcon, () => actions.openSettings('bots', bot.id)],
@@ -1418,7 +1499,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +    : [
 +        [
 +          isTile || locked ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
-+          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
++          unreadItem,
 +        ],
 +        [
 +          // One way to edit a Bot (#385): its name is edited in Edit Bot too.
@@ -1443,17 +1524,31 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
        index > 0 ? h('div', { className: 'bt-menu-sep', role: 'separator' }) : null,
        group.map(([label, Icon, run, danger]) => h('button', {
          key: label, type: 'button', role: 'menuitem', className: danger ? 'bt-danger' : undefined,
-@@ -67,28 +67,34 @@ function AgentMenu({ menu, roster, actions, leaving }) {
+@@ -57,7 +57,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+ }
+ 
+ // Menus for the DSH Agent row and its Sessions; none of the Bot entries apply.
+-function AgentMenu({ menu, roster, actions, leaving }) {
++function AgentMenu({ menu, roster, actions, unread, leaving }) {
+   const ref = useRef(null)
+   const [place, setPlace] = useState({ left: menu.x, top: menu.y })
+   useLayoutEffect(() => {
+@@ -67,28 +67,42 @@ function AgentMenu({ menu, roster, actions, leaving }) {
    }, [menu.x, menu.y])
    const agent = roster.agentsById[menu.kind === 'agent' ? menu.id : menu.agentId]
    if (agent === undefined) return null
 +  // A window that holds the team read-only draws none of the writes the host refuses (#2232, #2253).
 +  const locked = typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
++  const marked = isManuallyUnread(unread, agent.id)
++  const unreadItem = marked
++    ? [t('Clear unread mark'), UnreadIcon, () => actions.clearUnread(agent.id)]
++    : [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(agent.id)]
    const groups = menu.kind === 'agent'
      ? [
          [
 -          [agent.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })],
 +          locked ? null : [agent.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })],
++          unreadItem,
          ],
          [
 -          [t('Remove DSH Agent'), TrashIcon, () => actions.removeAgent(agent.id), true],
@@ -1463,6 +1558,9 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
      : [
          [
 -          [t('Rename'), PencilIcon, () => actions.beginAgentRename(menu.id)],
++          unreadItem,
++        ],
++        [
 +          locked ? null : [t('Rename'), PencilIcon, () => actions.beginAgentRename(menu.id)],
          ],
          [
@@ -1470,7 +1568,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +          locked ? null : [t('Archive'), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true],
          ],
        ]
-+  // Every row here writes, so a read-only window has no menu to draw at all.
++  // Host writes stay out of a read-only window; Mark as Unread/Read only touches local UI state.
 +  const shown = groups.map(group => group.filter(Boolean)).filter(group => group.length > 0)
 +  if (shown.length === 0) return null
    return h('div', { ref, className: 'bt-menu', role: 'menu', 'aria-label': menu.kind === 'agent' ? 'DSH Agent' : t('Session actions'), style: place, 'data-leaving': leaving || undefined },
@@ -1662,7 +1760,7 @@ diff --git a/src/client/icons.js b/src/client/icons.js
 diff --git a/src/client/index.js b/src/client/index.js
 --- a/src/client/index.js
 +++ b/src/client/index.js
-@@ -1,44 +1,84 @@
+@@ -1,44 +1,86 @@
 +import { FLYBOT_CSS, FlyBotApprovals, FlyBotSessionDock, call as flybotCall, createClientApi as createFlyBotClient } from './flybot-slots.js'
 +import { createElement as h } from 'react'
 +import { projectPresent, registry as flybotSlots, setPluginAnswer } from './flybot-registry.js'
@@ -1671,22 +1769,25 @@ diff --git a/src/client/index.js b/src/client/index.js
 -import { isHex, inkText, paintCss } from './inks.js'
 -import { DEFAULT_MASK, SHAPES, markupCache, maskOf } from './characters.js'
 -import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession } from './sources.js'
+-import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
+-import { MENTION_ORIGIN, currentPart } from './text.js'
 +import { isHex } from './inks.js'
 +import { SHAPES, markupCache } from './characters.js'
 +import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession, stateAnswerIsStale, stateRequest } from './sources.js'
- import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
--import { MENTION_ORIGIN, currentPart } from './text.js'
++import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes, resolveThemeId, themePrefsRecord } from './themes.js'
++import { appearanceOf, applyAppearanceAttribute, isDarkAppearance, systemDark } from './appearance.js'
 +import { currentPart, landingPart, setPluginTools } from './text.js'
 +import { mentionCss } from './mention-style.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 -import { lookOf } from './mark.js'
 -import { TeamSidebar, ConnectPlugins, YouAvatar, AccountLauncher, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
++import { PARITY_SHELL_CSS } from './parity-shell.js'
 +import { installBrandChrome, installTabTitle } from './brand.js'
 +import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
  import { HeaderPill } from './header.js'
 -import { ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
 +import { installHeaderEffects } from './header-effects.js'
-+import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
++import { ComposerIdentity, ComposerPlus, ComposerVoice, installSendShortcut, menuIcons } from './composer.js'
  import { CHATS_SOURCE, atSources } from './at-menu.js'
 +import { watchFaceMenu } from './face-at-filter.js'
  import { VOICE_BUNDLE } from './speech.js'
@@ -1768,12 +1869,16 @@ diff --git a/src/client/index.js b/src/client/index.js
    // `details` is the panel's subject (a Session id); `view` picks details or the
    // subject Bot's browser inside it.
 -  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
-+  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
++  const ui = createSource({ details: null, view: 'details', document: null, renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
-@@ -79,9 +79,21 @@ export function apply(ctx) {
-   const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state))
+@@ -76,12 +76,24 @@ export function apply(ctx) {
+   const setPlain = (plain) => surface.set(state => (state.plain === plain ? state : { ...state, plain }))
+   // A DSH Agent Session shows the plain conversation: the Bot details and browser
+   // panels would follow it and report it is not on the team, so they close.
+-  const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state))
++  const dropPanels = () => ui.set(state => (state.details || state.renaming || state.document ? { ...state, details: null, view: 'details', document: null, renaming: false, tab: null } : state))
    // A Bot's chat spans several parts, so when it was last left is kept per Bot.
    const seenKey = id => roster.getSnapshot().byId?.[id]?.id ?? id
 +  // Per Session, the newest turn this visit measured on screen (`noteVisitTail`). Leaving writes
@@ -1894,6 +1999,83 @@ diff --git a/src/client/index.js b/src/client/index.js
        if (next !== last) style.textContent = last = next
      }
      render()
+@@ -277,35 +277,64 @@ export function apply(ctx) {
+     const style = installStyles('', 'theme')
+     let key = ''
+     let releaseTokens = null
+-    const render = () => {
++    const originalDark = document.body.hasAttribute('data-ds-dark-theme')
++    const prefsNow = () => {
+       const snapshot = roster.getSnapshot()
+-      const prefs = snapshot.ready ? snapshot.prefs ?? {} : savedPrefs
++      return { snapshot, prefs: snapshot.ready ? snapshot.prefs ?? {} : savedPrefs }
++    }
++    const applyDark = (force = false) => {
++      const { prefs } = prefsNow()
++      const wanted = isDarkAppearance(prefs, new Date(), systemDark())
++      const current = document.body.hasAttribute('data-ds-dark-theme')
++      if (wanted === current) return
++      // Auto/system flips wait out a running turn rather than changing mid-reply.
++      const busy = !force && document.body.querySelector('[data-bt-running], [data-session-running], [aria-busy="true"]')
++      if (busy) return
++      applyAppearanceAttribute(wanted)
++    }
++    const render = () => {
++      const { snapshot, prefs } = prefsNow()
+       const themes = allThemes()
+-      const id = themes[prefs.theme] ? prefs.theme : 'deepseek'
++      const id = resolveThemeId(prefs, themes)
+       const accent = isHex(prefs.accent) ? prefs.accent : undefined
+       const motion = prefs.motion === 'quiet' || prefs.motion === 'lively' ? prefs.motion : 'normal'
++      const appearance = appearanceOf(prefs)
+       document.body.dataset.btMotion = motion
+-      const next = `${id}|${accent ?? ''}|${motion}|${registry.getSnapshot()}`
+-      if (next === key) return
+-      key = next
+-      style.textContent = themeCss(themes[id], accent)
+-      const release = releaseTokens
+-      releaseTokens = ctx.theme.overrideTokens('ds-bot', shellTokens(themes[id]))
+-      if (typeof release === 'function') release()
+-      if (snapshot.ready) {
+-        try { localStorage.setItem(PREFS_KEY, JSON.stringify({ theme: prefs.theme, accent: prefs.accent, motion: prefs.motion })) } catch { /* storage unavailable */ }
++      document.body.dataset.btAppearance = appearance.mode
++      const next = `${id}|${accent ?? ''}|${motion}|${appearance.mode}|${appearance.auto}|${appearance.from}|${appearance.to}|${registry.getSnapshot()}`
++      const changed = next !== key
++      if (changed) {
++        key = next
++        style.textContent = themeCss(themes[id], accent)
++        const release = releaseTokens
++        releaseTokens = ctx.theme.overrideTokens('ds-bot', shellTokens(themes[id]))
++        if (typeof release === 'function') release()
++        if (snapshot.ready) {
++          try { localStorage.setItem(PREFS_KEY, JSON.stringify(themePrefsRecord(prefs))) } catch { /* storage unavailable */ }
++        }
+       }
++      applyDark(changed)
+     }
+     render()
+     const offRoster = roster.subscribe(render)
+     const offRegistry = registry.subscribe(render)
++    const media = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null
++    const onScheme = () => applyDark()
++    media?.addEventListener?.('change', onScheme)
++    const tick = setInterval(() => applyDark(), 60_000)
++    // Do not immediately fight the host's theme mutation observer. Reconcile on
++    // preference/system changes and the minute tick instead.
+     return () => {
+       offRoster()
+       offRegistry()
++      media?.removeEventListener?.('change', onScheme)
++      clearInterval(tick)
++      applyAppearanceAttribute(originalDark)
+       try {
+         if (typeof releaseTokens === 'function') releaseTokens()
+       } finally {
+         delete document.body.dataset.btMotion
++        delete document.body.dataset.btAppearance
+         style.remove()
+       }
+     }
 @@ -325,7 +325,7 @@ export function apply(ctx) {
  
    ctx.inject(['shortcuts'], scope => { scope.effect(() => holdShellShortcuts(scope.shortcuts), 'ds-bot: settings shortcut') })
@@ -1911,7 +2093,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -409,15 +409,30 @@ export function apply(ctx) {
+@@ -409,16 +409,33 @@ export function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
      // was archived for a fresh one, the view goes on in the fresh one.
@@ -1944,15 +2126,52 @@ diff --git a/src/client/index.js b/src/client/index.js
 +        .finally(() => { reloading -= 1 })
 +    },
      openNewChat: (mode) => { ui.set(state => ({ ...state, newChat: mode, menu: null, palette: null })) },
++    searchMessages: (body, signal) => call('search-messages', body, signal),
++    readHistoryHit: (body, signal) => call('history-hit', body, signal),
      openPalette: (query = '') => { ui.set(state => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null })) },
      // The token keeps a late exit timer from closing a palette opened again since.
-@@ -443,11 +443,24 @@ export function apply(ctx) {
-     showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: false, tab })) },
+     closePalette: (token) => { ui.set(state => (state.palette && (token === undefined || state.palette.token === token) ? { ...state, palette: null } : state)) },
+@@ -428,26 +428,53 @@ export function apply(ctx) {
+     toggleDetails: (id, force) => {
+       ui.set((state) => {
+         const details = force || state.details !== id || state.view !== 'details' ? id : null
+-        return { ...state, renaming: false, tab: null, details, view: 'details' }
++        return { ...state, renaming: false, tab: null, details, view: 'details', document: null }
+       })
+     },
++    // A long-document card opens its full text in the side panel, beside the conversation.
++    openDocument: ({ title, text, sessionId }) => {
++      const id = sessionId
++      if (!id || text == null || String(text) === '') return
++      ui.set(state => ({
++        ...state,
++        details: id,
++        view: 'document',
++        document: { title: title || 'Document', text: String(text) },
++        renaming: false,
++        tab: null,
++      }))
++    },
+     // The open panel follows the main view; a subject with no browser (a group
+     // chat, an outside Session) settles on the details view.
+     followPanel: (id) => {
+       ui.set((state) => {
+         if (!state.details || state.details === id) return state
+-        const view = state.view === 'browser' && roster.getSnapshot().byId[id] === undefined ? 'details' : state.view
+-        return { ...state, details: id, view, renaming: false, tab: null }
++        const view = state.view === 'browser' && roster.getSnapshot().byId[id] === undefined ? 'details'
++          : state.view === 'document' ? 'details' : state.view
++        return { ...state, details: id, view, document: view === 'document' ? state.document : null, renaming: false, tab: null }
+       })
+     },
+-    showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: false, tab })) },
++    showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', document: null, renaming: false, tab })) },
      // Opening the conversation would move focus to its composer and blur the name field.
-     renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
+-    renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
 -    // `id` opens one Bot (page 'bots') or one group chat (page 'groups').
 -    openSettings: (page = 'general', id = null) => { ui.set(state => ({ ...state, settings: { page, id }, menu: null, palette: null, newChat: null })) },
 -    closeSettings: () => { ui.set(state => (state.settings ? { ...state, settings: null } : state)) },
++    renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', document: null, renaming: true, tab: null })) },
 +    // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
 +    // closing the page returns to; a page the inbox opened sends the queue back (#2541).
 +    openSettings: (page = 'general', id = null, back = null) => {
@@ -1979,7 +2198,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        if (surface.getSnapshot().mode === mode) return
        if (mode === 'agent') {
 -        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, toast: null }))
-+        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
++        ui.set(state => ({ ...state, details: null, view: 'details', document: null, settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
@@ -2068,9 +2287,42 @@ diff --git a/src/client/index.js b/src/client/index.js
      dismissToast: token => ui.set(state => (state.toast && (token === undefined || state.toast.token === token) ? { ...state, toast: null } : state)),
    }
    // Without the Desktop bridge these stay undefined, and no browser control renders.
-@@ -610,6 +610,7 @@ export function apply(ctx) {
+@@ -577,7 +577,7 @@ export function apply(ctx) {
+         if (!bot) return
+         browsers.ensureTabs(bot.id)
+         if (browsers.tabs.getSnapshot()[bot.id]?.active == null) browsers.openTab(bot.id)
+-        ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null }))
++        ui.set(state => ({ ...state, details: id, view: 'browser', document: null, renaming: false, tab: null }))
+       },
+       // '+' on the strip or the drawer's new-tab card: a blank tab in the browser view.
+       browserNewTab: (id) => {
+@@ -585,7 +585,7 @@ export function apply(ctx) {
+         if (!bot) return null
+         browsers.ensureTabs(bot.id)
+         const tabId = browsers.openTab(bot.id)
+-        ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null }))
++        ui.set(state => ({ ...state, details: id, view: 'browser', document: null, renaming: false, tab: null }))
+         return tabId
+       },
+       // A drawer card: its tab active, the panel on the browser view.
+@@ -593,7 +593,7 @@ export function apply(ctx) {
+         const bot = roster.getSnapshot().byId[id]
+         if (!bot) return
+         browsers.activate(bot.id, tabId)
+-        ui.set(state => ({ ...state, details: id, view: 'browser' }))
++        ui.set(state => ({ ...state, details: id, view: 'browser', document: null }))
+       },
+       browserEnsure: botId => browsers.ensureTabs(botId),
+       browserCloseTab: (botId, tabId) => browsers.closeTab(botId, tabId),
+@@ -606,10 +606,11 @@ export function apply(ctx) {
    }
-   actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
+   actions.setPanelView = (view) => {
+     if (view !== 'details' && view !== 'browser') return
+-    ui.set(state => (state.details && state.view !== view ? { ...state, view } : state))
++    ui.set(state => (state.details && state.view !== view ? { ...state, view, document: view === 'document' ? state.document : null } : state))
+   }
+-  actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
++  actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', document: null, renaming: false, tab: null } : state)) }
    // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
 +  actions.flybotSlotEntries = name => ctx.slots.entries?.(name) ?? []
    actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
@@ -2163,7 +2415,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    actions.referenceChat = (sessionId, span) => {
      const controller = atMenu?.controllerOf(sessionId)
      if (controller === undefined || span === undefined) return
-@@ -752,33 +752,51 @@ export function apply(ctx) {
+@@ -752,33 +752,53 @@ export function apply(ctx) {
      installCompiledStyles(SHELL_CSS, 'shell'),
      installCompiledStyles(SIDEBAR_CSS, 'sidebar'),
      installCompiledStyles(SECRET_CSS, 'secrets'),
@@ -2178,6 +2430,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +    installCompiledStyles(FLYBOT_CSS, 'flybot'),
      installCompiledStyles(MEMBER_CSS, 'members'),
      installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
++    installCompiledStyles(PARITY_SHELL_CSS, 'parity-shell'),
 +    installCompiledStyles(MOBILE_CSS, 'mobile'),
 +    installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
 +    installCompiledStyles(PROJECT_BOARD_CSS, 'project-board'),
@@ -2207,6 +2460,7 @@ diff --git a/src/client/index.js b/src/client/index.js
    ]
    const installConversation = () => [
      installCompiledStyles(CONVERSATION_CSS, 'conversation'),
++    installCompiledStyles(PARITY_SHELL_CSS, 'parity-shell-conversation'),
      installMentions(),
      installAtMenu(),
 -    shadow('conversation.session.header', { priority: -10, inject: face }, HeaderPill),
@@ -2246,7 +2500,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      shadow('conversation.input.right', { id: 'bot-voice', order: 100, inject: face }, ComposerVoice),
      shadow('conversation.composer', {
        priority: -10,
-@@ -808,7 +808,14 @@ export function apply(ctx) {
+@@ -808,12 +808,20 @@ export function apply(ctx) {
      shadow('conversation.input.dock', { id: 'bot-model', order: -110, inject: face }, ModelChoiceDock),
      shadow('conversation.input.dock', { id: 'bot-question', order: -100, inject: face }, QuestionDock),
      shadow('conversation.input.dock', { id: 'bot-secret', order: -90, inject: face }, SecretDock),
@@ -2261,10 +2515,17 @@ diff --git a/src/client/index.js b/src/client/index.js
    // The return button belongs to neither group: it renders only in Agent mode.
    ctx.effect(() => {
      const style = installStyles(RETURN_CSS, 'return')
+     return () => style.remove()
+   }, 'ds-bot: return styles')
++  ctx.effect(() => installSendShortcut(roster), 'ds-bot: send shortcut')
+   shadow('sidebar.footer.action', { id: 'bot-return', order: -300, inject: face }, BotReturn)
+ 
+   // The main view decides `plain`: a DSH Agent Session keeps the Bot shell but
 diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 --- a/src/client/new-chat.js
 +++ b/src/client/new-chat.js
-@@ -1,21 +1,34 @@
+@@ -1,21 +1,36 @@
++import { shouldSendOnKey, sendKeyOf } from './appearance.js'
  import { createElement as h, useRef, useState } from 'react'
 -import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 -import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
@@ -2289,6 +2550,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +  const [compose, setCompose] = useState(mode !== 'new')
    // A new group chat picks its admin first, then the other members.
    const [admin, setAdmin] = useState(null)
++  const [name, setName] = useState('')
    const [message, setMessage] = useState('')
    const [busy, setBusy] = useState(false)
    const [error, setError] = useState('')
@@ -2405,7 +2667,7 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 +      ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
 +      ...remotes,
 +    ]
-+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
++    const room = await actions.createRoom(members, { admin, ...(name.trim() ? { name: name.trim() } : {}), ...(participants ? { participants } : {}) })
      if (text) await actions.send(room.id, text)
      actions.openSession(room.id)
      close()
@@ -2507,7 +2769,15 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('span', { className: 'bt-to-label' }, t('To:')),
          adminBot ? h('span', { key: adminBot.id, className: 'bt-token bt-token-admin', title: t('Admin') },
            h(BotMark, { bot: adminBot, size: 16 }), adminBot.name, h(AdminStar),
-@@ -149,10 +149,12 @@ export function NewChat({ mode, roster, actions }) {
+@@ -142,39 +142,70 @@ export function NewChat({ mode, roster, actions }) {
+           placeholder: mode === 'search' ? t('Search Bots…') : choosingAdmin ? t('Choose the group admin') : group ? t('Who to chat with…') : t('Start a chat with…'),
+           onChange: (event) => { setQuery(event.target.value); setCursor(0) },
+           onKeyDown: (event) => {
+-            if (event.nativeEvent.isComposing) return
++            if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return
+             if (event.key === 'ArrowDown') { event.preventDefault(); setCursor(Math.min(active + 1, options.length - 1)) }
+             else if (event.key === 'ArrowUp') { event.preventDefault(); setCursor(Math.max(active - 1, 0)) }
+             else if (event.key === 'Enter' && options[active]) { event.preventDefault(); options[active].run() }
              else if (event.key === 'Backspace' && query === '') unpick()
            },
          }),
@@ -2515,16 +2785,27 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
 -          type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
 -          title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
 -        }, t('Create group chat')) : null,
-+        group && admin !== null ? (locked
++        group ? (locked
 +          ? readOnlyLine(h, roster, actions, { key: 'readonly-admin' })
 +          : h('button', {
-+            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
-+            title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
++            type: 'button', className: 'bt-send bt-to-create', disabled: busy || admin === null || picked.length === 0,
++            title: admin === null || picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
 +          }, t('Create group chat'))) : null,
          h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Close new chat'), onClick: close }, '×')),
++      group ? h('label', { className: 'bt-ng-name-row bt-nc-name' },
++        h('span', { className: 'bt-ng-name-label' }, t('Group name')),
++        h('input', {
++          className: 'bt-ng-name-input', value: name, maxLength: 60, readOnly: locked,
++          placeholder: t('Group name (optional)'),
++          'aria-label': t('Group name'),
++          onChange: event => setName(event.target.value),
++        })) : null,
        h('div', { ref: drop, className: 'bt-drop' }, h('div', { ref: glide.box, role: 'listbox', 'aria-label': t('Recipients'), className: 'bt-drop-list' },
          h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
-@@ -162,11 +162,28 @@ export function NewChat({ mode, roster, actions }) {
+-        options.length === 0 ? h('div', { className: 'bt-hint' }, mode === 'search' ? t('No Bots match') : t('Type a name to create a Bot'))
++        options.length === 0 ? h('div', { className: 'bt-hint' }, mode === 'search' || group ? t('No Bots match') : t('Type a name to create a Bot'))
+           : options.map((option, index) => h('button', {
+               key: option.key, type: 'button', role: 'option', className: 'bt-option', 'aria-selected': index === active, 'data-flip': option.key,
                onMouseEnter: () => setCursor(index), onClick: option.run,
              },
              option.bot ? h(BotMark, { bot: option.bot, size: 22 }) : h('span', { className: 'bt-option-icon' }, option.icon),
@@ -2558,13 +2839,17 @@ diff --git a/src/client/new-chat.js b/src/client/new-chat.js
          h('div', { className: 'bt-nc-card' },
            h('span', { className: 'bt-nc-plus', 'aria-hidden': true }, h(PlusIcon)),
            h('textarea', {
-@@ -176,5 +176,9 @@ export function NewChat({ mode, roster, actions }) {
-               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
+-            rows: 1, value: message, placeholder, 'aria-label': placeholder,
++            rows: 1, value: message, placeholder, readOnly: locked, 'aria-label': placeholder,
+             onChange: event => setMessage(event.target.value),
+             onKeyDown: (event) => {
+-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() }
++              if (!locked && shouldSendOnKey(event, sendKeyOf(roster.prefs))) { event.preventDefault(); sendMessage() }
              },
            }),
 -          h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
 +          locked
-+            ? (group && admin !== null
++            ? (group
 +              ? null
 +              : readOnlyLine(h, roster, actions, { key: 'readonly-compose' }))
 +            : h('button', { type: 'button', className: 'bt-nc-send', 'aria-label': t('Send message'), disabled: busy || message.trim() === '' || picked.length === 0, onClick: sendMessage }, h(ArrowUpIcon))))))
@@ -2610,8 +2895,19 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
  import { useLinger } from './motion.js'
  
  // How long a closing dialog or menu stays for its exit (see their [data-leaving] CSS).
-@@ -36,8 +36,12 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
-   }, [ui.details, ui.view, ui.renaming, ui.tab])
+@@ -27,24 +27,31 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+     previous.current = current
+     if (current) actions.followPanel?.(current)
+   }, [current])
+-  const open = ui.details ? { id: ui.details, view: ui.view ?? 'details', renaming: ui.renaming, tab: ui.tab } : null
++  const open = ui.details ? { id: ui.details, view: ui.view ?? 'details', renaming: ui.renaming, tab: ui.tab, document: ui.document ?? null } : null
+   const [kept, setKept] = useState(open)
+   useEffect(() => {
+     if (open) { setKept(open); return undefined }
+     const timer = setTimeout(() => setKept(null), PANEL_LINGER_MS)
+     return () => clearTimeout(timer)
+-  }, [ui.details, ui.view, ui.renaming, ui.tab])
++  }, [ui.details, ui.view, ui.renaming, ui.tab, ui.document])
    const pane = open ?? kept
    const [settings, settingsLeaving] = useLinger(ui.settings, DIALOG_EXIT_MS)
 +  const remoteBotId = ui.remoteBotSettings && roster.byId[ui.remoteBotSettings]?.remote ? ui.remoteBotSettings : null
@@ -2623,9 +2919,11 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
    return h(Fragment, null,
      pane ? createPortal(h(BotPanel, { pane, leaving: open === null, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }), document.body) : null,
      ui.newChat ? createPortal(h(NewChat, { key: ui.newChat, mode: ui.newChat, roster, actions }), document.body) : null,
-@@ -46,5 +46,8 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+     ui.palette ? createPortal(h(CommandPalette, { key: ui.palette.token, start: ui.palette.query, token: ui.palette.token, roster, actions, useSessions }), document.body) : null,
+     ui.exchange ? createPortal(h(ExchangeDialog, { pair: ui.exchange, roster, actions }), document.body) : null,
      ui.voice ? createPortal(h(VoiceMode, { key: ui.voice, sessionId: ui.voice, roster, actions, useSessions, useSessionStatus }), document.body) : null,
-     menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
+-    menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
++    menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, unread: ui.unread, leaving: menuLeaving }), document.body) : null,
      settings ? createPortal(h(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
 -    memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null)
 +    remoteBotSettings ? createPortal(h(RemoteBotSettingsSheet, { key: remoteBotSettings, bot: roster.byId[remoteBotSettings], roster, actions, leaving: remoteLeaving }), document.body) : null,
@@ -2636,7 +2934,9 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
 diff --git a/src/client/palette.js b/src/client/palette.js
 --- a/src/client/palette.js
 +++ b/src/client/palette.js
-@@ -1,16 +1,20 @@
+@@ -1,22 +1,35 @@
++import { HistoryHitDialog } from './history-hit.js'
++import { useHistorySearch } from './history-search.js'
  import { createElement as h, Fragment, useEffect, useState } from 'react'
  import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
  import { isMainOf } from './sources.js'
@@ -2649,24 +2949,42 @@ diff --git a/src/client/palette.js b/src/client/palette.js
  import { t } from './i18n.js'
 +import { isListedRemoteChat, pickerBotLabel } from '../shared/remote-label.js'
 +import { seatedCount } from './group-settings.js'
++import { PALETTE_FILTERS, PALETTE_MESSAGE_MIN, paletteEmptyKind, paletteFilterAllows } from '../shared/palette-search.js'
  
- // Search is a command palette: a 560px dialog, a search header, and 49px
- // rows (24px avatar, title, subtitle). Bots and groups match on name and role; past
+-// Search is a command palette: a 560px dialog, a search header, and 49px
+-// rows (24px avatar, title, subtitle). Bots and groups match on name and role; past
 -// messages match on their text.
-+// messages match on their text, read by `readableLine`, the same reader `previewOf` uses — a header,
-+// a delegation trace and a fence are routing or data, never the row (#1347).
++// Four real categories: names, commands, loaded outlines, and (when supported)
++// owner-scoped local Bot history via a bounded read-only host query. Group/remote
++// history remains loaded-only. No all-instance or filesystem search is implied.
++
 +const paletteText = (raw, names) => readableLine(String(raw ?? ''), names)
  const PALETTE_EXIT_MS = 160
  export function CommandPalette({ start, token, roster, actions, useSessions }) {
    const [query, setQuery] = useState(start ?? '')
-@@ -24,6 +24,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+   const [cursor, setCursor] = useState(0)
+   const [leaving, setLeaving] = useState(false)
++  const [filter, setFilter] = useState('all')
++  const [selectedHit, setSelectedHit] = useState(null)
++  const history = useHistorySearch(!selectedHit && paletteFilterAllows(filter, 'messages') ? actions.searchMessages : undefined, query.trim())
++  const historyEnabled = typeof actions.searchMessages === 'function'
++  const historyVisible = paletteFilterAllows(filter, 'messages')
+   const wanted = query.trim().toLowerCase()
++  const emptyKind = paletteEmptyKind(query, filter)
+   const close = () => {
+     if (leaving) return
+     setLeaving(true)
+@@ -24,8 +24,9 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
    }
    useEscape(close)
    const ids = [...roster.bots.map(currentPart), ...roster.rooms.map(item => item.id)]
 +  const names = botNames(roster)
    const found = useSessions((list) => {
-     if (wanted.length < 2) return '[]'
+-    if (wanted.length < 2) return '[]'
++    if (wanted.length < PALETTE_MESSAGE_MIN) return '[]'
      const hits = []
+     for (const id of ids) {
+       const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
 @@ -35,7 +35,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
          const entry = outline[index]
          if (hidden.includes(entry.turn)) continue
@@ -2676,7 +2994,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
            const at = text.toLowerCase().indexOf(wanted)
            if (at < 0) continue
            const from = Math.max(0, at - 24)
-@@ -49,13 +49,13 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -49,25 +49,33 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
    const matchesName = (...fields) => wanted === '' || fields.some(field => (field ?? '').toLowerCase().includes(wanted))
    const sections = []
    const people = [
@@ -2693,15 +3011,113 @@ diff --git a/src/client/palette.js b/src/client/palette.js
        badge: room.hidden ? t('Hidden') : undefined,
        run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),
-@@ -81,7 +81,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+   ]
+-  if (people.length) sections.push([t('Bots'), people])
++  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'chats') && people.length) sections.push([t('Bots'), people])
+   const agents = (roster.agents ?? []).filter(() => matchesName('DSH Agent')).map(agent => ({
+     key: agent.id, avatar: h('span', { className: 'bt-palette-agent' }, h(FishLogo, { size: 18 })), title: 'DSH Agent',
+     subtitle: t('Plain dsh session'),
+     run: () => actions.openAgent(agent.id),
+   }))
+-  if (agents.length) sections.push(['DSH Agent', agents])
+-  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
++  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'chats') && agents.length) sections.push(['DSH Agent', agents])
++  const historyRows = history.items.filter(hit => roster.byId[hit.botId]).map(hit => ({
++    key: `history:${hit.sessionId}:${hit.seq}`, title: roster.byId[hit.botId].name, subtitle: hit.snippet,
++    avatar: h(BotAvatar, { bot: roster.byId[hit.botId], size: 24, badge: false, live: false }),
++    badge: t(hit.earlier ? 'Earlier part; view read-only history' : 'View read-only history'),
++    keepOpen: true,
++    run: () => setSelectedHit({ botId: hit.botId, sessionId: hit.sessionId, hitToken: hit.hitToken }),
++  }))
++  if (emptyKind !== 'empty' && historyVisible && historyRows.length) sections.push([t('Local Bot chat history'), historyRows])
++  const messages = JSON.parse(found).filter(([id, turn]) => !history.items.some(hit => hit.sessionId === id && hit.turn === turn)).map(([id, turn, snippet]) => {
+     const bot = roster.byId[id]
+     const room = roster.roomsById[id]
+     return {
+@@ -76,14 +76,14 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+       run: () => actions.openSession(id),
+     }
+   })
+-  if (messages.length) sections.push([t('Messages'), messages])
++  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'messages') && messages.length) sections.push([t('Messages'), messages])
+   const commands = [
      { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
      { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
      { key: 'cmd:group', icon: h(PeopleIcon), title: t('Create group chat'), run: () => actions.openNewChat('group') },
 -    { key: 'cmd:settings', icon: h(GearIcon), title: t('Bot settings'), run: () => actions.openSettings('general') },
 +    { key: 'cmd:settings', icon: h(GearIcon), title: t('Settings'), run: () => actions.openSettings('general') },
    ].filter(command => matchesName(command.title))
-   if (commands.length) sections.push([t('Commands'), commands])
+-  if (commands.length) sections.push([t('Commands'), commands])
++  if (emptyKind !== 'empty' && paletteFilterAllows(filter, 'commands') && commands.length) sections.push([t('Commands'), commands])
    const rows = sections.flatMap(([, items]) => items)
+   const active = Math.min(cursor, Math.max(rows.length - 1, 0))
+   const shown = rows.map(row => row.key).join('\n')
+@@ -96,8 +96,9 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+   const choose = (row) => {
+     if (!row || leaving) return
+     void Promise.resolve(row.run()).catch(error => actions.reportError(error, 'menu'))
+-    close()
++    if (!row.keepOpen) close()
+   }
++  if (selectedHit) return h(HistoryHitDialog, { key: selectedHit.hitToken, hit: selectedHit, roster, actions, onBack: () => setSelectedHit(null) })
+   let index = -1
+   return h('div', { className: 'bt-palette-layer', 'data-leaving': leaving || undefined },
+     h('div', { className: 'bt-backdrop', onMouseDown: close }),
+@@ -105,7 +105,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+       h('div', { className: 'bt-palette-head' },
+         h('span', { className: 'bt-palette-glyph', 'aria-hidden': true }, h(SearchIcon)),
+         h('input', {
+-          autoFocus: true, value: query, placeholder: t('Search Bots, chats and messages'), 'aria-label': t('Search'),
++          autoFocus: true, value: query, placeholder: t(historyEnabled ? 'Search chats and local Bot history' : 'Search Bots, chats, and loaded messages'), 'aria-label': t('Search'),
+           role: 'combobox', 'aria-expanded': true, 'aria-controls': 'bt-palette-list',
+           onChange: (event) => { setQuery(event.target.value); setCursor(0) },
+           onKeyDown: (event) => {
+@@ -115,14 +115,42 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+             else if (event.key === 'Enter') { event.preventDefault(); choose(rows[active]) }
+           },
+         }),
+-        query ? h('button', { type: 'button', className: 'bt-palette-clear', 'aria-label': t('Clear search'), onClick: () => { setQuery(''); setCursor(0) } }, h(CloseIcon)) : null),
++        h('button', { type: 'button', className: 'bt-palette-clear', 'aria-label': t('Close'), onClick: close }, h(CloseIcon))),
++      h('div', { className: 'bt-palette-filters', role: 'tablist', 'aria-label': t('Search filters') },
++        PALETTE_FILTERS.map(id => h('button', {
++          key: id, type: 'button', role: 'tab', className: 'bt-palette-filter',
++          'data-filter': id, 'aria-selected': filter === id,
++          tabIndex: filter === id ? 0 : -1,
++          onKeyDown: event => {
++            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
++            event.preventDefault()
++            const index = PALETTE_FILTERS.indexOf(filter)
++            const next = event.key === 'Home' ? 0 : event.key === 'End' ? PALETTE_FILTERS.length - 1
++              : (index + (event.key === 'ArrowRight' ? 1 : -1) + PALETTE_FILTERS.length) % PALETTE_FILTERS.length
++            setFilter(PALETTE_FILTERS[next]); setCursor(0)
++            event.currentTarget.parentElement?.querySelectorAll('[role=tab]')?.[next]?.focus()
++          }, onClick: () => { setFilter(id); setCursor(0) },
++        }, t(id === 'all' ? 'All' : id === 'chats' ? 'Chats' : id === 'messages' ? 'Messages' : 'Commands')))),
++      historyVisible ? h('div', { className: 'bt-palette-history' },
++        h('p', { className: 'bt-palette-scope' }, t(historyEnabled ? 'History: your local Bots in this instance. Other chats: loaded messages only.' : 'History unavailable; searching loaded messages only.')),
++        h('span', { role: 'status', 'aria-live': 'polite' },
++          [...query].length > 256 ? t('History query is limited to 256 characters.')
++            : history.status === 'loading' ? t('Searching history…')
++              : history.status === 'error' ? t('History query failed; showing loaded messages only.')
++                : history.incomplete ? t('Some history could not be read; results are incomplete.') : '',
++          history.limited ? t('History search reached a safety limit; narrow your query.') : ''),
++        history.cursor ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: history.status === 'loading', onClick: history.more }, t('Search more history')) : null) : null,
+       h('div', { ref: listRef, id: 'bt-palette-list', className: 'bt-palette-list', role: 'listbox', 'aria-label': t('Results') },
+         h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
+         rows.length === 0
+           ? h('div', { className: 'bt-palette-empty' },
+               h('span', { className: 'bt-palette-empty-icon', 'aria-hidden': true }, h(SearchIcon)),
+-              h('span', { className: 'bt-palette-empty-label' }, t('No results')),
+-              h('span', { className: 'bt-palette-empty-hint' }, t('Try a Bot name or words from a message')))
++              h('span', { className: 'bt-palette-empty-label' }, historyVisible && history.status === 'loading' ? t('Searching history…') : historyVisible && history.cursor ? t('More history remains to be searched') : historyVisible && (history.incomplete || history.limited) ? t('No matches in the searched portion') : emptyKind === 'none' ? t('No results') : t('Search chats and messages')),
++              h('span', { className: 'bt-palette-empty-hint' },
++                historyEnabled && historyVisible ? t('Enter text to search local Bot history; other chats use loaded messages.')
++                  : emptyKind === 'short' ? t('Type at least two characters to search messages already loaded')
++                  : emptyKind === 'none' ? t('Try a Bot name, a group name, or words from a loaded message')
++                    : t('Type a Bot name, a group name, or words from a loaded message')))
+           : sections.map(([title, items]) => h(Fragment, { key: title },
+               h('div', { className: 'bt-palette-section', role: 'presentation', 'data-flip': `section:${title}` }, title),
+               items.map((row) => {
 diff --git a/src/client/questions.js b/src/client/questions.js
 --- a/src/client/questions.js
 +++ b/src/client/questions.js
@@ -2841,7 +3257,7 @@ diff --git a/src/client/questions.js b/src/client/questions.js
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
-@@ -1,16 +1,22 @@
+@@ -1,25 +1,36 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 +import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -2860,6 +3276,8 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  import { hostText, t } from './i18n.js'
 +import { friendBotTitle, roomTitle, sharedRoomTitle, isShownRemoteChat } from '../shared/remote-label.js'
 +import { visibleText } from '../shared/preview.js'
++import { matchesSessionFilter, sessionIsUnread } from '../shared/session-list-filter.js'
++import { shouldClearManualUnread } from '../shared/session-unread.js'
  import { showsDshRow } from './dsh-offer.js'
 +import { InboxRow } from './inbox.js'
 +import { KanbanRow } from './kanban.js'
@@ -2867,6 +3285,20 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  
  // -------------------------------------------------------------------------
  // Sidebar
+ 
+ // Manual "Mark as Unread" lasts until the conversation is opened again.
+ function useMarkedUnread(id, active, marked, actions) {
++  const wasActive = useRef(false)
+   useEffect(() => {
+-    if (active && marked) actions.clearUnread(id)
+-  }, [active, marked])
++    const opened = shouldClearManualUnread({ active, wasActive: wasActive.current, marked })
++    wasActive.current = active
++    if (opened) actions.clearUnread(id)
++  }, [active, marked, id])
+ }
+ 
+ const PinMark = () => h('span', { className: 'bt-pin', 'aria-hidden': true }, h(PinMarkIcon))
 @@ -37,77 +37,151 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
@@ -3037,7 +3469,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
  }
  
-@@ -235,6 +235,31 @@ function useListGlide(listRef, layout, key) {
+@@ -235,6 +235,52 @@ function useListGlide(listRef, layout, key) {
    }, [layout, key])
  }
  
@@ -3066,10 +3498,31 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +    closed ? null : children.map(child => h(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions })))
 +}
 +
++function SessionFilter({ value, onChange }) {
++  const items = [
++    ['all', t('All')],
++    ['group', t('Group chats')],
++    ['direct', t('Direct chats')],
++    ['unread', t('Unread')],
++  ]
++  return h('div', { className: 'bt-session-filter', role: 'radiogroup', 'aria-label': t('Session filter') },
++    items.map(([id, label]) => h('button', {
++      key: id, type: 'button', role: 'radio', className: 'bt-session-filter-btn',
++      'data-filter': id, 'aria-checked': value === id, onClick: () => onChange(id),
++    }, label)))
++}
++
++function sessionFilterEmpty(filter) {
++  if (filter === 'group') return t('No group chats')
++  if (filter === 'direct') return t('No direct chats')
++  if (filter === 'unread') return t('No unread chats')
++  return null
++}
++
  export function TeamSidebar(props) {
    const { wide, useRoster, useUi, useSessions, actions } = props
    const listRef = useRef(null)
-@@ -249,14 +249,38 @@ export function TeamSidebar(props) {
+@@ -249,15 +249,59 @@ export function TeamSidebar(props) {
    const order = useMemo(() => {
      const stamps = JSON.parse(updated)
      const entries = [
@@ -3087,6 +3540,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +    return entries.sort((a, b) => Number(Boolean(b.item.pinned)) - Number(Boolean(a.item.pinned)) || Number(foreign(a)) - Number(foreign(b)) || b.at - a.at)
    }, [roster, updated])
    const main = roster.byId[roster.mainBotId]
+-  useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
 +  // A host sentence of nothing but whitespace says nothing, so it draws no hint in either shape.
 +  // Read the same way as the workflow page (#2176), so the two surfaces cannot disagree; the text
 +  // drawn is still the host's own sentence, not a trimmed copy.
@@ -3102,20 +3556,59 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +  // A plugin (the tree) may give the Bots a structure: the list then is one tree under the Main Bot.
 +  const structure = useSidebarStructure()
 +  const [collapsed, setCollapsed] = useState({})
++  const [sessionFilter, setSessionFilter] = useState('all')
 +  const toggle = id => setCollapsed(value => ({ ...value, [id]: !value[id] }))
 +  // Only own Bots belong to the tree; a friend's Bot stays in the ordered list below it.
 +  // structure.include(id) === false hides a Bot from the default list (e.g. tree-archived, #452).
 +  const inTree = entry => entry.kind === 'bot' && !entry.item.remote
 +  const listed = entry => inTree(entry) && structure?.include?.(entry.item.id) !== false
-+  const tree = structure && wide && main ? botTree([main, ...order.filter(listed).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
-   useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
++  const statusMap = props.useSessionStatus ? props.useSessionStatus(value => value) : undefined
++  const unreadIds = useMemo(() => {
++    const ids = new Set()
++    const consider = (entry) => {
++      if (entry?.item && sessionIsUnread(entry, statusMap, markedUnread)) ids.add(entry.item.id)
++    }
++    if (main) consider({ kind: 'bot', item: main })
++    for (const entry of order) consider(entry)
++    return ids
++  }, [order, main, statusMap, markedUnread])
++  const showTree = Boolean(structure && wide && main && (sessionFilter === 'all' || sessionFilter === 'direct'))
++  const tree = showTree ? botTree([main, ...order.filter(listed).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
++  const visibleOrder = order.filter(entry =>
++    !(tree && inTree(entry)) &&
++    !(inTree(entry) && structure?.include?.(entry.item.id) === false) &&
++    matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)))
++  const showMain = !tree && main && matchesSessionFilter({ kind: 'bot', item: main }, sessionFilter, unreadIds.has(main.id))
++  const filterEmpty = roster.ready && !showMain && !tree && visibleOrder.length === 0
++    ? sessionFilterEmpty(sessionFilter)
++    : null
++  useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map(entry => entry.item.id)].filter(Boolean).join(','))
    useLandOnMainBot(roster, useSessions, actions)
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
-@@ -276,14 +276,22 @@ export function TeamSidebar(props) {
-       : h(Fragment, null,
-           h(UpdateButton, { useUpdate: props.useUpdate, actions }),
-           h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
+   // Typing while the sidebar has focus starts a search.
+@@ -267,23 +267,44 @@ export function TeamSidebar(props) {
+     event.preventDefault()
+     actions.openPalette(event.key)
+   }
+-  return h('div', { className: wide ? 'bt-side' : 'bt-side bt-rail', onKeyDown: typeToSearch },
+-    wide ? h('div', { className: 'bt-side-top' },
+-      h('span', { className: 'bt-brand' }, h(BrandMark, { size: 22 }), h(BrandName)),
+-      h(UpdateButton, { useUpdate: props.useUpdate, actions }),
+-      h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Search'), title: t('Search'), onClick: () => actions.openPalette() }, h(SearchIcon)),
+-      h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon)))
+-      : h(Fragment, null,
+-          h(UpdateButton, { useUpdate: props.useUpdate, actions }),
+-          h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
 -    wide && roster.readOnly ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
++  const sideTop = wide ? h('div', { className: 'bt-side-top' },
++    h('span', { className: 'bt-brand' }, h(BrandMark, { size: 22 }), h(BrandName)),
++    h(UpdateButton, { useUpdate: props.useUpdate, actions }),
++    h('button', { type: 'button', className: 'bt-round', 'aria-label': t('Search'), title: t('Search'), onClick: () => actions.openPalette() }, h(SearchIcon)),
++    h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon)))
++    : h(Fragment, null,
++        h(UpdateButton, { useUpdate: props.useUpdate, actions }),
++        h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon)))
++  const sideBody = [
 +    wide && readOnlySaid ? h('div', { className: 'bt-hint bt-read-only', role: 'status' }, hostText(roster.readOnly)) : null,
 +    wide && readOnlySaid ? readOnlyReload : null,
 +    !wide && readOnlySaid ? h('div', { className: 'bt-hint bt-read-only', role: 'status', title: hostText(roster.readOnly), 'aria-label': hostText(roster.readOnly) }, hostText(roster.readOnly)) : null,
@@ -3123,18 +3616,31 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +    h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
 +    h(KanbanRow, { wide, useUi, actions }),
 +    h(ProjectsNav, { wide }),
++    wide ? h(SessionFilter, { value: sessionFilter, onChange: setSessionFilter }) : null,
      h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
 -      main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
 -      order.map(entry => (entry.kind === 'bot'
 +      tree ? h('div', { className: 'bt-tree', role: 'group', 'aria-label': t('Bot tree') }, tree.map(node => h(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions })))
-+        : main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
-+      order.filter(entry => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false)).map(entry => (entry.kind === 'bot'
++        : showMain ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
++      visibleOrder.map(entry => (entry.kind === 'bot'
          ? h(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true })
          : entry.kind === 'room'
            ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })
 -          : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })))))
 +          : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true }))),
-+      wide ? h(FlyBotSections, { roster, actions, renderBot: bot => h(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null))
++      filterEmpty ? h('div', { className: 'bt-hint bt-session-filter-empty' }, filterEmpty) : null,
++      wide && sessionFilter === 'all' ? h(FlyBotSections, { roster, actions, renderBot: bot => h(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null),
++  ]
++  // Wide: an icon rail stays visible beside the session list. Search, New, Inbox,
++  // Kanban, Projects and the FlyBot name/mark remain; the rail repeats Search and
++  // New as icon buttons so those entries still sit in the header too.
++  const iconRail = wide ? h('nav', { className: 'bt-icon-rail', 'aria-label': t('FlyBot') },
++    h('span', { className: 'bt-brand-rail', title: t('FlyBot') }, h(BrandMark, { size: 28 })),
++    h('button', { type: 'button', className: 'bt-rail-btn', 'aria-label': t('Search'), title: t('Search'), onClick: () => actions.openPalette() }, h(SearchIcon)),
++    h('button', { type: 'button', className: 'bt-rail-btn', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))) : null
++  return h('div', { className: wide ? 'bt-side bt-side-split' : 'bt-side bt-rail', onKeyDown: typeToSearch },
++    iconRail,
++    wide ? h('div', { className: 'bt-chat-col' }, sideTop, ...sideBody) : h(Fragment, null, sideTop, ...sideBody))
  }
  
  // The update button at the sidebar's top right: a cloud while a newer DS Bot —
@@ -3258,7 +3764,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  // `seat` is the shell's settings.launcher seat: at priority -10 the whale wins it
  // over a shell account plugin's own launcher (the Desktop's "··· More"), which comes
  // back in Agent mode; FooterAccount stands in while no seat exists at all.
-@@ -511,9 +511,10 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
+@@ -511,9 +511,11 @@ export function AccountLauncher({ seat = true, settingsOpen, openSettings, openO
    const groups = [
      [
        [t('Usage'), GaugeIcon, () => actions.openSettings('usage')],
@@ -3266,6 +3772,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 -      [t('Automation tasks'), ClockIcon, () => actions.selectPanel('schedules')],
 -      [t('Bot settings'), GearIcon, () => actions.openSettings('general')],
 +      [t('Connect apps'), ConnectorIcon, () => actions.openConnectors()],
++      [t('Channels'), ConnectorIcon, () => actions.openSettings('channels')],
 +      [t('Plugins'), PlugIcon, () => actions.selectPanel('plugins')],
 +      [t('Scheduled tasks'), ClockIcon, () => actions.openSettings('schedules')],
 +      [t('Settings'), GearIcon, () => actions.openSettings('general')],
@@ -3305,7 +3812,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  }
  
  // Agent mode has none of the shell-group styles, so the return button carries its own.
-@@ -582,22 +582,22 @@ export const RETURN_CSS = `
+@@ -582,24 +582,28 @@ export const RETURN_CSS = `
  .bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
  .bt-return:hover{background:rgba(127,127,127,.14)}
  .bt-return:active{transform:scale(.96)}
@@ -3332,7 +3839,13 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +// and Connect apps; FooterAccount only shows when the seat went to no one. The
  // shell's footer classes are CSS-module names, so they match on their stems.
  export const SIDEBAR_CSS = `
++.bt-session-filter{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px 2px;flex:none}
++.bt-session-filter-btn{height:26px;padding:0 10px;border:.5px solid var(--bt-line);border-radius:999px;background:transparent;color:var(--bt-ink-2);font:inherit;font-size:12px;line-height:26px;cursor:pointer}
++.bt-session-filter-btn[aria-checked=true]{background:var(--bt-active);border-color:var(--bt-line-2);color:var(--bt-ink);font-weight:600}
++.bt-session-filter-empty{padding:16px 12px;text-align:center}
  .bt-side-top .bt-brand{cursor:default;padding-left:6px}
+ .bt-side-top .bt-brand:hover{background:none}
+ .bt-brand .bt-mark{flex:none}
 @@ -607,6 +607,10 @@ export const SIDEBAR_CSS = `
  .bt-rail .bt-row{position:relative}
  .bt-rail .bt-pin{position:absolute;top:3px;left:calc(50% + 12px)}
@@ -3382,6 +3895,16 @@ diff --git a/src/client/storage.js b/src/client/storage.js
 diff --git a/src/client/styles.js b/src/client/styles.js
 --- a/src/client/styles.js
 +++ b/src/client/styles.js
+@@ -13,6 +13,9 @@ import { SPRING_SHAPE, SPRING_TAP, SPRING_STRETCH, SPRING_POP, spring } from './
+ // CONVERSATION_CSS re-skins the shell's own conversation DOM and styles what only
+ // the conversation renders.
+ export const SHELL_CSS = `
++.bt-palette.bt-history-view{max-height:85vh;display:flex;flex-direction:column;width:min(760px,calc(100vw - 24px))}.bt-history-view h2{font-size:16px;margin:0;flex:1}.bt-history-disclaimer{padding:8px 16px;margin:0;color:var(--bt-ink-2)}.bt-history-content{overflow:auto;min-height:80px;padding:8px 16px;overflow-wrap:anywhere}.bt-history-entry{border-top:1px solid var(--bt-line);padding:8px 0}.bt-history-entry[data-hit]{border-left:3px solid var(--bt-accent);padding-left:10px}.bt-history-entry h3{font-size:12px;color:var(--bt-ink-2);font-weight:500}.bt-history-entry pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:8px 0}.bt-history-foot{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;border-top:1px solid var(--bt-line)}
++
++.bt-palette-history{padding:8px 16px;border-bottom:1px solid var(--bt-line);font-size:12px;color:var(--bt-ink-2);overflow-wrap:anywhere}.bt-palette-scope{margin:0 0 4px}.bt-palette-history button{margin:4px 0;display:block}
+ body{--bt-ink:#141414;--bt-ink-2:rgba(20,20,20,.6);--bt-ink-3:rgba(20,20,20,.36);--bt-bubble:#eeeeee;--bt-sidebar:#f7f7f7;--bt-main:#fcfcfc;--bt-line:rgba(20,20,20,.08);--bt-line-2:rgba(20,20,20,.15);--bt-line-weak:rgba(20,20,20,.1);--bt-hover:rgba(119,119,119,.09);--bt-active:rgba(119,119,119,.17);--bt-card:#ffffff;--bt-accent:#4d6bfe;--bt-green:#00c972;--bt-star:#ff9800;--bt-user:#070707;--bt-user-ink:#fcfcfc;--bt-tag-bg:rgba(20,20,20,.06);--bt-tag-ink:rgba(20,20,20,.56)}
+ body[data-ds-dark-theme]{--bt-ink:#f2f2f2;--bt-ink-2:rgba(242,242,242,.6);--bt-ink-3:rgba(242,242,242,.36);--bt-bubble:#262626;--bt-sidebar:#1b1b1b;--bt-main:#141414;--bt-line:rgba(255,255,255,.08);--bt-line-2:rgba(255,255,255,.15);--bt-line-weak:rgba(255,255,255,.1);--bt-hover:rgba(160,160,160,.12);--bt-active:rgba(160,160,160,.2);--bt-card:#1f1f1f;--bt-user:#f2f2f2;--bt-user-ink:#141414;--bt-tag-bg:rgba(255,255,255,.09);--bt-tag-ink:rgba(242,242,242,.62)}
+ ${Object.entries(INKS).map(([name, [light]]) => `body{--bt-ink-${name}:${light}}`).join('')}
 @@ -20,6 +20,7 @@ ${Object.entries(INKS).map(([name, [, dark]]) => `body[data-ds-dark-theme]{--bt-
  .bt-mark{display:inline-block;flex:none;position:relative;line-height:0}
  .bt-mark svg{width:100%;height:100%;overflow:visible}
@@ -3431,7 +3954,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-tile-name{font-size:13px;line-height:18px;font-weight:400;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-chip{font-size:11px;line-height:16px;padding:1px 4px;border-radius:4px;background:var(--bt-hover);border:1px solid var(--bt-line);color:var(--bt-ink-2);white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
  .bt-row{display:flex;align-items:center;gap:8px;min-height:54px;padding:8px;border:0;border-radius:10px;background:transparent;color:var(--bt-ink);text-align:left;cursor:pointer;width:100%;box-sizing:border-box;font-family:inherit;transition:background-color .12s ease}
-@@ -132,27 +132,32 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -132,27 +132,37 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  .bt-row-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
  .bt-row-name{display:flex;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:20px;font-weight:400}
  .bt-row-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3459,6 +3982,11 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 +@media (prefers-reduced-motion:reduce){}
  
  .bt-head{position:relative;display:flex;justify-content:center;align-items:center;height:40px;flex:none;pointer-events:none}
++.bt-head-actions{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:4px;pointer-events:auto;z-index:2}
++.bt-head-more{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:var(--bt-main);border:.5px solid var(--bt-line-2);color:var(--bt-ink-2);cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.04)}
++.bt-head-more:hover{background:var(--bt-hover);color:var(--bt-ink)}
++.bt-head-more svg{width:16px;height:16px}
++.bt-head-menu{position:fixed;min-width:220px;z-index:40}
  .bt-pill{pointer-events:auto;display:inline-flex;align-items:center;gap:8px;height:40px;padding:7.5px 13.5px 7.5px 7.5px;border-radius:999px;background:var(--bt-main);border:.5px solid var(--bt-line-2);box-shadow:0 2px 8px -1px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);color:var(--bt-ink);font-family:inherit;font-size:14px;line-height:20px;cursor:pointer;max-width:70%;box-sizing:border-box;transition:background-color .12s ease,transform ${SPRING_TAP.duration}ms ${SPRING_TAP.easing}}
  .bt-pill:hover{background:color-mix(in srgb,var(--bt-main),#777 9%)}
  .bt-pill:active{transform:scale(.965)}
@@ -3468,7 +3996,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
  .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
  .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}
-@@ -174,6 +174,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -174,12 +174,32 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
@@ -3476,11 +4004,37 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
  .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
  .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
-@@ -267,6 +267,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
+ .bt-bubble [class*="_markdown"]{color:inherit!important;font-size:inherit!important;line-height:inherit!important}
+ .bt-bubble p{margin:0}
+ .bt-bubble p + p{margin-top:6px}
++.bt-fold{display:flex;flex-direction:column;gap:6px;min-width:0}
++.bt-fold-toggle{align-self:flex-start;margin:2px 0 0;border:0;background:none;padding:0;color:var(--bt-ink-2);font:inherit;font-size:12px;line-height:16px;font-weight:600;cursor:pointer}
++.bt-fold-toggle:hover{color:var(--bt-ink);text-decoration:underline;text-underline-offset:2px}
++.bt-fold[data-folded] .bt-bubble,[data-folded].bt-fold{position:relative}
++.bt-doc-card{display:flex;align-items:center;gap:12px;width:min(100%,440px);box-sizing:border-box;margin:0;padding:12px 14px;border:.5px solid var(--bt-line-2);border-radius:14px;background:var(--bt-card);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
++.bt-doc-card:hover{background:var(--bt-hover)}
++.bt-doc-card-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;background:var(--bt-tag-bg);color:var(--bt-ink-2)}
++.bt-doc-card-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
++.bt-doc-card-title{font-size:14px;line-height:20px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-doc-card-meta{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
++.bt-doc-card-go{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
++.bt-umsg .bt-doc-card{width:min(100%,320px)}
++.bt-doc-pane{display:flex;flex-direction:column;min-height:0;height:100%;background:var(--bt-main);color:var(--bt-ink)}
++.bt-doc-pane-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:none;padding:16px 16px 12px;border-bottom:.5px solid var(--bt-line)}
++.bt-doc-pane-copy{min-width:0}
++.bt-doc-pane-title{margin:0;font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
++.bt-doc-pane-hint{margin:4px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
++.bt-doc-pane-body{flex:1;min-height:0;overflow:auto;padding:16px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);overflow-wrap:anywhere}
++.bt-doc-pane-body [class*="_markdown"]{color:inherit}
+ .bt-bubble ul,.bt-bubble ol{margin:4px 0;padding-left:20px}
+ .bt-bubble a[href^="${MENTION_ORIGIN}"]{text-decoration:none;font-weight:400;cursor:pointer;white-space:nowrap}
+ .bt-bubble a[href^="${MENTION_ORIGIN}"]::before{content:"";display:inline-block;width:16px;height:16px;margin-right:3px;vertical-align:-3px;background:currentColor;-webkit-mask:${DEFAULT_MASK} center/contain no-repeat;mask:${DEFAULT_MASK} center/contain no-repeat}
+@@ -267,6 +267,8 @@ button.bt-q-opt:active{background:var(--bt-active)}
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  
  .bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
 +.bt-pane[data-menu]{background:transparent}.bt-pane[data-menu] .bt-newchat{flex:none;align-self:flex-start;width:min(280px,calc(100% - 16px));max-height:calc(100% - 16px);margin:8px;overflow:auto;background:var(--bt-card);border:1px solid var(--bt-line-2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.14),0 2px 6px rgba(0,0,0,.06)}.bt-newchat[data-menu] .bt-drop{position:relative;top:0;left:0;width:auto;max-height:none;margin:0;box-shadow:none;border:0;max-width:none}
++.bt-nc-name{margin:8px 16px 0}
  .bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
  .bt-to-label{color:var(--bt-ink-2)}
  .bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
@@ -3683,15 +4237,29 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-menu button{display:flex;align-items:center;gap:4px;width:100%;min-height:30px;text-align:left;border:0;background:none;border-radius:6px;padding:6px 8px;font:inherit;font-size:13px;line-height:18px;color:var(--bt-ink);cursor:pointer;box-sizing:border-box}
  .bt-menu button:hover{background:var(--bt-hover)}
  .bt-menu button svg{flex:none;width:16px;height:16px;margin:0 1px}
-@@ -572,7 +572,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+@@ -572,7 +572,11 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-menu[data-leaving]{pointer-events:none;animation:bt-pop-out .12s cubic-bezier(.4,0,1,1) forwards}
  .bt-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .bt-menu-hint{flex:none;color:var(--bt-ink-3);font-size:12px;font-variant-numeric:tabular-nums}
 -.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:70;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
++.bt-document-message{min-width:0;max-width:100%}
++.bt-message-note{white-space:normal;overflow-wrap:anywhere;padding:6px 8px;max-width:220px}
++.bt-menu-reacts{display:flex;gap:2px;padding:2px 4px}
++.bt-menu-reacts button{width:32px;min-width:32px;height:32px;padding:0;justify-content:center;font-size:18px;line-height:1}
 +.bt-palette-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:140;isolation:isolate;pointer-events:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.46);animation:bt-fade .22s ease-out}
  .bt-palette{position:absolute;top:50%;left:50%;width:min(560px,92vw);transform:translate(-50%,-50%);display:flex;flex-direction:column;border-radius:12px;background:var(--bt-main);border:1px solid var(--bt-line-2);box-shadow:0 24px 48px -12px rgba(0,0,0,.25);overflow:hidden;color:var(--bt-ink);animation:bt-palette-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-palette-layer[data-leaving]{pointer-events:none}
+@@ -586,6 +586,9 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+ .bt-palette-clear{width:18px;height:18px;border:0;padding:0;border-radius:6px;background:none;color:var(--bt-ink-3);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+ .bt-palette-clear:hover{color:var(--bt-ink)}
+ .bt-palette-clear svg{width:12px;height:12px}
++.bt-palette-filters{display:flex;flex-wrap:wrap;gap:0;padding:0 10px;border-bottom:.5px solid var(--bt-line-2);flex:none}
++.bt-palette-filter{height:36px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--bt-ink-2);font:inherit;font-size:13px;cursor:pointer}
++.bt-palette-filter[aria-selected=true]{color:var(--bt-ink);border-bottom-color:var(--bt-accent);font-weight:600}
+ .bt-palette-list{position:relative;height:402px;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:2px;box-sizing:border-box}
+ .bt-palette-list>.bt-thumb,.bt-drop-list>.bt-thumb{left:0;right:0;border-radius:8px;background:var(--bt-active)}
+ .bt-palette-list>.bt-thumb{left:8px;right:8px}
 @@ -609,7 +609,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
@@ -3702,15 +4270,63 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-account{flex:none;width:36px;height:36px;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;display:inline-flex}
  .bt-account:hover .bt-you,.bt-account[aria-expanded=true] .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-sidebar))}
  /* Popover keyframes move translate and scale, which compose with a transform the popover
-@@ -676,7 +676,7 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -661,6 +661,20 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+ .bt-addlist{display:flex;flex-direction:column;margin-top:4px;padding:4px;border:1px solid var(--bt-line);border-radius:10px;background:var(--bt-card);animation:bt-rise .16s ease-out}
+ .bt-seg{position:relative;display:flex;gap:2px;padding:2px;border-radius:10px;background:var(--bt-hover)}
+ .bt-motion-seg{width:216px}
++.bt-appearance-seg{width:min(100%,360px)}
++.bt-appearance-seg button{font-size:12px;padding:6px 8px}
++.bt-time-field{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--bt-ink-2)}
++.bt-time-field .bt-input{width:auto}
++.bt-fold-modes{display:flex;flex-direction:column;width:100%}
++.bt-fold-lead{margin:0;padding:10px 16px 4px;font-size:12px;line-height:16px;color:var(--bt-ink-2)}
++.bt-fold-mode{display:flex;align-items:flex-start;gap:12px;width:100%;margin:0;padding:12px 16px;border:0;border-top:.5px solid var(--bt-line);background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer;box-sizing:border-box}
++.bt-fold-mode:hover{background:var(--bt-hover)}
++.bt-fold-radio{flex:none;width:16px;height:16px;margin-top:2px;border:1.5px solid var(--bt-ink-3);border-radius:50%;box-sizing:border-box;background:transparent;position:relative}
++.bt-fold-mode[aria-checked=true] .bt-fold-radio{border-color:var(--bt-accent)}
++.bt-fold-mode[aria-checked=true] .bt-fold-radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--bt-accent)}
++.bt-fold-mode-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
++.bt-fold-mode-label{font-size:14px;line-height:20px;font-weight:600}
++.bt-set-card .bt-fold-modes + .bt-set-row,.bt-set-card > .bt-switch{border-top:.5px solid var(--bt-line)}
+ .bt-seg button{position:relative;z-index:1;flex:1;height:30px;border:0;border-radius:8px;background:none;font:inherit;font-size:13px;color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,box-shadow .15s ease,${spring(SPRING_TAP, 'scale')}}
+ .bt-seg button[aria-pressed=true]{background:var(--bt-card);color:var(--bt-ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+ .bt-seg button:disabled{opacity:.4;cursor:default}
+@@ -676,9 +676,9 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  .bt-mem-row>svg{flex:none;color:var(--bt-ink-2)}
  .bt-mem-row-copy{flex:1;text-align:left}
  .bt-mem-row-go{display:inline-flex;align-items:center;gap:2px;color:var(--bt-ink-3);font-size:12px}
 -.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:61;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 +.bt-mem-layer{position:fixed;inset:var(--dsh-frame-chrome-top,0px) 0 0;z-index:121;isolation:isolate;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
  .bt-mem-scrim{animation:bt-fade .2s ease-out}
- .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
+-.bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
++.bt-mem{position:relative;width:min(880px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
+ .bt-mem-head .bt-icon-btn{width:32px;height:32px;flex:none}
+ .bt-mem-head [aria-haspopup] svg{width:18px;height:18px;stroke-width:2.6}
+@@ -688,7 +688,23 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+ .bt-mem-head-gap{flex:1}
+ .bt-mem-menu{position:absolute;top:52px;right:50px;min-width:220px;--bt-origin:top right}
+ .bt-mem-menu button:disabled{opacity:.4;cursor:default;background:none}
++.bt-mem-shell{flex:1;min-height:0;display:flex}
++.bt-mem-main{flex:1;min-width:0;display:flex;flex-direction:column}
++.bt-mem-nav{flex:none;width:228px;display:flex;flex-direction:column;gap:10px;padding:12px 10px 16px;border-right:.5px solid var(--bt-line);background:var(--bt-sidebar);min-height:0}
++.bt-mem-search{display:flex;align-items:center;gap:8px;margin:0 4px;padding:0 8px;height:32px;border-radius:8px;background:var(--bt-main);border:.5px solid var(--bt-line-2);color:var(--bt-ink-2)}
++.bt-mem-search svg{flex:none;width:14px;height:14px}
++.bt-mem-search-input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;outline:none}
++.bt-mem-nav-list{display:flex;flex-direction:column;gap:2px;min-height:0;overflow:auto;padding:0 2px}
++.bt-mem-nav-group{display:flex;flex-direction:column;gap:2px;margin-top:10px}
++.bt-mem-nav-heading{padding:4px 8px 2px;font-size:11px;line-height:14px;font-weight:600;color:var(--bt-ink-3);text-transform:uppercase;letter-spacing:.04em}
++.bt-mem-nav-item{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}
++.bt-mem-nav-item:hover{background:var(--bt-hover)}
++.bt-mem-nav-item[aria-current=page]{background:var(--bt-selected,var(--bt-active));font-weight:600}
++.bt-mem-nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-mem-nav-count{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
++.bt-mem[data-nav=hidden] .bt-mem-shell{display:flex}
+ .bt-mem-body{flex:1;overflow-y:auto;padding:22px 28px 24px;scrollbar-width:thin;display:flex;flex-direction:column;gap:12px}
++@media (max-width:640px){.bt-mem-nav{width:180px}}
+ .bt-mem-summary{transition:opacity .3s ease}
+ .bt-mem-summary[data-stale]{opacity:.55}
+ .bt-mem-summary h3{margin:20px 0 6px;font-size:17px;line-height:26px;font-weight:600}
 @@ -780,9 +780,20 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
  
  export const CONVERSATION_CSS = `
@@ -3838,6 +4454,19 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  [data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
  /* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
  [data-composer-card] button[class*="_add"]{display:none!important}
+@@ -882,7 +882,11 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+ .bt-plus:active{scale:.9}
+ .bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, 'rotate')}}
+ .bt-plus[aria-expanded=true] svg{rotate:45deg}
+-.bt-plus-menu{min-width:180px}
++.bt-plus-menu{min-width:220px}
++.bt-plus-group{display:flex;flex-direction:column}
++.bt-plus-group + .bt-plus-group{border-top:.5px solid var(--bt-line);margin-top:4px;padding-top:4px}
++.bt-plus-menu .bt-menu-hint,.bt-head-menu .bt-menu-hint{display:block;padding:2px 12px 8px 36px;font-size:11px;line-height:15px;color:var(--bt-ink-3);white-space:normal;max-width:240px}
++.bt-plus-menu button:disabled{opacity:.55;cursor:default}
+ [data-composer-card] [class*="_tools"]{gap:0!important}
+ [data-composer-card] [class*="_modes"]:empty{display:none!important}
+ [data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
 @@ -905,7 +905,9 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
  .bt-mic:active,.bt-voice:active{scale:.9}
  [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
@@ -3856,19 +4485,57 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
  .bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
  .bt-ububble p{margin:0;line-height:22px}
+diff --git a/src/client/themes.js b/src/client/themes.js
+--- a/src/client/themes.js
++++ b/src/client/themes.js
+@@ -28,6 +28,13 @@ const THEMES = {
+     light: { bg: '#f7f9fc', sidebar: '#eef2f8', bubble: '#e5ebf5', card: '#ffffff', text: '#121826', user: '#1e3a8a', userText: '#ffffff', accent: '#1e86ff' },
+     dark: { bg: '#0b1020', sidebar: '#10172a', bubble: '#1a2340', card: '#141c33', text: '#e8edf7', user: '#3b6fd8', userText: '#ffffff', accent: '#4f9dff' },
+   },
++  grove: {
++    label: 'Grove',
++    light: { bg: '#f4f7f5', sidebar: '#e8eee9', bubble: '#dfe8e2', card: '#ffffff', text: '#171c19', user: '#235039', userText: '#f4f7f5', accent: '#1f7a54' },
++    dark: { bg: '#171c19', sidebar: '#141916', bubble: '#2a332d', card: '#272e2b', text: '#e8eee9', user: '#235039', userText: '#f4f7f5', accent: '#3d9a6e' },
++    // #235039 is the measured selected fill from the visual reference Instant-mode sample.
++    css: 'html body{--bt-selected:color-mix(in srgb,var(--bt-accent) 18%,var(--bt-sidebar))}html body[data-ds-dark-theme]{--bt-selected:#235039}',
++  },
+ }
+ const rgba = (hex, alpha) => `rgba(${[1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)).join(',')},${alpha})`
+ function themeVars(mode, dark, accent = mode.accent) {
+@@ -105,3 +105,17 @@ export function registerTheme(id, theme) {
+   }
+ }
+ export const allThemes = () => ({ ...THEMES, ...customThemes })
++// Fresh profiles, or a stored id the registry no longer has, present Grove so the
++// forest shell is the first look of a real FlyBot. A saved DeepSeek / Mono / Paper /
++// Moonlight id is honored; those themes stay in the picker.
++export const DEFAULT_THEME = 'grove'
++export function resolveThemeId(prefs, themes = allThemes()) {
++  const id = prefs?.theme
++  return themes[id] ? id : DEFAULT_THEME
++}
++export function themePrefsRecord(prefs = {}) {
++  return {
++    theme: prefs.theme, accent: prefs.accent, motion: prefs.motion,
++    appearance: prefs.appearance, sendKey: prefs.sendKey, folding: prefs.folding,
++  }
++}
 diff --git a/src/client/user-message.js b/src/client/user-message.js
 --- a/src/client/user-message.js
 +++ b/src/client/user-message.js
-@@ -1,9 +1,11 @@
+@@ -1,9 +1,13 @@
  import { createElement as h, Fragment, useState } from 'react'
  import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
  import { mentionSpans } from '../shared/mentions.js'
 -import { BotMark } from './mark.js'
+-import { CheckIcon, CopyIcon } from './icons.js'
 +import { BotMark, PersonMark, markBotForMention } from './mark.js'
- import { CheckIcon, CopyIcon } from './icons.js'
++import { MessageTools, onMessageContextMenu } from './message-tools.js'
++import { userMessageReactKey } from '../shared/message-actions.js'
  import { dateLocale, t } from './i18n.js'
 +import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
 +import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
++import { FoldedContent, foldingOf, showsDocumentCard } from './message-fold.js'
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -3991,7 +4658,42 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  }
  
  function Attachments({ attachments, renderMessageImages }) {
-@@ -87,11 +87,34 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -69,38 +69,90 @@ function Attachments({ attachments, renderMessageImages }) {
+   }))
+ }
+ 
+-function CopyButton({ text }) {
+-  const [copied, setCopied] = useState(false)
+-  const copy = () => {
+-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
+-  }
+-  return h('button', { type: 'button', className: 'bt-tool', 'aria-label': copied ? t('Copied') : t('Copy'), title: copied ? t('Copied') : t('Copy'), onClick: copy }, copied ? h(CheckIcon) : h(CopyIcon))
+-}
+-
+ const clock = time => (typeof time === 'number' ? new Date(time).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) : undefined)
+ 
+ // A sent message, or one that joined a running turn ("steering").
+-export function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
++function userBody({ text, rest, roster, sessionId, incoming, author, referenceLabels, skillNames, references, actions, time }) {
++  if (text === '' && rest.length === 0) return null
++  const folding = foldingOf(roster.prefs)
++  const card = text !== '' && showsDocumentCard(text, folding)
++  const message = text === '' ? null : h(FoldedContent, { text, folding, actions, sessionId }, card ? undefined : shown => h(UserText, {
++    text: shown,
++    bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }),
++    referenceLabels, skillNames, references, actions,
++  }))
++  if (card && rest.length === 0) return message
++  return h('div', { className: 'bt-ubody', title: clock(time) },
++    card ? null : message,
++    rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null)),
++    card ? message : null)
++}
++
++export function UserMessageCell({ node, sessionId, useRoster, useUi, actions, renderMessageImages, openFile, openSkill }) {
+   const roster = useRoster(value => value)
+   const data = node.data ?? {}
+   const { text, attachments, rest } = contentParts(data.content)
    const referenceLabels = data.referenceLabels ?? []
    const references = openFile && openSkill ? { openFile, openSkill } : undefined
    const steering = node.kind === 'steering'
@@ -4008,6 +4710,16 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  // never drawn as held, whatever else in the room waits for approval (#457).
 +  const faceMine = Boolean(room?.origin === 'face-to-face' && !incoming)
 +  const myName = faceMine ? (facePeople(room, roster).find(entry => entry.mine)?.name || cleanPeerName(roster.self?.displayName, '') || author?.name || '') : ''
++  const reactKey = userMessageReactKey(sessionId, node)
++  const reactions = typeof useUi === 'function'
++    ? useUi(state => (reactKey ? state.reactions?.[reactKey] ?? null : null))
++    : null
++  const picked = reactions?.[0] ?? []
++  const [contextAt, setContextAt] = useState(null)
++  const react = reactKey && typeof actions?.toggleReaction === 'function'
++    ? emoji => actions.toggleReaction(reactKey, 0, emoji)
++    : undefined
++  const who = incoming ? (author?.name || 'message') : (myName || t('You'))
 +  return h('div', {
 +    className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
 +    'data-steering': steering || undefined,
@@ -4015,6 +4727,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +    'data-author': author?.authorId,
 +    'data-author-kind': author?.authorKind,
 +    'data-author-name': author?.name,
++    onContextMenu: text.trim() ? event => onMessageContextMenu(event, setContextAt) : undefined,
 +  },
 +    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
 +    faceMine ? h('span', { className: 'bt-lead', title: myName || undefined }, h(PersonMark, { name: myName || undefined })) : null,
@@ -4022,13 +4735,20 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +      faceMine && myName ? h('span', { className: 'bt-uauthor' }, myName)
 +        : author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
        attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
-       text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
+-      text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
 -        h(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
-+        h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
-         rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
-       referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
-     text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
-@@ -99,8 +99,15 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+-        rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
+-      referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
+-    text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
++      userBody({ text, rest, roster, sessionId, incoming, author, referenceLabels, skillNames: data.skillNames ?? [], references, actions, time: data.time }),
++      referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null,
++      picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
++        key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(reactKey, 0, emoji),
++      }, emoji))) : null),
++    h(MessageTools, {
++      text, name: who, sessionId, react, actions, roster, contextAt, className: 'bt-utools',
++    }))
+ }
  
  export const USER_MESSAGE_CSS = `
  .bt-umsg{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:4px}
@@ -4044,6 +4764,15 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
+@@ -113,5 +113,7 @@ export const USER_MESSAGE_CSS = `
+ .bt-ufile-meta{font-size:12px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .bt-urefs{font-size:13px;line-height:18px;color:var(--bt-ink-3)}
+ .bt-utools{display:flex;flex:none;gap:2px;opacity:0;visibility:hidden;transition:opacity .12s ease,visibility .12s}
+-.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools{opacity:1;visibility:visible}
++.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools,.bt-utools[data-open]{opacity:1;visibility:visible}
++.bt-umsg .bt-reacts{justify-content:flex-end}
++.bt-umsg-other .bt-reacts{justify-content:flex-start}
+ `
 diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 --- a/test/create-bot.test.js
 +++ b/test/create-bot.test.js
@@ -4365,6 +5094,15 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
  
  // Renders the named components of an element tree, leaving the rest as elements.
  const expand = (node, names) => {
+@@ -66,7 +66,7 @@ function cellProps({ closingSeq = 10, turn = finished } = {}) {
+   }
+   return { props, asked, links }
+ }
+-const markdownOf = props => find(expand(AssistantCell(props), ['Bubbles']), node => node.type === MarkdownText)
++const markdownOf = props => find(expand(AssistantCell(props), ['Bubbles', 'FoldedContent']), node => node.type === MarkdownText)
+ 
+ test('a reply that closes its turn links the files the turn changed or delivered', () => {
+   const { props, asked, links } = cellProps()
 @@ -101,3 +101,74 @@ test('the turn tail entry notes when the turn ended and shows the pause before t
    assert.deepEqual(noted, [['b', 3, 'end', 2_000]])
    assert.equal(find(out, node => node.props?.className === 'bt-time-sep').length, 1)
@@ -4373,7 +5111,7 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
 +test('a reply to a line the friend typed themselves is drawn as the person, not as the Bot', () => {
 +  const { props } = cellProps()
 +  const typed = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 3: 'Bob' } } }) }
-+  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles'])
++  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles', 'FoldedContent'])
 +  const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
 +  assert.equal(person.props['data-person'], 'Bob')
 +  assert.equal(find(drawn, node => /\bbt-person-mark\b/.test(node.props?.className ?? '')).length, 1)
@@ -4381,8 +5119,8 @@ diff --git a/test/turn-tail.test.js b/test/turn-tail.test.js
 +  assert.equal(find(drawn, node => node.type === MarkdownText).length, 1, 'the text is still rendered as markdown')
 +  // Another turn, or no mark at all: the Bot\'s own bubble.
 +  const other = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 9: 'Bob' } } }) }
-+  assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
-+  assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
++  assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles', 'FoldedContent']), node => node.props?.['data-person'] !== undefined).length, 0)
++  assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles', 'FoldedContent']), node => node.props?.['data-person'] !== undefined).length, 0)
 +})
 +
 +// #275: a friend's line in my Bot's own chat came while I was away. The NEW divider marks it; once

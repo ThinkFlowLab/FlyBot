@@ -28,7 +28,7 @@ function clientSources(dir, out = []) {
 
 test('every openSettings() page key exists in SETTINGS_PAGES', () => {
   const keys = new Set(settingsPageKeys())
-  assert.equal(keys.size, 13, 'the settings dialog lists thirteen pages')
+  assert.equal(keys.size, 14, 'the settings dialog lists fourteen pages')
 
   const unknown = []
   let seen = 0

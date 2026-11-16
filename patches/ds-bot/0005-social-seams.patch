@@ -267,7 +267,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
-@@ -1,10 +1,21 @@
+@@ -1,10 +1,23 @@
  // Client channel: the team view the browser renders, and the POST /api/bot endpoints.
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -276,6 +276,8 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  import { COLORS, EXTRA_COLORS, ROUTE } from './constants.js'
 +import { isFaceRoom, roomTargetOf } from './room-membership.js'
 +import { readQuietHours } from '../shared/quiet-hours.js'
++import { readAppearance, readSendKey } from '../shared/appearance-prefs.js'
++import { readFolding } from '../shared/message-fold-prefs.js'
 +import { readTurnBudget } from './turn-budget.js'
 +import { faceMentions } from './face-mentions.js'
 +import { visibleText } from '../shared/preview.js'
@@ -463,7 +465,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
      defaultModel: rt.cachedDefault() ?? null,
      permissions: rt.permissionCatalog?.() ?? null,
      modelsKey: modelsKey(),
-@@ -65,22 +65,66 @@ export function install(rt) {
+@@ -65,60 +65,178 @@ export function install(rt) {
      memory: rt.memoryEnabled !== false,
      // Set while another dsh host holds the team (store.js): why this one cannot change it.
      readOnly: rt.readOnly() ?? null,
@@ -518,7 +520,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +  // `diagnostics-clear` is not a read: it truncates `<home>/logs/diagnostics.jsonl`, the file a bug
 +  // report is meant to carry, so a host that only reads refuses it instead of erasing the evidence
 +  // (#2302). `diagnostics` and `diagnostics-log` stay, because they only read that file.
-+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
++  const READS = new Set(['history-hit', 'search-messages', 'state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
 +    'tasks', 'projects', 'project-read', 'project-board', 'project-team', 'project-of', 'project-decision', 'project-memory',
 +    'folders', 'folder-list', 'connector-app-status'])
 +
@@ -540,45 +542,85 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +  }
  
    function setPrefs(body) {
++    // Validate the complete request before replacing the live prefs.
++    const prefs = { ...state.prefs }
      if (body.theme !== undefined) {
-@@ -97,28 +97,72 @@ export function install(rt) {
-       else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
+       if (typeof body.theme !== 'string' || !/^[a-z][\w-]{0,31}$/.test(body.theme)) throw invalid('Unknown theme')
+-      state.prefs.theme = body.theme
++      prefs.theme = body.theme
+     }
+     if (body.accent !== undefined) {
+-      if (body.accent === null || body.accent === '') delete state.prefs.accent
+-      else if (/^#[0-9a-f]{6}$/i.test(body.accent)) state.prefs.accent = body.accent
++      if (body.accent === null || body.accent === '') delete prefs.accent
++      else if (/^#[0-9a-f]{6}$/i.test(body.accent)) prefs.accent = body.accent
+       else throw invalid('Accent must be a #rrggbb color')
+     }
+     if (body.motion !== undefined) {
+-      if (body.motion === null || body.motion === 'normal') delete state.prefs.motion
+-      else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
++      if (body.motion === null || body.motion === 'normal') delete prefs.motion
++      else if (body.motion === 'quiet' || body.motion === 'lively') prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
 +    // Notifications are on unless switched off (#353).
 +    if (body.notifications !== undefined) {
-+      if (body.notifications === null || body.notifications === true) delete state.prefs.notifications
-+      else if (body.notifications === false) state.prefs.notifications = false
++      if (body.notifications === null || body.notifications === true) delete prefs.notifications
++      else if (body.notifications === false) prefs.notifications = false
 +      else throw invalid('Notifications must be on or off')
 +    }
 +    // Each kind is on unless switched off on its own; only the off ones are kept (#469).
 +    if (body.notify !== undefined) {
 +      const kinds = body.notify
 +      if (kinds === null || typeof kinds !== 'object' || Array.isArray(kinds)) throw invalid('Notifications must be on or off')
-+      const notify = { ...state.prefs.notify }
++      const notify = { ...prefs.notify }
 +      for (const [kind, on] of Object.entries(kinds)) {
 +        if (!NOTIFY_KINDS.includes(kind) || typeof on !== 'boolean') throw invalid('Notifications must be on or off')
 +        if (on) delete notify[kind]
 +        else notify[kind] = false
 +      }
-+      if (Object.keys(notify).length > 0) state.prefs.notify = notify
-+      else delete state.prefs.notify
++      if (Object.keys(notify).length > 0) prefs.notify = notify
++      else delete prefs.notify
 +    }
 +    // Team quiet hours (#1166): off is the absence of the record, and an invalid window is
 +    // refused here, never stored as "always quiet".
 +    if (body.quietHours !== undefined) {
-+      const quiet = readQuietHours(body.quietHours, state.prefs.quietHours)
-+      if (quiet === undefined) delete state.prefs.quietHours
-+      else state.prefs.quietHours = quiet
++      const quiet = readQuietHours(body.quietHours, prefs.quietHours)
++      if (quiet === undefined) delete prefs.quietHours
++      else prefs.quietHours = quiet
 +    }
 +    // Team turn budget (#645, the C half): a whole number of turns per team-local day, `0` off.
 +    // Clearing the field is not "off" — it goes back to the default the store seeded — so an
 +    // invalid value is refused rather than stored as a number nobody meant.
 +    if (body.turnBudget !== undefined) {
 +      const budget = readTurnBudget(body.turnBudget)
-+      if (budget === undefined) delete state.prefs.turnBudget
-+      else state.prefs.turnBudget = budget
++      if (budget === undefined) delete prefs.turnBudget
++      else prefs.turnBudget = budget
 +    }
++    // Appearance is light / dark / auto / system; auto may follow sunset or a custom window.
++    if (body.appearance !== undefined) {
++      const appearance = readAppearance(body.appearance, prefs.appearance)
++      if (appearance === false) throw invalid('Appearance must be light, dark, auto or system')
++      if (appearance === undefined) delete prefs.appearance
++      else prefs.appearance = appearance
++    }
++    if (body.sendKey !== undefined) {
++      const sendKey = readSendKey(body.sendKey)
++      if (sendKey === false) throw invalid('Send shortcut must be Enter or Shift+Enter')
++      if (sendKey === undefined) delete prefs.sendKey
++      else prefs.sendKey = sendKey
++    }
++    if (body.folding !== undefined) {
++      const folding = readFolding(body.folding, prefs.folding)
++      if (folding === false) {
++        const cards = body.folding && typeof body.folding === 'object' && !Array.isArray(body.folding)
++          && body.folding.documentCards !== undefined && typeof body.folding.documentCards !== 'boolean'
++        throw invalid(cards ? 'Document cards must be on or off' : 'Message folding must be compact, standard or none')
++      }
++      if (folding === undefined) delete prefs.folding
++      else prefs.folding = folding
++    }
++    state.prefs = prefs
      return rt.save()
    }
  
@@ -607,6 +649,10 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 -          return ok({ ...view(), ...live() })
 +          if (body.since === state.revision && (body.models === undefined || body.models === modelsKey())) return ok({ revision: state.revision, unchanged: true, ...live(actor) })
 +          return ok({ ...view(actor), ...live(actor) })
++        case 'history-hit':
++          return ok(await rt.readHistoryHit(body, actor, signal))
++        case 'search-messages':
++          return ok(await rt.searchMessages(body, actor, signal))
          case 'models':
            await rt.catalog({ fresh: true })
            return ok({ modelsKey: modelsKey() })

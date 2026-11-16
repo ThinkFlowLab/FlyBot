@@ -6,15 +6,17 @@ import { call } from './api.js'
 import { isHex } from './inks.js'
 import { SHAPES, markupCache } from './characters.js'
 import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession, stateAnswerIsStale, stateRequest } from './sources.js'
-import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
+import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes, resolveThemeId, themePrefsRecord } from './themes.js'
+import { appearanceOf, applyAppearanceAttribute, isDarkAppearance, systemDark } from './appearance.js'
 import { currentPart, landingPart, setPluginTools } from './text.js'
 import { mentionCss } from './mention-style.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
+import { PARITY_SHELL_CSS } from './parity-shell.js'
 import { installBrandChrome, installTabTitle } from './brand.js'
 import { TeamSidebar, ConnectApps, YouAvatar, AccountLauncher, ModelsSettingsStep, MODELS_STEP_ID, MODELS_STEP_ORDER, FooterAccount, BrandMark, BrandName, BotReturn, SIDEBAR_CSS, RETURN_CSS, holdShellShortcuts } from './sidebar.js'
 import { HeaderPill } from './header.js'
 import { installHeaderEffects } from './header-effects.js'
-import { ComposerIdentity, ComposerPlus, ComposerVoice, menuIcons } from './composer.js'
+import { ComposerIdentity, ComposerPlus, ComposerVoice, installSendShortcut, menuIcons } from './composer.js'
 import { CHATS_SOURCE, atSources } from './at-menu.js'
 import { watchFaceMenu } from './face-at-filter.js'
 import { VOICE_BUNDLE } from './speech.js'
@@ -95,7 +97,7 @@ export function apply(ctx) {
   try { friendLines = JSON.parse(localStorage.getItem(STORAGE.friendLines) ?? 'null') } catch { friendLines = null }
   // `details` is the panel's subject (a Session id); `view` picks details or the
   // subject Bot's browser inside it.
-  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
+  const ui = createSource({ details: null, view: 'details', document: null, renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
   // Bot mode paints the whole team surface; Agent mode withdraws every slot and
   // style so the shell's own interface returns. `plain` stays false until a Bot-mode
   // view hosts a plain session, which drops only the conversation replacements.
@@ -119,7 +121,7 @@ export function apply(ctx) {
   const setPlain = (plain) => surface.set(state => (state.plain === plain ? state : { ...state, plain }))
   // A DSH Agent Session shows the plain conversation: the Bot details and browser
   // panels would follow it and report it is not on the team, so they close.
-  const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state))
+  const dropPanels = () => ui.set(state => (state.details || state.renaming || state.document ? { ...state, details: null, view: 'details', document: null, renaming: false, tab: null } : state))
   // A Bot's chat spans several parts, so when it was last left is kept per Bot.
   const seenKey = id => roster.getSnapshot().byId?.[id]?.id ?? id
   // Per Session, the newest turn this visit measured on screen (`noteVisitTail`). Leaving writes
@@ -354,35 +356,64 @@ export function apply(ctx) {
     const style = installStyles('', 'theme')
     let key = ''
     let releaseTokens = null
-    const render = () => {
+    const originalDark = document.body.hasAttribute('data-ds-dark-theme')
+    const prefsNow = () => {
       const snapshot = roster.getSnapshot()
-      const prefs = snapshot.ready ? snapshot.prefs ?? {} : savedPrefs
+      return { snapshot, prefs: snapshot.ready ? snapshot.prefs ?? {} : savedPrefs }
+    }
+    const applyDark = (force = false) => {
+      const { prefs } = prefsNow()
+      const wanted = isDarkAppearance(prefs, new Date(), systemDark())
+      const current = document.body.hasAttribute('data-ds-dark-theme')
+      if (wanted === current) return
+      // Auto/system flips wait out a running turn rather than changing mid-reply.
+      const busy = !force && document.body.querySelector('[data-bt-running], [data-session-running], [aria-busy="true"]')
+      if (busy) return
+      applyAppearanceAttribute(wanted)
+    }
+    const render = () => {
+      const { snapshot, prefs } = prefsNow()
       const themes = allThemes()
-      const id = themes[prefs.theme] ? prefs.theme : 'deepseek'
+      const id = resolveThemeId(prefs, themes)
       const accent = isHex(prefs.accent) ? prefs.accent : undefined
       const motion = prefs.motion === 'quiet' || prefs.motion === 'lively' ? prefs.motion : 'normal'
+      const appearance = appearanceOf(prefs)
       document.body.dataset.btMotion = motion
-      const next = `${id}|${accent ?? ''}|${motion}|${registry.getSnapshot()}`
-      if (next === key) return
-      key = next
-      style.textContent = themeCss(themes[id], accent)
-      const release = releaseTokens
-      releaseTokens = ctx.theme.overrideTokens('ds-bot', shellTokens(themes[id]))
-      if (typeof release === 'function') release()
-      if (snapshot.ready) {
-        try { localStorage.setItem(PREFS_KEY, JSON.stringify({ theme: prefs.theme, accent: prefs.accent, motion: prefs.motion })) } catch { /* storage unavailable */ }
+      document.body.dataset.btAppearance = appearance.mode
+      const next = `${id}|${accent ?? ''}|${motion}|${appearance.mode}|${appearance.auto}|${appearance.from}|${appearance.to}|${registry.getSnapshot()}`
+      const changed = next !== key
+      if (changed) {
+        key = next
+        style.textContent = themeCss(themes[id], accent)
+        const release = releaseTokens
+        releaseTokens = ctx.theme.overrideTokens('ds-bot', shellTokens(themes[id]))
+        if (typeof release === 'function') release()
+        if (snapshot.ready) {
+          try { localStorage.setItem(PREFS_KEY, JSON.stringify(themePrefsRecord(prefs))) } catch { /* storage unavailable */ }
+        }
       }
+      applyDark(changed)
     }
     render()
     const offRoster = roster.subscribe(render)
     const offRegistry = registry.subscribe(render)
+    const media = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null
+    const onScheme = () => applyDark()
+    media?.addEventListener?.('change', onScheme)
+    const tick = setInterval(() => applyDark(), 60_000)
+    // Do not immediately fight the host's theme mutation observer. Reconcile on
+    // preference/system changes and the minute tick instead.
     return () => {
       offRoster()
       offRegistry()
+      media?.removeEventListener?.('change', onScheme)
+      clearInterval(tick)
+      applyAppearanceAttribute(originalDark)
       try {
         if (typeof releaseTokens === 'function') releaseTokens()
       } finally {
         delete document.body.dataset.btMotion
+        delete document.body.dataset.btAppearance
         style.remove()
       }
     }
@@ -512,6 +543,8 @@ export function apply(ctx) {
         .finally(() => { reloading -= 1 })
     },
     openNewChat: (mode) => { ui.set(state => ({ ...state, newChat: mode, menu: null, palette: null })) },
+    searchMessages: (body, signal) => call('search-messages', body, signal),
+    readHistoryHit: (body, signal) => call('history-hit', body, signal),
     openPalette: (query = '') => { ui.set(state => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null })) },
     // The token keeps a late exit timer from closing a palette opened again since.
     closePalette: (token) => { ui.set(state => (state.palette && (token === undefined || state.palette.token === token) ? { ...state, palette: null } : state)) },
@@ -521,21 +554,35 @@ export function apply(ctx) {
     toggleDetails: (id, force) => {
       ui.set((state) => {
         const details = force || state.details !== id || state.view !== 'details' ? id : null
-        return { ...state, renaming: false, tab: null, details, view: 'details' }
+        return { ...state, renaming: false, tab: null, details, view: 'details', document: null }
       })
+    },
+    // A long-document card opens its full text in the side panel, beside the conversation.
+    openDocument: ({ title, text, sessionId }) => {
+      const id = sessionId
+      if (!id || text == null || String(text) === '') return
+      ui.set(state => ({
+        ...state,
+        details: id,
+        view: 'document',
+        document: { title: title || 'Document', text: String(text) },
+        renaming: false,
+        tab: null,
+      }))
     },
     // The open panel follows the main view; a subject with no browser (a group
     // chat, an outside Session) settles on the details view.
     followPanel: (id) => {
       ui.set((state) => {
         if (!state.details || state.details === id) return state
-        const view = state.view === 'browser' && roster.getSnapshot().byId[id] === undefined ? 'details' : state.view
-        return { ...state, details: id, view, renaming: false, tab: null }
+        const view = state.view === 'browser' && roster.getSnapshot().byId[id] === undefined ? 'details'
+          : state.view === 'document' ? 'details' : state.view
+        return { ...state, details: id, view, document: view === 'document' ? state.document : null, renaming: false, tab: null }
       })
     },
-    showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: false, tab })) },
+    showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', document: null, renaming: false, tab })) },
     // Opening the conversation would move focus to its composer and blur the name field.
-    renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
+    renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', document: null, renaming: true, tab: null })) },
     // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
     // closing the page returns to; a page the inbox opened sends the queue back (#2541).
     openSettings: (page = 'general', id = null, back = null) => {
@@ -561,7 +608,7 @@ export function apply(ctx) {
       if (mode !== 'bot' && mode !== 'agent') return
       if (surface.getSnapshot().mode === mode) return
       if (mode === 'agent') {
-        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
+        ui.set(state => ({ ...state, details: null, view: 'details', document: null, settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
       }
       writeMode(mode)
       surface.set(state => ({ ...state, mode }))
@@ -725,7 +772,7 @@ export function apply(ctx) {
         if (!bot) return
         browsers.ensureTabs(bot.id)
         if (browsers.tabs.getSnapshot()[bot.id]?.active == null) browsers.openTab(bot.id)
-        ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null }))
+        ui.set(state => ({ ...state, details: id, view: 'browser', document: null, renaming: false, tab: null }))
       },
       // '+' on the strip or the drawer's new-tab card: a blank tab in the browser view.
       browserNewTab: (id) => {
@@ -733,7 +780,7 @@ export function apply(ctx) {
         if (!bot) return null
         browsers.ensureTabs(bot.id)
         const tabId = browsers.openTab(bot.id)
-        ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null }))
+        ui.set(state => ({ ...state, details: id, view: 'browser', document: null, renaming: false, tab: null }))
         return tabId
       },
       // A drawer card: its tab active, the panel on the browser view.
@@ -741,7 +788,7 @@ export function apply(ctx) {
         const bot = roster.getSnapshot().byId[id]
         if (!bot) return
         browsers.activate(bot.id, tabId)
-        ui.set(state => ({ ...state, details: id, view: 'browser' }))
+        ui.set(state => ({ ...state, details: id, view: 'browser', document: null }))
       },
       browserEnsure: botId => browsers.ensureTabs(botId),
       browserCloseTab: (botId, tabId) => browsers.closeTab(botId, tabId),
@@ -754,9 +801,9 @@ export function apply(ctx) {
   }
   actions.setPanelView = (view) => {
     if (view !== 'details' && view !== 'browser') return
-    ui.set(state => (state.details && state.view !== view ? { ...state, view } : state))
+    ui.set(state => (state.details && state.view !== view ? { ...state, view, document: view === 'document' ? state.document : null } : state))
   }
-  actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
+  actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', document: null, renaming: false, tab: null } : state)) }
   // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
   actions.flybotSlotEntries = name => ctx.slots.entries?.(name) ?? []
   actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
@@ -956,6 +1003,7 @@ export function apply(ctx) {
     installCompiledStyles(FLYBOT_CSS, 'flybot'),
     installCompiledStyles(MEMBER_CSS, 'members'),
     installCompiledStyles(USER_MESSAGE_CSS, 'user-messages'),
+    installCompiledStyles(PARITY_SHELL_CSS, 'parity-shell'),
     installCompiledStyles(MOBILE_CSS, 'mobile'),
     installCompiledStyles(PANE_MIN_WIDTH_CSS, 'panes'),
     installCompiledStyles(PROJECT_BOARD_CSS, 'project-board'),
@@ -984,6 +1032,7 @@ export function apply(ctx) {
   ]
   const installConversation = () => [
     installCompiledStyles(CONVERSATION_CSS, 'conversation'),
+    installCompiledStyles(PARITY_SHELL_CSS, 'parity-shell-conversation'),
     installMentions(),
     installAtMenu(),
     // The shell's own Session header stays, so the child seats it renders keep
@@ -1042,6 +1091,7 @@ export function apply(ctx) {
     const style = installStyles(RETURN_CSS, 'return')
     return () => style.remove()
   }, 'ds-bot: return styles')
+  ctx.effect(() => installSendShortcut(roster), 'ds-bot: send shortcut')
   shadow('sidebar.footer.action', { id: 'bot-return', order: -300, inject: face }, BotReturn)
 
   // The main view decides `plain`: a DSH Agent Session keeps the Bot shell but

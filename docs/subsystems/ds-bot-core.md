@@ -126,3 +126,9 @@ that page has a command behind it.
 - Hand-editing `ds-bot/` or `client.js`.
 - Forgetting `node scripts/ds-bot-patches.mjs generate && check`.
 - Running the bench against `~/.dsh`.
+
+## Staged Teamily parity delivery (#3110)
+
+`core/dev/bench-preflight.mjs` resolves its CLI entry through real paths so a symlink-launched invocation still runs preflight; tests retain the original assertions. `core/dev/offline-fixture/` bundles actual client components with declared in-memory host and primitive mocks. Only source/manifests are committed; dependencies, render-check, dist and logs are excluded. Build writes local `dist/`, asserts the component source manifest and absence of real API transport, and supports SSR smoke. A policy refusal blocked file:// navigation before loading; SSR/VM tests and old hand-authored HTML mockups are not browser/production acceptance.
+
+The product target is a complete open-source Teamily alternative, not a permanent restriction to existing APIs. The server architecture is a management server plus FlyBot containers: the management server owns accounts, workspaces, permissions and container lifecycle; FlyBot containers execute Agents. Both are open-source and self-hostable. Container allocation granularity and orchestration technology remain undecided. Integrate existing FlyBot/Bot Social through explicit adapters rather than preserve unrelated backends or force all execution into one process. Missing models/backends are implementation work still owed. This staged PR does not perform that migration or close #3110.

@@ -54,7 +54,7 @@ const roomWith = (pendingApprovals, origin = 'face-to-face') => ({ id: 'g1', ori
 const draw = (room, replies) => {
   const roster = { bots: [chief], byId: { chief }, roomsById: { g1: room } }
   const content = [{ type: 'text', text: JSON.stringify({ replies }) }]
-  return expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles'])
+  return expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles', 'FoldedContent'])
 }
 const said = (text, seq) => ({ botId: 'chief', name: 'Chief', text, ...(seq !== undefined ? { seq } : {}) })
 const shownText = drawn => find(drawn, node => node.type?.name === 'MarkdownText').map(node => node.props.text)
@@ -137,7 +137,7 @@ test('the held line waits only for the Bot that sent it: another Bot saying the 
     { botId: 'writer', name: 'Writer', text: 'Draft: ship it on Friday' },
     { botId: 'chief', name: 'Chief', text: 'Draft: ship it on Friday' },
   ] }) }]
-  const drawn = expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles'])
+  const drawn = expand(GroupReplies({ sessionId: 'g1', callId: 'c1', done: true, content, roster, actions: {}, useUi: () => null }), ['GroupMessage', 'Bubbles', 'FoldedContent'])
   assert.equal(find(drawn, node => node.props?.className === 'bt-group-msg').length, 1, 'only Chief\'s line is left out')
   assert.deepEqual(shownText(drawn), ['Draft: ship it on Friday'], 'Writer\'s identical line is drawn')
   assert.equal(isHeldLine(room, 'Draft: ship it on Friday', writer), false)

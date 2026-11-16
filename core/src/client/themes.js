@@ -28,6 +28,13 @@ const THEMES = {
     light: { bg: '#f7f9fc', sidebar: '#eef2f8', bubble: '#e5ebf5', card: '#ffffff', text: '#121826', user: '#1e3a8a', userText: '#ffffff', accent: '#1e86ff' },
     dark: { bg: '#0b1020', sidebar: '#10172a', bubble: '#1a2340', card: '#141c33', text: '#e8edf7', user: '#3b6fd8', userText: '#ffffff', accent: '#4f9dff' },
   },
+  grove: {
+    label: 'Grove',
+    light: { bg: '#f4f7f5', sidebar: '#e8eee9', bubble: '#dfe8e2', card: '#ffffff', text: '#171c19', user: '#235039', userText: '#f4f7f5', accent: '#1f7a54' },
+    dark: { bg: '#171c19', sidebar: '#141916', bubble: '#2a332d', card: '#272e2b', text: '#e8eee9', user: '#235039', userText: '#f4f7f5', accent: '#3d9a6e' },
+    // #235039 is the measured selected fill from the visual reference Instant-mode sample.
+    css: 'html body{--bt-selected:color-mix(in srgb,var(--bt-accent) 18%,var(--bt-sidebar))}html body[data-ds-dark-theme]{--bt-selected:#235039}',
+  },
 }
 const rgba = (hex, alpha) => `rgba(${[1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)).join(',')},${alpha})`
 function themeVars(mode, dark, accent = mode.accent) {
@@ -105,3 +112,17 @@ export function registerTheme(id, theme) {
   }
 }
 export const allThemes = () => ({ ...THEMES, ...customThemes })
+// Fresh profiles, or a stored id the registry no longer has, present Grove so the
+// forest shell is the first look of a real FlyBot. A saved DeepSeek / Mono / Paper /
+// Moonlight id is honored; those themes stay in the picker.
+export const DEFAULT_THEME = 'grove'
+export function resolveThemeId(prefs, themes = allThemes()) {
+  const id = prefs?.theme
+  return themes[id] ? id : DEFAULT_THEME
+}
+export function themePrefsRecord(prefs = {}) {
+  return {
+    theme: prefs.theme, accent: prefs.accent, motion: prefs.motion,
+    appearance: prefs.appearance, sendKey: prefs.sendKey, folding: prefs.folding,
+  }
+}
