@@ -90,3 +90,7 @@ read a Project through the store, the channel and the board (`core/test/projects
 `project-board-panels`, `project-board-view`, `project-settings-page`, `projects-nav`,
 `project-board-readonly`, `project-board-entry`, `project-board-levels`, `readonly-window-reads`);
 they apply the domain with `core/test/project-domain.js`.
+
+## Staged Teamily parity delivery (#3110)
+
+The Project Assistant backfills an existing daily 09:00 project digest into automation state when Automation is opened later, rather than adding a duplicate task. `plugins/project/test/project-assistant.test.js` covers that existing-schedule path. This is a compatibility/idempotence repair, not a claim to a new general workflow scheduler.

@@ -54,7 +54,7 @@ test('the client installs the phone styles after the shell styles they override'
   const index = readFileSync(new URL('../src/client/index.js', import.meta.url), 'utf8')
   const at = name => index.indexOf(`installCompiledStyles(${name}`)
   assert.ok(at('MOBILE_CSS') > 0, 'MOBILE_CSS is installed')
-  for (const earlier of ['SHELL_CSS', 'INBOX_CSS', 'FLYBOT_CSS']) assert.ok(at(earlier) >= 0 && at(earlier) < at('MOBILE_CSS'), `${earlier} comes first`)
+  for (const earlier of ['SHELL_CSS', 'INBOX_CSS', 'FLYBOT_CSS', 'PARITY_SHELL_CSS']) assert.ok(at(earlier) >= 0 && at(earlier) < at('MOBILE_CSS'), `${earlier} comes first`)
   const bundle = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.ok(bundle.includes('.bt-inbox-actions :is(.bt-soft,.bt-send){height:36px'), 'client.js carries the phone styles')
 })

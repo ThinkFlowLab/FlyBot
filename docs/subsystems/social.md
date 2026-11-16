@@ -243,3 +243,9 @@ Covered by the plugin's own tests under `plugins/social/` / core test suite as w
 - Putting social logic under `core/`.
 - Assuming social owns `web-search.js`.
 - Importing `../../../core/…` from plugin runtime sources (breaks a packaged install, #153).
+
+## Staged Teamily parity delivery (#3110)
+
+Share and face-room integration paths preserve stopped/frozen/revoked Bot refusals as structured user-visible errors; empty successful responses do not become invented invite/share success. The client retains and presents the refusal, with tests for typed local/upstream errors, and the face-room time test follows the intended local-time behavior. This FlyBot-side delivery does not change historical Bot Social grant meaning or migrate server data. Upstream Bot Social's grant door is tracked independently; do not overwrite newer assertInvitable and no-side-effect refusal guards with the old local patch.
+
+The product target is a complete open-source Teamily alternative, not a permanent restriction to existing APIs. Subsequent server-side capabilities must converge behind one open-source, self-hostable server with one external deployment/API; internal modules and adapters integrate existing FlyBot/Bot Social capabilities rather than preserve two isolated backends. Missing models/backends are implementation work still owed. This staged PR does not perform that migration or close #3110.

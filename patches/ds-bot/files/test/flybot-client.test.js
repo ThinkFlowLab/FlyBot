@@ -215,7 +215,7 @@ test('the account menu names each destination as it is named elsewhere (#392, #3
   const settings = readFileSync(new URL('../src/client/settings.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   const menu = source.slice(source.indexOf('const groups = ['), source.indexOf('return h(Fragment, null,', source.indexOf('const groups = [')))
   const labels = [...menu.matchAll(/\[t\('([^']+)'\)/g)].map(match => match[1])
-  assert.deepEqual(labels, ['Usage', 'Connect apps', 'Plugins', 'Scheduled tasks', 'Settings', 'Switch to classic Agent mode'])
+  assert.deepEqual(labels, ['Usage', 'Connect apps', 'Channels', 'Plugins', 'Scheduled tasks', 'Settings', 'Switch to classic Agent mode'])
   // Connectors: the footer button's words, not the second name "Connectors".
   assert.doesNotMatch(menu, /t\('Connectors'\)/)
   // Scheduled tasks: the Settings page and a Bot's details use that name, and the row opens that page.

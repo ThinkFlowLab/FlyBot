@@ -1,7 +1,7 @@
 // #2474: in a window that holds the team read-only the host refuses every write with
-// `bot/read-only`, but seven Settings pages still drew their controls: General's theme
+// `bot/read-only`, but eight Settings pages still drew their controls: General's theme
 // select and switches, the Bots page's Main Bot and animation controls, and the live forms
-// of a Bot, a group chat, Connectors, Capabilities and Secrets. Each page now reads the
+// of a Bot, a group chat, Connectors, Channels, Capabilities and Secrets. Each page now reads the
 // roster's own read-only sentence through `lockedWindow` and draws a plain-text view
 // instead: no control anywhere, and the facts of the page kept as text. A writable window
 // is untouched, and the standing sentence stays in the dialog header — once per page.
@@ -79,6 +79,7 @@ const writer = { id: 'writer', name: 'Writer', role: 'Editor', model: 'mock/m1',
 const editor = { id: 'editor', name: 'Editor', role: '', model: 'mock/m1', workDir: null, instructions: '' }
 const room = { id: 'r1', name: 'Ops', admin: 'chief', members: ['chief', 'writer'], mode: 'admin', notice: 'Read this first.', named: true, workDir: '/work/ops', participants: [{ kind: 'human', id: 'owner-1', displayName: 'Alice', role: 'admin' }] }
 const github = { id: 'github', name: 'GitHub', kind: 'tool', state: 'ready', account: 'xuke' }
+const feishu = { id: 'feishu', name: 'Feishu', kind: 'channel', state: 'off' }
 const browser = { name: 'browser', kind: 'mcp', transport: 'stdio', description: 'Open pages' }
 const token = { name: 'GITHUB_TOKEN', purpose: 'Push branches', scope: 'all', createdAt: 0 }
 const baseRoster = {
@@ -90,7 +91,7 @@ const baseRoster = {
   mainBotId: 'chief',
   prefs: { theme: 'deepseek', motion: 'quiet', notifications: true },
   models: [{ id: 'm1', name: 'Mock One', served: true }],
-  connectors: [github],
+  connectors: [github, feishu],
   capabilities: [browser],
   secrets: [token],
   humans: [],
@@ -198,11 +199,12 @@ const INTERACTIVE = new Set(['button', 'a', 'input', 'select', 'textarea'])
 const isInteractive = (node) => INTERACTIVE.has(nameOf(node)) || typeof node.props?.onClick === 'function'
 
 const PAGES = [
-  { key: 'general', id: null, name: 'GeneralPage', facts: ['DeepSeek', 'On'] },
+  { key: 'general', id: null, name: 'GeneralPage', facts: ['DeepSeek', 'On', 'Standard'] },
   { key: 'bots', id: null, name: 'BotsPage', facts: ['Main Bot', 'Chief', 'Writer', 'Bot animation', 'Quiet'] },
   { key: 'bots', id: 'chief', name: 'BotSettingsForm', facts: ['Chief', 'Researcher', 'Run the team.'] },
   { key: 'groups', id: 'r1', name: 'GroupSettingsForm', facts: ['Ops', 'Chief', 'Writer', 'Alice', 'Read this first.'] },
   { key: 'connectors', id: null, name: 'ConnectorsPage', facts: ['GitHub', 'xuke'] },
+  { key: 'channels', id: null, name: 'ChannelsPage', facts: ['Feishu'] },
   { key: 'capabilities', id: null, name: 'CapabilitiesPage', facts: ['browser', 'Open pages'] },
   { key: 'secrets', id: null, name: 'SecretsPage', facts: ['GITHUB_TOKEN', 'Push branches'] },
 ]
@@ -210,7 +212,7 @@ const PAGES = [
 // Pressing what a locked page draws may navigate; it may not write.
 const pressure = (nodes) => nodes.filter(node => nameOf(node) === 'button')
 
-test('a read-only window draws no write control on any of the seven Settings pages (#2474)', () => {
+test('a read-only window draws no write control on any of the eight Settings pages (#2474)', () => {
   const controls = []
   const writes = []
   const missing = []
@@ -253,7 +255,9 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   const general = mount(baseRoster, 'general', null, 'GeneralPage').nodes
   assert.equal(general.filter(node => node.type === 'select').length, 1, 'General keeps its theme select')
   assert.equal(general.filter(node => node.type === 'input').length, 1, 'General keeps its colour field')
-  assert.equal(counts(general), 6, 'General keeps its four switches beside them')
+  // Theme select, accent field, four notification switches, appearance and send-shortcut
+  // segmenteds, plus the document-card switch (folding modes are radio buttons, not widgets).
+  assert.equal(counts(general), 9, 'General keeps its theme, accent, appearance, shortcut, folding and notification controls')
 
   const bots = mount(baseRoster, 'bots', null, 'BotsPage').nodes
   assert.equal(bots.filter(node => node.type === 'select').length, 2, 'Bots keeps both of its Main Bot selects')
@@ -262,6 +266,7 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   assert.ok(counts(mount(baseRoster, 'bots', 'chief', 'BotSettingsForm').nodes) >= 3, 'a Bot keeps its live form')
   assert.ok(counts(mount(baseRoster, 'groups', 'r1', 'GroupSettingsForm').nodes) >= 3, 'a group keeps its live form')
   assert.ok(mount(baseRoster, 'connectors', null, 'ConnectorsPage').nodes.some(node => nameOf(node) === 'ConnectorRow'), 'Connectors keeps its live rows')
+  assert.ok(mount(baseRoster, 'channels', null, 'ChannelsPage').nodes.some(node => nameOf(node) === 'ConnectorRow'), 'Channels keeps the Feishu row')
   assert.ok(mount(baseRoster, 'capabilities', null, 'CapabilitiesPage').nodes.some(node => nameOf(node) === 'CapabilityRow'), 'Capabilities keeps its rows')
   assert.ok(mount(baseRoster, 'secrets', null, 'SecretsPage').nodes.some(node => nameOf(node) === 'SecretRow'), 'Secrets keeps its rows')
 })
