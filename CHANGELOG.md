@@ -6,6 +6,37 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-11-16
+
+### Changed
+
+- The chat dock's own memory of a failed send, and of a Retry that already went out, now lives outside the component: `conversation.input.dock` is session-scoped, so opening another chat unmounted the dock and coming back drew the still pending hold as **Waiting for approval** again and offered a Retry that had already been sent. The records are keyed `<approval id>:<session id>` and go when the hold leaves the two lists the dock reads; nothing is pruned before both lists have answered.
+- The face-to-face room status chip now reads in the window's language in every state — **Open**, **Closed**, **Left**, **Ended**, **Joining** — and an expired matching window says **Ended** instead of printing the internal `ended` status id (#3090).
+
+### Fixed
+
+- Leaving a chat no longer marks the whole Session read: the visit writes only the newest turn that was actually on screen, so messages that arrived below the fold, or after you had scrolled up, keep their **NEW** divider and the unread pill on the next visit. A chat that never reported a visible turn still advances to the moment you left, as before ([#3079](https://github.com/ThinkFlowLab/FlyBot/issues/3079)).
+- **Approve all** no longer reports **Sent to …** for a local hold whose send failed: the host answers such a send normally, with the approval it saved as failed, so the batch counted it as reached, dropped its card and named people who never got anything. A hold whose decision was refused now also keeps its reason on its own card — local holds included — so the reason survives the next click and a chat switch instead of living only in the dock's one line (#3093).
+- In a Chinese window a past face-to-face room now reads its time in Chinese: the row's hover says `已结束 10月19日 14:05` instead of `Ended Oct 19 14:05`, a room that never ended says `开始`, and the title rebuilt from the room's members reads `面对面 · Alice · 10月19日 14:05`. The stored room name and the rules that parse it are untouched, so an English window shows exactly what it showed before ([#3098](https://github.com/ThinkFlowLab/FlyBot/issues/3098)).
+- The two accessible names on a past face-to-face room card now read in the window's language: a screen reader in a Chinese window says `打开 面对面 · Alice · 10月19日 14:05` for the row and `成员` for the people on it, instead of the English `Open …` and `Members`. Both words come from the dictionary, so an English window keeps exactly the names it had before; only the text read out changes, never the stored room name ([#3100](https://github.com/ThinkFlowLab/FlyBot/issues/3100)).
+- The `Workflow` badge on a workflow row now follows the window's language: a Chinese window reads `工作流` in the sidebar row and in the Hand a task to a Workflow target list, instead of the English word standing beside an already-translated page header ([#3102](https://github.com/ThinkFlowLab/FlyBot/issues/3102)).
+
+## [0.2.33] - 2026-11-15
+
+### Changed
+
+- `scripts/i18n-usage.mjs` sees copy a helper hands back: a `return` of a sentence — or of a `?:` / `||` expression built from sentences — is reported by `--missing` instead of staying invisible to both i18n checks, as long as the helper is drawn (called at a copy position, or rendered as an `h(Component, …)`). A helper whose value is data — a status id the file compares, a React key, a class name, a URL or a `location.href` template — is not reported. Product measured five such sites in `plugins/social/client.js`; the missing-entry baseline grows by 34 pins of English a reader can still see untranslated, and the bare-draw and template-draw counts are unchanged.
+- `scripts/i18n-usage.mjs` now closes the `]` it opens: an indexed read like `list[0]` no longer leaves the scan inside a bracket it can never close, so a literal beside it (`return list[0] || 'None yet'`) is reported by `--missing` instead of being swallowed along with the rest of the file. The same walk also records the names a `${}` hole interpolates, so a sentence a helper builds from a local counts as read rather than as a dead local. The missing-entry baseline grows by one pin — `Your own Bots stay shared. {} can share it again.`, the other branch of a sentence already pinned — and the bare-draw and template-draw counts are unchanged. See [#3077](https://github.com/ThinkFlowLab/FlyBot/issues/3077).
+- The approval dock no longer reads the server while its tab is hidden; coming back to the tab reads both of its lists at once instead of waiting for the next five-second poll (#3080).
+
+### Fixed
+
+- In the Bot Social dock, the **Retry** on a failed send listed from another chat no longer looks clickable while a different hold is being decided: the whole list's Retry goes disabled with the decision that is in flight, because the click there was already being dropped ([#3050](https://github.com/ThinkFlowLab/FlyBot/issues/3050)).
+- Sharing a Bot with a friend is one share at a time: while a row is sending, no other row is clickable, so a second click no longer takes the sending row's "Sharing…" over and posts a second grant at the same moment ([#3062](https://github.com/ThinkFlowLab/FlyBot/issues/3062)).
+- A release section is dated by the Asia/Shanghai calendar day of the release moment instead of the UTC day, so a release after 16:00Z no longer lands under the previous date (`changelog.mjs release` defaults to it; `--date` still overrides) (#3064).
+- "Approve all" no longer loses the reason when a batch is mixed: a hold that fails keeps its own sentence and the card it belongs to ("Eve: the hold is stale") while the holds that did send leave as before, and the receipt still names only the people reached (#3071).
+- `plugins/social/client.js`: a Bot Social hold whose send failed now keeps a **Not sent** card, with the reason and **Retry**, until it leaves the queue — the dock remembers the failure itself instead of only the one error line the next click clears, so the 5 s poll that still lists the hold as pending can no longer draw it back as waiting. Its **Retry** sends the same approval again (`approve`), once per card that actually went out, and a second click on a card that already went out sends nothing. A local failed hold keeps the host's own retry, which can be tried again while the host keeps answering with a failure.
+
 ## [0.2.32] - 2026-11-14
 
 ### Fixed
@@ -1489,7 +1520,9 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...HEAD
+[0.2.34]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...v0.2.34
+[0.2.33]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.31...v0.2.32
 [0.2.31]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.30...v0.2.31
 [0.2.30]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.29...v0.2.30

@@ -54,11 +54,8 @@ test('an external Bot whose process dies answers with a failure and lands in the
   const member = { id: 'ext', name: 'Runner', external: { driver: 'subprocess', command: [process.execPath, '-e', DIE] } }
   const reply = await run(member)
   assert.equal(reply?.failure?.reason, 'crashed')
-  const entry = await new Promise((resolve) => {
-    const started = Date.now()
-    const tick = () => (lines.length > 0 || Date.now() - started > 4000 ? resolve(lines[0]) : setTimeout(tick, 10))
-    tick()
-  })
+  await waitFor(() => lines.length > 0, 'the room line for the participant that died')
+  const entry = lines[0]
   assert.ok(entry, 'the room carries the state of a participant that died')
   assert.equal(entry.roomId, 'ops')
   assert.equal(entry.botId, 'ext')
@@ -79,10 +76,10 @@ test('a crashed external Bot starts a fresh process on its next turn (#198)', as
   const { lines, run } = fixture(t)
   const member = { id: 'gone', name: 'Gone', external: { driver: 'subprocess', command: [process.execPath, '-e', DIE] } }
   assert.equal((await run(member))?.failure?.reason, 'crashed')
-  await waitFor(() => lines.length >= 1)
+  await waitFor(() => lines.length >= 1, 'the crash line in the room')
   // A turn after the crash is not a dead end: the next one spawns again, and this one dies too.
   assert.equal((await run(member, 'again'))?.failure?.reason, 'crashed')
-  await waitFor(() => lines.length >= 2)
+  await waitFor(() => lines.length >= 2, 'the second crash line in the room')
   assert.equal(lines.filter(line => line.botId === 'gone').length, 2)
 })
 
@@ -108,10 +105,13 @@ test('a stop is asked for on the protocol before the signal, and a shell is not 
     external: { driver: 'subprocess', command: [process.execPath, '-e', script], env: { SEEN: seen } },
   }
   const turn = run(member, 'work')
-  await new Promise(resolve => setTimeout(resolve, 120))
+  // The stop line is a courtesy the driver follows with SIGTERM after TERM_GRACE_MS, so the child
+  // has to be reading before the stop is asked for: the turn it already read is that proof, and a
+  // fixed sleep here was only a bet on how fast this box starts a process (#3103).
+  await waitFor(() => readFileSync(seen, 'utf8').includes('"type":"turn"'), 'the child to read the turn line')
   assert.equal(await driver.cancel({ sessionId: 'external:ops:stop' }), true)
   assert.equal(await turn, null)
-  await waitFor(() => readFileSync(seen, 'utf8').includes('"type":"stop"'))
+  await waitFor(() => readFileSync(seen, 'utf8').includes('"type":"stop"'), 'the child to read the stop line')
   const lines = readFileSync(seen, 'utf8').split('\n').filter(Boolean)
   assert.match(lines[0], /"type":"turn"/)
   assert.match(lines[1], /"type":"stop"/)
@@ -133,7 +133,7 @@ setInterval(()=>fs.writeFileSync(process.env.DIR+'/f'+(n++),'x'),1)`
   const { driver, room } = fixture(t, dir)
   const member = { id: 'writes', name: 'Writes', external: { driver: 'subprocess', command: [process.execPath, '-e', LINGER], env: { DIR: dir } } }
   await driver.open({ room, member })
-  await waitFor(() => readdirSync(dir).length > 300)
+  await waitFor(() => readdirSync(dir).length > 300, 'the child to fill the temp dir')
   driver.close()
   await removeExternalDir(dir)
   assert.equal(existsSync(dir), false, 'a temp dir outlived the assertions that used it')
@@ -163,11 +163,8 @@ test('a turn that times out comes back as no answer, not as a model failure (#19
   // silence, so { failure } here would count a slow process as a failed model call.
   assert.deepEqual(reply, { missed: true })
   assert.equal(driver.snapshot('external:ops:slow').state, 'timeout')
-  const entry = await new Promise((resolve) => {
-    const started = Date.now()
-    const tick = () => (lines.length > 0 || Date.now() - started > 4000 ? resolve(lines[0]) : setTimeout(tick, 10))
-    tick()
-  })
+  await waitFor(() => lines.length > 0, 'the timeout line in the room')
+  const entry = lines[0]
   assert.match(entry.text, /timeout/)
   assert.equal(entry.botId, 'slow')
 })
@@ -181,11 +178,11 @@ test('a child that ignores the stop is killed after the grace (#1164)', async (t
   const { driver, run } = fixture(t, dir)
   const member = { id: 'stubborn', name: 'Stubborn', external: { driver: 'subprocess', command: [process.execPath, '-e', STUBBORN], env: { SEEN: seen } } }
   const turn = run(member, 'work')
-  await waitFor(() => /start \d+/.test(readFileSync(seen, 'utf8')))
+  await waitFor(() => /start \d+/.test(readFileSync(seen, 'utf8')), 'the child to report its pid')
   const pid = Number(readFileSync(seen, 'utf8').match(/start (\d+)/)[1])
   assert.equal(driver.closeParticipant('ops', 'stubborn'), true)
   assert.equal(await turn, null)
-  await waitFor(() => { try { process.kill(pid, 0); return false } catch { return true } }, 4000)
+  await waitFor(() => { try { process.kill(pid, 0); return false } catch { return true } }, 'the killed child to leave', 4000)
 })
 
 test('a timed-out turn never settles the next one with its late answer (#2634)', async (t) => {
@@ -217,29 +214,39 @@ process.stdin.on('data',c=>{
     queue.push(m);
     pump();
   }
-});`
+});
+fs.appendFileSync(process.env.READY,'ready\\n')`
   const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
   const seen = join(dir, 'seen.txt')
   const mark = join(dir, 'mark')
+  const ready = readyMarker(dir)
   writeFileSync(seen, '')
-  const { rt, run } = fixture(t, dir)
+  const { driver, room, rt, run } = fixture(t, dir)
   rt.roomReplyTimeoutMs = 300
-  const member = { id: 'held2', name: 'Held2', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { SEEN: seen, MARK: mark } } }
+  const member = { id: 'held2', name: 'Held2', external: { driver: 'subprocess', command: [process.execPath, '-e', HELD], env: { SEEN: seen, MARK: mark, READY: ready } } }
   const rows = () => readFileSync(seen, 'utf8').split('\n').filter(Boolean)
   const seenTurns = () => rows().filter(row => row.startsWith('turn '))
   const starts = () => rows().filter(row => row.startsWith('start '))
+  // The reply window is 300ms, so the child has to be reading before the turn is written: opening
+  // first and waiting for its marker measures the answer, not the boot (#3103).
+  await driver.open({ room, member })
+  await waitReady(ready, 'held2')
   const first = run(member, 'one')
-  await waitFor(() => seenTurns().length === 1)
+  await waitFor(() => seenTurns().length === 1, 'the child to record the first turn')
   assert.deepEqual(await first, { missed: true })
   // The second turn goes to whatever the driver believes answers it; the marker then releases the
-  // first turn's answer, which must not become the second turn's answer.
+  // first turn's answer, which must not become the second turn's answer. The timed-out process is
+  // gone, so this turn needs a fresh one: start it and let it read before the turn, or its 300ms
+  // window expires on a process that is still booting (#3103).
+  await driver.open({ room, member })
+  await waitReady(ready, 'held2', 2)
   const second = run(member, 'two')
-  await waitFor(() => seenTurns().length === 2)
+  await waitFor(() => seenTurns().length === 2, 'the child to record the second turn')
   writeFileSync(mark, '1')
   const answer = await second
   assert.notDeepEqual(answer, 'answer to one', "the next turn was settled by the timed-out turn's late answer")
   if (typeof answer === 'string') assert.equal(answer, 'answer to two')
-  await waitFor(() => starts().length === 2)
+  await waitFor(() => starts().length === 2, 'a second process to start')
   assert.notEqual(starts()[1], starts()[0], 'a timed-out process must not answer the next turn')
 })
 
@@ -255,12 +262,12 @@ test('a seat that was closed is never handed the next turn (#1164)', async (t) =
   const member = { id: 'seat2', name: 'Seat2', external: { driver: 'subprocess', command: [process.execPath, '-e', PID_LOG], env: { SEEN: seen } } }
   const turns = () => readFileSync(seen, 'utf8').split('\n').filter(row => row.startsWith('turn ')).map(row => row.slice(5))
   const stopped = run(member, 'one')
-  await waitFor(() => turns().length === 1)
+  await waitFor(() => turns().length === 1, 'the child to record the first turn')
   const first = turns()[0]
   assert.equal(await driver.cancel({ sessionId: 'external:ops:seat2' }), true)
   assert.equal(await stopped, null)
   const next = run(member, 'two')
-  await waitFor(() => turns().length === 2)
+  await waitFor(() => turns().length === 2, 'the child to record the second turn')
   const second = turns()[1]
   assert.notEqual(second, first, 'the closed process must not answer the next turn')
   await driver.cancel({ sessionId: 'external:ops:seat2' })
@@ -382,7 +389,7 @@ test('an answer line split past the 4 KB buffer is a failure, not a timeout, and
 test('bytes after an over-long line are dropped, never parsed as the answer (#2689)', async (t) => {
   // The tail after the overflow happens to be a well-formed answer object; it is the remainder of
   // the line that already overflowed, so it must not settle the turn with its text.
-  const SPLIT_FRAGMENT = `let b='';
+  const SPLIT_FRAGMENT = `const fs=require('node:fs');let b='';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data',c=>{
   b+=c;
@@ -395,10 +402,17 @@ process.stdin.on('data',c=>{
     process.stdout.write('{"text":"'+'x'.repeat(4200));
     setTimeout(()=>process.stdout.write('{"text":"sneaky"}\\n'),60);
   }
-});`
-  const { rt, run } = fixture(t)
+});
+fs.appendFileSync(process.env.READY,'ready\\n')`
+  const dir = mkdtempSync(join(tmpdir(), 'flybot-external-'))
+  const ready = readyMarker(dir)
+  const { driver, room, rt, run } = fixture(t, dir)
   rt.roomReplyTimeoutMs = 700
-  const member = { id: 'frag', name: 'Frag', external: { driver: 'subprocess', command: [process.execPath, '-e', SPLIT_FRAGMENT] } }
+  const member = { id: 'frag', name: 'Frag', external: { driver: 'subprocess', command: [process.execPath, '-e', SPLIT_FRAGMENT], env: { READY: ready } } }
+  // The 700ms window belongs to the answer, so the turn is written to a child that is already
+  // reading rather than to a process that may still be starting (#3103).
+  await driver.open({ room, member })
+  await waitReady(ready, 'frag')
   const reply = await run(member, 'big')
   assert.deepEqual(reply, { failure: { reason: 'error', detail: 'answer exceeded 4096 bytes' } })
 })
@@ -429,7 +443,7 @@ process.stdin.on('data',c=>{
   const member = { id: 'noisy', name: 'Noisy', external: { driver: 'subprocess', command: [process.execPath, '-e', NOISY], env: { SEEN: seen } } }
   // `open` starts the process without a turn: the noise line is written while the seat is idle.
   await driver.open({ room, member })
-  await waitFor(() => readFileSync(seen, 'utf8').includes('start '))
+  await waitFor(() => readFileSync(seen, 'utf8').includes('start '), 'the child to report it started')
   // The turn opens after the noise line is closed: the noise never becomes its answer or line.
   await new Promise(resolve => setTimeout(resolve, 300))
   assert.equal(await run(member, 'hi'), 'ok: hi')
@@ -461,7 +475,7 @@ process.stdin.on('data',c=>{
   const { driver, room, lines, run } = fixture(t, dir)
   const member = { id: 'cross', name: 'Cross', external: { driver: 'subprocess', command: [process.execPath, '-e', CROSSING], env: { SEEN: seen } } }
   await driver.open({ room, member })
-  await waitFor(() => readFileSync(seen, 'utf8').includes('start '))
+  await waitFor(() => readFileSync(seen, 'utf8').includes('start '), 'the child to report it started')
   // The 6000-byte log line has overflowed while the seat is idle; the turn opens before its
   // newline lands at ~400 ms, and the child answers 200 ms after that.
   await new Promise(resolve => setTimeout(resolve, 300))
@@ -489,13 +503,27 @@ process.stdin.on('data',c=>{
 })
 
 const waitForLine = async (lines, botId, ms = 4000) => {
-  await waitFor(() => lines.some(line => line.botId === botId), ms)
+  await waitFor(() => lines.some(line => line.botId === botId), `the room line for ${botId}`, ms)
   return lines.find(line => line.botId === botId)
 }
-const waitFor = async (done, ms = 4000) => {
+// The condition is the event and `what` names it: the budget only bounds the failure, so a red
+// says which handshake never arrived instead of an anonymous timeout (#3103).
+const waitFor = async (done, what = 'the child', ms = 4000) => {
   const started = Date.now()
   while (!done()) {
-    if (Date.now() - started > ms) throw new Error('timed out waiting for the child')
+    if (Date.now() - started > ms) throw new Error(`timed out waiting for ${what}`)
     await new Promise(resolve => setTimeout(resolve, 10))
   }
+}
+// A child announces that its stdin handler is attached, so a test never has to bet on how fast
+// this box starts a process: `run` waits for the marker, and the reply windows that follow
+// measure the answer rather than the boot (#3103).
+const readyMarker = (dir) => {
+  const ready = join(dir, 'ready.txt')
+  writeFileSync(ready, '')
+  return ready
+}
+const waitReady = async (ready, id, count = 1) => {
+  await waitFor(() => readFileSync(ready, 'utf8').split('\n').filter(row => row === 'ready').length >= count,
+    `process ${count} for ${id} to attach its stdin handler`)
 }

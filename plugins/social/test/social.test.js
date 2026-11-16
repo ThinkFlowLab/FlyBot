@@ -3546,10 +3546,12 @@ test('#456: a face-room event read twice (two polls at once) reaches the room on
   assert.equal(hosted.log.filter(line => String(line.text).includes('Line one from A')).length, 1, 'logged once')
 })
 
-function loadSocialClient(callImpl) {
+function loadSocialClient(callImpl, timers = {}) {
   const registered = []
   const entries = []
-  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, setInterval, clearInterval, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
+  // #3075 review: a test that has to see the 5 s poll arrive brings its own clock, so one tick is a
+  // poll the way the app runs it rather than a hand-poked state array.
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, setInterval: timers.setInterval ?? setInterval, clearInterval: timers.clearInterval ?? clearInterval, console, document: { getElementById: () => ({}), createElement: () => ({}), head: { appendChild() {} } } }
   sandbox.globalThis = sandbox
   sandbox.__flybot__ = {
     slots: { register: (slot, entry) => { entries.push([slot, entry]); return () => {} } },
@@ -3593,7 +3595,59 @@ function loadSocialClient(callImpl) {
       useMemo: f => f(),
     }))
   }
-  return { registered, entries, walk, pluginOf, h, sandbox }
+  // #3071: `pluginOf` seeds useState positionally and hands back a no-op setter, so nothing a click
+  // writes can be read afterwards — and a click that writes and then re-renders is exactly what a
+  // batch of decisions does. This variant keeps the slots live, so a test can draw, click, draw again
+  // and read what the component actually stored.
+  const pluginOfLive = (states = []) => {
+    const store = [...states]
+    // #3075 review: a ref outlives the render, which is the whole point of one — the dock keeps a Set in
+    // it. A fresh object per render made the one-send rule look right here while it was wrong in the app.
+    const refs = []
+    // …and an effect is the only place the dock starts its poll and prunes its records, so this stub
+    // runs the callback like React does: once on mount, again when a dependency changed, cleanup first.
+    const effects = []
+    let slot = 0
+    let refSlot = 0
+    let effectSlot = 0
+    let pending = []
+    const plugin = registered[0].factory(() => ({
+      createElement: h, Fragment: 'F',
+      useEffect: (run, deps) => {
+        const at = effectSlot++
+        const previous = effects[at]
+        const same = previous && (deps === undefined
+          ? false
+          : deps.length === (previous.deps?.length ?? -1) && deps.every((entry, index) => Object.is(entry, previous.deps[index])))
+        if (same) return
+        pending.push(() => {
+          previous?.cleanup?.()
+          const cleanup = run()
+          effects[at] = { deps, cleanup: typeof cleanup === 'function' ? cleanup : undefined }
+        })
+      },
+      useState: (value) => {
+        const at = slot++
+        if (!(at in store)) store[at] = value
+        return [store[at], next => { store[at] = typeof next === 'function' ? next(store[at]) : next }]
+      },
+      useRef: (value) => {
+        const at = refSlot++
+        if (!(at in refs)) refs[at] = { current: value }
+        return refs[at]
+      },
+      useMemo: fn => fn(),
+    }))
+    const render = (Component, props) => {
+      slot = 0; refSlot = 0; effectSlot = 0; pending = []
+      const tree = walk(Component(props))
+      for (const effect of pending) effect()
+      pending = []
+      return tree
+    }
+    return { plugin, render, store }
+  }
+  return { registered, entries, walk, pluginOf, pluginOfLive, h, sandbox }
 }
 
 test('social HTTP keep-alive reuses one Agent', () => {
@@ -4317,7 +4371,7 @@ test('an ended matching window sits under Past rooms and opens from its row, not
   const tree = walk(pluginOf([rooms, true]).FaceRooms({}))
   const ended = tree.find(n => n.props['data-flybot'] === 'face-room' && n.props['data-status'] === 'candidate')
   assert.ok(ended?.props['data-past'])
-  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('ended')))
+  assert.ok(tree.some(n => n.props['data-flybot'] === 'face-status' && n.children.includes('Ended')))
   assert.ok(tree.some(n => n.props.className === 'fs-face-row' && n.props.role === 'button'))
   assert.equal(tree.filter(n => n.type === 'button' && n.children.includes('Leave')).length, 0)
 })
@@ -4478,6 +4532,54 @@ test('#3029: Approve all claims nothing when every send fails, and the failure k
   assert.deepEqual(line.children, ['the hold is stale'])
 })
 
+test('#3071: a mixed Approve all keeps the reason of the send that failed', async () => {
+  const notes = []
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  // The send that fails is followed by two that work, so a later success is in a position to wipe the
+  // line the failure wrote. That is the mixed batch: one reason and one receipt in the same click.
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob'), hold('h3', '@bob.home', 'Bob')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  const props = { bot: { id: 'mine' }, roster: { bots: [] }, room, actions: { notify: text => notes.push(text) } }
+  const { pluginOfLive } = loadSocialClient(async (endpoint, payload) => {
+    // The dock's own load puts the three holds on screen; the effect really runs (#3075 review).
+    if (endpoint === 'social/status') return { approvals: items }
+    if (endpoint === 'approvals') return []
+    if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1') throw new Error('the hold is stale')
+    return { approvalId: payload?.approvalId, status: 'approved' }
+  })
+  const { plugin, render, store } = pluginOfLive([])
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+  const dock = () => render(plugin.ChatApprovalDock, props)
+  dock()
+  await flush()
+  await dock().find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.deepEqual(notes, ['Sent to Bob'], 'the receipt names only the sends that went out')
+  const line = dock().find(node => node.props['data-flybot'] === 'chat-approval-error')
+  assert.ok(line, 'a mixed click still says why one hold did not send')
+  assert.deepEqual(line.children, ['Eve: the hold is stale'], 'the reason and the card it belongs to survive the two sends that worked')
+  assert.equal(store[0].some(item => item.id === 'h1'), true, 'the failed card is still there to read it on')
+  assert.equal(store[0].some(item => item.id === 'h2'), false, 'the sends that went out left as they do today')
+})
+
+test('#3071: one card still says why its own click failed', async () => {
+  const hold = { id: 'h1', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@eve.home', toName: 'Eve', text: 'hi' }
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }] }
+  const { pluginOfLive } = loadSocialClient(async (endpoint) => {
+    if (endpoint === 'social/status') return { approvals: [hold] }
+    if (endpoint === 'approvals') return []
+    throw new Error('the hold is stale')
+  })
+  const { plugin, render } = pluginOfLive([])
+  const props = { bot: { id: 'mine' }, roster: { bots: [] }, room }
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+  render(plugin.ChatApprovalDock, props)
+  await flush()
+  const button = render(plugin.ChatApprovalDock, props).find(node => node.type === 'button' && node.children?.[0] === 'Approve')
+  await button.props.onClick()
+  const line = render(plugin.ChatApprovalDock, props).find(node => node.props['data-flybot'] === 'chat-approval-error')
+  assert.deepEqual(line?.children, ['the hold is stale'], 'the single-card path keeps its own reason')
+})
+
 test('#3044: no card stays clickable while another decision is in flight', () => {
   const { walk, pluginOf } = loadSocialClient(async () => ({}))
   const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
@@ -4633,6 +4735,29 @@ test('#3036: a Retry already in flight is disabled and a second click sends noth
   assert.equal(retry?.props.disabled, true, 'the row that is still sending draws its Retry disabled')
   await retry.props.onClick()
   assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide'), [], 'a second click while that one is in flight sends nothing')
+})
+
+test('#3050: a Retry that another decision would drop never looks clickable', async () => {
+  const calls = []
+  const { walk, pluginOf } = loadSocialClient(async (endpoint, payload) => { calls.push([endpoint, payload]); return {} })
+  const hold = (id, to, toName, status) => ({ id, source: 'local', kind: 'outbound_message', status, from: 'Chief', to, toName, text: id })
+  const failed = hold('apr-failed', '@bob.alice.home', 'Bob', 'failed')
+  const deciding = hold('apr-deciding', '@eve.alice.home', 'Eve', 'pending')
+  const dock = (busy) => walk(pluginOf([[], [deciding, failed], true, true, busy]).ChatApprovalDock({ bot: { id: 'chief', name: 'Chief' }, roster: { bots: [] } }))
+  // The fifth slot is the dock's `busy`: another hold, not this row, is being decided right now.
+  const busyElsewhere = dock('apr-deciding')
+  const retry = busyElsewhere.find(node => node.props['data-flybot'] === 'pending-retry')
+  assert.ok(retry, 'the failed row still offers Retry while a different hold is in flight')
+  assert.equal(busyElsewhere.filter(node => node.props['data-flybot'] === 'pending-retry').length, 1, 'the waiting row in the same list still offers none')
+  await retry.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide'), [], 'the click a drawn-enabled Retry allows sends nothing')
+  assert.equal(retry.props.disabled, true, 'a Retry its own handler drops must not draw enabled')
+  // Nothing in flight: the same row is a real button again, with the same payload.
+  const idle = dock('')
+  const stillThere = idle.find(node => node.props['data-flybot'] === 'pending-retry')
+  assert.equal(stillThere.props.disabled, false, 'an idle row keeps its Retry')
+  await stillThere.props.onClick()
+  assert.deepEqual(calls.filter(([endpoint]) => endpoint === 'decide').map(([, payload]) => [payload.id, payload.decision]), [['apr-failed', 'retry']], 'an idle click is still the one decide retry')
 })
 
 test('#52: a failed local hold reads Not sent with its error and offers Retry', async () => {
@@ -11743,6 +11868,38 @@ test('#973: the panel draws one row per Bot and names the Bot each button shares
   assert.ok(calls.some(([ep, payload]) => ep === 'social/share-with-friend' && payload.friendBotId === 'pb-writer' && payload.friendName === 'Writer (Bob)'), 'the row label travels with the click (#994)')
 })
 
+// #3062: `busy` is one slot for the whole card, so a click on a second row must not start a second
+// share: it takes the first row's label over (the sending row looks clickable again) and posts a
+// second grant at the same time.
+test('#3062: a second Share cannot start while the first one is still sending', async () => {
+  const calls = []
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const friends = [shareCoder, { home: '@bob.home', handle: '@eve.bob.home', name: 'Eve (Bob)', peerBotId: 'pb-eve' }]
+  const host = sharingHost(async (endpoint, payload) => {
+    if (endpoint === 'social/share-friends') return { friends }
+    if (endpoint === 'social/share-with-friend') { calls.push(payload.friendBotId); await gate; return { message: 'Shared Writer.' } }
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  const rows = () => panel.nodes().filter(n => n.type === 'button' && n.props?.['data-flybot'] === 'share-friend')
+  const label = node => (node?.props?.children ?? []).join('')
+  assert.equal(rows().length, 2, 'two rows to click')
+  rows()[0].props.onClick()
+  // The first row is the one that is sending: it says so, and the other row must not invite a click.
+  const sendingLabel = label(rows()[0])
+  const otherDisabled = rows()[1].props.disabled
+  await rows()[1].props.onClick()
+  const labelAfterSecondClick = label(rows()[0])
+  release()
+  await panel.settle()
+  assert.deepEqual(calls, ['pb-coder'], 'one share at a time: the second click posted nothing')
+  assert.equal(sendingLabel, 'Sharing…', 'the row that is sending says so')
+  assert.equal(otherDisabled, true, 'no second row may look clickable while one share is sending')
+  assert.equal(labelAfterSecondClick, 'Sharing…', 'a click on the other row does not take the sending row\'s label away')
+})
+
 // ---- #773: a room code shown as a QR image, and scanning one back ----------------------
 // The reference matrix comes from an independent encoder (node-qrcode) for the same payload in
 // byte mode, level M: every module is pinned, not just "something was drawn".
@@ -14962,4 +15119,157 @@ test('#3048: a hidden folder refusal names the segment it hit and the copy that 
   const dotTool = (name, args) => hiddenTeam.ctx.registeredTools.get(name).execute(args, { agent: { id: 'b' } })
   await assert.rejects(dotTool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [join(dotFiles, 'held.md')] }), /cannot be attached: it is a private FlyBot file$/)
   await assert.rejects(dotTool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [dotCred] }), /cannot be attached: it looks like a credential$/)
+})
+
+// #3075: a batch reported its failures only in the dock's one error line, which the next click clears.
+// The upstream Bot Social hold is still pending after a failed send, so the next 5 s poll drew the card
+// back as an ordinary waiting one — nothing on screen said which send had not gone, and the line was
+// gone by the next click. The dock now keeps its own record per id and draws the failed card from it.
+const p813Clock = () => {
+  const every = []
+  let seq = 0
+  return {
+    every,
+    setInterval(run, ms) { const id = (seq += 1); every.push({ id, run, ms }); return id },
+    clearInterval(id) { const at = every.findIndex(entry => entry.id === id); if (at >= 0) every.splice(at, 1) },
+    async tick() { await Promise.all(every.map(entry => entry.run())) },
+  }
+}
+const p813Items = () => [
+  { id: 'h1', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@eve.home', toName: 'Eve', text: 'one' },
+  { id: 'h2', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@bob.home', toName: 'Bob', text: 'two' },
+]
+const p813Props = { bot: { id: 'mine' }, roster: { bots: [] }, room: { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] } }
+const p813H1Calls = calls => calls.filter(([endpoint, payload]) => endpoint === 'social/decide-approval' && payload?.approvalId === 'h1')
+// The dock's own load() runs on mount and its own 5 s interval drives every later poll, so these tests
+// read the walk the app walks (#3075 review): a seeded state array hid both the poll and the refs, and
+// the one-send rule looked right there while it was wrong in the app.
+const p813Dock = async (impl) => {
+  const clock = p813Clock()
+  const { pluginOfLive } = loadSocialClient(impl, clock)
+  const { plugin: dock, render: draw, store } = pluginOfLive([])
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+  draw(dock.ChatApprovalDock, p813Props)
+  await flush()
+  return { dock, draw, store, clock, flush }
+}
+const p813Ready = async (endpoint, payload, calls) => {
+  calls.push([endpoint, payload])
+  if (endpoint === 'social/status') return { approvals: p813Items() }
+  if (endpoint === 'approvals') return []
+  if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1') throw new Error('the hold is stale')
+  return { approvalId: payload?.approvalId, status: 'approved' }
+}
+
+test('#3075: a failed send in a batch keeps its card failed, with the reason and a Retry', async () => {
+  const calls = []
+  const { dock, draw, store } = await p813Dock((endpoint, payload) => p813Ready(endpoint, payload, calls))
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  assert.equal(store[0].some(item => item.id === 'h2'), false, 'the send that went out left the list as it does today')
+  const tree = draw(dock.ChatApprovalDock, p813Props)
+  const card = tree.find(node => node.props['data-flybot'] === 'chat-approval')
+  assert.equal(card?.props['data-state'], 'failed', 'the failed card is drawn as failed, not as one more message waiting')
+  assert.deepEqual(tree.find(node => node.props['data-flybot'] === 'hold-error')?.children, ['the hold is stale'], 'the card carries the reason the line carried')
+  assert.equal(tree.some(node => node.type === 'button' && (node.children?.[0] === 'Approve' || node.children?.[0] === 'Reject')), false, 'a failed send offers no Approve or Reject')
+  assert.ok(tree.find(node => node.props['data-flybot'] === 'hold-retry'), 'a failed send offers Retry')
+})
+
+test('#3075: the failed card survives the 5 s poll that still sees the hold pending', async () => {
+  const calls = []
+  const { dock, draw, clock, flush } = await p813Dock((endpoint, payload) => p813Ready(endpoint, payload, calls))
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  // The poll writes the host's own list back: both holds, because the failed one is still pending upstream.
+  await clock.tick()
+  await flush()
+  const polled = draw(dock.ChatApprovalDock, p813Props)
+  assert.equal(polled.find(node => node.props['data-flybot'] === 'chat-approval' && node.props['data-state'] === 'failed')?.props['data-role'], 'owner', 'the poll did not turn the failed card back into a waiting one')
+  // Another card's click clears the line; it must not clear the failed card.
+  await polled.find(node => node.type === 'button' && node.children?.[0] === 'Approve').props.onClick()
+  const after = draw(dock.ChatApprovalDock, p813Props)
+  const failed = after.find(node => node.props['data-flybot'] === 'chat-approval' && node.props['data-state'] === 'failed')
+  assert.ok(failed, 'the card is still failed after the poll and the other click')
+  assert.deepEqual(after.find(node => node.props['data-flybot'] === 'hold-error')?.children, ['the hold is stale'], 'its reason is still on it')
+  assert.equal(after.some(node => node.props['data-flybot'] === 'chat-approval-error'), false, 'the line itself is the thing the click cleared')
+})
+
+test('#3075: Retry resends the approval, drops the card and clears the line', async () => {
+  const calls = []
+  let h1Tries = 0
+  const { dock, draw } = await p813Dock(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/status') return { approvals: p813Items() }
+    if (endpoint === 'approvals') return []
+    if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1' && ++h1Tries === 1) throw new Error('the hold is stale')
+    return { approvalId: payload?.approvalId, status: 'approved' }
+  })
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  const before = p813H1Calls(calls).length
+  const retry = draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'hold-retry')
+  await retry.props.onClick()
+  const sent = p813H1Calls(calls)
+  assert.equal(sent.length, before + 1, 'the Retry sends the hold again, once')
+  assert.equal(sent.at(-1)[1].decision, 'approve', 'Bot Social sends it as an approve: it takes approve or reject only')
+  const after = draw(dock.ChatApprovalDock, p813Props)
+  assert.equal(after.some(node => node.props['data-flybot'] === 'chat-approval'), false, 'the card leaves once it went out')
+  assert.equal(after.some(node => node.props['data-flybot'] === 'chat-approval-error'), false, 'the line is clear after a successful retry')
+})
+
+test('#3075: a Retry click on an id that already went out sends nothing', async () => {
+  const calls = []
+  let h1Tries = 0
+  const { dock, draw } = await p813Dock(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    if (endpoint === 'social/status') return { approvals: p813Items() }
+    if (endpoint === 'approvals') return []
+    if (endpoint === 'social/decide-approval' && payload?.approvalId === 'h1' && ++h1Tries === 1) throw new Error('the hold is stale')
+    return { approvalId: payload?.approvalId, status: 'approved' }
+  })
+  await draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'approve-all').props.onClick()
+  const before = p813H1Calls(calls).length
+  const retry = draw(dock.ChatApprovalDock, p813Props).find(node => node.props['data-flybot'] === 'hold-retry')
+  await retry.props.onClick()
+  assert.equal(p813H1Calls(calls).length, before + 1, 'the first click resends it')
+  await retry.props.onClick()
+  assert.equal(p813H1Calls(calls).length, before + 1, 'a second click on the card that already went out sends nothing')
+})
+
+// A local failed hold answers through the host's own `decide retry`; the host writes a retry that failed
+// again back into the approval and returns normally (#3075 review, FlyBot Test). So the dock must not
+// spend the id on the click: only a send that actually went out is spent. Otherwise the 5 s poll draws
+// the same Not sent card again and its Retry silently sends nothing for the rest of the session. This
+// test drives the poll itself — a real effect, a real interval tick — because a hand-poked state array
+// would leave the very path the bug lives on unread.
+test('#3075: a local failed hold can be retried again after a retry that failed again', async () => {
+  const calls = []
+  const friend = { id: 'remote-eve', name: 'Eve', remote: { handle: '@eve.alice.home' } }
+  const hostHold = { id: 'local-f1', status: 'failed', error: 'the send failed', senderName: 'Chief', recipientName: 'Eve', request: { to: { handle: '@eve.alice.home' }, text: 'x', from: 'chief', via: 'auto', meta: {} } }
+  const clock = p813Clock()
+  const { pluginOfLive } = loadSocialClient(async (endpoint, payload) => {
+    calls.push([endpoint, payload])
+    // The host answered; the send failed again, so the same failed approval is still what it lists.
+    if (endpoint === 'social/status') return { approvals: [] }
+    if (endpoint === 'approvals') return [hostHold]
+    return {}
+  }, clock)
+  const { plugin: dock, render: draw } = pluginOfLive([])
+  const props = { bot: friend, roster: { bots: [friend] } }
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+  const retries = () => calls.filter(([endpoint, payload]) => endpoint === 'decide' && payload?.decision === 'retry')
+
+  draw(dock.ChatApprovalDock, props)
+  await flush()
+  const first = draw(dock.ChatApprovalDock, props).find(node => node.props['data-flybot'] === 'hold-retry')
+  assert.ok(first, 'the failed local hold is drawn with its Retry')
+  await first.props.onClick()
+  assert.equal(retries().length, 1, 'the first Retry asks the host to retry the hold')
+  assert.equal(draw(dock.ChatApprovalDock, props).some(node => node.props['data-flybot'] === 'hold-retry'), false, 'the card leaves while the host works')
+
+  // The host returned normally and the 5 s poll runs: the same id comes back as a failed hold.
+  await clock.tick()
+  await flush()
+  const again = draw(dock.ChatApprovalDock, props).find(node => node.props['data-flybot'] === 'hold-retry')
+  assert.ok(again, 'the poll draws the same Not sent hold again')
+  await again.props.onClick()
+  assert.equal(retries().length, 2, 'a retry that failed again can be tried again')
+  assert.equal(clock.every.length, 1, 'the test drove the dock\'s own poll, not a copy of it')
 })

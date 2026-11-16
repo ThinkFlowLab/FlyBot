@@ -206,3 +206,45 @@ test('the workflow stays report only', () => {
   const test = readFileSync(new URL('../workflows/test.yml', import.meta.url), 'utf8')
   assert.doesNotMatch(test, /risk-tier|risk-gate/, 'tests-ok must not depend on the report')
 })
+
+// P-818 (#3087): the two JavaScript-source patterns are about what a change *ships*, not about the
+// text of a test that mounts the client bundle. A test file mounts the bundle with
+// `new Function('window', …)` exactly the way a browser does, and #3084 — one client test row — was
+// labelled T3 for that line while the change it carried is T2 (client code) + T2 (test) + T1
+// (changelog). A test file must read T2; the same line in `plugins/social/client.js` must stay T3,
+// because a non-test code file reads both lists.
+test('#3087: `new Function(` in a test file is T2, while the same line in client code is still T3', () => {
+  const mount = "+const run = new Function('window', readFileSync(main, 'utf8'))(window)"
+  const inTest = gate.judge([file('plugins/social/test/x.test.js', [mount])])
+  assert.equal(inTest.tier, 'T2')
+  assert.doesNotMatch(inTest.why.join('\n'), /new Function/)
+  // The positive control: moving the pattern must not switch it off for shipped code.
+  const inClient = gate.judge([file('plugins/social/client.js', [mount])])
+  assert.equal(inClient.tier, 'T3')
+  assert.match(inClient.why.join('\n'), /plugins\/social\/client\.js: \/new Function/)
+})
+
+test('#3087: `eval(` keeps the same split — a test file is its own tier, host code is still T3', () => {
+  const line = '+const out = eval(source)'
+  const inTest = gate.judge([file('core/test/a.test.js', [line])])
+  assert.equal(inTest.tier, 'T1')
+  assert.doesNotMatch(inTest.why.join('\n'), /eval/)
+  const inHost = gate.judge([file('core/src/host/groups.js', [line])])
+  assert.equal(inHost.tier, 'T3')
+  assert.match(inHost.why.join('\n'), /eval/)
+})
+
+// The rest of the list is untouched by this change: a test file may still quote a URL, but a child
+// process, a secret-shaped environment variable, a skipped case and a lint suppression still count
+// wherever they are written, because those describe what the test does, not what it runs.
+test('#3087: the patterns left in diffPatterns still count in a test file', () => {
+  const risky = {
+    child_process: "+import { spawn } from 'node:child_process'",
+    secret: '+const t = process.env.GITHUB_TOKEN',
+    only: "+it.skip('x', () => {})",
+    lint: '+// oxlint-disable-next-line',
+  }
+  for (const [name, line] of Object.entries(risky)) {
+    assert.equal(gate.judge([file('plugins/social/test/x.test.js', [line])]).tier, 'T3', name)
+  }
+})

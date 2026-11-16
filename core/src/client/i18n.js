@@ -206,6 +206,8 @@ const ZH = {
   'Copy a link a friend can paste in Add friend.': '复制链接，朋友在添加好友里粘贴即可。',
   'Copy my handle': '复制我的 handle',
   'Your Bot Social handle': '你的 Bot Social handle',
+  // #P769b: a Past room's hover names when the call started, then the day and the clock.
+  Started: '开始',
   'Face-to-face': '面对面',
   'This Bot has no model set up yet.': '这个 Bot 还没有配置模型。',
   'This Bot could not answer right now.': '这个 Bot 现在没法回答。',
@@ -1202,6 +1204,10 @@ const ZH = {
   'Source code': '源代码',
   'Release notes': '发布说明',
   Open: '打开',
+  Closed: '已关闭',
+  Left: '已离开',
+  Ended: '已结束',
+  Joining: '加入中',
   // Feedback and errors
   Feedback: '反馈',
   'Report a problem': '报告问题',

@@ -852,7 +852,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Content: '内容',
    'Referenced {labels}': '引用了 {labels}',
    ', ': '、',
-@@ -41,22 +41,79 @@ const ZH = {
+@@ -41,22 +41,81 @@ const ZH = {
    ' and ': '、',
    and: '和',
    '{count} members': '{count} 位成员',
@@ -886,6 +886,8 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Copy a link a friend can paste in Add friend.': '复制链接，朋友在添加好友里粘贴即可。',
 +  'Copy my handle': '复制我的 handle',
 +  'Your Bot Social handle': '你的 Bot Social handle',
++  // #P769b: a Past room's hover names when the call started, then the day and the clock.
++  Started: '开始',
 +  'Face-to-face': '面对面',
 +  'This Bot has no model set up yet.': '这个 Bot 还没有配置模型。',
 +  'This Bot could not answer right now.': '这个 Bot 现在没法回答。',
@@ -1495,7 +1497,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Updates: '更新',
    'Check for updates': '检查更新',
    'Checking…': '正在检查…',
-@@ -711,6 +711,13 @@ const ZH = {
+@@ -711,10 +711,21 @@ const ZH = {
    'Update checks are off.': '已关闭更新检查。',
    'Installed from a local folder; update it there.': '从本地文件夹安装，请在那里更新。',
    'Updates are not offered for this install.': '这种安装方式不提供更新。',
@@ -1509,6 +1511,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Links: '链接',
    'Source code': '源代码',
    'Release notes': '发布说明',
+   Open: '打开',
++  Closed: '已关闭',
++  Left: '已离开',
++  Ended: '已结束',
++  Joining: '加入中',
+   // Feedback and errors
+   Feedback: '反馈',
+   'Report a problem': '报告问题',
 @@ -726,7 +726,7 @@ const ZH = {
    Show: '查看',
    Hide: '收起',
