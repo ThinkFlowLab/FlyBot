@@ -1,0 +1,3 @@
+# Settings and chat-shell parity (Teamily inventory)
+
+General settings now include appearance (light / dark / automatic / match system, with sunset-to-sunrise or a custom night window), a language entry that follows the DeepSeek Harness locale, and a real Enter vs Shift+Enter send shortcut. A Channels page lists only integrations FlyBot already has (for example Feishu). The composer + menu groups the existing Attach, Reference, and Scheduled task actions, and the session header overflow exposes conversation settings and Copy invite link when sharing is available. Product name and mark stay FlyBot. Paid plans, credits, unimplemented creation types, and unconnected messaging channels are not added.

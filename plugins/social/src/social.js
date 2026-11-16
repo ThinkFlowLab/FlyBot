@@ -117,7 +117,28 @@ export function approvalDraftText(value) {
   const body = human ? draftText(human.text) : raw
   return body.replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
 }
-// Bot Social list_approvals card → the Friends' Bots queue (outbound drafts only).
+// Capability / share requests from Bot Social (`grant_request`). The owner decides these
+// in the Social section, not on an outbound-message dock card.
+export function grantRequestOf(item) {
+  const grant = item?.grant_request
+  return grant && typeof grant === 'object' ? grant : undefined
+}
+export function grantRequestSentence(item) {
+  if (!item || (item.kind && item.kind !== 'grant_request')) return ''
+  const grant = grantRequestOf(item)
+  const from = grant?.from
+  const who = cleanText(
+    (from && (from.display_name || from.handle))
+      || (typeof item.from === 'string' ? item.from : item.from?.display_name)
+      || item.sender_name
+      || '',
+  ) || 'A friend'
+  const cap = cleanText(grant?.capability || item.capability || '')
+  const summary = approvalDraftText(item.summary || item.text || '')
+  if (summary) return summary
+  return cap ? `${who} requests ${cap}` : `${who} requests a share`
+}
+// Bot Social list_approvals card → the Friends' Bots queue (outbound drafts) and, for grant_request, the Social section.
 const looksLikeBotId = (value) => /^bot_[a-z0-9]+$/i.test(String(value ?? '').trim())
 // Why Bot Social held a send, as the DLP categories it named (`dlp.commitment` → `commitment`). The plain
 // "all outbound needs approval" reason is not a finding and is left out. Only known-shaped names pass: the card
@@ -210,13 +231,18 @@ export function approvalView(item, { localName } = {}) {
     || item.sender_kind === 'human'
     || item.from_kind === 'human'
   const named = typeof localName === 'function' ? localName(item.bot_id) : ''
+  const grant = kind === 'grant_request' ? grantRequestOf(item) : undefined
+  const grantFrom = grant?.from
   const fromRaw = viaComposer
     ? 'You'
     : named
+      || (grantFrom && (grantFrom.display_name || grantFrom.handle))
       || (typeof item.from === 'string' ? item.from : item.from?.display_name)
       || item.sender_name
       || item.bot?.display_name
   const from = viaComposer ? 'You' : (cleanText(fromRaw) || (looksLikeBotId(item.bot_id) ? 'Bot' : cleanText(item.bot_id)))
+  const capability = cleanText(grant?.capability || item.capability || '')
+  const grantText = kind === 'grant_request' ? grantRequestSentence(item) : ''
   return {
     id,
     kind,
@@ -224,6 +250,7 @@ export function approvalView(item, { localName } = {}) {
     from,
     to: to?.handle ? norm(to.handle) : undefined,
     toName: cleanText(to?.display_name) || (kind === 'face_room_message' ? 'the room' : undefined),
+    ...(capability ? { capability } : {}),
     roomId: item.room_id || item.face_room_id || item.message?.room_id,
     // The Bot Social identity that wrote it (a local Bot is found by it), and why Bot Social held it (#371).
     ...(typeof item.bot_id === 'string' && item.bot_id ? { botId: item.bot_id } : {}),
@@ -235,7 +262,7 @@ export function approvalView(item, { localName } = {}) {
     // `autoSendHold` beside it, which adds its own switch (#457); the outbound paths never do.
     blanketHold: holdIsBlanket(item),
     autoSendHold: holdAllowsFaceAutoSend(item),
-    text,
+    text: grantText || text,
     summary: cleanText(item.summary),
     createdAt: item.created_at,
     attachments: (item.message?.attachments ?? []).filter(file => file?.name).map(file => ({ name: safeName(file.name), size: Number(file.size) || 0 })),
@@ -394,6 +421,41 @@ export function parseInviteInput(input) {
 // Neutral, not an error: re-accepting an invite for a Bot this home already has (#496).
 export const ALREADY_HAVE = "You already have this friend's Bot."
 
+// Bot Social #776: a stopped Bot is bot_frozen (resumable); a removed one is bot_revoked.
+// FlyBot API codes use the bot/ prefix so /api/bot keeps them (see channel.js).
+export function mapStoppedOrRemovedBot(error, { frozen, revoked } = {}) {
+  const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
+  const blob = `${raw} ${error?.code ?? ''}`
+  if (/bot_frozen|bot is frozen/i.test(blob)) {
+    return Object.assign(new Error(frozen), { code: 'bot/frozen' })
+  }
+  if (/bot_revoked|bot identity was revoked|bot in this relationship was revoked/i.test(blob)) {
+    return Object.assign(new Error(revoked), { code: 'bot/revoked' })
+  }
+  return undefined
+}
+
+// Auto-send / auto-approve (#3110): when the silent decide_approval path fails, the dock
+// shows these sentences on the waiting card. Transient errors are left off so a later poll
+// can retry an owner-typed line without flashing a card (#227).
+export const AUTO_APPROVE_FROZEN = 'Auto-send could not finish: one of the Bots on this line is stopped on Bot Social. Resume it, then approve again.'
+export const AUTO_APPROVE_REVOKED = 'Auto-send could not finish: one of the Bots on this line was removed from Bot Social, so it cannot be approved.'
+export const AUTO_APPROVE_CANCELLED = 'This approval was cancelled, so Auto-send could not send the line.'
+export const AUTO_APPROVE_FAILED = 'Auto-send could not send this line. It is waiting for your approval.'
+
+export function mapAutoApproveError(error, { allowGeneric = false } = {}) {
+  const mapped = mapStoppedOrRemovedBot(error, { frozen: AUTO_APPROVE_FROZEN, revoked: AUTO_APPROVE_REVOKED })
+  if (mapped) return mapped
+  const blob = `${String(error?.message ?? error ?? '')} ${error?.code ?? ''}`
+  if (/invalid_state|approval is cancelled|\bcancelled\b/i.test(blob)) {
+    return Object.assign(new Error(AUTO_APPROVE_CANCELLED), { code: 'invalid_state' })
+  }
+  if (!allowGeneric) return undefined
+  const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
+  if (!raw) return undefined
+  return Object.assign(new Error(AUTO_APPROVE_FAILED), { code: 'bot/auto-approve-failed' })
+}
+
 export function mapJoinInviteError(error, { foreignHost } = {}) {
   const msg = String(error?.message ?? error ?? '')
   const code = String(error?.code ?? '')
@@ -434,7 +496,53 @@ export function mapJoinInviteError(error, { foreignHost } = {}) {
   if (/rate_limited/i.test(blob)) {
     return Object.assign(new Error('Too many tries. Wait a moment and try again.'), { code: 'rate_limited' })
   }
+  const availability = mapStoppedOrRemovedBot(error, {
+    frozen: 'The Bot this invite names is stopped. Ask its owner to resume it; the same link will work again then.',
+    revoked: 'The Bot this invite names was removed. Ask its owner for a new invite to one of their Bots.',
+  })
+  if (availability) return availability
   return error
+}
+
+// Share-with-friend refusals from Bot Social, as plain next-step sentences.
+// A stopped Bot (#776 on Birfy/bot-social) is bot_frozen and can be resumed; a removed
+// one is bot_revoked. Neither should fall through to "Try again".
+export function mapShareFriendError(error) {
+  const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
+  const blob = `${raw} ${error?.code ?? ''}`
+  if (error?.unavailable || /unavailable/i.test(blob)) {
+    return Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
+  }
+  const availability = mapStoppedOrRemovedBot(error, {
+    frozen: 'One of the Bots in this share is stopped on Bot Social. Resume it, then share again.',
+    revoked: 'One of the Bots in this share was removed from Bot Social, so it cannot be shared.',
+  })
+  if (availability) return availability
+  if (/not_friends|no_relationship|no active relationship|not friends/i.test(blob)) {
+    return new Error('You are not friends with them yet. Add them from + Add friend.')
+  }
+  if (/already_granted|idempotent|unchanged/i.test(blob)) {
+    return null
+  }
+  if (/bot_not_found|not your bot/i.test(blob)) {
+    return new Error('Choose one of your Bots to share.')
+  }
+  if (/friend_not_found|no such friend|unknown friend/i.test(blob)) {
+    return new Error('That friend is not on this server.')
+  }
+  if (/not connected|no token|no server URL/i.test(blob)) {
+    return new Error('Bot Social is disconnected. Reconnect under Settings → Bot Social.')
+  }
+  // The server has the tool but refused our arguments (an older or newer contract, #592): a plain
+  // line, never the raw JSON-RPC validation text.
+  if (/(invalid input|invalid arguments|expected string|received undefined|-32602)/i.test(blob) && !/not found|no such tool|unknown tool/i.test(blob)) {
+    return new Error('Bot Social did not accept that share request. Its server may need an update; invite links still work.')
+  }
+  const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
+  if (/^(MCP error|JSON-RPC|error:)/i.test(body) || /^-?\d+ /.test(body)) {
+    return new Error('Could not share with that friend. Try again, or use an invite link.')
+  }
+  return new Error(body || 'Could not share with that friend. Try again.')
 }
 
 export const startFailureReason = (error) => String(error?.message ?? error ?? 'the plugin did not start').replace(/\s+/g, ' ').trim() || 'the plugin did not start'
@@ -2075,7 +2183,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     rememberOwnLine(approvalId)
     pendingCache.at = 0
     await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
-      .catch(error => warn('direct-chat owner line not approved yet; the next poll retries', error))
+      .catch(error => {
+        noteAutoApproveFailure(approvalId, error, { releaseOwn: true })
+        warn('direct-chat owner line not approved yet; the next poll retries', error)
+      })
   }
 
   // The room's own envelope clears Bot Social's blanket hold by itself (#847): the click on "Add
@@ -2103,6 +2214,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       await confirmedCall('decide_approval', { approval_id: approvalId, decision: 'approved' })
       return true
     } catch (error) {
+      noteAutoApproveFailure(approvalId, error, { allowGeneric: true })
       warn('room envelope hold not cleared; it waits on its card', error)
       return false
     }
@@ -2133,6 +2245,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // cache to begin with (#766).
       return true
     } catch (error) {
+      noteAutoApproveFailure(approvalId, error, { allowGeneric: true })
       warn('Auto-send did not approve the Bot Social hold; the line waits on its card', error)
       return false
     }
@@ -2830,7 +2943,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         handle: activeMember(bot.id)?.handle ? norm(activeMember(bot.id).handle) : undefined,
       })) : [],
       pendingApprovals: approvals.length,
-      approvals,
+      approvals: approvals.filter(item => item.kind !== 'grant_request'),
+      grantRequests: approvals.filter(item => item.kind === 'grant_request'),
       autoApproveFaceRooms,
       // Each Bot's face-room Auto-send (#457).
       faceAutoSend: Object.fromEntries(flybot.bot.list().map(bot => [bot.id, autoApproveFaceRooms || faceAutoOf(bot.id)])),
@@ -3011,8 +3125,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // reaching this point again (Codex P2 on #387).
     let status = joined.status
     if (joined.awaiting === 'your_owner_approval' && joined.approval_id) {
-      await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
-      status = 'pending_target'
+      try {
+        await confirmedCall('decide_approval', { approval_id: joined.approval_id, decision: 'approved' })
+        status = 'pending_target'
+      } catch (error) {
+        throw mapStoppedOrRemovedBot(error, {
+          frozen: 'One of the Bots on this invite is stopped on Bot Social. Resume it, then try the invite again.',
+          revoked: 'One of the Bots on this invite was removed from Bot Social, so the invite cannot be completed.',
+        }) ?? error
+      }
     }
     if (offeredHandle) unhideDeclined([offeredHandle])
     const unhide = revealHiddenIfPresent(settings, offeredHandle ? [offeredHandle] : [])
@@ -3059,7 +3180,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         warn('could not load pending request for respond', error)
       }
     }
-    const result = await confirmedCall('respond_friend_request', { relationship_id: rid, decision, ...(decision === 'accept' ? { grant_capabilities: ['chat.public'] } : {}) })
+    let result
+    try {
+      result = await confirmedCall('respond_friend_request', { relationship_id: rid, decision, ...(decision === 'accept' ? { grant_capabilities: ['chat.public'] } : {}) })
+    } catch (error) {
+      throw mapStoppedOrRemovedBot(error, {
+        frozen: 'One of the Bots in this request is stopped on Bot Social. Resume it, then accept again.',
+        revoked: 'One of the Bots in this request was removed from Bot Social, so it cannot be accepted.',
+      }) ?? error
+    }
     if (decision === 'accept') {
       const before = new Set(listedRemoteBots().map(bot => bot.handle))
       const roster = await remoteBots({ fresh: true }).catch(() => remote)
@@ -3315,39 +3444,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   }
   disposers.push(flybot.api.handle('social/share-friends', async ({ botId } = {}) => shareFriendsForBot(botId), { read: true }))
 
-  function mapShareFriendError(error) {
-    const raw = String(error?.message ?? error ?? '').replace(/\s+/g, ' ').trim()
-    const blob = `${raw} ${error?.code ?? ''}`
-    if (error?.unavailable || /unavailable/i.test(blob)) {
-      return Object.assign(new Error('Bot Social needs an update to share with a friend. Invite links still work.'), { code: 'unavailable' })
-    }
-    if (/not_friends|no_relationship|no active relationship|not friends/i.test(blob)) {
-      return new Error('You are not friends with them yet. Add them from + Add friend.')
-    }
-    if (/already_granted|idempotent|unchanged/i.test(blob)) {
-      return null
-    }
-    if (/bot_not_found|not your bot/i.test(blob)) {
-      return new Error('Choose one of your Bots to share.')
-    }
-    if (/friend_not_found|no such friend|unknown friend/i.test(blob)) {
-      return new Error('That friend is not on this server.')
-    }
-    if (/not connected|no token|no server URL/i.test(blob)) {
-      return new Error('Bot Social is disconnected. Reconnect under Settings → Bot Social.')
-    }
-    // The server has the tool but refused our arguments (an older or newer contract, #592): a plain
-    // line, never the raw JSON-RPC validation text.
-    if (/(invalid input|invalid arguments|expected string|received undefined|-32602)/i.test(blob) && !/not found|no such tool|unknown tool/i.test(blob)) {
-      return new Error('Bot Social did not accept that share request. Its server may need an update; invite links still work.')
-    }
-    const body = raw.replace(/^Bot Social\s+\S+:\s*/i, '').trim()
-    if (/^(MCP error|JSON-RPC|error:)/i.test(body) || /^-?\d+ /.test(body)) {
-      return new Error('Could not share with that friend. Try again, or use an invite link.')
-    }
-    return new Error(body || 'Could not share with that friend. Try again.')
-  }
-
   // #500: grant this Bot to an existing friend (Bot Social grant_bot_to_friend). Does not
   // replace invite links. After a successful share, People with access re-syncs this Bot.
   disposers.push(flybot.api.handle('social/share-with-friend', async ({ botId, home: friendHome, ownerId, friendOwnerId, friendBotId, peerBotId, friendName, friendHandle } = {}) => {
@@ -3550,6 +3646,8 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (settings.approvalNotices[item.id]) continue
       // The owner of a held room line sees its Approve card, never "waiting for the owner" (#179).
       if (item.kind === 'face_room_message') { settings.approvalNotices[item.id] = { at: now(), kind: 'waiting' }; changed = true; continue }
+      // grant_request is decided in the Social section; it has no 1:1 chat to post into.
+      if (item.kind === 'grant_request') { settings.approvalNotices[item.id] = { at: now(), kind: 'waiting' }; changed = true; continue }
       // Owner 1:1 chats use the Approve / Reject dock. Do not post a waiting bubble there (#140).
       await postChatNote(item, WAITING_OTHERS, { chats: false })
       settings.approvalNotices[item.id] = { at: now(), kind: 'waiting' }
@@ -3560,7 +3658,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   async function postRejectNote(approvalId) {
     const item = pendingCache.items.find(entry => entry.id === approvalId)
     // A rejected room line already reads "Not sent" where it would have stood (#456): no second note.
-    if (!item || item.kind === 'face_room_message') return
+    if (!item || item.kind === 'face_room_message' || item.kind === 'grant_request') return
     await postChatNote(item, REJECT_NOTE)
     settings.approvalNotices ??= {}
     settings.approvalNotices[approvalId] = { at: now(), kind: 'rejected' }
@@ -3593,6 +3691,45 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const keys = Object.keys(map)
     if (keys.length > 200) for (const key of keys.sort((a, b) => map[a] - map[b]).slice(0, keys.length - 200)) delete map[key]
     saveSettings()
+  }
+  const autoApproveNotices = () => (settings.autoApproveNotices ??= {})
+  function attachAutoApproveNotice(item) {
+    const note = autoApproveNotices()[item?.id]
+    return note?.message ? { ...item, autoApproveError: note.message, autoApproveCode: note.code } : item
+  }
+  function pruneAutoApproveNotices(ids) {
+    const map = settings.autoApproveNotices
+    if (!map) return
+    const live = new Set((ids ?? []).map(String))
+    let changed = false
+    for (const id of Object.keys(map)) {
+      if (live.has(id)) continue
+      delete map[id]
+      changed = true
+    }
+    if (changed) saveSettings()
+  }
+  // #3110: put a human sentence on the waiting card when Auto-send or a silent approve fails.
+  // Releasing an owner-typed line (frozen / revoked) lets the dock show it instead of retrying forever.
+  function noteAutoApproveFailure(approvalId, error, { releaseOwn = false, allowGeneric = false } = {}) {
+    const mapped = mapAutoApproveError(error, { allowGeneric })
+    if (!approvalId || !mapped) return mapped
+    const id = String(approvalId)
+    const map = autoApproveNotices()
+    map[id] = { at: now(), message: mapped.message, code: mapped.code }
+    const keys = Object.keys(map)
+    if (keys.length > 50) {
+      for (const key of keys.sort((a, b) => map[a].at - map[b].at).slice(0, keys.length - 50)) delete map[key]
+    }
+    if (releaseOwn && (mapped.code === 'bot/frozen' || mapped.code === 'bot/revoked')) {
+      const own = ownLineIds()
+      if (own[id]) delete own[id]
+    }
+    saveSettings()
+    if (pendingCache.items.some(item => item.id === id)) {
+      setPending(pendingCache.items.map(item => (item.id === id ? attachAutoApproveNotice(item) : item)))
+    }
+    return mapped
   }
   // The room a held room line belongs to (#188). Bot Social's approval card may not name it, so
   // the send path records it; a hold with no known room is legacy and stays out of every room.
@@ -3642,6 +3779,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     try {
       await confirmedCall('decide_approval', { approval_id: item.id, decision: 'approved' })
     } catch (error) {
+      noteAutoApproveFailure(item.id, error, { releaseOwn: true })
       warn('face-room owner line not approved', error)
     } finally {
       setTimeout(() => ownLineApproving.delete(item.id), 30_000).unref?.()
@@ -3678,6 +3816,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         await confirmedCall('decide_approval', { approval_id: id, decision: 'approved' })
         cleared.add(id)
       } catch (error) {
+        noteAutoApproveFailure(id, error, { allowGeneric: true })
         warn('room line held as policy not cleared; it waits on its card', error)
       } finally {
         roomPolicyClearing.delete(id)
@@ -3695,7 +3834,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const items = raw
         .filter(item => !cleared.has(String(item?.approval_id ?? item?.id ?? '')))
         .map(item => approvalView(item, { localName: localNameOf }))
-        .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message') && (item.status === 'pending' || item.status === 'pending_approval'))
+        .filter(item => item && (item.kind === 'outbound_message' || item.kind === 'face_room_message' || item.kind === 'grant_request') && (item.status === 'pending' || item.status === 'pending_approval'))
         // A local Bot's own send shows in its chat when the friend's chat is hidden or gone, so a hold is never
         // without a place (#371). The Bot is found by its Bot Social identity, never by a name.
         .map(item => {
@@ -3709,8 +3848,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // says which room it is; `toName` stays the plain string the two renderers already print.
         .map(item => (item.kind === 'face_room_message' && item.roomId ? { ...item, toName: holdRoomName(item.roomId) ?? item.toName } : item))
         .filter(item => item.kind !== 'face_room_message' || (ownLineIds()[item.id] || (item.roomId && faceHoldLive(item.roomId))))
-      const own = items.filter(item => ownLineIds()[item.id])
-      const held = items.filter(item => !ownLineIds()[item.id])
+      const own = items.filter(item => item.kind !== 'grant_request' && ownLineIds()[item.id])
+      const held = items.filter(item => item.kind === 'grant_request' || !ownLineIds()[item.id]).map(attachAutoApproveNotice)
+      pruneAutoApproveNotices([...held, ...own].map(item => item.id))
       setPending(held)
       for (const item of own) void approveOwnLine(item)
       await syncApprovalNotices(held).catch(error => warn('approval notice failed', error))
@@ -3857,7 +3997,15 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       : undefined
     const item = Array.isArray(pending) ? pending.find(entry => entry.id === id) : undefined
     if (mapped === 'rejected') await postRejectNote(id)
-    const result = await confirmedCall('decide_approval', { approval_id: id, decision: mapped })
+    let result
+    try {
+      result = await confirmedCall('decide_approval', { approval_id: id, decision: mapped })
+    } catch (error) {
+      throw mapStoppedOrRemovedBot(error, {
+        frozen: 'One of the Bots on this approval is stopped on Bot Social. Resume it, then approve again.',
+        revoked: 'One of the Bots on this approval was removed from Bot Social, so it cannot be approved.',
+      }) ?? error
+    }
     // A held face-room line follows the click: a bubble once approved, a grey "Not sent" line once rejected (#456).
     flybot.rooms?.settleHeld?.(id, mapped)
     // The decided hold leaves the badge now; the rest stay until the next fetch (#226).
@@ -3880,6 +4028,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (room?.sharedFrom?.invitedHandle) handles.add(norm(room.sharedFrom.invitedHandle))
     const faceId = room?.face?.roomId
     return pendingCache.items.filter((item) => {
+      if (item.kind === 'grant_request') return false
       if (item.kind === 'face_room_message') {
         return Boolean(item.roomId) && (item.roomId === faceId || item.roomId === room.id)
       }
@@ -3894,7 +4043,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     // A local Bot's own held sends wait on its row too, so a hold to a hidden friend chat still shows a dot (#371).
     if (!handle) return bot && !bot.remote ? pendingCache.items.filter(item => item.kind === 'outbound_message' && !item.roomId && item.fromId === bot.id) : []
     return pendingCache.items.filter((item) => {
-      if (item.kind === 'face_room_message' || item.roomId) return false
+      if (item.kind === 'grant_request' || item.kind === 'face_room_message' || item.roomId) return false
       return norm(item.to) === handle || norm(item.from) === handle
     })
   })
@@ -4613,7 +4762,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           if (outbound.human && sent.approvalId) {
             rememberOwnLine(sent.approvalId)
             await confirmedCall('decide_approval', { approval_id: sent.approvalId, decision: 'approved' })
-              .catch(error => warn('face-room owner line not approved', error))
+              .catch(error => {
+                noteAutoApproveFailure(sent.approvalId, error, { releaseOwn: true })
+                warn('face-room owner line not approved', error)
+              })
           }
           pendingCache.at = 0
           // A Bot whose Auto-send is on (#457): its clean line goes out now, approved by the owner's switch.
@@ -4641,6 +4793,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       pendingCache.at = 0
       return true
     } catch (error) {
+      noteAutoApproveFailure(approvalId, error, { allowGeneric: true })
       warn('face-room Auto-send did not approve the line', error)
       return false
     }

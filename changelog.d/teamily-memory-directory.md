@@ -1,0 +1,1 @@
+The memory panel now has a real directory and search over entries the host already loaded: Overview, All entries, and topics grouped by Bot or team memory. The directory can be hidden. Changing the setting does not invent a knowledge graph, a profile, a todo list, or a new page that saves itself immediately.

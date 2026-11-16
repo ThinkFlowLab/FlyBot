@@ -2,10 +2,12 @@ import { createElement as h, Fragment, useState } from 'react'
 import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
 import { mentionSpans } from '../shared/mentions.js'
 import { BotMark, PersonMark, markBotForMention } from './mark.js'
-import { CheckIcon, CopyIcon } from './icons.js'
+import { MessageTools, onMessageContextMenu } from './message-tools.js'
+import { userMessageReactKey } from '../shared/message-actions.js'
 import { dateLocale, t } from './i18n.js'
 import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
 import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
+import { FoldedContent, foldingOf, showsDocumentCard } from './message-fold.js'
 
 // -------------------------------------------------------------------------
 // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -155,18 +157,26 @@ function Attachments({ attachments, renderMessageImages }) {
   }))
 }
 
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
-  }
-  return h('button', { type: 'button', className: 'bt-tool', 'aria-label': copied ? t('Copied') : t('Copy'), title: copied ? t('Copied') : t('Copy'), onClick: copy }, copied ? h(CheckIcon) : h(CopyIcon))
-}
-
 const clock = time => (typeof time === 'number' ? new Date(time).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) : undefined)
 
 // A sent message, or one that joined a running turn ("steering").
-export function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill }) {
+function userBody({ text, rest, roster, sessionId, incoming, author, referenceLabels, skillNames, references, actions, time }) {
+  if (text === '' && rest.length === 0) return null
+  const folding = foldingOf(roster.prefs)
+  const card = text !== '' && showsDocumentCard(text, folding)
+  const message = text === '' ? null : h(FoldedContent, { text, folding, actions, sessionId }, card ? undefined : shown => h(UserText, {
+    text: shown,
+    bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }),
+    referenceLabels, skillNames, references, actions,
+  }))
+  if (card && rest.length === 0) return message
+  return h('div', { className: 'bt-ubody', title: clock(time) },
+    card ? null : message,
+    rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null)),
+    card ? message : null)
+}
+
+export function UserMessageCell({ node, sessionId, useRoster, useUi, actions, renderMessageImages, openFile, openSkill }) {
   const roster = useRoster(value => value)
   const data = node.data ?? {}
   const { text, attachments, rest } = contentParts(data.content)
@@ -185,6 +195,16 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
   // never drawn as held, whatever else in the room waits for approval (#457).
   const faceMine = Boolean(room?.origin === 'face-to-face' && !incoming)
   const myName = faceMine ? (facePeople(room, roster).find(entry => entry.mine)?.name || cleanPeerName(roster.self?.displayName, '') || author?.name || '') : ''
+  const reactKey = userMessageReactKey(sessionId, node)
+  const reactions = typeof useUi === 'function'
+    ? useUi(state => (reactKey ? state.reactions?.[reactKey] ?? null : null))
+    : null
+  const picked = reactions?.[0] ?? []
+  const [contextAt, setContextAt] = useState(null)
+  const react = reactKey && typeof actions?.toggleReaction === 'function'
+    ? emoji => actions.toggleReaction(reactKey, 0, emoji)
+    : undefined
+  const who = incoming ? (author?.name || 'message') : (myName || t('You'))
   return h('div', {
     className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
     'data-steering': steering || undefined,
@@ -192,6 +212,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
     'data-author': author?.authorId,
     'data-author-kind': author?.authorKind,
     'data-author-name': author?.name,
+    onContextMenu: text.trim() ? event => onMessageContextMenu(event, setContextAt) : undefined,
   },
     person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
     faceMine ? h('span', { className: 'bt-lead', title: myName || undefined }, h(PersonMark, { name: myName || undefined })) : null,
@@ -199,11 +220,14 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
       faceMine && myName ? h('span', { className: 'bt-uauthor' }, myName)
         : author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
       attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
-      text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
-        h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
-        rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
-      referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
-    text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
+      userBody({ text, rest, roster, sessionId, incoming, author, referenceLabels, skillNames: data.skillNames ?? [], references, actions, time: data.time }),
+      referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null,
+      picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
+        key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(reactKey, 0, emoji),
+      }, emoji))) : null),
+    h(MessageTools, {
+      text, name: who, sessionId, react, actions, roster, contextAt, className: 'bt-utools',
+    }))
 }
 
 export const USER_MESSAGE_CSS = `
@@ -229,5 +253,7 @@ export const USER_MESSAGE_CSS = `
 .bt-ufile-meta{font-size:12px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-urefs{font-size:13px;line-height:18px;color:var(--bt-ink-3)}
 .bt-utools{display:flex;flex:none;gap:2px;opacity:0;visibility:hidden;transition:opacity .12s ease,visibility .12s}
-.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools{opacity:1;visibility:visible}
+.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools,.bt-utools[data-open]{opacity:1;visibility:visible}
+.bt-umsg .bt-reacts{justify-content:flex-end}
+.bt-umsg-other .bt-reacts{justify-content:flex-start}
 `

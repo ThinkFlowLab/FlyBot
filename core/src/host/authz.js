@@ -292,6 +292,8 @@ export function install(rt) {
     // signed-in member ever asked for. Any signed-in actor may list, and the data layer
     // answers only their own rows (`schedulesView(actor)` in schedules.js). The `schedule-*`
     // writes keep their Session and target gates below, unchanged.
+    // Search derives its own allowlist from this instance's owner-scoped local Bots.
+    if (ep === 'search-messages' || ep === 'history-hit') return ALLOW
     if (ep === 'schedules') return ALLOW
 
     if (BOT_TARGETED.has(ep)) {

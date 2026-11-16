@@ -1,7 +1,7 @@
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { currentPart, faceRowTitle, latestMemoryChange } from './text.js'
-import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
+import { ArrowUpIcon, CloseIcon, ArrowDownIcon, DotsIcon, GearIcon, MemoryIcon, ShareIcon, SearchIcon, UnreadIcon, PinIcon } from './icons.js'
 import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { ActivityIndicator } from './activity-row.js'
@@ -10,6 +10,8 @@ import { t } from './i18n.js'
 import { call } from './api.js'
 import { ProjectAgentEntry, projectAgentFor } from './project-board.js'
 import { friendBotTitle, roomTitle } from '../shared/remote-label.js'
+import { isManuallyUnread, unreadEntryId } from '../shared/session-unread.js'
+import { canPinSession, sessionPinned } from '../shared/session-pin.js'
 
 // -------------------------------------------------------------------------
 // Conversation header
@@ -46,6 +48,83 @@ function MemoryNotice({ shown }) {
     h('span', { className: 'bt-pill-mem-in', ref: inner }, h('span', { className: 'bt-pill-mem-ico' }, h(MemoryIcon)), label))
 }
 
+function SessionOverflow({ sessionId, roster, actions, unread }) {
+  const [open, setOpen] = useState(false)
+  const [note, setNote] = useState('')
+  const button = useRef(null)
+  const menu = useRef(null)
+  const [box, setBox] = useState(null)
+  const bot = roster.byId?.[sessionId]
+  const targetId = unreadEntryId(roster, sessionId)
+  const marked = isManuallyUnread(unread, targetId)
+  const social = typeof globalThis !== 'undefined' ? globalThis.__flybot__?.social : undefined
+  const canInvite = Boolean(bot && !bot.remote && typeof social?.createInvite === 'function' && social.canInvite?.(bot.id) !== false)
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = (event) => {
+      if ([button.current, menu.current].some(node => node?.contains(event.target))) return
+      setOpen(false)
+    }
+    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); button.current?.focus() } }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey, true)
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey, true) }
+  }, [open])
+  useEffect(() => {
+    if (!note) return undefined
+    const timer = setTimeout(() => setNote(''), 2400)
+    return () => clearTimeout(timer)
+  }, [note])
+  const toggle = () => {
+    const rect = button.current?.getBoundingClientRect()
+    if (rect) setBox({ right: window.innerWidth - rect.right, top: rect.bottom + 6 })
+    setOpen(value => !value)
+    setNote('')
+  }
+  const openDetails = () => { setOpen(false); actions.toggleDetails(sessionId) }
+  const copyInvite = async () => {
+    try {
+      const invite = await social.createInvite(bot.id)
+      const link = invite?.link ?? invite?.url ?? invite?.text
+      if (!link) throw new Error('missing link')
+      await navigator.clipboard.writeText(link)
+      setNote(t('Invite link copied'))
+    } catch {
+      setNote(t('Could not copy the invite link'))
+    }
+  }
+  return h(Fragment, null,
+    h('div', { className: 'bt-head-actions' },
+      typeof actions?.openPalette === 'function'
+        ? h('button', {
+            type: 'button', className: 'bt-head-more', 'aria-label': t('Search'), title: t('Search'),
+            onClick: () => actions.openPalette(),
+          }, h(SearchIcon))
+        : null,
+      h('button', {
+        ref: button, type: 'button', className: 'bt-head-more', 'aria-label': t('Conversation settings'),
+        title: t('Conversation settings'), 'aria-haspopup': 'menu', 'aria-expanded': open, onClick: toggle,
+      }, h(DotsIcon))),
+    open && box ? createPortal(h('div', {
+      ref: menu, className: 'bt-menu bt-head-menu', role: 'menu', 'aria-label': t('Conversation settings'),
+      style: { right: box.right, top: box.top },
+    },
+      h('button', { type: 'button', role: 'menuitem', onClick: openDetails }, h(GearIcon), h('span', { className: 'bt-menu-label' }, t('Conversation settings'))),
+      typeof actions?.openPalette === 'function'
+        ? h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); actions.openPalette() } }, h(SearchIcon), h('span', { className: 'bt-menu-label' }, t('Search')))
+        : null,
+      marked
+        ? h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); actions.clearUnread?.(targetId) } }, h(UnreadIcon), h('span', { className: 'bt-menu-label' }, t('Clear unread mark')))
+        : h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); actions.markUnread?.(targetId) } }, h(UnreadIcon), h('span', { className: 'bt-menu-label' }, t('Mark as Unread'))),
+      canPinSession(roster, sessionId) && typeof actions?.setFlags === 'function'
+        ? h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); void Promise.resolve(actions.setFlags(sessionId, { pinned: !sessionPinned(roster, sessionId) })).catch(error => actions.reportError?.(error, 'menu')) } }, h(PinIcon), h('span', { className: 'bt-menu-label' }, sessionPinned(roster, sessionId) ? t('Unpin') : t('Pin')))
+        : null,
+      canInvite
+        ? h('button', { type: 'button', role: 'menuitem', onClick: () => { void copyInvite() } }, h(ShareIcon), h('span', { className: 'bt-menu-label' }, t('Copy invite link')))
+        : null,
+      note ? h('div', { className: 'bt-menu-hint', role: 'status' }, note) : null), document.body) : null)
+}
+
 export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useBusyAcks, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
   const roster = useRoster(value => value)
   const title = useSessions(list => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? '')
@@ -76,6 +155,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   const projectAgent = projectAgentFor(bot, roster.self?.memberId)
   const room = roster.roomsById[sessionId]
   const detailsOpen = useUi(state => state.details === sessionId)
+  const unread = useUi(state => state.unread)
   const full = bot?.remote
     ? friendBotTitle(bot)
     : (roomTitle(room) || bot?.name || '')
@@ -106,7 +186,8 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     }),
     h(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
     h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }),
-    h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }))
+    h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }),
+    h(SessionOverflow, { sessionId, roster, actions, unread }))
 }
 
 // New-message pills. "N new messages ↓" takes Back to bottom's place when

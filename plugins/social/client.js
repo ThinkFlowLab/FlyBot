@@ -630,12 +630,12 @@ window.__ModuleLoader__.load({
         const row = h('button', {
           key: item.id, type: 'button', className: 'fs-pending-item', 'data-flybot': 'pending-item',
           ...(failed ? { 'data-state': 'failed' } : {}),
-          title: oneLine(item.text || item.summary || pendingTitle(item)),
+          title: oneLine(item.autoApproveError || item.text || item.summary || pendingTitle(item)),
           onClick: () => onOpen?.(item),
         },
           h('span', { className: 'fs-text' },
             h('span', { className: 'fs-name' }, pendingTitle(item)),
-            h('span', { className: 'fs-pending-one' }, failed ? oneLine(item.error || tr('Not sent')) : oneLine(item.text || item.summary || ''))))
+            h('span', { className: 'fs-pending-one' }, failed ? oneLine(item.error || tr('Not sent')) : oneLine(item.autoApproveError || item.text || item.summary || ''))))
         if (!retry) return row
         return h('div', { key: item.id, className: 'fs-pending-row', 'data-flybot': 'pending-row' },
           row,
@@ -2188,6 +2188,9 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'fs-sub' }, `${from} → ${to}`)
           : null,
         reasonLine ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-reason' }, reasonLine) : null,
+        item.autoApproveError
+          ? h('div', { className: 'fs-sub fs-chat-error', role: 'status', 'data-flybot': 'auto-approve-error' }, tr(item.autoApproveError))
+          : null,
         text ? h('div', { className: 'fs-draft', 'data-clamp': !open && long ? true : undefined }, text) : null,
         long ? h('button', {
           type: 'button', className: 'fs-hold-more', 'data-flybot': 'hold-expand',
@@ -2209,6 +2212,7 @@ window.__ModuleLoader__.load({
       const handles = new Set((room?.participants ?? []).map(p => p.handle).filter(Boolean))
       if (handle) handles.add(handle)
       return list.filter(item => {
+        if (item.kind === 'grant_request') return false
         if (item.kind === 'face_room_message') {
           // A room line belongs to the one room it was held in (#188); no room means no card.
           if (faceId && item.roomId === faceId) return true
@@ -3230,11 +3234,14 @@ window.__ModuleLoader__.load({
       const [faceOpen, setFaceOpen] = useState(false)
       const [faceMode, setFaceMode] = useState('join')
       const [shareRequests, setShareRequests] = useState([])
+      const [grantRequests, setGrantRequests] = useState([])
+      const [grantBusy, setGrantBusy] = useState('')
       const [acceptNotices, setAcceptNotices] = useState([])
       // null until the first status answer: a reload must not toast notices that were already there (#1054).
       const seenAccept = useRef(null)
       const applyStatus = (value) => {
         setShareRequests(Array.isArray(value?.shareRequests) ? value.shareRequests : [])
+        setGrantRequests(Array.isArray(value?.grantRequests) ? value.grantRequests : [])
         const next = Array.isArray(value?.acceptNotices) ? value.acceptNotices : []
         setAcceptNotices(next)
         if (seenAccept.current === null) {
@@ -3253,6 +3260,17 @@ window.__ModuleLoader__.load({
       }, e => setError(errorText(e)))
       const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
       const dismissAccept = item => call('social/accept-notice-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
+      const decideGrant = (item, decision) => {
+        if (grantBusy || locked) return
+        setGrantBusy(item.id)
+        return call('social/decide-approval', { approvalId: item.id, decision }).then((result) => {
+          setGrantBusy('')
+          return loadApprovals().then(() => result)
+        }, e => {
+          setGrantBusy('')
+          setError(errorText(e))
+        })
+      }
       const askShareBack = item => call('social/ask-share-back', { botId: item.botId, to: item.from, noticeId: item.id }).then(applyStatus, e => setError(errorText(e)))
       useEffect(() => {
         loadApprovals()
@@ -3275,6 +3293,7 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
         h(AcceptNotices, { items: acceptNotices, onAsk: askShareBack, onDismiss: dismissAccept, locked }),
+        h(GrantRequests, { items: grantRequests, onDecide: decideGrant, busyId: grantBusy, locked }),
         h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest, locked }),
         h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
         adding ? h(AddFriend, { actions, remoteChats, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
@@ -3329,6 +3348,43 @@ window.__ModuleLoader__.load({
                 onClick: () => actions.openSettings('bots', item.botId),
               }, `Share ${bot}…`)))
         }))
+    }
+
+    // A Bot Social grant_request waits for this owner. Approve / Reject call the same
+    // decide-approval path as a held message; the card lives in the Social section because it
+    // is not an outbound draft and has no chat to open.
+    function grantRequestSentence(item) {
+      const rawWho = String(item?.from || '').trim()
+      const who = rawWho || tr('A friend')
+      const cap = String(item?.capability || '').trim()
+      const text = String(item?.text || item?.summary || '').trim()
+      // The host may already have written the English fallback into `text`. Treat that
+      // as the generic sentence so a zh UI can translate it; a custom summary is kept.
+      // Named keys (not English templates) keep this comparison out of the copy scan (#3110).
+      const fill = (key, params) => key.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+      const genericEnglish = (name) => cap
+        ? fill('{name} requests {capability}', { name, capability: cap })
+        : fill('{name} requests a share', { name })
+      const isGeneric = text && [rawWho, 'A friend', who].some(name => name && text === genericEnglish(name))
+      if (text && !isGeneric) return text
+      return cap
+        ? tr('{name} requests {capability}', { name: who, capability: cap })
+        : tr('{name} requests a share', { name: who })
+    }
+    function GrantRequests({ items, onDecide, busyId, error, locked = false } = {}) {
+      if (!Array.isArray(items) || items.length === 0) return null
+      return h('div', { className: 'fs-share-requests', 'data-flybot': 'grant-requests' },
+        items.map((item) => h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'grant-request' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'grant-request-text' }, grantRequestSentence(item)),
+          locked ? null : h('div', { className: 'fs-line' },
+            h('button', {
+              type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'grant-request-reject',
+              disabled: !!busyId, onClick: () => onDecide?.(item, 'reject'),
+            }, tr('Reject')),
+            h('button', {
+              type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'grant-request-approve',
+              disabled: !!busyId, onClick: () => onDecide?.(item, 'approve'),
+            }, tr('Approve'))))))
     }
 
     // One invite control for Add friend and a Bot's Sharing (#499): one button makes the link and copies
@@ -4262,6 +4318,7 @@ window.__ModuleLoader__.load({
       AddFriend,
       AcceptNotices,
       FriendsBots,
+      GrantRequests,
       ShareRequests,
       PendingApprovals,
       ChatApproval,

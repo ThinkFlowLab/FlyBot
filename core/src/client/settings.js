@@ -1,7 +1,10 @@
 import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
 import { ACCENT_INKS, INKS } from './inks.js'
 import { isMainOf } from './sources.js'
-import { allThemes } from './themes.js'
+import { allThemes, resolveThemeId } from './themes.js'
+import { appearanceOf, sendKeyOf } from './appearance.js'
+import { foldingOf } from './message-fold.js'
+import { ChannelsPage } from './connectors.js'
 import { WorkflowIcon } from './icons.js'
 import { WorkflowsPage } from './workflows.js'
 import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, FolderIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
@@ -22,15 +25,15 @@ import { SchedulesPage, lockedWindow } from './schedules.js'
 import { FeedbackIcon, FeedbackPage } from './feedback.js'
 import { FolderMenu } from './folder-menu.js'
 import { AboutPage } from './about.js'
-import { t } from './i18n.js'
+import { canSetLocale, languageLabel, setInterfaceLocale, t } from './i18n.js'
 import { readOnlyLine } from './read-only.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
 // Settings dialog: a 198px page list beside the page. Bots and group chats each list
 // their members, and one opens on its own settings form. Usage widens the dialog.
-const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['plugins', 'Plugins'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
-const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, plugins: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['projects', 'Projects'], ['connectors', 'Connectors'], ['channels', 'Channels'], ['capabilities', 'Capabilities'], ['plugins', 'Plugins'], ['schedules', 'Scheduled tasks'], ['workflows', 'Workflows'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About FlyBot']]
+const PAGE_ICONS = { ...SETTINGS_ICONS, projects: FolderIcon, connectors: ConnectorIcon, channels: ConnectorIcon, workflows: WorkflowIcon, capabilities: PlugIcon, plugins: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
 
 function SetSection({ title, children }) {
   return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
@@ -102,11 +105,35 @@ function PluginsPage({ call }) {
   return h(PluginsView, { answer, error, onFlip: flip })
 }
 
-// General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
+// General is Appearance, language, send shortcut, and Notifications; the switch
+// to classic Agent mode is the account menu's (#393).
+const APPEARANCE_MODES = [
+  ['light', 'Light theme'],
+  ['dark', 'Dark theme'],
+  ['auto', 'Automatic'],
+  ['system', 'Match system'],
+]
+const AUTO_KINDS = [['sun', 'Estimated night hours (time-zone based)'], ['custom', 'Custom hours']]
+const SEND_KEYS = [['enter', 'Enter to send'], ['shift-enter', 'Shift+Enter to send']]
+const appearanceLabel = appearance => APPEARANCE_MODES.find(([id]) => id === appearance.mode)?.[1] ?? 'Match system'
+const autoLabel = appearance => appearance.auto === 'custom'
+  ? `${appearance.from} – ${appearance.to}`
+  : 'Estimated night hours (time-zone based)'
+const sendKeyLabel = key => SEND_KEYS.find(([id]) => id === key)?.[1] ?? 'Enter to send'
+const FOLD_MODE_OPTIONS = [
+  ['compact', 'Compact', 'A very short preview, for scanning a conversation.'],
+  ['standard', 'Standard', 'A moderate preview. Recommended.'],
+  ['none', 'No folding', 'Show every message in full. Long messages push the conversation off the screen.'],
+]
+const foldModeLabel = mode => FOLD_MODE_OPTIONS.find(([id]) => id === mode)?.[1] ?? 'Standard'
+
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {}
   const themes = allThemes()
-  const current = themes[prefs.theme] ? prefs.theme : 'deepseek'
+  const current = resolveThemeId(prefs, themes)
+  const appearance = appearanceOf(prefs)
+  const sendKey = sendKeyOf(prefs)
+  const folding = foldingOf(prefs)
   const [custom, setCustom] = useState(prefs.accent ?? '#4d6bfe')
   const timer = useRef(0)
   useEffect(() => () => clearTimeout(timer.current), [])
@@ -115,14 +142,25 @@ function GeneralPage({ roster, actions, run }) {
     clearTimeout(timer.current)
     timer.current = setTimeout(() => run(actions.setPrefs({ accent: value })), 350)
   }
+  const setAppearance = (patch) => run(actions.setPrefs({ appearance: { ...appearance, ...patch } }))
+  const localeChooser = canSetLocale()
   // The host refuses `set-prefs` in a read-only window, so the page says what is chosen
   // instead of drawing the controls that would ask for it (#2474).
   if (lockedWindow(roster)) {
     const accent = ACCENT_INKS.find(ink => INKS[ink][0] === prefs.accent)
     return [
       h(SetSection, { key: 'look', title: t('Appearance') },
+        h(SetRow, { label: t('Appearance'), hint: t(appearanceLabel(appearance)) }),
+        appearance.mode === 'auto' ? h(SetRow, { label: t('Automatic switch'), hint: t(autoLabel(appearance)) }) : null,
         h(SetRow, { label: t('Theme'), hint: t(themes[current].label) }),
         h(SetRow, { label: t('Accent'), hint: accent ? t(capitalize(accent)) : prefs.accent ?? t('Default') })),
+      h(SetSection, { key: 'language', title: t('Language') },
+        h(SetRow, { label: t('Interface language'), hint: t(languageLabel()) })),
+      h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
+        h(SetRow, { label: t('Send shortcut'), hint: t(sendKeyLabel(sendKey)) })),
+      h(SetSection, { key: 'folding', title: t('Message folding') },
+        h(SetRow, { label: t('Message folding'), hint: t(foldModeLabel(folding.mode)) }),
+        h(SetRow, { label: t('Collapse long documents into cards'), hint: folding.documentCards ? t('On') : t('Off') })),
       h(SetSection, { key: 'notify', title: t('Notifications') },
         h(SetRow, { label: t('In other chats'), hint: prefs.notifications !== false ? t('On') : t('Off') }),
         NOTIFY_KINDS.map(([kind, label]) => h(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t('On') : t('Off') }))),
@@ -130,6 +168,23 @@ function GeneralPage({ roster, actions, run }) {
   }
   return [
     h(SetSection, { key: 'look', title: t('Appearance') },
+      h(SetRow, { label: t('Appearance'), hint: t('How this window looks: light, dark, automatic, or match the system.') },
+        h(Segmented, { label: t('Appearance'), value: appearance.mode, className: 'bt-appearance-seg' }, APPEARANCE_MODES.map(([id, label]) => h('button', {
+          key: id, type: 'button', 'aria-pressed': appearance.mode === id,
+          onClick: () => { if (appearance.mode !== id) setAppearance({ mode: id }) },
+        }, t(label))))),
+      appearance.mode === 'auto' ? h(SetRow, { label: t('Automatic switch'), hint: t('Switches about a minute after the chosen time, and not in the middle of a turn.') },
+        h(Segmented, { label: t('Automatic switch'), value: appearance.auto, className: 'bt-appearance-seg' }, AUTO_KINDS.map(([id, label]) => h('button', {
+          key: id, type: 'button', 'aria-pressed': appearance.auto === id,
+          onClick: () => { if (appearance.auto !== id) setAppearance({ auto: id }) },
+        }, t(label))))) : null,
+      appearance.mode === 'auto' && appearance.auto === 'custom'
+        ? h(SetRow, { label: t('Custom hours') },
+          h('label', { className: 'bt-time-field' }, t('Dark from'),
+            h('input', { className: 'bt-input', type: 'time', 'aria-label': t('Dark from'), value: appearance.from, onChange: event => setAppearance({ from: event.target.value }) })),
+          h('label', { className: 'bt-time-field' }, t('Dark until'),
+            h('input', { className: 'bt-input', type: 'time', 'aria-label': t('Dark until'), value: appearance.to, onChange: event => setAppearance({ to: event.target.value }) })))
+        : null,
       h(SetRow, { label: t('Theme'), hint: t('Colors for the whole team, on every device.') },
         h('select', { className: 'bt-select', 'aria-label': t('Theme'), value: current, onChange: event => run(actions.setPrefs({ theme: event.target.value })) },
           Object.entries(themes).map(([id, theme]) => h('option', { key: id, value: id }, t(theme.label))))),
@@ -142,6 +197,41 @@ function GeneralPage({ roster, actions, run }) {
           })),
           h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
             h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
+    h(SetSection, { key: 'language', title: t('Language') },
+      localeChooser
+        ? h(SetRow, { label: t('Interface language') },
+          h(Segmented, { label: t('Interface language'), value: languageLabel() === 'Simplified Chinese' ? 'zh' : 'en', className: 'bt-appearance-seg' }, [
+            h('button', { key: 'en', type: 'button', 'aria-pressed': languageLabel() !== 'Simplified Chinese', onClick: () => setInterfaceLocale('en') }, t('English')),
+            h('button', { key: 'zh', type: 'button', 'aria-pressed': languageLabel() === 'Simplified Chinese', onClick: () => setInterfaceLocale('zh') }, t('Simplified Chinese')),
+          ]))
+        : h(SetRow, { label: t('Interface language'), hint: `${t(languageLabel())}. ${t('Follows the DeepSeek Harness language.')}` })),
+    h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
+      h(SetRow, {
+        label: t('Send shortcut'),
+        hint: t(sendKey === 'shift-enter' ? 'Enter inserts a new line.' : 'Shift+Enter inserts a new line.'),
+      },
+        h(Segmented, { label: t('Send shortcut'), value: sendKey, className: 'bt-appearance-seg' }, SEND_KEYS.map(([id, label]) => h('button', {
+          key: id, type: 'button', 'aria-pressed': sendKey === id,
+          onClick: () => { if (sendKey !== id) run(actions.setPrefs({ sendKey: id === 'enter' ? null : id })) },
+        }, t(label)))))),
+    h(SetSection, { key: 'folding', title: t('Message folding') },
+      h('div', { className: 'bt-fold-modes', role: 'radiogroup', 'aria-label': t('Message folding') },
+        h('p', { className: 'bt-fold-lead' }, t('Choose how much of a long message to show before it folds.')),
+        FOLD_MODE_OPTIONS.map(([id, label, hint]) => h('button', {
+          key: id, type: 'button', role: 'radio', className: 'bt-fold-mode',
+          'aria-checked': folding.mode === id,
+          onClick: () => { if (folding.mode !== id) run(actions.setPrefs({ folding: { mode: id, documentCards: folding.documentCards } })) },
+        },
+          h('span', { className: 'bt-fold-radio', 'aria-hidden': true }),
+          h('span', { className: 'bt-fold-mode-copy' },
+            h('span', { className: 'bt-fold-mode-label' }, t(label)),
+            h('span', { className: 'bt-set-hint' }, t(hint)))))),
+      h(SwitchRow, {
+        label: t('Collapse long documents into cards'),
+        hint: t('Messages with several sections appear as a card you can open beside the conversation.'),
+        on: folding.documentCards,
+        onChange: on => run(actions.setPrefs({ folding: { mode: folding.mode, documentCards: on } })),
+      })),
     // One switch for every system notification (#353), then one per kind (#469).
     h(SetSection, { key: 'notify', title: t('Notifications') },
       h(SwitchRow, {
@@ -270,7 +360,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   const extra = useSettingsPages().map(entry => ({ entry, key: `plugin:${entry.id}` }))
   // #2877: the Projects page is a Project surface like the sidebar row; with the plugin off or
   // absent it is not in the list, so a page asked for by name falls back to General below.
-  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'connectors' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item])).filter(([key]) => key !== 'projects' || projectPresent())
+  const pages = SETTINGS_PAGES.flatMap(item => (item[0] === 'channels' ? [item, ...extra.map(({ entry, key }) => [key, entry.label ?? entry.id])] : [item])).filter(([key]) => key !== 'projects' || projectPresent())
   const shown = pages.some(([key]) => key === page) ? page : 'general'
   const pluginPage = extra.find(({ key }) => key === shown)?.entry
   const usageFocus = shown === 'usage' && id ? id : null
@@ -327,6 +417,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
           shown === 'projects' ? h(ProjectsPage, { roster, actions, run, call }) : null,
           shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
+          shown === 'channels' ? h(ChannelsPage, { roster, actions }) : null,
           shown === 'workflows' ? h(WorkflowsPage, { call, roster, start: id ?? undefined }) : null,
           pluginPage ? h(SettingsPageSlot, { entry: pluginPage, props: { roster, actions, call, run, t, Section: SetSection, Row: SetRow } }) : null,
           shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,

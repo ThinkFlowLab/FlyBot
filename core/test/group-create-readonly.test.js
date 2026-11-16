@@ -119,7 +119,6 @@ const press = (nodes, predicate) => {
   node.props.onClick?.()
   return node
 }
-const chips = nodes => nodes.filter(node => hasClass(node, 'bt-ng-chip'))
 const groupCreate = nodes => nodes.filter(node => hasClass(node, 'bt-send') && ownText(node).trim() === 'Create group chat')
 const readOnlyLine = nodes => nodes.filter(node => hasClass(node, 'bt-read-only'))
 
@@ -129,12 +128,10 @@ const settingsGroup = async (roster) => {
   const { calls, actions } = actionsOf()
   const form = mount(NewGroupForm, { roster, actions, run, onCreated() {}, onCancel() {} })
   let nodes = form.draw()
-  const adminChip = chips(nodes).find(node => node.props.role === 'radio' && ownText(node).includes('Chief'))
-  press(nodes, node => node === adminChip)
+  press(nodes, node => hasClass(node, 'bt-ng-pick') && node.props.role === 'option' && ownText(node).includes('Chief'))
   await flush()
   nodes = form.draw()
-  const memberChip = chips(nodes).find(node => node.props.role === 'checkbox' && ownText(node).includes('Scout'))
-  press(nodes, node => node === memberChip)
+  press(nodes, node => hasClass(node, 'bt-ng-pick') && node.props.role === 'option' && ownText(node).includes('Scout'))
   await flush()
   nodes = form.draw()
   const create = groupCreate(nodes)[0]
@@ -196,4 +193,59 @@ test('a writable window keeps both group-create controls and still writes', asyn
     assert.equal(pane.calls[0][0], 'create-room')
     assert.equal(readOnlyLine(pane.nodes).length, 0, 'no read-only line in a writable window')
   }
+})
+
+const nameInput = nodes => nodes.filter(node => node.type === 'input' && node.props?.['aria-label'] === 'Group name')
+const searchInput = nodes => nodes.filter(node => node.type === 'input' && node.props?.['aria-label'] === 'Search members')
+const empty = nodes => nodes.filter(node => hasClass(node, 'bt-ng-empty'))
+
+test('New group form shows the name, search, empty selected pane, and a disabled Create', () => {
+  const { actions } = actionsOf()
+  const form = mount(NewGroupForm, { roster: rosterWith(), actions, run, onCreated() {}, onCancel() {} })
+  const nodes = form.draw()
+  assert.equal(nameInput(nodes).length, 1, 'the optional name is visible before anyone is picked')
+  assert.equal(searchInput(nodes).length, 1, 'members can be searched')
+  assert.ok(empty(nodes).some(node => ownText(node).includes('No members selected')), 'the selected pane has an empty state')
+  const create = groupCreate(nodes)[0]
+  assert.ok(create, 'Create group chat is drawn')
+  assert.equal(create.props.disabled, true, 'Create stays disabled until members are selected')
+  assert.equal(ownText(nodes.find(node => hasClass(node, 'bt-ng-intro'))), 'Add a name, then pick Bots to chat with.')
+})
+
+test('searching hides unmatched Bots, and Create enables after an admin and a member', async () => {
+  const { actions } = actionsOf()
+  const form = mount(NewGroupForm, { roster: rosterWith(), actions, run, onCreated() {}, onCancel() {} })
+  let nodes = form.draw()
+  const search = searchInput(nodes)[0]
+  search.props.onChange({ target: { value: 'Scout' } })
+  await flush()
+  nodes = form.draw()
+  const options = nodes.filter(node => hasClass(node, 'bt-ng-pick') && node.props.role === 'option')
+  assert.deepEqual(options.map(ownText), ['Scout'])
+  search.props.onChange({ target: { value: 'nobody-here' } })
+  await flush()
+  nodes = form.draw()
+  assert.ok(empty(nodes).some(node => ownText(node).includes('No Bots match')))
+  search.props.onChange({ target: { value: '' } })
+  await flush()
+  nodes = form.draw()
+  press(nodes, node => hasClass(node, 'bt-ng-pick') && node.props.role === 'option' && ownText(node).includes('Chief'))
+  await flush()
+  nodes = form.draw()
+  assert.equal(groupCreate(nodes)[0].props.disabled, true, 'one pick is only the admin')
+  press(nodes, node => hasClass(node, 'bt-ng-pick') && node.props.role === 'option' && ownText(node).includes('Scout'))
+  await flush()
+  nodes = form.draw()
+  assert.equal(groupCreate(nodes)[0].props.disabled, false)
+  assert.ok(nodes.some(node => ownText(node).includes('Selected 2')))
+})
+
+test('New… group mode draws a disabled Create and an optional name before anyone is picked', () => {
+  const { actions } = actionsOf()
+  const pane = mount(NewChat, { mode: 'group', roster: rosterWith(), actions })
+  const nodes = pane.draw()
+  const create = groupCreate(nodes)[0]
+  assert.ok(create, 'Create group chat is drawn from the start')
+  assert.equal(create.props.disabled, true)
+  assert.equal(nameInput(nodes).length, 1)
 })

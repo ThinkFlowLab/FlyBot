@@ -74,6 +74,7 @@ test('error mapping covers the FACE_ROOMS.md codes', () => {
   assert.equal(mapFaceError({ error: { code: 'dlp_blocked' } }, 422).message, 'That message was blocked and was not sent.')
   assert.equal(mapFaceError({ error: { code: 'bot_not_found' } }, 404).message, 'That Bot is not one of yours on Bot Social.')
   assert.equal(mapFaceError({ error: { code: 'bot_revoked' } }, 403).message, 'This Bot is no longer available on Bot Social.')
+  assert.equal(mapFaceError({ error: { code: 'bot_frozen' } }, 403).message, 'This Bot is stopped on Bot Social. Resume it, then try again.')
   assert.equal(mapFaceError({ error: { code: 'forbidden' } }, 403).message, 'This Bot cannot join that room.')
   assert.equal(mapFaceError({ error: { code: 'unauthorized' } }, 401).message, 'Bot Social signed you out. Reconnect in Friends\' Bots, or restart FlyBot.')
   const limited = mapFaceError({ error: { code: 'rate_limited', retry_after: 45, scope: 'ip' } }, 429)

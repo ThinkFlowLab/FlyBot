@@ -7,8 +7,9 @@ import { t } from './i18n.js'
 import { useSidebarStructure } from './flybot-slots.js'
 import { pluginItems } from './flybot-registry.js'
 import { LinkIcon } from './icons.js'
+import { isManuallyUnread } from '../shared/session-unread.js'
 
-export function ContextMenu({ menu, roster, actions, leaving = false }) {
+export function ContextMenu({ menu, roster, actions, unread, leaving = false }) {
   useEscape(() => actions.closeMenu())
   useEffect(() => {
     const onDown = (event) => { if (!(event.target instanceof Element) || !event.target.closest('.bt-menu')) actions.closeMenu() }
@@ -23,11 +24,15 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
     if (!box) return
     setPlace({ left: Math.max(8, Math.min(menu.x, window.innerWidth - box.width - 8)), top: Math.max(8, Math.min(menu.y, window.innerHeight - box.height - 8)) })
   }, [menu.x, menu.y])
-  if (menu.kind === 'agent' || menu.kind === 'agent-session') return h(AgentMenu, { menu, roster, actions, leaving })
+  if (menu.kind === 'agent' || menu.kind === 'agent-session') return h(AgentMenu, { menu, roster, actions, unread, leaving })
   const bot = roster.byId[menu.id]
   const room = roster.roomsById[menu.id]
   const entry = bot ?? room
   if (entry === undefined) return null
+  const marked = isManuallyUnread(unread, menu.id)
+  const unreadItem = marked
+    ? [t('Clear unread mark'), UnreadIcon, () => actions.clearUnread(menu.id)]
+    : [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)]
   const isMainBot = isMainOf(roster, menu.id)
   const isTile = roster.mainBotId === menu.id
   const mainCount = (roster.mainBotIds ?? []).length
@@ -37,7 +42,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
   const groups = bot?.remote
     ? [
         [
-          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+          unreadItem,
         ],
         [
           [t('Bot settings'), GearIcon, () => actions.openSettings('bots', bot.id)],
@@ -48,7 +53,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
     : [
         [
           isTile || locked ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
-          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+          unreadItem,
         ],
         [
           // One way to edit a Bot (#385): its name is edited in Edit Bot too.
@@ -77,7 +82,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
 }
 
 // Menus for the DSH Agent row and its Sessions; none of the Bot entries apply.
-function AgentMenu({ menu, roster, actions, leaving }) {
+function AgentMenu({ menu, roster, actions, unread, leaving }) {
   const ref = useRef(null)
   const [place, setPlace] = useState({ left: menu.x, top: menu.y })
   useLayoutEffect(() => {
@@ -89,10 +94,15 @@ function AgentMenu({ menu, roster, actions, leaving }) {
   if (agent === undefined) return null
   // A window that holds the team read-only draws none of the writes the host refuses (#2232, #2253).
   const locked = typeof roster?.readOnly === 'string' && roster.readOnly.trim() !== ''
+  const marked = isManuallyUnread(unread, agent.id)
+  const unreadItem = marked
+    ? [t('Clear unread mark'), UnreadIcon, () => actions.clearUnread(agent.id)]
+    : [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(agent.id)]
   const groups = menu.kind === 'agent'
     ? [
         [
           locked ? null : [agent.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(agent.id, { pinned: !agent.pinned })],
+          unreadItem,
         ],
         [
           locked ? null : [t('Remove DSH Agent'), TrashIcon, () => actions.removeAgent(agent.id), true],
@@ -100,13 +110,16 @@ function AgentMenu({ menu, roster, actions, leaving }) {
       ]
     : [
         [
+          unreadItem,
+        ],
+        [
           locked ? null : [t('Rename'), PencilIcon, () => actions.beginAgentRename(menu.id)],
         ],
         [
           locked ? null : [t('Archive'), TrashIcon, () => actions.archiveAgentSession(agent.id, menu.id), true],
         ],
       ]
-  // Every row here writes, so a read-only window has no menu to draw at all.
+  // Host writes stay out of a read-only window; Mark as Unread/Read only touches local UI state.
   const shown = groups.map(group => group.filter(Boolean)).filter(group => group.length > 0)
   if (shown.length === 0) return null
   return h('div', { ref, className: 'bt-menu', role: 'menu', 'aria-label': menu.kind === 'agent' ? 'DSH Agent' : t('Session actions'), style: place, 'data-leaving': leaving || undefined },

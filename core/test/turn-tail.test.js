@@ -67,7 +67,7 @@ function cellProps({ closingSeq = 10, turn = finished } = {}) {
   }
   return { props, asked, links }
 }
-const markdownOf = props => find(expand(AssistantCell(props), ['Bubbles']), node => node.type === MarkdownText)
+const markdownOf = props => find(expand(AssistantCell(props), ['Bubbles', 'FoldedContent']), node => node.type === MarkdownText)
 
 test('a reply that closes its turn links the files the turn changed or delivered', () => {
   const { props, asked, links } = cellProps()
@@ -106,7 +106,7 @@ test('the turn tail entry notes when the turn ended and shows the pause before t
 test('a reply to a line the friend typed themselves is drawn as the person, not as the Bot', () => {
   const { props } = cellProps()
   const typed = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 3: 'Bob' } } }) }
-  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles'])
+  const drawn = expand(AssistantCell(typed), ['PersonMessage', 'PersonMark', 'Bubbles', 'FoldedContent'])
   const [person] = find(drawn, node => node.props?.['data-person'] !== undefined)
   assert.equal(person.props['data-person'], 'Bob')
   assert.equal(find(drawn, node => /\bbt-person-mark\b/.test(node.props?.className ?? '')).length, 1)
@@ -114,8 +114,8 @@ test('a reply to a line the friend typed themselves is drawn as the person, not 
   assert.equal(find(drawn, node => node.type === MarkdownText).length, 1, 'the text is still rendered as markdown')
   // Another turn, or no mark at all: the Bot\'s own bubble.
   const other = { ...props, useRoster: select => select({ ...roster, remoteTypedTurns: { b: { 9: 'Bob' } } }) }
-  assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
-  assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles']), node => node.props?.['data-person'] !== undefined).length, 0)
+  assert.equal(find(expand(AssistantCell(other), ['PersonMessage', 'PersonMark', 'Bubbles', 'FoldedContent']), node => node.props?.['data-person'] !== undefined).length, 0)
+  assert.equal(find(expand(AssistantCell(props), ['PersonMessage', 'PersonMark', 'Bubbles', 'FoldedContent']), node => node.props?.['data-person'] !== undefined).length, 0)
 })
 
 // #275: a friend's line in my Bot's own chat came while I was away. The NEW divider marks it; once

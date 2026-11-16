@@ -163,6 +163,7 @@ const FRIENDLY = {
   unauthorized: 'Bot Social signed you out. Reconnect in Friends\' Bots, or restart FlyBot.',
   forbidden: 'This Bot cannot join that room.',
   bot_revoked: 'This Bot is no longer available on Bot Social.',
+  bot_frozen: 'This Bot is stopped on Bot Social. Resume it, then try again.',
   bot_not_found: 'That Bot is not one of yours on Bot Social.',
   face_room_not_found: 'That room is not available.',
   room_full: 'This room already has 8 Bots. Nobody else can join with this number.',

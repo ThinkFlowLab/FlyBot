@@ -128,3 +128,13 @@ function runBench({ root, path, harness }, action) {
   if (result.error) assert.fail(`could not run bench.sh: ${result.error.message}`)
   return result
 }
+
+// Explicit symlink regression, independent of whether node_modules happens to be symlinked.
+test('CLI entry still runs when invoked through a symlink', () => {
+  const { root } = tree()
+  const entry = join(root, 'preflight.mjs')
+  symlinkSync(join(here, '../dev/bench-preflight.mjs'), entry)
+  const result = spawnSync(process.execPath, [entry], { encoding: 'utf8', env: { ...process.env, DSH_HARNESS: '' } })
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /usage: node dev\/bench-preflight.mjs/)
+})

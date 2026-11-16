@@ -180,6 +180,21 @@ test('the client channel answers from the saved state', async (t) => {
   for (const notify of [{ loud: false }, { failed: 'no' }, ['approval'], null]) {
     assert.deepEqual((await call('set-prefs', { notify })).error, { code: 'bot/invalid', message: 'Notifications must be on or off', details: {} })
   }
+  assert.equal((await call('set-prefs', { appearance: { mode: 'dark' } })).value.appearance.mode, 'dark')
+  assert.equal((await call('set-prefs', { appearance: { mode: 'auto', auto: 'custom', from: '21:00', to: '06:30' } })).value.appearance.from, '21:00')
+  assert.deepEqual((await call('set-prefs', { appearance: { mode: 'neon' } })).error, { code: 'bot/invalid', message: 'Appearance must be light, dark, auto or system', details: {} })
+  assert.equal((await call('set-prefs', { sendKey: 'shift-enter' })).value.sendKey, 'shift-enter')
+  const prefsBefore = structuredClone((await call('state')).value?.prefs ?? {})
+  assert.ok((await call('set-prefs', { appearance: { mode: 'light' }, sendKey: 'invalid', folding: { mode: 'none' } })).error)
+  assert.deepEqual((await call('state')).value?.prefs ?? {}, prefsBefore, 'mixed invalid prefs request changes nothing')
+
+  assert.equal('sendKey' in (await call('set-prefs', { sendKey: 'enter' })).value, false)
+  assert.deepEqual((await call('set-prefs', { sendKey: 'tab' })).error, { code: 'bot/invalid', message: 'Send shortcut must be Enter or Shift+Enter', details: {} })
+  assert.deepEqual((await call('set-prefs', { folding: { mode: 'compact', documentCards: false } })).value.folding, { mode: 'compact', documentCards: false })
+  assert.equal((await call('set-prefs', { folding: { mode: 'standard' } })).value.folding.mode, 'standard')
+  assert.equal((await call('set-prefs', { folding: null })).value.folding, undefined)
+  assert.deepEqual((await call('set-prefs', { folding: { mode: 'loose' } })).error, { code: 'bot/invalid', message: 'Message folding must be compact, standard or none', details: {} })
+  assert.deepEqual((await call('set-prefs', { folding: { mode: 'standard', documentCards: 'yes' } })).error, { code: 'bot/invalid', message: 'Document cards must be on or off', details: {} })
   // A refusal from the team code keeps its message for the user.
   assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
   // Off the Desktop profile there are no Bot browsers.

@@ -1,0 +1,1 @@
+Long messages in a chat bubble now fold to a preview (compact / standard / no folding), with Show more / Show less. Under the standard setting, a long multi-section document can collapse into a card opened beside the conversation. The General setting writes through set-prefs and actually changes the bubbles.
