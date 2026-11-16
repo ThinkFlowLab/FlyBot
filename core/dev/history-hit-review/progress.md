@@ -30,9 +30,11 @@
 
 - 主审查：`core/dev/history-search-review.md`。
 - 本轮映射：同目录 `replicate-map.md`、`feature-parity.md`。
-- 质量回顾：`changelog.d/teamily-integrated-quality-review.md`。
+- 质量回顾：`changelog.d/teamily-integrated-quality-review.fixed.md`。
 - 旧 canonical progress/map 位于树外，本轮遵守“只在隔离树改”没有同步；父代理如需汇总，引用本补记，不要误报树外文件已更新。
 
 ## PR 交付验证（2026-11-16，Asia/Shanghai）
 
 本轮提交前重新验证 core3367/3367、social721/721、project148/148；build/check/lint通过。与原修复树逐文件核对：社交/项目和schedule测试一致，schedule仅清理未使用localInput，i18n包含全部原新增项。真实组件fixture已改为本目录忽略的dist输出，来源manifest与20项SSR重跑通过，仍未浏览器验收。生成的core/client.js按仓库规范随源提交；依赖、日志、render-check、效果稿/截图不提交。PR仅覆盖已实现部分，关联#3110但不关闭总目标。
+
+PR policy 复查修正：changelog fragments 按 <slug>.<kind>.md 命名；Unicode 损坏检测测试改用等价 `\uFFFD` escape，避免测试源码本身触发仓库 mojibake 守卫。没有移除或放宽断言。

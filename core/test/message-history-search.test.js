@@ -273,7 +273,7 @@ test('context enforces UTF-8 output cap, preserves original Unicode and excludes
  const view=await f.rt.readHistoryHit({hitToken:hit.hitToken},alice)
  assert.ok(Buffer.byteLength(JSON.stringify(view))<=SEARCH_LIMITS.contextBytes)
  assert.ok(view.entries.some(entry=>entry.hit&&entry.text.includes('needle 原文')&&entry.truncated))
- assert.ok(view.entries.every(entry=>!entry.text.includes('�') && entry.text.isWellFormed()))
+ assert.ok(view.entries.every(entry=>!entry.text.includes('\uFFFD') && entry.text.isWellFormed()))
  assert.equal(JSON.stringify(view).includes('NEVER'),false)
 })
 
