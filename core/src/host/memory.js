@@ -1083,11 +1083,15 @@ export function install(rt) {
       const { scopes, error } = readScopes(args.scope, self)
       if (error) return error
       const loaded = scopes.map(scope => ({ scope, tag: tagOf(scope, self), label: labelOf(scope, self), files: loadScope(scope) }))
-      if (args.topic !== undefined && String(args.topic).trim() !== '') {
-        const topic = cleanTopic(args.topic)
+      // A name that cannot be a topic file is refused by name (#3042). Cleaning it to
+      // `undefined` here used to match MEMORY.md's own pseudo-file, so the answer was the
+      // whole entry point instead of the reason the name cannot be read.
+      const { topic: wanted, error: topicError } = topicArg(args.topic)
+      if (topicError) return topicError
+      if (wanted !== undefined) {
         for (const { label, files } of loaded) {
-          const file = files.find(item => item.topic === topic)
-          if (file !== undefined) return `Topic [[${topic}]] in ${label} (${sizeNote(file, file.content)}):\n${file.content.trim() || '(empty)'}`
+          const file = files.find(item => item.topic === wanted)
+          if (file !== undefined) return `Topic [[${wanted}]] in ${label} (${sizeNote(file, file.content)}):\n${file.content.trim() || '(empty)'}`
         }
         const known = loaded.flatMap(({ tag, files }) => files.filter(file => file.topic).map(file => `[[${file.topic}]] (${tag})`))
         return `No topic [[${String(args.topic).slice(0, 60)}]] there. Topics: ${known.join(', ') || 'none yet'}.`

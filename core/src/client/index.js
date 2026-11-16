@@ -20,7 +20,7 @@ import { watchFaceMenu } from './face-at-filter.js'
 import { VOICE_BUNDLE } from './speech.js'
 import { sameVersion } from './dsh-offer.js'
 import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
-import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell, settledVisit } from './cells.js'
+import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell, settledVisit, leftSeen } from './cells.js'
 import { Overlays } from './overlays.js'
 import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
 import { BROWSER_CSS } from './browser-pane.js'
@@ -122,9 +122,21 @@ export function apply(ctx) {
   const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state))
   // A Bot's chat spans several parts, so when it was last left is kept per Bot.
   const seenKey = id => roster.getSnapshot().byId?.[id]?.id ?? id
+  // Per Session, the newest turn this visit measured on screen (`noteVisitTail`). Leaving writes
+  // only that, so a turn that arrived below the fold or after the user scrolled up stays unseen
+  // and the NEW divider comes back for it (#3079).
+  const visitTails = {}
   const leaveVisits = (ids) => {
     const now = Date.now()
-    for (const id of ids) seenAt[seenKey(id)] = now
+    const visits = ui.getSnapshot().visits ?? {}
+    for (const id of ids) {
+      const key = seenKey(id)
+      // A settled visit already recorded what its divider said was seen (#275); the tail is the
+      // newest turn the view reported. Neither may move the mark backwards.
+      const seen = Math.max(seenAt[key] ?? 0, visits[id]?.seen ?? 0)
+      seenAt[key] = leftSeen(seen, visitTails[key], now)
+      delete visitTails[key]
+    }
     try { localStorage.setItem(SEEN_KEY, JSON.stringify(seenAt)) } catch { /* storage unavailable */ }
   }
   ctx.effect(() => {
@@ -587,6 +599,13 @@ export function apply(ctx) {
       const next = settledVisit(visit)
       return next === visit ? state : { ...state, visits: { ...state.visits, [id]: next } }
     }),
+    // The newest turn this visit measured on screen (`useTranscriptView`); a leave writes only
+    // this, and only forward, so what was never on screen stays unread (#3079).
+    noteVisitTail: (id, tail) => {
+      if (typeof tail !== 'number' || !Number.isFinite(tail)) return
+      const key = seenKey(id)
+      if (!(visitTails[key] >= tail)) visitTails[key] = tail
+    },
     endVisit: (id) => {
       leaveVisits([id])
       ui.set((state) => {

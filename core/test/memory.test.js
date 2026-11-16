@@ -244,6 +244,26 @@ test('#2692 a topic is one identity whichever canonical spelling it is written i
   assert.equal(read('bots', 'b2', 'MEMORY.md'), '# Memory\n\n## Index\n- [[\uac00]]\n')
 })
 
+// #3042: a name that cannot be a topic file cleaned to `undefined`, which is the topic of
+// MEMORY.md's own pseudo-file, so `recall` answered with the whole entry point instead of saying
+// the name is not one it can read. Only a name that is merely unknown is "no such topic".
+test('#3042 recall refuses a name that cannot be a topic, instead of reading MEMORY.md', async (t) => {
+  const { tool, read, stop } = start()
+  t.after(() => stop())
+  await tool('remember', { text: 'Flies from Hangzhou', topic: 'travel' }, 'b2')
+  const main = read('bots', 'b2', 'MEMORY.md')
+  for (const bad of ['../x', 'a/b', 'back\\slash']) {
+    const out = await tool('recall', { topic: bad }, 'b2')
+    assert.match(out, /cannot be a topic name: use a short word or two/, bad)
+    assert.doesNotMatch(out, /Flies from Hangzhou|\[\[undefined\]\]/, `${bad} must not read a file`)
+  }
+  // An empty name is no topic at all: the listing, as before.
+  assert.match(await tool('recall', { topic: '' }, 'b2'), /^Your memory: MEMORY\.md has 0 entries/)
+  // A name that is only unknown still says so, and lists the topics it knows.
+  assert.match(await tool('recall', { topic: 'nonexistent_topic_xyz' }, 'b2'), /^No topic \[\[nonexistent_topic_xyz\]\] there\. Topics: \[\[travel\]\] \(yours\)\.$/)
+  assert.equal(read('bots', 'b2', 'MEMORY.md'), main, 'a refused read changes nothing')
+})
+
 // A topic file written before this change keeps the spelling it was written with. The key is
 // computed from the name, so the file is still the one recall reads and remember appends to.
 test('#2692 a topic saved under another spelling before this change is still the file it names', async (t) => {

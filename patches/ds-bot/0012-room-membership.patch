@@ -949,6 +949,25 @@ diff --git a/src/client/header.js b/src/client/header.js
  }
  
  // New-message pills. "N new messages ↓" takes Back to bottom's place when
+@@ -133,9 +133,18 @@ function useTranscriptView() {
+         divider = at.bottom <= headerBottom ? 'above' : at.top >= box.bottom ? 'below' : 'in-view'
+       }
+       const composer = parseFloat(getComputedStyle(scroller).getPropertyValue('--dsh-composer-height')) || 152
++      // The newest turn whose row is on screen. Leaving writes only this, so a turn that arrived
++      // below the fold, or after the user scrolled up, stays unseen and its divider comes back (#3079).
++      let tail
++      for (const row of scroller.querySelectorAll('[data-chat-turn]')) {
++        const turn = Number(row.dataset.chatTurn)
++        const at = row.getBoundingClientRect()
++        if (Number.isFinite(turn) && at.bottom > box.top && at.top < box.bottom && (tail === undefined || turn > tail)) tail = turn
++      }
+       const next = {
+         unpinned: scroller.querySelector('[class*="_toBottomSlot"]>button') !== null,
+         divider,
++        tail,
+         center: Math.round(box.left + box.width / 2),
+         top: Math.round(headerBottom + 8),
+         bottom: Math.round(window.innerHeight - box.bottom + composer + 8),
 @@ -156,7 +156,7 @@ function useTranscriptView() {
    return view
  }
@@ -958,7 +977,21 @@ diff --git a/src/client/header.js b/src/client/header.js
    const replies = useSessions((list) => {
      const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline
      return Array.isArray(outline) ? outline.reduce((count, entry) => count + (entry.response ? 1 : 0), 0) : 0
-@@ -176,6 +176,10 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+@@ -171,11 +171,24 @@ function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+     return count
+   })
+   const view = useTranscriptView()
++  // The newest turn on screen, resolved to the time the leave mark compares against (a running
++  // turn has no end yet, so its start counts). A Session with nothing rendered reports nothing,
++  // and the leave keeps the old fallback (#3079).
++  const tailAt = useTurnClock((state) => {
++    if (view?.tail === undefined) return null
++    const entry = state[sessionId]?.[view.tail]
++    return entry?.end ?? entry?.first ?? null
++  })
++  useEffect(() => { if (tailAt !== null) actions?.noteVisitTail?.(sessionId, tailAt) }, [tailAt, sessionId])
+   const unpinned = view?.unpinned === true
+   const [release, setRelease] = useState({ base: null, dismissed: false })
    const [above, setAbove] = useState({ seen: false, dismissed: false })
    useEffect(() => { setRelease({ base: unpinned ? replies : null, dismissed: false }) }, [unpinned])
    useEffect(() => { if (view?.divider === 'in-view') setAbove(state => (state.seen ? state : { ...state, seen: true })) }, [view?.divider])
@@ -2118,7 +2151,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      },
    }))
  
-@@ -539,8 +539,26 @@ export function install(rt) {
+@@ -539,8 +539,38 @@ export function install(rt) {
        const { room, error } = rt.pickRoom(args.group, self)
        if (error) return error
        ensureRoomLog(room)
@@ -2137,11 +2170,23 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +      // said 500 lines read as "newest 30 of 60" with 440 of them silently gone (#2838). The
 +      // dropped lines sit below the oldest retained one, so they count from the reader's floor to
 +      // that point, never the lines before the reader joined. A co-seat mention reserves one of those
-+      // numbers and writes no line here (#1126), and `room.reserved` counts them, so the cut is
-+      // measured between the lines the room said and the lines it kept (#2855).
++      // numbers and writes no line here (#1126), so the cut is measured between the lines the room
++      // said and the lines it kept (#2855). Only the bookings at or above the floor belong to this
++      // reader's window: the ones below it are already outside, and subtracting them again turned
++      // lines 300..510 of a room that reached 510 into "newest 30 of 201" instead of 211 (#3037).
++      // `room.reservedSeqs` keeps each booking's number for that; a room saved before it existed
++      // carries only `room.reserved`, and keeps the room-wide discount it had.
 +      const reserved = Math.max(0, Number(room.reserved) || 0)
++      const booked = Array.isArray(room.reservedSeqs) ? room.reservedSeqs : []
++      // A list shorter than the count cannot place the room's bookings: a room that kept only its
++      // count and recorded one number afterwards names that one while `reserved` still counts them
++      // all, so the unrecorded ones must not be counted as if every one sat inside the window.
++      // Unknown keeps the room-wide discount (#3046).
++      const below = reserved > booked.length
++        ? 0
++        : Math.min(reserved, Math.max(0, from - 1), booked.filter(seq => Number(seq) < from).length)
 +      const dropped = Math.max(0, (room.seq ?? 0) - (room.log ?? []).length - reserved)
-+      const total = kept.length + Math.max(0, dropped - Math.max(0, from - 1))
++      const total = kept.length + Math.max(0, dropped - Math.max(0, from - 1) + below)
 +      const older = total - lines.length
 +      return `Latest in "${room.name}" (${older > 0 ? `newest ${lines.length} of ${total}, ` : ''}oldest first):\n${transcript(lines)}`
      },

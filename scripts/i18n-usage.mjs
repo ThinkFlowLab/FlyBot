@@ -11,6 +11,10 @@
 // the renderer, or an `h(...)` prop). A value already translated, a comparison operand, an object
 // key, a state id, a selector and a URL are data, not copy, and never count in either scan.
 //
+// `missingCopy` has a second view over the same file: copy a helper hands back (#P-800), because a
+// helper's answer has no draw position of its own — `return cond ? 'the room' : 'friend'` draws
+// English in a zh window with every check green. That view is described where it is built, below.
+//
 // `bareCopy` only counts **render positions** (#2998 ruling):
 //
 //   1. a string child of `h(...)` (argument 3 and later), or a pure template literal there;
@@ -135,6 +139,9 @@ export function tokens(source) {
       index += 1
       let value = ''
       let substituted = false
+      // The names a `${}` hole mentions: the hole's code is not tokenised, but a local interpolated
+      // here is read by the reader all the same (`${keepLine}` draws the sentence that local holds).
+      const holes = []
       while (index < source.length && source[index] !== '`') {
         if (source[index] === '\\') {
           const [each, next] = escapeAt(source, index)
@@ -144,12 +151,21 @@ export function tokens(source) {
         }
         if (source[index] === '$' && source[index + 1] === '{') {
           substituted = true
+          // One marker per hole, so the report names the copy a reader sees around it and the
+          // expressions stay out of the key (they are code, not a placeholder name).
+          value += '{}'
           let depth = 1
           index += 2
           while (index < source.length && depth > 0) {
             if (source[index] === '{') depth += 1
             else if (source[index] === '}') depth -= 1
             else if (source[index] === '\n') line += 1
+            else if (isIdent(source[index])) {
+              let name = ''
+              while (index < source.length && isIdent(source[index])) { name += source[index]; index += 1 }
+              holes.push(name)
+              continue
+            }
             index += 1
           }
           continue
@@ -159,7 +175,7 @@ export function tokens(source) {
         index += 1
       }
       index += 1
-      if (!substituted) place({ type: 'string', value })
+      place(substituted ? { type: 'string', value, substituted: true, holes } : { type: 'string', value })
       previous = 'string'
       lastValue = value
       continue
@@ -167,24 +183,26 @@ export function tokens(source) {
     if (isIdent(ch)) {
       let name = ''
       while (index < source.length && isIdent(source[index])) { name += source[index]; index += 1 }
-      if (name === 'tr' || name === 't' || name === 'hostText' || name === 'h') {
-        let next = index
-        while (next < source.length && /\s/.test(source[next])) next += 1
-        if (source[next] === '(') calls.push({ kind: name, arg: 0, obj: 0, key: null })
+      let next = index
+      while (next < source.length && /\s/.test(source[next])) next += 1
+      const called = source[next] === '('
+      if (called && (name === 'tr' || name === 't' || name === 'hostText' || name === 'h')) {
+        calls.push({ kind: name, arg: 0, obj: 0, key: null })
       }
-      place({ type: 'ident', value: name })
+      place({ type: 'ident', value: name, called })
       previous = name
       lastValue = name
       continue
     }
     if (ch === '(' || ch === '[') {
+      place({ type: 'punct', value: ch })
       if (!(previous === 'tr' || previous === 't' || previous === 'hostText' || previous === 'h')) calls.push({ kind: 'other', arg: 0, obj: 0, key: null })
       previous = '('
       index += 1
       continue
     }
-    if (ch === ')') { calls.pop(); previous = ')'; index += 1; continue }
-    if (ch === ']') { if (current()?.kind === 'other') calls.pop(); previous = ']'; index += 1; continue }
+    if (ch === ')') { place({ type: 'punct', value: ')' }); calls.pop(); previous = ')'; index += 1; continue }
+    if (ch === ']') { place({ type: 'punct', value: ']' }); if (current()?.kind === 'other') calls.pop(); previous = ']'; index += 1; continue }
     // Braces are emitted too, so a copy table can be delimited by its own body rather than by
     // guessing from the props depth.
     if (ch === '{') {
@@ -255,7 +273,7 @@ function constants(list) {
     if (name.type !== 'ident' || equals.type !== 'punct' || equals.value !== '=') continue
     // Same props depth as the `=`: `const LOCAL_REFUSAL_COPY = { … }` must not read as a binding
     // to its first key.
-    if (value.type !== 'string' || value.obj !== equals.obj) continue
+    if (value.type !== 'string' || value.substituted || value.obj !== equals.obj) continue
     bound.set(name.value, value.value)
   }
   return bound
@@ -276,6 +294,9 @@ export function bareCopy(source, file, dictionary = DICTIONARY.zh) {
   for (let at = 0; at < list.length; at += 1) {
     const token = list[at]
     if (translated(token)) continue
+    // A template literal with a `${}` hole has no dictionary key to compare with: it is reported
+    // by `templateDraws`, and both keyed scans stay exactly as wide as they were (#3040).
+    if (token.substituted) continue
     const before = list[at - 1]
     const after = list[at + 1]
     // A comparison operand (`run.status === 'done'`, `case 'idle'`) or an object key is data,
@@ -366,6 +387,8 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     const token = list[at]
     if (token.type !== 'string' && token.type !== 'ident') continue
     if (translated(token)) continue
+    // See `bareCopy`: a substituted template is `templateDraws`' business, not this scan's.
+    if (token.substituted) continue
     const before = list[at - 1]
     const after = list[at + 1]
     if (before?.type === 'punct' && COMPARISONS.has(before.value)) continue
@@ -387,6 +410,271 @@ export function missingCopy(source, file, dictionary = DICTIONARY.zh) {
     if (decoration(key)) continue
     if (Object.hasOwn(dictionary, key)) continue
     entries.push({ file, line: token.line, key })
+  }
+  // One entry point for both views: a copy table is a draw position and so is a helper's answer, and
+  // a caller of this scan wants the gap, not the shape it was written in.
+  return [...entries, ...helperCopy(source, file, dictionary)]
+}
+
+// The third place copy hides: what a helper hands back (main 9b45c95e, measured by Product). The
+// two scans above read a draw position and a table value, `templateDraws` reads a `${}` hole, and
+// none of them can read `return cond ? 'the room' : 'friend'` — five such sites in
+// `plugins/social/client.js` draw English in a zh window while every check is green. The rule here
+// is the one `templateBindings` already applies to a `const`, carried to what a helper yields: a
+// literal, or an expression built from literals by `? :`, `||` and parentheses, is copy. A call's
+// arguments are not a yield — `readableParty(to, 'friend')` hands `'friend'` to another helper, and
+// what that helper does with it is a different question — and nothing nested inside a call is
+// reached, so an `h(...)` full of attributes stays the draw scan's business.
+//
+// A helper counts only when it is **drawn**: its call sits where a reader sees the result (an `h()`
+// child, a copy attribute, a `text:` prop), a local it is assigned to is drawn, or it is rendered as
+// `h(Component, …)`. Without that test the machine ids would pin as untranslated sentences —
+// `faceChip`'s `'closed'` / `'left'`, the SVG path data in workflow's chart builder, timeline's
+// duration units — values a reader never sees as copy. The discriminator is the one `missingCopy`
+// already applies to a table: where the value ends up, not what it looks like.
+//
+// A value of one token — no space, and carrying `- _ . / : #` — is a CSS class, a selector, a URL or
+// an id, not a sentence: `fs-hint`, `remote:{}`, `https://…`. Same reason as `decoration`: a string
+// alone cannot say what it is, its shape can.
+const DECLARES = new Set(['const', 'let', 'var'])
+const CONTINUE_LINE = new Set(['?', ':', '.', '+', '-', '*', '/', '&&', '||', '='])
+const HELPER_TOKEN_SHAPE = /[-_.:/#]/
+const singleToken = key => !/\s/.test(key) && HELPER_TOKEN_SHAPE.test(key)
+
+const matchingBrace = (list, open) => {
+  let depth = 0
+  for (let at = open; at < list.length; at += 1) {
+    if (list[at].type !== 'punct') continue
+    if (list[at].value === '{') depth += 1
+    else if (list[at].value === '}') { depth -= 1; if (depth === 0) return at }
+  }
+  return -1
+}
+
+// The `{` that opens a `function name(…)` body: parens around the parameters are skipped, so a
+// default value's own object literal cannot be mistaken for the body.
+const bodyBrace = (list, from) => {
+  let depth = 0
+  for (let at = from; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'punct') continue
+    if (token.value === '(') depth += 1
+    else if (token.value === ')') depth -= 1
+    else if (token.value === '{' && depth === 0) return at
+  }
+  return -1
+}
+
+// The token after `=>` in `const name = … => …`, or -1 when the initializer is not an arrow.
+const arrowAt = (list, from) => {
+  let depth = 0
+  for (let at = from; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type === 'ident' && depth === 0 && STATEMENT.has(token.value) && at > from) return -1
+    if (token.type !== 'punct') continue
+    if (token.value === '(' || token.value === '[' || token.value === '{') depth += 1
+    else if (token.value === ')' || token.value === ']' || token.value === '}') { depth -= 1; if (depth < 0) return -1 }
+    else if (depth === 0 && (token.value === ';' || token.value === ',')) return -1
+    // `=>` is one token: the walker combines it before it reaches the list.
+    else if (depth === 0 && token.value === '=>') return at + 1
+  }
+  return -1
+}
+
+// A helper a reader can name: `function name(…) { … }` and `const name = (…) => …`. An anonymous
+// callback is not one — nothing else can hand its value to a draw.
+function helperBodies(list) {
+  const bodies = []
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'ident') continue
+    if (token.value === 'function') {
+      let nameAt = at + 1
+      if (list[nameAt]?.value === '*') nameAt += 1
+      const name = list[nameAt]
+      if (name?.type !== 'ident') continue
+      const open = bodyBrace(list, nameAt + 1)
+      if (open < 0) continue
+      const close = matchingBrace(list, open)
+      if (close > 0) bodies.push({ name: name.value, start: open, end: close, expression: false })
+      continue
+    }
+    if (!DECLARES.has(token.value)) continue
+    const name = list[at + 1]
+    if (name?.type !== 'ident' || list[at + 2]?.value !== '=') continue
+    const arrow = arrowAt(list, at + 3)
+    if (arrow < 0) continue
+    if (list[arrow]?.value === '{') {
+      const close = matchingBrace(list, arrow)
+      if (close > 0) bodies.push({ name: name.value, start: arrow, end: close, expression: false })
+    } else {
+      // An expression body ends at its own line, `,` or `;`; `expressionRun` finds that.
+      bodies.push({ name: name.value, start: arrow, end: list.length, expression: true })
+    }
+  }
+  return bodies
+}
+
+// The helpers whose value a reader sees: a call at a draw position, a drawn local it is assigned
+// to, or a component handed to `h(...)`. One level of assignment, because `const usage = roomHint(…)`
+// followed by `usage.text` is how the caller reads it.
+function drawnHelpers(list) {
+  const drawn = new Set()
+  const handed = new Map()
+  for (let at = 0; at + 3 < list.length; at += 1) {
+    if (!DECLARES.has(list[at].value)) continue
+    const name = list[at + 1]
+    if (name?.type !== 'ident' || list[at + 2]?.value !== '=') continue
+    for (let each = at + 3; each < list.length; each += 1) {
+      const token = list[each]
+      if (each > at + 3 && token.line !== list[each - 1].line) break
+      if (token.type === 'ident' && token.called) { handed.set(name.value, token.value); break }
+      if (token.type !== 'ident') break
+    }
+  }
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'ident') continue
+    const inCopyProp = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    const component = token.call === 'h' && token.obj === 0 && token.arg === 0 && !token.called
+    if (renderChild(token) || inCopyProp || copyValue(list, at) || component) drawn.add(token.value)
+  }
+  for (const [local, helper] of handed) if (drawn.has(local)) drawn.add(helper)
+  return drawn
+}
+
+// The expression a statement or an arrow body hands back, up to the end of that statement.
+function expressionRun(list, from, limit) {
+  const run = []
+  let depth = 0
+  for (let at = from; at < limit; at += 1) {
+    const token = list[at]
+    const previous = list[at - 1]
+    if (at > from && depth === 0 && token.line !== previous.line
+      && !CONTINUE_LINE.has(token.value) && !CONTINUE_LINE.has(previous.value)) break
+    if (token.type === 'ident' && depth === 0 && STATEMENT.has(token.value) && at > from) break
+    if (token.type === 'punct') {
+      if (token.value === '(' || token.value === '[' || token.value === '{') depth += 1
+      else if (token.value === ')' || token.value === ']' || token.value === '}') { if (depth === 0) break; depth -= 1 }
+      else if (depth === 0 && (token.value === ';' || token.value === ',')) break
+    }
+    run.push(token)
+  }
+  return run
+}
+
+// Every literal an expression is built from at its own level: `cond ? 'a' : 'b'`, `name || 'b'`,
+// `('You')`. A part that is a call or a member read is not a literal and is skipped rather than
+// opened — that is what keeps a helper's arguments out of this scan.
+function literalsOf(run) {
+  const literals = []
+  const parts = [[]]
+  let depth = 0
+  // `||` and `&&` are two single-character tokens, not one: the walker emits the operator it sees.
+  const split = new Set(['?', ':', '|', '&', '+'])
+  for (let at = 0; at < run.length; at += 1) {
+    const token = run[at]
+    if (token.type === 'punct') {
+      if (token.value === '(' || token.value === '[' || token.value === '{') depth += 1
+      else if (token.value === ')' || token.value === ']' || token.value === '}') depth -= 1
+      // `?.` is optional chaining, not the start of a ternary.
+      else if (depth === 0 && split.has(token.value) && run[at + 1]?.value !== '.') { parts.push([]); continue }
+    }
+    parts[parts.length - 1].push(token)
+  }
+  for (const part of parts) {
+    const bare = part.filter(token => !(token.type === 'punct' && (token.value === '(' || token.value === ')')))
+    if (bare.length === 1 && bare[0].type === 'string') { literals.push(bare[0]); continue }
+    // A parenthesised group is the same expression one level in: `… || (cond ? 'You' : 'Someone')`.
+    if (part.length >= 2 && part[0].value === '(' && part[part.length - 1].value === ')') {
+      literals.push(...literalsOf(part.slice(1, -1)))
+    }
+  }
+  return literals
+}
+
+// Every literal a helper hands back: a `return`, the arrow's expression body, and a `const` the
+// helper reads again afterwards (that is how it builds the sentence: `head + pick.join(', ')`).
+function yieldedLiterals(list, body) {
+  // An expression body is a value, the same way a local is: `friend => friend?.id || 'share'` hands
+  // back a key, so only a sentence counts there. A `return` in a block keeps its bare words — that is
+  // where a helper answers `'Closed'` or `'Joining'`.
+  if (body.expression) {
+    return literalsOf(expressionRun(list, body.start, Math.min(body.start + 400, list.length)))
+      .filter(each => each.substituted || /\s/.test(each.value))
+  }
+  const literals = []
+  for (let at = body.start; at < body.end; at += 1) {
+    const token = list[at]
+    if (token.type === 'ident' && token.value === 'return') {
+      literals.push(...literalsOf(expressionRun(list, at + 1, body.end)))
+      continue
+    }
+    if (!DECLARES.has(token.value)) continue
+    const name = list[at + 1]
+    if (name?.type !== 'ident' || list[at + 2]?.value !== '=') continue
+    const values = literalsOf(expressionRun(list, at + 3, body.end))
+    if (!values.length) continue
+    const rest = list.slice(at + 3, body.end)
+    // The name must be read again — that is how the helper builds its sentence — and must not be
+    // compared: `side === 'below'` says the local holds a machine id, not the words on the label.
+    const readPlain = rest.some(each => each.type === 'ident' && each.value === name.value)
+    // A name interpolated into a template is read just as plainly as one passed as an argument:
+    // `${keepLine}` puts the sentence that local holds on the screen. A hole has no room for a bare
+    // word, though — the sentence around it says what the value means — so only a sentence (a
+    // substituted template) counts when the hole is the only place the name is read.
+    const readInHole = rest.some(each => each.type === 'string' && Array.isArray(each.holes) && each.holes.includes(name.value))
+    const used = readPlain || readInHole
+    const comparedName = rest.some((each, index) => each.type === 'ident' && each.value === name.value
+      && rest[index - 1]?.value !== '.'
+      && ((rest[index - 1]?.type === 'punct' && COMPARISONS.has(rest[index - 1].value))
+        || (rest[index + 1]?.type === 'punct' && COMPARISONS.has(rest[index + 1].value))))
+    // A local is only half a sentence: `|| 'share'` is the last resort key of a lookup, not words on
+    // the screen, so a bare word from a local has to be spelled as a sentence (`'the room'`, a
+    // template with a hole) to count. A helper's own `return 'Closed'` is not filtered this way.
+    const sentence = values.filter(each => readPlain ? each.substituted || /\s/.test(each.value) : each.substituted)
+    if (used && !comparedName) literals.push(...sentence)
+  }
+  return literals
+}
+
+// A value the file compares against is a machine value, not copy: timeline's `'below'`, `'right'`
+// and `'left'` decide where a label is printed, and workflow's `'failed'` is a class name, but both
+// are written as a literal a helper hands back. The comparison is the file's own statement that the
+// string is data, so the scan reads it rather than guessing from the spelling.
+function comparedValues(list) {
+  const values = new Set()
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'string') continue
+    const before = list[at - 1]
+    const after = list[at + 1]
+    const compared = (before?.type === 'punct' && COMPARISONS.has(before.value))
+      || (after?.type === 'punct' && COMPARISONS.has(after.value))
+      || (before?.type === 'ident' && before.value === 'case')
+    if (compared) values.add(token.value)
+  }
+  return values
+}
+
+// Copy a helper hands to a reader with no zh entry. Its own view of the same walk, so
+// `missingCopy` keeps reading draw positions only and neither view can rewrite the other.
+function helperCopy(source, file, dictionary = DICTIONARY.zh) {
+  const list = tokens(source)
+  const drawn = drawnHelpers(list)
+  const compared = comparedValues(list)
+  const entries = []
+  for (const body of helperBodies(list)) {
+    if (!drawn.has(body.name)) continue
+    for (const token of yieldedLiterals(list, body)) {
+      const key = token.value
+      if (key === '' || key === ', ') continue
+      if (decoration(key)) continue
+      if (singleToken(key)) continue
+      if (compared.has(key)) continue
+      if (Object.hasOwn(dictionary, key)) continue
+      entries.push({ file, line: token.line, key })
+    }
   }
   return entries
 }
@@ -411,9 +699,113 @@ export function scanPlugins(pluginsRoot = new URL('../plugins/', import.meta.url
 }
 
 // The other half of the same walk: copy a plugin draws that the dictionary has no entry for, so
-// nothing can translate it at all (#3002).
+// nothing can translate it at all (#3002). Two views over one file — a draw position, and what a
+// helper hands back — because a helper's copy has no draw position of its own.
 export function scanMissing(pluginsRoot = new URL('../plugins/', import.meta.url)) {
   return pluginClients(pluginsRoot).flatMap(({ file, source }) => missingCopy(source, file)).sort(byPlace)
+}
+
+// The third view of the same walk: copy drawn as a template literal with a `${}` hole, which no
+// dictionary key can name (#3040).
+export function scanTemplateDraws(pluginsRoot = new URL('../plugins/', import.meta.url)) {
+  return pluginClients(pluginsRoot).flatMap(({ file, source }) => templateDraws(source, file)).sort(byPlace)
+}
+
+// Copy a plugin draws through a template literal with a `${}` hole (#3040). `h('span', {}, `superseded
+// by ${id}`)` has no dictionary key the two scans above could match and no `tr()` call to find, so the
+// English stays in a zh window while both checks are green — #3040 shipped that way and only a reader
+// noticed. The draw is reported where copy is read (a child node, a copy attribute, a `text:` prop, a
+// copy table value), with one `{}` per hole, so the fix has one shape: `tr('superseded by {id}', { id })`.
+// A substituted template can reach the reader through a name: `const approveAllTitle = cond ?
+// `…${n} 条 · to ${who}` : `…${n} 条`` is drawn by `h('button', { title: approveAllTitle })`. The
+// literal sits in an assignment, where none of the positions below can place it, and the name is
+// what a reader is told. Only an assignment whose value is a template, or a ternary between
+// templates, binds: `const bars = g.bars.map(bar => h(…))` also carries templates inside it, and
+// none of them is what `bars` draws (#3049).
+const STATEMENT = new Set(['const', 'let', 'var', 'return', 'if', 'for', 'while', 'switch', 'function', 'class', 'case', 'else', 'do', 'try', 'throw'])
+// A line that starts with one of these continues the assignment above it, so the statement walk
+// below must not stop at the line break.
+const CONTINUATION = new Set(['?', ':', '.', '+', '-', '*', '/', '&&', '||', '='])
+
+function templateBindings(list) {
+  const bound = new Map()
+  for (let at = 0; at + 3 < list.length; at += 1) {
+    const keyword = list[at]
+    const name = list[at + 1]
+    const equals = list[at + 2]
+    if (keyword.type !== 'ident' || !['const', 'let', 'var'].includes(keyword.value)) continue
+    if (name.type !== 'ident' || equals.type !== 'punct' || equals.value !== '=') continue
+    const segment = []
+    let depth = 0
+    for (let each = at + 3; each < list.length; each += 1) {
+      const token = list[each]
+      const previous = list[each - 1]
+      if (depth === 0 && each > at + 3 && token.line !== previous.line
+        && !CONTINUATION.has(token.value) && !CONTINUATION.has(previous.value)) break
+      if (token.type === 'punct') {
+        if (token.value === '(' || token.value === '[' || token.value === '{') { segment.push({ token, depth }); depth += 1; continue }
+        if (token.value === ')' || token.value === ']' || token.value === '}') {
+          if (depth === 0) break
+          depth -= 1
+          segment.push({ token, depth })
+          continue
+        }
+        if (depth === 0 && token.value === ',') break
+      }
+      if (depth === 0 && token.type === 'ident' && STATEMENT.has(token.value)) break
+      segment.push({ token, depth })
+    }
+    const question = segment.findIndex(entry => entry.depth === 0 && entry.token.type === 'punct' && entry.token.value === '?')
+    const whole = text => text.type === 'string' && text.substituted
+    if (question < 0) {
+      if (segment.length === 1 && whole(segment[0].token)) bound.set(name.value, [{ line: segment[0].token.line, key: segment[0].token.value }])
+      continue
+    }
+    const branches = segment.slice(question + 1).map(entry => entry.token)
+    const literal = branches.every(token => whole(token) || (token.type === 'punct' && ['?', ':', '(', ')'].includes(token.value)))
+    const values = branches.filter(whole).map(token => ({ line: token.line, key: token.value }))
+    if (literal && values.length) bound.set(name.value, values)
+  }
+  return bound
+}
+
+export function templateDraws(source, file) {
+  const list = tokens(source)
+  const tables = copyTables(list)
+  const bound = templateBindings(list)
+  // The lines a drawn name carries: the literal is copy because the name is drawn, wherever the
+  // assignment happens to sit.
+  const drawnLines = new Set()
+  for (let at = 0; at < list.length && bound.size; at += 1) {
+    const token = list[at]
+    if (token.type !== 'ident' || !bound.has(token.value)) continue
+    const before = list[at - 1]
+    const inTable = tables.some(body => at > body.start && at < body.end)
+    const inProps = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    const inValue = inTable && before?.type === 'punct' && before.value === ':'
+    if (!inProps && !inValue && !renderChild(token)) continue
+    for (const value of bound.get(token.value)) drawnLines.add(value.line)
+  }
+  const entries = []
+  for (let at = 0; at < list.length; at += 1) {
+    const token = list[at]
+    if (token.type !== 'string' || !token.substituted) continue
+    if (translated(token)) continue
+    const before = list[at - 1]
+    const after = list[at + 1]
+    if (before?.type === 'punct' && COMPARISONS.has(before.value)) continue
+    if (after?.type === 'punct' && COMPARISONS.has(after.value)) continue
+    const inTable = tables.some(body => at > body.start && at < body.end)
+    const inProps = token.call === 'h' && token.obj > 0 && MISSING_ATTRS.has(token.prop)
+    if (!inTable && !inProps && !copyValue(list, at) && !renderChild(token) && !drawnLines.has(token.line)) continue
+    // Inside a table only a direct value counts, the same rule the missing-entry scan holds.
+    if (inTable && !(before?.type === 'punct' && before.value === ':')) continue
+    // The same shape rule as the scan above: with the holes spelled `{}`, a draw whose literal text
+    // carries no letter is a separator or a figure, not a sentence (`\`${a} · ${b}\``).
+    if (decoration(token.value)) continue
+    entries.push({ file, line: token.line, key: token.value })
+  }
+  return entries
 }
 
 // The missing-entry baseline is keyed by where the copy lives, not by the line it happens to sit on:
@@ -502,8 +894,9 @@ const flagValue = name => {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const missing = process.argv.includes('--missing')
-  const entries = missing ? scanMissing() : scanPlugins()
-  const identity = missing ? baselineOf : drawBaselineOf
+  const templates = process.argv.includes('--template-draws')
+  const entries = templates ? scanTemplateDraws() : missing ? scanMissing() : scanPlugins()
+  const identity = templates || missing ? baselineOf : drawBaselineOf
   // One identity for every reader of this run: `--json` prints it, `--write` pins it and the tail
   // line counts it, so the count can never disagree with the file a reader compares it with. The
   // walk still lists each draw (two attributes on one line are two draws); the count is pins, a
@@ -525,7 +918,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
   } else {
     for (const entry of entries) console.log(`${entry.file}:${entry.line}: ${JSON.stringify(entry.key)}`)
-    const what = missing ? 'drawn copy strings with no zh entry' : 'bare draws'
+    const what = templates ? 'template draws a `${}` hole keeps out of every key' : missing ? 'drawn copy strings with no zh entry' : 'bare draws'
     console.log(`${counted.length} ${what} in ${new Set(entries.map(entry => entry.file)).size} files`)
+    // The two keyed scans stay exactly as wide as they were: what they cannot judge is counted here
+    // rather than silently dropped, so a reader of either report knows the size of the blind spot
+    // (#3049). `--json` and `--write` keep their shape: this line is for a person.
+    if (!templates) console.log(`${baselineOf(scanTemplateDraws()).length} interpolated template draws are out of scope (--template-draws)`)
   }
 }

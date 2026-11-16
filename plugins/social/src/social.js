@@ -651,14 +651,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return out
   }
   function fileProblem(file) {
-    const parts = file.split(sep).filter(Boolean)
-    if (parts.some(part => part.startsWith('.'))) return 'hidden files and folders are private'
+    // #3048: the more specific refusal has to win, so "copy the file out and attach the copy" can
+    // never be said about a credentials file or a private FlyBot file that happens to live under a
+    // dot folder (they normally do): those stay refused on their own ground. Only a file refused for
+    // being hidden is told how to get out, and the refusal names the segment it hit, never the path
+    // it was handed.
     if (CREDENTIAL_NAME.test(basename(file))) return 'it looks like a credential'
     for (const dir of privateDirs()) {
       let real = dir
       try { real = realpathSync(dir) } catch { /* not a symlink or gone: compare the path as it is */ }
       if (file === real || file.startsWith(real + sep)) return 'it is a private FlyBot file'
     }
+    const hidden = file.split(sep).filter(Boolean).find(part => part.startsWith('.'))
+    if (hidden) return `${hidden} is a hidden file or folder, so it stays private: copy the file to a folder that is not hidden (for example your home folder) and attach that copy`
     if (!(extname(file).toLowerCase() in MIME)) return `only ${Object.keys(MIME).join(' ')} files`
     return undefined
   }
@@ -2715,7 +2720,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     parameters: {
       to: { type: 'string', required: true, description: 'Handle from list_friend_bots, e.g. @coder.bob.home' },
       message: { type: 'string', required: true, description: 'Self-contained message; the other Bot cannot see this conversation' },
-      files: { type: 'array', items: { type: 'string' }, description: `Optional absolute paths of files to attach (at most ${MAX_FILES}, ${sizeLabel(DEFAULT_MAX_FILE_BYTES)} each; documents, data, text and images only). The user sees the names and sizes before anything is sent.` },
+      files: { type: 'array', items: { type: 'string' }, description: `Optional absolute paths of files to attach (at most ${MAX_FILES}, ${sizeLabel(DEFAULT_MAX_FILE_BYTES)} each; documents, data, text and images only). The user sees the names and sizes before anything is sent. A path inside a hidden file or folder (any name starting with a dot, such as .ssh) is private and is refused: copy the file to a folder that is not hidden first, then attach that copy.` },
     },
     async execute(args, { botId }) {
       const to = norm(args.to)

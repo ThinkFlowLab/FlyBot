@@ -132,6 +132,10 @@ runs:
           --test-reporter=spec --test-reporter-destination=stdout \
           --test-reporter=lcov --test-reporter-destination=lcov.info \
           "test/*.test.js" | tee test-output.txt
+        # A glob that matches nothing makes node exit 0 with `tests 0` and 100% coverage (#2733).
+        tests=$(sed -n 's/^ℹ tests \([0-9]*\)$/\1/p' test-output.txt | tail -1)
+        echo "tests: ${tests:-?}"
+        [ "${tests:-0}" -ge 1 ] || { echo "::error::core suite ran no tests (glob matched nothing)"; exit 1; }
         {
           echo "### Coverage: core (ds-bot) (Node $NODE_V, DSH $DSH)"
           echo '```'

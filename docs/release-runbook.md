@@ -36,6 +36,9 @@ call beside it is the same request.
    `core/package-lock.json`, the version patch under `patches/ds-bot/`, and the `changelog.d/`
    fragments that went into the section, deleted. Push the branch through the API and open the pull
    request **upstream** with its `Owner:` / `Reviewer:` lines and a `Fixes #<n>` line.
+   The section date is the **Asia/Shanghai calendar day of the release moment** — the day every
+   released section carries — and `changelog.mjs release` defaults to it; `--date` overrides only a
+   section that is backfilled.
 2. A Reviewer reads the tip and writes one conclusion, `Verdict: PASS at <tip>`. The mechanical
    release exception (below) covers the approval, but not this line: `enqueue-guard` refuses a head
    with no `Verdict:` naming it.

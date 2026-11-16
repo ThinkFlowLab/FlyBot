@@ -17,6 +17,9 @@
 // attributes at once and pin once. Two of the three `placeholder` hits are example values and are
 // skipped by the rule above, so this file ships a 61-entry baseline (+25) (#3009).
 //
+// A helper's answer is the third view of the same walk (see the end of this file): copy a plugin
+// draws through a function it calls at a draw position is as much a gap as copy spelled inline.
+//
 // The baseline may only shrink: fixing a sentence adds its dictionary entry and deletes its line
 // here; deleting the sentence from the code must delete its line too, or the entry is stale. The
 // 33 -> 36 growth #3008 took and the growth this change takes are intake, not relaxation: every
@@ -27,7 +30,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { baselineOf, missingCopy, scanMissing } from '../../scripts/i18n-usage.mjs'
+import { baselineOf, missingCopy, scanMissing, tokens } from '../../scripts/i18n-usage.mjs'
 
 const baselineFile = new URL('./i18n-missing-entries.baseline.json', import.meta.url)
 
@@ -119,7 +122,10 @@ test('--missing prints the identity count, not the raw draw count', () => {
     return result.stdout
   }
   const counted = JSON.parse(run('--missing', '--json')).entries.length
-  const tail = run('--missing').trimEnd().split('\n').at(-1)
+  // #3049 adds a last line counting the template draws this scan cannot judge, so the summary is
+  // found by its own sentence rather than by being the last line.
+  const tail = run('--missing').trimEnd().split('\n').find(line => /^\d+ drawn copy strings with no zh entry in \d+ files$/.test(line))
+  assert.ok(tail, 'the --missing summary line is printed')
   assert.equal(Number.parseInt(tail, 10), counted, `the summary line must report what --json holds: ${tail}`)
   // Two draws, one pin: that is why the raw array and the identity disagree on main.
   const draws = missingCopy("h(Button, { title: 'A new untranslated line.', 'aria-label': 'A new untranslated line.' })", 'plugins/sample/client.js')
@@ -205,4 +211,110 @@ test('the widening only adds pins and never admits a glyph', () => {
     'plugins/tree/client.js:Tree reorganized#2',
   ]) assert.ok(current.has(entry), `${entry} is pinned`)
   for (const pin of current) assert.match(pin, /\p{L}/u, `${pin} names a sentence, not a glyph`)
+})
+
+// A helper that hands copy back is the third blind spot this scan had. `missingCopy` read a draw
+// position and a copy table; a helper's answer had neither, so `return cond ? 'the room' : 'friend'`
+// stayed English in a zh window with both i18n checks green — Product measured five such sites in
+// `plugins/social/client.js` on main 9b45c95e (`roomHint`, `pendingTitle`, `holdParties`, the
+// auto-send toast and the `'You'` / `'Someone'` fallback). The scan now follows what a helper yields,
+// on the rule it already applies to a `const`: a literal, or an expression built from literals by
+// `? :`, `||` and parentheses, is copy.
+//
+// What the numbers in this file are, and are not: `--missing` reporting 132 on main was not 132
+// English leaks in a zh window — most were sentences a plugin draws from a table it never calls
+// `tr()` on — and the count is not a KPI to drive down. The baseline is intake of what is not
+// translated yet; it may only shrink.
+test('a helper that hands copy back is a draw, not data', () => {
+  const source = [
+    "function partyLabel(item) { return item.kind === 'face_room_message' ? 'the room' : 'friend' }",
+    "h('span', null, partyLabel(item))",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), ['the room', 'friend'])
+})
+
+// The other half of the rule, and the reason it needs a drawn helper instead of every `return`: a
+// status id the file compares (`faceChip`'s `'closed'`), a local only used as a React key
+// (`friend?.id || 'share'`) and an SVG path template (`M …`) are values a reader never reads as a
+// sentence. Without this test the walk would pin every one of them, and timeline's label placement
+// alone would add `'below'`, `'right'` and `'left'`.
+test('a helper that hands back an id, a key or a path is not copy', () => {
+  const source = [
+    "function faceChip(room) { if (room.status === 'closed') return 'closed'; return 'open' }",
+    "const chip = faceChip(room)",
+    "h('span', { 'data-status': chip }, chip === 'open' ? tr('Open') : tr('Closed'))",
+    "const friendKey = friend => friend?.peerBotId || 'share'",
+    "h('div', { key: friendKey(friend) }, tr('Member'))",
+    "function pathOf(a, b) { return `M ${a} ${b} C ${a} ${b}` }",
+    "h('path', { d: pathOf(1, 2) })",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js'), [])
+})
+
+// A class name, a URL and a `location.href` template are one token, not a sentence, and the shape is
+// what says so: no space, and a `- _ . / : #` in it. All three are drawn here, so the shape rule is
+// the only thing keeping them out.
+test('a returned class, URL or href template is not a sentence', () => {
+  const source = [
+    "function toneClass(tone) { return tone === 'bad' ? 'fs-bad' : 'fs-good' }",
+    "h('span', null, toneClass(tone))",
+    "function roomUrl(id) { return `https://social.example/room/${id}` }",
+    "h('span', null, roomUrl(id))",
+    "function anchor(id) { return `${location.href}#${id}` }",
+    "h('a', null, anchor(id))",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js'), [])
+})
+
+// The reading rule from the other side: a key a plugin's own table already translates is not a gap,
+// however the helper spells it. The table has entries only the plugin knows, so the scan must not
+// report `tr('superseded by {id}')` as missing — 67 of workflow's 68 pins are that shape and none of
+// them may enter this baseline.
+test('a key the plugin table already translates is not a gap', () => {
+  const source = [
+    "const ZH = { 'superseded by {id}': '被 {id} 取代' }",
+    "function superseded(id) { return tr('superseded by {id}', { id }) }",
+    "h('span', null, superseded(id))",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js'), [])
+})
+
+// The tokenizer opened a bracket on `[` and never closed it, so every depth in this file counted one
+// too many from the first `[…]` onward: `? :` and `||` no longer split at the top level, and a
+// `return` that reads an index — `return list[0] || 'None yet'` — handed back one unsplittable part,
+// which is not a literal, so the sentence was dropped and both i18n checks stayed green. The token is
+// the fix at the source: an opener closes what it opened (Product, round 138).
+test('#3077: the tokenizer closes the bracket it opened', () => {
+  const punct = tokens('const first = list[0]').filter(token => token.type === 'punct').map(token => token.value)
+  assert.deepEqual(punct, ['=', '[', ']'])
+})
+
+// The same walk, from the reader's side: a literal beside an indexed read is copy a zh window still
+// shows in English.
+test('#3077: a literal beside an indexed read is still copy', () => {
+  const source = [
+    "function emptyLabel(list) { return list[0] || 'None yet' }",
+    "h('span', null, emptyLabel(items))",
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), ['None yet'])
+})
+
+// A sentence a helper keeps in a local and interpolates into what it draws is read by the person, so
+// the scan has to see the name the hole names. Closing the bracket above turned this pin's old
+// accident off — its `const` sits inside a run that used to overrun the file — so both branches of
+// the sentence are reported instead of one, and neither by an overrun.
+test('#3077: a name a template interpolates is a read, not a dead local', () => {
+  const source = [
+    'function FriendNote({ who, linked, shared }) {',
+    '  const line = shared > 0',
+    '    ? `${who} stays a friend: still shared through ${linked}.`',
+    '    : `Your own Bots stay shared. ${who} can share it again.`',
+    "  return h('span', null, `Remove? ${line}`)",
+    '}',
+    'h(FriendNote, { who, linked, shared })',
+  ].join('\n')
+  assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), [
+    '{} stays a friend: still shared through {}.',
+    'Your own Bots stay shared. {} can share it again.',
+  ])
 })

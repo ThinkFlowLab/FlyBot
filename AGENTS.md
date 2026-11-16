@@ -258,6 +258,18 @@ If either lacks it, add it there and push. No trailer and no subsystem-doc updat
 
 The standing "file no new issues" rule covers design proposals only: a reproducible code defect is still filed as an issue, with its reproduction.
 
+#### A Bot never signs a gate change (#3069)
+
+**A Bot never writes a `Policy-sign:` line.** Not a Reviewer, a Lead, a Dev or a Triage — and not on someone else's pull request either: the line is written by the person who signs, or pasted by a person the signer authorised, and a Bot asks for the signature and leaves the line out. [`policy/gates.json`](policy/gates.json) is the list of files that need one.
+
+**A Verdict is not a signature.** The comment a `Policy-sign:` line names must come from a human account that is not `Birfy` and must name the tip (the head sha, or its first twelve characters at least). A `Verdict: PASS` written by the Reviewer, and any comment carrying `Written-by: Reviewer` / `Written-by: Dev` / `Written-by: Lead`, is never a signature: the checker only compares the commenter's login with the pull request author's, and both are `type: User`, so it cannot tell one automated team from two people.
+
+**A gate-file pull request stops at `policy-sign` red.** A change touching a file in [`policy/gates.json`](policy/gates.json) (the gate scripts it lists under `.github/scripts/` — `policy-sign.mjs`, `merge-gate.mjs`, `review-gate.mjs` among them — `.github/workflows/test.yml` and everything under `policy/`) waits for a human signature: it is not enqueued, and a PASS plus green checks is not a way round the check; it enters the queue once the line names a signing comment.
+
+**The signature wall does not re-open a PASS.** A red `policy-sign` is not a technical defect: nobody writes `REQUEST_CHANGES` for it, and a PASS written at the correct tip stays valid while the signature is pending — a moved tip follows the usual rule: an unchanged change set keeps its conclusion, a changed blob is reviewed again.
+
+The rule has an incident behind it: on 2026-11-14 `#3067` carried a PASS at `8a9123ad8f3c` (comment `6870226233`, `Birfy`), and at 02:38Z the same chain wrote `Policy-sign: 6870226233` — its own verdict — into the body and enqueued it (entry `MQE_lQDOVIxL0c8AAAABPEHU7c4ABOPczgP8gaM`, run `43547419017`); `policy-sign` had gone green because the signer login `Birfy` is not the author login `HugoXK` and both are `type: User`. Chief dequeued it, removed the line and re-ran `test.yml` (`43547048668`) to red.
+
 ### Reference-first
 
 Architecture truth lives in [docs/subsystems/](docs/subsystems/README.md) (each page's `owned_paths`, enforced by `arch-docs`), and in this file and [docs/code-standards.md](docs/code-standards.md) where those already state a rule. [`.claude/skills/review-pr/SKILL.md`](.claude/skills/review-pr/SKILL.md) stays thin: the Verifier procedure (tip SHA, PASS / FAIL / INC, `Ran:` / `Not run:`, security and cleanliness checks) plus pointers. On each tip review, re-read the subsystem pages, this file, and code-standards from `origin/main`. Do not restate subsystem architecture details in the skill. Owner decision 2026-10-24.

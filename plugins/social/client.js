@@ -181,6 +181,9 @@ window.__ModuleLoader__.load({
 .fs-pending .fs-label{padding:0}
 .fs-pending-item{display:flex;align-items:center;gap:8px;width:100%;max-width:100%;min-width:0;padding:4px 4px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;flex-wrap:nowrap}
 .fs-pending-item:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-pending-row{display:flex;align-items:center;gap:6px;min-width:0}
+.fs-pending-row .fs-pending-item{flex:1 1 auto;min-width:0}
+.fs-pending-row .fs-btn{flex:0 0 auto}
 .fs-pending-item .fs-text{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:row;align-items:baseline;gap:8px}
 .fs-pending-item .fs-name{flex:0 1 auto;max-width:40%;min-width:0}
 .fs-pending-one{flex:1 1 auto;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -614,19 +617,46 @@ window.__ModuleLoader__.load({
       return item.from || item.to || item.toName ? `${from} → ${to}` : (to || 'Outbound reply')
     }
 
-    // Compact jump list. Approve / Reject live on the in-chat card.
-    function PendingApprovals({ items, onOpen }) {
+    // Compact jump list. Approve / Reject live on the in-chat card. #P796: a failed hold lists here too,
+    // so the list carries two states and every head counts only its own rows — a failed send is never
+    // read as one more message waiting for approval.
+    function PendingApprovals({ items, onOpen, onRetry, busy }) {
       if (!items?.length) return null
-      return h('div', { className: 'fs-pending', 'data-flybot': 'pending-approvals', role: 'region', 'aria-label': 'Messages waiting for your approval' },
-        h('div', { className: 'fs-label' }, 'Waiting for your approval', h('span', { className: 'fs-count' }, String(items.length))),
-        items.map(item => h('button', {
+      const rowOf = (item) => {
+        const failed = item.status === 'failed'
+        // #P796: a failed hold sitting in another chat is still the owner's, so it lists here too, with
+        // the same Retry its in-chat card offers — and only while the shared canRetry() allows one.
+        const retry = failed && typeof onRetry === 'function' && canRetry(item)
+        const row = h('button', {
           key: item.id, type: 'button', className: 'fs-pending-item', 'data-flybot': 'pending-item',
+          ...(failed ? { 'data-state': 'failed' } : {}),
           title: oneLine(item.text || item.summary || pendingTitle(item)),
           onClick: () => onOpen?.(item),
         },
           h('span', { className: 'fs-text' },
             h('span', { className: 'fs-name' }, pendingTitle(item)),
-            h('span', { className: 'fs-pending-one' }, oneLine(item.text || item.summary || ''))))))
+            h('span', { className: 'fs-pending-one' }, failed ? oneLine(item.error || tr('Not sent')) : oneLine(item.text || item.summary || ''))))
+        if (!retry) return row
+        return h('div', { key: item.id, className: 'fs-pending-row', 'data-flybot': 'pending-row' },
+          row,
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'pending-retry',
+            // #3050: the dock drops every Retry while any decision is in flight, so the list goes
+            // disabled with it — an enabled button whose click is swallowed is a dead click.
+            disabled: !!busy, onClick: () => onRetry(item),
+          }, tr('Retry')))
+      }
+      const failedItems = items.filter(item => item.status === 'failed')
+      const waitingItems = items.filter(item => item.status !== 'failed')
+      const waitingHead = waitingItems.length ? tr('Waiting for your approval') : null
+      const failedHead = failedItems.length ? tr('Not sent') : null
+      const group = (head, rows) => rows.length
+        ? [h('div', { key: `head-${head}`, className: 'fs-label' }, head, h('span', { className: 'fs-count' }, String(rows.length))), ...rows.map(rowOf)]
+        : []
+      return h('div', {
+        className: 'fs-pending', 'data-flybot': 'pending-approvals', role: 'region',
+        'aria-label': failedItems.length ? [waitingHead, failedHead].filter(Boolean).join(' · ') : tr('Messages waiting for your approval'),
+      }, [...group(waitingHead, waitingItems), ...group(failedHead, failedItems)])
     }
 
     const STOP_JOIN = /6-digit|no longer valid|Too many (failed )?attempts|signed you out/i
@@ -983,6 +1013,14 @@ window.__ModuleLoader__.load({
         try { return fn(text, params) } catch { /* fall through to the English */ }
       }
       return String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
+    }
+    // Which language the window is in, for the one thing a translator cannot carry: the order a date is
+    // written in. A plain script cannot import core's `language()`, so it asks the host translator for a
+    // word the zh dictionary surely holds; a host without one keeps English, which is `tr`'s fallback too.
+    const zhUi = () => {
+      const fn = globalThis.__flybot__?.t
+      if (typeof fn !== 'function') return false
+      try { return fn('Tasks') === '任务' } catch { return false }
     }
     const host = (endpoint, payload) => {
       const fn = globalThis.__flybot__?.host
@@ -1923,16 +1961,21 @@ window.__ModuleLoader__.load({
     }
     function faceChipLabel(room) {
       const chip = faceChip(room)
+      // #3090: every state this chip can show goes through the translator with the English word as its
+      // key, so a window in another language does not keep four of the five in English. `ended` is the
+      // internal status id; the word this chip shows is `Ended`.
       if (chip === 'open') return tr('Open')
-      if (chip === 'closed') return 'Closed'
-      if (chip === 'left') return 'Left'
-      if (chip === 'ended') return 'ended'
-      if (chip === 'joining') return 'Joining'
+      if (chip === 'closed') return tr('Closed')
+      if (chip === 'left') return tr('Left')
+      if (chip === 'ended') return tr('Ended')
+      if (chip === 'joining') return tr('Joining')
       return chip
     }
     // Past rooms read like the room's tab and sidebar row (#304): `Face-to-face · Alice, Bob · 482913`.
     // People come from every member when the row has them (a stored auto name can miss one), the
-    // number from the row or its stored title, else the time the room was created.
+    // number from the row or its stored title, else the time the room was created. Only the title the
+    // owner reads follows the window's language (#P769b); the rules above and the stored name itself
+    // stay English, because `named` is what the server saved and what the next render parses again.
     function shownFaceTitle(room) {
       const named = String(room?.name || '').trim()
       if (named && named !== 'Face-to-face room' && !named.startsWith('Face-to-face · ')) return named
@@ -1951,24 +1994,39 @@ window.__ModuleLoader__.load({
       const owners = rows.slice(0, 3).map(row => row.owner)
       const stored = named.match(/ · (\d{6})$/)?.[1]
       const code = sixRoomDigits(room?.joinCode || room?.code || stored)
-      const bits = ['Face-to-face']
+      const bits = [tr('Face-to-face')]
       if (owners.length) bits.push(owners.join(', '))
       const storedWhen = named.match(/ · ([A-Z][a-z]{2} \d{1,2} \d{2}:\d{2})$/)?.[1]
       if (code) bits.push(code)
-      else if (storedWhen) bits.push(storedWhen)
+      else if (storedWhen) bits.push(faceStamp(storedWhen))
       else {
         // Created = the joining deadline minus the 10-minute window, never the deadline itself.
         const deadline = Date.parse(room?.expiresAt || '')
         const at = Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : Date.parse(room?.startedAt || ''))
         const when = Number.isFinite(at) ? new Date(at) : new Date()
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        bits.push(`${months[when.getMonth()]} ${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
+        bits.push(`${faceDay(when)} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
       }
       return bits.join(' · ')
     }
     // The time a Past row shows (#304): when the room ended here, else when it started (or was
-    // created). Today reads `14:05`, an earlier day `Oct 19`; the hover text has the full time.
+    // created). Today reads `14:05`, an earlier day `Oct 19` — `10月19日` in a zh window; the hover
+    // text names which of the two it is, in the window's language too (#P769b).
     const FACE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    function faceDayOf(month, day) {
+      return zhUi() ? `${month + 1}月${day}日` : `${FACE_MONTHS[month]} ${day}`
+    }
+    function faceDay(when) {
+      return faceDayOf(when.getMonth(), when.getDate())
+    }
+    // A stored auto title carries its own English stamp (`Oct 19 14:05`). The rebuilt title shows it,
+    // so a zh window writes it the way `faceDay` does; the stored name is never rewritten, and an
+    // English window keeps the stamp's bytes exactly as they were saved.
+    function faceStamp(text) {
+      if (!zhUi()) return text
+      const [month, day, hhmm] = String(text).split(' ')
+      const index = FACE_MONTHS.indexOf(month)
+      return index < 0 || !day || !hhmm ? text : `${faceDayOf(index, day)} ${hhmm}`
+    }
     function faceRowTime(room, today = new Date()) {
       const ended = Date.parse(room?.endedAt || '')
       const deadline = Date.parse(room?.expiresAt || '')
@@ -1977,9 +2035,9 @@ window.__ModuleLoader__.load({
       if (!Number.isFinite(at)) return undefined
       const when = new Date(at)
       const hhmm = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
-      const day = `${FACE_MONTHS[when.getMonth()]} ${when.getDate()}`
+      const day = faceDay(when)
       const sameDay = when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth() && when.getDate() === today.getDate()
-      return { text: sameDay ? hhmm : day, full: `${Number.isFinite(ended) ? 'Ended' : 'Started'} ${day} ${hhmm}` }
+      return { text: sameDay ? hhmm : day, full: `${tr(Number.isFinite(ended) ? 'Ended' : 'Started')} ${day} ${hhmm}` }
     }
     function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
       const [busy, setBusy] = useState('')
@@ -2028,7 +2086,9 @@ window.__ModuleLoader__.load({
           'data-open': openable ? true : undefined,
           onClick: openable ? () => (busy ? undefined : open()) : undefined,
           ...(rowOpens ? {
-            role: 'button', tabIndex: 0, 'aria-label': `Open ${title}`, 'aria-busy': busy ? true : undefined,
+            // The two accessible names on this card are read out, never parsed back, so they take the
+            // dictionary like the visible copy does; the stored room name stays English (#3100).
+            role: 'button', tabIndex: 0, 'aria-label': tr('Open {title}', { title }), 'aria-busy': busy ? true : undefined,
             onKeyDown: (event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return
               event.preventDefault?.()
@@ -2036,7 +2096,7 @@ window.__ModuleLoader__.load({
             },
           } : {}),
         },
-          h('span', { className: 'fs-stack', 'aria-label': 'Members' },
+          h('span', { className: 'fs-stack', 'aria-label': tr('Members') },
             shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
               h(FaceAvatar, { bot: look(m), size: 20 }))),
             extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
@@ -2408,6 +2468,74 @@ window.__ModuleLoader__.load({
       return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
     }
 
+    // #3082: a chat's dock is mounted per session (`conversation.input.dock` is `scope: session`), so
+    // opening another chat unmounts it and coming back mounts a new one. What a send that failed says,
+    // and which Retry already went out, cannot live in that component: the way back drew the still
+    // pending hold as a fresh wait again and offered a Retry that had already gone out (#3075 fixed the
+    // card, not the remount). This is the module-level Map + listener shape
+    // `core/src/client/approval-claims.js` uses for claims (#260, #418); the dock only subscribes.
+    // Keyed `${id}:${sessionId}`: one record per hold per chat.
+    const dockRecords = new Map()
+    const dockRecordListeners = new Set()
+    const dockRecordKey = (sessionId, id) => `${id}:${sessionId}`
+    const dockRecordChanged = () => { for (const fn of [...dockRecordListeners]) fn() }
+    const dockRecordOf = (sessionId, id) => dockRecords.get(dockRecordKey(sessionId, id))
+    const dockFailuresOf = (sessionId) => {
+      const out = {}
+      const suffix = `:${sessionId}`
+      for (const [key, record] of dockRecords) {
+        if (record.failure && key.endsWith(suffix)) out[key.slice(0, -suffix.length)] = record.failure
+      }
+      return out
+    }
+    const setDockRecord = (sessionId, id, change) => {
+      const key = dockRecordKey(sessionId, id)
+      const next = change(dockRecords.get(key) ?? {})
+      if (next.failure || next.retried) dockRecords.set(key, next)
+      else dockRecords.delete(key)
+      dockRecordChanged()
+    }
+    // A spent Retry is never dropped because its card left the lists: the send went out, and the poll that
+    // still writes the hold back as failed would otherwise offer that send again (#3082). The records are
+    // kept bounded instead: once more than this many are spent, the one entered longest ago goes first.
+    const DOCK_RETRIED_MAX = 50
+    function trimDockRetried() {
+      let spent = 0
+      for (const record of dockRecords.values()) if (record.retried) spent++
+      for (const [key, record] of [...dockRecords]) {
+        if (spent <= DOCK_RETRIED_MAX) break
+        if (!record.retried) continue
+        dockRecords.delete(key)
+        spent--
+      }
+    }
+    const rememberDockFailure = (sessionId, id, reason) => setDockRecord(sessionId, id, record => ({ ...record, failure: reason }))
+    const forgetDockFailure = (sessionId, id) => setDockRecord(sessionId, id, ({ failure, ...record }) => record)
+    const markDockRetried = (sessionId, id) => {
+      setDockRecord(sessionId, id, record => ({ ...record, retried: true }))
+      trimDockRetried()
+    }
+    const unmarkDockRetried = (sessionId, id) => setDockRecord(sessionId, id, ({ retried, ...record }) => record)
+    const dockRetried = (sessionId, id) => dockRecordOf(sessionId, id)?.retried === true
+    // The failure line goes when its id leaves the two lists the dock reads — decided here, in another
+    // window, or gone — so a stale line cannot outlive the card it explained (#3075). A spent Retry is
+    // not a line about a card that is gone, so it stays (`trimDockRetried` bounds it).
+    function pruneDockRecords(sessionId, liveIds) {
+      const suffix = `:${sessionId}`
+      let dropped = false
+      for (const key of [...dockRecords.keys()]) {
+        if (!key.endsWith(suffix) || liveIds.has(key.slice(0, -suffix.length))) continue
+        if (dockRecords.get(key)?.retried) continue
+        dockRecords.delete(key)
+        dropped = true
+      }
+      if (dropped) dockRecordChanged()
+    }
+    function onDockRecords(fn) {
+      dockRecordListeners.add(fn)
+      return () => { dockRecordListeners.delete(fn) }
+    }
+
     function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim, t } = {}) {
       useStyles()
       const locked = readOnlyReason(roster)
@@ -2419,7 +2547,17 @@ window.__ModuleLoader__.load({
       const [listLoaded, setListLoaded] = useState(false)
       const [busy, setBusy] = useState('')
       const [error, setError] = useState('')
+      // #3075: a Bot Social send that failed leaves the upstream hold pending, so the 5 s poll writes the
+      // card back as if it never failed. The dock keeps its own memory of which sends did not go and why,
+      // keyed by id, and merges it into the cards it draws; `items` and `local` stay the host's lists.
+      // #3082: that memory, and a Retry already sent (#3075), outlive this component — a record is read
+      // from the module above, which a new mount of the same chat subscribes to again.
+      const [, bumpRecord] = useState(0)
+      useEffect(() => onDockRecords(() => bumpRecord(value => value + 1)), [sessionId])
+      const failures = dockFailuresOf(sessionId)
       const load = () => {
+        // #3080: a tab that is not on screen has nobody reading these cards; showing it catches up below.
+        if (typeof document !== 'undefined' && document.hidden) return
         call('social/status', {}).then(value => {
           setItems(Array.isArray(value?.approvals) ? value.approvals : [])
           setStatusLoaded(true)
@@ -2434,7 +2572,12 @@ window.__ModuleLoader__.load({
         if (typeof setInterval !== 'function') return undefined
         const timer = setInterval(load, 5000)
         timer?.unref?.()
-        return () => clearInterval(timer)
+        // #3080: a tab that sat in the background catches up the moment it is shown, not one beat later
+        // (the same shape `everySecond` uses above).
+        const onShow = () => { if (typeof document === 'undefined' || !document.hidden) load() }
+        const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+        doc?.addEventListener('visibilitychange', onShow)
+        return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
       }, [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
       // The person who gets it (#418, #498), not the friend's Bot: a local hold already names the person.
@@ -2443,12 +2586,30 @@ window.__ModuleLoader__.load({
         const from = faceFromLabel(item, room)
         return label || from ? { ...item, ...(label ? { toName: label } : {}), ...(from ? { from } : {}) } : item
       })
+      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
+      // (`status: 'pending'`). A failed hold is not approved; it is retried.
+      const waiting = entry => !entry.status || entry.status === 'pending'
       // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418): no dock draws it.
+      // #3075: the dock's own memory of a failed send is what keeps the card saying so across a poll. Only
+      // a waiting card is cast as failed; one the host already marks failed keeps its own reason (#P796).
+      const withFailures = item => {
+        const reason = failures[item.id]
+        return reason && waiting(item) ? { ...item, status: 'failed', error: reason } : item
+      }
       const held = [
         ...named(items),
         ...named(local.filter(item => !item.inline)),
-      ]
+      ].map(withFailures)
       const mine = approvalsForOpenChat(held, session)
+      // A failure line goes when its id leaves the two lists (decided here, in another window, or gone),
+      // so a stale line cannot outlive the card it explained; a spent Retry stays for the poll below.
+      const heldKey = held.map(item => item.id).join(',')
+      useEffect(() => {
+        // Only an answered pair of lists knows a card is gone (#1607); before that, nothing is. A quiet
+        // chat never prunes its records, because a card that is missing there may still be loading.
+        if (!statusLoaded || !listLoaded) return
+        pruneDockRecords(sessionId, new Set(held.map(item => item.id)))
+      }, [heldKey, statusLoaded, listLoaded, sessionId])
       // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
       const shownIds = mine.map(item => item.id).join(',')
       useEffect(() => {
@@ -2464,19 +2625,20 @@ window.__ModuleLoader__.load({
       // (#1638). A card the dock never draws keeps the line, because there the sentence is true.
       const roomCards = approvalsForOpenChat((room?.pendingApprovals ?? []).filter(item => !item.inline), session)
       const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && roomCards.length === 0 && (room?.pendingCount ?? 0) > 0
-      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
-      // (`status: 'pending'`). A failed hold is not approved; it is retried.
-      const waiting = entry => !entry.status || entry.status === 'pending'
       // #3016: a hold that sits in another chat is still this person's, and this dock is the surface
       // that can open every chat. When this chat draws no card of its own, the dock lists what waits
       // elsewhere: the overlay can only point at such a hold, never say how many or to whom.
+      // #P796: a failed hold counts here too — never approved, but its row is the only way to the chat
+      // that offers its Retry, and dropping it from this list hid it from every chat but its own.
       // Both polls answer first, or the count would grow one 5 s beat later (#1607).
       const mineIds = new Set(mine.map(item => item.id))
-      const elsewhere = statusLoaded && listLoaded ? held.filter(item => !mineIds.has(item.id) && waiting(item)) : []
+      const elsewhere = statusLoaded && listLoaded
+        ? held.filter(item => !mineIds.has(item.id) && (waiting(item) || item.status === 'failed'))
+        : []
       // The chat that draws that card is where the row leads, the same place approvalsForOpenChat
       // puts it: a friend's chat once it is listed (#278), else the sending Bot's own (#371).
       const chatOfHold = (item) => {
-        // #3034: a room hold names the room by its face/wire id, while a chat opens by the room's local
+        // #P795: a room hold names the room by its face/wire id, while a chat opens by the room's local
         // session id (`approvalsForOpenChat` matches the same pair). A room this window has not seen
         // falls back to the id the hold carries, which is all there is to go on.
         if (item.kind === 'face_room_message' && item.roomId) {
@@ -2491,22 +2653,59 @@ window.__ModuleLoader__.load({
       const list = elsewhere.length
         ? h(PendingApprovals, {
           items: elsewhere,
+          busy,
           onOpen: item => {
             const id = chatOfHold(item)
             if (id && typeof actions?.openSession === 'function') actions.openSession(id)
           },
+          // One decision path, the dock's own: the in-chat card's Retry is the same `decide`. While that
+          // one is in flight a second click is dropped here too, not only disabled on the button (#P796).
+          onRetry: item => { if (busy) return; setError(''); decide(item, 'retry') },
         })
         : null
       if (!mine.length && !waitingOthers && !list) return null
       const decide = async (item, decision) => {
+        // #3044: one decision at a time. A card drawn while another send is in flight cannot start
+        // a second one, so two replies never race each other's `setBusy`/`setError`.
+        if (busy) return false
+        // #3075: a Retry acts on the card that failed, once — a click that arrives after that card's own
+        // send already went out (a stale node one frame behind the render that removed it) sends nothing.
+        // What is spent is the send that went out, not the click: a local retry the host answers with
+        // the same failure returns normally (#3075 review), so the id is only marked after a send.
+        const retry = decision === 'retry'
+        if (retry && dockRetried(sessionId, item.id)) return false
         setBusy(item.id)
-        setError('')
+        // The line is cleared where the person acted, not here (#3071): a batch calls this once per
+        // hold, so clearing on entry let a send that worked erase the reason the one before it had
+        // just written.
+        // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
+        // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
+        // (#3093) that record is the card's, whatever kind it is — a local hold the host marked failed
+        // draws its own status, and a decision the host refused never reached a send to be described.
+        const notSent = (failure) => {
+          const reason = String(failure?.message ?? failure).slice(0, 200)
+          setError(reason)
+          // A retry the host refused may be tried again; the id was never marked spent.
+          if (retry) unmarkDockRetried(sessionId, item.id)
+          rememberDockFailure(sessionId, item.id, reason)
+          return { error: reason }
+        }
         try {
           const always = decision === 'always'
-          const mapped = always || decision === 'approve' || decision === 'approved' ? 'approve' : decision
+          // #3075: Bot Social's endpoint takes approve or reject only, and a hold that failed is still
+          // pending upstream — sending it again is an approve. The local host has its own `retry`.
+          const wanted = retry && item.source !== 'local' ? 'approve' : decision
+          const mapped = always || wanted === 'approve' || wanted === 'approved' ? 'approve' : wanted
           let autoSend
           if (item.source === 'local') {
-            await call('decide', { id: item.id, decision: mapped })
+            const answer = await call('decide', { id: item.id, decision: mapped })
+            // (#3093) the local host answers a send that failed with the approval its own `release`
+            // saved as failed — status plus error, no throw — so a normal answer is not a send. Counting
+            // it as one dropped the card and let a batch's receipt name people it never reached. A
+            // rejection is the one non-approved answer that is not a failure.
+            if (answer && typeof answer === 'object' && (answer.error || answer.status === 'failed')) {
+              return notSent(String(answer.error ?? 'the send failed'))
+            }
             if (always) {
               // A face-room line turns on Auto-send for the Bot that wrote it only (#457).
               if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') {
@@ -2519,17 +2718,23 @@ window.__ModuleLoader__.load({
           } else {
             const result = await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
             autoSend = result?.autoSend
+            // Bot Social's endpoint accepted the send, so this card has nothing left to retry.
+            if (retry) markDockRetried(sessionId, item.id)
           }
           const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
           // The decided card leaves now (#456); the next load agrees.
           const drop = list => list.filter(entry => entry.id !== item.id)
           setItems(drop)
           setLocal(drop)
+          // The card went out, so the dock's own failed record for it is done too.
+          forgetDockFailure(sessionId, item.id)
           if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
           return true
         } catch (failure) {
-          // A stale or failed hold must say why, never swallow the click.
-          setError(String(failure?.message ?? failure).slice(0, 200))
+          // A stale or failed hold must say why, never swallow the click. The reason also goes back to
+          // the caller: a batch has to report it after its last send, not lose it to that send's own
+          // clear (#3071).
+          return notSent(failure)
         } finally { setBusy('') }
       }
       // #3011/#3029: one entry per person, in draw order; a hold whose person never resolved keeps the
@@ -2538,8 +2743,6 @@ window.__ModuleLoader__.load({
         const name = typeof item.toName === 'string' ? item.toName.trim() : ''
         return name && !people.includes(name) ? [...people, name] : people
       }, [])
-      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
-      // (`status: 'pending'`). A failed hold is not approved; it is retried.
       // #3029: the click sends several holds and they leave the dock at once, so the tail reports what
       // actually went out — one receipt for the people reached, and none when every send failed (those
       // cards keep their own error line).
@@ -2547,10 +2750,23 @@ window.__ModuleLoader__.load({
         const tr = (text, params) => (typeof t === 'function'
           ? t(text, params)
           : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+        // The click is the person acting, so this is where the previous line goes (#3071).
+        setError('')
         const sent = []
-        for (const item of mine.filter(waiting)) if (await decide(item, 'approve')) sent.push(item)
+        const failed = []
+        for (const item of mine.filter(waiting)) {
+          const outcome = await decide(item, 'approve')
+          if (outcome === true) sent.push(item)
+          else if (outcome?.error) {
+            const name = typeof item.toName === 'string' ? item.toName.trim() : ''
+            failed.push(name ? `${name}: ${outcome.error}` : outcome.error)
+          }
+        }
         const reached = recipientNames(sent)
         if (reached.length) actions?.notify?.(tr('Sent to {to}', { to: reached.join(tr(', ')) }))
+        // #3071: written once, after the last send, so no send in the batch can clear it again; the
+        // receipt above still names only the people reached.
+        if (failed.length) setError(failed.join(' '))
       }
       // #3011: the button says what it will send and to whom, so the blast radius of a click that
       // cannot be undone is readable before it.
@@ -2607,7 +2823,9 @@ window.__ModuleLoader__.load({
           : null,
         error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
         mine.map(item => h(ChatApproval, {
-          key: item.id, item, canDecide: true, busy: busy === item.id, onDecide: decide, t,
+          // #3044: a decision in flight locks every card, not only its own.
+          // #3071: a click on one card clears the previous line here, where the person acted.
+          key: item.id, item, canDecide: true, busy: !!busy, onDecide: (card, decision) => { setError(''); return decide(card, decision) }, t,
         })))
     }
 
@@ -3665,6 +3883,9 @@ window.__ModuleLoader__.load({
       // its busy flag, and what a fallback refresh removes. A friend without a Bot id keys on the person.
       const friendKey = friend => friend?.peerBotId || friend?.handle || friend?.home || friend?.ownerId || 'share'
       const share = async (friend) => {
+        // #3062: `busy` is one slot for the whole card, so a second share would take the first row's
+        // label over while its grant is still in flight and post two grants at once.
+        if (busy) return
         // #1128: the button is disabled; a click that still arrives says why instead of posting a grant.
         if (friend.removed === true) { setNote({ tone: 'error', text: friend.reason || 'That Bot was removed from that home.' }); return }
         setBusy(friendKey(friend))
@@ -3713,7 +3934,8 @@ window.__ModuleLoader__.load({
             className: 'fs-btn fs-btn-sm',
             // #1128: a row whose Bot the friend's home no longer lists stays visible, with the reason, and
             // is not clickable: the grant would reach nobody.
-            disabled: busy === friendKey(friend) || friend.removed === true,
+            // #3062: one share at a time, so no row invites a click while any share is sending.
+            disabled: !!busy || friend.removed === true,
             'data-flybot': 'share-friend',
             'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
             onClick: () => { void share(friend) },

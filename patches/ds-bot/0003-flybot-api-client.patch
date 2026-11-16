@@ -1162,7 +1162,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // The time separator: "Today 1:12 AM", "Yesterday 9:03 PM", "Thu, Sep 3 4:20 PM".
  const SEPARATOR_GAP_MS = 30 * 60 * 1000
  export function clockLabel(time, now = Date.now()) {
-@@ -444,6 +444,19 @@ export function openingTurn(turns, firstTurns, hiddenTurns) {
+@@ -444,6 +444,26 @@ export function openingTurn(turns, firstTurns, hiddenTurns) {
  }
  // Began after the user last left the conversation and before this visit opened it.
  export const unseenSince = (visit, time) => typeof visit?.seen === 'number' && time > visit.seen && time <= visit.entered
@@ -1179,6 +1179,13 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +// The unread divider has been on screen and the chat moved on, so nothing from before this visit
 +// is new any more: `seen` catches up with `entered` and every divider of the visit goes (#275).
 +export const settledVisit = visit => (typeof visit?.seen === 'number' && visit.seen < visit.entered ? { ...visit, seen: visit.entered } : visit)
++// What leaving a chat writes into the seen mark (#3079): the newest turn the view reported on
++// screen, never the clock, so a turn that arrived below the fold or after the user scrolled up
++// stays unseen and its NEW divider comes back. A Session that never reported a visible turn keeps
++// the old fallback (`now`, a browser's first answer); the mark only moves forward, so an older
++// tail cannot reopen turns that were already read.
++export const leftSeen = (seen, tail, now = Date.now()) =>
++  Math.max(typeof seen === 'number' ? seen : 0, typeof tail === 'number' ? tail : now)
  
  // An entry in DSH's own turn tail, after what other plugins put there (the cards of
  // the files a turn delivered). The tail sits right before the next turn's first row,
@@ -1686,7 +1693,7 @@ diff --git a/src/client/index.js b/src/client/index.js
  import { sameVersion } from './dsh-offer.js'
  import { AnsweredCell, QuestionCard, QuestionDock } from './questions.js'
 -import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell } from './cells.js'
-+import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell, settledVisit } from './cells.js'
++import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell, ContextCell, settledVisit, leftSeen } from './cells.js'
  import { Overlays } from './overlays.js'
  import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
  import { BROWSER_CSS } from './browser-pane.js'
@@ -1765,6 +1772,29 @@ diff --git a/src/client/index.js b/src/client/index.js
    // Bot mode paints the whole team surface; Agent mode withdraws every slot and
    // style so the shell's own interface returns. `plain` stays false until a Bot-mode
    // view hosts a plain session, which drops only the conversation replacements.
+@@ -79,9 +79,21 @@ export function apply(ctx) {
+   const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state))
+   // A Bot's chat spans several parts, so when it was last left is kept per Bot.
+   const seenKey = id => roster.getSnapshot().byId?.[id]?.id ?? id
++  // Per Session, the newest turn this visit measured on screen (`noteVisitTail`). Leaving writes
++  // only that, so a turn that arrived below the fold or after the user scrolled up stays unseen
++  // and the NEW divider comes back for it (#3079).
++  const visitTails = {}
+   const leaveVisits = (ids) => {
+     const now = Date.now()
+-    for (const id of ids) seenAt[seenKey(id)] = now
++    const visits = ui.getSnapshot().visits ?? {}
++    for (const id of ids) {
++      const key = seenKey(id)
++      // A settled visit already recorded what its divider said was seen (#275); the tail is the
++      // newest turn the view reported. Neither may move the mark backwards.
++      const seen = Math.max(seenAt[key] ?? 0, visits[id]?.seen ?? 0)
++      seenAt[key] = leftSeen(seen, visitTails[key], now)
++      delete visitTails[key]
++    }
+     try { localStorage.setItem(SEEN_KEY, JSON.stringify(seenAt)) } catch { /* storage unavailable */ }
+   }
+   ctx.effect(() => {
 @@ -90,6 +90,8 @@ export function apply(ctx) {
      return () => window.removeEventListener('pagehide', onPageHide)
    }, 'ds-bot: remember visits on page hide')
@@ -1953,7 +1983,7 @@ diff --git a/src/client/index.js b/src/client/index.js
        }
        writeMode(mode)
        surface.set(state => ({ ...state, mode }))
-@@ -487,6 +487,12 @@ export function apply(ctx) {
+@@ -487,6 +487,19 @@ export function apply(ctx) {
        const seen = seenAt[seenKey(id)] ?? (made?.createdBy && Number.isFinite(made.createdAt) ? made.createdAt : null)
        ui.set(state => ({ ...state, visits: { ...state.visits, [id]: { seen, entered: Date.now() } } }))
      },
@@ -1963,6 +1993,13 @@ diff --git a/src/client/index.js b/src/client/index.js
 +      const next = settledVisit(visit)
 +      return next === visit ? state : { ...state, visits: { ...state.visits, [id]: next } }
 +    }),
++    // The newest turn this visit measured on screen (`useTranscriptView`); a leave writes only
++    // this, and only forward, so what was never on screen stays unread (#3079).
++    noteVisitTail: (id, tail) => {
++      if (typeof tail !== 'number' || !Number.isFinite(tail)) return
++      const key = seenKey(id)
++      if (!(visitTails[key] >= tail)) visitTails[key] = tail
++    },
      endVisit: (id) => {
        leaveVisits([id])
        ui.set((state) => {

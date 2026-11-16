@@ -1748,6 +1748,60 @@ test('Chinese labels follow the host Tasks translation', () => {
   }
 })
 
+// P-784: `Workflow` is the word the panel prints beside a lane's name to say what the lane is,
+// not an id anything reads back, so a zh window prints it in Chinese like the `Flow`, `Runs` and
+// `Workflows` beside it. Two places draw it — the sidebar row and the target list of Hand a task
+// to a Workflow — and neither can lean on the core dictionary, which has no `Workflow` entry, so
+// both read the plugin's own ZH table. The host below answers a zh UI the way core's `t` does:
+// it translates what it knows and hands an unknown key back as itself, so Chinese here can only
+// come from the plugin's table.
+const zhUi = { t: key => (key === 'Tasks' ? '任务' : key), host: async () => [] }
+const badgesOf = tree => findAll(tree, node => String(node.props?.className ?? '').split(' ').includes('wf-badge'))
+
+test('P-784: a zh window prints the sidebar row\'s Workflow badge in Chinese', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = zhUi
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    const badges = badgesOf(view.tree)
+    assert.equal(badges.length, 1, 'the sidebar row draws one badge')
+    assert.equal(textOf(badges[0]), '工作流', `a zh window reads the badge in Chinese, got ${JSON.stringify(textOf(badges[0]))}`)
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+test('P-784: the same badge in Hand a task to a Workflow reads Chinese too', async () => {
+  const graph = delivery()
+  const call = async (name) => {
+    if (name === 'workflow/state') return { workflows: [graph], templates: [] }
+    return { ok: true, workflows: [graph] }
+  }
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = zhUi
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    await settle()
+    findAll(view.tree, node => node.props?.className === 'wf-row wf-assign-row')[0].props.onClick()
+    await settle()
+    const targets = findAll(view.tree, node => String(node.props?.className ?? '').split(' ').includes('wf-tgt'))
+    assert.equal(targets.length, 1, 'the picker offers one lane')
+    const badges = badgesOf(targets[0])
+    assert.equal(badges.length, 1, 'the lane target draws one badge')
+    assert.equal(textOf(badges[0]), '工作流', `a zh window reads the badge in Chinese, got ${JSON.stringify(textOf(badges[0]))}`)
+    view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
 test('a failed stage graph save is reported, not swallowed', async (t) => {
   await withUnhandled(async (unhandled) => {
     const graph = delivery()

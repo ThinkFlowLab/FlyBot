@@ -1310,7 +1310,10 @@ export function install(rt) {
       // hands the reservation and the next line written here the same number, and a receiving home
       // keys its one-bubble rule on that number, so the real line is taken for a redelivery (#2863).
       // `room.reserved` counts the numbers issued that never became a line here, so the room read can
-      // still report the lines the room holds instead of a cut that never happened (#2855).
+      // still report the lines the room holds instead of a cut that never happened (#2855). The
+      // numbers themselves go in `room.reservedSeqs`: whether a booking sits inside a reader's window
+      // depends on where it is, and a bare count cannot tell a booking below that floor from one
+      // above it (#3037).
       takeLineSeq(roomId) {
         const room = rt.roomOf?.(String(roomId ?? ''))
         if (!room) return 1
@@ -1318,8 +1321,10 @@ export function install(rt) {
           room.seq = Array.isArray(room.log) ? room.log.length : 0
         }
         if (typeof room.reserved !== 'number' || !Number.isFinite(room.reserved) || room.reserved < 0) room.reserved = 0
+        if (!Array.isArray(room.reservedSeqs)) room.reservedSeqs = []
         room.seq += 1
         room.reserved += 1
+        room.reservedSeqs.push(room.seq)
         void Promise.resolve(rt.save?.()).catch(() => {})
         return room.seq
       },
