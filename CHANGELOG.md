@@ -6,6 +6,21 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-11-16
+
+### Changed
+
+- The chat dock's own memory of a failed send, and of a Retry that already went out, now lives outside the component: `conversation.input.dock` is session-scoped, so opening another chat unmounted the dock and coming back drew the still pending hold as **Waiting for approval** again and offered a Retry that had already been sent. The records are keyed `<approval id>:<session id>` and go when the hold leaves the two lists the dock reads; nothing is pruned before both lists have answered.
+- The face-to-face room status chip now reads in the window's language in every state — **Open**, **Closed**, **Left**, **Ended**, **Joining** — and an expired matching window says **Ended** instead of printing the internal `ended` status id (#3090).
+
+### Fixed
+
+- Leaving a chat no longer marks the whole Session read: the visit writes only the newest turn that was actually on screen, so messages that arrived below the fold, or after you had scrolled up, keep their **NEW** divider and the unread pill on the next visit. A chat that never reported a visible turn still advances to the moment you left, as before ([#3079](https://github.com/ThinkFlowLab/FlyBot/issues/3079)).
+- **Approve all** no longer reports **Sent to …** for a local hold whose send failed: the host answers such a send normally, with the approval it saved as failed, so the batch counted it as reached, dropped its card and named people who never got anything. A hold whose decision was refused now also keeps its reason on its own card — local holds included — so the reason survives the next click and a chat switch instead of living only in the dock's one line (#3093).
+- In a Chinese window a past face-to-face room now reads its time in Chinese: the row's hover says `已结束 10月19日 14:05` instead of `Ended Oct 19 14:05`, a room that never ended says `开始`, and the title rebuilt from the room's members reads `面对面 · Alice · 10月19日 14:05`. The stored room name and the rules that parse it are untouched, so an English window shows exactly what it showed before ([#3098](https://github.com/ThinkFlowLab/FlyBot/issues/3098)).
+- The two accessible names on a past face-to-face room card now read in the window's language: a screen reader in a Chinese window says `打开 面对面 · Alice · 10月19日 14:05` for the row and `成员` for the people on it, instead of the English `Open …` and `Members`. Both words come from the dictionary, so an English window keeps exactly the names it had before; only the text read out changes, never the stored room name ([#3100](https://github.com/ThinkFlowLab/FlyBot/issues/3100)).
+- The `Workflow` badge on a workflow row now follows the window's language: a Chinese window reads `工作流` in the sidebar row and in the Hand a task to a Workflow target list, instead of the English word standing beside an already-translated page header ([#3102](https://github.com/ThinkFlowLab/FlyBot/issues/3102)).
+
 ## [0.2.33] - 2026-11-15
 
 ### Changed
@@ -1505,7 +1520,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...HEAD
+[0.2.34]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...v0.2.34
 [0.2.33]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.31...v0.2.32
 [0.2.31]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.30...v0.2.31
