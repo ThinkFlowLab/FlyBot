@@ -27,16 +27,20 @@ export function stripFence(text) {
 }
 
 // The words of a stored line as a preview shows them: inner text of a wrap, no marker of any shape,
-// and one line, because a row is one line.
+// and one line, because a row is one line. A wrap in the middle of a line loses its markers in place,
+// so the sentence around it survives: a reply that quotes a remote line and then answers it reads as
+// the reply, not as the quote.
 export function visibleText(text) {
   let out = String(text ?? '')
   for (let previous; previous !== out;) {
     previous = out
     const open = out.indexOf('<untrusted-message')
-    if (open < 0) break
     const close = out.lastIndexOf('</untrusted-message>')
-    const inner = close > open ? out.slice(out.indexOf('>', open) + 1, close) : out
-    out = stripFence(inner)
+    if (open < 0 || close <= open) break
+    const head = out.slice(0, open)
+    const inner = out.slice(out.indexOf('>', open) + 1, close)
+    const tail = out.slice(close + '</untrusted-message>'.length)
+    out = stripFence(head) + inner + stripFence(tail)
   }
   return stripFence(out).replace(/\s+/g, ' ').trim()
 }
