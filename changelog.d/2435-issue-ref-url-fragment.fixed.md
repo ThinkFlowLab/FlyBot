@@ -1,0 +1,1 @@
+Reading an issue number out of a line no longer turns a link's URL fragment into an issue reference: `https://example.com/page#123` used to name issue #123 and write a card for an issue nobody meant, while `owner/repo#12`, a bare `#12` and GitHub issue and pull-request links keep naming the issue they point at ([#2435](https://github.com/ThinkFlowLab/FlyBot/issues/2435)).
