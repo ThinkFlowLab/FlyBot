@@ -136,6 +136,34 @@ export const exitCodeFor = (findings) => (findings.some((finding) => !finding.ea
 
 const realGh = (...args) => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 256 << 20 })
 
+// #3127: `gh api` has three ways to hand back no answer, and they are one event: it exits nonzero
+// (execFileSync throws), it prints nothing (`JSON.parse('')` throws `unexpected end of JSON input`),
+// or it prints a body that is not JSON. None of them says anything about the commit — in particular
+// none of them means "this commit has no pull request" — so a read is retried before it may fail the
+// run. Without this, one API hiccup turned the patrol red with no finding and hid the window it had
+// not audited yet.
+export const READ_ATTEMPTS = 3
+export const READ_BACKOFF_MS = 100
+const realSleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+
+export function retryRead(read, { attempts = READ_ATTEMPTS, sleep = realSleep } = {}) {
+  let last
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return read()
+    } catch (e) {
+      last = e
+      if (attempt < attempts) sleep(READ_BACKOFF_MS * attempt)
+    }
+  }
+  throw last
+}
+
+// A retried read still failed: the reason is one line, so the error names the commit and the cause
+// without echoing a whole `execFileSync` stack into the job log.
+const reasonOf = (e) =>
+  String(e?.message ?? e).split('\n').map((line) => line.trim()).find(Boolean) ?? 'no answer'
+
 function arg(name) {
   const i = process.argv.indexOf(name)
   return i > 0 ? process.argv[i + 1] : undefined
@@ -143,8 +171,9 @@ function arg(name) {
 
 // The entry point a workflow or a hand run calls. `api`, `env` and the options are injectable so a
 // test drives the whole walk from fixtures without the network.
-export function main({ api, gh = realGh, env = process.env, repo: repoOption, limit: limitOption, since: sinceOption, baseline: baselineOption } = {}) {
+export function main({ api, gh = realGh, sleep = realSleep, env = process.env, repo: repoOption, limit: limitOption, since: sinceOption, baseline: baselineOption } = {}) {
   const fetchJson = api ?? ((path) => JSON.parse(gh('api', path)))
+  const readJson = (path) => retryRead(() => fetchJson(path), { sleep })
   const repo = repoOption || env.GH_REPO || arg('--repo')
   if (!repo) throw new Error('set GH_REPO or pass --repo owner/name')
   const limit = Number(limitOption ?? arg('--limit') ?? env.LIMIT ?? 50)
@@ -153,14 +182,23 @@ export function main({ api, gh = realGh, env = process.env, repo: repoOption, li
   const baseline = Boolean(baselineOption ?? (process.argv.includes('--baseline') || env.BASELINE))
 
   const base = `repos/${repo}`
-  const since = sinceDate({ value: sinceValue, repo, fetchJson })
-  const commits = fetchJson(`${base}/commits?sha=main&per_page=${limit}`)
+  const since = sinceDate({ value: sinceValue, repo, fetchJson: readJson })
+  const commits = readJson(`${base}/commits?sha=main&per_page=${limit}`)
   if (!Array.isArray(commits)) throw new Error('the commits API did not return a list')
+  // `?? []` keeps a `[]` — and a `null` body — an answer ("no pull request"). A read that never
+  // answered is a different thing: it is thrown, naming the commit, and never becomes a finding.
+  const pullsFor = (sha) => {
+    try {
+      return readJson(`${base}/commits/${sha}/pulls?per_page=100`) ?? []
+    } catch (e) {
+      throw new Error(`could not read the pulls of ${sha} after ${READ_ATTEMPTS} attempts: ${reasonOf(e)}`)
+    }
+  }
   const findings = classify(audit({
     commits,
-    pullsFor: (sha) => fetchJson(`${base}/commits/${sha}/pulls?per_page=100`) ?? [],
+    pullsFor,
     // The runs endpoint answers `{ total_count, workflow_runs }`; only the runs matter here.
-    runsFor: (sha) => fetchJson(`${base}/actions/runs?event=merge_group&head_sha=${sha}&per_page=100`)?.workflow_runs ?? [],
+    runsFor: (sha) => readJson(`${base}/actions/runs?event=merge_group&head_sha=${sha}&per_page=100`)?.workflow_runs ?? [],
   }), { since, baseline })
   for (const finding of findings) console.log(finding.line)
   const failing = findings.filter((finding) => !finding.earlier)
