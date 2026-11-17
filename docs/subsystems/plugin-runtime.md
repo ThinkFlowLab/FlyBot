@@ -76,6 +76,7 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 
 - `flybot.chatApprovals.setProvider` attaches pending Bot Social holds to a 1:1 friend's-Bot chat the same way `roomApprovals` does for groups, and to a local Bot for its own held sends (#371). The team view puts `pendingCount` on that bot; the sidebar paints the gold wait dot. `flybot.chatApprovals.changed()` tells the host the list changed (a hold arrived or was decided), so the badge refreshes at once instead of on the next unrelated revision (#226). Still not team mode.
 - `flybot.watched()` is true while a FlyBot window on screen reads the team (its roster poll, within the last 8 s; a hidden window does not count, #497). A plugin that polls a remote inbox reads it at its live cadence then, so what arrives reaches the open window within seconds; with no window it keeps its idle cadence. It only observes the client polls and changes nothing.
+- `flybot.uiLanguage()` is the DSH interface language the last browser that asked for the team reported (`rt.uiLanguage()`: the `locale` of its `state` read, e.g. `Chinese (简体中文)`; `English` until a window asks, #3124). A plugin that writes host text into a chat — no translator of its own — picks its words by it, the same locale the window draws that plugin's cards in.
 
 ### Sidebar + friend actions
 

@@ -1724,6 +1724,64 @@ test('#278: "Waiting for the owner\'s approval" is posted into the rooms a hold 
   assert.deepEqual(posted.map(([room]) => room), ['group-1'])
 })
 
+// #3124: the two notes the host writes beside an approval card, through the real host, with the
+// window's language set the way the browser sets it (the `locale` of its state read; no call means
+// no window has asked yet). The hold carries a finding so it stays pending, and the fake server
+// keeps it until the reject call, so one run captures the waiting note and the reject note.
+async function approvalNotesWithWindow(t, locale) {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  if (locale !== undefined) await call('state', { locale })
+  const server = holdingServer({ reasons: ['dlp.commitment'] })
+  const posted = []
+  const scope = ctx.flybot.scope
+  ctx.flybot.scope = (name) => {
+    const scoped = scope(name)
+    scoped.rooms = {
+      ...scoped.rooms,
+      list: () => [{ id: 'group-1', origin: 'group', participants: [{ handle: '@coder.bob.home', remote: true }] }],
+      ofFace: () => undefined,
+      postNotice: (roomId, text) => posted.push([roomId, text]),
+    }
+    return scoped
+  }
+  const notes = []
+  const orig = ctx.flybot.remote.chats.deliver
+  ctx.flybot.remote.chats.deliver = async (msg) => { notes.push(msg); return orig?.(msg) }
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@bob.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  assert.equal((await ctx.flybot.bot.send({ from: 'a', to: '@coder.bob.home', text: 'a Bot line' })).action, 'allow')
+  await call('flybot/social/status', {})
+  const approvalId = server.queue[0]?.approval_id
+  assert.ok(approvalId, 'the fake server kept the hold')
+  await call('flybot/social/decide-approval', { approvalId, decision: 'reject' })
+  return { posted, notes }
+}
+
+test('#3124: a Chinese window gets both notes in the language its card is drawn in', async (t) => {
+  const { posted, notes } = await approvalNotesWithWindow(t, 'zh-CN')
+  assert.deepEqual(posted, [['group-1', '等待主人批准'], ['group-1', '已拒绝。']], `the room notes follow the window, saw ${JSON.stringify(posted)}`)
+  assert.equal(posted.some(([, text]) => text === WAITING_OTHERS || text === REJECT_NOTE), false, 'no English note is posted in a Chinese window')
+  assert.ok(notes.some(n => n.text === '已拒绝。'), `the reject note follows the window, saw ${JSON.stringify(notes)}`)
+  assert.equal(notes.some(n => n.text === REJECT_NOTE), false, 'the English reject note is not posted in a Chinese window')
+})
+
+test('#3124: an English window keeps both notes exactly as they read today', async (t) => {
+  const { posted, notes } = await approvalNotesWithWindow(t, 'en-US')
+  assert.deepEqual(posted, [['group-1', WAITING_OTHERS], ['group-1', REJECT_NOTE]], `saw ${JSON.stringify(posted)}`)
+  assert.ok(notes.some(n => n.text === REJECT_NOTE), `saw ${JSON.stringify(notes)}`)
+})
+
+test('#3124: with no window, or a language the host does not translate, the notes stay English', async (t) => {
+  for (const locale of [undefined, 'fr-FR']) {
+    const { posted, notes } = await approvalNotesWithWindow(t, locale)
+    assert.deepEqual(posted, [['group-1', WAITING_OTHERS], ['group-1', REJECT_NOTE]], `${locale ?? 'no window'}: saw ${JSON.stringify(posted)}`)
+    assert.ok(notes.some(n => n.text === REJECT_NOTE), `${locale ?? 'no window'}: saw ${JSON.stringify(notes)}`)
+  }
+})
+
 const heldOutbound = {
   approval_id: 'apr-hold-1',
   kind: 'outbound_message',

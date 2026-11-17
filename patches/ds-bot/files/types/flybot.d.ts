@@ -396,6 +396,8 @@ export interface FlyBot {
   ready(): Promise<void>
   /** True while another dsh holds the team: no polling, no writes. */
   readOnly(): boolean
+  /** The DSH interface language the last browser that asked for the team reported, e.g. `Chinese (简体中文)`; `English` until a window asks (#3124). */
+  uiLanguage(): string
   /**
    * The Project domain host seam (#2830), for `plugins/project` only: the runtime the domain
    * installs its seams on (`rt.projectBoard`, `rt.projectChief`, `rt.projectTeam`,
