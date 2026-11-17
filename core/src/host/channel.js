@@ -9,6 +9,7 @@ import { readQuietHours } from '../shared/quiet-hours.js'
 import { readTurnBudget } from './turn-budget.js'
 import { faceMentions } from './face-mentions.js'
 import { visibleText } from '../shared/preview.js'
+import { excerpt } from './text.js'
 
 const NOTIFY_KINDS = ['approval', 'finished', 'failed']
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
@@ -239,7 +240,7 @@ export function install(rt) {
   // `diagnostics-clear` is not a read: it truncates `<home>/logs/diagnostics.jsonl`, the file a bug
   // report is meant to carry, so a host that only reads refuses it instead of erasing the evidence
   // (#2302). `diagnostics` and `diagnostics-log` stay, because they only read that file.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'chats.search', 'room-progress', 'room-history', 'exchange', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'auth-whoami', 'workflows',
     'tasks', 'projects', 'project-read', 'project-board', 'project-team', 'project-of', 'project-decision', 'project-memory',
     'folders', 'folder-list', 'connector-app-status'])
 
@@ -356,6 +357,29 @@ export function install(rt) {
         case 'earlier':
           await rt.load()
           return ok(await rt.earlierPage(String(body.sessionId ?? ''), body.cursor ?? undefined))
+        case 'chats.search': {
+          // The palette's whole-text rows (P-820), scoped the way `state` is: the view
+          // narrows to the actor's own Bots and rooms, and only the sessions behind those
+          // rows are searched — a member never reads another member's chats through it.
+          await rt.load()
+          const query = String(body.query ?? '')
+          const scoped = view(actor)
+          const sessionToChat = new Map()
+          for (const bot of scoped.bots) for (const part of [bot.sessionId, ...(bot.parts ?? [])]) sessionToChat.set(part, bot.id)
+          for (const room of scoped.rooms) for (const part of room.parts ?? []) if (!sessionToChat.has(part)) sessionToChat.set(part, room.id)
+          const { rows, more } = await rt.searchHomeChat([...sessionToChat.keys()], query)
+          const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))]
+          return ok({
+            rows: rows
+              .map(row => {
+                const lower = row.text.toLowerCase()
+                const wanted = terms.find(term => lower.includes(term)) ?? ''
+                return { chat: sessionToChat.get(row.session) ?? null, turn: row.turn, text: excerpt(row.text, wanted) }
+              })
+              .filter(row => row.chat !== null),
+            more,
+          })
+        }
         case 'usage':
           await rt.load()
           return ok(await rt.usageView({ timeZone: typeof body.timeZone === 'string' ? body.timeZone.slice(0, 64) : undefined }))

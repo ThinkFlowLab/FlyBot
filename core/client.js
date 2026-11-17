@@ -873,6 +873,7 @@ var ZH = {
   "Rejected for {name}": "已拒绝 {name} 的请求",
   // Command palette
   Messages: "消息",
+  "Messages (full text)": "消息（全文）",
   Commands: "命令",
   "Search Bots, chats and messages": "搜索 Bot、对话和消息",
   "Clear search": "清除搜索",
@@ -15879,10 +15880,12 @@ var import_react33 = require("react");
 var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
 var paletteText = (raw, names) => readableLine(String(raw ?? ""), names);
 var PALETTE_EXIT_MS = 160;
+var SEARCH_DEBOUNCE_MS = 150;
 function CommandPalette({ start, token, roster, actions, useSessions }) {
   const [query, setQuery] = (0, import_react33.useState)(start ?? "");
   const [cursor, setCursor] = (0, import_react33.useState)(0);
   const [leaving, setLeaving] = (0, import_react33.useState)(false);
+  const [wholeText, setWholeText] = (0, import_react33.useState)(null);
   const wanted = query.trim().toLowerCase();
   const close = () => {
     if (leaving) return;
@@ -15914,6 +15917,29 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     }
     return JSON.stringify(hits);
   });
+  const searchChats = actions.searchChats;
+  (0, import_react33.useEffect)(() => {
+    if (wanted.length < 2 || !searchChats) {
+      setWholeText(null);
+      return void 0;
+    }
+    let current = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void searchChats(wanted, controller.signal).then(
+        (rows2) => {
+          if (current) setWholeText(Array.isArray(rows2) ? rows2 : []);
+        },
+        () => {
+        }
+      );
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [wanted, searchChats]);
   const matchesName = (...fields) => wanted === "" || fields.some((field) => (field ?? "").toLowerCase().includes(wanted));
   const sections = [];
   const people2 = [
@@ -15961,6 +15987,19 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     };
   });
   if (messages.length) sections.push([t("Messages"), messages]);
+  const outlined = new Set(messages.map((row) => row.key));
+  const fullText = (wholeText ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map((row) => {
+    const bot = roster.byId[row.chat];
+    const room2 = roster.roomsById[row.chat];
+    return {
+      key: `${row.chat}:${row.turn}`,
+      title: bot?.name ?? room2?.name ?? t("Bot"),
+      subtitle: row.text,
+      avatar: bot ? (0, import_react33.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react33.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
+      run: () => actions.openSession(row.chat, { turn: row.turn })
+    };
+  });
+  if (fullText.length) sections.push([t("Messages (full text)"), fullText]);
   const commands = [
     { key: "cmd:new", icon: (0, import_react33.createElement)(PlusIcon), title: t("New chat"), run: () => actions.openNewChat("new") },
     { key: "cmd:bot", icon: (0, import_react33.createElement)(PlusIcon), title: t("Create Bot"), run: () => actions.openNewChat("create") },
@@ -23229,11 +23268,25 @@ function apply(ctx) {
     for (const [id, owner] of pendingAdopt) if (owner === agentId && !ids.includes(id)) ids.push(id);
     return ids;
   };
+  const seekTurn = (turn) => {
+    if (!Number.isInteger(turn) || turn < 0 || typeof document === "undefined") return;
+    let tries = 0;
+    const seek = () => {
+      const node = document.querySelector(`[data-chat-turn="${turn}"]`);
+      if (node !== null) {
+        node.scrollIntoView({ block: "center" });
+        return;
+      }
+      if ((tries += 1) > 20) return;
+      setTimeout(seek, 100);
+    };
+    seek();
+  };
   const actions = {
     // The full-pane overlays sit above the conversation, so opening one must dismiss them
     // or the click appears to do nothing.
     isAgentSession: (id) => isAgentSessionId(id),
-    openSession: (id) => {
+    openSession: (id, { turn } = {}) => {
       noteNavigation("openSession", id);
       if (isAgentSessionId(id)) return actions.openAgentSession(id);
       ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
@@ -23241,7 +23294,11 @@ function apply(ctx) {
       const target = partFor(id);
       expected = target;
       ctx.uiWorkspace.openSession(target);
+      seekTurn(turn);
     },
+    // The palette's whole-text message search (P-820): the host answers with the
+    // caller's own chats, whole lines with the turn they belong to.
+    searchChats: (query, signal) => call("chats.search", { query }, signal).then((value) => value?.rows ?? []),
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {

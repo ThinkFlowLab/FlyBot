@@ -13,7 +13,9 @@ import { ANCHOR_LINE_MAX, HISTORY_PAGE, HISTORY_PAGES_MAX, HISTORY_TIMEOUT_MS, O
 import { ensurePrivateDir, tightenFile } from './private-files.js'
 import { excerpt } from './text.js'
 
-const INDEX_VERSION = 4
+// Version 5 added `lines.turn` and `marks.turnNo`: the turn a line belongs to by number,
+// which the palette's whole-text rows jump to (the outline only keeps the preview text).
+const INDEX_VERSION = 5
 const AROUND_LINES = 6
 const SEARCH_TERMS_MAX = 6
 const ANY_TERM_HITS = 50
@@ -45,8 +47,9 @@ function termWhere(terms, sessions, hidden) {
 }
 
 // The rows carry their own text and columns; a query with a long term is driven by the
-// FTS index over them, and one without it scans the rows alone.
-const LINE_COLUMNS = 'lines.text, lines.session, lines.seq, lines.time, lines.who'
+// FTS index over them, and one without it scans the rows alone. `turn` is the turn
+// number the line belongs to, carried since index version 5.
+const LINE_COLUMNS = 'lines.text, lines.session, lines.seq, lines.time, lines.who, lines.turn'
 const linesFrom = ranked => (ranked ? 'lines_fts JOIN lines ON lines.id = lines_fts.rowid' : 'lines')
 
 export function termQuery(terms, sessions, limit, hidden) {
@@ -167,6 +170,7 @@ export function install(rt) {
       seq INTEGER NOT NULL,
       time INTEGER NOT NULL,
       who TEXT NOT NULL,
+      turn INTEGER NOT NULL DEFAULT -1,
       UNIQUE(session, seq)
     );
     CREATE VIRTUAL TABLE lines_fts USING fts5(text, content='lines', content_rowid='id', tokenize = 'trigram');
@@ -176,7 +180,7 @@ export function install(rt) {
     CREATE TRIGGER lines_delete AFTER DELETE ON lines BEGIN
       INSERT INTO lines_fts (lines_fts, rowid, text) VALUES ('delete', old.id, old.text);
     END;
-    CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, keep INTEGER NOT NULL, sealed INTEGER NOT NULL, turn INTEGER NOT NULL);
+    CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, keep INTEGER NOT NULL, sealed INTEGER NOT NULL, turn INTEGER NOT NULL, turnNo INTEGER NOT NULL DEFAULT -1);
     PRAGMA user_version = ${INDEX_VERSION};`
 
   // How many rows an older index stored more than once. A build before #2711 could hold one
@@ -207,9 +211,9 @@ export function install(rt) {
         db,
         writable,
         hardened: false,
-        mark: db.prepare('SELECT through, keep, sealed, turn FROM marks WHERE session = ?'),
-        setMark: db.prepare('INSERT OR REPLACE INTO marks (session, through, keep, sealed, turn) VALUES (?, ?, ?, ?, ?)'),
-        insert: db.prepare('INSERT OR IGNORE INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
+        mark: db.prepare('SELECT through, keep, sealed, turn, turnNo FROM marks WHERE session = ?'),
+        setMark: db.prepare('INSERT OR REPLACE INTO marks (session, through, keep, sealed, turn, turnNo) VALUES (?, ?, ?, ?, ?, ?)'),
+        insert: db.prepare('INSERT OR IGNORE INTO lines (text, session, seq, time, who, turn) VALUES (?, ?, ?, ?, ?, ?)'),
         before: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq < ? ORDER BY seq DESC LIMIT ?'),
         from: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq >= ? ORDER BY seq LIMIT ?'),
         countAll: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
@@ -262,21 +266,25 @@ export function install(rt) {
         }
         let keep = mark ? mark.keep === 1 : false
         let turn = mark?.turn ?? -1
+        let turnNo = mark?.turnNo ?? -1
         let last = mark?.through ?? -1
         for (const event of events) {
           if (event.seq <= last) continue
           last = event.seq
-          if (event.type === 'turn/start') turn = event.seq
+          if (event.type === 'turn/start') {
+            turn = event.seq
+            if (Number.isFinite(event.data?.turn)) turnNo = event.data.turn
+          }
           const entry = rt.historyEntry(event, false)
           if (entry === undefined) continue
           if (entry.answer) {
-            if (keep) index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, 'you')
+            if (keep) index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, 'you', turnNo)
             continue
           }
           keep = entry.keepAnswers
-          if (entry.text !== '') index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, entry.who)
+          if (entry.text !== '') index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, entry.who, turnNo)
         }
-        index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn)
+        index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn, turnNo)
         index.db.exec('COMMIT')
         // The first commit is what makes `-wal`/`-shm`, so the modes are put right once it exists.
         if (!index.hardened) {
@@ -324,12 +332,20 @@ export function install(rt) {
     const { index, parts, hidden } = await indexedParts(botId, askingId)
     if (index === null) return { ...(await scanOwnChat(botId, query, limit)), every: true }
     const sessions = parts.map(part => part.sessionId)
+    const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
+    const found = matchedRows(index, sessions, terms, limit, hidden)
+    return { lines: found.rows.sort(byTime).map(row => rowLine(parts, row, terms)), every: found.every, more: found.more }
+  }
+
+  // The rows a query matches, best first, and how many the cap left out (#1906): the core
+  // both searches share. `searchOwnChat` formats these rows for the tool; `searchHomeChat`
+  // hands them to the channel raw. `every` says every term matched somewhere, not only some.
+  function matchedRows(index, sessions, terms, limit, hidden) {
     const run = (wanted, max) => {
       const { sql, args } = termQuery(wanted, sessions, max, hidden)
       return index.db.prepare(sql).all(...args)
     }
     const count = query => index.db.prepare(query.sql).get(...query.args).n
-    const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
     let rows = run(terms, limit)
     let every = true
     let total
@@ -349,8 +365,23 @@ export function install(rt) {
     } else if (rows.length === limit) {
       total = count(termCountQuery(terms, sessions, hidden))
     }
-    const more = total === undefined ? 0 : Math.max(0, total - rows.length)
-    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every, more }
+    return { rows, every, more: total === undefined ? 0 : Math.max(0, total - rows.length) }
+  }
+
+  // The whole-text search behind the palette's "Messages (full text)" group (P-820): the
+  // outline previews stop at 50/120 characters, so a hit past that budget is invisible to
+  // the outline read. The sessions are the caller's to name — the channel lists the caller's
+  // own chats — and each is caught up bare, exactly as `indexedParts` catches up a Bot's
+  // parts; no `endedAt` is known here, so nothing seals. Without an index there are no rows,
+  // and the palette keeps its outline search.
+  async function searchHomeChat(sessionIds, query, { limit = OWN_CHAT_SEARCH } = {}) {
+    const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, SEARCH_TERMS_MAX)
+    if (terms.length === 0) return { rows: [], more: 0 }
+    const index = await openIndex()
+    if (index === null) return { rows: [], more: 0 }
+    const sessions = [...new Set(sessionIds)]
+    for (const sessionId of sessions) await catchUp(index, { sessionId }).catch(error => rt.warn('ds-bot: indexing %s failed: %s', sessionId, error))
+    return matchedRows(index, sessions, terms, limit, undefined)
   }
 
   // The latest messages across all parts, oldest first; `more` is how many the cap left out (#1906).
@@ -428,5 +459,5 @@ export function install(rt) {
     ].join('\n')
   }
 
-  Object.assign(rt, { eventsBackwards, searchOwnChat, latestOwnChat, aroundOwnChat, partIndex, ownChatBrief })
+  Object.assign(rt, { eventsBackwards, searchOwnChat, searchHomeChat, latestOwnChat, aroundOwnChat, partIndex, ownChatBrief })
 }

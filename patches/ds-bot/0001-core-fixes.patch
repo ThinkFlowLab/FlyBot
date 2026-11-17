@@ -1234,7 +1234,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,9 +360,108 @@ const ZH = {
+@@ -360,11 +360,111 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -1343,7 +1343,10 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Rejected for {name}': '已拒绝 {name} 的请求',
    // Command palette
    Messages: '消息',
++  'Messages (full text)': '消息（全文）',
    Commands: '命令',
+   'Search Bots, chats and messages': '搜索 Bot、对话和消息',
+   'Clear search': '清除搜索',
 @@ -390,11 +390,15 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',
@@ -4007,7 +4010,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 --- a/src/host/chat-index.js
 +++ b/src/host/chat-index.js
-@@ -7,12 +7,13 @@
+@@ -7,12 +7,15 @@
  // The index is derived from the Session logs: a part catches up when it is read, an
  // ended part is sealed once it is complete, and deleting the file only costs a
  // rebuild. Without SQLite, read_own_chat scans the logs as before.
@@ -4019,11 +4022,13 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
  import { excerpt } from './text.js'
  
 -const INDEX_VERSION = 3
-+const INDEX_VERSION = 4
++// Version 5 added `lines.turn` and `marks.turnNo`: the turn a line belongs to by number,
++// which the palette's whole-text rows jump to (the outline only keeps the preview text).
++const INDEX_VERSION = 5
  const AROUND_LINES = 6
  const SEARCH_TERMS_MAX = 6
  const ANY_TERM_HITS = 50
-@@ -21,25 +21,52 @@ const INDEX_TIMEOUT_MS = 120_000
+@@ -21,25 +21,53 @@ const INDEX_TIMEOUT_MS = 120_000
  const SEAL_AFTER_MS = 60_000
  
  const likeOf = term => `%${term.replace(/[\\%_]/g, char => `\\${char}`)}%`
@@ -4057,8 +4062,9 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +}
 +
 +// The rows carry their own text and columns; a query with a long term is driven by the
-+// FTS index over them, and one without it scans the rows alone.
-+const LINE_COLUMNS = 'lines.text, lines.session, lines.seq, lines.time, lines.who'
++// FTS index over them, and one without it scans the rows alone. `turn` is the turn
++// number the line belongs to, carried since index version 5.
++const LINE_COLUMNS = 'lines.text, lines.session, lines.seq, lines.time, lines.who, lines.turn'
 +const linesFrom = ranked => (ranked ? 'lines_fts JOIN lines ON lines.id = lines_fts.rowid' : 'lines')
 +
 +export function termQuery(terms, sessions, limit, hidden) {
@@ -4143,7 +4149,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
          } catch (error) {
            if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
          }
-@@ -100,24 +100,65 @@ export function install(rt) {
+@@ -100,24 +100,66 @@ export function install(rt) {
      return opening
    }
  
@@ -4160,6 +4166,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +      seq INTEGER NOT NULL,
 +      time INTEGER NOT NULL,
 +      who TEXT NOT NULL,
++      turn INTEGER NOT NULL DEFAULT -1,
 +      UNIQUE(session, seq)
 +    );
 +    CREATE VIRTUAL TABLE lines_fts USING fts5(text, content='lines', content_rowid='id', tokenize = 'trigram');
@@ -4169,7 +4176,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +    CREATE TRIGGER lines_delete AFTER DELETE ON lines BEGIN
 +      INSERT INTO lines_fts (lines_fts, rowid, text) VALUES ('delete', old.id, old.text);
 +    END;
-+    CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, keep INTEGER NOT NULL, sealed INTEGER NOT NULL, turn INTEGER NOT NULL);
++    CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, keep INTEGER NOT NULL, sealed INTEGER NOT NULL, turn INTEGER NOT NULL, turnNo INTEGER NOT NULL DEFAULT -1);
 +    PRAGMA user_version = ${INDEX_VERSION};`
 +
 +  // How many rows an older index stored more than once. A build before #2711 could hold one
@@ -4206,12 +4213,14 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
        }
        return {
          db,
+-        mark: db.prepare('SELECT through, keep, sealed, turn FROM marks WHERE session = ?'),
+-        setMark: db.prepare('INSERT OR REPLACE INTO marks (session, through, keep, sealed, turn) VALUES (?, ?, ?, ?, ?)'),
+-        insert: db.prepare('INSERT INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
 +        writable,
 +        hardened: false,
-         mark: db.prepare('SELECT through, keep, sealed, turn FROM marks WHERE session = ?'),
-         setMark: db.prepare('INSERT OR REPLACE INTO marks (session, through, keep, sealed, turn) VALUES (?, ?, ?, ?, ?)'),
--        insert: db.prepare('INSERT INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
-+        insert: db.prepare('INSERT OR IGNORE INTO lines (text, session, seq, time, who) VALUES (?, ?, ?, ?, ?)'),
++        mark: db.prepare('SELECT through, keep, sealed, turn, turnNo FROM marks WHERE session = ?'),
++        setMark: db.prepare('INSERT OR REPLACE INTO marks (session, through, keep, sealed, turn, turnNo) VALUES (?, ?, ?, ?, ?, ?)'),
++        insert: db.prepare('INSERT OR IGNORE INTO lines (text, session, seq, time, who, turn) VALUES (?, ?, ?, ?, ?, ?)'),
          before: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq < ? ORDER BY seq DESC LIMIT ?'),
          from: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq >= ? ORDER BY seq LIMIT ?'),
 +        countAll: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
@@ -4243,7 +4252,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
        const events = []
        for await (const event of eventsBackwards(part.sessionId, AbortSignal.timeout(INDEX_TIMEOUT_MS), Infinity)) {
          if (event.seq <= through) break
-@@ -148,13 +148,25 @@ export function install(rt) {
+@@ -148,26 +148,47 @@ export function install(rt) {
        if (events.length > 0 && events.at(-1).seq !== through + 1) throw new Error(`the history of ${part.sessionId} came back with a gap`)
        events.reverse()
        if (index !== chatIndex) return
@@ -4267,15 +4276,29 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +        }
 +        let keep = mark ? mark.keep === 1 : false
 +        let turn = mark?.turn ?? -1
++        let turnNo = mark?.turnNo ?? -1
 +        let last = mark?.through ?? -1
          for (const event of events) {
 +          if (event.seq <= last) continue
            last = event.seq
-           if (event.type === 'turn/start') turn = event.seq
+-          if (event.type === 'turn/start') turn = event.seq
++          if (event.type === 'turn/start') {
++            turn = event.seq
++            if (Number.isFinite(event.data?.turn)) turnNo = event.data.turn
++          }
            const entry = rt.historyEntry(event, false)
-@@ -168,6 +168,11 @@ export function install(rt) {
+           if (entry === undefined) continue
+           if (entry.answer) {
+-            if (keep) index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, 'you')
++            if (keep) index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, 'you', turnNo)
+             continue
+           }
+           keep = entry.keepAnswers
+-          if (entry.text !== '') index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, entry.who)
++          if (entry.text !== '') index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, entry.who, turnNo)
          }
-         index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn)
+-        index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn)
++        index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn, turnNo)
          index.db.exec('COMMIT')
 +        // The first commit is what makes `-wal`/`-shm`, so the modes are put right once it exists.
 +        if (!index.hardened) {
@@ -4299,7 +4322,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
    }
    const rowLine = (parts, row, terms = [], max = OWN_CHAT_LINE_MAX) => {
      const lower = row.text.toLowerCase()
-@@ -202,19 +202,21 @@ export function install(rt) {
+@@ -202,19 +202,29 @@ export function install(rt) {
    }
  
    // Messages with all the words, best first; with none of them having all, those with
@@ -4311,19 +4334,28 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 -    if (index === null) return { lines: await scanOwnChat(botId, query, limit), every: true }
 +    if (index === null) return { ...(await scanOwnChat(botId, query, limit)), every: true }
      const sessions = parts.map(part => part.sessionId)
++    const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
++    const found = matchedRows(index, sessions, terms, limit, hidden)
++    return { lines: found.rows.sort(byTime).map(row => rowLine(parts, row, terms)), every: found.every, more: found.more }
++  }
++
++  // The rows a query matches, best first, and how many the cap left out (#1906): the core
++  // both searches share. `searchOwnChat` formats these rows for the tool; `searchHomeChat`
++  // hands them to the channel raw. `every` says every term matched somewhere, not only some.
++  function matchedRows(index, sessions, terms, limit, hidden) {
      const run = (wanted, max) => {
        const { sql, args } = termQuery(wanted, sessions, max, hidden)
        return index.db.prepare(sql).all(...args)
      }
+-    const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
 +    const count = query => index.db.prepare(query.sql).get(...query.args).n
-     const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
      let rows = run(terms, limit)
      let every = true
 +    let total
      if (rows.length === 0 && terms.length > 1) {
        every = false
        const found = new Map()
-@@ -227,11 +227,15 @@ export function install(rt) {
+@@ -227,11 +227,30 @@ export function install(rt) {
          }
        }
        rows = [...found.values()].sort((a, b) => (b.count - a.count) || (b.row.time - a.row.time)).slice(0, limit).map(hit => hit.row)
@@ -4332,8 +4364,23 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +      total = count(termCountQuery(terms, sessions, hidden))
      }
 -    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every }
-+    const more = total === undefined ? 0 : Math.max(0, total - rows.length)
-+    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every, more }
++    return { rows, every, more: total === undefined ? 0 : Math.max(0, total - rows.length) }
++  }
++
++  // The whole-text search behind the palette's "Messages (full text)" group (P-820): the
++  // outline previews stop at 50/120 characters, so a hit past that budget is invisible to
++  // the outline read. The sessions are the caller's to name — the channel lists the caller's
++  // own chats — and each is caught up bare, exactly as `indexedParts` catches up a Bot's
++  // parts; no `endedAt` is known here, so nothing seals. Without an index there are no rows,
++  // and the palette keeps its outline search.
++  async function searchHomeChat(sessionIds, query, { limit = OWN_CHAT_SEARCH } = {}) {
++    const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, SEARCH_TERMS_MAX)
++    if (terms.length === 0) return { rows: [], more: 0 }
++    const index = await openIndex()
++    if (index === null) return { rows: [], more: 0 }
++    const sessions = [...new Set(sessionIds)]
++    for (const sessionId of sessions) await catchUp(index, { sessionId }).catch(error => rt.warn('ds-bot: indexing %s failed: %s', sessionId, error))
++    return matchedRows(index, sessions, terms, limit, undefined)
    }
  
 -  // The latest messages across all parts, oldest first.
@@ -4411,6 +4458,13 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
      return [
        'Your own chat with the user so far (latest messages, oldest first; private, so share only what the group needs):',
        lines.length > 0 ? lines.join('\n') : 'Nothing yet.',
+@@ -289,5 +289,5 @@ export function install(rt) {
+     ].join('\n')
+   }
+ 
+-  Object.assign(rt, { eventsBackwards, searchOwnChat, latestOwnChat, aroundOwnChat, partIndex, ownChatBrief })
++  Object.assign(rt, { eventsBackwards, searchOwnChat, searchHomeChat, latestOwnChat, aroundOwnChat, partIndex, ownChatBrief })
+ }
 diff --git a/src/host/connectors.js b/src/host/connectors.js
 --- a/src/host/connectors.js
 +++ b/src/host/connectors.js
@@ -12813,12 +12867,12 @@ diff --git a/test/history.test.js b/test/history.test.js
 +  // over it, so a ranked query joins the index and reads the columns from the rows (#2711).
    assert.deepEqual(termQuery(['needle', 'a"b"c'], sessions, 20), {
 -    sql: 'SELECT text, session, seq, time, who FROM lines WHERE lines MATCH ? AND session IN (SELECT value FROM json_each(?)) ORDER BY rank LIMIT 20',
-+    sql: 'SELECT lines.text, lines.session, lines.seq, lines.time, lines.who FROM lines_fts JOIN lines ON lines.id = lines_fts.rowid WHERE lines_fts MATCH ? AND lines.session IN (SELECT value FROM json_each(?)) ORDER BY rank LIMIT 20',
++    sql: 'SELECT lines.text, lines.session, lines.seq, lines.time, lines.who, lines.turn FROM lines_fts JOIN lines ON lines.id = lines_fts.rowid WHERE lines_fts MATCH ? AND lines.session IN (SELECT value FROM json_each(?)) ORDER BY rank LIMIT 20',
      args: ['"needle" "a""b""c"', '["s1","s2"]'],
    })
    assert.deepEqual(termQuery(['会议', '5%'], sessions, 5, { session: 's2', from: 40 }), {
 -    sql: "SELECT text, session, seq, time, who FROM lines WHERE session IN (SELECT value FROM json_each(?)) AND NOT (session = ? AND seq >= ?) AND text LIKE ? ESCAPE '\\' AND text LIKE ? ESCAPE '\\' ORDER BY time DESC LIMIT 5",
-+    sql: "SELECT lines.text, lines.session, lines.seq, lines.time, lines.who FROM lines WHERE lines.session IN (SELECT value FROM json_each(?)) AND NOT (lines.session = ? AND lines.seq >= ?) AND lines.text LIKE ? ESCAPE '\\' AND lines.text LIKE ? ESCAPE '\\' ORDER BY lines.time DESC LIMIT 5",
++    sql: "SELECT lines.text, lines.session, lines.seq, lines.time, lines.who, lines.turn FROM lines WHERE lines.session IN (SELECT value FROM json_each(?)) AND NOT (lines.session = ? AND lines.seq >= ?) AND lines.text LIKE ? ESCAPE '\\' AND lines.text LIKE ? ESCAPE '\\' ORDER BY lines.time DESC LIMIT 5",
      args: ['["s1","s2"]', 's2', 40, '%会议%', '%5\\%%'],
    })
  })

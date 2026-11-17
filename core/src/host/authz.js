@@ -294,6 +294,11 @@ export function install(rt) {
     // writes keep their Session and target gates below, unchanged.
     if (ep === 'schedules') return ALLOW
 
+    // The palette's whole-text search is the same shape (P-820): the ask names no Bot or
+    // room, and the answer is scoped per actor in the handler (`chats.search` in
+    // channel.js searches only the sessions the actor's own view holds).
+    if (ep === 'chats.search') return ALLOW
+
     if (BOT_TARGETED.has(ep)) {
       if (ep.startsWith('schedule-')) {
         // The create endpoint keys off `body.target` (Bot or room id); `sessionId` is

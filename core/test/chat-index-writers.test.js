@@ -3,6 +3,11 @@
 // dsh keeps read-only still opened the index for writing (#2711).
 //
 // Real module, a temporary home, real SQLite, and a fake Session log as the source.
+//
+// P-820: the palette's message search reads the turnOutline projection, whose prompt and
+// response previews stop at 50/120 characters, so a hit past that budget found nothing. The
+// index this file already exercises holds the whole text, and the palette reaches it through
+// `searchHomeChat` and the channel's `chats.search` — answered with only the caller's chats.
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
@@ -11,6 +16,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { hashToken } from '../src/host/member-auth.js'
 
 const T0 = 1_760_000_000_000
 const INDEX = 'chat-index.sqlite'
@@ -37,6 +43,36 @@ const seed = () => ({
   prefs: {},
   revision: 1,
 })
+
+// Two members, each with their own Bot, and owner-2 signed in: the shape `chats.search`
+// has to scope. The seed stays otherwise identical to the single-Bot one.
+const TOKEN_OWNER_2 = 'tok-owner-2'
+const sharedSeed = () => ({
+  version: 2,
+  mainBotIds: ['a'],
+  members: {
+    'owner-1': { id: 'owner-1', createdAt: 1, designatedChiefId: 'a' },
+    'owner-2': { id: 'owner-2', createdAt: 2 },
+  },
+  bots: {
+    a: { id: 'a', sessionId: 'solo', name: 'Solo', role: 'Dev', model: 'deepseek/v4', instructions: '', createdAt: 1, ownerId: 'owner-1' },
+    b: { id: 'b', sessionId: 'duo', name: 'Duo', role: 'Dev', model: 'deepseek/v4', instructions: '', createdAt: 2, ownerId: 'owner-2' },
+  },
+  authSessions: {
+    s2: { id: 's2', tokenHash: hashToken(TOKEN_OWNER_2), memberId: 'owner-2', createdAt: 3, revokedAt: null },
+  },
+  rooms: {},
+  exchanges: [],
+  exchangeTurns: {},
+  questions: {},
+  prefs: {},
+  revision: 1,
+})
+
+// The history the palette's defect lives in: a line whose match sits far past the 120
+// characters the outline projection keeps, inside a turn that is not the first one.
+const NEEDLE_LINE = 'x'.repeat(300) + ' NEEDLE'
+const turnStart = (seq, turn) => ({ type: 'turn/start', seq, time: T0 + seq * 1000, data: { turn } })
 
 const scratch = (t, name = 'ds-bot-index-') => {
   const home = mkdtempSync(join(tmpdir(), name))
@@ -81,15 +117,19 @@ function barrier(parties) {
 
 // One host over `home`: the whole core with a fake Session controller, as a second dsh
 // would open the same home. `heldBy` puts a live other pid in `state.lock` first, so this
-// host is the read-only window `home-lock` describes.
-async function start(t, home, { heldBy, gate } = {}) {
+// host is the read-only window `home-lock` describes. `saved` swaps the state seed in, and
+// the host's `route` is the /api/bot Fetch route the channel registered.
+async function start(t, home, { heldBy, gate, saved } = {}) {
   if (heldBy !== undefined) {
     writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: heldBy, host: hostname(), token: 'other', since: Date.now() }))
   }
-  writeFileSync(join(home, 'state.json'), JSON.stringify(seed()), { mode: 0o600 })
+  writeFileSync(join(home, 'state.json'), JSON.stringify(saved ?? seed()), { mode: 0o600 })
   const ctx = fakeContext()
   const warnings = []
   ctx.logger.warn = (...args) => warnings.push(args.map(part => String(part)).join(' '))
+  let route
+  const registered = ctx.connection.fetch.register
+  ctx.connection.fetch.register = (options) => { route = options; return registered(options) }
   Object.assign(ctx, {
     llm: { listProviders: () => [], listModels: async () => [], resolveModelInfo: async () => ({}) },
     sessionController: {
@@ -114,7 +154,7 @@ async function start(t, home, { heldBy, gate } = {}) {
   // parts, returns `{lines: []}` and never calls `sessionController.page()`, so the party
   // this test's gate waits for never arrives. Wait for the load the host relies on.
   await rt.load()
-  const host = { home, ctx, rt, warnings, stop: () => ctx.dispose() }
+  const host = { home, ctx, rt, route, warnings, stop: () => ctx.dispose() }
   t.after(() => host.stop())
   return host
 }
@@ -260,4 +300,54 @@ test('an index two writers already duplicated is rebuilt once at startup (#2711)
   assert.equal(read.more, 0)
   assert.equal(rowsOf(home), 3, 'the rebuilt index holds one row per source line')
   assert.match(host.warnings.join('\n'), /rebuilt the chat index/)
+})
+
+// P-820. The host's whole-text search across given sessions: the palette's outline search
+// misses any hit past the 50/120-character preview, and this read is what fills that gap.
+// The row names the turn the hit belongs to, which is how the palette jumps to it.
+test('the whole-text search finds a line past the outline budget, with its turn (P-820)', async (t) => {
+  const home = scratch(t)
+  HISTORY.duo = [turnStart(0, 4), line(1, 'a plain line'), turnStart(2, 5), line(3, NEEDLE_LINE)]
+  try {
+    const host = await start(t, home)
+    const read = await host.rt.searchHomeChat(['solo', 'duo'], 'needle', {})
+    assert.equal(read.rows.length, 1, JSON.stringify(read))
+    const [row] = read.rows
+    assert.equal(row.session, 'duo')
+    assert.equal(row.seq, 3)
+    assert.equal(row.turn, 5, 'the row names the turn the hit belongs to')
+    assert.match(row.text, /NEEDLE/)
+    assert.equal(read.more, 0)
+
+    // A chat the caller did not list is not searched, and the caller's list is what the
+    // channel scopes per member: this read never widens it on its own.
+    const own = await host.rt.searchHomeChat(['solo'], 'needle', {})
+    assert.equal(own.rows.length, 0)
+  } finally {
+    delete HISTORY.duo
+  }
+})
+
+// P-820. The channel action the palette calls: `chats.search` answers through /api/bot with
+// the signed-in member's chats only — owner-2 signs in, and owner-1's Bot never shows up even
+// though its own history is served by the same host.
+test('chats.search answers through the channel with only the caller\'s chats (P-820)', async (t) => {
+  const home = scratch(t, 'ds-bot-index-search-')
+  HISTORY.duo = [turnStart(0, 4), line(1, 'a plain line'), turnStart(2, 5), line(3, NEEDLE_LINE)]
+  try {
+    const host = await start(t, home, { saved: sharedSeed() })
+    assert.notEqual(host.route, undefined, 'the channel registered its /api/bot route')
+    const response = await host.route.fetch(new Request('http://localhost/api/bot', {
+      method: 'POST',
+      headers: { 'x-flybot-member-session': TOKEN_OWNER_2 },
+      body: JSON.stringify({ endpoint: 'chats.search', payload: { query: 'needle' } }),
+    }))
+    const result = await response.json()
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.deepEqual(result.value.rows.map(row => row.chat), ['b'], JSON.stringify(result.value))
+    assert.equal(result.value.rows[0].turn, 5)
+    assert.match(result.value.rows[0].text, /NEEDLE/)
+  } finally {
+    delete HISTORY.duo
+  }
 })

@@ -1,0 +1,1 @@
+The command palette now searches the whole text of a chat's messages, not only the opening the outline preview keeps: a word that appears past the first characters of a long reply lists a **Messages (full text)** group, and choosing a row opens that chat at the turn the line came from ([#3139](https://github.com/ThinkFlowLab/FlyBot/issues/3139)).

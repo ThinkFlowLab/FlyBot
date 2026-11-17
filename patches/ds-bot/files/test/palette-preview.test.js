@@ -163,3 +163,132 @@ test('previewOf falls back to an older turn when the newest turn is empty', () =
   const unsent = outline([{ turn: 1, response: 'older reply', prompt: 'q1' }, { turn: 2, response: 'held reply', prompt: 'What is 2+2?' }])
   assert.equal(previewOf(unsent, 's1', [], [2]), 'What is 2+2?')
 })
+
+// P-820. The outline the message search reads holds only the first 50/120 characters of each
+// prompt and response, so a hit past that budget found nothing. The host's whole-text search
+// answers those rows, and the palette renders them as their own group, newest first.
+//
+// The rows arrive after a round-trip, so the palette needs state that changes once the
+// promise lands: this harness runs the same bundle under a react whose useState setter
+// rerenders and whose useEffect runs with its cleanup — a minimal React for one component
+// tree. Layout effects stay inert: they place the glide thumb, and nothing here asserts motion.
+function livePalette({ start = '', raw = '', rows = [] } = {}) {
+  let live
+  const instance = { cursor: 0, hooks: [], pending: [] }
+  const react = {
+    createElement: h, Fragment: Symbol('F'),
+    useLayoutEffect() {},
+    useRef: (current) => { const slot = instance.hooks ??= []; return slot[instance.cursor++] ??= { current } },
+    useState(init) {
+      const slot = instance.hooks[instance.cursor++] ??= { value: typeof init === 'function' ? init() : init }
+      const set = (next) => {
+        const value = typeof next === 'function' ? next(slot.value) : next
+        if (Object.is(value, slot.value)) return
+        slot.value = value
+        run()
+      }
+      return [slot.value, set]
+    },
+    useEffect(effect, deps) {
+      instance.pending.push({ effect, deps })
+    },
+  }
+  const calls = { openSession: [], search: [] }
+  const actions = {
+    closePalette() {}, reportError() {},
+    openSession: (...args) => { calls.openSession.push(args) },
+    searchChats: (query, signal) => { calls.search.push([query, signal]); return Promise.resolve(rows) },
+  }
+  const useSessions = (selector) => selector(outlineOf(raw))
+  const module = { exports: {} }
+  runInNewContext(outputFiles[0].text, {
+    module, exports: module.exports,
+    document: { hidden: false },
+    window: { addEventListener() {}, removeEventListener() {} },
+    navigator: { language: 'en' }, localStorage: { getItem: () => null, setItem() {} },
+    setTimeout, clearTimeout, AbortController,
+    require: (name) => {
+      if (name === 'react') return react
+      if (name === 'react-dom') return { createPortal: (node) => node }
+      if (name === '@deepseek-ai/dsh-client-ui-primitives') return { FishLogo: () => null, MarkdownText: ({ text }) => text }
+      throw new Error(`Unexpected platform module ${name}`)
+    },
+  })
+  const run = () => {
+    if (instance.rendering) { instance.rerun = true; return }
+    instance.rendering = true
+    do {
+      instance.rerun = false
+      instance.cursor = 0
+      instance.pending = []
+      live = module.exports.CommandPalette({ start, token: 't', roster: ROSTER, actions, useSessions })
+      for (const { effect, deps } of instance.pending.splice(0)) {
+        // Deps are compared per hook site: an effect with the same deps does not rerun.
+        const prior = instance.effectStates ??= []
+        const at = instance.effectCursor ??= 0
+        instance.effectCursor += 1
+        const state = prior[at] ??= { ran: false, cleanup: null, deps: undefined }
+        const changed = !state.ran || deps === undefined || (deps.length > 0 && !deps.every((dep, index) => Object.is(dep, state.deps?.[index])))
+        if (!changed) continue
+        state.cleanup?.()
+        state.cleanup = effect() ?? null
+        state.ran = true
+        state.deps = deps
+      }
+      instance.effectCursor = 0
+    } while (instance.rerun)
+    instance.rendering = false
+  }
+  run()
+  const settle = async (ms = 250) => { await new Promise(resolve => setTimeout(resolve, ms)); for (let i = 0; i < 5; i += 1) await Promise.resolve() }
+  const walk = (node, visit) => {
+    if (node === null || typeof node !== 'object') return
+    if (Array.isArray(node)) { for (const child of node) walk(child, visit); return }
+    visit(node)
+    const children = node.props?.children
+    if (Array.isArray(children)) for (const child of children) walk(child, visit)
+    else if (children !== undefined) walk(children, visit)
+  }
+  const flips = () => {
+    const out = []
+    walk(live, node => { const flip = node.props?.['data-flip']; if (typeof flip === 'string') out.push(node) })
+    return out
+  }
+  return {
+    calls, settle, run,
+    sections: () => flips().map(node => node.props['data-flip']).filter(flip => flip.startsWith('section:')).map(flip => flip.slice('section:'.length)),
+    rows: () => flips().map(node => node.props['data-flip']).filter(flip => !flip.startsWith('section:')),
+    choose: (key) => { const node = flips().find(node => node.props['data-flip'] === key); node?.props.onClick?.() },
+  }
+}
+
+// The stored outline keeps the first 120 characters: a needle past that is invisible to the
+// outline search (the defect this fixes), and the host's row is the only place it can surface.
+test('P-820: a hit past the outline preview budget is found by the whole-text group', async () => {
+  const capped = 'x'.repeat(119) + '…'
+  assert.deepEqual(hits('needle', capped), [], 'the outline preview holds no needle')
+  const palette = livePalette({ start: 'needle', raw: capped, rows: [{ chat: 's1', turn: 7, text: 'x'.repeat(24) + ' NEEDLE' }] })
+  await palette.settle()
+  assert.deepEqual(palette.calls.search.map(([query]) => query), ['needle'], 'the host search was asked for the query')
+  assert.deepEqual(palette.sections(), ['Messages (full text)'], JSON.stringify(palette.sections()))
+  assert.deepEqual(palette.rows(), ['s1:7'])
+})
+
+test('P-820: choosing a whole-text row opens the chat at that turn', async () => {
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 7, text: 'NEEDLE at the far end' }] })
+  await palette.settle()
+  palette.choose('s1:7')
+  // The row object comes from the palette's realm, so the fields are read, not deep-equalled.
+  assert.equal(palette.calls.openSession.length, 1)
+  assert.equal(palette.calls.openSession[0][0], 's1')
+  assert.equal(palette.calls.openSession[0][1]?.turn, 7)
+})
+
+// A row the outline search already found for the same chat and turn is the same message: the
+// whole-text group carries only what the previews missed.
+test('P-820: a row the outline already found is not shown twice', async () => {
+  const palette = livePalette({ start: 'needle', raw: 'the needle is right here', rows: [{ chat: 's1', turn: 1, text: 'the needle is right here' }, { chat: 's1', turn: 9, text: 'another NEEDLE far past the budget' }] })
+  await palette.settle()
+  assert.deepEqual(palette.sections(), ['Messages', 'Messages (full text)'], JSON.stringify(palette.sections()))
+  assert.deepEqual(palette.rows(), ['s1:1', 's1:9'], JSON.stringify(palette.rows()))
+})

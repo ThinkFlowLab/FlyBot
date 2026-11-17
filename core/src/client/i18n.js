@@ -817,6 +817,7 @@ const ZH = {
   'Rejected for {name}': '已拒绝 {name} 的请求',
   // Command palette
   Messages: '消息',
+  'Messages (full text)': '消息（全文）',
   Commands: '命令',
   'Search Bots, chats and messages': '搜索 Bot、对话和消息',
   'Clear search': '清除搜索',
