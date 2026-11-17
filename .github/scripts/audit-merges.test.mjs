@@ -261,3 +261,103 @@ test('#697: the patrol is read-only, runs daily, and takes its own previous run 
   assert.match(text, /uses: actions\/setup-node@[0-9a-f]{40}/)
   assert.doesNotMatch(text, /permissions: write-all|contents: write/, 'no write path into the repository')
 })
+
+// #3127: the patrol went red with no finding because one `gh api` reply came back empty and
+// `JSON.parse('')` threw. A read that did not answer is not an answer: retry it, and only then fail —
+// naming the commit it could not read, never as a bypass or a direct commit.
+const drive = (api, overrides = {}) => {
+  const lines = []
+  const errors = []
+  const [log, error] = [console.log, console.error]
+  console.log = (line) => lines.push(line)
+  console.error = (line) => errors.push(line)
+  let result
+  let failure
+  try {
+    result = main({ api, repo: 'o/r', sleep: () => {}, ...overrides })
+  } catch (e) {
+    failure = e
+  } finally {
+    console.log = log
+    console.error = error
+  }
+  return { result, failure, lines, errors }
+}
+
+test('#3127: a pulls read that fails twice and answers on the third attempt is retried, not a red run', () => {
+  const queued = fixture('queued')
+  const pullsPath = `repos/o/r/commits/${queued.sha}/pulls?per_page=100`
+  let attempts = 0
+  const api = (path) => {
+    if (path === 'repos/o/r/commits?sha=main&per_page=50') return [{ sha: queued.sha }]
+    if (path === pullsPath) {
+      attempts += 1
+      if (attempts < 3) throw new Error('unexpected end of JSON input')
+      return queued.pulls
+    }
+    if (path === `repos/o/r/actions/runs?event=merge_group&head_sha=${queued.sha}&per_page=100`) return { workflow_runs: queued.runs }
+    throw new Error(`unexpected path ${path}`)
+  }
+  const { result, failure, lines, errors } = drive(api)
+  assert.equal(failure, undefined, 'a transient read failure does not end the run')
+  assert.equal(attempts, 3)
+  assert.deepEqual(lines, [], 'the queued merge prints nothing')
+  assert.equal(result.ok, true)
+  assert.equal(exitCodeFor(result.findings), 0)
+  assert.match(errors.join('\n'), /1 commits on main, 0 bypassed the queue, 0 direct/)
+})
+
+test('#3127: a pulls read that never answers names the commit and is never reported as a finding', () => {
+  const queued = fixture('queued')
+  const pullsPath = `repos/o/r/commits/${queued.sha}/pulls?per_page=100`
+  let attempts = 0
+  const api = (path) => {
+    if (path === 'repos/o/r/commits?sha=main&per_page=50') return [{ sha: queued.sha }]
+    if (path === pullsPath) {
+      attempts += 1
+      throw new Error('unexpected end of JSON input')
+    }
+    if (path.startsWith('repos/o/r/actions/runs')) return { workflow_runs: [] }
+    throw new Error(`unexpected path ${path}`)
+  }
+  const { failure, lines } = drive(api)
+  assert.equal(attempts, 3, 'three attempts, then give up')
+  assert.ok(failure, 'the run fails instead of inventing a finding')
+  assert.match(failure.message, new RegExp(`^could not read the pulls of ${queued.sha} after 3 attempts: unexpected end of JSON input`))
+  assert.deepEqual(lines, [], 'a read failure is not printed as a finding line')
+})
+
+test('#3127: a bypass fixture still fails the run after the retry change', () => {
+  const bypassed = fixture('bypassed')
+  const api = (path) => {
+    if (path === 'repos/o/r/commits?sha=main&per_page=50') return [{ sha: bypassed.sha }]
+    if (path === `repos/o/r/commits/${bypassed.sha}/pulls?per_page=100`) return bypassed.pulls
+    if (path === `repos/o/r/actions/runs?event=merge_group&head_sha=${bypassed.sha}&per_page=100`) return { workflow_runs: bypassed.runs }
+    throw new Error(`unexpected path ${path}`)
+  }
+  const { result, failure, lines } = drive(api)
+  assert.equal(failure, undefined)
+  assert.deepEqual(lines, [`bypassed queue: #680 ${bypassed.sha.slice(0, 12)} (merge_group: failure)`])
+  assert.equal(result.bypassed, 1)
+  assert.equal(exitCodeFor(result.findings), 1)
+})
+
+test('#3127: an empty /pulls list is still an answer, not a read failure to retry', () => {
+  const direct = fixture('direct')
+  let pullsCalls = 0
+  const api = (path) => {
+    if (path === 'repos/o/r/commits?sha=main&per_page=50') return [{ sha: direct.sha }]
+    if (path === `repos/o/r/commits/${direct.sha}/pulls?per_page=100`) {
+      pullsCalls += 1
+      return []
+    }
+    if (path === `repos/o/r/actions/runs?event=merge_group&head_sha=${direct.sha}&per_page=100`) return { workflow_runs: direct.runs }
+    throw new Error(`unexpected path ${path}`)
+  }
+  const { result, failure, lines } = drive(api)
+  assert.equal(failure, undefined)
+  assert.equal(pullsCalls, 1, 'an empty answer is accepted on the first attempt')
+  assert.deepEqual(lines, [`direct commit: ${direct.sha}`])
+  assert.equal(result.direct, 1)
+  assert.equal(exitCodeFor(result.findings), 1)
+})
