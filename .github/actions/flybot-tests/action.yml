@@ -86,6 +86,10 @@ runs:
       shell: bash
       working-directory: core
       run: npm test
+    - name: Plane tests
+      shell: bash
+      working-directory: plane
+      run: npm test
     - name: Plugin lint
       if: inputs.plugins != 'false'
       shell: bash
