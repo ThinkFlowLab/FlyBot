@@ -224,7 +224,7 @@ test('the Chinese shell renders the same timeline event lines in Chinese', async
   const text = await stageText(EVENTS, 'zh')
   assert.ok(text.includes('任务已分配 · #1489 · Timeline copy → Delivery lane'), `assigned line missing from: ${text}`)
   assert.ok(text.includes('排队 · #1489 · Timeline copy（前面 2 个）'))
-  assert.ok(text.includes('Workflow「Delivery lane」已创建 · 成员 Planner, Writer'))
+  assert.ok(text.includes('工作流「Delivery lane」已创建 · 成员 Planner, Writer'))
   assert.ok(text.includes('⏸ 已暂停 · #1489 · Timeline copy'))
   assert.ok(text.includes('▶ 已继续 · #1489 · Timeline copy'))
   assert.ok(text.includes('■ 已停止 · #1489 · Timeline copy'))
@@ -390,7 +390,7 @@ test('a non-live run frame carries an English key and keeps the Chinese text', a
   assert.ok(text.includes('↺ Run reset'))
 
   const zh = await stageText(rows, 'zh')
-  assert.ok(zh.includes('任务 #1489 Timeline copy 已进入 Workflow，Planner 认领'))
+  assert.ok(zh.includes('任务 #1489 Timeline copy 已进入工作流，Planner 认领'))
   assert.ok(zh.includes('Writer 这一步失败了，停在本节点。'))
   assert.ok(zh.includes('↻ Tester 失败后自动重试 · Coder 已推送快照更新'))
   assert.ok(zh.includes('✓ 完成 · #1489 · Timeline copy · 6 步'))
