@@ -12,6 +12,7 @@
 import { socialFetch } from './mcp-client.js'
 import { lookFromServer } from './look.js'
 import { formatFaceRoomTitle, faceRoomCreatedAt } from './face-title.js'
+import { chineseUi } from './hidden-remotes.js'
 
 export const FACE_JOIN_CODE = /^\d{6}$/
 export const FACE_MAX_MEMBERS = 8
@@ -428,25 +429,31 @@ export function faceOutbound(line, { locals = [], asBots = [], who } = {}) {
   return undefined
 }
 
-export function platformJoinText(member) {
+// #3133: the notices the host posts for a room event follow the window's language, the seam #3124
+// gave the approval notes; English is the fallback.
+export function platformJoinText(member, language) {
   const who = faceMemberLabel(member)
   // Server copy; we rebuild from sanitized fields so a poisoned payload cannot instruct.
-  if (member?.roomOnly === true || member?.published !== true) return `${who} joined; available to this room only`
-  return `${who} joined`
+  if (member?.roomOnly === true || member?.published !== true) {
+    return chineseUi(language) ? `${who} 已加入；仅在此房间可用` : `${who} joined; available to this room only`
+  }
+  return chineseUi(language) ? `${who} 已加入` : `${who} joined`
 }
 
 // A leave names the person, not their Bot (#191): "Bob left the room".
-export function platformLeaveText(member) {
+export function platformLeaveText(member, language) {
   const owner = faceOwnerName(member)
-  return owner ? `${owner} left the room` : `${faceMemberLabel(member)} left`
+  if (owner) return chineseUi(language) ? `${owner} 已离开房间` : `${owner} left the room`
+  return chineseUi(language) ? `${faceMemberLabel(member)} 已离开` : `${faceMemberLabel(member)} left`
 }
 
 // The closed status line already says who left and that the room closed (#1103):
-// "Bob left the room. Room closed." The short platform leave is the same fact.
+// "Bob left the room. Room closed." The short platform leave is the same fact, in either language
+// (#3133), so the pattern reads both the English and the Chinese leave.
 // Same rule as core `leaveNoticeCoveredByClose` (`cells.js`), which hides a line already drawn.
 export function leaveNoticeCoveredByClose(room, text) {
   if (room?.origin !== 'face-to-face' || room.face?.status !== 'closed') return false
-  const match = String(text ?? '').trim().match(/^(.+) left(?: the room)?$/)
+  const match = String(text ?? '').trim().match(/^(.+) (?:left(?: the room)?|已离开(?:房间)?)$/)
   if (!match) return false
   const who = match[1]
   for (const participant of room.participants ?? []) {
@@ -457,14 +464,17 @@ export function leaveNoticeCoveredByClose(room, text) {
   return false
 }
 
-export function platformLeadText(member, reason) {
-  if (member) return `Room lead: ${faceMemberLabel(member)}`
-  return reason === 'lead_left' ? 'The room lead left. The default lead takes over.' : 'The room lead is back to the default.'
+export function platformLeadText(member, reason, language) {
+  if (member) return chineseUi(language) ? `总负责人：${faceMemberLabel(member)}` : `Room lead: ${faceMemberLabel(member)}`
+  if (reason === 'lead_left') return chineseUi(language) ? '总负责人已离开，由默认总负责人接手。' : 'The room lead left. The default lead takes over.'
+  return chineseUi(language) ? '总负责人恢复为默认。' : 'The room lead is back to the default.'
 }
 
-export function platformStartedText(reason) {
-  if (reason === 'expired') return 'Joining has ended. The room is now open. The number is no longer valid.'
-  return 'The room is now open. The number is no longer valid.'
+export function platformStartedText(reason, language) {
+  if (reason === 'expired') {
+    return chineseUi(language) ? '加入期已结束。房间现已开放，号码不再有效。' : 'Joining has ended. The room is now open. The number is no longer valid.'
+  }
+  return chineseUi(language) ? '房间现已开放，号码不再有效。' : 'The room is now open. The number is no longer valid.'
 }
 
 // Peer look is optional: only pass through a stored color / avatar when the payload
@@ -542,7 +552,7 @@ export function viewFaceRoom(body) {
     eventCursor: Number(body.event_cursor ?? body.eventCursor ?? 0) || 0,
     members,
     ...(lead ? { lead } : {}),
-    events: (body.events ?? []).map(viewFaceEvent).filter(Boolean),
+    events: (body.events ?? []).map(event => viewFaceEvent(event)).filter(Boolean),
     memberCount: Number(body.member_count ?? body.members?.length ?? 0) || 0,
     myBots: (body.my_bots ?? body.myBots ?? []).map(viewFaceMember).filter(Boolean),
   }
@@ -580,7 +590,7 @@ function viewedFaceText(event) {
   return faceUntrustedText(raw ?? event.untrustedText)
 }
 
-export function viewFaceEvent(event) {
+export function viewFaceEvent(event, language) {
   if (!event || typeof event !== 'object') return undefined
   const raw = String(event.type || event.event_type || '')
   const mapped = INBOX_TYPES[raw] || raw
@@ -598,7 +608,7 @@ export function viewFaceEvent(event) {
     trust: event.trust,
     member,
     from,
-    text: mapped === 'room.message' ? undefined : sanitizePlatformText(event.text, mapped, member, event.reason),
+    text: mapped === 'room.message' ? undefined : sanitizePlatformText(event.text, mapped, member, event.reason, language),
     // A viewed event (renderFaceEvent views again) already holds the plain text: keep it as is (#302).
     untrustedText: mapped === 'room.message' ? stripFaceMarkers(viewedFaceText(event)) : undefined,
     // Stamped by Bot Social (never read from the text): the owner typed this line themselves. A viewed
@@ -610,13 +620,13 @@ export function viewFaceEvent(event) {
   }
 }
 
-function sanitizePlatformText(text, type, member, reason) {
+function sanitizePlatformText(text, type, member, reason, language) {
   // Rebuild join/leave/start from sanitized fields so a 60-char name cap cannot
   // truncate the sentence, and a poisoned `text` cannot instruct.
-  if (type === 'member.joined' && member) return platformJoinText(member)
-  if (type === 'member.left' && member) return platformLeaveText(member)
-  if (type === 'room.started') return platformStartedText(reason)
-  if (type === 'room.lead_changed') return platformLeadText(member, reason)
+  if (type === 'member.joined' && member) return platformJoinText(member, language)
+  if (type === 'member.left' && member) return platformLeaveText(member, language)
+  if (type === 'room.started') return platformStartedText(reason, language)
+  if (type === 'room.lead_changed') return platformLeadText(member, reason, language)
   const cleaned = cutCodePoints(String(text ?? '')
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
     .replace(/[[\]"<>`@]/g, '')
@@ -629,8 +639,8 @@ function sanitizePlatformText(text, type, member, reason) {
 // it carries that stamp; the FLYBOT-FACE-HUMAN text is then never an attribution (any Bot can write
 // it), though its inner text is still unwrapped for display. Without it (an older server) the envelope
 // keeps its legacy meaning (#180).
-export function renderFaceEvent(event, { attested = false } = {}) {
-  const viewed = viewFaceEvent(event)
+export function renderFaceEvent(event, { attested = false, language } = {}) {
+  const viewed = viewFaceEvent(event, language)
   if (!viewed) return undefined
   if (viewed.type === 'room.message') {
     const from = viewed.from || {}

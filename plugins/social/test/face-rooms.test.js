@@ -214,6 +214,42 @@ test('peer names and system copy are sanitized', () => {
   assert.equal(alreadyLeftFace({ code: 'nope', message: 'busy' }), false)
 })
 
+// #3133: the notices the host posts into a face room follow the window's language, the same seam
+// #3124 gave the approval notes. An explicit English window, and a window that never said, keep English.
+test('#3133: face-room notices follow the window\'s language', () => {
+  const zh = 'Chinese (简体中文)'
+  const reviewer = { handle: '@reviewer.flybot682b8a43.home', display_name: 'Reviewer', owner_name: 'FlyBot 682b8a43' }
+  assert.equal(platformJoinText({ ...reviewer, published: true }, zh), 'Reviewer (flybot682b8a43) 已加入')
+  assert.equal(platformJoinText({ ...reviewer, published: false }, zh), 'Reviewer (flybot682b8a43) 已加入；仅在此房间可用')
+  assert.equal(platformLeaveText({ display_name: 'Coder', owner_name: 'Bob' }, zh), 'Bob 已离开房间')
+  assert.equal(platformLeaveText({ display_name: 'Coder' }, zh), 'Coder 已离开')
+  assert.equal(platformLeadText(reviewer, undefined, zh), '总负责人：Reviewer (flybot682b8a43)')
+  assert.equal(platformLeadText(undefined, 'lead_left', zh), '总负责人已离开，由默认总负责人接手。')
+  assert.equal(platformLeadText(undefined, 'back', zh), '总负责人恢复为默认。')
+  assert.equal(platformStartedText('expired', zh), '加入期已结束。房间现已开放，号码不再有效。')
+  assert.equal(platformStartedText('start', zh), '房间现已开放，号码不再有效。')
+  // An explicit English window and a window that never said read the same English.
+  assert.equal(platformJoinText({ ...reviewer, published: true }, 'English'), 'Reviewer (flybot682b8a43) joined')
+  assert.equal(platformLeaveText({ display_name: 'Coder' }, 'English'), 'Coder left')
+  assert.equal(platformLeadText(reviewer, undefined, 'English'), 'Room lead: Reviewer (flybot682b8a43)')
+  assert.equal(platformStartedText('start', 'English'), 'The room is now open. The number is no longer valid.')
+  assert.equal(platformJoinText({ ...reviewer, published: true }), 'Reviewer (flybot682b8a43) joined')
+  // The event a room posts carries the language through to the line it draws (a viewed member
+  // collapses `published` into `roomOnly`, so a plain join reads the room-only shape).
+  assert.equal(renderFaceEvent({ event_id: 'fev_z1', type: 'face_room.joined', member: { ...reviewer, published: true } }, { language: zh }).text, 'Reviewer (flybot682b8a43) 已加入；仅在此房间可用')
+  assert.equal(renderFaceEvent({ event_id: 'fev_z2', type: 'face_room.left', member: { display_name: 'Coder', owner_name: 'Bob' } }, { language: zh }).text, 'Bob 已离开房间')
+  assert.equal(renderFaceEvent({ event_id: 'fev_z3', type: 'face_room.lead_changed', reason: 'lead_left', lead: null }, { language: zh }).text, platformLeadText(undefined, 'lead_left', zh))
+  // #1103 in Chinese: the closed banner already names the leaver, so the short zh leave is not a second line.
+  const closed = {
+    origin: 'face-to-face', face: { status: 'closed' },
+    participants: [{ remote: true, ownerName: 'SelfB1025', displayName: 'Coder', leftSeq: 4 }],
+  }
+  assert.equal(leaveNoticeCoveredByClose(closed, 'SelfB1025 已离开房间'), true)
+  assert.equal(leaveNoticeCoveredByClose(closed, 'Coder (SelfB1025) 已离开'), true)
+  assert.equal(leaveNoticeCoveredByClose(closed, 'Carol 已离开房间'), false)
+  assert.equal(leaveNoticeCoveredByClose(closed, 'SelfB1025 left the room'), true)
+})
+
 test('#526: an owner name made up from the install id gives way to the owner username', () => {
   // A seat as Bot Social sends it for an owner who never set a name.
   const reviewer = { handle: '@reviewer.flybot682b8a43.home', display_name: 'Reviewer', owner_name: 'FlyBot 682b8a43' }
