@@ -513,3 +513,29 @@ test('a Bot Social read answers only for the actor\'s own Bot (#1788)', async (t
   // And once authz applies, a missing actor is still refused before any Bot is read.
   assert.equal(rt.authorize(null, 'flybot/social/share-friends', { botId: 'a1' }).code, 'bot/unauthorized')
 })
+
+// P-820: the palette's whole-text search is a member read the data layer scopes, the shape
+// `schedules` set — the channel answers with only the actor's own chats, so any signed-in
+// actor may ask and a missing actor is refused like every other member read.
+test('chats.search is a signed-in member read, refused without an actor (P-820)', async (t) => {
+  const saved = {
+    ...TEAM,
+    bots: {
+      ...TEAM.bots,
+      b1: { id: 'b1', sessionId: 'b1', name: 'B', instructions: '', createdAt: 3, ownerId: 'owner-2' },
+    },
+  }
+  const { rt } = runtime(t, saved)
+  await rt.load()
+  const actorA = await rt.authenticate((await redeemOwner(rt)).sessionToken)
+  const actorB = await rt.authenticate((await redeemOwner(rt)).sessionToken)
+  assert.equal(actorB.memberId, 'owner-2')
+
+  for (const actor of [actorA, actorB]) {
+    const gate = rt.authorize(actor, 'chats.search', { query: 'needle' })
+    assert.equal(gate.ok, true, `any signed-in member may search their own chats: ${JSON.stringify(gate)}`)
+  }
+  const none = rt.authorize(null, 'chats.search', { query: 'needle' })
+  assert.equal(none.ok, false)
+  assert.equal(none.code, 'bot/unauthorized')
+})

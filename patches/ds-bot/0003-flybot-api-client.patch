@@ -1903,14 +1903,47 @@ diff --git a/src/client/index.js b/src/client/index.js
    // A Bot id, or any part of its chat, opens the Bot's current part.
    const partFor = (id) => {
      const bot = roster.getSnapshot().byId[id]
-@@ -342,6 +342,7 @@ export function apply(ctx) {
+@@ -337,11 +337,27 @@ export function apply(ctx) {
+     for (const [id, owner] of pendingAdopt) if (owner === agentId && !ids.includes(id)) ids.push(id)
+     return ids
+   }
++  // The palette's whole-text rows name the turn the hit belongs to (P-820). DSH opens a
++  // session by id only, so the turn is found where the message pills already look: the
++  // flow's own DOM. A turn the host has not loaded lands on the nearest view — the row's
++  // snippet still shows the words — and the seek gives up rather than spin.
++  const seekTurn = (turn) => {
++    if (!Number.isInteger(turn) || turn < 0 || typeof document === 'undefined') return
++    let tries = 0
++    const seek = () => {
++      const node = document.querySelector(`[data-chat-turn="${turn}"]`)
++      if (node !== null) { node.scrollIntoView({ block: 'center' }); return }
++      if ((tries += 1) > 20) return
++      setTimeout(seek, 100)
++    }
++    seek()
++  }
+   const actions = {
+     // The full-pane overlays sit above the conversation, so opening one must dismiss them
      // or the click appears to do nothing.
      isAgentSession: id => isAgentSessionId(id),
-     openSession: (id) => {
+-    openSession: (id) => {
++    openSession: (id, { turn } = {}) => {
 +      noteNavigation('openSession', id)
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
+@@ -349,7 +349,11 @@ export function apply(ctx) {
+       const target = partFor(id)
+       expected = target
+       ctx.uiWorkspace.openSession(target)
++      seekTurn(turn)
+     },
++    // The palette's whole-text message search (P-820): the host answers with the
++    // caller's own chats, whole lines with the turn they belong to.
++    searchChats: (query, signal) => call('chats.search', { query }, signal).then(value => value?.rows ?? []),
+     // The conversation replacements withdraw for a plain Session; set the surface
+     // before the navigation so the Bot skin never flashes.
+     openAgentSession: (sessionId) => {
 @@ -409,15 +409,30 @@ export function apply(ctx) {
      },
      // `last` is the Bot conversation the view held before it cleared: when that part
@@ -2636,7 +2669,7 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
 diff --git a/src/client/palette.js b/src/client/palette.js
 --- a/src/client/palette.js
 +++ b/src/client/palette.js
-@@ -1,16 +1,20 @@
+@@ -1,21 +1,29 @@
  import { createElement as h, Fragment, useEffect, useState } from 'react'
  import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
  import { isMainOf } from './sources.js'
@@ -2657,8 +2690,17 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 +// a delegation trace and a fence are routing or data, never the row (#1347).
 +const paletteText = (raw, names) => readableLine(String(raw ?? ''), names)
  const PALETTE_EXIT_MS = 160
++// The whole-text search is a round-trip the host answers: a pause, so typing a query does
++// not ask once per character.
++const SEARCH_DEBOUNCE_MS = 150
  export function CommandPalette({ start, token, roster, actions, useSessions }) {
    const [query, setQuery] = useState(start ?? '')
+   const [cursor, setCursor] = useState(0)
+   const [leaving, setLeaving] = useState(false)
++  const [wholeText, setWholeText] = useState(null)
+   const wanted = query.trim().toLowerCase()
+   const close = () => {
+     if (leaving) return
 @@ -24,6 +24,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
    }
    useEscape(close)
@@ -2676,7 +2718,30 @@ diff --git a/src/client/palette.js b/src/client/palette.js
            const at = text.toLowerCase().indexOf(wanted)
            if (at < 0) continue
            const from = Math.max(0, at - 24)
-@@ -49,13 +49,13 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -46,16 +46,36 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+     }
+     return JSON.stringify(hits)
+   })
++  // The outline previews stop at 50/120 characters, so any hit past that budget is
++  // invisible to the read above (P-820). The host searches the whole text over the
++  // caller's own chats; an answer that lands for a query the user already changed is
++  // dropped with the effect that asked for it.
++  const searchChats = actions.searchChats
++  useEffect(() => {
++    if (wanted.length < 2 || !searchChats) {
++      setWholeText(null)
++      return undefined
++    }
++    let current = true
++    const controller = new AbortController()
++    const timer = setTimeout(() => {
++      void searchChats(wanted, controller.signal).then(
++        rows => { if (current) setWholeText(Array.isArray(rows) ? rows : []) },
++        () => {},
++      )
++    }, SEARCH_DEBOUNCE_MS)
++    return () => { current = false; clearTimeout(timer); controller.abort() }
++  }, [wanted, searchChats])
    const matchesName = (...fields) => wanted === '' || fields.some(field => (field ?? '').toLowerCase().includes(wanted))
    const sections = []
    const people = [
@@ -2693,7 +2758,25 @@ diff --git a/src/client/palette.js b/src/client/palette.js
        badge: room.hidden ? t('Hidden') : undefined,
        run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),
-@@ -81,7 +81,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -77,11 +77,25 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+     }
+   })
+   if (messages.length) sections.push([t('Messages'), messages])
++  // The host's whole-text rows, newest first (P-820). A row the outline already found for
++  // the same chat and turn is the same message, so it is not shown twice; a row whose chat
++  // the roster does not hold is not the caller's to open.
++  const outlined = new Set(messages.map(row => row.key))
++  const fullText = (wholeText ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
++    const bot = roster.byId[row.chat]
++    const room = roster.roomsById[row.chat]
++    return {
++      key: `${row.chat}:${row.turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
++      avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
++      run: () => actions.openSession(row.chat, { turn: row.turn }),
++    }
++  })
++  if (fullText.length) sections.push([t('Messages (full text)'), fullText])
+   const commands = [
      { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
      { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
      { key: 'cmd:group', icon: h(PeopleIcon), title: t('Create group chat'), run: () => actions.openNewChat('group') },

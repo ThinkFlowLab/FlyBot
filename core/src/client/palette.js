@@ -16,10 +16,14 @@ import { seatedCount } from './group-settings.js'
 // a delegation trace and a fence are routing or data, never the row (#1347).
 const paletteText = (raw, names) => readableLine(String(raw ?? ''), names)
 const PALETTE_EXIT_MS = 160
+// The whole-text search is a round-trip the host answers: a pause, so typing a query does
+// not ask once per character.
+const SEARCH_DEBOUNCE_MS = 150
 export function CommandPalette({ start, token, roster, actions, useSessions }) {
   const [query, setQuery] = useState(start ?? '')
   const [cursor, setCursor] = useState(0)
   const [leaving, setLeaving] = useState(false)
+  const [wholeText, setWholeText] = useState(null)
   const wanted = query.trim().toLowerCase()
   const close = () => {
     if (leaving) return
@@ -51,6 +55,26 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
     }
     return JSON.stringify(hits)
   })
+  // The outline previews stop at 50/120 characters, so any hit past that budget is
+  // invisible to the read above (P-820). The host searches the whole text over the
+  // caller's own chats; an answer that lands for a query the user already changed is
+  // dropped with the effect that asked for it.
+  const searchChats = actions.searchChats
+  useEffect(() => {
+    if (wanted.length < 2 || !searchChats) {
+      setWholeText(null)
+      return undefined
+    }
+    let current = true
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      void searchChats(wanted, controller.signal).then(
+        rows => { if (current) setWholeText(Array.isArray(rows) ? rows : []) },
+        () => {},
+      )
+    }, SEARCH_DEBOUNCE_MS)
+    return () => { current = false; clearTimeout(timer); controller.abort() }
+  }, [wanted, searchChats])
   const matchesName = (...fields) => wanted === '' || fields.some(field => (field ?? '').toLowerCase().includes(wanted))
   const sections = []
   const people = [
@@ -82,6 +106,20 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
     }
   })
   if (messages.length) sections.push([t('Messages'), messages])
+  // The host's whole-text rows, newest first (P-820). A row the outline already found for
+  // the same chat and turn is the same message, so it is not shown twice; a row whose chat
+  // the roster does not hold is not the caller's to open.
+  const outlined = new Set(messages.map(row => row.key))
+  const fullText = (wholeText ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
+    const bot = roster.byId[row.chat]
+    const room = roster.roomsById[row.chat]
+    return {
+      key: `${row.chat}:${row.turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
+      avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
+      run: () => actions.openSession(row.chat, { turn: row.turn }),
+    }
+  })
+  if (fullText.length) sections.push([t('Messages (full text)'), fullText])
   const commands = [
     { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
     { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
