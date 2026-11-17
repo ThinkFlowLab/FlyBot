@@ -414,11 +414,26 @@ export function apply(ctx) {
     for (const [id, owner] of pendingAdopt) if (owner === agentId && !ids.includes(id)) ids.push(id)
     return ids
   }
+  // The palette's whole-text rows name the turn the hit belongs to (P-820). DSH opens a
+  // session by id only, so the turn is found where the message pills already look: the
+  // flow's own DOM. A turn the host has not loaded lands on the nearest view — the row's
+  // snippet still shows the words — and the seek gives up rather than spin.
+  const seekTurn = (turn) => {
+    if (!Number.isInteger(turn) || turn < 0 || typeof document === 'undefined') return
+    let tries = 0
+    const seek = () => {
+      const node = document.querySelector(`[data-chat-turn="${turn}"]`)
+      if (node !== null) { node.scrollIntoView({ block: 'center' }); return }
+      if ((tries += 1) > 20) return
+      setTimeout(seek, 100)
+    }
+    seek()
+  }
   const actions = {
     // The full-pane overlays sit above the conversation, so opening one must dismiss them
     // or the click appears to do nothing.
     isAgentSession: id => isAgentSessionId(id),
-    openSession: (id) => {
+    openSession: (id, { turn } = {}) => {
       noteNavigation('openSession', id)
       // A DSH Agent Session id lands on the plain surface, not the Bot skin.
       if (isAgentSessionId(id)) return actions.openAgentSession(id)
@@ -427,7 +442,11 @@ export function apply(ctx) {
       const target = partFor(id)
       expected = target
       ctx.uiWorkspace.openSession(target)
+      seekTurn(turn)
     },
+    // The palette's whole-text message search (P-820): the host answers with the
+    // caller's own chats, whole lines with the turn they belong to.
+    searchChats: (query, signal) => call('chats.search', { query }, signal).then(value => value?.rows ?? []),
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {
