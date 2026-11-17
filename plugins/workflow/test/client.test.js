@@ -1739,7 +1739,7 @@ test('Chinese labels follow the host Tasks translation', () => {
   globalThis.__flybot__ = { t: key => (key === 'Tasks' ? '任务' : key) }
   try {
     assert.equal(client.tr('Edit'), '编辑')
-    assert.equal(client.tr('Hand a task to a Workflow'), '把任务交给 Workflow')
+    assert.equal(client.tr('Hand a task to a Workflow'), '把任务交给工作流')
     assert.equal(client.tr('Pick a node'), '选择一个节点')
     assert.equal(client.columnOf({ status: 'working' }), 'in-progress')
     assert.equal(client.shortId('task-abcdef123456'), '#123456')
@@ -1797,6 +1797,43 @@ test('P-784: the same badge in Hand a task to a Workflow reads Chinese too', asy
     assert.equal(badges.length, 1, 'the lane target draws one badge')
     assert.equal(textOf(badges[0]), '工作流', `a zh window reads the badge in Chinese, got ${JSON.stringify(textOf(badges[0]))}`)
     view.unmount()
+  } finally {
+    globalThis.__flybot__ = prev
+  }
+})
+
+// #3129: the zh table named the feature `Workflow` inside Chinese sentences while the page header,
+// the row badge and the missing-plugin hint already read 工作流 — two vocabularies on one screen.
+// These are the keys that carried it, and `tr` is the path a zh window really takes, so the test
+// reads the same table the window reads.
+const ZH_WORKFLOW_KEYS = [
+  'No workflows in this Project',
+  'Hand a task to a Workflow',
+  'A task can go to a Workflow, not only to one Bot. The Workflow then runs each Bot in order, or side by side.',
+  'New workflow',
+  'No workflows yet.',
+  'Workflow graphs',
+  'Delete workflow',
+  'Rename workflow',
+  'Tasks this workflow holds',
+  'Could not rename this workflow',
+  'Could not delete this workflow',
+  'Could not save this workflow',
+  'Could not reset this workflow',
+  'Reading workflows…',
+  'Workflow "{name}" created · members {members}',
+  'Task {task} entered the workflow; {nodes} claimed it',
+]
+
+test('#3129: no Chinese sentence names the feature in English', () => {
+  const prev = globalThis.__flybot__
+  globalThis.__flybot__ = zhUi
+  try {
+    for (const key of ZH_WORKFLOW_KEYS) {
+      const text = client.tr(key, { name: 'lane', members: 'A, B', task: '#1', nodes: 'A' })
+      assert.equal(text.includes('Workflow'), false, `${JSON.stringify(key)} still says Workflow in a Chinese sentence: ${JSON.stringify(text)}`)
+      assert.ok(text.includes('工作流'), `${JSON.stringify(key)} does not name the feature 工作流: ${JSON.stringify(text)}`)
+    }
   } finally {
     globalThis.__flybot__ = prev
   }
