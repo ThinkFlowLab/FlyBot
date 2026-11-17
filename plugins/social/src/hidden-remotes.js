@@ -125,6 +125,15 @@ export const WAITING_OWNER = 'Waiting for approval'
 export const WAITING_OTHERS = "Waiting for the owner's approval"
 export const REJECT_NOTE = 'Rejected.'
 
+// #3124: the two notes the host writes beside an approval card follow the window's language, the
+// same one the card itself is drawn in. The card is translated in the browser; the host has no
+// translator, so it picks the words by the interface language the last window reported
+// (`flybot.uiLanguage`, a language name such as `Chinese (简体中文)`) and the Chinese pair lives
+// here, beside its English one. An unknown language keeps English, the host's own fallback.
+const chineseUi = (language) => /^(zh|chinese)/i.test(String(language ?? ''))
+export const waitingNote = (language) => (chineseUi(language) ? '等待主人批准' : WAITING_OTHERS)
+export const rejectNote = (language) => (chineseUi(language) ? '已拒绝。' : REJECT_NOTE)
+
 export function chatApprovalTitle(canDecide) {
   return canDecide ? WAITING_OWNER : WAITING_OTHERS
 }

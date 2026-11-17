@@ -72,8 +72,8 @@ import {
   isHomeLevelHandle,
   isHiddenRemote,
   revealHiddenIfPresent,
-  WAITING_OTHERS,
-  REJECT_NOTE,
+  waitingNote,
+  rejectNote,
 } from './hidden-remotes.js'
 
 export const NS = 'social'
@@ -3515,6 +3515,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     }
     return pick(openable)
   }
+  // #3124: the notes written beside an approval card follow the window's language, the same one
+  // the card is drawn in. The host reads it from the interface language the last browser reported;
+  // a host without that seam keeps the English notes.
+  const noteLanguage = () => flybot.uiLanguage?.()
   async function postChatNote(item, text, { chats: toChats = true } = {}) {
     for (const room of roomsForApproval(item)) {
       try { flybot.rooms.postNotice?.(room.id, text) } catch (error) { warn('approval notice not posted', error) }
@@ -3551,7 +3555,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // The owner of a held room line sees its Approve card, never "waiting for the owner" (#179).
       if (item.kind === 'face_room_message') { settings.approvalNotices[item.id] = { at: now(), kind: 'waiting' }; changed = true; continue }
       // Owner 1:1 chats use the Approve / Reject dock. Do not post a waiting bubble there (#140).
-      await postChatNote(item, WAITING_OTHERS, { chats: false })
+      await postChatNote(item, waitingNote(noteLanguage()), { chats: false })
       settings.approvalNotices[item.id] = { at: now(), kind: 'waiting' }
       changed = true
     }
@@ -3561,7 +3565,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     const item = pendingCache.items.find(entry => entry.id === approvalId)
     // A rejected room line already reads "Not sent" where it would have stood (#456): no second note.
     if (!item || item.kind === 'face_room_message') return
-    await postChatNote(item, REJECT_NOTE)
+    await postChatNote(item, rejectNote(noteLanguage()))
     settings.approvalNotices ??= {}
     settings.approvalNotices[approvalId] = { at: now(), kind: 'rejected' }
     saveSettings()
