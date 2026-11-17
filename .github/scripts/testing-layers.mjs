@@ -39,6 +39,12 @@ export function globMatch(pattern, path) {
   return new RegExp('^' + re + '$').test(path)
 }
 
+// A directory below the root that carries its own `.git` — a linked worktree's `gitdir:` file, a
+// clone's store — is another checkout parked under this one (a developer's `tmp/<branch>/`), and
+// none of its files is this repository's to classify: the walk stops at that boundary the way it
+// stops at `node_modules`. The root's own `.git` is skipped by name and never checked here.
+const isAnotherCheckout = (abs) => existsSync(join(abs, '.git'))
+
 export function collectTestFiles(root) {
   const out = []
   const walk = (dir) => {
@@ -46,6 +52,7 @@ export function collectTestFiles(root) {
       const rel = dir ? `${dir}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.dsh-test-')) continue
+        if (isAnotherCheckout(join(root, rel))) continue
         walk(rel)
       } else if (/\.test\.(m?[jt]s|cjs)$/.test(entry.name)) out.push(rel)
     }
