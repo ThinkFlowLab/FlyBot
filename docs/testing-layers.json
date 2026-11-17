@@ -124,6 +124,15 @@
         "dev/live-e2e/test/**"
       ],
       "reason": "Offline unit tests for the live end-to-end harness (a fake adapter, no model). They run in the root `npm run verify` only; no CI gate runs them today. Moving them into L1 is a separate change, and the layer that does drive a real model is `live-e2e.yml`, whose row is below."
+    },
+    {
+      "id": "plane",
+      "layer": "L1",
+      "paths": [
+        "plane/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plane test",
+      "note": "管理面控制平面骨架：凭证分离、所有权、创建/启停、compose 生成；不碰网络与 Docker。"
     }
   ],
   "workflows": [

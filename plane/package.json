@@ -1,0 +1,9 @@
+{
+  "name": "@flybot/plane",
+  "private": true,
+  "description": "Management-plane control-plane skeleton: accounts, workspaces, instance records, credentials, lifecycle (#3113).",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test \"test/*.test.js\"" },
+  "devDependencies": {}
+}
