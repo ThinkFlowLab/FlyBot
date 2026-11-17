@@ -12533,7 +12533,7 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
  
-@@ -287,3 +287,314 @@ test('members still at work show in the team view and in the prompts of the othe
+@@ -287,3 +287,334 @@ test('members still at work show in the team view and in the prompts of the othe
    host.finish('gc', '没问题。')
    await settle(() => result() !== undefined)
  })
@@ -12826,6 +12826,26 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +  assert.match(out, /Checkpoint 1/)
 +  assert.match(out, /words/)
 +  assert.match(out, /the url is https:\/\/example\.test\/xyz/, 'the newest lines are still shown')
++})
++
++// #2780: the bare read says "newest 12 of 15" (#1906), and a condensed current part hides the
++// same way, but its sentence named no count — a Bot reading three of fifteen messages read as
++// if that was all the part ever held.
++test('a condensed current part says how many of its messages it still shows (#2780)', async (t) => {
++  const history = { b: Array.from({ length: 15 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
++  const host = await start(t, undefined, history)
++  host.agentOf('b').session.deriveMessages = () => checkpointMessages(1)
++  const out = await host.tool('read_own_chat', { part: 1 }, 'b')
++  assert.equal(shownLines(out).length, 12, out)
++  assert.match(out, /newest 12 of 15/, `the read hid three messages without saying so: ${out}`)
++
++  // A short part shows all of them, and then no count clause is owed.
++  const short = { b: Array.from({ length: 3 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
++  const brief = await start(t, undefined, short)
++  brief.agentOf('b').session.deriveMessages = () => checkpointMessages(1)
++  const briefOut = await brief.tool('read_own_chat', { part: 1 }, 'b')
++  assert.equal(shownLines(briefOut).length, 3, briefOut)
++  assert.doesNotMatch(briefOut, /newest 3 of 3/, briefOut)
 +})
 +
 +test('a current part with no checkpoint, and an ended or missing part, answer as before (#2774)', async (t) => {

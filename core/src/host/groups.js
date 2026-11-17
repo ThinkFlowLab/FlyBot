@@ -1009,8 +1009,11 @@ export function install(rt) {
             // keeps the unchanged sentence rather than failing this read.
           }
           if (checkpoints === 0) return `Part ${number} is the current one; it is in your context.${partsNote}`
-          const { lines } = await rt.latestOwnChat(botId, { askingId: id })
-          return `Part ${number} is the current one, but its earlier messages are condensed into [Checkpoint ${checkpoints}], so only its newest messages are still in your context:\n${lines.join('\n')}\nSearch it with words to read the rest word for word.${partsNote}`
+          const { lines, more } = await rt.latestOwnChat(botId, { askingId: id })
+          // The cap hides the rest, so the sentence says how many of how many this read shows:
+          // the bare sentence let 12 of 15 read as the whole of it (#2780).
+          const newest = more > 0 ? `its newest ${lines.length} of ${lines.length + more} messages` : `its newest ${lines.length} messages`
+          return `Part ${number} is the current one, but its earlier messages are condensed into [Checkpoint ${checkpoints}], so only ${newest} are still in your context:\n${lines.join('\n')}\nSearch it with words to read the rest word for word.${partsNote}`
         }
         return `Part ${number} of your own chat (${rt.clock(part.startedAt)} – ${rt.clock(part.endedAt)}). The handoff note that closed it:\n${rt.noteText(part) ?? '(none: the part ended on a context overflow)'}${partsNote}`
       }

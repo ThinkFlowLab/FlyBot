@@ -1,0 +1,1 @@
+When the current part of your own chat has its earlier messages condensed into a checkpoint, `read_own_chat` now says how many of the part's messages it still shows — `only its newest 12 of 15 messages` — instead of `only its newest messages`, so a message the cap left out no longer reads as if it never existed ([#3144](https://github.com/ThinkFlowLab/FlyBot/issues/3144)).
