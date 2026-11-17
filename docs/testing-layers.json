@@ -83,6 +83,15 @@
       "note": "Peer plugin; its CI job also runs the plugin lint and fails a skipped test."
     },
     {
+      "id": "plane",
+      "layer": "L1",
+      "paths": [
+        "plane/test/**/*.test.js"
+      ],
+      "command": "npm --prefix plane test",
+      "note": "Management-plane skeleton: credential separation, ownership, create/start/stop, compose materialization; no network and no Docker."
+    },
+    {
       "id": "scripts",
       "layer": "L1",
       "paths": [
