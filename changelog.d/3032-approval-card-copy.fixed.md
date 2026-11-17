@@ -1,0 +1,1 @@
+The last four English controls on the approval cards — another owner's "Waiting for the owner's approval" line, the per-pair Auto-send from now on link on the in-chat card and on a held reply's bubble, and the friend panel's Decline button and pending tag — now follow the window's language ([#3032](https://github.com/ThinkFlowLab/FlyBot/issues/3032)).

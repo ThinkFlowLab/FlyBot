@@ -2157,7 +2157,7 @@ window.__ModuleLoader__.load({
           : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
         const place = item.place
         return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
-          h('div', { className: 'fs-name' }, WAITING_OTHERS),
+          h('div', { className: 'fs-name' }, tr(WAITING_OTHERS)),
           place?.bubble ? h('div', { className: 'fs-sub', 'data-flybot': 'waiting-place' }, tr('Decide on the reply bubble above.')) : null,
           place?.chatId ? h('div', { className: 'fs-sub', 'data-flybot': 'waiting-place' }, tr("Decide in {name}'s chat.", { name: place.name })) : null,
           place?.chatId && typeof onOpen === 'function'
@@ -2199,7 +2199,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, tr('Approve')),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, tr('Reject'))),
           // Two buttons are the decision; the standing choice is a quiet link, not a third button (#260).
-          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, AUTO_SEND_LINK)))
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, tr(AUTO_SEND_LINK))))
     }
 
     function approvalsForOpenChat(items, { sessionId, room, bot, roster } = {}) {
@@ -2857,7 +2857,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'fs-hold-decide' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: busy, onClick: () => onDecide('approve') }, tr('Approve')),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => onDecide('reject') }, tr('Reject'))),
-          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, AUTO_SEND_LINK)))
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, tr(AUTO_SEND_LINK))))
     }
 
     function FriendBotRow({ bot, chat, renderBot, busy, onRemove }) {
@@ -3521,7 +3521,7 @@ window.__ModuleLoader__.load({
               item.message ? h('span', { className: 'fs-sub fs-msg' }, item.message) : null),
             h('span', { className: 'fs-actions' },
               h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'accept') }, tr('Accept')),
-              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'decline') }, 'Decline'))))) : null,
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'decline') }, tr('Decline')))))) : null,
         outgoing.length ? h('div', { className: 'bt-social-outgoing' },
           h('div', { className: 'fs-label' }, tr('Waiting for them to accept')),
           outgoing.map(item => h('div', { key: item.relationshipId ?? item.handle, className: 'fs-row' },
@@ -3529,7 +3529,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'fs-text' },
               h('span', { className: 'fs-name' }, item.name ?? item.handle),
               item.name ? h('span', { className: 'fs-sub' }, item.handle) : null),
-            h('span', { className: 'fs-tag' }, 'pending')))) : null,
+            h('span', { className: 'fs-tag' }, tr('pending'))))) : null,
         onDone ? h('div', { className: 'fs-line', 'data-flybot': 'add-friend-done', style: { padding: '6px 10px 2px', justifyContent: 'flex-end' } },
           h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, tr('Done'))) : null)
     }

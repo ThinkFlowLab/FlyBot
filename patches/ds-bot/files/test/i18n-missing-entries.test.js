@@ -186,15 +186,16 @@ test('glyphs, bare digits and separators drawn as children are not pins', () => 
 })
 
 // The same sentence drawn through an attribute and as a child is two positions in one file, so it
-// keeps two pins in #3026's shape: the attribute `#1`, the child `#2`.
+// keeps two pins in #3026's shape: the attribute `#1`, the child `#2`. The sample is a sentence with
+// no zh entry; #3032 gave `Decline` one, so this test moved to a string that is still a gap.
 test('a sentence drawn as an attribute and as a child keeps two pins', () => {
   const source = [
-    "h(Button, { title: 'Decline' })",
-    "h(Button, null, 'Decline')",
+    "h(Button, { title: 'Reopen the room' })",
+    "h(Button, null, 'Reopen the room')",
   ].join('\n')
   assert.deepEqual(baselineOf(missingCopy(source, 'plugins/sample/client.js')), [
-    'plugins/sample/client.js:Decline#1',
-    'plugins/sample/client.js:Decline#2',
+    'plugins/sample/client.js:Reopen the room#1',
+    'plugins/sample/client.js:Reopen the room#2',
   ])
 })
 

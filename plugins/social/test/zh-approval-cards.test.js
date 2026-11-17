@@ -99,12 +99,12 @@ const hostT = (text, params) => {
   return String(hit).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
 }
 
-function fixtures({ incoming = [], grants = [], friends = undefined } = {}) {
+function fixtures({ incoming = [], outgoing = [], grants = [], friends = undefined } = {}) {
   globalThis.__flybot__ = {
     t: hostT,
     call: (endpoint) => {
       if (endpoint === 'social/access') return Promise.resolve({ grants, note: '' })
-      if (endpoint === 'social/overview') return Promise.resolve({ incoming, outgoing: [] })
+      if (endpoint === 'social/overview') return Promise.resolve({ incoming, outgoing })
       if (endpoint === 'social/status') return Promise.resolve({ bots: [], home: '' })
       if (endpoint === 'social/face-rooms') return Promise.resolve({ rooms: [] })
       if (endpoint === 'social/settings') return Promise.resolve({})
@@ -218,6 +218,44 @@ test('#3004: the two inline confirmations speak the window’s language', async 
   } finally { delete globalThis.__flybot__ }
 })
 
+// #3032: the four controls #3004 left English — the other owner's card title, the per-pair Auto-send
+// link on both cards, and the friend row's Decline and pending tag. Each one is drawn on the card a
+// reader sees, so each is asserted where it is drawn and the English is asserted absent.
+test('#3032: the last four approval-card controls speak the window’s language', async () => {
+  const app = loadApp()
+  const english = "Waiting for the owner's approval"
+  fixtures({ incoming: [{ relationshipId: 'rel9', handle: '@eve.home', name: 'Eve' }], outgoing: [{ relationshipId: 'rel2', handle: '@sam.home', name: 'Sam' }] })
+  try {
+    const mine = { hooks: {}, effects: [], props: { item: pendingItem, canDecide: true, onDecide() {} } }
+    const owner = drawn(render(app.ChatApproval, mine))
+    assert.ok(owner.includes(zh['Auto-send from now on']), `expected ${zh['Auto-send from now on']} on the owner card, saw ${JSON.stringify(owner)}`)
+    assert.ok(!owner.includes('Auto-send from now on'), 'the English Auto-send link is still drawn on the owner card')
+
+    const held = { hooks: {}, effects: [], props: { held: { id: 'h1', from: '@me.home', to: '@eve.home' }, decide: async () => {} } }
+    const bubble = drawn(render(app.HeldReplyCard, held))
+    assert.ok(bubble.includes(zh['Auto-send from now on']), `expected ${zh['Auto-send from now on']} on the held-reply card, saw ${JSON.stringify(bubble)}`)
+    assert.ok(!bubble.includes('Auto-send from now on'), 'the English Auto-send link is still drawn on the held-reply card')
+
+    // Another owner's card is the one the core dock renders with its own `t` prop (flybot-slots.js
+    // passes it), so the test hands it the same translator the dock does.
+    const other = { hooks: {}, effects: [], props: { item: pendingItem, canDecide: false, t: hostT } }
+    const peer = drawn(render(app.ChatApproval, other))
+    assert.ok(peer.includes(zh[english]), `expected ${zh[english]} on another owner's card, saw ${JSON.stringify(peer)}`)
+    assert.ok(!peer.includes(english), 'the English waiting line is still drawn on another owner’s card')
+
+    const friend = { hooks: {}, effects: [], props: { onDone() {} } }
+    render(app.AddFriend, friend)
+    runEffects(friend)
+    await tick()
+    await tick()
+    const words = drawn(render(app.AddFriend, friend))
+    for (const key of ['Decline', 'pending']) {
+      assert.ok(words.includes(zh[key]), `expected ${zh[key]} (${key}) on the friend panel, saw ${JSON.stringify(words)}`)
+      assert.ok(!words.includes(key), `the English ${JSON.stringify(key)} is still drawn on the friend panel`)
+    }
+  } finally { delete globalThis.__flybot__ }
+})
+
 // The other direction: with no translator bound, the same cards keep today's English byte for byte
 // (a zh window is the only thing this change is allowed to move).
 test('#3004: with no translator the cards keep today’s English', () => {
@@ -226,7 +264,7 @@ test('#3004: with no translator the cards keep today’s English', () => {
   try {
     const inst = { hooks: {}, effects: [], props: { item: pendingItem, canDecide: true, onDecide() {} } }
     const words = drawn(render(app.ChatApproval, inst))
-    for (const key of ['Waiting for approval', 'Show more', 'Approve', 'Reject']) {
+    for (const key of ['Waiting for approval', 'Show more', 'Approve', 'Reject', 'Auto-send from now on']) {
       assert.ok(words.includes(key), `expected ${JSON.stringify(key)}, saw ${JSON.stringify(words)}`)
     }
   } finally { delete globalThis.__flybot__ }
