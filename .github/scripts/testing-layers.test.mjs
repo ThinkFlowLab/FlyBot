@@ -85,6 +85,33 @@ test('#749: a new test file nobody classified fails the check, and so does a new
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+// A linked worktree a developer parks under the checkout (`tmp/<branch>/`, carrying its own `.git`
+// file) is another repository's checkout, not a file this repository holds: its test copies are not
+// this check's to classify, while a genuinely new test file inside this repository still is.
+test('#749: a nested checkout under the root is not this repository\'s to classify', () => {
+  const root = fixture({
+    suites: [realSuite('core')],
+    workflows: [realWorkflow('test')],
+    files: ['core/test/a.test.js', 'misc/unregistered.test.js'],
+    workflowsOnDisk: ['.github/workflows/test.yml'],
+  })
+  try {
+    // A linked worktree: its `.git` is a file pointing at the main checkout's store.
+    const linked = join(root, 'tmp', 'w-stranger')
+    mkdirSync(join(linked, 'core', 'test'), { recursive: true })
+    writeFileSync(join(linked, '.git'), 'gitdir: /elsewhere/.git/worktrees/w-stranger\n')
+    writeFileSync(join(linked, 'core', 'test', 'copy.test.js'), '// another checkout\'s file\n')
+    // A full clone parked the same way: its `.git` is a directory.
+    const clone = join(root, 'tmp', 'clone-stranger')
+    mkdirSync(join(clone, 'core', 'test'), { recursive: true })
+    mkdirSync(join(clone, '.git'))
+    writeFileSync(join(clone, 'core', 'test', 'copy.test.js'), '// another checkout\'s file\n')
+    const { problems } = check({ root })
+    assert.equal(problems.length, 1, problems.join('\n'))
+    assert.ok(problems[0].includes('misc/unregistered.test.js'), problems.join('\n'))
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
 test('#749: a "none" row without a reason, and a stale doc, are both reported', () => {
   const suites = [
     realSuite('core'),
