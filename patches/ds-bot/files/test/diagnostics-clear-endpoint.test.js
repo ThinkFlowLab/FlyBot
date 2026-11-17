@@ -23,7 +23,10 @@ function channel() {
     warn: () => {},
     refresh: async () => {},
     readOnly: () => undefined,
+    // This stub host reaches the channel without the real authz module; the pairing marker says
+    // so deliberately (#3145), as a host that installed both would carry.
     authorize: () => ({ ok: true }),
+    authorizePaired: true,
     load: async () => {},
     diagnostics: { clear: async () => ({ leaf: 'truncated', rotated: 'kept' }) },
   }

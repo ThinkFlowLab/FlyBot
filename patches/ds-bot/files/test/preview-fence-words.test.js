@@ -96,7 +96,7 @@ test('the host room preview on the state answer keeps them too', async () => {
     state,
     ctx: { effect: (fn) => { fn(); return () => {} }, connection: { fetch: { register: (r) => { route = r; return () => {} } } } },
     warn: () => {}, noteFailure: () => {},
-    readOnly: () => undefined, authenticate: async () => null, authorize: () => ({ ok: true }),
+    readOnly: () => undefined, authenticate: async () => null, authorize: () => ({ ok: true }), authorizePaired: true,
     bootstrap: async () => {}, catalog: async () => [], loadSecrets: async () => {},
     cachedCatalog: () => [], cachedDefault: () => null,
     chatOf: id => `chat-${id}`, ownedLive: full => full, ownedView: full => full, load: async () => {}, refresh: async () => {},
