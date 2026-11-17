@@ -2753,20 +2753,28 @@ window.__ModuleLoader__.load({
         // The click is the person acting, so this is where the previous line goes (#3071).
         setError('')
         const sent = []
-        const failed = []
+        // One entry per person, in the order the batch reached them, each reason named once: the same
+        // person failing twice is one entry, and two people are two entries separated by a dot, so a
+        // name never reads as the tail of the reason before it (#3093 follow-up).
+        const failed = new Map()
         for (const item of mine.filter(waiting)) {
           const outcome = await decide(item, 'approve')
           if (outcome === true) sent.push(item)
           else if (outcome?.error) {
             const name = typeof item.toName === 'string' ? item.toName.trim() : ''
-            failed.push(name ? `${name}: ${outcome.error}` : outcome.error)
+            const reasons = failed.get(name) ?? []
+            if (!reasons.includes(outcome.error)) reasons.push(outcome.error)
+            failed.set(name, reasons)
           }
         }
         const reached = recipientNames(sent)
         if (reached.length) actions?.notify?.(tr('Sent to {to}', { to: reached.join(tr(', ')) }))
         // #3071: written once, after the last send, so no send in the batch can clear it again; the
         // receipt above still names only the people reached.
-        if (failed.length) setError(failed.join(' '))
+        if (failed.size) {
+          const entries = [...failed].map(([name, reasons]) => (name ? `${name}: ${reasons.join(', ')}` : reasons.join(', ')))
+          setError(entries.join(' · '))
+        }
       }
       // #3011: the button says what it will send and to whom, so the blast radius of a click that
       // cannot be undone is readable before it.
