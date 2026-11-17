@@ -222,6 +222,11 @@ const ZH = {
   'no longer shared': '已不再共享',
   'Messages waiting for your approval': '等你批准的消息',
   'Waiting for approval': '等待批准',
+  // #3032: the four approval-card controls that were still drawn as bare English.
+  "Waiting for the owner's approval": '等待 owner 批准',
+  'Auto-send from now on': '以后自动发送',
+  Decline: '拒绝',
+  pending: '等待中',
   'Decide on the reply bubble above.': '在上面的回复气泡里批准。',
   "Decide in {name}'s chat.": '在 {name} 的聊天里批准。',
   'Not sent': '未发出',
