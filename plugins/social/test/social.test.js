@@ -1782,6 +1782,47 @@ test('#3124: with no window, or a language the host does not translate, the note
   }
 })
 
+// #3133: the Not-sent line the host writes into the owner's chat with that Bot follows the window's
+// language, the same seam #3124 gave the approval notes. The #442 test below is the English control.
+test('#3133: a Chinese window gets the Not-sent line in Chinese', async (t) => {
+  const { ctx, call, stop } = await team()
+  t.after(stop)
+  await call('state', { locale: 'zh-CN' })
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = log.filter(e => e.bot === a.bot_id && e.cursor > since); return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const delivered = captureChatDeliveries(ctx)
+  const social = createSocial(ctx.flybot, { autoAccept: true, inboxPollMs: 0 }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  await social.remoteBots({ fresh: true })
+  assert.equal(await social.sendChat({ handle: '@coder.bob.home', text: 'Hi' }), '')
+  const via = server.calls.filter(c => c.name === 'send_as_member').at(-1).args.from_bot_id
+  log.push({ bot: via, cursor: 1, event_id: 'evt_nd_zh', event_type: 'message.not_delivered', message_id: 'msg_zh', conversation_id: 'c1', to: { bot_id: 'x1', handle: '@coder.bob.home', home_handle: '@bob.home', display_name: 'Coder' }, reason: 'not_shared_yet', trust: 'platform' })
+  assert.equal(await social.pollInbox(), 0, 'a notice is not a delivered message')
+  assert.equal(delivered.length, 1)
+  assert.equal(delivered[0].text, '未发送：Coder (Bob) 还没有准备好与你对话，因此没有收到你的消息。请重新发送。')
+  assert.equal(delivered.some(n => String(n.text).startsWith('Not sent:')), false, 'no English Not-sent line in a Chinese window')
+})
+
+// #3133: the one room line that names a lost call follows the window's language too. The #997 test
+// above is the English control.
+test('#3133: a Chinese window gets the no-call line in Chinese', async (t) => {
+  const typedLine = { authorKind: 'human', who: 'Danyang', text: "@Coder · Bob please look", authorId: 'owner-1' }
+  const refusing = attestingFaceServer({ refuse: true, features: ['typed_by_owner', 'mentions'] })
+  refusing.face.peer('123456')
+  const notices = []
+  const a = await faceFixture(t, refusing, (scoped) => {
+    const orig = scoped.rooms.postNotice?.bind(scoped.rooms)
+    scoped.rooms.postNotice = (id, text) => { notices.push(String(text)); return orig?.(id, text) }
+  })
+  await a.call('state', { locale: 'zh-CN' })
+  const before = notices.length
+  await a.fanout(typedLine, { mentions: ['@coder.bob.home'] })
+  assert.deepEqual(notices.slice(before), ['没有为 @coder.bob.home 发起调用：此连接器令牌无法证明输入行，对方主机会把这一行当作 Bot 的行。'], `the room line follows the window, saw ${JSON.stringify(notices.slice(before))}`)
+})
+
 const heldOutbound = {
   approval_id: 'apr-hold-1',
   kind: 'outbound_message',

@@ -74,6 +74,7 @@ import {
   revealHiddenIfPresent,
   waitingNote,
   rejectNote,
+  chineseUi,
 } from './hidden-remotes.js'
 
 export const NS = 'social'
@@ -2494,7 +2495,10 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       handle,
       home: event.to?.home_handle ? norm(event.to.home_handle) : undefined,
       name: cleanText(event.to?.display_name, handle),
-      text: `Not sent: ${friendBotTitle(handle)} was not ready to talk with you yet, so it did not get your message. Send it again.`,
+      // #3133: the note follows the window's language (#3124's seam); English is the fallback.
+      text: chineseUi(flybot.uiLanguage?.())
+        ? `未发送：${friendBotTitle(handle)} 还没有准备好与你对话，因此没有收到你的消息。请重新发送。`
+        : `Not sent: ${friendBotTitle(handle)} was not ready to talk with you yet, so it did not get your message. Send it again.`,
     })
   }
   // Tells the sender (through Bot Social) that this home could not hand their message to its Bot. A server
@@ -4221,7 +4225,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       // is the last resort for a server that stamps neither an id nor a cursor (#1063).
       const eventKey = faceEventKey(event, position)
       if (eventKey && seen.includes(eventKey)) continue
-      const line = renderFaceEvent(event, { attested })
+      const line = renderFaceEvent(event, { attested, language: flybot.uiLanguage?.() })
       if (!line) continue
       seen = rememberEvent(seen, eventKey)
       if (line.system) {
@@ -4263,7 +4267,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       if (handle && !localHandles.has(handle)) markRoomRemote(handle, snapshot.roomId)
       const key = `join:${handle}`
       if (!handle || previousLive.has(handle) || joinedFromEvents.has(handle) || seen.includes(key)) continue
-      const text = platformJoinText(member)
+      const text = platformJoinText(member, flybot.uiLanguage?.())
       if (alreadyJoined(text)) {
         seen = rememberEvent(seen, key)
         continue
@@ -4608,7 +4612,13 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           // itself (core `openingSpeakers`), attested or as the envelope, so its call is not lost.
           const seats = new Set((room.participants ?? []).filter(item => item.remote === true).map(item => norm(item.handle)))
           const lost = [...new Set(mentions.map(handle => (typeof handle === 'string' ? norm(handle) : '')).filter(handle => handle && seats.has(handle)))]
-          if (lost.length > 0) flybot.rooms.postNotice?.(room.id, `No call went out for ${lost.join(', ')}: this connector token may not attest typed lines, so the other home reads this line as a Bot's.`)
+          if (lost.length > 0) {
+            // #3133: the room line follows the window's language (#3124's seam); English is the fallback.
+            const lostLine = chineseUi(flybot.uiLanguage?.())
+              ? `没有为 ${lost.join(', ')} 发起调用：此连接器令牌无法证明输入行，对方主机会把这一行当作 Bot 的行。`
+              : `No call went out for ${lost.join(', ')}: this connector token may not attest typed lines, so the other home reads this line as a Bot's.`
+            flybot.rooms.postNotice?.(room.id, lostLine)
+          }
         }
         if (sent?.status === 'pending_approval') {
           rememberHoldRoom(sent.approvalId, serverId)
