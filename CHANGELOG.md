@@ -6,6 +6,14 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.35] - 2026-11-17
+
+### Fixed
+
+- A workflow whose node spells a fact with a space while the edge carries the canonical spelling no longer fails to save: the edge alignment check keys the node lists the same way the rest of the engine does, so `text: draft` on a node and `text:draft` on its edge are one fact.
+- Reading an issue number out of a line no longer turns a link's URL fragment into an issue reference: `https://example.com/page#123` used to name issue #123 and write a card for an issue nobody meant, while `owner/repo#12`, a bare `#12` and GitHub issue and pull-request links keep naming the issue they point at ([#2435](https://github.com/ThinkFlowLab/FlyBot/issues/2435)).
+- A preview now keeps the words on either side of a quoted remote line: a reply that quoted a line and then answered it showed the quote alone in the sidebar and the palette row.
+
 ## [0.2.34] - 2026-11-16
 
 ### Changed
@@ -1520,7 +1528,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.35...HEAD
+[0.2.35]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...v0.2.35
 [0.2.34]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...v0.2.34
 [0.2.33]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.31...v0.2.32
