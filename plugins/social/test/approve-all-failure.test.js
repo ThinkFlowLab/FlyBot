@@ -126,13 +126,13 @@ const localHold = (id, handle, name) => ({
 })
 const holds = () => [localHold('l1', '@eve.home', 'Eve'), localHold('l2', '@bob.home', 'Bob')]
 
-function harness({ decide }) {
+function harness({ decide, holdList = holds() }) {
   const state = { calls: [], notes: [], decide }
   globalThis.__flybot__ = {
     call: (endpoint, payload) => {
       state.calls.push([endpoint, payload])
       if (endpoint === 'social/status') return Promise.resolve({ approvals: [] })
-      if (endpoint === 'approvals') return Promise.resolve(holds())
+      if (endpoint === 'approvals') return Promise.resolve(holdList)
       if (endpoint === 'decide') {
         const answer = state.decide(payload)
         return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer)
@@ -222,5 +222,45 @@ test('#3093: a local reject is a decision, not a failed send', async () => {
     assert.doesNotMatch(drawn(after), /Not sent/, 'a decision that landed is not a failed send')
     assert.equal(find(after, byFlybot('hold-retry')), undefined, 'and it offers no Retry')
     assert.deepEqual(state.notes, [], 'a rejected card is not receipted as sent')
+  } finally { delete globalThis.__flybot__ }
+})
+
+// The batch's own line, read where the person reads it: one alert under the button (#3071 keeps it out
+// of the cards, whose own reason is #3093's record).
+function errorLine(tree) {
+  const node = find(tree, byFlybot('chat-approval-error'))
+  return node ? drawn(node) : undefined
+}
+
+test('a batch that fails two holds for one person names that person once', async () => {
+  const app = loadDock()
+  // The same reason twice is one thing that happened, not two: a line that says it twice reads as a
+  // stutter, and the person cannot tell it from a second, different failure.
+  const state = harness({
+    holdList: [localHold('l1', '@eve.home', 'Eve'), localHold('l2', '@eve.home', 'Eve')],
+    decide: () => new Error('the hold is stale'),
+  })
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byFlybot('approve-all')).props.onClick()
+    const after = render(app.ChatApprovalDock, first.inst, state.props)
+    assert.equal(errorLine(after), 'Eve: the hold is stale', `one entry per person and reason, saw ${JSON.stringify(errorLine(after))}`)
+    assert.equal(findAll(after, byFlybot('chat-approval')).length, 2, 'both cards are still there to read')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('a batch that fails two people separates their reasons and keeps each name', async () => {
+  const app = loadDock()
+  // Two different failures no longer run together as "Eve: the hold is stale Bob: …", where the second
+  // person's name looked like part of the first person's reason.
+  const state = harness({
+    holdList: [localHold('l1', '@eve.home', 'Eve'), localHold('l2', '@bob.home', 'Bob')],
+    decide: payload => new Error(payload.id === 'l1' ? 'the hold is stale' : 'Bot Social is unreachable'),
+  })
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byFlybot('approve-all')).props.onClick()
+    const after = render(app.ChatApprovalDock, first.inst, state.props)
+    assert.equal(errorLine(after), 'Eve: the hold is stale · Bob: Bot Social is unreachable', `each failure is its own entry, saw ${JSON.stringify(errorLine(after))}`)
   } finally { delete globalThis.__flybot__ }
 })

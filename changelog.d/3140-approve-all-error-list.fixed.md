@@ -1,0 +1,1 @@
+The **Approve all** line in a chat's approval dock now reports one entry per person: the same person failing twice is named once, and two people's failures are separated by a dot instead of running together, so a name is never read as the tail of the reason before it ([#3140](https://github.com/ThinkFlowLab/FlyBot/issues/3140)).
