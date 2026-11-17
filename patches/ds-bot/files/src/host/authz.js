@@ -238,6 +238,10 @@ export function install(rt) {
     }
   }
 
+  // #3145: channel.js refuses a handler reached without this marker. It is set whichever way
+  // `authzEnforced()` answers — a single-user install (false) is a supported pair, not a
+  // missing one — so the marker and `authorize` are installed together and never separately.
+  rt.authorizePaired = true
   rt.authorize = function authorize(actor, endpoint, body) {
     if (!rt.authzEnforced()) return ALLOW
     const ep = String(endpoint ?? '')

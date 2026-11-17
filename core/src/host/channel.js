@@ -323,6 +323,9 @@ export function install(rt) {
       // Actor is resolved once from the member session token; body.actorId / payload.actorId
       // grant nothing and are ignored (#48).
       const actor = sessionToken ? await rt.authenticate(sessionToken) : null
+      // authorize() and this handler are a pair (#3145): the gate below is what makes the
+      // fail-open-looking ownership test in chats.search safe; mounted alone, that test is skipped.
+      if (typeof rt.authorize !== 'function' || rt.authorizePaired !== true) return fail('This host mounts the channel handler without its authz module; install both (#3145).', 'bot/internal')
       const gate = rt.authorize(actor, endpoint, body)
       if (!gate.ok) return fail(gate.message, gate.code)
       switch (endpoint) {
