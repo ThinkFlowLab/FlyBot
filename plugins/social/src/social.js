@@ -435,6 +435,9 @@ export function mapJoinInviteError(error, { foreignHost } = {}) {
   if (/rate_limited/i.test(blob)) {
     return Object.assign(new Error('Too many tries. Wait a moment and try again.'), { code: 'rate_limited' })
   }
+  // An emergency stop is a state the owner can end, not a dead invite: the same one sentence as the
+  // share and the face room, with the server's code kept (#3114).
+  if (/bot_frozen/i.test(blob)) return mapFaceError({ error: { code: 'bot_frozen' } }, 403)
   return error
 }
 
@@ -3337,6 +3340,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (/friend_not_found|no such friend|unknown friend/i.test(blob)) {
       return new Error('That friend is not on this server.')
     }
+    // An emergency stop is a state the owner can end, not a failure of the share: the face-room
+    // sentence is the one line for all three doors (#3114).
+    if (/bot_frozen/i.test(blob)) return mapFaceError({ error: { code: 'bot_frozen' } }, 403)
     if (/not connected|no token|no server URL/i.test(blob)) {
       return new Error('Bot Social is disconnected. Reconnect under Settings → Bot Social.')
     }

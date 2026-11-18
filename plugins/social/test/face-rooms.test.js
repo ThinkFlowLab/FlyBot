@@ -99,6 +99,18 @@ test('error mapping covers the FACE_ROOMS.md codes', () => {
   assert.equal(formatRetryAfter(60), '1 minute')
 })
 
+test('#3114: a frozen Bot is one human line, and its room has not ended', () => {
+  // The server answers `403 bot_frozen` on either end of a relationship; a stop is a state its owner
+  // can end, so the refusal must not read like a room that is gone (#3114).
+  const frozen = mapFaceError({ error: { code: 'bot_frozen', message: 'bot is frozen (emergency stop)' } }, 403)
+  assert.equal(frozen.code, 'bot_frozen')
+  assert.equal(frozen.message, 'One of these Bots is emergency-stopped on Bot Social. Its owner can resume it in My Bots on that server, then try again.')
+  assert.doesNotMatch(frozen.message, /bot is frozen|emergency stop\)|bot_frozen|grant_bot_to_friend/i)
+  // The words `alreadyLeftFace` reads as an ending must not creep in with the friendly sentence.
+  assert.doesNotMatch(frozen.message, /not available|has closed|no longer|not one of yours/i)
+  assert.equal(alreadyLeftFace(frozen), false)
+})
+
 test('a 5xx at join says Bot Social is not answering, not "try another number"', () => {
   const copy = 'Bot Social is not answering right now. Try again in a moment.'
   for (const status of [500, 502, 503, 530]) {
