@@ -18,14 +18,16 @@ export const FOLD_THRESHOLDS = {
   standard: { lines: 12, chars: 800 },
 }
 
-export const DEFAULT_FOLDING = { mode: 'standard' }
+export const DEFAULT_FOLDING = { mode: 'standard', documentCards: true }
 
 const MODE_SET = new Set(FOLD_MODES)
 
 export function foldingOf(prefs) {
   const raw = prefs?.folding
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_FOLDING }
-  return { mode: MODE_SET.has(raw.mode) ? raw.mode : DEFAULT_FOLDING.mode }
+  // The card switch sits beside the folding record, not inside it (#3114).
+  const documentCards = prefs?.documentCards !== false
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_FOLDING, documentCards }
+  return { mode: MODE_SET.has(raw.mode) ? raw.mode : DEFAULT_FOLDING.mode, documentCards }
 }
 
 function clipWord(line, max) {
@@ -150,6 +152,7 @@ export function documentCount(text) {
 }
 
 export function showsDocumentCard(text, folding) {
+  if (folding?.documentCards === false) return false
   if (folding?.mode === 'none') return false
   return isLongDocument(text)
 }

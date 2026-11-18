@@ -431,6 +431,7 @@ has lines (#2790, `core/test/room-read-floor-clamp.test.js`).
 ### The message-folding preference (#3114)
 
 - `set-prefs` takes `folding: { mode: 'compact' | 'standard' | 'none' }` and stores it as `state.prefs.folding`. `folding: null` deletes the record, so the client's own default (standard) reads again; any other shape or mode is refused with `Message folding must be compact, standard or none` rather than stored as a mode no bubble can draw. The mode is one team-wide value, like the theme, and the client reads it back through `foldingOf` beside the bubble that folds (`core/src/client/message-fold.js`).
+- The document-card switch is a pref of its own: `set-prefs` takes `documentCards: false` and stores `state.prefs.documentCards` at the top of `prefs`, `null`/`true` delete it (on is the default, so only off is kept), and any other value is refused with `Document cards must be on or off` rather than stored. It sits beside `folding` and not inside it, so writing a folding mode rewrites `{ mode }` without clearing the switch; the response stays `ok(state.prefs)`.
 
 ### Own-chat reads say what a cap left out (#1906)
 

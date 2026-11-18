@@ -1133,7 +1133,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -149,14 +149,44 @@ const ZH = {
+@@ -149,14 +149,47 @@ const ZH = {
    About: '简介',
    'Show less': '收起',
    'Show more': '展开',
@@ -1143,6 +1143,9 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  Standard: '标准',
 +  'No folding': '不折叠',
 +  'Message folding must be compact, standard or none': '消息折叠必须是紧凑、标准或不折叠',
++  'Document cards': '文档卡片',
++  'Show a long document as a card you can read beside the chat.': '长文档显示为卡片，可在对话旁阅读全文。',
++  'Document cards must be on or off': '文档卡片必须是开或关',
 +  'Open beside the conversation': '在对话旁打开',
 +  'Opened beside the conversation.': '已在对话旁打开。',
 +  'Close document': '关闭文档',
@@ -13672,7 +13675,7 @@ diff --git a/test/install.test.js b/test/install.test.js
    // A refusal from the team code keeps its message for the user.
    assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
    // Off the Desktop profile there are no Bot browsers.
-@@ -157,6 +157,23 @@ const TEAM = {
+@@ -157,6 +157,39 @@ const TEAM = {
    questions: {},
  }
  
@@ -13691,6 +13694,22 @@ diff --git a/test/install.test.js b/test/install.test.js
 +  assert.deepEqual((await call('set-prefs', { folding: { mode: 'standard' } })).value.folding, { mode: 'standard' })
 +  assert.equal('folding' in (await call('set-prefs', { folding: null })).value, false)
 +  assert.equal((await call('set-prefs', { folding: { mode: 'none' } })).value.folding.mode, 'none')
++})
++
++// The document-cards switch (#3114) is a team preference of its own, kept beside the folding
++// mode rather than inside it: off is stored, on is the absence of the record, and a value no
++// page can draw is refused instead of stored.
++test('set-prefs stores the document-cards switch and refuses anything else (#3114)', async (t) => {
++  const { call, stop } = start(TEAM)
++  t.after(stop)
++  assert.equal((await call('set-prefs', { documentCards: false })).value.documentCards, false)
++  assert.equal('documentCards' in (await call('set-prefs', { documentCards: null })).value, false)
++  assert.equal((await call('set-prefs', { documentCards: false })).value.documentCards, false)
++  for (const documentCards of ['off', 0, ['false'], { on: false }]) {
++    assert.deepEqual((await call('set-prefs', { documentCards })).error, { code: 'bot/invalid', message: 'Document cards must be on or off', details: {} })
++  }
++  assert.equal((await call('state')).value.prefs.documentCards, false, 'a refusal stores nothing')
++  assert.equal('documentCards' in (await call('set-prefs', { documentCards: true })).value, false)
 +})
 +
  test('in the Desktop profile read_browser is the last tool and reads through the window', async (t) => {

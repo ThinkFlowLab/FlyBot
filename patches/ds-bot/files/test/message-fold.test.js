@@ -89,6 +89,8 @@ test('#3114: a message over the cap folds, one at the cap stays open', () => {
   assert.equal(compact.lines, 4)
   assert.equal(standard.lines, 12)
   assert.equal(foldingOf(undefined).mode, 'standard')
+  assert.equal(foldingOf(undefined).documentCards, true, 'the document card is on by default')
+  assert.equal(foldingOf({ folding: { mode: 'compact' } }).documentCards, true, 'a folding mode alone keeps the card on')
   assert.equal(shouldFold(lines(standard.lines), 'standard'), false, '12 lines stay open')
   assert.equal(shouldFold(lines(standard.lines + 1), 'standard'), true, '13 lines fold')
   assert.equal(shouldFold('x'.repeat(compact.chars), 'compact'), false, '240 characters stay open')
@@ -214,4 +216,43 @@ test('#3114: the document pane draws the whole text and closes', () => {
   const close = walk(pane, item => item.props?.['aria-label'] === 'Close document')[0]
   close.props.onClick()
   assert.equal(closed, 1, 'the pane closes once')
+})
+
+// General → Document cards (#3114). Off takes away the card and its Show message text at every
+// folding mode and leaves the reply folded by the same cap as any other; on is what the bubble
+// drew before the switch existed.
+test('#3114: with document cards off a long document folds like any other reply', () => {
+  const body = runbook()
+  const seen = (mode, documentCards) => fresh({ text: body, roster: { ...roster, prefs: { folding: { mode }, documentCards } } })
+  for (const mode of ['compact', 'standard']) {
+    const off = seen(mode, false)
+    assert.equal(classed(off, 'bt-doc-card').length, 0, `no card when the switch is off and ${mode}`)
+    assert.ok(!text(off).includes('Show message text'), `no Show message text when the switch is off and ${mode}`)
+    assert.equal(toggles(off).length, 1, `${mode} folds the document like any other reply`)
+    assert.equal(text(toggles(off)[0]), 'Show more', 'and offers Show more')
+    assert.ok(!text(off).includes('Step 10'), 'the preview stops before the end')
+  }
+  const none = seen('none', false)
+  assert.equal(classed(none, 'bt-doc-card').length, 0, 'no card when the switch is off and nothing folds')
+  assert.ok(text(none).includes('Step 10'), 'and the whole text is drawn')
+  // On is today: the card, or the whole text when folding itself is off.
+  for (const mode of ['standard', 'compact']) {
+    const on = seen(mode, true)
+    assert.equal(classed(on, 'bt-doc-card').length, 1, `the card is drawn when the switch is on and ${mode}`)
+    assert.equal(text(toggles(on)[0]), 'Show message text', 'and the text stays one press away')
+  }
+  const open = seen('none', true)
+  assert.equal(classed(open, 'bt-doc-card').length, 0, 'no card when folding is off')
+  assert.ok(text(open).includes('Step 10'), 'and the whole text is drawn')
+  // A streaming reply is whole and cardless whatever the switch says.
+  for (const documentCards of [true, false]) {
+    const streaming = fresh({ text: body, streaming: true, roster: { ...roster, prefs: { documentCards } } })
+    assert.equal(classed(streaming, 'bt-doc-card').length, 0, 'a streaming reply draws no card')
+    assert.ok(text(streaming).includes('Step 10'), 'and is drawn whole')
+  }
+  // A long reply with no headings or sections is not a document: the switch changes nothing.
+  const plain = fresh({ text: numbered(20), roster: { ...roster, prefs: { documentCards: false } } })
+  assert.equal(classed(plain, 'bt-doc-card').length, 0, 'a long reply draws no card either way')
+  assert.equal(toggles(plain).length, 1, 'and folds the same')
+  assert.equal(text(toggles(plain)[0]), 'Show more', 'with Show more')
 })

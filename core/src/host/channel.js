@@ -322,6 +322,13 @@ export function install(rt) {
       else if (typeof raw === 'object' && !Array.isArray(raw) && FOLD_MODES.has(mode)) state.prefs.folding = { mode }
       else throw invalid('Message folding must be compact, standard or none')
     }
+    // Document cards (#3114): a switch of its own at the top of `prefs`, so rewriting the
+    // folding mode above never clears it. On is the default, so only off is stored.
+    if (body.documentCards !== undefined) {
+      if (body.documentCards === null || body.documentCards === true) delete state.prefs.documentCards
+      else if (body.documentCards === false) state.prefs.documentCards = false
+      else throw invalid('Document cards must be on or off')
+    }
     return rt.save()
   }
 

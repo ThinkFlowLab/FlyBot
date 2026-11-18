@@ -492,6 +492,9 @@ var ZH = {
   Standard: "标准",
   "No folding": "不折叠",
   "Message folding must be compact, standard or none": "消息折叠必须是紧凑、标准或不折叠",
+  "Document cards": "文档卡片",
+  "Show a long document as a card you can read beside the chat.": "长文档显示为卡片，可在对话旁阅读全文。",
+  "Document cards must be on or off": "文档卡片必须是开或关",
   "Open beside the conversation": "在对话旁打开",
   "Opened beside the conversation.": "已在对话旁打开。",
   "Close document": "关闭文档",
@@ -7276,12 +7279,13 @@ var FOLD_THRESHOLDS = {
   compact: { lines: 4, chars: 240 },
   standard: { lines: 12, chars: 800 }
 };
-var DEFAULT_FOLDING = { mode: "standard" };
+var DEFAULT_FOLDING = { mode: "standard", documentCards: true };
 var MODE_SET = new Set(FOLD_MODES);
 function foldingOf(prefs) {
   const raw = prefs?.folding;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_FOLDING };
-  return { mode: MODE_SET.has(raw.mode) ? raw.mode : DEFAULT_FOLDING.mode };
+  const documentCards = prefs?.documentCards !== false;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_FOLDING, documentCards };
+  return { mode: MODE_SET.has(raw.mode) ? raw.mode : DEFAULT_FOLDING.mode, documentCards };
 }
 function clipWord(line2, max) {
   if (line2.length <= max) return line2;
@@ -7388,6 +7392,7 @@ function documentCount(text2) {
   return Math.max(documentHeadings(text2).length, documentSections(text2).length, 1);
 }
 function showsDocumentCard(text2, folding) {
+  if (folding?.documentCards === false) return false;
   if (folding?.mode === "none") return false;
   return isLongDocument(text2);
 }
@@ -20340,7 +20345,8 @@ function GeneralPage({ roster, actions, run }) {
       (0, import_react45.createElement)(
         SetSection,
         { key: "folding", title: t("Message folding") },
-        (0, import_react45.createElement)(SetRow, { label: t("Message folding"), hint: t(foldModeLabel(folding.mode)) })
+        (0, import_react45.createElement)(SetRow, { label: t("Message folding"), hint: t(foldModeLabel(folding.mode)) }),
+        (0, import_react45.createElement)(SetRow, { label: t("Document cards"), hint: folding.documentCards ? t("On") : t("Off") })
       ),
       (0, import_react45.createElement)(
         SetSection,
@@ -20422,7 +20428,13 @@ function GeneralPage({ roster, actions, run }) {
             if (folding.mode !== id) run(actions.setPrefs({ folding: { mode: id } }));
           }
         }, t(label))))
-      )
+      ),
+      (0, import_react45.createElement)(SwitchRow, {
+        label: t("Document cards"),
+        hint: t("Show a long document as a card you can read beside the chat."),
+        on: folding.documentCards,
+        onChange: (on) => run(actions.setPrefs({ documentCards: on }))
+      })
     ),
     // One switch for every system notification (#353), then one per kind (#469).
     (0, import_react45.createElement)(
