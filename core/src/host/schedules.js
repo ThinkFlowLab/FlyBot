@@ -696,13 +696,17 @@ export function install(rt) {
         if (at?.botId !== botId) return
         rows.push({
           at: when ?? '',
+          live: status === 'active' && when !== undefined,
           line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
         })
       }
       for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
       for (const entry of Object.values(paused())) add({ ...entry.record, id: entry.id, sessionId: entry.sessionId }, 'paused', undefined)
       if (rows.length === 0) return `${head}\nnone — no scheduled task in any of its Sessions, so this is the whole list for the Bot.`
-      rows.sort((a, b) => a.at.localeCompare(b.at) || a.line.localeCompare(b.line))
+      // A live row comes first, then the rows with no next run (#3174): sorting on the instant
+      // alone put every dead row above the tasks still due, because a paused row has none and a
+      // finished one-shot keeps a past one (#2767). Each group keeps instant order inside itself.
+      rows.sort((a, b) => (a.live === b.live ? 0 : a.live ? -1 : 1) || a.at.localeCompare(b.at) || a.line.localeCompare(b.line))
       return [head, ...rows.map(row => row.line)].join('\n')
     },
   }))
