@@ -261,7 +261,7 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   const general = mount(baseRoster, 'general', null, 'GeneralPage').nodes
   assert.equal(general.filter(node => node.type === 'select').length, 1, 'General keeps its theme select')
   assert.equal(general.filter(node => node.type === 'input').length, 1, 'General keeps its colour field')
-  assert.equal(counts(general), 7, 'General keeps its four switches beside the send-key picker')
+  assert.equal(counts(general), 8, 'General keeps its four switches beside the send-key and folding pickers')
   assert.equal(general.filter(node => node.type === Segmented && node.props?.label === 'Send shortcut').length, 1, 'General draws the send-key picker')
 
   const bots = mount(baseRoster, 'bots', null, 'BotsPage').nodes
@@ -288,7 +288,8 @@ test('Settings → General picks the message folding mode and writes it through 
   assert.deepEqual(buttons.map(text), ['Compact', 'Standard', 'No folding'])
   assert.deepEqual(buttons.map(button => button.props['aria-pressed']), [true, false, false], 'the stored mode is the one in use')
   buttons[1].props.onClick()
-  assert.deepEqual(written, [{ folding: { mode: 'standard' } }], 'Standard asks the host to store standard')
+  // The page runs inside a vm realm, so its own object is compared by value, not by prototype.
+  assert.deepEqual(JSON.parse(JSON.stringify(written)), [{ folding: { mode: 'standard' } }], 'Standard asks the host to store standard')
   const locked = mount({ ...roster, readOnly: SENTENCE }, 'general', null, 'GeneralPage').nodes
   assert.equal(locked.filter(node => node.type === Segmented && node.props?.label === 'Message folding').length, 0, 'a locked page draws no folding picker')
   assert.ok(text(locked).includes('Compact'), 'and keeps the mode in use as text')

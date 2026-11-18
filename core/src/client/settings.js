@@ -25,6 +25,7 @@ import { FolderMenu } from './folder-menu.js'
 import { AboutPage } from './about.js'
 import { t } from './i18n.js'
 import { readOnlyLine } from './read-only.js'
+import { foldingOf } from './message-fold.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
@@ -54,6 +55,10 @@ const NOTIFY_KINDS = [
 // (composer.js writes localStorage), so the host stores no send-key field.
 const SEND_KEY_LABELS = [['enter', 'Enter to send'], ['shift-enter', 'Shift+Enter to send']]
 const sendKeyLabel = key => SEND_KEY_LABELS.find(([id]) => id === key)?.[1] ?? SEND_KEY_LABELS[0][1]
+// How much of a long message shows before it folds (#3114). The host keeps the choice, so
+// the row writes `set-prefs` and every window folds the same way.
+const FOLD_MODE_LABELS = [['compact', 'Compact'], ['standard', 'Standard'], ['none', 'No folding']]
+const foldModeLabel = mode => FOLD_MODE_LABELS.find(([id]) => id === mode)?.[1] ?? 'Standard'
 // Settings → Plugins (#2564): the four feature plugins, each with one switch. The
 // switch writes FlyBot's state.json; the packages stay installed and the next start
 // reads the answer, so nothing unloads from the session that flipped it.
@@ -112,6 +117,7 @@ function PluginsPage({ call }) {
 // General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {}
+  const folding = foldingOf(prefs)
   const themes = allThemes()
   const current = themes[prefs.theme] ? prefs.theme : 'deepseek'
   const [custom, setCustom] = useState(prefs.accent ?? '#4d6bfe')
@@ -134,6 +140,8 @@ function GeneralPage({ roster, actions, run }) {
         h(SetRow, { label: t('Accent'), hint: accent ? t(capitalize(accent)) : prefs.accent ?? t('Default') })),
       h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
         h(SetRow, { label: t('Send shortcut'), hint: t(sendKeyLabel(sendKey)) })),
+      h(SetSection, { key: 'folding', title: t('Message folding') },
+        h(SetRow, { label: t('Message folding'), hint: t(foldModeLabel(folding.mode)) })),
       h(SetSection, { key: 'notify', title: t('Notifications') },
         h(SetRow, { label: t('In other chats'), hint: prefs.notifications !== false ? t('On') : t('Off') }),
         NOTIFY_KINDS.map(([kind, label]) => h(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t('On') : t('Off') }))),
@@ -162,6 +170,15 @@ function GeneralPage({ roster, actions, run }) {
           key: id, type: 'button', 'aria-pressed': sendKey === id,
           onClick: () => chooseSendKey(id),
         }, t(sendKeyLabel(id))))))),
+    h(SetSection, { key: 'folding', title: t('Message folding') },
+      h(SetRow, {
+        label: t('Message folding'),
+        hint: t('Choose how much of a long message to show before it folds.'),
+      },
+        h(Segmented, { label: t('Message folding'), value: folding.mode, className: 'bt-appearance-seg' }, FOLD_MODE_LABELS.map(([id, label]) => h('button', {
+          key: id, type: 'button', 'aria-pressed': folding.mode === id,
+          onClick: () => { if (folding.mode !== id) run(actions.setPrefs({ folding: { mode: id } })) },
+        }, t(label)))))),
     // One switch for every system notification (#353), then one per kind (#469).
     h(SetSection, { key: 'notify', title: t('Notifications') },
       h(SwitchRow, {

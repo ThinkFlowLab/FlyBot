@@ -12,6 +12,9 @@ import { visibleText } from '../shared/preview.js'
 import { excerpt } from './text.js'
 
 const NOTIFY_KINDS = ['approval', 'finished', 'failed']
+// How much of a long message a bubble shows before it folds (#3114); the client reads the
+// mode back through `foldingOf`, which treats anything else as the default.
+const FOLD_MODES = new Set(['compact', 'standard', 'none'])
 const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
 // How long a burst of the user's lines is collected before it opens one turn (#642).
 const SETTLE_MS = 1_500
@@ -309,6 +312,15 @@ export function install(rt) {
       const budget = readTurnBudget(body.turnBudget)
       if (budget === undefined) delete state.prefs.turnBudget
       else state.prefs.turnBudget = budget
+    }
+    // Message folding (#3114): a team-wide mode in `{ mode }`; `null` clears it back to the
+    // default, and a mode no bubble can draw is refused instead of stored.
+    if (body.folding !== undefined) {
+      const raw = body.folding
+      const mode = raw?.mode ?? state.prefs.folding?.mode ?? 'standard'
+      if (raw === null) delete state.prefs.folding
+      else if (typeof raw === 'object' && !Array.isArray(raw) && FOLD_MODES.has(mode)) state.prefs.folding = { mode }
+      else throw invalid('Message folding must be compact, standard or none')
     }
     return rt.save()
   }

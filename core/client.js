@@ -486,6 +486,12 @@ var ZH = {
   About: "简介",
   "Show less": "收起",
   "Show more": "展开",
+  "Message folding": "消息折叠",
+  "Choose how much of a long message to show before it folds.": "选择长消息在对话里折叠前展示多少内容。",
+  Compact: "紧凑",
+  Standard: "标准",
+  "No folding": "不折叠",
+  "Message folding must be compact, standard or none": "消息折叠必须是紧凑、标准或不折叠",
   "Showing {shown} of {count}": "显示 {shown} / {count}",
   "Showing all {count}": "显示全部 {count}",
   "Admin leads": "管理员主持",
@@ -20070,6 +20076,8 @@ var NOTIFY_KINDS = [
 ];
 var SEND_KEY_LABELS = [["enter", "Enter to send"], ["shift-enter", "Shift+Enter to send"]];
 var sendKeyLabel = (key) => SEND_KEY_LABELS.find(([id]) => id === key)?.[1] ?? SEND_KEY_LABELS[0][1];
+var FOLD_MODE_LABELS = [["compact", "Compact"], ["standard", "Standard"], ["none", "No folding"]];
+var foldModeLabel = (mode) => FOLD_MODE_LABELS.find(([id]) => id === mode)?.[1] ?? "Standard";
 function PluginsView({ answer = null, error = "", onFlip }) {
   const plugins = answer?.plugins ?? [];
   const profile = typeof answer?.profile === "string" && answer.profile !== "" ? answer.profile : "<profile>";
@@ -20133,6 +20141,7 @@ function PluginsPage({ call: call4 }) {
 }
 function GeneralPage({ roster, actions, run }) {
   const prefs = roster.prefs ?? {};
+  const folding = foldingOf(prefs);
   const themes = allThemes();
   const current = themes[prefs.theme] ? prefs.theme : "deepseek";
   const [custom, setCustom] = (0, import_react45.useState)(prefs.accent ?? "#4d6bfe");
@@ -20160,6 +20169,11 @@ function GeneralPage({ roster, actions, run }) {
         SetSection,
         { key: "shortcuts", title: t("Shortcuts") },
         (0, import_react45.createElement)(SetRow, { label: t("Send shortcut"), hint: t(sendKeyLabel(sendKey)) })
+      ),
+      (0, import_react45.createElement)(
+        SetSection,
+        { key: "folding", title: t("Message folding") },
+        (0, import_react45.createElement)(SetRow, { label: t("Message folding"), hint: t(foldModeLabel(folding.mode)) })
       ),
       (0, import_react45.createElement)(
         SetSection,
@@ -20222,6 +20236,25 @@ function GeneralPage({ roster, actions, run }) {
           "aria-pressed": sendKey === id,
           onClick: () => chooseSendKey(id)
         }, t(sendKeyLabel(id)))))
+      )
+    ),
+    (0, import_react45.createElement)(
+      SetSection,
+      { key: "folding", title: t("Message folding") },
+      (0, import_react45.createElement)(
+        SetRow,
+        {
+          label: t("Message folding"),
+          hint: t("Choose how much of a long message to show before it folds.")
+        },
+        (0, import_react45.createElement)(Segmented, { label: t("Message folding"), value: folding.mode, className: "bt-appearance-seg" }, FOLD_MODE_LABELS.map(([id, label]) => (0, import_react45.createElement)("button", {
+          key: id,
+          type: "button",
+          "aria-pressed": folding.mode === id,
+          onClick: () => {
+            if (folding.mode !== id) run(actions.setPrefs({ folding: { mode: id } }));
+          }
+        }, t(label))))
       )
     ),
     // One switch for every system notification (#353), then one per kind (#469).

@@ -1090,10 +1090,16 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -149,14 +149,31 @@ const ZH = {
+@@ -149,14 +149,37 @@ const ZH = {
    About: '简介',
    'Show less': '收起',
    'Show more': '展开',
++  'Message folding': '消息折叠',
++  'Choose how much of a long message to show before it folds.': '选择长消息在对话里折叠前展示多少内容。',
++  Compact: '紧凑',
++  Standard: '标准',
++  'No folding': '不折叠',
++  'Message folding must be compact, standard or none': '消息折叠必须是紧凑、标准或不折叠',
 +  'Showing {shown} of {count}': '显示 {shown} / {count}',
 +  'Showing all {count}': '显示全部 {count}',
    'Admin leads': '管理员主持',
@@ -13607,6 +13613,30 @@ diff --git a/test/install.test.js b/test/install.test.js
    // A refusal from the team code keeps its message for the user.
    assert.deepEqual((await call('delete-bot', { id: 'nobody' })).error, { code: 'bot/refused', message: 'Unknown Bot', details: {} })
    // Off the Desktop profile there are no Bot browsers.
+@@ -157,6 +157,23 @@ const TEAM = {
+   questions: {},
+ }
+ 
++// The message folding mode (#3114) is a team preference: one window writes it, and every window
++// reads it back through the roster, where `foldingOf` decides how much of a long message shows.
++// `null` clears it to the default, and a mode no bubble can draw is refused rather than stored.
++test('set-prefs stores the message folding mode and refuses any other one (#3114)', async (t) => {
++  const { call, stop } = start(TEAM)
++  t.after(stop)
++  assert.deepEqual((await call('set-prefs', { folding: { mode: 'compact' } })).value.folding, { mode: 'compact' })
++  assert.deepEqual((await call('state')).value.prefs.folding, { mode: 'compact' })
++  for (const folding of [{ mode: 'wild' }, ['compact'], 'compact']) {
++    assert.deepEqual((await call('set-prefs', { folding })).error, { code: 'bot/invalid', message: 'Message folding must be compact, standard or none', details: {} })
++  }
++  assert.deepEqual((await call('state')).value.prefs.folding, { mode: 'compact' }, 'a refusal stores nothing')
++  assert.deepEqual((await call('set-prefs', { folding: { mode: 'standard' } })).value.folding, { mode: 'standard' })
++  assert.equal('folding' in (await call('set-prefs', { folding: null })).value, false)
++  assert.equal((await call('set-prefs', { folding: { mode: 'none' } })).value.folding.mode, 'none')
++})
++
+ test('in the Desktop profile read_browser is the last tool and reads through the window', async (t) => {
+   const { ctx, call, stop } = start(TEAM, { services: { profileContext: { name: 'desktop' } } })
+   t.after(stop)
 diff --git a/test/member-status.test.js b/test/member-status.test.js
 --- a/test/member-status.test.js
 +++ b/test/member-status.test.js
