@@ -264,3 +264,60 @@ test('a batch that fails two people separates their reasons and keeps each name'
     assert.equal(errorLine(after), 'Eve: the hold is stale · Bob: Bot Social is unreachable', `each failure is its own entry, saw ${JSON.stringify(errorLine(after))}`)
   } finally { delete globalThis.__flybot__ }
 })
+
+// P-812 residual: the line above is one click's whole report, so its shape is bounded too. A batch
+// can fail for many people at once and a host reason can be a whole paragraph; an alert read at a
+// glance must not become a wall of text. The rows are capped, the rest is counted in the window's
+// own words, and a single reason is cut.
+test('a batch that fails many people caps the rows and counts the rest', async () => {
+  const app = loadDock()
+  const people = ['Eve', 'Bob', 'Ada', 'Cy', 'Dee']
+  const holdList = people.map((name, index) => localHold(`l${index + 1}`, `@${name.toLowerCase()}.home`, name))
+  const state = harness({ holdList, decide: payload => new Error(`reason-${payload.id}`) })
+  try {
+    const first = await openChat(app, state)
+    const all = find(first.tree, byFlybot('approve-all'))
+    assert.ok(all, 'five waiting holds offer Approve all')
+    await all.props.onClick()
+    const after = render(app.ChatApprovalDock, first.inst, state.props)
+    const line = errorLine(after)
+    assert.equal(line, 'Eve: reason-l1 · Bob: reason-l2 · Ada: reason-l3 · 2 more not shown', `three rows and the count of the rest, saw ${JSON.stringify(line)}`)
+    assert.doesNotMatch(line, /Cy: reason-l4|Dee: reason-l5/, 'the line does not grow with the batch')
+    assert.equal(findAll(after, byFlybot('chat-approval')).length, 5, 'every card stays drawn, with its own reason')
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('the count of the rows the line leaves out follows the window language', async () => {
+  const { DICTIONARY } = await import('../../../core/src/client/i18n.js')
+  const translate = (text, params) => String(DICTIONARY.zh[text] ?? text).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+  const people = ['Eve', 'Bob', 'Ada', 'Cy', 'Dee']
+  const holdList = people.map((name, index) => localHold(`l${index + 1}`, `@${name.toLowerCase()}.home`, name))
+  const state = harness({ holdList, decide: payload => new Error(`reason-${payload.id}`) })
+  state.props = { ...state.props, t: translate }
+  const app = loadDock()
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byFlybot('approve-all')).props.onClick()
+    const line = errorLine(render(app.ChatApprovalDock, first.inst, state.props))
+    assert.match(line, /还有 2 条未显示$/, `the tail is the dictionary sentence, saw ${JSON.stringify(line)}`)
+  } finally { delete globalThis.__flybot__ }
+})
+
+test('a reason longer than a paragraph is cut inside the line', async () => {
+  const app = loadDock()
+  // Two holds of one person are one row, so the row cap cannot hide the length of a single reason.
+  const long = '🚀'.repeat(600)
+  const state = harness({
+    holdList: [localHold('l1', '@eve.home', 'Eve'), localHold('l2', '@eve.home', 'Eve')],
+    decide: () => new Error(long),
+  })
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byFlybot('approve-all')).props.onClick()
+    const line = errorLine(render(app.ChatApprovalDock, first.inst, state.props))
+    assert.ok(line.length < 500, `one reason does not own the whole line, saw ${line.length} characters`)
+    assert.match(line, /…$/, `the cut is marked, saw ${JSON.stringify(line.slice(-6))}`)
+    assert.ok(line.isWellFormed(), 'the cut lands on a code point, never inside an emoji')
+    assert.ok(!/\p{Surrogate}/u.test(line), 'no lone surrogate survives the cut')
+  } finally { delete globalThis.__flybot__ }
+})
