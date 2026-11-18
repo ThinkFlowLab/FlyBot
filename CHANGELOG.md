@@ -6,6 +6,24 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.37] - 2026-11-19
+
+### Added
+
+- The memory dialog has a directory of own and team topics and a search over the entries it already loaded, so finding one memory no longer means scrolling the whole list. (#3114)
+- A long chat message now opens as a whole-line preview with one **Show more** control in the bubble: the whole reply is one press away, **Show less** folds it back, and a reply still streaming or under the cap is never folded ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A message now opens the same menu on a right-click as its hover toolbar, and a person's own line carries Reply and the same Copy/Download menu a reply does; a copy or a download the window cannot do says why in the menu instead of failing silently ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- General → Shortcuts now offers **Shift+Enter to send** (Enter starts a new line) beside the default Enter-to-send; the choice is kept for this window. ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114))
+- A sidebar session filter that hides every row now says why the list is empty — **No group chats**, **No direct chats** or **No unread chats** — instead of leaving a blank panel ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The sidebar session list now offers **All**, **Group chats**, **Direct chats**, and **Unread** filters above it, so a long list can be narrowed to rooms, to Bots and the coding agent, or to the rows already showing an unread mark; the filter bar is only drawn in the wide sidebar ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+
+### Fixed
+
+- The **Approve all** button in a chat's approval dock and the count in its tooltip now follow the window's language: a Chinese window reads 全部批准（3） and 共 3 条 · 发给 Eve, Bob instead of English, and an English window no longer reads 条 in its tooltip ([#3061](https://github.com/ThinkFlowLab/FlyBot/issues/3061)).
+- A Project whose assistant Session already holds its 09:00 digest now adopts that task instead of writing a second one, and a digest its owner paused stays paused rather than being replaced by an active copy. (#1751)
+- When the current part of your own chat has its earlier messages condensed into a checkpoint, `read_own_chat` now says how many of the part's messages it still shows — `only its newest 12 of 15 messages` — instead of `only its newest messages`, so a message the cap left out no longer reads as if it never existed ([#3144](https://github.com/ThinkFlowLab/FlyBot/issues/3144)).
+- The chat dock's **Approve all** failure line now names at most three people and ends with `2 more not shown` (还有 2 条未显示 in a Chinese window) instead of growing with every failing card, and a failure reason the host passes through whole is cut at 200 code points, so one batch can no longer fill the alert ([#3158](https://github.com/ThinkFlowLab/FlyBot/issues/3158)).
+
 ## [0.2.36] - 2026-11-18
 
 ### Fixed
@@ -1540,7 +1558,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.36...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.37...HEAD
+[0.2.37]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.36...v0.2.37
 [0.2.36]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.35...v0.2.36
 [0.2.35]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...v0.2.35
 [0.2.34]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...v0.2.34

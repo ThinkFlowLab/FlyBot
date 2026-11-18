@@ -1,1 +1,0 @@
-General → Shortcuts now offers **Shift+Enter to send** (Enter starts a new line) beside the default Enter-to-send; the choice is kept for this window. ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114))
