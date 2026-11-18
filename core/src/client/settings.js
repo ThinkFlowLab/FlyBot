@@ -141,7 +141,8 @@ function GeneralPage({ roster, actions, run }) {
       h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
         h(SetRow, { label: t('Send shortcut'), hint: t(sendKeyLabel(sendKey)) })),
       h(SetSection, { key: 'folding', title: t('Message folding') },
-        h(SetRow, { label: t('Message folding'), hint: t(foldModeLabel(folding.mode)) })),
+        h(SetRow, { label: t('Message folding'), hint: t(foldModeLabel(folding.mode)) }),
+        h(SetRow, { label: t('Document cards'), hint: folding.documentCards ? t('On') : t('Off') })),
       h(SetSection, { key: 'notify', title: t('Notifications') },
         h(SetRow, { label: t('In other chats'), hint: prefs.notifications !== false ? t('On') : t('Off') }),
         NOTIFY_KINDS.map(([kind, label]) => h(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t('On') : t('Off') }))),
@@ -178,7 +179,12 @@ function GeneralPage({ roster, actions, run }) {
         h(Segmented, { label: t('Message folding'), value: folding.mode, className: 'bt-appearance-seg' }, FOLD_MODE_LABELS.map(([id, label]) => h('button', {
           key: id, type: 'button', 'aria-pressed': folding.mode === id,
           onClick: () => { if (folding.mode !== id) run(actions.setPrefs({ folding: { mode: id } })) },
-        }, t(label)))))),
+        }, t(label))))),
+      h(SwitchRow, {
+        label: t('Document cards'),
+        hint: t('Show a long document as a card you can read beside the chat.'),
+        on: folding.documentCards, onChange: on => run(actions.setPrefs({ documentCards: on })),
+      })),
     // One switch for every system notification (#353), then one per kind (#469).
     h(SetSection, { key: 'notify', title: t('Notifications') },
       h(SwitchRow, {

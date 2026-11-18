@@ -218,6 +218,22 @@ test('set-prefs stores the message folding mode and refuses any other one (#3114
   assert.equal((await call('set-prefs', { folding: { mode: 'none' } })).value.folding.mode, 'none')
 })
 
+// The document-cards switch (#3114) is a team preference of its own, kept beside the folding
+// mode rather than inside it: off is stored, on is the absence of the record, and a value no
+// page can draw is refused instead of stored.
+test('set-prefs stores the document-cards switch and refuses anything else (#3114)', async (t) => {
+  const { call, stop } = start(TEAM)
+  t.after(stop)
+  assert.equal((await call('set-prefs', { documentCards: false })).value.documentCards, false)
+  assert.equal('documentCards' in (await call('set-prefs', { documentCards: null })).value, false)
+  assert.equal((await call('set-prefs', { documentCards: false })).value.documentCards, false)
+  for (const documentCards of ['off', 0, ['false'], { on: false }]) {
+    assert.deepEqual((await call('set-prefs', { documentCards })).error, { code: 'bot/invalid', message: 'Document cards must be on or off', details: {} })
+  }
+  assert.equal((await call('state')).value.prefs.documentCards, false, 'a refusal stores nothing')
+  assert.equal('documentCards' in (await call('set-prefs', { documentCards: true })).value, false)
+})
+
 test('in the Desktop profile read_browser is the last tool and reads through the window', async (t) => {
   const { ctx, call, stop } = start(TEAM, { services: { profileContext: { name: 'desktop' } } })
   t.after(stop)

@@ -261,7 +261,7 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   const general = mount(baseRoster, 'general', null, 'GeneralPage').nodes
   assert.equal(general.filter(node => node.type === 'select').length, 1, 'General keeps its theme select')
   assert.equal(general.filter(node => node.type === 'input').length, 1, 'General keeps its colour field')
-  assert.equal(counts(general), 8, 'General keeps its four switches beside the send-key and folding pickers')
+  assert.equal(counts(general), 9, 'General keeps its five switches beside the send-key and folding pickers')
   assert.equal(general.filter(node => node.type === Segmented && node.props?.label === 'Send shortcut').length, 1, 'General draws the send-key picker')
 
   const bots = mount(baseRoster, 'bots', null, 'BotsPage').nodes
@@ -293,6 +293,27 @@ test('Settings → General picks the message folding mode and writes it through 
   const locked = mount({ ...roster, readOnly: SENTENCE }, 'general', null, 'GeneralPage').nodes
   assert.equal(locked.filter(node => node.type === Segmented && node.props?.label === 'Message folding').length, 0, 'a locked page draws no folding picker')
   assert.ok(text(locked).includes('Compact'), 'and keeps the mode in use as text')
+})
+
+// General → Document cards (#3114): the switch writes the team preference through `set-prefs`,
+// and the card stays on until a team switches it off. The locked page draws no switch and keeps
+// the choice as text, the way the folding mode does above.
+test('General draws the document-cards switch and writes it through set-prefs (#3114)', () => {
+  const written = []
+  const { nodes } = mount(baseRoster, 'general', null, 'GeneralPage', [], { setPrefs: payload => { written.push(payload); return Promise.resolve(payload) } })
+  const cards = nodes.filter(node => node.type === SwitchRow && node.props?.label === 'Document cards')
+  assert.equal(cards.length, 1, 'General draws the document-cards switch')
+  assert.equal(cards[0].props.on, true, 'the card is on until the team switches it off')
+  cards[0].props.onChange(false)
+  // The page runs inside a vm realm, so its own object is compared by value, not by prototype.
+  assert.deepEqual(JSON.parse(JSON.stringify(written)), [{ documentCards: false }], 'off asks the host to store off')
+  const off = { ...baseRoster, prefs: { ...baseRoster.prefs, documentCards: false } }
+  const stored = mount(off, 'general', null, 'GeneralPage').nodes
+  assert.equal(stored.filter(node => node.type === SwitchRow && node.props?.label === 'Document cards')[0].props.on, false, 'the stored choice is the one drawn')
+  const locked = mount({ ...off, readOnly: SENTENCE }, 'general', null, 'GeneralPage').nodes
+  assert.equal(locked.filter(node => node.type === SwitchRow && node.props?.label === 'Document cards').length, 0, 'a locked page draws no document-cards switch')
+  assert.ok(text(locked).includes('Document cards'), 'and still names it')
+  assert.ok(text(locked).includes('Off'), 'keeping the choice as text')
 })
 
 // The window can be unlocked under a page that is already on screen: the other window holding
