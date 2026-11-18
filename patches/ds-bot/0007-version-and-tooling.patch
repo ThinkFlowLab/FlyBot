@@ -1048,7 +1048,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  test('diagnostics append fallback redacts an error message', async (t) => {
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
    t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
-@@ -133,6 +133,987 @@ test('diagnostics append fallback redacts an error message', async (t) => {
+@@ -133,6 +133,1049 @@ test('diagnostics append fallback redacts an error message', async (t) => {
    assert.match(stderr.join('\n'), /api_key=\[hidden\]/)
  })
  
@@ -1755,6 +1755,68 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  assert.match(report.markdown, /^state backups: state\.json\.broken-1001 /m)
 +  assert.doesNotMatch(report.markdown, /other\.txt/, "only the store's own backup prefix is listed")
 +  assert.equal(report.markdown.match(/^\| Read-only \| (.*)$/m)?.[1], readOnly, 'the Read-only row is unchanged')
++})
++
++// The backups line carries names from disk, and a name is not markdown (#P-550). The store writes
++// only `state.json.v1` and `state.json.broken-<stamp>`, but any file with that prefix sits in the
++// folder and is described here — and the report gets pasted into a public issue, so a name with a
++// newline would open a line of its own, a name with a carriage return would leave a bare CR, and a
++// name shaped like a saved key would print it. All three are the same gap: this one text reached
++// the report without the cleaning every other text in it gets. Windows cannot create the first two
++// at all, and the nightly compatibility run is on Windows.
++test('a backup whose name carries a line break is drawn as one line', { skip: process.platform === 'win32' }, async (t) => {
++  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000)
++  const put = (host, name) => {
++    const path = join(host.home, name)
++    writeFileSync(path, 'x'.repeat(2048))
++    utimesSync(path, twoHoursAgo, twoHoursAgo)
++    return path
++  }
++  const clean = await realHost(t)
++  const injected = await realHost(t)
++  put(clean, 'state.json.broken-a | Read-only | no |')
++  const path = put(injected, 'state.json.broken-a\n| Read-only | no |')
++  const bytes = readFileSync(path)
++  const cleanReport = await clean.rt.diagnostics.report({})
++  const report = await injected.rt.diagnostics.report({})
++
++  const line = 'state backups: state.json.broken-a | Read-only | no | (2 KB, 2 h ago)'
++  assert.equal(report.facts.stateBackups, 'state.json.broken-a | Read-only | no | (2 KB, 2 h ago)',
++    'the name is folded onto one line before it reaches the fact')
++  const shown = report.markdown.split('\n')
++  assert.ok(shown.includes(line), 'the whole name stays on the one backups line')
++  assert.equal(shown.length, cleanReport.markdown.split('\n').length,
++    'a name with a line break adds no line of its own next to the same name without one')
++  assert.equal(shown.some(text => text.startsWith('| Read-only | no |')), false,
++    'nothing the name carries opens a line of its own')
++  assert.deepEqual(readFileSync(path), bytes, 'describing the backup reads none of its bytes')
++})
++
++test('a backup whose name carries a carriage return leaves no bare CR in the report', { skip: process.platform === 'win32' }, async (t) => {
++  const { home, rt } = await realHost(t)
++  const path = join(home, 'state.json.broken-c\r| Team | forged |')
++  writeFileSync(path, 'x'.repeat(1024))
++  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000)
++  utimesSync(path, twoHoursAgo, twoHoursAgo)
++
++  const report = await rt.diagnostics.report({})
++  assert.equal(report.facts.stateBackups, 'state.json.broken-c | Team | forged | (1 KB, 2 h ago)')
++  assert.equal(report.markdown.includes('\r'), false, 'no carriage return reaches the report')
++  assert.match(report.markdown, /^state backups: state\.json\.broken-c \| Team \| forged \| \(1 KB, 2 h ago\)$/m)
++})
++
++test('a backup name shaped like a saved key is hidden, like every other text in the report', async (t) => {
++  const { home, rt } = await realHost(t)
++  const name = 'state.json.broken-sk-abcdefghijklmnop'
++  const path = join(home, name)
++  writeFileSync(path, 'x'.repeat(2048))
++  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000)
++  utimesSync(path, twoHoursAgo, twoHoursAgo)
++
++  const report = await rt.diagnostics.report({})
++  assert.equal(report.facts.stateBackups, 'state.json.broken-sk-[hidden] (2 KB, 2 h ago)')
++  assert.match(report.markdown, /^state backups: state\.json\.broken-sk-\[hidden\] \(2 KB, 2 h ago\)$/m,
++    'the key shape is hidden by the same cleaning every other text gets')
 +})
 +
 +// The line is read information, not a write: a window another dsh keeps read-only still names the

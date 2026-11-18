@@ -394,8 +394,13 @@ export function install(rt) {
   // One name this host may describe, always from the metadata `lstat` gave: size and age. A name
   // `lstat` itself cannot answer for is named with the code it failed with, never guessed at; a
   // folder or a link is a name like any other here, drawn from its own metadata and never opened.
-  const backupFact = (name, info) => `${name} (${sizeText(info.size)}, ${ageText(info.mtimeMs)})`
-  const backupProblem = (name, error) => `${name} (unreadable: ${typeof error?.code === 'string' ? error.code : 'cannot be read'})`
+  // A backup name is a name from disk and this report gets pasted into a public issue: a filename
+  // may carry a line break, a control character or a saved-key shape, so it is folded onto one line
+  // first — the same replace `tasks.js`, `meetings.js` and `decisions.js` use on their text — and
+  // then handed to `show` for the home abbreviation and the hidden credentials.
+  const backupName = name => show(String(name).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim())
+  const backupFact = (name, info) => `${backupName(name)} (${sizeText(info.size)}, ${ageText(info.mtimeMs)})`
+  const backupProblem = (name, error) => `${backupName(name)} (unreadable: ${typeof error?.code === 'string' ? error.code : 'cannot be read'})`
   const stateBackups = async () => {
     if (statePath === undefined) return undefined
     const named = []
