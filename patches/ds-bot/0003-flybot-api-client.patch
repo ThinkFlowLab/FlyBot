@@ -551,14 +551,16 @@ diff --git a/src/client/capability-settings.js b/src/client/capability-settings.
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -2,12 +2,20 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
- import { createPortal } from 'react-dom'
+@@ -1,13 +1,21 @@
+ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+-import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
  import { inkText } from './inks.js'
 -import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts } from './text.js'
-+import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, cutText, isPluginTool } from './text.js'
- import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
+-import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 -import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
++import { currentPart, linkMentions, mentionTarget, MENTION_ORIGIN, dayLabel, contentText, stripHeader, stripTrace, botNames, isHiddenTurn, typedBy, heldReplyOf, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, cutText, isPluginTool } from './text.js'
++import { MemoryIcon } from './icons.js'
 +import { colorOf, lookBotForRemote, toolState, BotMark, PersonMark, RoomAvatar } from './mark.js'
 +import { botByName, rosterBot } from './sources.js'
  import { AnsweredCell, SettledQuestion, PendingQuestion } from './questions.js'
@@ -570,11 +572,12 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 +import { fileSize } from './flybot-slots.js'
 +import { HeldReplyActions } from './held-reply.js'
++import { MessageTools, onMessageContextMenu } from './message-tools.js'
 +import { call } from './api.js'
  import { failureLabel } from './diagnostics.js'
  import { turnReasoning } from './turn-reasoning.js'
  
-@@ -16,37 +16,101 @@ import { turnReasoning } from './turn-reasoning.js'
+@@ -16,93 +16,145 @@ import { turnReasoning } from './turn-reasoning.js'
  
  const mdLabels = () => ({ code: { copyLabel: t('Copy'), copiedLabel: t('Copied') }, footnotes: t('Footnotes') })
  
@@ -631,6 +634,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +    : null
 +  const reactKey = (index) => (msgKeys ? msgKeys[index] : msgKey)
 +  const reactIndex = (index) => (msgKeys ? 0 : index)
++  // A right-click on a row opens this menu; the index keeps one row's click out of its neighbours.
++  const [contextAt, setContextAt] = useState(null)
 +  // #2123: a message with no text is no message — a turn that ended in tool calls only, or whose reply
 +  // a card elsewhere carries, leaves nothing to draw. The empty and whitespace-only shapes are one: the
 +  // row (bubble and its avatar) is drawn only for a text a person can read.
@@ -646,13 +651,18 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +      const picked = key ? (msgKeys ? reactions?.[key] : reactions)?.[reactIndex(index)] ?? [] : []
 +      const last = index === shown.length - 1
        const live = streaming && last
-       return h('div', { key: index, className: 'bt-msg' },
+-      return h('div', { key: index, className: 'bt-msg' },
++      return h('div', {
++        key: index,
++        className: 'bt-msg',
++        onContextMenu: live ? undefined : event => onMessageContextMenu(event, at => setContextAt({ ...at, index })),
++      },
          h('div', { className: 'bt-msg-line' },
            lead && last ? lead : null,
            h('div', { className: 'bt-bubble' },
              h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
 -          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(msgKey, index, emoji) : undefined, actions })),
-+          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions })),
++          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions, contextAt: contextAt?.index === index ? contextAt : null })),
          picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
 -          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(msgKey, index, emoji),
 +          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
@@ -660,11 +670,43 @@ diff --git a/src/client/cells.js b/src/client/cells.js
      }))
  }
  
+-const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 +// A held send is shown by its card and the sidebar mark, not by a line in a Face-to-face room's history:
 +// older rooms still hold this line from when the social plugin posted it for a direct message (#278).
 +const WAITING_OTHERS_NOTICE = "Waiting for the owner's approval"
- const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
  
+-// Closes a popover on a press outside the given elements or on Escape.
+-function useDismiss(open, close, refs) {
+-  useEffect(() => {
+-    if (!open) return undefined
+-    const onDown = (event) => {
+-      if (refs.some(ref => ref.current?.contains(event.target))) return
+-      close()
+-    }
+-    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }
+-    window.addEventListener('mousedown', onDown)
+-    window.addEventListener('keydown', onKey, true)
+-    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey, true) }
+-  }, [open])
+-}
+-
+-// The hover toolbar beside a reply bubble: Add reaction, Reply, More.
+-function MessageTools({ text, name, sessionId, react, actions }) {
+-  const [panel, setPanel] = useState(null)
+-  const [place, setPlace] = useState(null)
+-  const [copied, setCopied] = useState(false)
+-  const tools = useRef(null)
+-  const pop = useRef(null)
+-  const close = () => setPanel(null)
+-  useDismiss(panel !== null, close, [tools, pop])
+-  const open = (kind, event) => {
+-    if (panel === kind) { close(); return }
+-    const rect = event.currentTarget.getBoundingClientRect()
+-    const below = rect.bottom + 220 < window.innerHeight
+-    setPlace(kind === 'react'
+-      ? { left: rect.left + rect.width / 2, top: rect.top - 6, '--bt-origin': 'bottom center' }
+-      : { left: Math.min(rect.left, window.innerWidth - 208), ...(below ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4, '--bt-origin': 'bottom left' }) })
+-    setPanel(kind)
 +// The closed status line already says who left (#1103). Same rule as
 +// plugins/social/src/face-rooms.js leaveNoticeCoveredByClose: the plugin does not post the short
 +// line when it already knows the room closed, and a line posted earlier is not drawn beside the banner.
@@ -677,17 +719,18 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +    if (participant?.remote !== true || participant.leftSeq === undefined) continue
 +    const name = String(participant.ownerName || participant.displayName || participant.name || '').trim()
 +    if (name && (who === name || who.endsWith(` (${name})`))) return true
-+  }
+   }
+-  const copy = () => {
+-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
+-  }
+-  const download = () => {
+-    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }))
+-    const link = Object.assign(document.createElement('a'), { href: url, download: `${name}-message.md` })
+-    link.click()
+-    setTimeout(() => URL.revokeObjectURL(url), 1000)
 +  return false
 +}
 +
- // Closes a popover on a press outside the given elements or on Escape.
- function useDismiss(open, close, refs) {
-   useEffect(() => {
-@@ -100,9 +100,45 @@ function MessageTools({ text, name, sessionId, react, actions }) {
-       item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
- }
- 
 +// The first line with something on it, inner runs of whitespace squeezed: a folded row shows it, so
 +// the row never reads as an empty frame while the text it names sits behind the caret (#1624).
 +const PEEK_MAX = 160
@@ -707,7 +750,16 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  for (const part of graphemes(line)) {
 +    if (kept.length + part.length > PEEK_MAX - CUT.length) break
 +    kept += part
-+  }
+   }
+-  const item = (label, Icon, run) => h('button', { key: label, type: 'button', role: 'menuitem', onClick: () => { close(); run() } }, h(Icon), label)
+-  return h('div', { ref: tools, className: 'bt-tools', 'data-open': panel !== null || undefined },
+-    react ? h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('Add reaction'), title: t('Add reaction'), 'aria-expanded': panel === 'react', onClick: event => open('react', event) }, h(SmileIcon)) : null,
+-    sessionId ? h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('Reply'), title: t('Reply'), onClick: () => actions.quote(sessionId, text) }, h(ReplyIcon)) : null,
+-    h('button', { type: 'button', className: 'bt-tool', 'aria-label': t('More message actions'), title: t('More'), 'aria-haspopup': 'menu', 'aria-expanded': panel === 'more', onClick: event => open('more', event) }, copied ? h(CheckIcon) : h(DotsIcon)),
+-    panel === 'react' ? createPortal(h('div', { ref: pop, className: 'bt-react-strip', role: 'menu', 'aria-label': t('Reactions'), style: place },
+-      REACTIONS.map(emoji => h('button', { key: emoji, type: 'button', role: 'menuitem', 'aria-label': emoji, onClick: () => { close(); react(emoji) } }, emoji))), document.body) : null,
+-    panel === 'more' ? createPortal(h('div', { ref: pop, className: 'bt-menu', role: 'menu', 'aria-label': t('Message actions'), style: place },
+-      item(t('Copy'), CopyIcon, copy), item(t('Download'), DownloadIcon, download)), document.body) : null)
 +  return kept + CUT
 +}
 +// Nothing but markup: a line count still says something, where a fence fragment says nothing (#1642).
@@ -718,8 +770,8 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +  const lines = text.split('\n').map((part) => part.replace(/\s+/g, ' ').trim()).filter((part) => part !== '')
 +  const prose = lines.find((line) => !isMarkup(line))
 +  return prose === undefined ? onlyMarkup(lines) : clip(prose)
-+}
-+
+ }
+ 
  function ThinkingRow({ text }) {
 +  // Folded by default; the caret shows there is something inside. Nothing to show, no row.
 +  if (typeof text !== 'string' || text.trim() === '') return null
@@ -4000,11 +4052,12 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
  import { mentionSpans } from '../shared/mentions.js'
 -import { BotMark } from './mark.js'
+-import { CheckIcon, CopyIcon } from './icons.js'
 +import { BotMark, PersonMark, markBotForMention } from './mark.js'
- import { CheckIcon, CopyIcon } from './icons.js'
  import { dateLocale, t } from './i18n.js'
 +import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
 +import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
++import { MessageTools, onMessageContextMenu } from './message-tools.js'
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -4127,7 +4180,22 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  }
  
  function Attachments({ attachments, renderMessageImages }) {
-@@ -87,11 +87,34 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+@@ -69,14 +69,6 @@ function Attachments({ attachments, renderMessageImages }) {
+   }))
+ }
+ 
+-function CopyButton({ text }) {
+-  const [copied, setCopied] = useState(false)
+-  const copy = () => {
+-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
+-  }
+-  return h('button', { type: 'button', className: 'bt-tool', 'aria-label': copied ? t('Copied') : t('Copy'), title: copied ? t('Copied') : t('Copy'), onClick: copy }, copied ? h(CheckIcon) : h(CopyIcon))
+-}
+-
+ const clock = time => (typeof time === 'number' ? new Date(time).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) : undefined)
+ 
+ // A sent message, or one that joined a running turn ("steering").
+@@ -87,20 +87,52 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
    const referenceLabels = data.referenceLabels ?? []
    const references = openFile && openSkill ? { openFile, openSkill } : undefined
    const steering = node.kind === 'steering'
@@ -4144,6 +4212,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +  // never drawn as held, whatever else in the room waits for approval (#457).
 +  const faceMine = Boolean(room?.origin === 'face-to-face' && !incoming)
 +  const myName = faceMine ? (facePeople(room, roster).find(entry => entry.mine)?.name || cleanPeerName(roster.self?.displayName, '') || author?.name || '') : ''
++  const [contextAt, setContextAt] = useState(null)
 +  return h('div', {
 +    className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
 +    'data-steering': steering || undefined,
@@ -4151,6 +4220,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +    'data-author': author?.authorId,
 +    'data-author-kind': author?.authorKind,
 +    'data-author-name': author?.name,
++    onContextMenu: event => onMessageContextMenu(event, setContextAt),
 +  },
 +    person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
 +    faceMine ? h('span', { className: 'bt-lead', title: myName || undefined }, h(PersonMark, { name: myName || undefined })) : null,
@@ -4163,8 +4233,9 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +        h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
          rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
        referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
-     text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
-@@ -99,8 +99,15 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
+-    text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
++    h(MessageTools, { text, name: incoming ? author?.name : t('You'), sessionId, actions, contextAt, className: 'bt-utools' }))
+ }
  
  export const USER_MESSAGE_CSS = `
  .bt-umsg{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:4px}
@@ -4180,6 +4251,13 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
  .bt-ubody a{color:inherit}
  .bt-umention{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;max-width:100%;padding:0 1px;border:0;background:none;color:inherit;font:inherit;font-weight:600;line-height:inherit;cursor:pointer;border-radius:6px;white-space:nowrap}
  .bt-umention:hover{text-decoration:underline;text-underline-offset:2px}
+@@ -113,5 +113,5 @@ export const USER_MESSAGE_CSS = `
+ .bt-ufile-meta{font-size:12px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .bt-urefs{font-size:13px;line-height:18px;color:var(--bt-ink-3)}
+ .bt-utools{display:flex;flex:none;gap:2px;opacity:0;visibility:hidden;transition:opacity .12s ease,visibility .12s}
+-.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools{opacity:1;visibility:visible}
++.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools,.bt-utools[data-open]{opacity:1;visibility:visible}
+ `
 diff --git a/test/create-bot.test.js b/test/create-bot.test.js
 --- a/test/create-bot.test.js
 +++ b/test/create-bot.test.js

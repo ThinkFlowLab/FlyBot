@@ -2,10 +2,10 @@ import { createElement as h, Fragment, useState } from 'react'
 import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
 import { mentionSpans } from '../shared/mentions.js'
 import { BotMark, PersonMark, markBotForMention } from './mark.js'
-import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
 import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
 import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
+import { MessageTools, onMessageContextMenu } from './message-tools.js'
 
 // -------------------------------------------------------------------------
 // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -155,14 +155,6 @@ function Attachments({ attachments, renderMessageImages }) {
   }))
 }
 
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1000) })
-  }
-  return h('button', { type: 'button', className: 'bt-tool', 'aria-label': copied ? t('Copied') : t('Copy'), title: copied ? t('Copied') : t('Copy'), onClick: copy }, copied ? h(CheckIcon) : h(CopyIcon))
-}
-
 const clock = time => (typeof time === 'number' ? new Date(time).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' }) : undefined)
 
 // A sent message, or one that joined a running turn ("steering").
@@ -185,6 +177,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
   // never drawn as held, whatever else in the room waits for approval (#457).
   const faceMine = Boolean(room?.origin === 'face-to-face' && !incoming)
   const myName = faceMine ? (facePeople(room, roster).find(entry => entry.mine)?.name || cleanPeerName(roster.self?.displayName, '') || author?.name || '') : ''
+  const [contextAt, setContextAt] = useState(null)
   return h('div', {
     className: incoming ? 'bt-umsg bt-umsg-other' : 'bt-umsg',
     'data-steering': steering || undefined,
@@ -192,6 +185,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
     'data-author': author?.authorId,
     'data-author-kind': author?.authorKind,
     'data-author-name': author?.name,
+    onContextMenu: event => onMessageContextMenu(event, setContextAt),
   },
     person ? h('span', { className: 'bt-lead', title: author.name }, h(PersonMark, { name: author.name })) : null,
     faceMine ? h('span', { className: 'bt-lead', title: myName || undefined }, h(PersonMark, { name: myName || undefined })) : null,
@@ -203,7 +197,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
         h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
         rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
       referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
-    text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))
+    h(MessageTools, { text, name: incoming ? author?.name : t('You'), sessionId, actions, contextAt, className: 'bt-utools' }))
 }
 
 export const USER_MESSAGE_CSS = `
@@ -229,5 +223,5 @@ export const USER_MESSAGE_CSS = `
 .bt-ufile-meta{font-size:12px;line-height:15px;color:var(--bt-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bt-urefs{font-size:13px;line-height:18px;color:var(--bt-ink-3)}
 .bt-utools{display:flex;flex:none;gap:2px;opacity:0;visibility:hidden;transition:opacity .12s ease,visibility .12s}
-.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools{opacity:1;visibility:visible}
+.bt-umsg:hover .bt-utools,.bt-umsg:focus-within .bt-utools,.bt-utools[data-open]{opacity:1;visibility:visible}
 `

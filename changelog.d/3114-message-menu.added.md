@@ -1,0 +1,1 @@
+A message now opens the same menu on a right-click as its hover toolbar, and a person's own line carries Reply and the same Copy/Download menu a reply does; a copy or a download the window cannot do says why in the menu instead of failing silently ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
