@@ -164,6 +164,9 @@ const FRIENDLY = {
   unauthorized: 'Bot Social signed you out. Reconnect in Friends\' Bots, or restart FlyBot.',
   forbidden: 'This Bot cannot join that room.',
   bot_revoked: 'This Bot is no longer available on Bot Social.',
+  // A stop is a state, not an ending: the owner can resume the same Bot, and the same invite or room
+  // works again (bot-social FACE_ROOMS.md, `bot_frozen` 403). It must not read like `bot_revoked`.
+  bot_frozen: 'One of these Bots is emergency-stopped on Bot Social. Its owner can resume it in My Bots on that server, then try again.',
   bot_not_found: 'That Bot is not one of yours on Bot Social.',
   face_room_not_found: 'That room is not available.',
   room_full: 'This room already has 8 Bots. Nobody else can join with this number.',

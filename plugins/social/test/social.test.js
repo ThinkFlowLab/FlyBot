@@ -9637,6 +9637,35 @@ test('#310: join_invite errors read as plain sentences, never as raw codes', asy
   assert.equal(server.calls.filter(c => c.name === 'join_invite').at(-1).args.code, 'eWDDdBMIxLSZ')
 })
 
+test('#3114: a frozen Bot reads as one human line on the share and on the invite', async (t) => {
+  const copy = 'One of these Bots is emergency-stopped on Bot Social. Its owner can resume it in My Bots on that server, then try again.'
+  const invite = mapJoinInviteError(Object.assign(new Error('Bot Social join_invite: bot is frozen (emergency stop)'), { code: 'bot_frozen' }))
+  assert.equal(invite.message, copy)
+  assert.doesNotMatch(invite.message, /bot is frozen|emergency stop\)|bot_frozen|grant_bot_to_friend/i)
+
+  const { ctx, home, call, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const baseFetch = server.fetch
+  server.fetch = async (url, init) => {
+    const body = init.body ? JSON.parse(init.body) : {}
+    if (body?.params?.name !== 'grant_bot_to_friend') return baseFetch(url, init)
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'bot_frozen', message: 'bot is frozen (emergency stop)' }) }] } }), { status: 200 })
+  }
+  const social = await startSocial(ctx.flybot, {
+    server: 'https://social.test', credentialsPath: join(home, 'flybot-social.json'),
+    fetch: server.fetch, inboxPollMs: 0,
+  })
+  t.after(() => social.dispose())
+  await settle()
+  const chief = ctx.flybot.bot.list().find(b => b.isMain) || ctx.flybot.bot.list()[0]
+  await call('flybot/social/create-invite', { botId: chief.id })
+  const result = await call('flybot/social/share-with-friend', { botId: chief.id, home: '@bob.home' })
+  assert.equal(result.ok, false)
+  assert.equal(result.error.message, copy)
+  assert.doesNotMatch(result.error.message, /bot is frozen|emergency stop\)|bot_frozen|grant_bot_to_friend/i)
+})
+
 test('#310: Copy invite link always carries the /i/ segment', () => {
   assert.equal(inviteLink({ code: 'ABC', url: 'https://h.example/i/ABC' }), 'https://h.example/i/ABC')
   assert.equal(inviteLink({ code: 'ABC', url: 'https://h.example/ABC' }), 'https://h.example/i/ABC')
