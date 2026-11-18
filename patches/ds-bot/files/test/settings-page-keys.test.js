@@ -83,8 +83,49 @@ test('PAGE_ICONS keys are settings pages', () => {
 
 // A page counts as rendered only when its branch paints something: a bare `shown === 'about'`
 // keeps the literal and still opens an empty dialog. Usage never branches on `shown` at all —
-// its panel stays mounted and one unconditional call draws it (#3153).
-const PAGE_PINS = { usage: /h\((UsagePage),/ }
+// its panel stays mounted behind `usageOpened`, and one call inside that block draws it (#3153).
+function usageBlock(source) {
+  const start = source.indexOf("usageOpened ? h('div', { key: 'usage'")
+  assert.ok(start >= 0, 'settings.js still gates the Usage panel on usageOpened')
+  const close = ': null)'
+  const end = source.indexOf(close, start)
+  assert.ok(end > start, `the usageOpened block still closes with ${close}`)
+  return source.slice(start, end + close.length)
+}
+
+// The consequent of one `shown === '<key>'` test: what that condition itself paints. It ends at
+// its own `:` (or at the `)` closing the call it sits in), so a chain —
+// `shown === 'about' ? null : shown === 'general' ? h(GeneralPage, …)` — paints nothing for
+// `about`. Reading on to the next `? h(` in the line would credit a page with a sibling's
+// component and pass while that page draws nothing (#3155 follow-up).
+function branchConsequent(tail) {
+  const question = tail.indexOf('?')
+  if (question === -1) return ''
+  let depth = 0
+  for (let index = question + 1; index < tail.length; index += 1) {
+    const char = tail[index]
+    if (char === '(' || char === '{' || char === '[') depth += 1
+    else if (char === ')' || char === '}' || char === ']') {
+      if (depth === 0) return tail.slice(question + 1, index)
+      depth -= 1
+    } else if (char === ':' && depth === 0) return tail.slice(question + 1, index)
+  }
+  return tail.slice(question + 1)
+}
+
+// A comment spells a call without running it: `null /* h(UsagePage, { … }) */` draws nothing, so
+// every scan below reads the source with comments removed. The line rule wants whitespace before
+// `//`, which leaves a `//` inside a string alone.
+function withoutComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1')
+}
+
+// key -> the component that key's own render form draws, or undefined. `usage` is read inside
+// its usageOpened block, so moving `h(UsagePage, …)` out of that block no longer counts.
+function pinnedComponent(key, source) {
+  if (key !== 'usage') return undefined
+  return /h\((UsagePage),/.exec(withoutComments(usageBlock(source)))?.[1]
+}
 
 function definedComponents(source) {
   const names = new Set()
@@ -99,24 +140,25 @@ function definedComponents(source) {
 }
 
 test('every settings page has a rendered branch', () => {
-  const source = readFileSync(join(clientRoot, 'settings.js'), 'utf8')
-  // key -> the component its branch draws, read from `shown === '<key>' … ? h(<Component …`
+  // Comments are stripped first: a commented-out branch or call renders nothing.
+  const source = withoutComments(readFileSync(join(clientRoot, 'settings.js'), 'utf8'))
+  // key -> the component its own branch draws: the consequent after `shown === '<key>'`'s `?`.
   const painted = new Map()
   for (const line of source.split('\n')) {
     for (const named of line.matchAll(/shown === '([^']+)'/g)) {
-      const drawn = /\?\s*h\(([A-Z]\w*)/.exec(line.slice(named.index))
+      const drawn = /^\s*h\(\s*([A-Z]\w*)/.exec(branchConsequent(line.slice(named.index)))
       if (drawn) painted.set(named[1], drawn[1])
     }
   }
   const pages = settingsPageKeys()
   const branches = new Set([...source.matchAll(/shown === '([^']+)'/g)].map(match => match[1]))
 
-  const unrendered = pages.filter(key => !painted.has(key) && !PAGE_PINS[key]?.test(source))
+  const unrendered = pages.filter(key => !painted.has(key) && pinnedComponent(key, source) === undefined)
   assert.deepEqual(unrendered, [], `settings pages with no rendered branch:\n${unrendered.join('\n')}`)
 
   const components = definedComponents(source)
   const loose = pages
-    .map(key => [key, painted.get(key) ?? PAGE_PINS[key]?.exec(source)?.[1]])
+    .map(key => [key, painted.get(key) ?? pinnedComponent(key, source)])
     .filter(([, name]) => name !== undefined && !components.has(name))
     .map(([key, name]) => `${key} -> ${name}`)
   assert.deepEqual(loose, [], `rendered branches that name an undefined component:\n${loose.join('\n')}`)
