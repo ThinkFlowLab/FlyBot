@@ -1,0 +1,1 @@
+A long chat message now opens as a whole-line preview with one **Show more** control in the bubble: the whole reply is one press away, **Show less** folds it back, and a reply still streaming or under the cap is never folded ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

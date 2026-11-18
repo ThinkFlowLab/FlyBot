@@ -551,7 +551,7 @@ diff --git a/src/client/capability-settings.js b/src/client/capability-settings.
 diff --git a/src/client/cells.js b/src/client/cells.js
 --- a/src/client/cells.js
 +++ b/src/client/cells.js
-@@ -1,13 +1,21 @@
+@@ -1,13 +1,22 @@
  import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 -import { createPortal } from 'react-dom'
  import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -573,11 +573,12 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 +import { fileSize } from './flybot-slots.js'
 +import { HeldReplyActions } from './held-reply.js'
 +import { MessageTools, onMessageContextMenu } from './message-tools.js'
++import { foldBody, foldingOf } from './message-fold.js'
 +import { call } from './api.js'
  import { failureLabel } from './diagnostics.js'
  import { turnReasoning } from './turn-reasoning.js'
  
-@@ -16,93 +16,145 @@ import { turnReasoning } from './turn-reasoning.js'
+@@ -16,93 +16,146 @@ import { turnReasoning } from './turn-reasoning.js'
  
  const mdLabels = () => ({ code: { copyLabel: t('Copy'), copiedLabel: t('Copied') }, footnotes: t('Footnotes') })
  
@@ -616,6 +617,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
  // row, so it lines up with the bubble whether or not reactions hang below it.
 -export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, useUi, lead, mentions }) {
 +export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
++  const folding = foldingOf(roster?.prefs)
 +  const openLink = bubbleLinkClick({ actions, subject: selfId ?? sessionId })
    const onClick = (event) => {
 +    if (openLink(event)) return
@@ -660,8 +662,9 @@ diff --git a/src/client/cells.js b/src/client/cells.js
          h('div', { className: 'bt-msg-line' },
            lead && last ? lead : null,
            h('div', { className: 'bt-bubble' },
-             h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
+-            h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
 -          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(msgKey, index, emoji) : undefined, actions })),
++            foldBody({ text, folding, streaming: live, draw: shown => h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions }) })),
 +          live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions, contextAt: contextAt?.index === index ? contextAt : null })),
          picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
 -          key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(msgKey, index, emoji),
@@ -3656,14 +3659,22 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
  .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
  .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}
-@@ -174,6 +174,7 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -174,8 +174,15 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
 +.bt-event.bt-not-sent{gap:6px;color:var(--bt-ink-3)}
  .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
  .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
++.bt-fold{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
++.bt-fold-toggle{border:0;background:none;padding:0;font:inherit;font-size:12px;line-height:16px;color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
++.bt-fold-toggle:hover{color:var(--bt-ink)}
++.bt-fold-toggle:focus-visible{outline:2px solid currentColor;outline-offset:2px}
++.bt-fold[data-folded] .bt-fold-body>:first-child{margin-top:0}
++.bt-fold[data-folded] .bt-fold-body>:last-child{margin-bottom:0}
  .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
+ .bt-bubble [class*="_markdown"]{color:inherit!important;font-size:inherit!important;line-height:inherit!important}
+ .bt-bubble p{margin:0}
 @@ -267,6 +267,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
  @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
  
@@ -4068,7 +4079,7 @@ diff --git a/src/client/styles.js b/src/client/styles.js
 diff --git a/src/client/user-message.js b/src/client/user-message.js
 --- a/src/client/user-message.js
 +++ b/src/client/user-message.js
-@@ -1,9 +1,11 @@
+@@ -1,9 +1,12 @@
  import { createElement as h, Fragment, useState } from 'react'
  import * as ui from '@deepseek-ai/dsh-client-ui-primitives'
  import { mentionSpans } from '../shared/mentions.js'
@@ -4079,6 +4090,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
 +import { cleanPeerName, faceAliases, remoteBotTitle, remoteMentionLabel } from '../shared/remote-label.js'
 +import { facePeople, faceSeatLabel, faceSeats } from './face-seats.js'
 +import { MessageTools, onMessageContextMenu } from './message-tools.js'
++import { foldBody, foldingOf } from './message-fold.js'
  
  // -------------------------------------------------------------------------
  // The user's own messages. DSH draws every "@word" in them as a file reference, and
@@ -4251,7 +4263,7 @@ diff --git a/src/client/user-message.js b/src/client/user-message.js
        attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
        text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
 -        h(UserText, { text, bots: mentionableBots(roster, sessionId), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
-+        h(UserText, { text, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }),
++        foldBody({ text, folding: foldingOf(roster.prefs), draw: shown => h(UserText, { text: shown, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }) }),
          rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
        referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
 -    text === '' ? null : h('div', { className: 'bt-utools' }, h(CopyButton, { text })))

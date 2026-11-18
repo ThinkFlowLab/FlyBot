@@ -199,6 +199,12 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-event.bt-not-sent{gap:6px;color:var(--bt-ink-3)}
 .bt-msg:not(:first-child)>.bt-msg-line>.bt-bubble{border-start-start-radius:6px}
 .bt-msg:not(:last-child)>.bt-msg-line>.bt-bubble{border-end-start-radius:6px}
+.bt-fold{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.bt-fold-toggle{border:0;background:none;padding:0;font:inherit;font-size:12px;line-height:16px;color:var(--bt-ink-2);cursor:pointer;border-radius:6px}
+.bt-fold-toggle:hover{color:var(--bt-ink)}
+.bt-fold-toggle:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.bt-fold[data-folded] .bt-fold-body>:first-child{margin-top:0}
+.bt-fold[data-folded] .bt-fold-body>:last-child{margin-bottom:0}
 .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
 .bt-bubble [class*="_markdown"]{color:inherit!important;font-size:inherit!important;line-height:inherit!important}
 .bt-bubble p{margin:0}
