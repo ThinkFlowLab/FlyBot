@@ -82,11 +82,15 @@ function markdown(props) {
   return { type: 'span', props: { className: 'bt-md', text: props.text, children: [] } }
 }
 
-const bundle = await build({
-  entryPoints: [fileURLToPath(new URL('../src/client/cells.js', import.meta.url))],
+// Two bubbles, one toolbar: the reply bubble and a person's own line are bundled side by side so a
+// case can press the same buttons on both.
+const buildOf = (entry) => build({
+  entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
   external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
 })
+const cellsBundle = await buildOf('../src/client/cells.js')
+const userBundle = await buildOf('../src/client/user-message.js')
 const env = {
   module: { exports: {} },
   document: { body: {}, hidden: false, addEventListener() {}, removeEventListener() {} },
@@ -99,11 +103,25 @@ env.module.exports = env.module.exports
 env.require = (name) => {
   if (name === 'react') return react
   if (name === 'react-dom') return { createPortal: (node) => node }
-  if (name === '@deepseek-ai/dsh-client-ui-primitives') return { MarkdownText: markdown }
+  if (name === '@deepseek-ai/dsh-client-ui-primitives') return {
+    MarkdownText: markdown,
+    // A person's own line projects its text through the host; the bubble calls it unconditionally.
+    projectUserText: (text) => text,
+    fileExtension: () => undefined,
+    fileSizeText: () => undefined,
+  }
   throw new Error(`Unexpected platform module ${name}`)
 }
-runInNewContext(bundle.outputFiles[0].text, env)
-const { TriggerCell, Bubbles } = env.module.exports
+// Each entry loads into the same context with its own module object, so both bundles share the fake
+// React, the document and the platform stubs — and a hook instance map per rendered tree.
+function loadBundle(output) {
+  env.module = { exports: {} }
+  runInNewContext(output.text, env)
+  return env.module.exports
+}
+const files = { 'cells.js': cellsBundle.outputFiles[0], 'user-message.js': userBundle.outputFiles[0] }
+const { TriggerCell, Bubbles } = loadBundle(files['cells.js'])
+const { UserMessageCell } = loadBundle(files['user-message.js'])
 
 // Expanding a tree runs the function components it meets, keeping their hook slots under their path, so
 // a second render passes through the instances the first one built.
@@ -250,4 +268,81 @@ test('P-393: a bubble in the current part keeps its own key and its own reply ta
   press(reply)
   assert.deepEqual(calls.reactions, [['chief:5:2', 0, '❤️']], 'the live key is unchanged')
   assert.deepEqual(calls.quotes, [['chief', 'a current answer']], 'the live reply target is unchanged')
+})
+
+// One render pass from an empty hook map, so a case starts with closed menus whatever its neighbours
+// left open; the passes after it keep the slots, which is what a click needs to move the menu.
+function fresh(element) {
+  runtime.instances = new Map()
+  runtime.key = 'root'
+  runtime.index = 0
+  return render(element)
+}
+const menu = (tree) => find(tree, (node) => node.props?.role === 'menu' && node.props?.['aria-label'] === 'Message actions')[0]
+const item = (node, label) => [].concat(node.props?.children ?? []).find(child => child && [].concat(child.props?.children ?? []).includes(label))
+const rightClick = (node) => node.props.onContextMenu({
+  target: { closest: () => null }, clientX: 40, clientY: 60, preventDefault() {}, stopPropagation() {},
+})
+const labelsOf = (node) => [].concat(node.props.children).filter(Boolean)
+  .map(child => [].concat(child.props?.children ?? []).filter(part => typeof part === 'string').join(''))
+
+test('a right-click on a bubble opens the menu the More button opens', () => {
+  const calls = { quotes: [], reactions: [] }
+  const actions = {
+    quote: (sessionId, text) => { calls.quotes.push([sessionId, text]) },
+    toggleReaction: (key, index, emoji) => { calls.reactions.push([key, index, emoji]) },
+    openSession() {},
+  }
+  const props = { texts: ['a bubble to right-click'], roster, selfId: 'chief', actions, sessionId: 'chief', msgKey: 'chief:3:1', useUi: (selector) => selector({ reactions: {} }) }
+  let tree = fresh(react.createElement(Bubbles, props))
+  const row = find(tree, (node) => classes(node).includes('bt-msg'))[0]
+  assert.equal(typeof row?.props?.onContextMenu, 'function', 'the row a person right-clicks carries a menu handler')
+  rightClick(row)
+  tree = render(react.createElement(Bubbles, props))
+  const opened = menu(tree)
+  assert.ok(opened, 'a right-click opens the message menu')
+  assert.deepEqual(labelsOf(opened), ['Reply', 'Copy', 'Download'], 'the menu carries the actions this window can run')
+  press(item(opened, 'Reply'))
+  assert.deepEqual(calls.quotes, [['chief', 'a bubble to right-click']], 'Reply quotes the right-clicked line into the open chat')
+})
+
+test('a user bubble gets the same tools as a reply', () => {
+  const calls = { quotes: [] }
+  const actions = { quote: (sessionId, text) => { calls.quotes.push([sessionId, text]) }, openSession() {} }
+  const props = {
+    node: { data: { content: [{ type: 'text', text: 'my own words' }] } },
+    sessionId: 'chief',
+    actions,
+    useRoster: (selector) => selector(roster),
+  }
+  let tree = fresh(react.createElement(UserMessageCell, props))
+  const reply = button(tree, 'Reply')
+  assert.ok(reply, 'my own line offers Reply too')
+  assert.ok(button(tree, 'More message actions'), 'my own line offers the same More button')
+  press(reply)
+  assert.deepEqual(calls.quotes, [['chief', 'my own words']], 'Reply on my own line quotes my own words')
+  const root = find(tree, (node) => classes(node).includes('bt-umsg') && !classes(node).includes('bt-umsg-other'))[0]
+  assert.equal(typeof root?.props?.onContextMenu, 'function', 'my own line carries a menu handler')
+  rightClick(root)
+  tree = render(react.createElement(UserMessageCell, props))
+  const opened = menu(tree)
+  assert.ok(opened, 'the same menu opens on my own line')
+  assert.deepEqual(labelsOf(opened), ['Reply', 'Copy', 'Download'], 'my own line carries the same actions')
+})
+
+test('a copy the window cannot do says why instead of throwing out of the click', async () => {
+  assert.equal(env.navigator.clipboard, undefined, 'this window cannot write to the clipboard')
+  const actions = { quote() {}, toggleReaction() {}, openSession() {} }
+  const props = { texts: ['a bubble to copy'], roster, selfId: 'chief', actions, sessionId: 'chief', msgKey: 'chief:4:1', useUi: (selector) => selector({ reactions: {} }) }
+  let tree = fresh(react.createElement(Bubbles, props))
+  press(button(tree, 'More message actions'))
+  tree = render(react.createElement(Bubbles, props))
+  const copy = item(menu(tree), 'Copy')
+  assert.ok(copy, 'the menu offers Copy')
+  assert.doesNotThrow(() => copy.props.onClick({}), 'the click does not throw out of the menu')
+  await tick()
+  tree = render(react.createElement(Bubbles, props))
+  const note = find(tree, (node) => node.props?.role === 'status')[0]
+  assert.ok(note, 'the menu says why nothing was copied')
+  assert.match([].concat(note.props.children).join(''), /Clipboard unavailable/)
 })
