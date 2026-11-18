@@ -1195,10 +1195,15 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Secrets: '密钥',
    Appearance: '外观',
    Theme: '主题',
-@@ -301,6 +301,8 @@ const ZH = {
+@@ -301,6 +301,13 @@ const ZH = {
    'Unread marks, badges, and the brand mark.': '未读标记、徽标和品牌标志。',
    'Theme accent': '主题强调色',
    'Custom accent': '自定义强调色',
++  Shortcuts: '快捷键',
++  'Send shortcut': '发送快捷键',
++  'Enter to send': 'Enter 发送',
++  'Shift+Enter to send': 'Shift+Enter 发送',
++  'Choose which key sends a message; the other one starts a new line.': '选择哪个键发送消息，另一个键换行。',
 +  On: '开',
 +  None: '无',
    'Bots · {count}': 'Bot · {count}',

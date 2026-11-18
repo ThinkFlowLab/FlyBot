@@ -13,6 +13,7 @@ import { useDialogFocus, useEscape } from './overlay-hooks.js'
 import { BotSettingsForm, SwitchRow } from './bot-settings.js'
 import { Segmented, useGlide } from './motion.js'
 import { GroupSettingsForm, NewGroupForm, seatedCount } from './group-settings.js'
+import { SEND_KEYS, readSendKey, writeSendKey } from './composer.js'
 import { CreateBot } from './create-bot.js'
 import { KeyIcon, SecretsPage } from './secret-card.js'
 import { UsagePage } from './usage-page.js'
@@ -47,6 +48,12 @@ const NOTIFY_KINDS = [
   ['finished', 'Finished'],
   ['failed', 'Failed'],
 ]
+
+// Which key sends (General → Shortcuts). The shell sends on Enter and keeps Shift+Enter
+// for a new line; the other choice flips that pair. The answer stays in this window
+// (composer.js writes localStorage), so the host stores no send-key field.
+const SEND_KEY_LABELS = [['enter', 'Enter to send'], ['shift-enter', 'Shift+Enter to send']]
+const sendKeyLabel = key => SEND_KEY_LABELS.find(([id]) => id === key)?.[1] ?? SEND_KEY_LABELS[0][1]
 // Settings → Plugins (#2564): the four feature plugins, each with one switch. The
 // switch writes FlyBot's state.json; the packages stay installed and the next start
 // reads the answer, so nothing unloads from the session that flipped it.
@@ -108,6 +115,8 @@ function GeneralPage({ roster, actions, run }) {
   const themes = allThemes()
   const current = themes[prefs.theme] ? prefs.theme : 'deepseek'
   const [custom, setCustom] = useState(prefs.accent ?? '#4d6bfe')
+  const [sendKey, setSendKey] = useState(() => readSendKey())
+  const chooseSendKey = (id) => { if (sendKey !== id) setSendKey(writeSendKey(id)) }
   const timer = useRef(0)
   useEffect(() => () => clearTimeout(timer.current), [])
   const pickCustom = (value) => {
@@ -123,6 +132,8 @@ function GeneralPage({ roster, actions, run }) {
       h(SetSection, { key: 'look', title: t('Appearance') },
         h(SetRow, { label: t('Theme'), hint: t(themes[current].label) }),
         h(SetRow, { label: t('Accent'), hint: accent ? t(capitalize(accent)) : prefs.accent ?? t('Default') })),
+      h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
+        h(SetRow, { label: t('Send shortcut'), hint: t(sendKeyLabel(sendKey)) })),
       h(SetSection, { key: 'notify', title: t('Notifications') },
         h(SetRow, { label: t('In other chats'), hint: prefs.notifications !== false ? t('On') : t('Off') }),
         NOTIFY_KINDS.map(([kind, label]) => h(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t('On') : t('Off') }))),
@@ -142,6 +153,15 @@ function GeneralPage({ roster, actions, run }) {
           })),
           h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
             h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
+    h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
+      h(SetRow, {
+        label: t('Send shortcut'),
+        hint: t('Choose which key sends a message; the other one starts a new line.'),
+      },
+        h(Segmented, { label: t('Send shortcut'), value: sendKey, className: 'bt-appearance-seg' }, SEND_KEYS.map(id => h('button', {
+          key: id, type: 'button', 'aria-pressed': sendKey === id,
+          onClick: () => chooseSendKey(id),
+        }, t(sendKeyLabel(id))))))),
     // One switch for every system notification (#353), then one per kind (#469).
     h(SetSection, { key: 'notify', title: t('Notifications') },
       h(SwitchRow, {

@@ -19,6 +19,7 @@ const { outputFiles } = await build({
       "export { Segmented } from './src/client/motion.js'",
       "export { ModelMenu } from './src/client/model-menu.js'",
       "export { FolderMenu } from './src/client/folder-menu.js'",
+      "export { installSendShortcut, shouldBreakOnKey, shouldSendOnKey } from './src/client/composer.js'",
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
@@ -55,13 +56,20 @@ const react = {
   useId: () => { hook(); return 'id' },
   useSyncExternalStore: (_subscribe, get) => { hook(); return get() },
 }
+// The send-key setting is this window's own (the host stores no send-key field), so the
+// page and the composer read and write this store. It starts empty in every mount.
+const stores = new Map()
+const storage = {
+  getItem: key => (stores.has(key) ? stores.get(key) : null),
+  setItem: (key, value) => { stores.set(key, String(value)) },
+}
 const win = { location: { hash: '' }, addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }
 const module = { exports: {} }
 runInNewContext(outputFiles[0].text, {
   module, exports: module.exports, console, setTimeout, clearTimeout, requestAnimationFrame: () => 0, cancelAnimationFrame() {},
   document: { hidden: false, addEventListener() {}, removeEventListener() {}, createElement: () => ({ getContext: () => ({}) }) },
   navigator: { language: 'en' },
-  localStorage: { getItem: () => null, setItem() {} },
+  localStorage: storage,
   window: win,
   require: (name) => {
     if (name === 'react') return react
@@ -70,7 +78,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SettingsDialog, InlineText, SwitchRow, Segmented, ModelMenu, FolderMenu } = module.exports
+const { SettingsDialog, InlineText, SwitchRow, Segmented, ModelMenu, FolderMenu, installSendShortcut, shouldBreakOnKey, shouldSendOnKey } = module.exports
 
 const SENTENCE = 'The Bot team in /home/xuke/.flybot is open in another dsh (Web or Desktop, pid 41 on host). Close the other one and reload.'
 
@@ -253,7 +261,8 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   const general = mount(baseRoster, 'general', null, 'GeneralPage').nodes
   assert.equal(general.filter(node => node.type === 'select').length, 1, 'General keeps its theme select')
   assert.equal(general.filter(node => node.type === 'input').length, 1, 'General keeps its colour field')
-  assert.equal(counts(general), 6, 'General keeps its four switches beside them')
+  assert.equal(counts(general), 7, 'General keeps its four switches beside the send-key picker')
+  assert.equal(general.filter(node => node.type === Segmented && node.props?.label === 'Send shortcut').length, 1, 'General draws the send-key picker')
 
   const bots = mount(baseRoster, 'bots', null, 'BotsPage').nodes
   assert.equal(bots.filter(node => node.type === 'select').length, 2, 'Bots keeps both of its Main Bot selects')
@@ -339,4 +348,123 @@ test('a read-only plain group states who answers and its working folder', () => 
   const writable = mount(baseRoster, 'groups', 'r1', 'GroupSettingsForm').nodes
   assert.ok(writable.some(node => node.type === Segmented), 'the writable page draws the mode picker')
   assert.ok(writable.some(node => node.type === FolderMenu), 'and the folder menu')
+})
+
+// Which key sends (General → Shortcuts). The shell sends on Enter and keeps Shift+Enter for
+// a new line; the setting flips that pair for this window. The choice is local: the host has
+// no send-key field, so the page writes localStorage instead of asking set-prefs.
+test('General offers Enter or Shift+Enter to send, and stores the choice for this window (#3114)', () => {
+  stores.clear()
+  const { nodes, calls } = mount(baseRoster, 'general', null, 'GeneralPage')
+  const facts = text(nodes)
+  assert.match(facts, /Shortcuts/, 'the choice has its own section')
+  assert.match(facts, /Send shortcut/, 'and its own row')
+  const picker = nodes.find(node => node.type === Segmented && node.props?.label === 'Send shortcut')
+  assert.ok(picker, 'the row draws a picker')
+  const buttons = all(picker).filter(node => nameOf(node) === 'button')
+  assert.deepEqual(buttons.map(text), ['Enter to send', 'Shift+Enter to send'])
+  assert.deepEqual(buttons.map(button => button.props['aria-pressed']), [true, false], 'Enter is the default')
+  buttons[1].props.onClick()
+  assert.equal(stores.get('flybot-send-key'), 'shift-enter', 'the choice is stored for this window')
+  assert.deepEqual(calls, [], 'and no host write is asked for')
+  const after = mount(baseRoster, 'general', null, 'GeneralPage').nodes
+    .find(node => node.type === Segmented && node.props?.label === 'Send shortcut')
+  assert.equal(after.props.value, 'shift-enter', 'a reload draws the stored choice')
+})
+
+test('a read-only window names the send shortcut instead of drawing a picker (#3114)', () => {
+  stores.clear()
+  const { nodes, calls } = mount(lockedRoster, 'general', null, 'GeneralPage')
+  const facts = text(nodes)
+  assert.match(facts, /Send shortcut/, 'the page still names the setting')
+  assert.match(facts, /Enter to send/, 'with the choice in use')
+  assert.equal(nodes.filter(node => node.type === Segmented && node.props?.label === 'Send shortcut').length, 0, 'and no picker')
+  assert.deepEqual(calls, [], 'a locked page asks for no write')
+})
+
+// The composer side: with Shift+Enter to send, Enter starts a new line and Shift+Enter
+// presses the shell's own Send button (found by its label, since the component carries no
+// marker); with the default Enter to send, the composer is untouched.
+const composerFixture = ({ label = 'Send', disabled = false, command = 'insertLineBreak' } = {}) => {
+  const calls = []
+  const button = { disabled, textContent: label, getAttribute: () => label, click: () => calls.push('send') }
+  const card = { querySelector: () => null, querySelectorAll: () => [button] }
+  const execCommand = (name) => { calls.push(`exec:${name}`); return name === command }
+  const field = {
+    isContentEditable: true,
+    getAttribute: name => (name === 'contenteditable' ? 'true' : null),
+    ownerDocument: { execCommand },
+    closest: selector => (selector === '[data-composer-card]' ? card : field),
+  }
+  return { calls, card, button, field }
+}
+const keydown = (field, { shiftKey = false, prevented = false } = {}) => {
+  const calls = []
+  const event = {
+    key: 'Enter', shiftKey, target: field, defaultPrevented: prevented,
+    preventDefault: () => calls.push('prevent'), stopPropagation: () => calls.push('stop'),
+  }
+  return { event, calls }
+}
+const listen = (doc) => {
+  const listeners = []
+  doc.defaultView.addEventListener = (type, fn, capture) => listeners.push({ type, fn, capture })
+  doc.defaultView.removeEventListener = () => {}
+  const stop = installSendShortcut({ doc })
+  return { key: event => listeners.find(listener => listener.type === 'keydown').fn(event), stop }
+}
+
+test('Shift+Enter to send presses the composer\'s Send button and Enter starts a new line (#3114)', () => {
+  stores.clear()
+  stores.set('flybot-send-key', 'shift-enter')
+  const fixture = composerFixture()
+  const doc = { defaultView: { localStorage: storage } }
+  const shortcut = listen(doc)
+  const send = keydown(fixture.field, { shiftKey: true })
+  shortcut.key(send.event)
+  assert.deepEqual(send.calls, ['prevent', 'stop'], 'the press is taken from the shell')
+  assert.deepEqual(fixture.calls, ['send'], 'and lands on the shell\'s own Send button')
+  const breakLine = keydown(fixture.field)
+  shortcut.key(breakLine.event)
+  assert.deepEqual(breakLine.calls, ['prevent', 'stop'])
+  assert.deepEqual(fixture.calls, ['send', 'exec:insertLineBreak'], 'Enter inserts one line break')
+  shortcut.stop()
+})
+
+test('Enter to send leaves the composer to the shell (#3114)', () => {
+  stores.clear()
+  const fixture = composerFixture()
+  const doc = { defaultView: { localStorage: storage } }
+  const shortcut = listen(doc)
+  const plain = keydown(fixture.field)
+  shortcut.key(plain.event)
+  assert.deepEqual(plain.calls, [], 'nothing is intercepted')
+  assert.deepEqual(fixture.calls, [], 'and nothing is pressed')
+  const enter = { key: 'Enter', shiftKey: false }
+  const shift = { key: 'Enter', shiftKey: true }
+  assert.equal(shouldSendOnKey(enter, 'enter'), true)
+  assert.equal(shouldBreakOnKey(shift, 'enter'), true)
+  assert.equal(shouldSendOnKey(shift, 'shift-enter'), true)
+  assert.equal(shouldBreakOnKey(enter, 'shift-enter'), true)
+  shortcut.stop()
+})
+
+test('a window with no Send to press keeps the shell\'s handling, and a locked field is left alone (#3114)', () => {
+  stores.clear()
+  stores.set('flybot-send-key', 'shift-enter')
+  const disabled = composerFixture({ disabled: true })
+  const doc = { defaultView: { localStorage: storage } }
+  const shortcut = listen(doc)
+  const press = keydown(disabled.field, { shiftKey: true })
+  shortcut.key(press.event)
+  assert.deepEqual(press.calls, [], 'a disabled Send button means the key falls through')
+  const outside = keydown({ closest: () => null })
+  shortcut.key(outside.event)
+  assert.deepEqual(outside.calls, [], 'a key outside the composer is not ours')
+  const readonly = composerFixture()
+  readonly.field.getAttribute = name => (name === 'aria-readonly' ? 'true' : name === 'contenteditable' ? 'true' : null)
+  const typed = keydown(readonly.field)
+  shortcut.key(typed.event)
+  assert.deepEqual(typed.calls, [], 'a read-only composer receives the key as it is')
+  shortcut.stop()
 })
