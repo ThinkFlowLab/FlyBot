@@ -489,6 +489,16 @@ diff --git a/client.js b/client.js
    // Shapes
    Whale: "鲸鱼",
    Star: "星星",
+@@ -355,6 +355,9 @@ var ZH = {
+   General: "通用",
+   Bots: "Bot",
+   "Group chats": "群聊",
++  "Session filter": "会话筛选",
++  "Direct chats": "单聊",
++  Unread: "未读",
+   Secrets: "密钥",
+   Appearance: "外观",
+   Theme: "主题",
 @@ -363,6 +363,8 @@ var ZH = {
    "Unread marks, badges, and the brand mark.": "未读标记、徽标和品牌标志。",
    "Theme accent": "主题强调色",
@@ -2152,7 +2162,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,388 +1624,2942 @@ function usageOf(list, ids) {
+@@ -1624,537 +1624,3105 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -2936,6 +2946,127 @@ diff --git a/client.js b/client.js
 -.bt-lead{flex:none;display:flex;margin-bottom:1px}
 -button.bt-lead{border:0;background:none;padding:0;cursor:pointer}
 -/* Rows without the avatar start where the bubble beside it starts: 22px avatar + 8px gap. */
+-.bt-astack[data-lead]>.bt-msg:not(:last-child)>.bt-msg-line,.bt-astack[data-lead] .bt-reacts{margin-left:30px}
+-.bt-group-name{font-size:12px;line-height:16px;font-weight:500;margin-left:42px}
+-.bt-x{border:0;background:none;color:var(--bt-ink-2);cursor:pointer;width:24px;height:24px;border-radius:6px;font-size:16px;line-height:24px;padding:0;transition:background-color .12s ease,color .12s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-x:hover{background:var(--bt-hover);color:var(--bt-ink)}
+-
+-.bt-q{margin:0 auto 8px;width:100%;max-width:var(--dsh-chat-content-width,748px);display:flex;flex-direction:column;gap:12px;--bt-q-edge:color-mix(in srgb,var(--bt-ink) 10%,transparent);--bt-q-rule:color-mix(in srgb,var(--bt-ink) 8%,transparent);--bt-q-rule-2:color-mix(in srgb,var(--bt-ink) 5%,transparent);background:var(--bt-card);box-shadow:0 1px 3px rgba(20,20,20,.04),inset 0 0 0 1px var(--bt-q-edge);border-radius:16px;padding:14px 16px;box-sizing:border-box;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
+-body[data-ds-dark-theme] .bt-q{--bt-q-edge:rgba(255,255,255,.16);--bt-q-rule:rgba(255,255,255,.12);--bt-q-rule-2:rgba(255,255,255,.08)}
+-@keyframes bt-q-in{from{transform:translateY(10px) scale(.97)}}
+-.bt-q-settled{animation:none}
+-.bt-q-head{display:flex;align-items:flex-start;gap:8px;min-width:0}
+-.bt-q-text{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
+-.bt-q-title{margin:0;font-size:15px;line-height:22px;font-weight:600;overflow-wrap:anywhere}
+-.bt-q-detail{font-size:13px;line-height:18px;color:var(--bt-ink-2)}
+-.bt-q-x{flex:none;width:20px;height:20px;border:0;padding:0;border-radius:6px;background:none;color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .12s ease,color .12s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-q-x svg{width:14px;height:14px}
+-.bt-q-x:hover{background:var(--bt-hover);color:var(--bt-ink)}
+-.bt-q-x:focus-visible,.bt-q-opt:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
+-.bt-q-list{display:flex;flex-direction:column;gap:1px;min-width:0;box-sizing:border-box;margin:0 -8px}
+-.bt-q-opt{position:relative;display:flex;align-items:flex-start;gap:16px;width:100%;min-width:0;box-sizing:border-box;margin:0;border:0;border-radius:12px;background:transparent;padding:10px 8px;font:inherit;color:var(--bt-ink);text-align:start;cursor:pointer;transition:background-color .12s ease}
+-.bt-q:not(.bt-q-raised)>.bt-q-head:has(+.bt-q-list){padding-bottom:12px;border-bottom:1px solid var(--bt-q-rule)}
+-.bt-q:not(.bt-q-raised)>.bt-q-head+.bt-q-list{margin-top:-6px}
+-.bt-q-opt+.bt-q-opt::before{content:"";position:absolute;left:calc(var(--bt-key,24px) + 24px);right:8px;top:-1px;height:1px;background:var(--bt-q-rule-2);transition:opacity .12s ease;pointer-events:none}
+-button.bt-q-opt:hover::before,button.bt-q-opt:hover+.bt-q-opt::before,.bt-q-opt[aria-pressed=true]::before,.bt-q-opt[aria-pressed=true]+.bt-q-opt::before{opacity:0}
+-.bt-q-raised .bt-q-opt::before{display:none}
+-button.bt-q-opt:hover{background:var(--bt-hover)}
+-button.bt-q-opt:active{background:var(--bt-active)}
+-.bt-q-opt[aria-pressed=true]{background:var(--bt-active)}
+-.bt-q:not(.bt-q-raised) :is(button.bt-q-opt:hover,.bt-q-opt[aria-pressed=true]) .bt-key{background:var(--bt-card);color:var(--bt-ink)}
+-.bt-key{flex:none;box-sizing:border-box;width:var(--bt-key,24px);height:var(--bt-key,24px);border-radius:8px;background:var(--bt-hover);color:var(--bt-ink-2);font-size:12px;line-height:var(--bt-key,24px);font-weight:500;text-align:center;font-variant-numeric:tabular-nums;transition:background-color .12s ease,color .12s ease}
+-.bt-q-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;padding-top:2px}
+-/* With a description the key spans the two text lines less 2px above and below. */
+-.bt-q-opt:has(.bt-q-desc){--bt-key:34px}
+-.bt-q-opt:has(.bt-q-desc) .bt-key{margin-top:2px;border-radius:10px;font-size:13px}
+-.bt-q-opt:has(.bt-q-desc) .bt-q-body{padding-top:0}
+-.bt-q-label{font-size:14px;line-height:20px;font-weight:500;white-space:normal;overflow-wrap:anywhere}
+-.bt-q-desc{font-size:12px;line-height:17px;color:var(--bt-ink-2);overflow-wrap:anywhere}
+-.bt-q-check{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2);animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} backwards}
+-.bt-q-settled .bt-q-check{animation:none}
+-.bt-q-check svg{width:16px;height:16px}
+-.bt-q-settled .bt-key{opacity:.4}
+-.bt-q-settled .bt-q-label{color:color-mix(in srgb,var(--bt-ink) 45%,transparent)}
+-.bt-q-dismissed .bt-q-title{color:var(--bt-ink-2)}
+-.bt-q.bt-q-settled{gap:6px;padding:12px 16px}
+-.bt-q-settled .bt-q-title{font-size:14px;line-height:20px;font-weight:500}
+-.bt-q.bt-q-settled>.bt-q-head:has(+.bt-q-list){padding-bottom:0;border-bottom:0}
+-.bt-q.bt-q-settled>.bt-q-head+.bt-q-list{margin-top:0}
+-.bt-q-settled .bt-q-opt{padding:4px 8px}
+-.bt-q-badge{flex:none;height:20px;padding:0 7px;border-radius:999px;border:1px dotted var(--bt-line-2);color:var(--bt-ink-2);font-size:12px;line-height:18px;box-sizing:border-box}
+-.bt-q-custom{display:flex;align-items:flex-start;gap:8px;width:100%;min-width:0}
+-.bt-q-field{flex:1 1 0;min-width:0;display:flex;box-sizing:border-box;min-height:32px;padding:5px 11px;border-radius:8px;border:.5px solid var(--bt-line-2);background:none;cursor:text;transition:border-color .12s ease}
+-.bt-q-field:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)}
+-.bt-q-input{flex:1;width:100%;min-width:0;max-height:120px;margin:0;padding:0;border:0;outline:none;background:transparent;color:var(--bt-ink);font:inherit;font-size:14px;line-height:20px;resize:none;overflow-y:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
+-.bt-q-input:not(:placeholder-shown){field-sizing:content}
+-.bt-q-input::placeholder{color:var(--bt-ink-3)}
+-.bt-q-submit,.bt-q-btn{flex:none;height:36px;padding:0 14px;border:0;border-radius:999px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;transition:opacity .12s ease,background-color .12s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-q-submit{background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-q-submit-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards,bt-veil-in .16s ease-out backwards}
+-@keyframes bt-q-submit-in{from{transform:translateX(8px) scale(.9)}}
+-.bt-q-submit:hover:not(:disabled){opacity:.86}
+-.bt-q-submit:disabled{opacity:.4;cursor:default}
+-.bt-q-btn{background:var(--bt-hover);color:var(--bt-ink)}
+-.bt-q-btn:hover{background:var(--bt-active)}
+-.bt-q-foot{display:flex;justify-content:flex-end;gap:8px}
+-.bt-q-raised{width:calc(var(--dsh-chat-content-width,748px) - 32px);max-width:calc(100% - 32px);gap:0;padding:0;box-shadow:0 2px 8px rgba(20,20,20,.035),inset 0 0 0 .5px color-mix(in srgb,var(--bt-ink) 5%,transparent)}
+-.bt-q-raised .bt-q-head{padding:14px 16px 4px 20px}
+-.bt-q-raised .bt-q-head:last-child{padding-bottom:16px}
+-.bt-q-raised .bt-q-list{gap:1px;margin:0;padding:8px}
+-.bt-q-raised .bt-q-opt{gap:4px;padding:7px;border-radius:16px;color:var(--bt-ink-2)}
+-.bt-q-raised button.bt-q-opt:hover{color:var(--bt-ink)}
+-.bt-q-raised .bt-q-opt[aria-pressed=true]{background:transparent;color:var(--bt-ink)}
+-.bt-q-raised .bt-q-opt[aria-pressed=true]:hover{background:var(--bt-hover)}
+-.bt-q-raised .bt-q-opt[aria-pressed=true] .bt-key,.bt-q-ownrow:focus-within .bt-key,.bt-q-ownrow[data-filled] .bt-key{background:var(--bt-user);color:var(--bt-user-ink)}
+-.bt-q-raised .bt-q-body{padding:2px 6px 0}
+-.bt-q-raised .bt-q-desc{color:color-mix(in srgb,var(--bt-ink) 61%,transparent)}
+-.bt-q-ownrow{cursor:text}
+-.bt-q-ownrow .bt-q-input{color:var(--bt-ink)}
+-.bt-q-raised .bt-q-foot{padding:0 8px 8px}
+-@media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
+-
+-.bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
+-.bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
+-.bt-to-label{color:var(--bt-ink-2)}
+-.bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
+-.bt-token{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 6px 0 4px;border-radius:999px;background:var(--bt-hover);font-size:13px;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-.bt-token button{border:0;background:none;color:var(--bt-ink-2);cursor:pointer;padding:0 2px}
+-.bt-admin-star{flex:none;display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;corner-shape:round;background:color-mix(in srgb,var(--bt-star) 82%,var(--bt-sidebar));vertical-align:-1px}
+-.bt-to-star{display:inline-flex;margin-right:-2px;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-.bt-to .bt-to-create{flex:none;height:28px;padding:0 12px;font-size:13px;animation:bt-q-submit-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
+-.bt-drop{position:absolute;top:48px;left:32px;width:min(550px,calc(100% - 64px));display:flex;flex-direction:column;padding:6px;max-height:min(420px,60vh);overflow-y:auto;background:var(--bt-card);border:1px solid var(--bt-line-2);border-radius:12px;box-shadow:0 6px 20px -4px rgba(0,0,0,.12);box-sizing:border-box;z-index:1;transform-origin:24px 0;animation:bt-pop-drop ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .14s ease-out}
+-.bt-option{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:8px;padding:7px 8px;min-height:36px;box-sizing:border-box;font-size:13px;line-height:18px;color:var(--bt-ink);cursor:pointer;text-align:left;width:100%}
+-.bt-option[aria-selected=true]{background:var(--bt-active)}
+-.bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
+-.bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+-.bt-option-hint{font-size:11px;color:var(--bt-ink-2);flex:none;animation:bt-veil-in .16s ease-out}
+-.bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
+-.bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
+-.bt-nc-spacer{flex:1}
+-.bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
+-.bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
+-.bt-nc-plus{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2);background:var(--bt-hover);flex:none}
+-.bt-nc-card textarea{flex:1;resize:none;border:0;outline:none;background:none;color:var(--bt-ink);font:inherit;font-size:14px;line-height:20px;padding:7px 4px;min-height:34px;max-height:140px;box-sizing:border-box}
+-.bt-nc-send{width:34px;height:34px;border-radius:50%;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
+-.bt-nc-send:disabled{opacity:.3;cursor:default}
+-.bt-create{flex:1;display:flex;flex-direction:column;min-width:0}
+-.bt-create-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);box-sizing:border-box}
+-.bt-create-gap{width:28px}
+-.bt-create-title{font-size:14px;line-height:20px;font-weight:500}
+-.bt-create-body{flex:1;overflow-y:auto;padding:28px 16px 32px;display:flex;justify-content:center}
+-.bt-create-card{width:100%;max-width:400px;display:flex;flex-direction:column;gap:18px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} both,bt-veil-in .22s ease-out both}
+-.bt-create-preview{display:flex;flex-direction:column;align-items:center;gap:10px}
+-.bt-create-pop{display:inline-flex;animation:bt-create-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} both}
+-@keyframes bt-create-pop{from{transform:scale(.72);opacity:.4}}
+-.bt-create-name{font-size:17px;line-height:24px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+-.bt-create-step{font-size:12px;line-height:16px;color:var(--bt-ink-2);margin-bottom:-10px}
+-.bt-create-looks{display:flex;flex-direction:column;gap:10px;padding:10px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
+-.bt-create-lookbar{justify-content:center}
+-.bt-create-foot{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
+-.bt-create-go{height:36px;padding:0 20px}
+-@media (prefers-reduced-motion:reduce){.bt-create-card,.bt-create-pop{animation:none}}
+-.bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
+-.bt-send:disabled{opacity:.35;cursor:default}
+-.bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
 +// src/client/characters.js
 +var CHARACTERS = {
 +  whale: { label: "Whale", body: "M65.3 20.9l5.1 .1 4.8 .9 4.8 1.7 4.3 2.3 3.8 3.1 3 3.4 2.3 3.8 1.6 4.3 .9 4.3 0 4.8-.8 4.8-1.4 4.3-2.3 4.3-3.2 4.3-3.4 3.3-4.3 3.1-7.2 3.5-7.6 1.7-7.2 .1-9.6-1.6-3.3-1-2.9-1.7-8.8-8.9-6-4.7-3.3-.5-7.7 1.1-4.8-.1-4.7-1.2-1.9-1.2-1-1-.5-1.5 .4-1.4 1.1-1.3 1.9-1.3 4.7-1.5 7.7-.6 1.1-.5 .7-1 0-1.4-2.8-7.2-1.2-5.3-.1-4.3 .4-1.4 .9-1.2 1.9-.2 2 1 2.2 2.3 2.2 3.4 3.2 7.6 1.9 9.7 .5-.1 1.1-7.2 1.8-4.8 3.2-5.2 3.9-4.3 4.9-3.9 5.6-2.9 5.8-1.9z", paints: [["M93.3 55.8l1-.3 .1 1.2-2.4 5.3-3.4 4.8-3.8 3.8-4.8 3.4-5.7 2.8-4.8 1.5-4.8 .4 20.1-17.4 5.2-3.7z", "#fff", 1]], shade: "M88.6 29.5l2.4 2.9 1.9 2.8 2.4 6.3 .5 3.3 .1 5.3-1.5 6.6-1.9 4.3-2 3.3-4.8 5.4-5.7 4.3-7.2 3.3-6.2 1.5-6.7 .1-3.3-.2-9.6-1.8-3.3-1.5-2.4-1.9-8.6-8.9-5.3-3.9-3.3-.1-2.9 .2-3.3 .8-5.8 0-4.3-1-2.9-1.9 .6-.6 3.8-1.3 10.5-2.5 4.3 .9 1.4-.1 2.2-1.7 .5-1.4-.3-1.5-1.2-1.4-2.2-1.4-1.2-1.9-.6-12 .4-3.3 .5-.5 2.9 3.8 2.4 4.8 1.9 5.7 .7 5.8 .7 2.8 2.1 2.4 2.7 5.5 3.8 4.3 2.9 2.2 3.3 1 3.4-.4 6.2-3 7.1-4.5 7.3-5.6 6.6-5.9 5.9-6.5 3.7-5.3 1.7-4.2 .1-2.9z", light: "M55.6 22.8l1.9-.3 1.5 .3 .6 1 .1 .9-2 4.3-3.8 5.3-5.8 6.2-5.4 4.4-4.8 2.3-1.4 0-1.2-.5-.8-1.9 .5-3.3 2.5-4.8 3.3-4.3 2.4-2.4 5.3-3.9zM19.3 28.1l-1.4 2 .3-1.1zM21.7 49.1l.6 .5-.3 .5-.8 0zM35.8 52l1.2-.4 .9 .7 .7 1.6-.4 .9-1.2 .1-2.6-.5zM7.2 52.9l-2.9 2.9 1.2-1.6z", eyes: [[72.5, 48.4, 9.3, 23, -15.8], [85.6, 43.4, 7, 22.9, -21.2]] },
@@ -3125,7 +3256,28 @@ diff --git a/client.js b/client.js
 +  return mask;
 +}
 +var DEFAULT_MASK = maskOf(FALLBACK_SHAPE);
-+
+ 
+-.bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+-.bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
+-.bt-dialog .bt-head{height:62px}
+-.bt-dialog-log{flex:1;overflow-y:auto;padding:8px 16px 20px;width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;box-sizing:border-box}
+-.bt-dialog-foot{display:flex;justify-content:center;padding:10px 10px 16px}
+-.bt-exchange{animation:bt-sheet-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} both,bt-veil-in .24s ease-out both}
+-.bt-exchange[data-leaving]{animation:bt-sheet-out .22s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
+-@keyframes bt-sheet-in{from{transform:translateY(24px)}}
+-@keyframes bt-sheet-out{to{opacity:0;transform:translateY(16px);filter:blur(4px)}}
+-.bt-exchange .bt-dialog{position:relative}
+-.bt-exchange .bt-dialog-log{max-width:none;margin:0;padding:39px max(16px,calc((100% - 960px)/2)) 76px;scrollbar-width:thin}
+-.bt-exchange .bt-tools{display:none}
+-.bt-exchange .bt-dialog-foot{position:absolute;left:0;right:0;bottom:0;height:76px;box-sizing:border-box;align-items:flex-end;padding:0 0 28px;background:var(--bt-main);z-index:3;animation:bt-foot-in .3s cubic-bezier(.22,1,.36,1) .3s both}
+-.bt-exchange .bt-dialog-foot::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:40px;background:linear-gradient(to top,var(--bt-main),transparent);pointer-events:none}
+-.bt-exchange[data-leaving] .bt-dialog-foot{animation:bt-foot-out .22s cubic-bezier(.4,0,1,1) forwards}
+-@keyframes bt-foot-in{from{opacity:0;transform:translateY(6px)}}
+-@keyframes bt-foot-out{to{opacity:0;transform:translateY(6px)}}
+-@media (prefers-reduced-motion:reduce){.bt-exchange,.bt-exchange .bt-dialog-foot{animation-duration:.01s}}
+-.bt-soft{height:36px;border-radius:999px;border:0;background:var(--bt-hover);color:var(--bt-ink);padding:0 16px;font-size:14px;cursor:pointer}
+-.bt-soft:hover{background:var(--bt-active)}
+-.bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
 +// src/client/cluster-order.js
 +function clusterOrder(people2) {
 +  const list = Array.isArray(people2) ? people2 : [];
@@ -3136,7 +3288,8 @@ diff --git a/client.js b/client.js
 +  if (list.length <= 4) return [...remotes, ...locals];
 +  return [...locals, ...remotes];
 +}
-+
+ 
+-.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
 +// src/client/sources.js
 +function createSource(initial) {
 +  let value = initial;
@@ -5455,27 +5608,104 @@ diff --git a/client.js b/client.js
 +.bt-lead{flex:none;display:flex;margin-bottom:1px}
 +button.bt-lead{border:0;background:none;padding:0;cursor:pointer}
 +/* Rows without the avatar start where the bubble beside it starts: 22px avatar + 8px gap. */
- .bt-astack[data-lead]>.bt-msg:not(:last-child)>.bt-msg-line,.bt-astack[data-lead] .bt-reacts{margin-left:30px}
- .bt-group-name{font-size:12px;line-height:16px;font-weight:500;margin-left:42px}
- .bt-x{border:0;background:none;color:var(--bt-ink-2);cursor:pointer;width:24px;height:24px;border-radius:6px;font-size:16px;line-height:24px;padding:0;transition:background-color .12s ease,color .12s ease,${spring(SPRING_TAP, "scale")}}
-@@ -2085,6 +2085,7 @@ button.bt-q-opt:active{background:var(--bt-active)}
- @media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
- 
- .bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
++.bt-astack[data-lead]>.bt-msg:not(:last-child)>.bt-msg-line,.bt-astack[data-lead] .bt-reacts{margin-left:30px}
++.bt-group-name{font-size:12px;line-height:16px;font-weight:500;margin-left:42px}
++.bt-x{border:0;background:none;color:var(--bt-ink-2);cursor:pointer;width:24px;height:24px;border-radius:6px;font-size:16px;line-height:24px;padding:0;transition:background-color .12s ease,color .12s ease,${spring(SPRING_TAP, "scale")}}
++.bt-x:hover{background:var(--bt-hover);color:var(--bt-ink)}
++
++.bt-q{margin:0 auto 8px;width:100%;max-width:var(--dsh-chat-content-width,748px);display:flex;flex-direction:column;gap:12px;--bt-q-edge:color-mix(in srgb,var(--bt-ink) 10%,transparent);--bt-q-rule:color-mix(in srgb,var(--bt-ink) 8%,transparent);--bt-q-rule-2:color-mix(in srgb,var(--bt-ink) 5%,transparent);background:var(--bt-card);box-shadow:0 1px 3px rgba(20,20,20,.04),inset 0 0 0 1px var(--bt-q-edge);border-radius:16px;padding:14px 16px;box-sizing:border-box;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} backwards,bt-veil-in .2s ease-out backwards}
++body[data-ds-dark-theme] .bt-q{--bt-q-edge:rgba(255,255,255,.16);--bt-q-rule:rgba(255,255,255,.12);--bt-q-rule-2:rgba(255,255,255,.08)}
++@keyframes bt-q-in{from{transform:translateY(10px) scale(.97)}}
++.bt-q-settled{animation:none}
++.bt-q-head{display:flex;align-items:flex-start;gap:8px;min-width:0}
++.bt-q-text{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
++.bt-q-title{margin:0;font-size:15px;line-height:22px;font-weight:600;overflow-wrap:anywhere}
++.bt-q-detail{font-size:13px;line-height:18px;color:var(--bt-ink-2)}
++.bt-q-x{flex:none;width:20px;height:20px;border:0;padding:0;border-radius:6px;background:none;color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .12s ease,color .12s ease,${spring(SPRING_TAP, "scale")}}
++.bt-q-x svg{width:14px;height:14px}
++.bt-q-x:hover{background:var(--bt-hover);color:var(--bt-ink)}
++.bt-q-x:focus-visible,.bt-q-opt:focus-visible{outline:2px solid var(--bt-accent);outline-offset:-2px}
++.bt-q-list{display:flex;flex-direction:column;gap:1px;min-width:0;box-sizing:border-box;margin:0 -8px}
++.bt-q-opt{position:relative;display:flex;align-items:flex-start;gap:16px;width:100%;min-width:0;box-sizing:border-box;margin:0;border:0;border-radius:12px;background:transparent;padding:10px 8px;font:inherit;color:var(--bt-ink);text-align:start;cursor:pointer;transition:background-color .12s ease}
++.bt-q:not(.bt-q-raised)>.bt-q-head:has(+.bt-q-list){padding-bottom:12px;border-bottom:1px solid var(--bt-q-rule)}
++.bt-q:not(.bt-q-raised)>.bt-q-head+.bt-q-list{margin-top:-6px}
++.bt-q-opt+.bt-q-opt::before{content:"";position:absolute;left:calc(var(--bt-key,24px) + 24px);right:8px;top:-1px;height:1px;background:var(--bt-q-rule-2);transition:opacity .12s ease;pointer-events:none}
++button.bt-q-opt:hover::before,button.bt-q-opt:hover+.bt-q-opt::before,.bt-q-opt[aria-pressed=true]::before,.bt-q-opt[aria-pressed=true]+.bt-q-opt::before{opacity:0}
++.bt-q-raised .bt-q-opt::before{display:none}
++button.bt-q-opt:hover{background:var(--bt-hover)}
++button.bt-q-opt:active{background:var(--bt-active)}
++.bt-q-opt[aria-pressed=true]{background:var(--bt-active)}
++.bt-q:not(.bt-q-raised) :is(button.bt-q-opt:hover,.bt-q-opt[aria-pressed=true]) .bt-key{background:var(--bt-card);color:var(--bt-ink)}
++.bt-key{flex:none;box-sizing:border-box;width:var(--bt-key,24px);height:var(--bt-key,24px);border-radius:8px;background:var(--bt-hover);color:var(--bt-ink-2);font-size:12px;line-height:var(--bt-key,24px);font-weight:500;text-align:center;font-variant-numeric:tabular-nums;transition:background-color .12s ease,color .12s ease}
++.bt-q-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;padding-top:2px}
++/* With a description the key spans the two text lines less 2px above and below. */
++.bt-q-opt:has(.bt-q-desc){--bt-key:34px}
++.bt-q-opt:has(.bt-q-desc) .bt-key{margin-top:2px;border-radius:10px;font-size:13px}
++.bt-q-opt:has(.bt-q-desc) .bt-q-body{padding-top:0}
++.bt-q-label{font-size:14px;line-height:20px;font-weight:500;white-space:normal;overflow-wrap:anywhere}
++.bt-q-desc{font-size:12px;line-height:17px;color:var(--bt-ink-2);overflow-wrap:anywhere}
++.bt-q-check{flex:none;display:inline-flex;align-items:center;color:var(--bt-ink-2);animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} backwards}
++.bt-q-settled .bt-q-check{animation:none}
++.bt-q-check svg{width:16px;height:16px}
++.bt-q-settled .bt-key{opacity:.4}
++.bt-q-settled .bt-q-label{color:color-mix(in srgb,var(--bt-ink) 45%,transparent)}
++.bt-q-dismissed .bt-q-title{color:var(--bt-ink-2)}
++.bt-q.bt-q-settled{gap:6px;padding:12px 16px}
++.bt-q-settled .bt-q-title{font-size:14px;line-height:20px;font-weight:500}
++.bt-q.bt-q-settled>.bt-q-head:has(+.bt-q-list){padding-bottom:0;border-bottom:0}
++.bt-q.bt-q-settled>.bt-q-head+.bt-q-list{margin-top:0}
++.bt-q-settled .bt-q-opt{padding:4px 8px}
++.bt-q-badge{flex:none;height:20px;padding:0 7px;border-radius:999px;border:1px dotted var(--bt-line-2);color:var(--bt-ink-2);font-size:12px;line-height:18px;box-sizing:border-box}
++.bt-q-custom{display:flex;align-items:flex-start;gap:8px;width:100%;min-width:0}
++.bt-q-field{flex:1 1 0;min-width:0;display:flex;box-sizing:border-box;min-height:32px;padding:5px 11px;border-radius:8px;border:.5px solid var(--bt-line-2);background:none;cursor:text;transition:border-color .12s ease}
++.bt-q-field:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)}
++.bt-q-input{flex:1;width:100%;min-width:0;max-height:120px;margin:0;padding:0;border:0;outline:none;background:transparent;color:var(--bt-ink);font:inherit;font-size:14px;line-height:20px;resize:none;overflow-y:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
++.bt-q-input:not(:placeholder-shown){field-sizing:content}
++.bt-q-input::placeholder{color:var(--bt-ink-3)}
++.bt-q-submit,.bt-q-btn{flex:none;height:36px;padding:0 14px;border:0;border-radius:999px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;transition:opacity .12s ease,background-color .12s ease,${spring(SPRING_TAP, "scale")}}
++.bt-q-submit{background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-q-submit-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards,bt-veil-in .16s ease-out backwards}
++@keyframes bt-q-submit-in{from{transform:translateX(8px) scale(.9)}}
++.bt-q-submit:hover:not(:disabled){opacity:.86}
++.bt-q-submit:disabled{opacity:.4;cursor:default}
++.bt-q-btn{background:var(--bt-hover);color:var(--bt-ink)}
++.bt-q-btn:hover{background:var(--bt-active)}
++.bt-q-foot{display:flex;justify-content:flex-end;gap:8px}
++.bt-q-raised{width:calc(var(--dsh-chat-content-width,748px) - 32px);max-width:calc(100% - 32px);gap:0;padding:0;box-shadow:0 2px 8px rgba(20,20,20,.035),inset 0 0 0 .5px color-mix(in srgb,var(--bt-ink) 5%,transparent)}
++.bt-q-raised .bt-q-head{padding:14px 16px 4px 20px}
++.bt-q-raised .bt-q-head:last-child{padding-bottom:16px}
++.bt-q-raised .bt-q-list{gap:1px;margin:0;padding:8px}
++.bt-q-raised .bt-q-opt{gap:4px;padding:7px;border-radius:16px;color:var(--bt-ink-2)}
++.bt-q-raised button.bt-q-opt:hover{color:var(--bt-ink)}
++.bt-q-raised .bt-q-opt[aria-pressed=true]{background:transparent;color:var(--bt-ink)}
++.bt-q-raised .bt-q-opt[aria-pressed=true]:hover{background:var(--bt-hover)}
++.bt-q-raised .bt-q-opt[aria-pressed=true] .bt-key,.bt-q-ownrow:focus-within .bt-key,.bt-q-ownrow[data-filled] .bt-key{background:var(--bt-user);color:var(--bt-user-ink)}
++.bt-q-raised .bt-q-body{padding:2px 6px 0}
++.bt-q-raised .bt-q-desc{color:color-mix(in srgb,var(--bt-ink) 61%,transparent)}
++.bt-q-ownrow{cursor:text}
++.bt-q-ownrow .bt-q-input{color:var(--bt-ink)}
++.bt-q-raised .bt-q-foot{padding:0 8px 8px}
++@media (prefers-reduced-motion:reduce){.bt-q{animation:bt-fade .12s ease-out backwards}.bt-q-settled{animation:none}.bt-q-submit{animation:none}}
++
++.bt-newchat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;animation:bt-veil-in .18s ease-out}
 +.bt-pane[data-menu]{background:transparent}.bt-pane[data-menu] .bt-newchat{flex:none;align-self:flex-start;width:min(280px,calc(100% - 16px));max-height:calc(100% - 16px);margin:8px;overflow:auto;background:var(--bt-card);border:1px solid var(--bt-line-2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.14),0 2px 6px rgba(0,0,0,.06)}.bt-newchat[data-menu] .bt-drop{position:relative;top:0;left:0;width:auto;max-height:none;margin:0;box-shadow:none;border:0;max-width:none}
- .bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
- .bt-to-label{color:var(--bt-ink-2)}
- .bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
-@@ -2098,9 +2098,18 @@ button.bt-q-opt:active{background:var(--bt-active)}
- .bt-option[aria-selected=true]{background:var(--bt-active)}
- .bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
- .bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
--.bt-option-hint{font-size:11px;color:var(--bt-ink-2);flex:none;animation:bt-veil-in .16s ease-out}
++.bt-to{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);font-size:14px;box-sizing:border-box}
++.bt-to-label{color:var(--bt-ink-2)}
++.bt-to input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
++.bt-token{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 6px 0 4px;border-radius:999px;background:var(--bt-hover);font-size:13px;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
++.bt-token button{border:0;background:none;color:var(--bt-ink-2);cursor:pointer;padding:0 2px}
++.bt-admin-star{flex:none;display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;corner-shape:round;background:color-mix(in srgb,var(--bt-star) 82%,var(--bt-sidebar));vertical-align:-1px}
++.bt-to-star{display:inline-flex;margin-right:-2px;animation:bt-check-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
++.bt-to .bt-to-create{flex:none;height:28px;padding:0 12px;font-size:13px;animation:bt-q-submit-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
++.bt-drop{position:absolute;top:48px;left:32px;width:min(550px,calc(100% - 64px));display:flex;flex-direction:column;padding:6px;max-height:min(420px,60vh);overflow-y:auto;background:var(--bt-card);border:1px solid var(--bt-line-2);border-radius:12px;box-shadow:0 6px 20px -4px rgba(0,0,0,.12);box-sizing:border-box;z-index:1;transform-origin:24px 0;animation:bt-pop-drop ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .14s ease-out}
++.bt-option{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:8px;padding:7px 8px;min-height:36px;box-sizing:border-box;font-size:13px;line-height:18px;color:var(--bt-ink);cursor:pointer;text-align:left;width:100%}
++.bt-option[aria-selected=true]{background:var(--bt-active)}
++.bt-drop-list>.bt-option:not([aria-selected=true]):hover{background:var(--bt-hover)}
++.bt-option-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 +.bt-option-hint{font-size:11px;color:var(--bt-ink-2);flex:0 1 auto;min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;animation:bt-veil-in .16s ease-out}
 +.bt-option-copy{flex:1;min-width:0;display:flex;flex-direction:column}
 +.bt-option-sub{font-size:11px;line-height:15px;color:var(--bt-ink-2);white-space:normal;overflow-wrap:anywhere}
- .bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
- .bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
++.bt-option-icon{width:22px;height:22px;border-radius:50%;background:var(--bt-hover);color:var(--bt-ink-2);display:inline-flex;align-items:center;justify-content:center;flex:none}
++.bt-hint{padding:14px;text-align:center;font-size:13px;color:var(--bt-ink-2)}
 +/* #2502: the host sentence and its Reload entry share one row; the sidebar's own rule sizes
 +   the button, this only places it beside the sentence instead of under it. */
 +.bt-readonly-line{display:flex;align-items:center;gap:8px}
@@ -5483,25 +5713,59 @@ diff --git a/client.js b/client.js
 +.bt-readonly-line>.bt-read-only-reload{flex:none;margin:0}
 +.bt-readonly-line-head{padding:0 20px 8px}
 +.bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
- .bt-nc-spacer{flex:1}
- .bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
- .bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
-@@ -2127,6 +2127,10 @@ button.bt-q-opt:active{background:var(--bt-active)}
- .bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
- .bt-send:disabled{opacity:.35;cursor:default}
- .bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
++.bt-nc-spacer{flex:1}
++.bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
++.bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
++.bt-nc-plus{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2);background:var(--bt-hover);flex:none}
++.bt-nc-card textarea{flex:1;resize:none;border:0;outline:none;background:none;color:var(--bt-ink);font:inherit;font-size:14px;line-height:20px;padding:7px 4px;min-height:34px;max-height:140px;box-sizing:border-box}
++.bt-nc-send{width:34px;height:34px;border-radius:50%;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
++.bt-nc-send:disabled{opacity:.3;cursor:default}
++.bt-create{flex:1;display:flex;flex-direction:column;min-width:0}
++.bt-create-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--bt-line);box-sizing:border-box}
++.bt-create-gap{width:28px}
++.bt-create-title{font-size:14px;line-height:20px;font-weight:500}
++.bt-create-body{flex:1;overflow-y:auto;padding:28px 16px 32px;display:flex;justify-content:center}
++.bt-create-card{width:100%;max-width:400px;display:flex;flex-direction:column;gap:18px;animation:bt-q-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} both,bt-veil-in .22s ease-out both}
++.bt-create-preview{display:flex;flex-direction:column;align-items:center;gap:10px}
++.bt-create-pop{display:inline-flex;animation:bt-create-pop ${SPRING_POP.duration}ms ${SPRING_POP.easing} both}
++@keyframes bt-create-pop{from{transform:scale(.72);opacity:.4}}
++.bt-create-name{font-size:17px;line-height:24px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-create-step{font-size:12px;line-height:16px;color:var(--bt-ink-2);margin-bottom:-10px}
++.bt-create-looks{display:flex;flex-direction:column;gap:10px;padding:10px;border:1px solid var(--bt-line);border-radius:12px;background:var(--bt-card)}
++.bt-create-lookbar{justify-content:center}
++.bt-create-foot{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
++.bt-create-go{height:36px;padding:0 20px}
++@media (prefers-reduced-motion:reduce){.bt-create-card,.bt-create-pop{animation:none}}
++.bt-send{height:40px;min-width:40px;border-radius:999px;border:0;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);font-size:14px;padding:0 14px;cursor:pointer}
++.bt-send:disabled{opacity:.35;cursor:default}
++.bt-error{padding:0 14px 10px;color:#e02135;font-size:12px}
 +.bt-fix-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 +.bt-fix-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer}
 +.bt-fix .bt-note{margin-top:6px}
 +.bt-fix-link{margin-top:6px;color:inherit;user-select:all}
- 
- .bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
- .bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
-@@ -2150,11 +2150,11 @@ button.bt-q-opt:active{background:var(--bt-active)}
- .bt-soft:hover{background:var(--bt-active)}
- .bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
- 
--.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
++
++.bt-pane{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;z-index:45;pointer-events:auto;background:var(--bt-main);color:var(--bt-ink);display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
++.bt-dialog{flex:1;display:flex;flex-direction:column;min-width:0}
++.bt-dialog .bt-head{height:62px}
++.bt-dialog-log{flex:1;overflow-y:auto;padding:8px 16px 20px;width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;box-sizing:border-box}
++.bt-dialog-foot{display:flex;justify-content:center;padding:10px 10px 16px}
++.bt-exchange{animation:bt-sheet-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing} both,bt-veil-in .24s ease-out both}
++.bt-exchange[data-leaving]{animation:bt-sheet-out .22s cubic-bezier(.4,0,1,1) forwards;pointer-events:none}
++@keyframes bt-sheet-in{from{transform:translateY(24px)}}
++@keyframes bt-sheet-out{to{opacity:0;transform:translateY(16px);filter:blur(4px)}}
++.bt-exchange .bt-dialog{position:relative}
++.bt-exchange .bt-dialog-log{max-width:none;margin:0;padding:39px max(16px,calc((100% - 960px)/2)) 76px;scrollbar-width:thin}
++.bt-exchange .bt-tools{display:none}
++.bt-exchange .bt-dialog-foot{position:absolute;left:0;right:0;bottom:0;height:76px;box-sizing:border-box;align-items:flex-end;padding:0 0 28px;background:var(--bt-main);z-index:3;animation:bt-foot-in .3s cubic-bezier(.22,1,.36,1) .3s both}
++.bt-exchange .bt-dialog-foot::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:40px;background:linear-gradient(to top,var(--bt-main),transparent);pointer-events:none}
++.bt-exchange[data-leaving] .bt-dialog-foot{animation:bt-foot-out .22s cubic-bezier(.4,0,1,1) forwards}
++@keyframes bt-foot-in{from{opacity:0;transform:translateY(6px)}}
++@keyframes bt-foot-out{to{opacity:0;transform:translateY(6px)}}
++@media (prefers-reduced-motion:reduce){.bt-exchange,.bt-exchange .bt-dialog-foot{animation-duration:.01s}}
++.bt-soft{height:36px;border-radius:999px;border:0;background:var(--bt-hover);color:var(--bt-ink);padding:0 16px;font-size:14px;cursor:pointer}
++.bt-soft:hover{background:var(--bt-active)}
++.bt-time{display:block;text-align:center;font-size:12px;line-height:16px;color:var(--bt-ink-2);padding:6px 0}
++
 +.bt-panel{position:fixed;top:var(--dsh-frame-chrome-top,0px);right:0;bottom:0;width:var(--bt-panel-w,320px);pointer-events:auto;z-index:40;background:var(--bt-main);border-left:.5px solid var(--bt-line-2);display:flex;flex-direction:column;color:var(--bt-ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;box-sizing:border-box;animation:bt-pane-in .3s cubic-bezier(.2,0,0,1);transition:width ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing};container:bt-panel/inline-size}
  .bt-panel[data-leaving]{transform:translateX(100%);transition:transform .3s cubic-bezier(.2,0,0,1);pointer-events:none}
  .bt-panel[data-instant]{transition:none}
@@ -5693,14 +5957,94 @@ diff --git a/client.js b/client.js
  .bt-mem-scrim{animation:bt-fade .2s ease-out}
  .bt-mem{position:relative;width:min(680px,calc(100vw - 48px));height:min(760px,calc(100vh - 2*max(32px,var(--dsh-frame-overlay-top,32px))));background:var(--bt-main);border-radius:20px;border:.5px solid var(--bt-line-2);box-shadow:0 24px 80px rgba(0,0,0,.24);display:flex;flex-direction:column;overflow:hidden;color:var(--bt-ink);animation:bt-dialog-rise ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-mem-head{position:relative;display:flex;align-items:center;gap:8px;height:60px;flex:none;padding:0 14px 0 24px;border-bottom:.5px solid var(--bt-line);box-sizing:border-box}
-@@ -2597,9 +2597,20 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+@@ -2595,4575 +2595,8337 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
+ :is(.bt-soft,.bt-send,.bt-mini,.bt-tab,.bt-avedit-tab,.bt-pick,.bt-q-submit,.bt-q-btn):active:not(:disabled){scale:.96}
+ @media (prefers-reduced-motion:reduce){.bt-thumb{transition:none}.bt-panel-view>[data-move],.bt-drawer-name-input,.bt-veil,.bt-pop-in,.bt-token,.bt-drop,.bt-newchat,.bt-option-hint,.bt-connector-form,.bt-settings-head>*{animation:none}}
  `;
- var CONVERSATION_CSS = `
- .bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
+-var CONVERSATION_CSS = `
+-.bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
 -.bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
-+.bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;white-space:nowrap}
- .bt-think summary::-webkit-details-marker{display:none}
+-.bt-think summary::-webkit-details-marker{display:none}
 -.bt-think-text{white-space:pre-wrap;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
+-.bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
+-.bt-event>span{padding:0 2px}
+-.bt-event button{border:0;background:none;color:inherit;font:inherit;display:inline-flex;align-items:center;gap:4px;cursor:pointer;height:24px;padding:4px 6px 4px 4px;border-radius:999px;box-sizing:border-box;transition:background-color .12s ease}
+-.bt-event button:hover{background:var(--bt-hover)}
+-.bt-event button:active{background:var(--bt-active)}
+-.bt-event button.bt-event-whole{min-width:0;max-width:100%;padding:4px 6px 4px 8px}
+-.bt-event-whole>*{flex:none}
+-.bt-event-whole>span:first-child{margin-right:2px}
+-/* One button cannot wrap like separate parts, so a long name is cut to fit the chat. */
+-.bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+-.bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
+-[class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
+-.bt-activity{display:flex;align-items:center;gap:10px;margin:8px 0 4px 2px;font-size:14px;color:var(--bt-ink-2)}
+-.bt-group-replies{display:contents}
+-/* A Bot chat is flat in every work-details mode, without changing the user's mode
+-   (it is a DSH-wide setting): step groups lose their header and stay open, and what a
+-   mode folds away in a finished turn stays shown. TurnProcessCell also opens that
+-   fold; these rules cover the first frame before it does. */
+-[data-step-process]>div:first-child{display:none!important}
+-[data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
+-:is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
+-[class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
+-[class*="_header"]:has(.bt-head){border-bottom-color:transparent!important;box-shadow:none!important}
+-/* The transcript runs under a floating header pill. */
+-header[class*="_header"]:has(.bt-head){position:absolute!important;top:0;left:0;right:0;z-index:8;display:flex!important;padding:10px 0 0!important;background:transparent!important;pointer-events:none;justify-content:center}
+-header[class*="_header"]:has(.bt-head)::before{content:"";position:absolute;inset:0 0 auto;height:60px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
+-header[class*="_header"]:has(.bt-head)>[class*="_headerLeading"]{position:absolute;left:12px;top:10px;pointer-events:auto}
+-header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
+-[class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
+-/* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
+-   without its copy and branch row; a tail with nothing in it takes no room. */
+-[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]){display:none!important}
+-[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))){display:none!important}
+-/* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
+-   the shell's new-session hero: no headline, no workspace or mode picker, and the
+-   composer stays docked at the bottom. */
+-[data-content-phase=hero] [class*="_scrollBody"]{justify-content:flex-end!important}
+-[data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
+-[data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
+-[data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
+-/* The right sides give back the scrollbar gutter so both edges sit 16px from the column. */
+-[class*="_scroll"]:has(> [class*="_column"]){padding:60px 11px 16px 16px!important}
+-/* The shell's running status only hosts the activity row (.bt-typing). */
+-[data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
+-[data-chat-running]>span:not([role=status]){display:none!important}
+-[data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
+-.bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
+-.bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
+-.bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
+-.bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
+-.bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
+-.bt-typing>.bt-mark .bt-eyes{transition:scale .28s cubic-bezier(.4,.06,.18,1)}
+-.bt-typing>.bt-mark:hover .bt-eyes{scale:1.18}
+-.bt-typing-text{display:flex;align-items:center;flex:1 1 auto;min-width:0;animation:bt-typing-label .22s ease-out .2s backwards}
+-.bt-typing-label{display:inline-flex;align-items:center;gap:6px;min-width:0;animation:bt-typing-label .22s ease-out backwards}
+-.bt-typing-label>.bt-shimmer{font-size:14px;line-height:22px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+-.bt-typing-time{flex-shrink:0;font-size:12px;line-height:22px;color:var(--bt-ink-3);white-space:nowrap}
+-@keyframes bt-typing-in{from{opacity:0;transform:scale(.9)}}
+-@keyframes bt-typing-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92);filter:blur(3px)}}
+-@keyframes bt-typing-label{from{opacity:0;filter:blur(5px);transform:translateY(3px)}}
+-/* Shimmer: a stepped sweep clipped to the text. */
+-.bt-shimmer{color:transparent;background:linear-gradient(90deg,var(--bt-shimmer-base) 0%,var(--bt-shimmer-base) 25%,var(--bt-ink) 60%,var(--bt-shimmer-base) 75%,var(--bt-shimmer-base) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;animation:bt-shimmer 2.2s steps(60) infinite;--bt-shimmer-base:color-mix(in srgb,var(--bt-ink) 40%,transparent)}
+-@keyframes bt-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+-/* New rows slide up; a reply that replaces the activity row grows out of its corner. */
+-[data-bt-enter="new"]{animation:bt-row-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
+-[data-bt-enter="after-collapse"]{transform-origin:0 100%;animation:bt-row-after .24s cubic-bezier(.23,1,.32,1) .38s backwards}
+-@keyframes bt-row-in{from{transform:translateY(12px)}to{transform:none}}
+-@keyframes bt-row-after{0%{opacity:0;transform:translateY(12px) scale(.94)}55%{opacity:1}100%{opacity:1;transform:none}}
+-@media (prefers-reduced-motion:reduce){
+-.bt-typing,.bt-typing[data-exiting]{animation-name:bt-fade-in;animation-duration:.12s;transform:none}
+-.bt-typing[data-exiting]{animation-name:bt-fade-out}
+-.bt-typing-text,.bt-typing-label{animation-name:bt-fade-in;animation-delay:0s}
+-.bt-shimmer{animation:none;background:none;color:var(--bt-ink-2)}
+-[data-bt-enter="new"]{animation:none}
+-[data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
++var CONVERSATION_CSS = `
++.bt-think{font-size:13px;line-height:18px;color:var(--bt-ink-2);margin:2px 0 4px;max-width:min(560px,78%)}
++.bt-think summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;white-space:nowrap}
++.bt-think summary::-webkit-details-marker{display:none}
 +.bt-think-caret{display:inline-block;transition:transform .15s;font-size:14px;line-height:1}
 +.bt-think[open] .bt-think-caret{transform:rotate(90deg)}
 +.bt-think-peek{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3)}
@@ -5713,27 +6057,27 @@ diff --git a/client.js b/client.js
 +.bt-person-msg .bt-bubble :is(p,li){white-space:pre-line}
 +.bt-remote-handle{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36))}
 +.bt-think-text{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;padding-left:10px;border-left:2px solid var(--bt-line-2)}
- .bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
- .bt-event>span{padding:0 2px}
- .bt-event button{border:0;background:none;color:inherit;font:inherit;display:inline-flex;align-items:center;gap:4px;cursor:pointer;height:24px;padding:4px 6px 4px 4px;border-radius:999px;box-sizing:border-box;transition:background-color .12s ease}
-@@ -2612,7 +2612,6 @@ var CONVERSATION_CSS = `
- .bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
- .bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
- [class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
--.bt-activity{display:flex;align-items:center;gap:10px;margin:8px 0 4px 2px;font-size:14px;color:var(--bt-ink-2)}
- .bt-group-replies{display:contents}
- /* A Bot chat is flat in every work-details mode, without changing the user's mode
-    (it is a DSH-wide setting): step groups lose their header and stay open, and what a
-@@ -2622,21 +2622,48 @@ var CONVERSATION_CSS = `
- [data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
- :is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
- [class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
--[class*="_header"]:has(.bt-head){border-bottom-color:transparent!important;box-shadow:none!important}
--/* The transcript runs under a floating header pill. */
--header[class*="_header"]:has(.bt-head){position:absolute!important;top:0;left:0;right:0;z-index:8;display:flex!important;padding:10px 0 0!important;background:transparent!important;pointer-events:none;justify-content:center}
--header[class*="_header"]:has(.bt-head)::before{content:"";position:absolute;inset:0 0 auto;height:60px;background:linear-gradient(to bottom,var(--bt-main),color-mix(in srgb,var(--bt-main) 0%,transparent));pointer-events:none;z-index:-1}
--header[class*="_header"]:has(.bt-head)>[class*="_headerLeading"]{position:absolute;left:12px;top:10px;pointer-events:auto}
--header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
++.bt-event{display:flex;justify-content:center;align-items:center;gap:2px;min-height:24px;margin:2px 0;font-size:12px;line-height:16px;color:var(--bt-ink-2);flex-wrap:wrap}
++.bt-event>span{padding:0 2px}
++.bt-event button{border:0;background:none;color:inherit;font:inherit;display:inline-flex;align-items:center;gap:4px;cursor:pointer;height:24px;padding:4px 6px 4px 4px;border-radius:999px;box-sizing:border-box;transition:background-color .12s ease}
++.bt-event button:hover{background:var(--bt-hover)}
++.bt-event button:active{background:var(--bt-active)}
++.bt-event button.bt-event-whole{min-width:0;max-width:100%;padding:4px 6px 4px 8px}
++.bt-event-whole>*{flex:none}
++.bt-event-whole>span:first-child{margin-right:2px}
++/* One button cannot wrap like separate parts, so a long name is cut to fit the chat. */
++.bt-event-whole>.bt-event-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-time-sep{display:flex;justify-content:center;align-items:center;height:28px;margin:14px 0 8px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
++[class*="_scroll"]>[class*="_column"]::before{content:var(--bt-first-sep,none);display:block;flex:none;height:28px;margin:17px 0 12px;font-size:12px;line-height:28px;text-align:center;color:var(--bt-ink-2);white-space:nowrap}
++.bt-group-replies{display:contents}
++/* A Bot chat is flat in every work-details mode, without changing the user's mode
++   (it is a DSH-wide setting): step groups lose their header and stay open, and what a
++   mode folds away in a finished turn stays shown. TurnProcessCell also opens that
++   fold; these rules cover the first frame before it does. */
++[data-step-process]>div:first-child{display:none!important}
++[data-step-process]>[data-step-process-body]{display:block!important;content-visibility:visible!important;max-height:none!important;overflow:visible!important;mask-image:none!important;scrollbar-gutter:auto!important}
++:is([data-step-process],[data-turn-process-hidden])[hidden]{content-visibility:visible!important}
++[class*="_flowItem"]:has(> [data-slot="conversation.chat.node"]:empty){display:none!important}
 +/* FlyBot's pill rides the shell's own Session header utilities, beside the seats
 +   the native header renders (actions: the subagent catalog; lineage; corner).
 +   It is a compact control in that row now, not a floating replacement for the
@@ -5753,11 +6097,9 @@ diff --git a/client.js b/client.js
 +   line. No fill, no radius, muted ink, and the description stays on hover. */
 +[data-slot="conversation.session.header.actions"] [class*="_label"]{background:none;border-radius:0;color:var(--bt-ink-3);cursor:help;pointer-events:auto}
 +[data-slot="conversation.session.header.actions"] [class*="_label"] svg{opacity:.7}
- [class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
- /* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
-    without its copy and branch row; a tail with nothing in it takes no room. */
--[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]){display:none!important}
--[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))){display:none!important}
++[class*="_body"]:has(> [class*="_scrollBody"]){--dsh-chat-content-width:min(960px,100%)}
++/* DSH's turn tail keeps what plugins put in it (delivered files, the Bot's separators),
++   without its copy and branch row; a tail with nothing in it takes no room. */
 +[data-turn-tail]>:not([data-slot="conversation.chat.turnTail"]):not(.bt-typing){display:none!important}
 +[class*="_flowItem"][data-chat-flow-kind="turn-tail"]:not(:has([data-slot="conversation.chat.turnTail"]:not(:empty))):not(:has([data-turn-tail]>.bt-typing)){display:none!important}
 +/* #1347: the thread must never paint above a dialog, a sheet or a scrim.
@@ -5773,18 +6115,20 @@ diff --git a/client.js b/client.js
 +   whatever any single bubble does. contain:paint is deliberately NOT used: it would clip the
 +   popovers the thread legitimately renders (reaction strip, message menu), which portal to body
 +   for exactly that reason. */
- /* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
-    the shell's new-session hero: no headline, no workspace or mode picker, and the
-    composer stays docked at the bottom. */
- [data-content-phase=hero] [class*="_scrollBody"]{justify-content:flex-end!important}
++/* Every team Session belongs to a Bot or a group, so a blank one is an empty chat, not
++   the shell's new-session hero: no headline, no workspace or mode picker, and the
++   composer stays docked at the bottom. */
++[data-content-phase=hero] [class*="_scrollBody"]{justify-content:flex-end!important}
 +body[data-bt-remote-chat=empty][data-content-phase=hero] [class*="_scrollBody"]::before{content:var(--bt-remote-empty);display:block;text-align:center;color:var(--bt-ink-3);font-size:13px;line-height:18px;padding:16px 12px 8px;max-width:var(--dsh-chat-content-width,min(960px,100%));margin:0 auto;white-space:pre-wrap}
- [data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
- [data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
- [data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
-@@ -2646,8 +2646,19 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
- [data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
- [data-chat-running]>span:not([role=status]){display:none!important}
- [data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
++[data-content-phase=hero] [class*="_composerHero"]{align-self:stretch!important;width:auto!important;padding-bottom:0!important}
++[data-content-phase=hero] [class*="_composerHero"]>[class$="_root"],[data-content-phase=hero] [class*="_heroWorkspaceRow"]{display:none!important}
++[data-content-phase=hero] [class*="_composerHero"] [class*="_input"]{min-height:0!important}
++/* The right sides give back the scrollbar gutter so both edges sit 16px from the column. */
++[class*="_scroll"]:has(> [class*="_column"]){padding:60px 11px 16px 16px!important}
++/* The shell's running status only hosts the activity row (.bt-typing). */
++[data-chat-running]{display:block!important;width:100%;min-height:0!important;margin:0!important;padding:0!important}
++[data-chat-running]>span:not([role=status]){display:none!important}
++[data-chat-running]:has(> .bt-typing){margin-top:var(--dsh-chat-flow-gap,12px)!important}
 +.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 +.bt-busy-ack .bt-astack{align-items:flex-start}
 +.bt-busy-ack .bt-bubble{opacity:.92}
@@ -5793,132 +6137,39 @@ diff --git a/client.js b/client.js
 +.bt-busy-dots>span:nth-child(2){animation-delay:.2s}.bt-busy-dots>span:nth-child(3){animation-delay:.4s}
 +@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 +@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
- .bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
- .bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
++.bt-typing{display:flex;align-items:center;gap:12px;height:36px;min-width:0;padding-inline-start:8px;transform-origin:0 50%;animation:bt-typing-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing} backwards}
++.bt-typing[data-exiting]{animation:bt-typing-out .14s cubic-bezier(.22,1,.36,1) forwards}
 +.bt-typing[data-carry],.bt-typing[data-carry]>.bt-typing-text{animation:none}
 +/* Between a friend's chat turns the row sits in the last turn's tail (#443), at the transcript's foot. */
 +[data-turn-tail]>.bt-typing{margin-top:var(--dsh-chat-flow-gap,12px)}
- .bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
- .bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
- .bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
-@@ -2676,4494 +2676,8140 @@ header[class*="_header"] .bt-head{flex:1 1 auto;width:100%}
- [data-bt-enter="new"]{animation:none}
- [data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
- }
--@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
--@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
--[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
--[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
--[data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
--[class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
--[class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
--[data-composer-card]>[class*="_row"]{display:contents!important}
--[data-composer-card] [class*="_tools"]{order:1;flex:none;align-self:flex-end;margin:0}
--[data-composer-card]>[data-input-scroll]{order:2;flex:1 1 0;min-width:0;padding:0 8px!important;margin:0!important}
--[data-composer-card] [class*="_trailing"]{order:3;flex:none;align-self:flex-end;margin:0}
--[data-composer-card]>[data-slot="conversation.input.attachments"]{order:0;flex-basis:100%}
--[data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
--[data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
--[data-composer-placeholder]{font-size:0!important;line-height:0!important}
--[data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
--/* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
--[data-composer-card] button[class*="_add"]{display:none!important}
--.bt-plus{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-plus:hover,.bt-plus[aria-expanded=true]{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
--.bt-plus:active{scale:.9}
--.bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, "rotate")}}
--.bt-plus[aria-expanded=true] svg{rotate:45deg}
--.bt-plus-menu{min-width:180px}
--[data-composer-card] [class*="_tools"]{gap:0!important}
--[data-composer-card] [class*="_modes"]:empty{display:none!important}
--[data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
--[data-composer-card] [class*="_trailing"]{gap:8px}
--[data-composer-card] [class*="_standardControls"]{display:flex;align-items:center;gap:8px}
--[data-composer-card] button[class*="_primary"]{width:28px!important;height:28px!important;background:var(--bt-accent)!important;color:var(--bt-accent-ink,#fff)!important;border-radius:50%!important;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")};animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--[data-composer-card] button[class*="_primary"]:hover:not(:disabled){opacity:.9}
--[data-composer-card] button[class*="_primary"]:active:not(:disabled){scale:.9}
--@keyframes bt-icon-swap{from{opacity:0;transform:scale(.5) rotate(-30deg)}}
--[data-composer-card] button[class*="_primary"] svg{width:14px;height:14px}
--[data-composer-card] button[class*="_primary"]:disabled{display:none!important}
--[data-composer-dock]{display:none!important}
--.bt-mic,.bt-voice{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
--.bt-mic{background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2)}
--.bt-mic:hover{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
--.bt-mic[aria-pressed=true]{background:#ff3e51;color:#fff;animation:bt-mic-pulse 1.4s ease-in-out infinite}
--@keyframes bt-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,62,81,.35)}50%{box-shadow:0 0 0 5px rgba(255,62,81,0)}}
--.bt-voice{display:none;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
--.bt-voice:hover{opacity:.9}
--.bt-mic:active,.bt-voice:active{scale:.9}
--[data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
--body[data-bt-room] .bt-voice{display:none!important}
--body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
--.bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
--[data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
--.bt-q{order:1}
--div:has(> nav [class*="_marks"]){display:none!important}
--/* Every user-side bubble (sent, steering mid-turn, not yet admitted, question replies)
--   takes its surface and its text from the one --bt-user pair: a skin that repaints
--   the host's bubble surface alone would otherwise leave the text unreadable. */
--[class*="_userRow"] [class*="_bubble"],[data-chat-flow-kind=question-reply] [class*="_bubble"],[data-chat-flow-kind=command-input] [class*="_bubble"]{background:var(--bt-user)!important;color:var(--bt-user-ink)!important;border-radius:18px!important;padding:7px 12px!important;font-size:var(--dsh-content-font-size,14px)!important;line-height:calc(var(--dsh-content-font-size,14px) + 8px)!important}
--[class*="_userRow"] [class*="_bubble"] [class*="_markdown"],[class*="_userRow"] [class*="_bubble"] a{color:inherit}
--/* Sent messages get the hover toolbar below; steering and unsent bubbles keep none. */
--[class*="_userRow"] [class*="_actions"]{display:none!important}
--[data-chat-flow-kind=user] [class*="_userRow"]{flex-direction:row-reverse;align-items:center;justify-content:flex-start}
--[data-chat-flow-kind=user] [class*="_actions"]{display:flex!important;height:24px!important;gap:2px!important;opacity:0!important;visibility:hidden;transition:opacity .12s ease,visibility .12s!important;flex:none}
--[data-chat-flow-kind=user] [class*="_userRow"]:hover [class*="_actions"],[data-chat-flow-kind=user] [class*="_userRow"]:focus-within [class*="_actions"]{opacity:1!important;visibility:visible}
--[data-chat-flow-kind=user] [class*="_actions"] [class*="_timeStart"]{display:none}
--[data-chat-flow-kind=user] [class*="_actions"] button{width:24px;height:24px;border-radius:6px;color:var(--bt-ink-2)}
--[data-chat-flow-kind=user] [class*="_actions"] button:hover{background:var(--bt-hover);color:var(--bt-ink)}
--[data-chat-flow-kind=user] [class*="_actions"] svg{width:15px;height:15px}
--.bt-q-inline{display:flex;margin:4px 0 6px}
--[data-chat-flow-kind=assistant-step]+[data-step-process]:has(.bt-q-inline){margin-top:0!important}
--[data-chat-flow-kind=question-reply]:has(.bt-q-inline),[data-chat-group-key]:has([data-chat-flow-kind=question-reply] .bt-q-inline),[data-chat-group-key]:has(.bt-q-gone){margin-top:0!important}
--.bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
--.bt-q-dock{width:100%;display:flex;justify-content:center}
--.bt-q-dock .bt-q{margin:0 auto 8px}
--[class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
--[data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
--[class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
--[class*="_toBottomSlot"]>button:active{scale:.9}
--[class*="_toBottomSlot"]>button:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))!important}
--[class*="_toBottomSlot"]>button svg{display:none}
--[class*="_toBottomSlot"]>button::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat}
--@keyframes bt-tobottom-in{from{translate:0 8px;scale:.8}}
--[data-bt-news] [class*="_toBottomSlot"]>button{visibility:hidden!important;pointer-events:none!important}
--.bt-news{position:fixed;z-index:30;transform:translateX(-50%);display:inline-flex;align-items:center;overflow:hidden;border-radius:999px;background:#0c64c1;color:#fcfcfc;box-shadow:inset 0 0 0 1px rgba(20,20,20,.05),0 1px 3px 0 rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-news-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
--@keyframes bt-news-in{from{translate:0 8px;scale:.9}}
--.bt-news[data-direction=up]{animation-name:bt-news-in-up,bt-veil-in}
--@keyframes bt-news-in-up{from{translate:0 -8px;scale:.9}}
--.bt-news-jump{display:inline-flex;align-items:center;gap:2px;margin:0;padding:4px 26px 4px 4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;outline:none}
--.bt-news-ico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
--.bt-news-ico svg{width:16px;height:16px}
--.bt-news-x{position:absolute;right:4px;top:50%;z-index:1;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
--.bt-news-x svg{width:12px;height:12px}
--.bt-news-x:hover{opacity:1;background:rgba(20,20,20,.5)}
--@media (prefers-reduced-motion:reduce){.bt-news,[class*="_toBottomSlot"]>button{animation:none}}
--.bt-new-sep{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding:2px 0;font-size:11px;line-height:14px;font-weight:500;letter-spacing:.02em;text-transform:uppercase;color:#0c64c1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
--.bt-new-sep::before,.bt-new-sep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,#0c64c1 20%,transparent)}
--.bt-open-new{display:flex;flex-direction:column}
--.bt-open-new .bt-new-sep{margin:18px 0 0}
--.bt-open-new .bt-time-sep{height:16px;margin:32px 0 2px}
--.bt-earlier{display:flex;flex-direction:column;gap:6px}
--.bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
--.bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
--.bt-urow{display:flex;justify-content:flex-end}
--.bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
--.bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
--.bt-ububble p{margin:0;line-height:22px}
--.bt-uimages{display:block;font-size:12px;opacity:.7}
--.bt-earlier .bt-event{margin:4px 0}
--.bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
--.bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
--`;
--function installStyles(text, tag) {
--  const style = document.createElement("style");
--  style.dataset.dshBot = tag;
--  style.textContent = text;
--  document.head.appendChild(style);
--  return style;
++.bt-typing>.bt-mark,.bt-typing>.bt-cluster{flex-shrink:0}
++.bt-typing>.bt-mark{cursor:pointer;transition:filter .16s ease-out}
++.bt-typing>.bt-mark:hover{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
++.bt-typing>.bt-mark .bt-eyes{transition:scale .28s cubic-bezier(.4,.06,.18,1)}
++.bt-typing>.bt-mark:hover .bt-eyes{scale:1.18}
++.bt-typing-text{display:flex;align-items:center;flex:1 1 auto;min-width:0;animation:bt-typing-label .22s ease-out .2s backwards}
++.bt-typing-label{display:inline-flex;align-items:center;gap:6px;min-width:0;animation:bt-typing-label .22s ease-out backwards}
++.bt-typing-label>.bt-shimmer{font-size:14px;line-height:22px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.bt-typing-time{flex-shrink:0;font-size:12px;line-height:22px;color:var(--bt-ink-3);white-space:nowrap}
++@keyframes bt-typing-in{from{opacity:0;transform:scale(.9)}}
++@keyframes bt-typing-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92);filter:blur(3px)}}
++@keyframes bt-typing-label{from{opacity:0;filter:blur(5px);transform:translateY(3px)}}
++/* Shimmer: a stepped sweep clipped to the text. */
++.bt-shimmer{color:transparent;background:linear-gradient(90deg,var(--bt-shimmer-base) 0%,var(--bt-shimmer-base) 25%,var(--bt-ink) 60%,var(--bt-shimmer-base) 75%,var(--bt-shimmer-base) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;animation:bt-shimmer 2.2s steps(60) infinite;--bt-shimmer-base:color-mix(in srgb,var(--bt-ink) 40%,transparent)}
++@keyframes bt-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
++/* New rows slide up; a reply that replaces the activity row grows out of its corner. */
++[data-bt-enter="new"]{animation:bt-row-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing}}
++[data-bt-enter="after-collapse"]{transform-origin:0 100%;animation:bt-row-after .24s cubic-bezier(.23,1,.32,1) .38s backwards}
++@keyframes bt-row-in{from{transform:translateY(12px)}to{transform:none}}
++@keyframes bt-row-after{0%{opacity:0;transform:translateY(12px) scale(.94)}55%{opacity:1}100%{opacity:1;transform:none}}
++@media (prefers-reduced-motion:reduce){
++.bt-typing,.bt-typing[data-exiting]{animation-name:bt-fade-in;animation-duration:.12s;transform:none}
++.bt-typing[data-exiting]{animation-name:bt-fade-out}
++.bt-typing-text,.bt-typing-label{animation-name:bt-fade-in;animation-delay:0s}
++.bt-shimmer{animation:none;background:none;color:var(--bt-ink-2)}
++[data-bt-enter="new"]{animation:none}
++[data-bt-enter="after-collapse"]{animation:bt-fade-in .12s ease-out}
++}
 +@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
 +@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
 +[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
@@ -6241,7 +6492,121 @@ diff --git a/client.js b/client.js
 +    ) : null,
 +    foot
 +  );
-+}
+ }
+-@keyframes bt-fade-in{from{opacity:0}to{opacity:1}}
+-@keyframes bt-fade-out{from{opacity:1}to{opacity:0}}
+-[data-composer-card]{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0!important;min-height:44px;border-radius:22px!important;padding:7.5px!important;box-sizing:border-box;background:var(--bt-main)!important;border:.5px solid var(--bt-line-2)!important;box-shadow:0 2px 8px -1px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03),0 0 0 1px rgba(228,228,228,.04)!important;transition:border-color .15s ease,background-color .15s ease,${spring(SPRING_SHAPE, "border-radius")}!important}
+-[data-composer-card]:hover,[data-composer-card]:focus-within{border-color:color-mix(in srgb,var(--bt-ink) 30%,transparent)!important}
+-[data-composer-card]:has(> [data-slot="conversation.input.attachments"] *),[data-composer-card]:has([data-composer-input] br + *),[data-composer-card]:has([data-composer-input] > :nth-child(2)){border-radius:18px!important}
+-[class*="_root"]:has(> [data-composer-card]){padding:0 11px 13px 16px!important}
+-[class*="_root"]:has(> [data-composer-card])>[data-composer-card]{max-width:min(992px,100%)!important}
+-[data-composer-card]>[class*="_row"]{display:contents!important}
+-[data-composer-card] [class*="_tools"]{order:1;flex:none;align-self:flex-end;margin:0}
+-[data-composer-card]>[data-input-scroll]{order:2;flex:1 1 0;min-width:0;padding:0 8px!important;margin:0!important}
+-[data-composer-card] [class*="_trailing"]{order:3;flex:none;align-self:flex-end;margin:0}
+-[data-composer-card]>[data-slot="conversation.input.attachments"]{order:0;flex-basis:100%}
+-[data-composer-card] [data-composer-input]{min-height:24px;padding:2px 0!important}
+-[data-composer-card] [data-composer-placeholder]{left:0!important;top:2px!important}
+-[data-composer-placeholder]{font-size:0!important;line-height:0!important}
+-[data-composer-placeholder]::after{content:var(--bt-placeholder,"Message");display:block;font-size:14px;line-height:24px;color:color-mix(in srgb,var(--bt-ink) 36%,transparent)}
+-/* The team's "+" (ComposerPlus) takes the seat of the shell's command-menu button. */
+-[data-composer-card] button[class*="_add"]{display:none!important}
+-.bt-plus{flex:none;width:28px;height:28px;padding:0;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2);cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-plus:hover,.bt-plus[aria-expanded=true]{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
+-.bt-plus:active{scale:.9}
+-.bt-plus svg{width:14px;height:14px;transition:${spring(SPRING_POP, "rotate")}}
+-.bt-plus[aria-expanded=true] svg{rotate:45deg}
+-.bt-plus-menu{min-width:180px}
+-[data-composer-card] [class*="_tools"]{gap:0!important}
+-[data-composer-card] [class*="_modes"]:empty{display:none!important}
+-[data-composer-card] [class*="_activity"]:not(:has([data-slot] > *)){display:none!important}
+-[data-composer-card] [class*="_trailing"]{gap:8px}
+-[data-composer-card] [class*="_standardControls"]{display:flex;align-items:center;gap:8px}
+-[data-composer-card] button[class*="_primary"]{width:28px!important;height:28px!important;background:var(--bt-accent)!important;color:var(--bt-accent-ink,#fff)!important;border-radius:50%!important;transition:opacity .15s ease,${spring(SPRING_TAP, "scale")};animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-[data-composer-card] button[class*="_primary"]:hover:not(:disabled){opacity:.9}
+-[data-composer-card] button[class*="_primary"]:active:not(:disabled){scale:.9}
+-@keyframes bt-icon-swap{from{opacity:0;transform:scale(.5) rotate(-30deg)}}
+-[data-composer-card] button[class*="_primary"] svg{width:14px;height:14px}
+-[data-composer-card] button[class*="_primary"]:disabled{display:none!important}
+-[data-composer-dock]{display:none!important}
+-.bt-mic,.bt-voice{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s ease,color .15s ease,${spring(SPRING_TAP, "scale")}}
+-.bt-mic{background:color-mix(in srgb,var(--bt-ink) 5%,transparent);box-shadow:inset 0 0 0 .5px var(--bt-line);color:var(--bt-ink-2)}
+-.bt-mic:hover{background:color-mix(in srgb,var(--bt-ink) 10%,transparent);color:var(--bt-ink)}
+-.bt-mic[aria-pressed=true]{background:#ff3e51;color:#fff;animation:bt-mic-pulse 1.4s ease-in-out infinite}
+-@keyframes bt-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,62,81,.35)}50%{box-shadow:0 0 0 5px rgba(255,62,81,0)}}
+-.bt-voice{display:none;background:var(--bt-accent);color:var(--bt-accent-ink,#fff);animation:bt-icon-swap ${SPRING_POP.duration}ms ${SPRING_POP.easing}}
+-.bt-voice:hover{opacity:.9}
+-.bt-mic:active,.bt-voice:active{scale:.9}
+-[data-composer-card]:has(button[class*="_primary"]:disabled) .bt-voice{display:inline-grid}
+-body[data-bt-room] .bt-voice{display:none!important}
+-body[data-bt-room] [data-composer-card]:has(button[class*="_primary"]:disabled) .bt-mic:not([aria-pressed=true]){background:var(--bt-accent);color:var(--bt-accent-ink,#fff)}
+-.bt-mic-note{position:absolute;right:12px;bottom:calc(100% + 8px);padding:5px 10px;border-radius:8px;background:var(--bt-user);color:var(--bt-user-ink);font-size:12px;line-height:16px;white-space:nowrap;pointer-events:none;animation:bt-rise .16s ease-out}
+-[data-chain-overlay-fallback="conversation.composer"]:has(~ .bt-q){display:block!important;order:2}
+-.bt-q{order:1}
+-div:has(> nav [class*="_marks"]){display:none!important}
+-/* Every user-side bubble (sent, steering mid-turn, not yet admitted, question replies)
+-   takes its surface and its text from the one --bt-user pair: a skin that repaints
+-   the host's bubble surface alone would otherwise leave the text unreadable. */
+-[class*="_userRow"] [class*="_bubble"],[data-chat-flow-kind=question-reply] [class*="_bubble"],[data-chat-flow-kind=command-input] [class*="_bubble"]{background:var(--bt-user)!important;color:var(--bt-user-ink)!important;border-radius:18px!important;padding:7px 12px!important;font-size:var(--dsh-content-font-size,14px)!important;line-height:calc(var(--dsh-content-font-size,14px) + 8px)!important}
+-[class*="_userRow"] [class*="_bubble"] [class*="_markdown"],[class*="_userRow"] [class*="_bubble"] a{color:inherit}
+-/* Sent messages get the hover toolbar below; steering and unsent bubbles keep none. */
+-[class*="_userRow"] [class*="_actions"]{display:none!important}
+-[data-chat-flow-kind=user] [class*="_userRow"]{flex-direction:row-reverse;align-items:center;justify-content:flex-start}
+-[data-chat-flow-kind=user] [class*="_actions"]{display:flex!important;height:24px!important;gap:2px!important;opacity:0!important;visibility:hidden;transition:opacity .12s ease,visibility .12s!important;flex:none}
+-[data-chat-flow-kind=user] [class*="_userRow"]:hover [class*="_actions"],[data-chat-flow-kind=user] [class*="_userRow"]:focus-within [class*="_actions"]{opacity:1!important;visibility:visible}
+-[data-chat-flow-kind=user] [class*="_actions"] [class*="_timeStart"]{display:none}
+-[data-chat-flow-kind=user] [class*="_actions"] button{width:24px;height:24px;border-radius:6px;color:var(--bt-ink-2)}
+-[data-chat-flow-kind=user] [class*="_actions"] button:hover{background:var(--bt-hover);color:var(--bt-ink)}
+-[data-chat-flow-kind=user] [class*="_actions"] svg{width:15px;height:15px}
+-.bt-q-inline{display:flex;margin:4px 0 6px}
+-[data-chat-flow-kind=assistant-step]+[data-step-process]:has(.bt-q-inline){margin-top:0!important}
+-[data-chat-flow-kind=question-reply]:has(.bt-q-inline),[data-chat-group-key]:has([data-chat-flow-kind=question-reply] .bt-q-inline),[data-chat-group-key]:has(.bt-q-gone){margin-top:0!important}
+-.bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
+-.bt-q-dock{width:100%;display:flex;justify-content:center}
+-.bt-q-dock .bt-q{margin:0 auto 8px}
+-[class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
+-[data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
+-[class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
+-[class*="_toBottomSlot"]>button:active{scale:.9}
+-[class*="_toBottomSlot"]>button:hover{background:color-mix(in srgb,var(--bt-ink) 4%,var(--bt-main))!important}
+-[class*="_toBottomSlot"]>button svg{display:none}
+-[class*="_toBottomSlot"]>button::before{content:"";width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 4v12M5 11l5 5 5-5'/%3E%3C/svg%3E") center/contain no-repeat}
+-@keyframes bt-tobottom-in{from{translate:0 8px;scale:.8}}
+-[data-bt-news] [class*="_toBottomSlot"]>button{visibility:hidden!important;pointer-events:none!important}
+-.bt-news{position:fixed;z-index:30;transform:translateX(-50%);display:inline-flex;align-items:center;overflow:hidden;border-radius:999px;background:#0c64c1;color:#fcfcfc;box-shadow:inset 0 0 0 1px rgba(20,20,20,.05),0 1px 3px 0 rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;animation:bt-news-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out}
+-@keyframes bt-news-in{from{translate:0 8px;scale:.9}}
+-.bt-news[data-direction=up]{animation-name:bt-news-in-up,bt-veil-in}
+-@keyframes bt-news-in-up{from{translate:0 -8px;scale:.9}}
+-.bt-news-jump{display:inline-flex;align-items:center;gap:2px;margin:0;padding:4px 26px 4px 4px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;font-size:13px;line-height:18px;white-space:nowrap;cursor:pointer;outline:none}
+-.bt-news-ico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
+-.bt-news-ico svg{width:16px;height:16px}
+-.bt-news-x{position:absolute;right:4px;top:50%;z-index:1;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.75;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+-.bt-news-x svg{width:12px;height:12px}
+-.bt-news-x:hover{opacity:1;background:rgba(20,20,20,.5)}
+-@media (prefers-reduced-motion:reduce){.bt-news,[class*="_toBottomSlot"]>button{animation:none}}
+-.bt-new-sep{display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding:2px 0;font-size:11px;line-height:14px;font-weight:500;letter-spacing:.02em;text-transform:uppercase;color:#0c64c1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+-.bt-new-sep::before,.bt-new-sep::after{content:"";flex:1;height:1px;background:color-mix(in srgb,#0c64c1 20%,transparent)}
+-.bt-open-new{display:flex;flex-direction:column}
+-.bt-open-new .bt-new-sep{margin:18px 0 0}
+-.bt-open-new .bt-time-sep{height:16px;margin:32px 0 2px}
+-.bt-earlier{display:flex;flex-direction:column;gap:6px}
+-.bt-earlier-top{display:flex;justify-content:center;align-items:center;height:34px;flex:none}
+-.bt-earlier-top .bt-soft{height:28px;font-size:12px;padding:0 12px}
+-.bt-urow{display:flex;justify-content:flex-end}
+-.bt-ububble{max-width:min(560px,78%);background:var(--bt-user);color:var(--bt-user-ink);border-radius:18px;padding:7px 12px;font-size:14px;line-height:20px;box-sizing:border-box;overflow-wrap:anywhere}
+-.bt-ububble [class*="_markdown"],.bt-ububble a{color:inherit!important}
+-.bt-ububble p{margin:0;line-height:22px}
+-.bt-uimages{display:block;font-size:12px;opacity:.7}
+-.bt-earlier .bt-event{margin:4px 0}
+-.bt-part-line{display:flex;align-items:center;gap:10px;margin:10px 0 6px;font-size:11px;line-height:14px;color:var(--bt-ink-3)}
+-.bt-part-line::before,.bt-part-line::after{content:"";flex:1;height:1px;background:var(--bt-line)}
+-`;
+-function installStyles(text, tag) {
+-  const style = document.createElement("style");
+-  style.dataset.dshBot = tag;
+-  style.textContent = text;
+-  document.head.appendChild(style);
+-  return style;
 +function SettledQuestion({ question, answer }) {
 +  const options = optionsOf(question);
 +  const prompt = question?.question ?? "";
@@ -7608,14 +7973,8 @@ diff --git a/client.js b/client.js
 +    }),
 +    reasoning ? (0, import_react10.createElement)(ThinkingRow, { text: reasoning }) : null,
 +    held && bubbles ? (0, import_react10.createElement)(HeldReply, { held, roster, sessionId, actions, closing }, bubbles) : bubbles
-   );
- }
--function SettledQuestion({ question, answer }) {
--  const options = optionsOf(question);
--  const prompt = question?.question ?? "";
--  const chosen = [...answer.selected ?? [], ...answer.custom ? [answer.custom] : []];
--  if (chosen.length === 0) {
--    return (0, import_react4.createElement)(
++  );
++}
 +function HeldReply({ held, roster, sessionId, actions, closing, children }) {
 +  const bot = roster.byId[sessionId];
 +  const chat = (roster.bots ?? []).find((item) => item.remote?.handle === held.to);
@@ -7625,8 +7984,14 @@ diff --git a/client.js b/client.js
 +    { className: "bt-held-reply", "data-state": held.status, "data-held": isApprovalWaiting(held.status) ? "" : void 0 },
 +    children,
 +    closing ? (0, import_react10.createElement)(HeldReplyActions, { held: { ...held, toName, from: bot?.name }, actions, roster }) : null
-+  );
-+}
+   );
+ }
+-function SettledQuestion({ question, answer }) {
+-  const options = optionsOf(question);
+-  const prompt = question?.question ?? "";
+-  const chosen = [...answer.selected ?? [], ...answer.custom ? [answer.custom] : []];
+-  if (chosen.length === 0) {
+-    return (0, import_react4.createElement)(
 +function PersonMessage({ name, texts: texts2, roster, selfId, actions, sessionId, msgKey, useUi }) {
 +  if (!(texts2 ?? []).some((text2) => String(text2 ?? "").trim() !== "")) return null;
 +  const lead = (0, import_react10.createElement)("span", { className: "bt-lead", title: name }, (0, import_react10.createElement)(PersonMark, { name }));
@@ -9114,7 +9479,20 @@ diff --git a/client.js b/client.js
 -    reasoning ? (0, import_react6.createElement)(ThinkingRow, { text: reasoning }) : null,
 -    texts2.length ? (0, import_react6.createElement)(Bubbles, { texts: texts2, roster, selfId, actions, streaming: running, sessionId, msgKey: `${sessionId}:${data.turn}:${node.key ?? data.seq ?? ""}`, useUi, mentions }) : null
 -  );
--}
++  const root = node.data.root;
++  const turn = node.location?.turn?.turn ?? root.turn;
++  const hidden = isHiddenTurn(roster, sessionId, turn);
++  const findBot = (nameOrId) => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId);
++  const calls = hidden ? [] : callTree(root);
++  const drawn = calls.filter((call4) => DRAWN.has(toolName(call4)));
++  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call4) => call4.kind !== "tool-result");
++  const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
++  useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
++  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
++  if (drawn.length === 0) return null;
++  const env = { sessionId, roster, actions, useUi, findBot };
++  return (0, import_react10.createElement)(import_react10.Fragment, null, drawn.map((call4, index) => (0, import_react10.createElement)(import_react10.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
+ }
 -function EventLine({ prefix, bots, joiner = t("and"), onOpen, whole = false }) {
 -  if (whole && bots.length === 1) {
 -    return (0, import_react6.createElement)(
@@ -9141,19 +9519,13 @@ diff --git a/client.js b/client.js
 -    ));
 -  });
 -  return (0, import_react6.createElement)("div", { className: "bt-event" }, parts);
-+  const root = node.data.root;
-+  const turn = node.location?.turn?.turn ?? root.turn;
-+  const hidden = isHiddenTurn(roster, sessionId, turn);
-+  const findBot = (nameOrId) => roster.byId[nameOrId] ?? botByName(roster.bots, nameOrId);
-+  const calls = hidden ? [] : callTree(root);
-+  const drawn = calls.filter((call4) => DRAWN.has(toolName(call4)));
-+  const running = root.kind === "tool-result" ? void 0 : calls.findLast((call4) => call4.kind !== "tool-result");
-+  const note = running ? toolActivity(toolName(running), toolArgs(running).text, findBot, roster.byId[sessionId]) : null;
-+  useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note);
-+  useShownCards(actions, sessionId, drawn.filter((call4) => CARDS.has(toolName(call4)) && call4.callId).map((call4) => call4.callId));
-+  if (drawn.length === 0) return null;
-+  const env = { sessionId, roster, actions, useUi, findBot };
-+  return (0, import_react10.createElement)(import_react10.Fragment, null, drawn.map((call4, index) => (0, import_react10.createElement)(import_react10.Fragment, { key: call4.callId ?? index }, renderCall(call4, env))));
++
++// src/client/awaiting.js
++var AWAIT_REPLY_MS = 10 * 60 * 1e3;
++function awaitingReply(roster, sessionId, now = Date.now()) {
++  const at = roster?.remoteAwaiting?.[sessionId];
++  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
++  return now - at < AWAIT_REPLY_MS;
  }
 -function GroupMessage({ bot, text, room: room2, roster, actions, msgKey, useUi }) {
 -  const lead = (0, import_react6.createElement)(
@@ -9173,12 +9545,12 @@ diff --git a/client.js b/client.js
 -    (0, import_react6.createElement)(Bubbles, { texts: [text], roster, selfId: bot.id, actions, sessionId: room2?.id, msgKey, useUi, lead })
 -  );
 +
-+// src/client/awaiting.js
-+var AWAIT_REPLY_MS = 10 * 60 * 1e3;
-+function awaitingReply(roster, sessionId, now = Date.now()) {
-+  const at = roster?.remoteAwaiting?.[sessionId];
-+  if (typeof at !== "number" || roster?.byId?.[sessionId]?.remote === void 0) return false;
-+  return now - at < AWAIT_REPLY_MS;
++// src/client/remote-approval-wait.js
++var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
++function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
++  if (!remote) return null;
++  if (tool && inputAt <= (tool.at ?? 0)) return null;
++  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
  }
 -function GroupEvent({ prefix, room: room2, name, roster, actions }) {
 -  return (0, import_react6.createElement)(
@@ -9188,12 +9560,14 @@ diff --git a/client.js b/client.js
 -    room2 ? (0, import_react6.createElement)("button", { type: "button", onClick: () => actions.openSession(room2.id) }, (0, import_react6.createElement)(RoomAvatar, { room: room2, roster, size: 16 }), room2.name) : name ? (0, import_react6.createElement)("span", null, name) : null
 -  );
 +
-+// src/client/remote-approval-wait.js
-+var REMOTE_APPROVAL_LABEL = "Waiting for their approval";
-+function remoteApprovalPhrase(remote, { tool, inputAt = 0 } = {}) {
-+  if (!remote) return null;
-+  if (tool && inputAt <= (tool.at ?? 0)) return null;
-+  return { key: "remote-approval", label: REMOTE_APPROVAL_LABEL, state: "thinking" };
++// src/client/activity-row-host.js
++var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
++var TAIL_HOST = "tail";
++function findRunningHostIn(root) {
++  if (!root || typeof root.querySelector !== "function") return null;
++  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
++  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
++  return root.querySelector(RUNNING_HOST);
  }
 -function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
 -  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null;
@@ -9209,18 +9583,6 @@ diff --git a/client.js b/client.js
 -    (0, import_react6.createElement)("button", { type: "button", title: result, onClick: () => actions.openMemory(target.id) }, (0, import_react6.createElement)(MemoryIcon), label)
 -  );
 +
-+// src/client/activity-row-host.js
-+var RUNNING_HOST = "[data-chat-flow] [data-chat-running]";
-+var TAIL_HOST = "tail";
-+function findRunningHostIn(root) {
-+  if (!root || typeof root.querySelector !== "function") return null;
-+  if (typeof root.matches === "function" && root.matches("[data-chat-running]")) return root;
-+  if (typeof Element !== "undefined" && root instanceof Element) return root.querySelector("[data-chat-running]");
-+  return root.querySelector(RUNNING_HOST);
- }
--function PartLine({ time }) {
--  return (0, import_react6.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react6.createElement)("span", null, dayLabel(time)) : null);
-+
 +// src/client/activity-row.js
 +var import_react11 = require("react");
 +var import_react_dom2 = require("react-dom");
@@ -9232,11 +9594,8 @@ diff --git a/client.js b/client.js
 +  const hours = Math.floor(minutes / 60);
 +  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
  }
--var scrollParent = (node) => {
--  for (let at = node.parentElement; at; at = at.parentElement) {
--    if (/(auto|scroll)/.test(getComputedStyle(at).overflowY)) return at;
--  }
--  return null;
+-function PartLine({ time }) {
+-  return (0, import_react6.createElement)("div", { className: "bt-part-line", role: "separator" }, Number.isFinite(time) ? (0, import_react6.createElement)("span", null, dayLabel(time)) : null);
 +var REMOTE_GRACE_MS = 1500;
 +function useAwaitingReply(roster, sessionId) {
 +  const at = roster?.remoteAwaiting?.[sessionId];
@@ -9248,7 +9607,12 @@ diff --git a/client.js b/client.js
 +    return () => clearTimeout(timer);
 +  }, [shown, at]);
 +  return shown;
-+}
+ }
+-var scrollParent = (node) => {
+-  for (let at = node.parentElement; at; at = at.parentElement) {
+-    if (/(auto|scroll)/.test(getComputedStyle(at).overflowY)) return at;
+-  }
+-  return null;
 +function findHost(where) {
 +  if (where !== TAIL_HOST) return findRunningHostIn(document);
 +  const flow = document.querySelector("[data-conversation-scroll] [data-chat-flow]") ?? document.querySelector("[data-chat-flow]");
@@ -9633,14 +9997,26 @@ diff --git a/client.js b/client.js
 -function NewDivider() {
 -  return (0, import_react6.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react6.createElement)("span", null, t("New")));
 +
-+// src/client/dsh-offer.js
-+var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
-+var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
-+var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
-+function showsDshRow(dsh, app) {
-+  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
-+  if (dsh.kind === "npm") return true;
-+  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
++// src/shared/session-list-filter.js
++var SESSION_FILTERS = ["all", "group", "direct", "unread"];
++function sessionStatusOf(map, id) {
++  if (id == null || map == null) return void 0;
++  if (typeof map.get === "function") return map.get(id);
++  return map[id];
++}
++function sessionIsUnread(entry, statusMap, markedUnread) {
++  const item = entry?.item;
++  if (!item) return false;
++  if (markedUnread?.[item.id]) return true;
++  if (entry.kind === "agent") {
++    return (item.sessions ?? []).some((id) => sessionStatusOf(statusMap, id)?.completionUnread === true);
++  }
++  if (entry.kind === "room") {
++    return sessionStatusOf(statusMap, item.id)?.completionUnread === true;
++  }
++  const part = item.sessionId ?? item.id;
++  const status = sessionStatusOf(statusMap, part);
++  return status?.completionUnread === true || status?.pendingInteraction !== void 0;
  }
 -function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
 -  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
@@ -9659,6 +10035,34 @@ diff --git a/client.js b/client.js
 -    return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
 -  });
 -  return fresh ? (0, import_react6.createElement)(NewDivider) : null;
++function matchesSessionFilter(entry, filter, unread = false) {
++  if (filter === "group") return entry?.kind === "room";
++  if (filter === "direct") return entry?.kind === "bot" || entry?.kind === "agent";
++  if (filter === "unread") return unread === true;
++  return true;
+ }
+-function Nothing() {
+-  return null;
++
++// src/client/dsh-offer.js
++var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
++var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
++var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
++function showsDshRow(dsh, app) {
++  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
++  if (dsh.kind === "npm") return true;
++  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
+ }
+-var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
+-function clockLabel(time, now = Date.now()) {
+-  const date = new Date(time);
+-  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+-  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
+-  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
+-  if (days === 0) return t("Today {time}", { time: clock4 });
+-  if (days === 1) return t("Yesterday {time}", { time: clock4 });
+-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+-  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
 +
 +// src/client/overlay-hooks.js
 +var import_react12 = require("react");
@@ -9678,8 +10082,13 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
  }
--function Nothing() {
--  return null;
+-function nextTurnStart(turns, turn) {
+-  let next;
+-  for (const key in turns) {
+-    const candidate = Number(key);
+-    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
+-  }
+-  return next === void 0 ? void 0 : turns[next].first;
 +function useDialogFocus(ref) {
 +  (0, import_react12.useEffect)(() => {
 +    const before = document.activeElement;
@@ -9692,16 +10101,14 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
  }
--var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
--function clockLabel(time, now = Date.now()) {
--  const date = new Date(time);
--  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
--  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
--  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
--  if (days === 0) return t("Today {time}", { time: clock4 });
--  if (days === 1) return t("Yesterday {time}", { time: clock4 });
--  const sameYear = date.getFullYear() === new Date(now).getFullYear();
--  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
+-function openingTurn(turns, firstTurns, hiddenTurns) {
+-  if (!turns || !firstTurns) return null;
+-  const start = nextTurnStart(turns, -Infinity);
+-  if (start === void 0) return null;
+-  const turn = Number(Object.keys(turns).filter((key) => turns[key].first === start)[0]);
+-  const listed = firstTurns.split(",").map(Number);
+-  const earlier = listed.filter((entry) => entry < turn);
+-  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
 +function usePaneLeft() {
 +  const [paneLeft, setPaneLeft] = (0, import_react12.useState)(280);
 +  (0, import_react12.useLayoutEffect)(() => {
@@ -9710,13 +10117,16 @@ diff --git a/client.js b/client.js
 +  }, []);
 +  return paneLeft;
  }
--function nextTurnStart(turns, turn) {
--  let next;
--  for (const key in turns) {
--    const candidate = Number(key);
--    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
--  }
--  return next === void 0 ? void 0 : turns[next].first;
+-var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
+-function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
+-  const turn = location2.turn;
+-  const time = location2.end.time;
+-  (0, import_react6.useEffect)(() => {
+-    actions.noteTurnTime(sessionId, turn, "end", time);
+-  }, [sessionId, turn, time]);
+-  const label = useTurnClock((state) => {
+-    const start = nextTurnStart(state[sessionId] ?? {}, turn);
+-    return start !== void 0 && start - time >= SEPARATOR_GAP_MS ? clockLabel(start) : "";
 +
 +// src/client/member-status.js
 +var import_react13 = require("react");
@@ -9738,36 +10148,17 @@ diff --git a/client.js b/client.js
 +    const doing = workIn(room2, work, id);
 +    const approvals = askedIn(room2, work, id, doing);
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
-+  });
- }
--function openingTurn(turns, firstTurns, hiddenTurns) {
--  if (!turns || !firstTurns) return null;
--  const start = nextTurnStart(turns, -Infinity);
--  if (start === void 0) return null;
--  const turn = Number(Object.keys(turns).filter((key) => turns[key].first === start)[0]);
--  const listed = firstTurns.split(",").map(Number);
--  const earlier = listed.filter((entry) => entry < turn);
--  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
-+function busyMembers(room2, work, roster) {
-+  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
-+  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
- }
--var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
--function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
--  const turn = location2.turn;
--  const time = location2.end.time;
--  (0, import_react6.useEffect)(() => {
--    actions.noteTurnTime(sessionId, turn, "end", time);
--  }, [sessionId, turn, time]);
--  const label = useTurnClock((state) => {
--    const start = nextTurnStart(state[sessionId] ?? {}, turn);
--    return start !== void 0 && start - time >= SEPARATOR_GAP_MS ? clockLabel(start) : "";
--  });
+   });
 -  const visit = useUi((state) => state.visits?.[sessionId]);
 -  const fresh = useTurnClock((state) => {
 -    if (typeof visit?.seen !== "number" || time > visit.seen) return false;
 -    const start = nextTurnStart(state[sessionId] ?? {}, turn);
 -    return start !== void 0 && start > visit.seen && start <= visit.entered;
++}
++function busyMembers(room2, work, roster) {
++  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
++  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
++}
 +function splitBusy(busy) {
 +  const here = busy.filter((entry) => entry.state === "work" && entry.here);
 +  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
@@ -11896,23 +12287,6 @@ diff --git a/client.js b/client.js
        "div",
 -      { className: "bt-agent-sub", "data-open": open || void 0 },
 -      (0, import_react8.createElement)(
--        "div",
--        { className: "bt-agent-sub-in" },
--        (0, import_react8.createElement)(
--          "button",
--          { type: "button", className: "bt-agent-sub-row bt-agent-new", style: { "--i": 0 }, onClick: () => {
--            void actions.newAgentSession(agent.id).catch((error) => actions.reportError(error, "agent-session"));
--          } },
--          (0, import_react8.createElement)(PlusIcon),
--          (0, import_react8.createElement)("span", { className: "bt-agent-sub-title" }, t("New session"))
--        ),
--        sessions.map((session, index) => (0, import_react8.createElement)(AgentSessionRow, {
--          key: session.id,
--          session,
--          agent,
--          actions,
--          index: index + 1,
--          renaming: renaming === session.id
 +      { className: "bt-board-main" },
 +      error ? (0, import_react16.createElement)("p", { className: "bt-board-error", role: "alert" }, error) : null,
 +      lanes ? (0, import_react16.createElement)("p", { className: "bt-board-hint" }, t("Assign, claim, and progress live on this board: one overall task, a subtask per part, an assignee, a column, and progress. @ only wakes someone.")) : null,
@@ -11930,7 +12304,23 @@ diff --git a/client.js b/client.js
 +      // with the shared Reload beside it, since the sidebar's entry is covered by this overlay.
 +      locked ? readOnlyLine(import_react16.createElement, roster, actions, { key: "readonly", className: "bt-board-hint" }) : null,
 +      (0, import_react16.createElement)(
-+        "div",
+         "div",
+-        { className: "bt-agent-sub-in" },
+-        (0, import_react8.createElement)(
+-          "button",
+-          { type: "button", className: "bt-agent-sub-row bt-agent-new", style: { "--i": 0 }, onClick: () => {
+-            void actions.newAgentSession(agent.id).catch((error) => actions.reportError(error, "agent-session"));
+-          } },
+-          (0, import_react8.createElement)(PlusIcon),
+-          (0, import_react8.createElement)("span", { className: "bt-agent-sub-title" }, t("New session"))
+-        ),
+-        sessions.map((session, index) => (0, import_react8.createElement)(AgentSessionRow, {
+-          key: session.id,
+-          session,
+-          agent,
+-          actions,
+-          index: index + 1,
+-          renaming: renaming === session.id
 +        { className: "bt-board-columns" },
 +        ["not-started", "in-progress", "done"].map((column) => (0, import_react16.createElement)(BoardColumn, {
 +          key: column,
@@ -13079,7 +13469,9 @@ diff --git a/client.js b/client.js
 -  const seated = props.useUi((value) => value.accountSeated === true);
 -  if (seated) return null;
 -  return (0, import_react8.createElement)("span", { className: "bt-foot-account" }, (0, import_react8.createElement)(AccountLauncher, { ...props, seat: false }));
--}
++    tops.current = { layout, map: next };
++  }, [layout, key]);
+ }
 -function BotReturn({ wide, useSurface, actions }) {
 -  const mode = useSurface((value) => value.mode);
 -  if (mode !== "agent") return null;
@@ -13088,8 +13480,41 @@ diff --git a/client.js b/client.js
 -    { type: "button", className: "bt-return", "aria-label": t("DS Bot"), title: t("DS Bot"), onClick: () => actions.setSurface("bot") },
 -    (0, import_react8.createElement)(BotMark, { look: MAIN_LOOK, size: 20 }),
 -    wide ? (0, import_react8.createElement)("span", { className: "bt-return-name" }, t("DS Bot")) : null
--  );
--}
++var NodeActions = class extends import_react19.Component {
++  constructor(props) {
++    super(props);
++    this.state = { failed: false };
++  }
++  static getDerivedStateFromError() {
++    return { failed: true };
++  }
++  componentDidCatch(error) {
++    console.error("flybot: nodeActions failed", error);
++  }
++  render() {
++    return this.state.failed ? null : (0, import_react19.createElement)(this.props.component, { bot: this.props.bot });
++  }
++};
++function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) {
++  const { bot, depth, children } = node;
++  const closed = collapsed[bot.id] === true;
++  return (0, import_react19.createElement)(
++    import_react19.Fragment,
++    null,
++    (0, import_react19.createElement)(
++      "div",
++      { className: "bt-tree-item", "data-depth": depth, style: { paddingLeft: `${depth * 16}px` } },
++      children.length ? (0, import_react19.createElement)(
++        "button",
++        { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) },
++        (0, import_react19.createElement)("span", { className: "bt-tree-chev", "aria-hidden": true }, "▾")
++      ) : (0, import_react19.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
++      (0, import_react19.createElement)(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
++      typeof actions === "function" ? (0, import_react19.createElement)(NodeActions, { component: actions, bot }) : null
++    ),
++    closed ? null : children.map((child) => (0, import_react19.createElement)(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions }))
+   );
+ }
 -var RETURN_CSS = `
 -.bt-return{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:background-color .12s ease}
 -.bt-return:hover{background:rgba(127,127,127,.14)}
@@ -13184,9 +13609,7 @@ diff --git a/client.js b/client.js
 -    return () => clearTimeout(timer);
 -  }, [seen]);
 -  return shown;
-+    tops.current = { layout, map: next };
-+  }, [layout, key]);
- }
+-}
 -function MemoryNotice({ shown }) {
 -  const inner = (0, import_react9.useRef)(null);
 -  const [width, setWidth] = (0, import_react9.useState)(0);
@@ -13198,39 +13621,25 @@ diff --git a/client.js b/client.js
 -    "span",
 -    { className: "bt-pill-mem", "aria-hidden": true, style: { "--bt-mem-w": `${width}px` } },
 -    (0, import_react9.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react9.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react9.createElement)(MemoryIcon)), label)
-+var NodeActions = class extends import_react19.Component {
-+  constructor(props) {
-+    super(props);
-+    this.state = { failed: false };
-+  }
-+  static getDerivedStateFromError() {
-+    return { failed: true };
-+  }
-+  componentDidCatch(error) {
-+    console.error("flybot: nodeActions failed", error);
-+  }
-+  render() {
-+    return this.state.failed ? null : (0, import_react19.createElement)(this.props.component, { bot: this.props.bot });
-+  }
-+};
-+function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) {
-+  const { bot, depth, children } = node;
-+  const closed = collapsed[bot.id] === true;
++function SessionFilter({ value, onChange }) {
++  const items = [
++    ["all", t("All")],
++    ["group", t("Group chats")],
++    ["direct", t("Direct chats")],
++    ["unread", t("Unread")]
++  ];
 +  return (0, import_react19.createElement)(
-+    import_react19.Fragment,
-+    null,
-+    (0, import_react19.createElement)(
-+      "div",
-+      { className: "bt-tree-item", "data-depth": depth, style: { paddingLeft: `${depth * 16}px` } },
-+      children.length ? (0, import_react19.createElement)(
-+        "button",
-+        { type: "button", className: "bt-tree-toggle", "aria-expanded": !closed, "aria-label": `${closed ? t("Expand") : t("Collapse")} ${bot.name}`, onClick: () => toggle(bot.id) },
-+        (0, import_react19.createElement)("span", { className: "bt-tree-chev", "aria-hidden": true }, "▾")
-+      ) : (0, import_react19.createElement)("span", { className: "bt-tree-toggle bt-tree-leaf", "aria-hidden": true }),
-+      (0, import_react19.createElement)(BotRow, { ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }),
-+      typeof actions === "function" ? (0, import_react19.createElement)(NodeActions, { component: actions, bot }) : null
-+    ),
-+    closed ? null : children.map((child) => (0, import_react19.createElement)(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions }))
++    "div",
++    { className: "bt-session-filter", role: "radiogroup", "aria-label": t("Session filter") },
++    items.map(([id, label]) => (0, import_react19.createElement)("button", {
++      key: id,
++      type: "button",
++      role: "radio",
++      className: "bt-session-filter-btn",
++      "data-filter": id,
++      "aria-checked": value === id,
++      onClick: () => onChange(id)
++    }, label))
    );
  }
 -function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
@@ -13283,10 +13692,6 @@ diff --git a/client.js b/client.js
 -    else delete document.body.dataset.btRoom;
 -    return () => {
 -      delete document.body.dataset.btRoom;
--    };
--  }, [Boolean(room2)]);
--  const memoryNotice = notice && changed !== null && roster.memory !== false;
--  return (0, import_react9.createElement)(
 +  const order = (0, import_react19.useMemo)(() => {
 +    const stamps = JSON.parse(updated);
 +    const entries2 = [
@@ -13311,11 +13716,28 @@ diff --git a/client.js b/client.js
 +  }, t("Reload"));
 +  const structure = useSidebarStructure();
 +  const [collapsed, setCollapsed] = (0, import_react19.useState)({});
++  const [sessionFilter, setSessionFilter] = (0, import_react19.useState)("all");
 +  const toggle = (id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }));
 +  const inTree = (entry) => entry.kind === "bot" && !entry.item.remote;
 +  const listed = (entry) => inTree(entry) && structure?.include?.(entry.item.id) !== false;
-+  const tree = structure && wide && main ? botTree([main, ...order.filter(listed).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
-+  useListGlide(listRef, wide, order.map((entry) => entry.item.id).join(","));
++  const statusMap = props.useSessionStatus ? props.useSessionStatus((value) => value) : void 0;
++  const unreadIds = (0, import_react19.useMemo)(() => {
++    const ids = /* @__PURE__ */ new Set();
++    const consider = (entry) => {
++      if (entry?.item && sessionIsUnread(entry, statusMap, markedUnread)) ids.add(entry.item.id);
+     };
+-  }, [Boolean(room2)]);
+-  const memoryNotice = notice && changed !== null && roster.memory !== false;
+-  return (0, import_react9.createElement)(
++    if (main) consider({ kind: "bot", item: main });
++    for (const entry of order) consider(entry);
++    return ids;
++  }, [order, main, statusMap, markedUnread]);
++  const showTree = Boolean(structure && wide && main && (sessionFilter === "all" || sessionFilter === "direct"));
++  const tree = showTree ? botTree([main, ...order.filter(listed).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
++  const visibleOrder = order.filter((entry) => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false) && matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)));
++  const showMain = !tree && main && matchesSessionFilter({ kind: "bot", item: main }, sessionFilter, unreadIds.has(main.id));
++  useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map((entry) => entry.item.id)].filter(Boolean).join(","));
 +  useLandOnMainBot(roster, useSessions, actions);
 +  const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide };
 +  const typeToSearch = (event) => {
@@ -13365,12 +13787,13 @@ diff --git a/client.js b/client.js
 +    (0, import_react19.createElement)(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
 +    (0, import_react19.createElement)(KanbanRow, { wide, useUi, actions }),
 +    (0, import_react19.createElement)(ProjectsNav, { wide }),
++    wide ? (0, import_react19.createElement)(SessionFilter, { value: sessionFilter, onChange: setSessionFilter }) : null,
 +    (0, import_react19.createElement)(
 +      "div",
 +      { ref: listRef, className: "bt-list", role: "region", "aria-label": t("Bot list") },
-+      tree ? (0, import_react19.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react19.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
-+      order.filter((entry) => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false)).map((entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
-+      wide ? (0, import_react19.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react19.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
++      tree ? (0, import_react19.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react19.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : showMain ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
++      visibleOrder.map((entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
++      wide && sessionFilter === "all" ? (0, import_react19.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react19.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
 +    )
    );
  }
@@ -13934,6 +14357,10 @@ diff --git a/client.js b/client.js
 +  return (0, import_react19.createElement)("span", { style: { fontWeight: 600, fontSize: 14 } }, t("FlyBot"));
 +}
 +var SIDEBAR_CSS = `
++.bt-session-filter{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px 2px;flex:none}
++.bt-session-filter-btn{height:26px;padding:0 10px;border:.5px solid var(--bt-line);border-radius:999px;background:transparent;color:var(--bt-ink-2);font:inherit;font-size:12px;line-height:26px;cursor:pointer}
++.bt-session-filter-btn[aria-checked=true]{background:var(--bt-active);border-color:var(--bt-line-2);color:var(--bt-ink);font-weight:600}
++.bt-session-filter-empty{padding:16px 12px;text-align:center}
 +.bt-side-top .bt-brand{cursor:default;padding-left:6px}
 +.bt-side-top .bt-brand:hover{background:none}
 +.bt-brand .bt-mark{flex:none}

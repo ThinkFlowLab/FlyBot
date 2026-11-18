@@ -1182,6 +1182,16 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
+@@ -293,6 +293,9 @@ const ZH = {
+   General: '通用',
+   Bots: 'Bot',
+   'Group chats': '群聊',
++  'Session filter': '会话筛选',
++  'Direct chats': '单聊',
++  Unread: '未读',
+   Secrets: '密钥',
+   Appearance: '外观',
+   Theme: '主题',
 @@ -301,6 +301,8 @@ const ZH = {
    'Unread marks, badges, and the brand mark.': '未读标记、徽标和品牌标志。',
    'Theme accent': '主题强调色',

@@ -66,7 +66,7 @@ test('the sidebar + menu wires plugin actions in after New group chat', () => {
   assert.match(sidebar, /const inTree = entry => entry\.kind === 'bot' && !entry\.item\.remote/)
   assert.match(sidebar, /structure\?\.include\?\.\(entry\.item\.id\) !== false/)
   assert.match(sidebar, /botTree\(\[main, \.\.\.order\.filter\(listed\)/)
-  assert.match(sidebar, /order\.filter\(entry => !\(tree && inTree\(entry\)\) && !\(inTree\(entry\) && structure\?\.include/)
+  assert.match(sidebar, /!\(tree && inTree\(entry\)\) &&\n\s*!\(inTree\(entry\) && structure\?\.include\?\.\(entry\.item\.id\) === false\) &&\n\s*matchesSessionFilter/)
   assert.equal(DICTIONARY.zh['Copy my handle'], '复制我的 handle')
   assert.equal(DICTIONARY.zh['Face-to-face'], '面对面')
   assert.equal(DICTIONARY.zh['Face-to-face room'], '面对面房间')
