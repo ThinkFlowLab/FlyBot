@@ -1182,13 +1182,16 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
  
    // Shapes
    Whale: '鲸鱼', Star: '星星', Moon: '月亮', Wave: '声波', Squircle: '圆角方', Bull: '牛角', Blossom: '花朵',
-@@ -293,6 +293,9 @@ const ZH = {
+@@ -293,6 +293,12 @@ const ZH = {
    General: '通用',
    Bots: 'Bot',
    'Group chats': '群聊',
 +  'Session filter': '会话筛选',
 +  'Direct chats': '单聊',
 +  Unread: '未读',
++  'No group chats': '没有群聊',
++  'No direct chats': '没有单聊',
++  'No unread chats': '没有未读会话',
    Secrets: '密钥',
    Appearance: '外观',
    Theme: '主题',

@@ -3121,7 +3121,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
      : wide && unread && !active ? h('span', { className: 'bt-unread', 'aria-hidden': true }) : null)
  }
  
-@@ -235,6 +235,45 @@ function useListGlide(listRef, layout, key) {
+@@ -235,6 +235,53 @@ function useListGlide(listRef, layout, key) {
    }, [layout, key])
  }
  
@@ -3164,10 +3164,18 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +    }, label)))
 +}
 +
++// A filter that hides every row leaves a blank panel, so the list says which filter emptied it.
++function sessionFilterEmpty(filter) {
++  if (filter === 'group') return t('No group chats')
++  if (filter === 'direct') return t('No direct chats')
++  if (filter === 'unread') return t('No unread chats')
++  return null
++}
++
  export function TeamSidebar(props) {
    const { wide, useRoster, useUi, useSessions, actions } = props
    const listRef = useRef(null)
-@@ -249,15 +249,56 @@ export function TeamSidebar(props) {
+@@ -249,15 +249,59 @@ export function TeamSidebar(props) {
    const order = useMemo(() => {
      const stamps = JSON.parse(updated)
      const entries = [
@@ -3224,11 +3232,14 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 +    !(inTree(entry) && structure?.include?.(entry.item.id) === false) &&
 +    matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)))
 +  const showMain = !tree && main && matchesSessionFilter({ kind: 'bot', item: main }, sessionFilter, unreadIds.has(main.id))
++  const filterEmpty = roster.ready && !showMain && !tree && visibleOrder.length === 0
++    ? sessionFilterEmpty(sessionFilter)
++    : null
 +  useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map(entry => entry.item.id)].filter(Boolean).join(','))
    useLandOnMainBot(roster, useSessions, actions)
    const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
    // Typing while the sidebar has focus starts a search.
-@@ -276,14 +276,23 @@ export function TeamSidebar(props) {
+@@ -276,14 +276,24 @@ export function TeamSidebar(props) {
        : h(Fragment, null,
            h(UpdateButton, { useUpdate: props.useUpdate, actions }),
            h('button', { type: 'button', className: 'bt-round', 'aria-label': t('New…'), title: t('New…'), onClick: () => actions.openNewChat('new') }, h(PlusIcon))),
@@ -3252,6 +3263,7 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
            ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })
 -          : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })))))
 +          : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true }))),
++      filterEmpty ? h('div', { className: 'bt-hint bt-session-filter-empty' }, filterEmpty) : null,
 +      wide && sessionFilter === 'all' ? h(FlyBotSections, { roster, actions, renderBot: bot => h(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null))
  }
  
