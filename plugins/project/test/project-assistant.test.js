@@ -350,6 +350,98 @@ test('project-create retries the digest for an assistant it did not create (#175
   }
 })
 
+// #1751: the retry must not be a second write. A Project Assistant whose Session already holds
+// its 09:00 digest adopts that task; its identity is the Session, the title and a daily rule, so a
+// task its owner paused is the digest too, and an ended row is the only one that is replaced.
+test('reconcile adopts a 09:00 digest already on the Session and does not write a second (#1751)', async () => {
+  const { rt, service, attachSchedule, stop } = await start({ schedule: false })
+  try {
+    const project = await created(rt, { name: 'Adopt', ownerUserId: 'owner-1' })
+    const sessionId = rt.readProject(project.id).assistant.sessionId
+    assert.equal(service.tasks.size, 0, 'nothing is written while the service is off')
+    await service.create(sessionId, { title: '09:00 Project digest', prompt: 'the digest', daily: { time: '09:00', time_zone: 'Asia/Shanghai' } })
+    assert.equal(service.created.length, 1, 'the Session already holds one digest')
+
+    attachSchedule()
+    await rt.projectAssistant.reconcile()
+
+    assert.equal(service.created.length, 1, 'the digest already on the Session is adopted, not written again')
+    assert.equal(service.tasks.size, 1, 'one 09:00 task on the Session, not two')
+    const saved = rt.readProject(project.id).assistant
+    assert.equal(saved.scheduleId, 'schedule-1', 'the Project names the task that was already there')
+    assert.equal(saved.error, undefined, 'an adopted digest leaves no retry behind')
+  } finally {
+    await stop()
+  }
+})
+
+test('reconcile adopts a paused digest rather than writing an active second one (#1751)', async () => {
+  const { rt, service, attachSchedule, stop } = await start({ schedule: false })
+  try {
+    const project = await created(rt, { name: 'Paused', ownerUserId: 'owner-1' })
+    const sessionId = rt.readProject(project.id).assistant.sessionId
+    // DSH's own storage keeps `active | inactive` only. A paused task lives in the host's
+    // `pausedSchedules` and the view merges it back with `status: 'paused'`, which is the state
+    // the digest above is in: its owner paused it, so no active copy may take its place.
+    rt.state.pausedSchedules ??= {}
+    rt.state.pausedSchedules['schedule-9'] = {
+      id: 'schedule-9',
+      sessionId,
+      record: { title: '09:00 Project digest', prompt: 'the digest', kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai' },
+      pausedAt: Date.now(),
+    }
+
+    attachSchedule()
+    await rt.projectAssistant.reconcile()
+
+    assert.equal(service.created.length, 0, 'the owner paused this digest, so no active one replaces it')
+    assert.equal(service.tasks.size, 0, 'and nothing new is written to DSH')
+    const saved = rt.readProject(project.id).assistant
+    assert.equal(saved.scheduleId, 'schedule-9', 'the Project names the paused task its owner can resume')
+  } finally {
+    await stop()
+  }
+})
+
+test('an ended digest is replaced, and the Project stores the live task rather than the dead one (#1751)', async () => {
+  const { rt, service, attachSchedule, stop } = await start({ schedule: false })
+  try {
+    const project = await created(rt, { name: 'Ended', ownerUserId: 'owner-1' })
+    const sessionId = rt.readProject(project.id).assistant.sessionId
+    await service.create(sessionId, { title: '09:00 Project digest', prompt: 'the digest', daily: { time: '09:00', time_zone: 'Asia/Shanghai' } })
+    // The row DSH leaves behind when a task ends: still in the catalog, with `status: 'inactive'`.
+    service.tasks.get('schedule-1').status = 'inactive'
+
+    attachSchedule()
+    await rt.projectAssistant.reconcile()
+
+    assert.equal(service.created.length, 2, 'an ended digest is replaced by a live one')
+    assert.equal(service.tasks.size, 2, 'the dead row stays where DSH keeps it')
+    const saved = rt.readProject(project.id).assistant
+    assert.equal(saved.scheduleId, 'schedule-2', 'the stored id names a task that can still fire')
+  } finally {
+    await stop()
+  }
+})
+
+test('a weekly task reusing the digest title is not the digest (#1751)', async () => {
+  const { rt, service, attachSchedule, stop } = await start({ schedule: false })
+  try {
+    const project = await created(rt, { name: 'Weekly', ownerUserId: 'owner-1' })
+    const sessionId = rt.readProject(project.id).assistant.sessionId
+    await service.create(sessionId, { title: '09:00 Project digest', prompt: 'something else', weekly: { time: '09:00', time_zone: 'Asia/Shanghai', weekdays: [1] } })
+
+    attachSchedule()
+    await rt.projectAssistant.reconcile()
+
+    assert.equal(service.created.length, 2, 'the daily digest is written beside the weekly task')
+    const saved = rt.readProject(project.id).assistant
+    assert.equal(saved.scheduleId, 'schedule-2', 'the adopted task is the daily one, not the weekly')
+  } finally {
+    await stop()
+  }
+})
+
 test('buildDigest is pure: the same rows answer the same four sections', () => {
   const project = { id: 'project-1', name: 'Pure' }
   const rows = [
