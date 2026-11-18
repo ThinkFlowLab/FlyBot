@@ -93,9 +93,9 @@ export function apply(ctx) {
   // Per Bot, the last friend's-line stamp this browser has shown (friend-lines.js); null: no record yet.
   let friendLines = null
   try { friendLines = JSON.parse(localStorage.getItem(STORAGE.friendLines) ?? 'null') } catch { friendLines = null }
-  // `details` is the panel's subject (a Session id); `view` picks details or the
-  // subject Bot's browser inside it.
-  const ui = createSource({ details: null, view: 'details', renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
+  // `details` is the panel's subject (a Session id); `view` picks details, the
+  // subject Bot's browser, or a long document opened from the chat.
+  const ui = createSource({ details: null, view: 'details', document: null, renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} })
   // Bot mode paints the whole team surface; Agent mode withdraws every slot and
   // style so the shell's own interface returns. `plain` stays false until a Bot-mode
   // view hosts a plain session, which drops only the conversation replacements.
@@ -119,7 +119,7 @@ export function apply(ctx) {
   const setPlain = (plain) => surface.set(state => (state.plain === plain ? state : { ...state, plain }))
   // A DSH Agent Session shows the plain conversation: the Bot details and browser
   // panels would follow it and report it is not on the team, so they close.
-  const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state))
+  const dropPanels = () => ui.set(state => (state.details || state.renaming ? { ...state, details: null, view: 'details', document: null, renaming: false, tab: null } : state))
   // A Bot's chat spans several parts, so when it was last left is kept per Bot.
   const seenKey = id => roster.getSnapshot().byId?.[id]?.id ?? id
   // Per Session, the newest turn this visit measured on screen (`noteVisitTail`). Leaving writes
@@ -450,7 +450,7 @@ export function apply(ctx) {
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {
-      ui.set(state => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, details: null, view: 'details', renaming: false, tab: null }))
+      ui.set(state => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, details: null, view: 'details', document: null, renaming: false, tab: null }))
       setPlain(true)
       expected = sessionId
       ctx.uiWorkspace.openSession(sessionId)
@@ -540,8 +540,14 @@ export function apply(ctx) {
     toggleDetails: (id, force) => {
       ui.set((state) => {
         const details = force || state.details !== id || state.view !== 'details' ? id : null
-        return { ...state, renaming: false, tab: null, details, view: 'details' }
+        return { ...state, renaming: false, tab: null, document: null, details, view: 'details' }
       })
+    },
+    // A long document opens beside the conversation it came from: the panel keeps
+    // that Session as its subject, so moving to another conversation closes it.
+    openDocument: ({ title, text, sessionId } = {}) => {
+      if (!sessionId || String(text ?? '').trim() === '') return
+      ui.set(state => ({ ...state, details: sessionId, view: 'document', document: { title, text }, renaming: false, tab: null }))
     },
     // The open panel follows the main view; a subject with no browser (a group
     // chat, an outside Session) settles on the details view.
@@ -549,12 +555,13 @@ export function apply(ctx) {
       ui.set((state) => {
         if (!state.details || state.details === id) return state
         const view = state.view === 'browser' && roster.getSnapshot().byId[id] === undefined ? 'details' : state.view
+        if (view === 'document') return { ...state, details: id, view: 'details', document: null, renaming: false, tab: null }
         return { ...state, details: id, view, renaming: false, tab: null }
       })
     },
-    showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: false, tab })) },
+    showDetails: (id, tab = null) => { ui.set(state => ({ ...state, details: id, view: 'details', document: null, renaming: false, tab })) },
     // Opening the conversation would move focus to its composer and blur the name field.
-    renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', renaming: true, tab: null })) },
+    renameBot: (id) => { ui.set(state => ({ ...state, details: id, view: 'details', document: null, renaming: true, tab: null })) },
     // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
     // closing the page returns to; a page the inbox opened sends the queue back (#2541).
     openSettings: (page = 'general', id = null, back = null) => {
@@ -580,7 +587,7 @@ export function apply(ctx) {
       if (mode !== 'bot' && mode !== 'agent') return
       if (surface.getSnapshot().mode === mode) return
       if (mode === 'agent') {
-        ui.set(state => ({ ...state, details: null, view: 'details', settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
+        ui.set(state => ({ ...state, details: null, view: 'details', document: null, settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }))
       }
       writeMode(mode)
       surface.set(state => ({ ...state, mode }))
@@ -773,9 +780,9 @@ export function apply(ctx) {
   }
   actions.setPanelView = (view) => {
     if (view !== 'details' && view !== 'browser') return
-    ui.set(state => (state.details && state.view !== view ? { ...state, view } : state))
+    ui.set(state => (state.details && state.view !== view ? { ...state, view, document: null } : state))
   }
-  actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', renaming: false, tab: null } : state)) }
+  actions.closePanel = () => { ui.set(state => (state.details ? { ...state, details: null, view: 'details', document: null, renaming: false, tab: null } : state)) }
   // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
   actions.flybotSlotEntries = name => ctx.slots.entries?.(name) ?? []
   actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null

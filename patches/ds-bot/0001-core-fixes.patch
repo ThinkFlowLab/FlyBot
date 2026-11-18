@@ -179,7 +179,7 @@ diff --git a/src/client/bot-browsers.js b/src/client/bot-browsers.js
 diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
 --- a/src/client/browser-pane.js
 +++ b/src/client/browser-pane.js
-@@ -4,6 +4,7 @@
+@@ -4,24 +4,17 @@
  // body-level layer by bot-browsers.js; the panel draws the strip and the toolbar
  // and reports the rectangle the shown webview covers.
  import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -187,7 +187,10 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  import { createPortal } from 'react-dom'
  import { BotMark } from './mark.js'
  import { STORAGE } from './storage.js'
-@@ -13,15 +13,6 @@ import { t } from './i18n.js'
+ import { SPRING_SHAPE, springEasing } from './motion.js'
+ import { DetailsDrawer } from './details-drawer.js'
++import { DocumentPane } from './message-fold.js'
+ import { t } from './i18n.js'
  
  export const PANEL_LINGER_MS = 300
  const WIDTH_KEY = STORAGE.browserWidth
@@ -226,6 +229,46 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
  
  // The conversation column's right margin lives in one rule of our own, matched on the
  // column's exact class. A custom property on <body> would restyle the whole page, tens
+@@ -278,14 +278,16 @@ function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPages })
+ }
+ 
+ /**
+- * One aside for the Bot's details and browser. `pane` is
+- * `{ id, view: 'details'|'browser', renaming, tab }`; `id` is the Session id the
+- * panel follows. Without the Desktop bridge the browser view never shows.
++ * One aside for the Bot's details, its browser, and a long document opened from a
++ * chat. `pane` is `{ id, view: 'details'|'browser'|'document', renaming, tab, document }`;
++ * `id` is the Session id the panel follows. Without the Desktop bridge the browser
++ * view never shows.
+  */
+ export function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }) {
+   const bot = roster.byId[pane.id]
+   const canBrowse = Boolean(bot && roster.browser === true && actions.browserShow)
+-  const view = pane.view === 'browser' && canBrowse ? 'browser' : 'details'
++  const view = pane.view === 'browser' && canBrowse ? 'browser'
++    : pane.view === 'document' && pane.document ? 'document' : 'details'
+   const tabState = useBrowserTabs(map => (bot ? (map[bot.id] ?? EMPTY_TABS) : EMPTY_TABS))
+   const active = tabState.active
+   const page = useBrowserPages(pages => (active ? pages[active] : null) ?? EMPTY_PAGE)
+@@ -471,7 +471,7 @@ export function BotPanel({ pane, leaving, roster, actions, useSessions, useSessi
+ 
+   const hasStrip = canBrowse && tabState.ids.length > 0
+   return h('aside', {
+-    ref: root, className: 'bt-panel', 'data-view': view, 'aria-label': view === 'browser' && bot ? t("{name}'s browser", { name: bot.name }) : t('Conversation details'),
++    ref: root, className: 'bt-panel', 'data-view': view, 'aria-label': view === 'browser' && bot ? t("{name}'s browser", { name: bot.name }) : view === 'document' ? (pane.document?.title || t('Document')) : t('Conversation details'),
+     'data-leaving': leaving || undefined, 'aria-hidden': leaving || undefined, 'data-settling': settling || undefined,
+     'data-instant': instant || undefined, 'data-dragging': dragging || undefined, style: { '--bt-panel-w': `${panelWidth}px` },
+     onAnimationEnd: (event) => { if (event.target === event.currentTarget) setLanded(true) },
+@@ -483,6 +483,9 @@ export function BotPanel({ pane, leaving, roster, actions, useSessions, useSessi
+     hasStrip ? h(PanelStrip, { bot, subject: pane.id, view, ids: tabState.ids, active, reading, onView: switchView, actions: panelActions, useBrowserPages }) : null,
+     view === 'browser' && bot
+       ? h(BrowserView, { key: `browser:${active}`, bot, tabId: active, leaving, landed: landed && !settling, actions, useBrowserPages })
++      : view === 'document'
++        ? h('div', { key: `document:${pane.id}:${pane.document?.title ?? ''}`, className: 'bt-panel-view' },
++            h(DocumentPane, { document: pane.document, onClose: () => actions.closePanel() }))
+       : h('div', { key: `details:${pane.id}:${pane.renaming ? 'rename' : ''}:${pane.tab ?? ''}`, className: 'bt-panel-view' },
+           h(DetailsDrawer, {
+             sessionId: pane.id, startRenaming: pane.renaming, startTab: pane.tab, hasStrip,
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
@@ -1090,7 +1133,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Add to group chat': '加入群聊',
    'Message Bot': '给 Bot 发消息',
    'To:': '发给：',
-@@ -149,14 +149,37 @@ const ZH = {
+@@ -149,14 +149,44 @@ const ZH = {
    About: '简介',
    'Show less': '收起',
    'Show more': '展开',
@@ -1100,6 +1143,13 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  Standard: '标准',
 +  'No folding': '不折叠',
 +  'Message folding must be compact, standard or none': '消息折叠必须是紧凑、标准或不折叠',
++  'Open beside the conversation': '在对话旁打开',
++  'Opened beside the conversation.': '已在对话旁打开。',
++  'Close document': '关闭文档',
++  '{count} sections': '{count} 个章节',
++  Document: '文档',
++  'Show message text': '显示消息正文',
++  'Hide message text': '收起消息正文',
 +  'Showing {shown} of {count}': '显示 {shown} / {count}',
 +  'Showing all {count}': '显示全部 {count}',
    'Admin leads': '管理员主持',

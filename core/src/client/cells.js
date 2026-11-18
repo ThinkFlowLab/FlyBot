@@ -98,7 +98,7 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
         h('div', { className: 'bt-msg-line' },
           lead && last ? lead : null,
           h('div', { className: 'bt-bubble' },
-            foldBody({ text, folding, streaming: live, draw: shown => h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions }) })),
+            foldBody({ text, folding, streaming: live, actions, sessionId, draw: shown => h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions }) })),
           live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions, contextAt: contextAt?.index === index ? contextAt : null })),
         picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
           key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
