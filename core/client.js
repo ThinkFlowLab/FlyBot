@@ -722,6 +722,11 @@ var ZH = {
   "Unread marks, badges, and the brand mark.": "未读标记、徽标和品牌标志。",
   "Theme accent": "主题强调色",
   "Custom accent": "自定义强调色",
+  Shortcuts: "快捷键",
+  "Send shortcut": "发送快捷键",
+  "Enter to send": "Enter 发送",
+  "Shift+Enter to send": "Shift+Enter 发送",
+  "Choose which key sends a message; the other one starts a new line.": "选择哪个键发送消息，另一个键换行。",
   On: "开",
   None: "无",
   "Bots · {count}": "Bot · {count}",
@@ -13150,6 +13155,102 @@ var import_react24 = require("react");
 var import_react_dom7 = require("react-dom");
 var speechApi = () => window.SpeechRecognition ?? window.webkitSpeechRecognition;
 var keepComposerFocus = (event) => event.preventDefault();
+var SEND_KEYS = ["enter", "shift-enter"];
+var DEFAULT_SEND_KEY = "enter";
+var SEND_KEY_STORAGE = "flybot-send-key";
+function normalizeSendKey(value) {
+  return SEND_KEYS.includes(value) ? value : DEFAULT_SEND_KEY;
+}
+function readSendKey(storage = globalThis.localStorage) {
+  try {
+    return normalizeSendKey(storage?.getItem(SEND_KEY_STORAGE));
+  } catch {
+    return DEFAULT_SEND_KEY;
+  }
+}
+function writeSendKey(value, storage = globalThis.localStorage) {
+  const key = normalizeSendKey(value);
+  try {
+    storage?.setItem(SEND_KEY_STORAGE, key);
+  } catch {
+  }
+  return key;
+}
+var plainEnter = (event) => {
+  if (event?.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey) return false;
+  return !(event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229 || event.which === 229);
+};
+function shouldSendOnKey(event, sendKey) {
+  if (!plainEnter(event)) return false;
+  return normalizeSendKey(sendKey) === "shift-enter" ? event.shiftKey === true : event.shiftKey !== true;
+}
+function shouldBreakOnKey(event, sendKey) {
+  if (!plainEnter(event)) return false;
+  return normalizeSendKey(sendKey) === "shift-enter" ? event.shiftKey !== true : event.shiftKey === true;
+}
+function composerFieldOf(target) {
+  const field = target?.closest?.('[data-composer-input], textarea, [contenteditable="true"]');
+  return field ?? null;
+}
+function composerCardOf(field) {
+  return field?.closest?.("[data-composer-card]") ?? null;
+}
+var NOT_SEND = /dictate|mic|voice|add|plus|stop|录音|听写|添加|停止/i;
+function findSendButton(card) {
+  const named = card?.querySelector?.("button[type=submit], button[data-send], [data-composer-send]");
+  if (named) return named;
+  const buttons = card?.querySelectorAll?.("button") ?? [];
+  for (const button of buttons) {
+    const label = [button.getAttribute?.("aria-label"), button.getAttribute?.("title"), button.textContent].filter(Boolean).join(" ");
+    if (/send|发送/i.test(label) && !NOT_SEND.test(label)) return button;
+  }
+  return null;
+}
+function insertComposerNewline(field) {
+  if (!field) return false;
+  if (typeof field.value === "string" && typeof field.selectionStart === "number") {
+    const start = field.selectionStart;
+    const end = field.selectionEnd ?? start;
+    field.value = `${field.value.slice(0, start)}
+${field.value.slice(end)}`;
+    field.selectionStart = field.selectionEnd = start + 1;
+    field.dispatchEvent?.(new Event("input", { bubbles: true }));
+    return true;
+  }
+  if (field.isContentEditable !== true && field.getAttribute?.("contenteditable") !== "true") return false;
+  const doc = field.ownerDocument ?? globalThis.document;
+  if (typeof doc?.execCommand !== "function") return false;
+  return doc.execCommand("insertLineBreak") === true || doc.execCommand("insertParagraph") === true || doc.execCommand("insertText", false, "\n") === true;
+}
+function installSendShortcut({ doc = globalThis.document } = {}) {
+  const view = doc?.defaultView;
+  if (!view?.addEventListener) return () => {
+  };
+  const onKey = (event) => {
+    if (event.defaultPrevented) return;
+    const field = composerFieldOf(event.target);
+    if (!field || field.disabled || field.readOnly || field.getAttribute?.("aria-readonly") === "true") return;
+    const card = composerCardOf(field);
+    if (!card) return;
+    const sendKey = readSendKey(view.localStorage);
+    if (sendKey === DEFAULT_SEND_KEY) return;
+    if (shouldSendOnKey(event, sendKey)) {
+      const button = findSendButton(card);
+      if (!button || button.disabled || button.getAttribute?.("aria-disabled") === "true") return;
+      event.preventDefault();
+      event.stopPropagation();
+      button.click?.();
+      return;
+    }
+    if (shouldBreakOnKey(event, sendKey)) {
+      event.preventDefault();
+      event.stopPropagation();
+      insertComposerNewline(field);
+    }
+  };
+  view.addEventListener("keydown", onKey, true);
+  return () => view.removeEventListener("keydown", onKey, true);
+}
 function useDictation(onText) {
   const [listening, setListening] = (0, import_react24.useState)(false);
   const [note, setNote] = (0, import_react24.useState)("");
@@ -13245,6 +13346,7 @@ function ComposerVoice({ sessionId, inputActions, actions, useUi }) {
       selection?.collapseToEnd();
     }
   }, [quote?.token]);
+  (0, import_react24.useEffect)(() => installSendShortcut(), []);
   if (sessionId === void 0) return null;
   const pluginMic = actions.speech() !== void 0;
   return (0, import_react24.createElement)(
@@ -19733,6 +19835,8 @@ var NOTIFY_KINDS = [
   ["finished", "Finished"],
   ["failed", "Failed"]
 ];
+var SEND_KEY_LABELS = [["enter", "Enter to send"], ["shift-enter", "Shift+Enter to send"]];
+var sendKeyLabel = (key) => SEND_KEY_LABELS.find(([id]) => id === key)?.[1] ?? SEND_KEY_LABELS[0][1];
 function PluginsView({ answer = null, error = "", onFlip }) {
   const plugins = answer?.plugins ?? [];
   const profile = typeof answer?.profile === "string" && answer.profile !== "" ? answer.profile : "<profile>";
@@ -19799,6 +19903,10 @@ function GeneralPage({ roster, actions, run }) {
   const themes = allThemes();
   const current = themes[prefs.theme] ? prefs.theme : "deepseek";
   const [custom, setCustom] = (0, import_react44.useState)(prefs.accent ?? "#4d6bfe");
+  const [sendKey, setSendKey] = (0, import_react44.useState)(() => readSendKey());
+  const chooseSendKey = (id) => {
+    if (sendKey !== id) setSendKey(writeSendKey(id));
+  };
   const timer = (0, import_react44.useRef)(0);
   (0, import_react44.useEffect)(() => () => clearTimeout(timer.current), []);
   const pickCustom = (value) => {
@@ -19814,6 +19922,11 @@ function GeneralPage({ roster, actions, run }) {
         { key: "look", title: t("Appearance") },
         (0, import_react44.createElement)(SetRow, { label: t("Theme"), hint: t(themes[current].label) }),
         (0, import_react44.createElement)(SetRow, { label: t("Accent"), hint: accent ? t(capitalize2(accent)) : prefs.accent ?? t("Default") })
+      ),
+      (0, import_react44.createElement)(
+        SetSection,
+        { key: "shortcuts", title: t("Shortcuts") },
+        (0, import_react44.createElement)(SetRow, { label: t("Send shortcut"), hint: t(sendKeyLabel(sendKey)) })
       ),
       (0, import_react44.createElement)(
         SetSection,
@@ -19859,6 +19972,23 @@ function GeneralPage({ roster, actions, run }) {
             (0, import_react44.createElement)("input", { type: "color", value: custom, "aria-label": t("Custom accent"), onChange: (event) => pickCustom(event.target.value) })
           )
         )
+      )
+    ),
+    (0, import_react44.createElement)(
+      SetSection,
+      { key: "shortcuts", title: t("Shortcuts") },
+      (0, import_react44.createElement)(
+        SetRow,
+        {
+          label: t("Send shortcut"),
+          hint: t("Choose which key sends a message; the other one starts a new line.")
+        },
+        (0, import_react44.createElement)(Segmented, { label: t("Send shortcut"), value: sendKey, className: "bt-appearance-seg" }, SEND_KEYS.map((id) => (0, import_react44.createElement)("button", {
+          key: id,
+          type: "button",
+          "aria-pressed": sendKey === id,
+          onClick: () => chooseSendKey(id)
+        }, t(sendKeyLabel(id)))))
       )
     ),
     // One switch for every system notification (#353), then one per kind (#469).
