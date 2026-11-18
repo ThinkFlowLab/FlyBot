@@ -1,1 +1,0 @@
-A Project whose assistant Session already holds its 09:00 digest now adopts that task instead of writing a second one, and a digest its owner paused stays paused rather than being replaced by an active copy. (#1751)

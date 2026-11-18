@@ -1,1 +1,0 @@
-The sidebar session list now offers **All**, **Group chats**, **Direct chats**, and **Unread** filters above it, so a long list can be narrowed to rooms, to Bots and the coding agent, or to the rows already showing an unread mark; the filter bar is only drawn in the wide sidebar ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

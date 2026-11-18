@@ -1,1 +1,0 @@
-A sidebar session filter that hides every row now says why the list is empty — **No group chats**, **No direct chats** or **No unread chats** — instead of leaving a blank panel ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
