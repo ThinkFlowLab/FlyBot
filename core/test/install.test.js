@@ -201,6 +201,23 @@ const TEAM = {
   questions: {},
 }
 
+// The message folding mode (#3114) is a team preference: one window writes it, and every window
+// reads it back through the roster, where `foldingOf` decides how much of a long message shows.
+// `null` clears it to the default, and a mode no bubble can draw is refused rather than stored.
+test('set-prefs stores the message folding mode and refuses any other one (#3114)', async (t) => {
+  const { call, stop } = start(TEAM)
+  t.after(stop)
+  assert.deepEqual((await call('set-prefs', { folding: { mode: 'compact' } })).value.folding, { mode: 'compact' })
+  assert.deepEqual((await call('state')).value.prefs.folding, { mode: 'compact' })
+  for (const folding of [{ mode: 'wild' }, ['compact'], 'compact']) {
+    assert.deepEqual((await call('set-prefs', { folding })).error, { code: 'bot/invalid', message: 'Message folding must be compact, standard or none', details: {} })
+  }
+  assert.deepEqual((await call('state')).value.prefs.folding, { mode: 'compact' }, 'a refusal stores nothing')
+  assert.deepEqual((await call('set-prefs', { folding: { mode: 'standard' } })).value.folding, { mode: 'standard' })
+  assert.equal('folding' in (await call('set-prefs', { folding: null })).value, false)
+  assert.equal((await call('set-prefs', { folding: { mode: 'none' } })).value.folding.mode, 'none')
+})
+
 test('in the Desktop profile read_browser is the last tool and reads through the window', async (t) => {
   const { ctx, call, stop } = start(TEAM, { services: { profileContext: { name: 'desktop' } } })
   t.after(stop)

@@ -267,7 +267,7 @@ diff --git a/src/client/mark.js b/src/client/mark.js
 diff --git a/src/host/channel.js b/src/host/channel.js
 --- a/src/host/channel.js
 +++ b/src/host/channel.js
-@@ -1,10 +1,22 @@
+@@ -1,10 +1,25 @@
  // Client channel: the team view the browser renders, and the POST /api/bot endpoints.
  import { randomUUID } from 'node:crypto'
  import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -282,6 +282,9 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +import { excerpt } from './text.js'
  
 +const NOTIFY_KINDS = ['approval', 'finished', 'failed']
++// How much of a long message a bubble shows before it folds (#3114); the client reads the
++// mode back through `foldingOf`, which treats anything else as the default.
++const FOLD_MODES = new Set(['compact', 'standard', 'none'])
  const LANGUAGES = { zh: 'Chinese (简体中文)', en: 'English' }
 +// How long a burst of the user's lines is collected before it opens one turn (#642).
 +const SETTLE_MS = 1_500
@@ -542,7 +545,7 @@ diff --git a/src/host/channel.js b/src/host/channel.js
  
    function setPrefs(body) {
      if (body.theme !== undefined) {
-@@ -97,28 +97,75 @@ export function install(rt) {
+@@ -97,28 +97,84 @@ export function install(rt) {
        else if (body.motion === 'quiet' || body.motion === 'lively') state.prefs.motion = body.motion
        else throw invalid('Motion must be quiet, normal or lively')
      }
@@ -579,6 +582,15 @@ diff --git a/src/host/channel.js b/src/host/channel.js
 +      const budget = readTurnBudget(body.turnBudget)
 +      if (budget === undefined) delete state.prefs.turnBudget
 +      else state.prefs.turnBudget = budget
++    }
++    // Message folding (#3114): a team-wide mode in `{ mode }`; `null` clears it back to the
++    // default, and a mode no bubble can draw is refused instead of stored.
++    if (body.folding !== undefined) {
++      const raw = body.folding
++      const mode = raw?.mode ?? state.prefs.folding?.mode ?? 'standard'
++      if (raw === null) delete state.prefs.folding
++      else if (typeof raw === 'object' && !Array.isArray(raw) && FOLD_MODES.has(mode)) state.prefs.folding = { mode }
++      else throw invalid('Message folding must be compact, standard or none')
 +    }
      return rt.save()
    }

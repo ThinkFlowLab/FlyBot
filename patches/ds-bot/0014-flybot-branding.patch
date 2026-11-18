@@ -293,7 +293,7 @@ diff --git a/src/client/secret-card.js b/src/client/secret-card.js
 diff --git a/src/client/settings.js b/src/client/settings.js
 --- a/src/client/settings.js
 +++ b/src/client/settings.js
-@@ -2,29 +2,36 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
+@@ -2,29 +2,37 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
  import { ACCENT_INKS, INKS } from './inks.js'
  import { isMainOf } from './sources.js'
  import { allThemes } from './themes.js'
@@ -325,6 +325,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
  import { AboutPage } from './about.js'
  import { t } from './i18n.js'
 +import { readOnlyLine } from './read-only.js'
++import { foldingOf } from './message-fold.js'
  
  const capitalize = word => word[0].toUpperCase() + word.slice(1)
  
@@ -337,7 +338,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
  
  function SetSection({ title, children }) {
    return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
-@@ -35,11 +35,81 @@ function SetRow({ label, hint, children }) {
+@@ -35,11 +35,86 @@ function SetRow({ label, hint, children }) {
      children ? h('div', { className: 'bt-set-control' }, children) : null)
  }
  
@@ -353,6 +354,10 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +// (composer.js writes localStorage), so the host stores no send-key field.
 +const SEND_KEY_LABELS = [['enter', 'Enter to send'], ['shift-enter', 'Shift+Enter to send']]
 +const sendKeyLabel = key => SEND_KEY_LABELS.find(([id]) => id === key)?.[1] ?? SEND_KEY_LABELS[0][1]
++// How much of a long message shows before it folds (#3114). The host keeps the choice, so
++// the row writes `set-prefs` and every window folds the same way.
++const FOLD_MODE_LABELS = [['compact', 'Compact'], ['standard', 'Standard'], ['none', 'No folding']]
++const foldModeLabel = mode => FOLD_MODE_LABELS.find(([id]) => id === mode)?.[1] ?? 'Standard'
 +// Settings → Plugins (#2564): the four feature plugins, each with one switch. The
 +// switch writes FlyBot's state.json; the packages stay installed and the next start
 +// reads the answer, so nothing unloads from the session that flipped it.
@@ -411,6 +416,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +// General is Appearance and Notifications; the switch to classic Agent mode is the account menu's (#393).
  function GeneralPage({ roster, actions, run }) {
    const prefs = roster.prefs ?? {}
++  const folding = foldingOf(prefs)
    const themes = allThemes()
    const current = themes[prefs.theme] ? prefs.theme : 'deepseek'
    const [custom, setCustom] = useState(prefs.accent ?? '#4d6bfe')
@@ -419,7 +425,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    const timer = useRef(0)
    useEffect(() => () => clearTimeout(timer.current), [])
    const pickCustom = (value) => {
-@@ -47,6 +47,21 @@ function GeneralPage({ roster, actions, run }) {
+@@ -47,6 +47,23 @@ function GeneralPage({ roster, actions, run }) {
      clearTimeout(timer.current)
      timer.current = setTimeout(() => run(actions.setPrefs({ accent: value })), 350)
    }
@@ -433,6 +439,8 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +        h(SetRow, { label: t('Accent'), hint: accent ? t(capitalize(accent)) : prefs.accent ?? t('Default') })),
 +      h(SetSection, { key: 'shortcuts', title: t('Shortcuts') },
 +        h(SetRow, { label: t('Send shortcut'), hint: t(sendKeyLabel(sendKey)) })),
++      h(SetSection, { key: 'folding', title: t('Message folding') },
++        h(SetRow, { label: t('Message folding'), hint: t(foldModeLabel(folding.mode)) })),
 +      h(SetSection, { key: 'notify', title: t('Notifications') },
 +        h(SetRow, { label: t('In other chats'), hint: prefs.notifications !== false ? t('On') : t('Off') }),
 +        NOTIFY_KINDS.map(([kind, label]) => h(SetRow, { key: kind, label: t(label), hint: prefs.notifications !== false && prefs.notify?.[kind] !== false ? t('On') : t('Off') }))),
@@ -441,7 +449,7 @@ diff --git a/src/client/settings.js b/src/client/settings.js
    return [
      h(SetSection, { key: 'look', title: t('Appearance') },
        h(SetRow, { label: t('Theme'), hint: t('Colors for the whole team, on every device.') },
-@@ -61,9 +61,26 @@ function GeneralPage({ roster, actions, run }) {
+@@ -61,9 +61,35 @@ function GeneralPage({ roster, actions, run }) {
            })),
            h('label', { className: 'bt-swatch bt-swatch-custom', title: t('Custom accent'), 'data-on': Boolean(prefs.accent) && !ACCENT_INKS.some(ink => INKS[ink][0] === prefs.accent) },
              h('input', { type: 'color', value: custom, 'aria-label': t('Custom accent'), onChange: event => pickCustom(event.target.value) }))))),
@@ -457,6 +465,15 @@ diff --git a/src/client/settings.js b/src/client/settings.js
 +          key: id, type: 'button', 'aria-pressed': sendKey === id,
 +          onClick: () => chooseSendKey(id),
 +        }, t(sendKeyLabel(id))))))),
++    h(SetSection, { key: 'folding', title: t('Message folding') },
++      h(SetRow, {
++        label: t('Message folding'),
++        hint: t('Choose how much of a long message to show before it folds.'),
++      },
++        h(Segmented, { label: t('Message folding'), value: folding.mode, className: 'bt-appearance-seg' }, FOLD_MODE_LABELS.map(([id, label]) => h('button', {
++          key: id, type: 'button', 'aria-pressed': folding.mode === id,
++          onClick: () => { if (folding.mode !== id) run(actions.setPrefs({ folding: { mode: id } })) },
++        }, t(label)))))),
 +    // One switch for every system notification (#353), then one per kind (#469).
 +    h(SetSection, { key: 'notify', title: t('Notifications') },
 +      h(SwitchRow, {
