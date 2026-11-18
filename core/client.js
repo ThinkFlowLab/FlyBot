@@ -1104,6 +1104,12 @@ var ZH = {
   "Memory summary": "记忆摘要",
   "All entries": "全部记忆",
   "Memory options": "记忆选项",
+  Overview: "总览",
+  "Memory directory": "记忆目录",
+  "Search memory": "搜索记忆",
+  "Main memory": "主记忆",
+  'No entries match "{query}"': '没有匹配 "{query}" 的记忆',
+  "Try a different word, or clear the search to see every entry.": "换个词，或清空搜索看全部记忆。",
   "Close memory": "关闭记忆",
   "Back to the summary": "返回摘要",
   "Regenerate summary": "重新生成摘要",
@@ -5865,6 +5871,20 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
 .bt-mem-head-gap{flex:1}
 .bt-mem-menu{position:absolute;top:52px;right:50px;min-width:220px;--bt-origin:top right}
 .bt-mem-menu button:disabled{opacity:.4;cursor:default;background:none}
+.bt-mem-shell{flex:1;min-height:0;display:flex}
+.bt-mem-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.bt-mem-nav{flex:none;width:200px;display:flex;flex-direction:column;gap:10px;padding:12px 10px 16px;border-right:.5px solid var(--bt-line);background:var(--bt-sidebar);min-height:0}
+.bt-mem-search{display:flex;align-items:center;gap:8px;margin:0 4px;padding:0 8px;height:32px;border-radius:8px;background:var(--bt-main);border:.5px solid var(--bt-line-2);color:var(--bt-ink-2)}
+.bt-mem-search svg{flex:none;width:14px;height:14px}
+.bt-mem-search-input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;outline:none}
+.bt-mem-nav-list{display:flex;flex-direction:column;gap:2px;min-height:0;overflow:auto;padding:0 2px}
+.bt-mem-nav-group{display:flex;flex-direction:column;gap:2px;margin-top:10px}
+.bt-mem-nav-heading{padding:4px 8px 2px;font-size:11px;line-height:14px;font-weight:600;color:var(--bt-ink-3);text-transform:uppercase;letter-spacing:.04em}
+.bt-mem-nav-item{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}
+.bt-mem-nav-item:hover{background:var(--bt-hover)}
+.bt-mem-nav-item[aria-current=page]{background:var(--bt-selected,var(--bt-active));font-weight:600}
+.bt-mem-nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-mem-nav-count{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-mem-body{flex:1;overflow-y:auto;padding:22px 28px 24px;scrollbar-width:thin;display:flex;flex-direction:column;gap:12px}
 .bt-mem-summary{transition:opacity .3s ease}
 .bt-mem-summary[data-stale]{opacity:.55}
@@ -14867,6 +14887,16 @@ var groupEntries = (entries2) => entries2.reduce((groups, entry) => {
   else groups.push({ key, scope: entry.scope, topic: entry.topic, entries: [entry] });
   return groups;
 }, []);
+var navTopics = (entries2) => groupEntries(entries2 ?? []).map((group) => ({ scope: group.scope, topic: group.topic ?? null, count: group.entries.length }));
+var sameTopic = (a, b) => Boolean(a) && Boolean(b) && a.scope === b.scope && (a.topic ?? null) === (b.topic ?? null);
+var filterMemoryEntries = (entries2, query) => {
+  const terms = String(query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [...entries2 ?? []];
+  return (entries2 ?? []).filter((entry) => {
+    const hay = `${entry.text ?? ""} ${entry.topic ?? ""} ${entry.by ?? ""}`.toLowerCase();
+    return terms.every((term) => hay.includes(term));
+  });
+};
 function EntryRow({ entry, remove }) {
   const [confirming, setConfirming] = (0, import_react30.useState)(false);
   const [busy, setBusy] = (0, import_react30.useState)(false);
@@ -14905,13 +14935,13 @@ function EntryRow({ entry, remove }) {
     }, confirming ? t("Remove") : (0, import_react30.createElement)(TrashIcon)) : null
   );
 }
-function Entries({ bot, view, remove }) {
+function Entries({ bot, view, remove, subset = false }) {
   const groups = groupEntries(view.entries);
   const refused = memoryBlockedNotice(view);
   const sections = [
     { scope: "own", title: t("{name}'s memory", { name: bot.name }), size: view.sizes.own },
     { scope: "team", title: t("Team memory"), hint: t("Every Bot reads it"), size: view.sizes.team }
-  ];
+  ].filter((section) => !subset || groups.some((group) => group.scope === section.scope));
   return (0, import_react30.createElement)(
     "div",
     { className: "bt-mem-entries" },
@@ -15006,10 +15036,61 @@ function useNow3(every) {
   }, [every]);
   return now;
 }
+function MemoryNav({ bot, view, page, topic, query, setQuery, openOverview, openTopic, openEntries }) {
+  const topics = navTopics(view?.entries);
+  const item = (title, badge, on, current) => (0, import_react30.createElement)(
+    "button",
+    {
+      type: "button",
+      className: "bt-mem-nav-item",
+      "aria-current": current ? "page" : void 0,
+      onClick: on
+    },
+    (0, import_react30.createElement)("span", { className: "bt-mem-nav-label" }, title),
+    badge === void 0 ? null : (0, import_react30.createElement)("span", { className: "bt-mem-nav-count" }, String(badge))
+  );
+  const block = (title, items) => items.length === 0 ? null : (0, import_react30.createElement)(
+    "div",
+    { className: "bt-mem-nav-group" },
+    (0, import_react30.createElement)("div", { className: "bt-mem-nav-heading" }, title),
+    items.map((entry) => (0, import_react30.createElement)(
+      import_react30.Fragment,
+      { key: `${entry.scope}:${entry.topic ?? ""}` },
+      item(entry.topic ?? t("Main memory"), entry.count, () => openTopic(entry), page === "entries" && sameTopic(topic, entry))
+    ))
+  );
+  return (0, import_react30.createElement)(
+    "nav",
+    { className: "bt-mem-nav", "aria-label": t("Memory directory") },
+    (0, import_react30.createElement)(
+      "label",
+      { className: "bt-mem-search" },
+      (0, import_react30.createElement)(SearchIcon),
+      (0, import_react30.createElement)("input", {
+        className: "bt-mem-search-input",
+        type: "search",
+        value: query,
+        placeholder: t("Search memory"),
+        "aria-label": t("Search memory"),
+        onChange: (event) => setQuery(event.target.value)
+      })
+    ),
+    (0, import_react30.createElement)(
+      "div",
+      { className: "bt-mem-nav-list" },
+      item(t("Overview"), void 0, openOverview, page === "summary" && query.trim() === ""),
+      item(t("All entries"), view?.entries.length ?? 0, () => openEntries(null), page === "entries" && !topic && query.trim() === ""),
+      block(t("{name}'s memory", { name: bot.name }), topics.filter((entry) => entry.scope !== "team")),
+      block(t("Team memory"), topics.filter((entry) => entry.scope === "team"))
+    )
+  );
+}
 function MemoryDialog({ bot, actions, roster, leaving = false }) {
   const { view, error, load, show } = useMemoryView(bot.id, actions);
   const locked = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
   const [page, setPage] = (0, import_react30.useState)("summary");
+  const [topic, setTopic] = (0, import_react30.useState)(null);
+  const [query, setQuery] = (0, import_react30.useState)("");
   const [menu, setMenu] = (0, import_react30.useState)(false);
   const [menuShown, menuLeaving] = useLinger(menu, MENU_EXIT_MS2);
   const [text2, setText] = (0, import_react30.useState)("");
@@ -15043,16 +15124,24 @@ function MemoryDialog({ bot, actions, roster, leaving = false }) {
   const regenerate = () => {
     setMenu(false);
     setPage("summary");
+    setTopic(null);
+    setQuery("");
     void load({ regenerate: true });
   };
-  const openEntries = () => {
+  const openEntries = (nextTopic = null) => {
     setMenu(false);
     setPage("entries");
+    setTopic(nextTopic);
+    setQuery("");
   };
-  const backToSummary = () => {
+  const openOverview = () => {
+    setMenu(false);
     setPage("summary");
+    setTopic(null);
+    setQuery("");
     void load({ summarize: true });
   };
+  const backToSummary = () => openOverview();
   const remove = async (entry) => {
     try {
       show(await actions.memoryForget(bot.id, entry));
@@ -15080,7 +15169,12 @@ function MemoryDialog({ bot, actions, roster, leaving = false }) {
   };
   const count = view?.entries.length ?? 0;
   const when3 = view?.summary ? ago(view.summary.at, now) : null;
-  const status = view === null ? "" : page === "entries" ? count === 1 ? t("1 entry") : t("{count} entries", { count }) : view.summarizing && view.summary ? t("Updating…") : view.summary && view.fresh ? when3 ? t("Updated {time}", { time: when3 }) : t("Updated just now") : "";
+  const searching = query.trim() !== "";
+  const filtered = view === null ? [] : searching ? filterMemoryEntries(view.entries, query) : topic ? view.entries.filter((entry) => sameTopic(entry, topic)) : view.entries;
+  const listed = view === null ? null : { ...view, entries: filtered };
+  const showEntries = searching || page === "entries";
+  const title = searching ? t("Search memory") : page === "entries" ? topic ? topic.topic ?? t("Main memory") : t("All entries") : t("Memory summary");
+  const status = view === null ? "" : showEntries ? filtered.length === 1 ? t("1 entry") : t("{count} entries", { count: filtered.length }) : view.summarizing && view.summary ? t("Updating…") : view.summary && view.fresh ? when3 ? t("Updated {time}", { time: when3 }) : t("Updated just now") : "";
   const busy = answer?.pending === true;
   return (0, import_react30.createElement)(
     "div",
@@ -15092,9 +15186,9 @@ function MemoryDialog({ bot, actions, roster, leaving = false }) {
       (0, import_react30.createElement)(
         "div",
         { className: "bt-mem-head" },
-        page === "entries" ? (0, import_react30.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Back to the summary"), onClick: backToSummary }, (0, import_react30.createElement)(ChevronLeftIcon)) : null,
-        (0, import_react30.createElement)("h2", null, page === "entries" ? t("All entries") : t("Memory summary")),
-        (0, import_react30.createElement)("span", { className: "bt-mem-status" }, page === "summary" ? [bot.name, status].filter(Boolean).join(" · ") : status),
+        showEntries ? (0, import_react30.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Back to the summary"), onClick: backToSummary }, (0, import_react30.createElement)(ChevronLeftIcon)) : null,
+        (0, import_react30.createElement)("h2", null, title),
+        (0, import_react30.createElement)("span", { className: "bt-mem-status" }, page === "summary" && !searching ? [bot.name, status].filter(Boolean).join(" · ") : status),
         (0, import_react30.createElement)("span", { className: "bt-mem-head-gap" }),
         (0, import_react30.createElement)("button", { ref: dotsRef, type: "button", className: "bt-icon-btn", "aria-label": t("Memory options"), "aria-haspopup": "menu", "aria-expanded": menu, onClick: () => setMenu((value) => !value) }, (0, import_react30.createElement)(DotsIcon)),
         (0, import_react30.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close memory"), onClick: close }, (0, import_react30.createElement)(CloseIcon)),
@@ -15103,7 +15197,7 @@ function MemoryDialog({ bot, actions, roster, leaving = false }) {
           { ref: menuRef, className: "bt-menu bt-mem-menu", role: "menu", "aria-label": t("Memory options"), "data-leaving": menuLeaving || void 0 },
           (0, import_react30.createElement)(
             "button",
-            { type: "button", role: "menuitem", onClick: openEntries },
+            { type: "button", role: "menuitem", onClick: () => openEntries(null) },
             (0, import_react30.createElement)("span", { className: "bt-menu-label" }, t("All entries")),
             (0, import_react30.createElement)("span", { className: "bt-menu-hint" }, String(count))
           ),
@@ -15116,32 +15210,56 @@ function MemoryDialog({ bot, actions, roster, leaving = false }) {
       ),
       (0, import_react30.createElement)(
         "div",
-        { className: "bt-mem-body" },
-        readOnlyLine(import_react30.createElement, roster, actions),
-        error ? (0, import_react30.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, hostText(error)) : null,
-        view === null ? error ? null : (0, import_react30.createElement)(Skeleton) : page === "entries" ? (0, import_react30.createElement)(Entries, { bot, view, remove: locked ? null : remove }) : (0, import_react30.createElement)(Summary, { bot, view, regenerate })
-      ),
-      (0, import_react30.createElement)(
-        "div",
-        { className: "bt-mem-foot" },
-        answer ? (0, import_react30.createElement)(Reply, { answer, dismiss: () => setAnswer(null) }) : null,
-        locked ? null : (0, import_react30.createElement)(
-          "form",
-          { className: "bt-mem-ask", onSubmit: ask },
-          (0, import_react30.createElement)("input", {
-            ref: inputRef,
-            className: "bt-mem-input",
-            value: text2,
-            maxLength: 2e3,
-            disabled: view === null,
-            placeholder: t("Ask or update"),
-            "aria-label": t("Ask about or update {name}'s memory", { name: bot.name }),
-            onChange: (event) => setText(event.target.value)
-          }),
+        { className: "bt-mem-shell" },
+        (0, import_react30.createElement)(MemoryNav, {
+          bot,
+          view,
+          page,
+          topic,
+          query,
+          setQuery,
+          openOverview,
+          openEntries,
+          openTopic: (next) => openEntries(next)
+        }),
+        (0, import_react30.createElement)(
+          "div",
+          { className: "bt-mem-main" },
           (0, import_react30.createElement)(
-            "button",
-            { type: "submit", className: "bt-mem-send", disabled: busy || text2.trim() === "", "aria-label": t("Send") },
-            busy ? (0, import_react30.createElement)("span", { className: "bt-mem-spin", "aria-hidden": true }) : (0, import_react30.createElement)(ArrowUpIcon)
+            "div",
+            { className: "bt-mem-body" },
+            readOnlyLine(import_react30.createElement, roster, actions),
+            error ? (0, import_react30.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, hostText(error)) : null,
+            view === null ? error ? null : (0, import_react30.createElement)(Skeleton) : showEntries ? searching && filtered.length === 0 ? (0, import_react30.createElement)(
+              "div",
+              { className: "bt-mem-empty" },
+              (0, import_react30.createElement)("div", { className: "bt-mem-empty-title" }, t('No entries match "{query}"', { query: query.trim() })),
+              (0, import_react30.createElement)("div", { className: "bt-mem-empty-text" }, t("Try a different word, or clear the search to see every entry."))
+            ) : (0, import_react30.createElement)(Entries, { bot, view: listed, remove: locked ? null : remove, subset: searching || Boolean(topic) }) : (0, import_react30.createElement)(Summary, { bot, view, regenerate })
+          ),
+          (0, import_react30.createElement)(
+            "div",
+            { className: "bt-mem-foot" },
+            answer ? (0, import_react30.createElement)(Reply, { answer, dismiss: () => setAnswer(null) }) : null,
+            locked ? null : (0, import_react30.createElement)(
+              "form",
+              { className: "bt-mem-ask", onSubmit: ask },
+              (0, import_react30.createElement)("input", {
+                ref: inputRef,
+                className: "bt-mem-input",
+                value: text2,
+                maxLength: 2e3,
+                disabled: view === null,
+                placeholder: t("Ask or update"),
+                "aria-label": t("Ask about or update {name}'s memory", { name: bot.name }),
+                onChange: (event) => setText(event.target.value)
+              }),
+              (0, import_react30.createElement)(
+                "button",
+                { type: "submit", className: "bt-mem-send", disabled: busy || text2.trim() === "", "aria-label": t("Send") },
+                busy ? (0, import_react30.createElement)("span", { className: "bt-mem-spin", "aria-hidden": true }) : (0, import_react30.createElement)(ArrowUpIcon)
+              )
+            )
           )
         )
       )

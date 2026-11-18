@@ -805,6 +805,20 @@ body[data-ds-dark-theme] .bt-theme-chip i{background:var(--da)}
 .bt-mem-head-gap{flex:1}
 .bt-mem-menu{position:absolute;top:52px;right:50px;min-width:220px;--bt-origin:top right}
 .bt-mem-menu button:disabled{opacity:.4;cursor:default;background:none}
+.bt-mem-shell{flex:1;min-height:0;display:flex}
+.bt-mem-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.bt-mem-nav{flex:none;width:200px;display:flex;flex-direction:column;gap:10px;padding:12px 10px 16px;border-right:.5px solid var(--bt-line);background:var(--bt-sidebar);min-height:0}
+.bt-mem-search{display:flex;align-items:center;gap:8px;margin:0 4px;padding:0 8px;height:32px;border-radius:8px;background:var(--bt-main);border:.5px solid var(--bt-line-2);color:var(--bt-ink-2)}
+.bt-mem-search svg{flex:none;width:14px;height:14px}
+.bt-mem-search-input{flex:1;min-width:0;border:0;background:none;color:var(--bt-ink);font:inherit;font-size:13px;outline:none}
+.bt-mem-nav-list{display:flex;flex-direction:column;gap:2px;min-height:0;overflow:auto;padding:0 2px}
+.bt-mem-nav-group{display:flex;flex-direction:column;gap:2px;margin-top:10px}
+.bt-mem-nav-heading{padding:4px 8px 2px;font-size:11px;line-height:14px;font-weight:600;color:var(--bt-ink-3);text-transform:uppercase;letter-spacing:.04em}
+.bt-mem-nav-item{display:flex;align-items:center;gap:8px;width:100%;margin:0;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}
+.bt-mem-nav-item:hover{background:var(--bt-hover)}
+.bt-mem-nav-item[aria-current=page]{background:var(--bt-selected,var(--bt-active));font-weight:600}
+.bt-mem-nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-mem-nav-count{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums}
 .bt-mem-body{flex:1;overflow-y:auto;padding:22px 28px 24px;scrollbar-width:thin;display:flex;flex-direction:column;gap:12px}
 .bt-mem-summary{transition:opacity .3s ease}
 .bt-mem-summary[data-stale]{opacity:.55}

@@ -172,3 +172,85 @@ test('P-475: the dialog is handed the roster, or the panel cannot know the windo
   const overlays = readFileSync(new URL('../src/client/overlays.js', import.meta.url), 'utf8')
   assert.match(overlays, /h\(MemoryDialog, \{ key: memory, bot: roster\.byId\[memory\], roster, actions, leaving: memoryLeaving \}\)/)
 })
+
+// #3114: the directory and the search read the view the host already returned; four entries
+// across both scopes, one untagged, so a topic row, an untagged row, and a shared topic name
+// (travel in own and team) are all on screen at once.
+const catalogView = () => ({
+  entries: [
+    { text: 'Prefers the window seat on flights', scope: 'own', topic: 'travel', source: 'memory panel', added: 'today' },
+    { text: 'Allergic to peanuts', scope: 'own', source: 'memory panel', added: 'today' },
+    { text: 'Standup is at 10:00', scope: 'team', topic: 'rituals', by: 'Chief', added: 'yesterday' },
+    { text: 'The travel budget is tight this quarter', scope: 'team', topic: 'travel', by: 'Writer', added: 'yesterday' },
+  ],
+  sizes: { own: 40, team: 60 },
+  limits: { main: 4000 },
+  blocked: [],
+  summary: { at: Date.now() - 60_000, text: 'One saved fact' },
+  fresh: true,
+  summarizing: false,
+})
+const catalogActions = () => ({ ...actions(), memoryView: async () => catalogView() })
+
+// Opening the summary page is enough: the directory is drawn beside it, so no ⋯ walk is needed.
+async function openCatalog(roster = {}) {
+  reset()
+  const props = { bot: { id: 'bot1', name: 'Scout' }, actions: catalogActions(), roster }
+  let tree = render(props)
+  await flush()
+  tree = render(props)
+  return { props, tree }
+}
+const navItems = tree => byClass(tree, 'bt-mem-nav-item')
+const searchField = tree => all(tree).find(node => node.type === 'input' && node.props?.['aria-label'] === 'Search memory')
+
+test('#3114: the memory panel names a directory and offers a search over loaded entries', async () => {
+  const { tree } = await openCatalog()
+  assert.ok(all(tree).some(node => node.props?.['aria-label'] === 'Memory directory'), 'the directory is named')
+  assert.ok(searchField(tree), 'the directory holds a search field')
+  // Overview, All entries, own: travel + Main memory, team: rituals + travel — the directory
+  // keeps the order the list draws its groups in, so a row never moves when an entry is added.
+  assert.equal(navItems(tree).length, 6)
+  const labels = byClass(tree, 'bt-mem-nav-label').map(node => textOf(node))
+  assert.deepEqual(labels, ['Overview', 'All entries', 'travel', 'Main memory', 'rituals', 'travel'])
+  // All entries carries the count the view already gave, and two travel rows stay separate.
+  assert.equal(textOf(navItems(tree)[1]), 'All entries4')
+  assert.deepEqual(byClass(tree, 'bt-mem-nav-count').map(node => textOf(node)), ['4', '1', '1', '1', '1'])
+})
+
+test('#3114: search keeps entries that hold every term, and says when none does', async () => {
+  const { props, tree } = await openCatalog()
+  searchField(tree).props.onChange({ target: { value: 'travel budget' } })
+  const searched = render(props)
+  assert.match(textOf(searched), /The travel budget is tight this quarter/)
+  // "travel" alone is the topic of the window-seat entry, but "budget" is not in its text.
+  assert.doesNotMatch(textOf(searched), /Prefers the window seat on flights/)
+  assert.doesNotMatch(textOf(searched), /Allergic to peanuts/)
+  // The title says what the list is, and the count follows the filter, not the view.
+  assert.match(textOf(searched), /Search memory/)
+  assert.equal(textOf(byClass(searched, 'bt-mem-status')[0]), '1 entry')
+  searchField(searched).props.onChange({ target: { value: 'nothing here' } })
+  const empty = render(props)
+  assert.match(textOf(empty), /No entries match "nothing here"/)
+  assert.match(textOf(empty), /Try a different word, or clear the search to see every entry\./)
+  assert.equal(byClass(empty, 'bt-mem-entry').length, 0)
+})
+
+test('#3114: a directory topic filters the list, and All entries clears it', async () => {
+  const { props, tree } = await openCatalog()
+  // Index 2 is the own "travel" row; the own block is drawn before the team block.
+  const ownTravel = navItems(tree)[2]
+  assert.equal(textOf(ownTravel), 'travel1')
+  ownTravel.props.onClick()
+  const filtered = render(props)
+  assert.match(textOf(filtered), /Prefers the window seat on flights/)
+  // Team travel holds the same topic name and must not leak into the own list.
+  assert.doesNotMatch(textOf(filtered), /The travel budget is tight this quarter/)
+  assert.doesNotMatch(textOf(filtered), /Allergic to peanuts/)
+  assert.equal(byClass(filtered, 'bt-mem-topic').length, 1)
+  assert.equal(navItems(filtered)[2].props['aria-current'], 'page')
+  navItems(filtered)[1].props.onClick()
+  const all = render(props)
+  assert.equal(byClass(all, 'bt-mem-entry').length, 4)
+  assert.equal(navItems(all)[2].props['aria-current'], undefined)
+})
