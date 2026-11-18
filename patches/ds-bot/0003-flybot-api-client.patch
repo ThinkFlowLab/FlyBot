@@ -2001,7 +2001,7 @@ diff --git a/src/client/index.js b/src/client/index.js
      },
 +    // The palette's whole-text message search (P-820): the host answers with the
 +    // caller's own chats, whole lines with the turn they belong to.
-+    searchChats: (query, signal) => call('chats.search', { query }, signal).then(value => value?.rows ?? []),
++    searchChats: (query, signal) => call('chats.search', { query }, signal).then(value => ({ rows: value?.rows ?? [], more: value?.more ?? 0 })),
      // The conversation replacements withdraw for a plain Session; set the surface
      // before the navigation so the Bot skin never flashes.
      openAgentSession: (sessionId) => {
@@ -2809,15 +2809,23 @@ diff --git a/src/client/palette.js b/src/client/palette.js
    const wanted = query.trim().toLowerCase()
    const close = () => {
      if (leaving) return
-@@ -24,6 +24,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -24,18 +24,22 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
    }
    useEscape(close)
    const ids = [...roster.bots.map(currentPart), ...roster.rooms.map(item => item.id)]
 +  const names = botNames(roster)
++  const chatOf = (id) => roster.byId[id]?.id ?? id
    const found = useSessions((list) => {
-     if (wanted.length < 2) return '[]'
+-    if (wanted.length < 2) return '[]'
++    if (wanted.length < 2) return '{"hits":[],"turns":{}}'
      const hits = []
-@@ -35,7 +35,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
++    const turns = {}
+     for (const id of ids) {
+       const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
+       if (!Array.isArray(outline)) continue
++      turns[chatOf(id)] ??= outline.map(entry => entry.turn)
+       const hidden = roster.exchangeTurns[id] ?? []
+       for (let index = outline.length - 1; index >= 0 && hits.length < 30; index -= 1) {
          const entry = outline[index]
          if (hidden.includes(entry.turn)) continue
          for (const raw of [entry.response, entry.prompt]) {
@@ -2826,9 +2834,12 @@ diff --git a/src/client/palette.js b/src/client/palette.js
            const at = text.toLowerCase().indexOf(wanted)
            if (at < 0) continue
            const from = Math.max(0, at - 24)
-@@ -46,16 +46,36 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -44,18 +44,38 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+         }
+       }
      }
-     return JSON.stringify(hits)
+-    return JSON.stringify(hits)
++    return JSON.stringify({ hits, turns })
    })
 +  // The outline previews stop at 50/120 characters, so any hit past that budget is
 +  // invisible to the read above (P-820). The host searches the whole text over the
@@ -2844,7 +2855,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 +    const controller = new AbortController()
 +    const timer = setTimeout(() => {
 +      void searchChats(wanted, controller.signal).then(
-+        rows => { if (current) setWholeText(Array.isArray(rows) ? rows : []) },
++        value => { if (current) setWholeText({ rows: value?.rows ?? [], more: value?.more ?? 0 }) },
 +        () => {},
 +      )
 +    }, SEARCH_DEBOUNCE_MS)
@@ -2866,7 +2877,21 @@ diff --git a/src/client/palette.js b/src/client/palette.js
        badge: room.hidden ? t('Hidden') : undefined,
        run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),
-@@ -77,11 +77,25 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -67,21 +67,50 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+     run: () => actions.openAgent(agent.id),
+   }))
+   if (agents.length) sections.push(['DSH Agent', agents])
+-  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
++  const outlineRead = JSON.parse(found)
++  const messages = outlineRead.hits.map(([id, turn, snippet]) => {
+     const bot = roster.byId[id]
+     const room = roster.roomsById[id]
+     return {
+-      key: `${id}:${turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: snippet,
++      key: `${chatOf(id)}:${turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: snippet,
+       avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
+-      run: () => actions.openSession(id),
++      run: () => actions.openSession(id, { turn }),
      }
    })
    if (messages.length) sections.push([t('Messages'), messages])
@@ -2874,16 +2899,30 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 +  // the same chat and turn is the same message, so it is not shown twice; a row whose chat
 +  // the roster does not hold is not the caller's to open.
 +  const outlined = new Set(messages.map(row => row.key))
-+  const fullText = (wholeText ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
++  // The current part's own turn numbers are the only proof the client has of what it holds; a
++  // chat whose outline has not loaded proves nothing, and is left unmarked.
++  const inPart = (chat, turn) => {
++    const held = outlineRead.turns?.[chat]
++    return Array.isArray(held) && held.length > 0 ? held.includes(turn) : undefined
++  }
++  const keyCounts = new Map()
++  const fullText = (wholeText?.rows ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
 +    const bot = roster.byId[row.chat]
 +    const room = roster.roomsById[row.chat]
++    const here = inPart(row.chat, row.turn)
++    const at = `${row.chat}:${row.turn}`
++    const count = (keyCounts.get(at) ?? 0) + 1
++    keyCounts.set(at, count)
 +    return {
-+      key: `${row.chat}:${row.turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
++      key: count > 1 ? `${at}:${count}` : at, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
 +      avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
-+      run: () => actions.openSession(row.chat, { turn: row.turn }),
++      badge: here === false ? t('Earlier part') : undefined,
++      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn }),
 +    }
 +  })
-+  if (fullText.length) sections.push([t('Messages (full text)'), fullText])
++  const hidden = wholeText?.more ?? 0
++  const note = hidden > 0 ? t('{count} more matches · add a word to narrow it', { count: hidden }) : null
++  if (fullText.length) sections.push([t('Messages (full text)'), fullText, note])
    const commands = [
      { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
      { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
@@ -2893,6 +2932,23 @@ diff --git a/src/client/palette.js b/src/client/palette.js
    ].filter(command => matchesName(command.title))
    if (commands.length) sections.push([t('Commands'), commands])
    const rows = sections.flatMap(([, items]) => items)
+@@ -123,7 +123,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+               h('span', { className: 'bt-palette-empty-icon', 'aria-hidden': true }, h(SearchIcon)),
+               h('span', { className: 'bt-palette-empty-label' }, t('No results')),
+               h('span', { className: 'bt-palette-empty-hint' }, t('Try a Bot name or words from a message')))
+-          : sections.map(([title, items]) => h(Fragment, { key: title },
++          : sections.map(([title, items, note]) => h(Fragment, { key: title },
+               h('div', { className: 'bt-palette-section', role: 'presentation', 'data-flip': `section:${title}` }, title),
+               items.map((row) => {
+                 index += 1
+@@ -137,5 +137,6 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+                   h('span', { className: 'bt-palette-title' }, row.title),
+                   row.subtitle ? h('span', { className: 'bt-palette-sub' }, row.subtitle) : null),
+                 row.badge ? h('span', { className: 'bt-palette-badge' }, row.badge) : null)
+-              }))))))
++              }),
++              note ? h('div', { className: 'bt-palette-note', role: 'status' }, note) : null)))))
+ }
 diff --git a/src/client/questions.js b/src/client/questions.js
 --- a/src/client/questions.js
 +++ b/src/client/questions.js
@@ -3960,6 +4016,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.46);animation:bt-fade .22s ease-out}
  .bt-palette{position:absolute;top:50%;left:50%;width:min(560px,92vw);transform:translate(-50%,-50%);display:flex;flex-direction:column;border-radius:12px;background:var(--bt-main);border:1px solid var(--bt-line-2);box-shadow:0 24px 48px -12px rgba(0,0,0,.25);overflow:hidden;color:var(--bt-ink);animation:bt-palette-in ${SPRING_SHAPE.duration}ms ${SPRING_SHAPE.easing},bt-veil-in .2s ease-out}
  .bt-palette-layer[data-leaving]{pointer-events:none}
+@@ -593,6 +593,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
+ :is(.bt-palette-row,.bt-palette-section,.bt-drop-list>.bt-option){position:relative;z-index:1}
+ .bt-palette-section{padding:8px 8px 4px;font-size:12px;line-height:16px;color:var(--bt-ink-3);flex:none}
+ .bt-palette-section:first-of-type{padding-top:0}
++.bt-palette-note{padding:2px 8px 8px;font-size:12px;line-height:16px;color:var(--bt-ink-3);flex:none}
+ .bt-palette-row{flex:none;display:flex;align-items:center;gap:8px;height:49px;padding:6px 10px 6px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;box-sizing:border-box;width:100%}
+ .bt-palette-row[aria-selected=true]{background:var(--bt-active)}
+ .bt-palette-lead{flex:none;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
 @@ -609,7 +609,8 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
  .bt-palette-empty-label{font-size:14px;font-weight:500;color:var(--bt-ink-2)}
  .bt-palette-empty-hint{font-size:13px;line-height:16px;color:var(--bt-ink-3)}
