@@ -1,17 +1,15 @@
-// Long-message folding in a chat bubble: the thresholds, the whole-line
-// preview, and the one control that opens the whole reply. The document card
-// and the folding preference are a later slice; foldingOf() is the read that
-// setting will write through.
+// Long-message folding in a chat bubble: the thresholds, the whole-line preview,
+// and the one control that opens the whole reply. The document card and the
+// folding preference are a later slice; foldingOf() is the read it will write.
 
 import { createElement as h, useEffect, useState } from 'react'
 import { t } from './i18n.js'
 
 export const FOLD_MODES = ['compact', 'standard', 'none']
 
-// A message folds when it exceeds either cap for the chosen mode. The preview
-// is the shorter of "first N lines" and "first M characters", ending on a line
-// or word boundary. Equal-to-the-cap messages stay open — only values *over*
-// the threshold fold.
+// A message folds when it exceeds either cap for the chosen mode; the preview is
+// the shorter of "first N lines" and "first M characters", ending on a line or
+// word boundary. Equal-to-the-cap messages stay open — only values over it fold.
 export const FOLD_THRESHOLDS = {
   compact: { lines: 4, chars: 240 },
   standard: { lines: 12, chars: 800 },
@@ -38,9 +36,8 @@ function clipWord(line, max) {
   return slice
 }
 
-// An odd number of code-block markers means the preview opened a block it did
-// not close. Cut before that opener when there is still prose; otherwise close
-// it so the renderer is not left hanging.
+// An odd number of code-block markers means the preview opened a block it did not
+// close: cut before that opener when there is still prose, else close the block.
 function closeCodeBlock(preview) {
   let block = null
   let offset = 0
@@ -58,7 +55,6 @@ function closeCodeBlock(preview) {
   return `${preview}\n${block.char.repeat(block.length)}`
 }
 
-// Either cap is enough: a long single paragraph folds although it is one line.
 export function exceedsThreshold(text, cap) {
   if (!cap) return false
   const raw = String(text ?? '')
@@ -92,7 +88,6 @@ export function previewOf(text, mode) {
   return closeCodeBlock(out.join('\n'))
 }
 
-// Nothing to open when the preview is already the whole reply.
 export function shouldFold(text, mode) {
   const cap = FOLD_THRESHOLDS[mode]
   if (!cap) return false
@@ -101,16 +96,21 @@ export function shouldFold(text, mode) {
   return previewOf(raw, mode) !== raw
 }
 
-// The bubble's body: the reply as `draw` hands it over, and one control that
-// opens the whole reply. `draw` is a property, not a child, because a caller
-// expands a cell component with its props alone.
-export function FoldedContent({ text, folding, streaming = false, draw }) {
+// A reply at or under the cap, or one still streaming, is drawn by the caller
+// straight away; only a longer one is handed to FoldedContent.
+export function foldBody({ text, folding, streaming = false, draw }) {
+  const mode = folding?.mode ?? DEFAULT_FOLDING.mode
+  const raw = String(text ?? '')
+  if (streaming || !shouldFold(raw, mode)) return draw ? draw(raw) : null
+  return h(FoldedContent, { text: raw, folding, draw })
+}
+
+// One control under the preview: open draws the whole reply and becomes Show less.
+export function FoldedContent({ text, folding, draw }) {
   const [open, setOpen] = useState(false)
   const mode = folding?.mode ?? DEFAULT_FOLDING.mode
   useEffect(() => { setOpen(false) }, [mode, text])
-  const raw = String(text ?? '')
-  if (streaming || !shouldFold(raw, mode)) return draw ? draw(raw) : null
-  const shown = open ? raw : previewOf(raw, mode)
+  const shown = open ? text : previewOf(text, mode)
   return h('div', { className: 'bt-fold', 'data-folded': open ? undefined : '' },
     h('div', { className: 'bt-fold-body' }, draw ? draw(shown) : null),
     h('button', {

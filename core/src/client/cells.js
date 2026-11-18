@@ -15,6 +15,7 @@ import { faceBotLabel, faceSeatLabel, faceSeats } from './face-seats.js'
 import { fileSize } from './flybot-slots.js'
 import { HeldReplyActions } from './held-reply.js'
 import { MessageTools, onMessageContextMenu } from './message-tools.js'
+import { foldBody, foldingOf } from './message-fold.js'
 import { call } from './api.js'
 import { failureLabel } from './diagnostics.js'
 import { turnReasoning } from './turn-reasoning.js'
@@ -58,6 +59,7 @@ function bubbleLinkClick({ actions, subject }) {
 // `lead` (a sender avatar in group chats) sits beside the last bubble, in the same
 // row, so it lines up with the bubble whether or not reactions hang below it.
 export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, msgKey, msgKeys, useUi, lead, mentions }) {
+  const folding = foldingOf(roster?.prefs)
   const openLink = bubbleLinkClick({ actions, subject: selfId ?? sessionId })
   const onClick = (event) => {
     if (openLink(event)) return
@@ -96,7 +98,7 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
         h('div', { className: 'bt-msg-line' },
           lead && last ? lead : null,
           h('div', { className: 'bt-bubble' },
-            h(MarkdownText, { text: linkMentions(text, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })),
+            foldBody({ text, folding, streaming: live, draw: shown => h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions }) })),
           live ? null : h(MessageTools, { text, name: roster.byId[selfId]?.name ?? t('Bot'), sessionId, react: key ? emoji => actions.toggleReaction(key, reactIndex(index), emoji) : undefined, actions, contextAt: contextAt?.index === index ? contextAt : null })),
         picked.length ? h('div', { className: 'bt-reacts' }, picked.map(emoji => h('button', {
           key: emoji, type: 'button', className: 'bt-react', 'aria-label': t('Remove reaction {emoji}', { emoji }), onClick: () => actions.toggleReaction(key, reactIndex(index), emoji),
