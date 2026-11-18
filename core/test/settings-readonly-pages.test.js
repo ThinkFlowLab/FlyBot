@@ -55,13 +55,20 @@ const react = {
   useId: () => { hook(); return 'id' },
   useSyncExternalStore: (_subscribe, get) => { hook(); return get() },
 }
+// The send-key setting is this window's own (the host stores no send-key field), so the
+// page and the composer read and write this store. It starts empty in every mount.
+const stores = new Map()
+const storage = {
+  getItem: key => (stores.has(key) ? stores.get(key) : null),
+  setItem: (key, value) => { stores.set(key, String(value)) },
+}
 const win = { location: { hash: '' }, addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }
 const module = { exports: {} }
 runInNewContext(outputFiles[0].text, {
   module, exports: module.exports, console, setTimeout, clearTimeout, requestAnimationFrame: () => 0, cancelAnimationFrame() {},
   document: { hidden: false, addEventListener() {}, removeEventListener() {}, createElement: () => ({ getContext: () => ({}) }) },
   navigator: { language: 'en' },
-  localStorage: { getItem: () => null, setItem() {} },
+  localStorage: storage,
   window: win,
   require: (name) => {
     if (name === 'react') return react
@@ -253,7 +260,8 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   const general = mount(baseRoster, 'general', null, 'GeneralPage').nodes
   assert.equal(general.filter(node => node.type === 'select').length, 1, 'General keeps its theme select')
   assert.equal(general.filter(node => node.type === 'input').length, 1, 'General keeps its colour field')
-  assert.equal(counts(general), 6, 'General keeps its four switches beside them')
+  assert.equal(counts(general), 7, 'General keeps its four switches beside the send-key picker')
+  assert.equal(general.filter(node => node.type === Segmented && node.props?.label === 'Send shortcut').length, 1, 'General draws the send-key picker')
 
   const bots = mount(baseRoster, 'bots', null, 'BotsPage').nodes
   assert.equal(bots.filter(node => node.type === 'select').length, 2, 'Bots keeps both of its Main Bot selects')
@@ -339,4 +347,36 @@ test('a read-only plain group states who answers and its working folder', () => 
   const writable = mount(baseRoster, 'groups', 'r1', 'GroupSettingsForm').nodes
   assert.ok(writable.some(node => node.type === Segmented), 'the writable page draws the mode picker')
   assert.ok(writable.some(node => node.type === FolderMenu), 'and the folder menu')
+})
+
+// Which key sends (General → Shortcuts). The shell sends on Enter and keeps Shift+Enter for
+// a new line; the setting flips that pair for this window. The choice is local: the host has
+// no send-key field, so the page writes localStorage instead of asking set-prefs.
+test('General offers Enter or Shift+Enter to send, and stores the choice for this window (#3114)', () => {
+  stores.clear()
+  const { nodes, calls } = mount(baseRoster, 'general', null, 'GeneralPage')
+  const facts = text(nodes)
+  assert.match(facts, /Shortcuts/, 'the choice has its own section')
+  assert.match(facts, /Send shortcut/, 'and its own row')
+  const picker = nodes.find(node => node.type === Segmented && node.props?.label === 'Send shortcut')
+  assert.ok(picker, 'the row draws a picker')
+  const buttons = all(picker).filter(node => nameOf(node) === 'button')
+  assert.deepEqual(buttons.map(text), ['Enter to send', 'Shift+Enter to send'])
+  assert.deepEqual(buttons.map(button => button.props['aria-pressed']), [true, false], 'Enter is the default')
+  buttons[1].props.onClick()
+  assert.equal(stores.get('flybot-send-key'), 'shift-enter', 'the choice is stored for this window')
+  assert.deepEqual(calls, [], 'and no host write is asked for')
+  const after = mount(baseRoster, 'general', null, 'GeneralPage').nodes
+    .find(node => node.type === Segmented && node.props?.label === 'Send shortcut')
+  assert.equal(after.props.value, 'shift-enter', 'a reload draws the stored choice')
+})
+
+test('a read-only window names the send shortcut instead of drawing a picker (#3114)', () => {
+  stores.clear()
+  const { nodes, calls } = mount(lockedRoster, 'general', null, 'GeneralPage')
+  const facts = text(nodes)
+  assert.match(facts, /Send shortcut/, 'the page still names the setting')
+  assert.match(facts, /Enter to send/, 'with the choice in use')
+  assert.equal(nodes.filter(node => node.type === Segmented && node.props?.label === 'Send shortcut').length, 0, 'and no picker')
+  assert.deepEqual(calls, [], 'a locked page asks for no write')
 })
