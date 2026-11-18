@@ -708,6 +708,9 @@ var ZH = {
   General: "通用",
   Bots: "Bot",
   "Group chats": "群聊",
+  "Session filter": "会话筛选",
+  "Direct chats": "单聊",
+  Unread: "未读",
   Secrets: "密钥",
   Appearance: "外观",
   Theme: "主题",
@@ -8495,6 +8498,34 @@ function ActivityIndicator({ sessionId, useRoster, useSessionStatus, useLive, us
   ), host);
 }
 
+// src/shared/session-list-filter.js
+var SESSION_FILTERS = ["all", "group", "direct", "unread"];
+function sessionStatusOf(map, id) {
+  if (id == null || map == null) return void 0;
+  if (typeof map.get === "function") return map.get(id);
+  return map[id];
+}
+function sessionIsUnread(entry, statusMap, markedUnread) {
+  const item = entry?.item;
+  if (!item) return false;
+  if (markedUnread?.[item.id]) return true;
+  if (entry.kind === "agent") {
+    return (item.sessions ?? []).some((id) => sessionStatusOf(statusMap, id)?.completionUnread === true);
+  }
+  if (entry.kind === "room") {
+    return sessionStatusOf(statusMap, item.id)?.completionUnread === true;
+  }
+  const part = item.sessionId ?? item.id;
+  const status = sessionStatusOf(statusMap, part);
+  return status?.completionUnread === true || status?.pendingInteraction !== void 0;
+}
+function matchesSessionFilter(entry, filter, unread = false) {
+  if (filter === "group") return entry?.kind === "room";
+  if (filter === "direct") return entry?.kind === "bot" || entry?.kind === "agent";
+  if (filter === "unread") return unread === true;
+  return true;
+}
+
 // src/client/dsh-offer.js
 var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
 var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
@@ -10868,6 +10899,27 @@ function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) 
     closed ? null : children.map((child) => (0, import_react19.createElement)(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions }))
   );
 }
+function SessionFilter({ value, onChange }) {
+  const items = [
+    ["all", t("All")],
+    ["group", t("Group chats")],
+    ["direct", t("Direct chats")],
+    ["unread", t("Unread")]
+  ];
+  return (0, import_react19.createElement)(
+    "div",
+    { className: "bt-session-filter", role: "radiogroup", "aria-label": t("Session filter") },
+    items.map(([id, label]) => (0, import_react19.createElement)("button", {
+      key: id,
+      type: "button",
+      role: "radio",
+      className: "bt-session-filter-btn",
+      "data-filter": id,
+      "aria-checked": value === id,
+      onClick: () => onChange(id)
+    }, label))
+  );
+}
 function TeamSidebar(props) {
   const { wide, useRoster, useUi, useSessions, actions } = props;
   const listRef = (0, import_react19.useRef)(null);
@@ -10903,11 +10955,25 @@ function TeamSidebar(props) {
   }, t("Reload"));
   const structure = useSidebarStructure();
   const [collapsed, setCollapsed] = (0, import_react19.useState)({});
+  const [sessionFilter, setSessionFilter] = (0, import_react19.useState)("all");
   const toggle = (id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }));
   const inTree = (entry) => entry.kind === "bot" && !entry.item.remote;
   const listed = (entry) => inTree(entry) && structure?.include?.(entry.item.id) !== false;
-  const tree = structure && wide && main ? botTree([main, ...order.filter(listed).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
-  useListGlide(listRef, wide, order.map((entry) => entry.item.id).join(","));
+  const statusMap = props.useSessionStatus ? props.useSessionStatus((value) => value) : void 0;
+  const unreadIds = (0, import_react19.useMemo)(() => {
+    const ids = /* @__PURE__ */ new Set();
+    const consider = (entry) => {
+      if (entry?.item && sessionIsUnread(entry, statusMap, markedUnread)) ids.add(entry.item.id);
+    };
+    if (main) consider({ kind: "bot", item: main });
+    for (const entry of order) consider(entry);
+    return ids;
+  }, [order, main, statusMap, markedUnread]);
+  const showTree = Boolean(structure && wide && main && (sessionFilter === "all" || sessionFilter === "direct"));
+  const tree = showTree ? botTree([main, ...order.filter(listed).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
+  const visibleOrder = order.filter((entry) => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false) && matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)));
+  const showMain = !tree && main && matchesSessionFilter({ kind: "bot", item: main }, sessionFilter, unreadIds.has(main.id));
+  useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map((entry) => entry.item.id)].filter(Boolean).join(","));
   useLandOnMainBot(roster, useSessions, actions);
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide };
   const typeToSearch = (event) => {
@@ -10939,12 +11005,13 @@ function TeamSidebar(props) {
     (0, import_react19.createElement)(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
     (0, import_react19.createElement)(KanbanRow, { wide, useUi, actions }),
     (0, import_react19.createElement)(ProjectsNav, { wide }),
+    wide ? (0, import_react19.createElement)(SessionFilter, { value: sessionFilter, onChange: setSessionFilter }) : null,
     (0, import_react19.createElement)(
       "div",
       { ref: listRef, className: "bt-list", role: "region", "aria-label": t("Bot list") },
-      tree ? (0, import_react19.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react19.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : main ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
-      order.filter((entry) => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false)).map((entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
-      wide ? (0, import_react19.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react19.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
+      tree ? (0, import_react19.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react19.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : showMain ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
+      visibleOrder.map((entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
+      wide && sessionFilter === "all" ? (0, import_react19.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react19.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
     )
   );
 }
@@ -11289,6 +11356,10 @@ function BrandName() {
   return (0, import_react19.createElement)("span", { style: { fontWeight: 600, fontSize: 14 } }, t("FlyBot"));
 }
 var SIDEBAR_CSS = `
+.bt-session-filter{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px 2px;flex:none}
+.bt-session-filter-btn{height:26px;padding:0 10px;border:.5px solid var(--bt-line);border-radius:999px;background:transparent;color:var(--bt-ink-2);font:inherit;font-size:12px;line-height:26px;cursor:pointer}
+.bt-session-filter-btn[aria-checked=true]{background:var(--bt-active);border-color:var(--bt-line-2);color:var(--bt-ink);font-weight:600}
+.bt-session-filter-empty{padding:16px 12px;text-align:center}
 .bt-side-top .bt-brand{cursor:default;padding-left:6px}
 .bt-side-top .bt-brand:hover{background:none}
 .bt-brand .bt-mark{flex:none}

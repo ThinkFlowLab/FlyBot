@@ -13,6 +13,7 @@ import { springEasing, SPRING_SHAPE } from './motion.js'
 import { hostText, t } from './i18n.js'
 import { friendBotTitle, roomTitle, sharedRoomTitle, isShownRemoteChat } from '../shared/remote-label.js'
 import { visibleText } from '../shared/preview.js'
+import { matchesSessionFilter, sessionIsUnread } from '../shared/session-list-filter.js'
 import { showsDshRow } from './dsh-offer.js'
 import { InboxRow } from './inbox.js'
 import { KanbanRow } from './kanban.js'
@@ -340,6 +341,20 @@ function TreeNode({ node, rowProps, markedUnread, collapsed, toggle, actions }) 
     closed ? null : children.map(child => h(TreeNode, { key: child.bot.id, node: child, rowProps, markedUnread, collapsed, toggle, actions })))
 }
 
+function SessionFilter({ value, onChange }) {
+  const items = [
+    ['all', t('All')],
+    ['group', t('Group chats')],
+    ['direct', t('Direct chats')],
+    ['unread', t('Unread')],
+  ]
+  return h('div', { className: 'bt-session-filter', role: 'radiogroup', 'aria-label': t('Session filter') },
+    items.map(([id, label]) => h('button', {
+      key: id, type: 'button', role: 'radio', className: 'bt-session-filter-btn',
+      'data-filter': id, 'aria-checked': value === id, onClick: () => onChange(id),
+    }, label)))
+}
+
 export function TeamSidebar(props) {
   const { wide, useRoster, useUi, useSessions, actions } = props
   const listRef = useRef(null)
@@ -380,13 +395,30 @@ export function TeamSidebar(props) {
   // A plugin (the tree) may give the Bots a structure: the list then is one tree under the Main Bot.
   const structure = useSidebarStructure()
   const [collapsed, setCollapsed] = useState({})
+  const [sessionFilter, setSessionFilter] = useState('all')
   const toggle = id => setCollapsed(value => ({ ...value, [id]: !value[id] }))
   // Only own Bots belong to the tree; a friend's Bot stays in the ordered list below it.
   // structure.include(id) === false hides a Bot from the default list (e.g. tree-archived, #452).
   const inTree = entry => entry.kind === 'bot' && !entry.item.remote
   const listed = entry => inTree(entry) && structure?.include?.(entry.item.id) !== false
-  const tree = structure && wide && main ? botTree([main, ...order.filter(listed).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
-  useListGlide(listRef, wide, order.map(entry => entry.item.id).join(','))
+  const statusMap = props.useSessionStatus ? props.useSessionStatus(value => value) : undefined
+  const unreadIds = useMemo(() => {
+    const ids = new Set()
+    const consider = (entry) => {
+      if (entry?.item && sessionIsUnread(entry, statusMap, markedUnread)) ids.add(entry.item.id)
+    }
+    if (main) consider({ kind: 'bot', item: main })
+    for (const entry of order) consider(entry)
+    return ids
+  }, [order, main, statusMap, markedUnread])
+  const showTree = Boolean(structure && wide && main && (sessionFilter === 'all' || sessionFilter === 'direct'))
+  const tree = showTree ? botTree([main, ...order.filter(listed).map(entry => entry.item)], main.id, id => structure.parentOf(id)) : null
+  const visibleOrder = order.filter(entry =>
+    !(tree && inTree(entry)) &&
+    !(inTree(entry) && structure?.include?.(entry.item.id) === false) &&
+    matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)))
+  const showMain = !tree && main && matchesSessionFilter({ kind: 'bot', item: main }, sessionFilter, unreadIds.has(main.id))
+  useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map(entry => entry.item.id)].filter(Boolean).join(','))
   useLandOnMainBot(roster, useSessions, actions)
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
   // Typing while the sidebar has focus starts a search.
@@ -412,15 +444,16 @@ export function TeamSidebar(props) {
     h(InboxRow, { wide, useRoster, useWork: props.useWork, useUi, actions }),
     h(KanbanRow, { wide, useUi, actions }),
     h(ProjectsNav, { wide }),
+    wide ? h(SessionFilter, { value: sessionFilter, onChange: setSessionFilter }) : null,
     h('div', { ref: listRef, className: 'bt-list', role: 'region', 'aria-label': t('Bot list') },
       tree ? h('div', { className: 'bt-tree', role: 'group', 'aria-label': t('Bot tree') }, tree.map(node => h(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions })))
-        : main ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
-      order.filter(entry => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false)).map(entry => (entry.kind === 'bot'
+        : showMain ? h(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : h('div', { className: 'bt-hint' }, t('Setting up your Main Bot…')),
+      visibleOrder.map(entry => (entry.kind === 'bot'
         ? h(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true })
         : entry.kind === 'room'
           ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })
           : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true }))),
-      wide ? h(FlyBotSections, { roster, actions, renderBot: bot => h(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null))
+      wide && sessionFilter === 'all' ? h(FlyBotSections, { roster, actions, renderBot: bot => h(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null))
 }
 
 // The update button at the sidebar's top right: a cloud while a newer DS Bot —
@@ -742,6 +775,10 @@ export function BrandName() {
 // and Connect apps; FooterAccount only shows when the seat went to no one. The
 // shell's footer classes are CSS-module names, so they match on their stems.
 export const SIDEBAR_CSS = `
+.bt-session-filter{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px 2px;flex:none}
+.bt-session-filter-btn{height:26px;padding:0 10px;border:.5px solid var(--bt-line);border-radius:999px;background:transparent;color:var(--bt-ink-2);font:inherit;font-size:12px;line-height:26px;cursor:pointer}
+.bt-session-filter-btn[aria-checked=true]{background:var(--bt-active);border-color:var(--bt-line-2);color:var(--bt-ink);font-weight:600}
+.bt-session-filter-empty{padding:16px 12px;text-align:center}
 .bt-side-top .bt-brand{cursor:default;padding-left:6px}
 .bt-side-top .bt-brand:hover{background:none}
 .bt-brand .bt-mark{flex:none}
