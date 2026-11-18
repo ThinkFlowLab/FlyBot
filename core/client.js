@@ -492,6 +492,13 @@ var ZH = {
   Standard: "标准",
   "No folding": "不折叠",
   "Message folding must be compact, standard or none": "消息折叠必须是紧凑、标准或不折叠",
+  "Open beside the conversation": "在对话旁打开",
+  "Opened beside the conversation.": "已在对话旁打开。",
+  "Close document": "关闭文档",
+  "{count} sections": "{count} 个章节",
+  Document: "文档",
+  "Show message text": "显示消息正文",
+  "Hide message text": "收起消息正文",
   "Showing {shown} of {count}": "显示 {shown} / {count}",
   "Showing all {count}": "显示全部 {count}",
   "Admin leads": "管理员主持",
@@ -5277,6 +5284,22 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-fold-toggle:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .bt-fold[data-folded] .bt-fold-body>:first-child{margin-top:0}
 .bt-fold[data-folded] .bt-fold-body>:last-child{margin-bottom:0}
+.bt-document-message{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;max-width:100%}
+.bt-doc-card{display:flex;align-items:center;gap:12px;width:min(100%,440px);box-sizing:border-box;margin:0;padding:12px 14px;border:.5px solid var(--bt-line-2);border-radius:14px;background:var(--bt-card);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-doc-card:hover{background:var(--bt-hover)}
+.bt-doc-card-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;background:var(--bt-tag-bg);color:var(--bt-ink-2)}
+.bt-doc-card-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.bt-doc-card-title{font-size:14px;line-height:20px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-doc-card-meta{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-doc-card-go{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
+.bt-umsg .bt-doc-card{width:min(100%,320px)}
+.bt-doc-pane{display:flex;flex-direction:column;min-height:0;height:100%;background:var(--bt-main);color:var(--bt-ink)}
+.bt-doc-pane-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:none;padding:16px 16px 12px;border-bottom:.5px solid var(--bt-line)}
+.bt-doc-pane-copy{min-width:0}
+.bt-doc-pane-title{margin:0;font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.bt-doc-pane-hint{margin:4px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-doc-pane-body{flex:1;min-height:0;overflow:auto;padding:16px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);overflow-wrap:anywhere}
+.bt-doc-pane-body [class*="_markdown"]{color:inherit}
 .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
 .bt-bubble [class*="_markdown"]{color:inherit!important;font-size:inherit!important;line-height:inherit!important}
 .bt-bubble p{margin:0}
@@ -7247,6 +7270,7 @@ function onMessageContextMenu(event, setContextAt, { live = false } = {}) {
 
 // src/client/message-fold.js
 var import_react11 = require("react");
+var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var FOLD_MODES = ["compact", "standard", "none"];
 var FOLD_THRESHOLDS = {
   compact: { lines: 4, chars: 240 },
@@ -7323,10 +7347,56 @@ function shouldFold(text2, mode) {
   if (!exceedsThreshold(raw, cap)) return false;
   return previewOf2(raw, mode) !== raw;
 }
-function foldBody({ text: text2, folding, streaming = false, draw }) {
+var DOCUMENT_MIN_HEADINGS = 2;
+var DOCUMENT_MIN_SECTIONS = 3;
+function proseLines(text2) {
+  let block = null;
+  return String(text2 ?? "").split("\n").filter((line2) => {
+    const match = line2.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (match) {
+      if (!block) block = match[1];
+      else if (match[1][0] === block[0] && match[1].length >= block.length && !match[2].trim()) block = null;
+      return false;
+    }
+    return !block;
+  });
+}
+function documentHeadings(text2) {
+  const heads = [];
+  for (const line2 of proseLines(text2)) {
+    const match = line2.match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (match) heads.push({ level: match[1].length, title: match[2] });
+  }
+  return heads;
+}
+function documentSections(text2) {
+  return proseLines(text2).join("\n").split(/^\s*---\s*$/m).filter((part) => part.trim() !== "");
+}
+function isLongDocument(text2) {
+  if (!exceedsThreshold(text2, FOLD_THRESHOLDS.standard)) return false;
+  if (documentHeadings(text2).length >= DOCUMENT_MIN_HEADINGS) return true;
+  return documentSections(text2).length >= DOCUMENT_MIN_SECTIONS;
+}
+function documentTitle(text2) {
+  const first = documentHeadings(text2)[0]?.title;
+  if (first) return first;
+  const line2 = String(text2 ?? "").split("\n").find((item) => item.trim() !== "") ?? "";
+  const plain = line2.replace(/^#{1,6}\s+/, "").trim();
+  return plain.length > 80 ? `${plain.slice(0, 80).trim()}…` : plain;
+}
+function documentCount(text2) {
+  return Math.max(documentHeadings(text2).length, documentSections(text2).length, 1);
+}
+function showsDocumentCard(text2, folding) {
+  if (folding?.mode === "none") return false;
+  return isLongDocument(text2);
+}
+function foldBody({ text: text2, folding, streaming = false, draw, actions, sessionId }) {
   const mode = folding?.mode ?? DEFAULT_FOLDING.mode;
   const raw = String(text2 ?? "");
-  if (streaming || !shouldFold(raw, mode)) return draw ? draw(raw) : null;
+  if (streaming) return draw ? draw(raw) : null;
+  if (showsDocumentCard(raw, folding)) return (0, import_react11.createElement)(DocumentMessage, { text: raw, folding, draw, actions, sessionId });
+  if (!shouldFold(raw, mode)) return draw ? draw(raw) : null;
   return (0, import_react11.createElement)(FoldedContent, { text: raw, folding, draw });
 }
 function FoldedContent({ text: text2, folding, draw }) {
@@ -7352,6 +7422,103 @@ function FoldedContent({ text: text2, folding, draw }) {
     }, t(open ? "Show less" : "Show more"))
   );
 }
+var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
+function DocumentMessage({ text: text2, folding, draw, actions, sessionId }) {
+  const [open, setOpen] = (0, import_react11.useState)(false);
+  const mode = folding?.mode ?? DEFAULT_FOLDING.mode;
+  (0, import_react11.useEffect)(() => {
+    setOpen(false);
+  }, [mode, text2]);
+  const raw = String(text2 ?? "");
+  const title = documentTitle(raw) || t("Document");
+  return (0, import_react11.createElement)(
+    "div",
+    { className: "bt-document-message" },
+    (0, import_react11.createElement)(DocumentCard, {
+      title,
+      count: documentCount(raw),
+      onOpen: () => actions?.openDocument?.({ title, text: raw, sessionId })
+    }),
+    (0, import_react11.createElement)("button", {
+      type: "button",
+      className: "bt-fold-toggle",
+      "aria-expanded": open,
+      onClick: (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen((value) => !value);
+      }
+    }, t(open ? "Hide message text" : "Show message text")),
+    open ? draw ? draw(raw) : (0, import_react11.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: raw, labels: mdLabels(), variant: "compact" }) : null
+  );
+}
+function DocumentCard({ title, count, onOpen }) {
+  const sections = t("{count} sections", { count });
+  return (0, import_react11.createElement)(
+    "button",
+    {
+      type: "button",
+      className: "bt-doc-card",
+      "aria-label": `${title}. ${sections}. ${t("Open beside the conversation")}`,
+      onClick: (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onOpen?.();
+      }
+    },
+    (0, import_react11.createElement)("span", { className: "bt-doc-card-icon", "aria-hidden": true }, (0, import_react11.createElement)(DocIcon)),
+    (0, import_react11.createElement)(
+      "span",
+      { className: "bt-doc-card-copy" },
+      (0, import_react11.createElement)("span", { className: "bt-doc-card-title" }, title),
+      (0, import_react11.createElement)("span", { className: "bt-doc-card-meta" }, sections)
+    ),
+    (0, import_react11.createElement)("span", { className: "bt-doc-card-go" }, t("Open beside the conversation"))
+  );
+}
+function DocIcon() {
+  return (0, import_react11.createElement)(
+    "svg",
+    {
+      width: 22,
+      height: 22,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true
+    },
+    (0, import_react11.createElement)("path", { d: "M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z" }),
+    (0, import_react11.createElement)("path", { d: "M14 3.5V9h5.5" }),
+    (0, import_react11.createElement)("path", { d: "M8.5 13h7M8.5 16.5h5" })
+  );
+}
+function DocumentPane({ document: document2, onClose }) {
+  const title = document2?.title || t("Document");
+  const text2 = String(document2?.text ?? "");
+  return (0, import_react11.createElement)(
+    "div",
+    { className: "bt-doc-pane", "aria-label": title },
+    (0, import_react11.createElement)(
+      "div",
+      { className: "bt-doc-pane-head" },
+      (0, import_react11.createElement)(
+        "div",
+        { className: "bt-doc-pane-copy" },
+        (0, import_react11.createElement)("h2", { className: "bt-doc-pane-title" }, title),
+        (0, import_react11.createElement)("p", { className: "bt-doc-pane-hint" }, t("Opened beside the conversation."))
+      ),
+      (0, import_react11.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close document"), onClick: onClose }, (0, import_react11.createElement)(CloseIcon))
+    ),
+    (0, import_react11.createElement)(
+      "div",
+      { className: "bt-doc-pane-body" },
+      (0, import_react11.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: text2, labels: mdLabels(), variant: "compact" })
+    )
+  );
+}
 
 // src/client/turn-reasoning.js
 function turnReasoning(steps, current) {
@@ -7365,8 +7532,8 @@ var stepReasoning = (step) => step.blocks.filter((block) => block.kind === "reas
 
 // src/client/cells.js
 var import_react12 = require("react");
-var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-var mdLabels = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
+var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
+var mdLabels2 = () => ({ code: { copyLabel: t("Copy"), copiedLabel: t("Copied") }, footnotes: t("Footnotes") });
 function bubbleLinkClick({ actions, subject }) {
   return (event) => {
     if (!event || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
@@ -7424,7 +7591,7 @@ function Bubbles({ texts: texts2, roster, selfId, actions, streaming, sessionId,
           (0, import_react12.createElement)(
             "div",
             { className: "bt-bubble" },
-            foldBody({ text: text2, folding, streaming: live, draw: (shown2) => (0, import_react12.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: linkMentions(shown2, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: "compact", fileMentions: mentions }) })
+            foldBody({ text: text2, folding, streaming: live, actions, sessionId, draw: (shown2) => (0, import_react12.createElement)(import_dsh_client_ui_primitives2.MarkdownText, { text: linkMentions(shown2, roster.bots, selfId), streaming: live, labels: mdLabels2(), variant: "compact", fileMentions: mentions }) })
           ),
           live ? null : (0, import_react12.createElement)(MessageTools, { text: text2, name: roster.byId[selfId]?.name ?? t("Bot"), sessionId, react: key ? (emoji) => actions.toggleReaction(key, reactIndex(index), emoji) : void 0, actions, contextAt: contextAt?.index === index ? contextAt : null })
         ),
@@ -7871,7 +8038,7 @@ function EarlierParts({ sessionId, roster, actions, useUi }) {
           return (0, import_react12.createElement)("div", { key, className: "bt-urow", onClickCapture: bubbleLinkClick({ actions, subject: selfId ?? sessionId }) }, (0, import_react12.createElement)(
             "div",
             { className: "bt-ububble" },
-            row.text ? (0, import_react12.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: row.text, labels: mdLabels(), variant: "compact" }) : null,
+            row.text ? (0, import_react12.createElement)(import_dsh_client_ui_primitives2.MarkdownText, { text: row.text, labels: mdLabels2(), variant: "compact" }) : null,
             row.images ? (0, import_react12.createElement)("span", { className: "bt-uimages" }, row.images === 1 ? t("1 image") : t("{count} images", { count: row.images })) : null
           ));
         case "answer":
@@ -8245,7 +8412,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
           (0, import_react12.createElement)(
             "div",
             { className: "bt-ububble" },
-            (0, import_react12.createElement)(import_dsh_client_ui_primitives.MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels(), variant: "compact" })
+            (0, import_react12.createElement)(import_dsh_client_ui_primitives2.MarkdownText, { text: remoteMessageText(reply.text), labels: mdLabels2(), variant: "compact" })
           ),
           room2?.origin === "face-to-face" ? (0, import_react12.createElement)("span", { className: "bt-lead", title: who || void 0 }, (0, import_react12.createElement)(PersonMark, { name: who || void 0 })) : null
         );
@@ -10713,7 +10880,7 @@ function ProjectsNav({ wide = true, request, onOpen } = {}) {
 // src/client/sidebar.js
 var import_react21 = require("react");
 var import_react_dom4 = require("react-dom");
-var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
 function useMarkedUnread(id, active, marked, actions) {
   (0, import_react21.useEffect)(() => {
     if (active && marked) actions.clearUnread(id);
@@ -11019,7 +11186,7 @@ function AgentRow({ agent, actions, useSessions, useSessionStatus, useUi, wide, 
           actions.openMenu({ kind: "agent", id: agent.id, x: event.clientX, y: event.clientY });
         }
       },
-      (0, import_react21.createElement)("span", { className: `bt-agent-ava${running ? " bt-run" : ""}` }, (0, import_react21.createElement)(import_dsh_client_ui_primitives2.FishLogo, { size: 22 })),
+      (0, import_react21.createElement)("span", { className: `bt-agent-ava${running ? " bt-run" : ""}` }, (0, import_react21.createElement)(import_dsh_client_ui_primitives3.FishLogo, { size: 22 })),
       wide ? (0, import_react21.createElement)(
         "span",
         { className: "bt-row-body" },
@@ -16363,7 +16530,7 @@ button.bt-face-bot:hover{color:var(--bt-ink);text-decoration:underline;text-unde
 
 // src/client/palette.js
 var import_react35 = require("react");
-var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
 var paletteText = (raw, names) => readableLine(String(raw ?? ""), names);
 var PALETTE_EXIT_MS = 160;
 var SEARCH_DEBOUNCE_MS = 150;
@@ -16455,7 +16622,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
   if (people2.length) sections.push([t("Bots"), people2]);
   const agents = (roster.agents ?? []).filter(() => matchesName("DSH Agent")).map((agent) => ({
     key: agent.id,
-    avatar: (0, import_react35.createElement)("span", { className: "bt-palette-agent" }, (0, import_react35.createElement)(import_dsh_client_ui_primitives3.FishLogo, { size: 18 })),
+    avatar: (0, import_react35.createElement)("span", { className: "bt-palette-agent" }, (0, import_react35.createElement)(import_dsh_client_ui_primitives4.FishLogo, { size: 18 })),
     title: "DSH Agent",
     subtitle: t("Plain dsh session"),
     run: () => actions.openAgent(agent.id)
@@ -21711,7 +21878,7 @@ function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPages }) 
 function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }) {
   const bot = roster.byId[pane.id];
   const canBrowse = Boolean(bot && roster.browser === true && actions.browserShow);
-  const view = pane.view === "browser" && canBrowse ? "browser" : "details";
+  const view = pane.view === "browser" && canBrowse ? "browser" : pane.view === "document" && pane.document ? "document" : "details";
   const tabState = useBrowserTabs((map) => bot ? map[bot.id] ?? EMPTY_TABS2 : EMPTY_TABS2);
   const active = tabState.active;
   const page = useBrowserPages((pages) => (active ? pages[active] : null) ?? EMPTY_PAGE);
@@ -21910,7 +22077,7 @@ function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatu
       ref: root,
       className: "bt-panel",
       "data-view": view,
-      "aria-label": view === "browser" && bot ? t("{name}'s browser", { name: bot.name }) : t("Conversation details"),
+      "aria-label": view === "browser" && bot ? t("{name}'s browser", { name: bot.name }) : view === "document" ? pane.document?.title || t("Document") : t("Conversation details"),
       "data-leaving": leaving || void 0,
       "aria-hidden": leaving || void 0,
       "data-settling": settling || void 0,
@@ -21926,7 +22093,11 @@ function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatu
     // pages underneath (the chat, the guest) see no pointer.
     dragging ? (0, import_react_dom10.createPortal)((0, import_react48.createElement)("div", { className: "bt-drag-shield", "aria-hidden": true }), document.body) : null,
     hasStrip ? (0, import_react48.createElement)(PanelStrip, { bot, subject: pane.id, view, ids: tabState.ids, active, reading, onView: switchView, actions: panelActions, useBrowserPages }) : null,
-    view === "browser" && bot ? (0, import_react48.createElement)(BrowserView, { key: `browser:${active}`, bot, tabId: active, leaving, landed: landed && !settling, actions, useBrowserPages }) : (0, import_react48.createElement)(
+    view === "browser" && bot ? (0, import_react48.createElement)(BrowserView, { key: `browser:${active}`, bot, tabId: active, leaving, landed: landed && !settling, actions, useBrowserPages }) : view === "document" ? (0, import_react48.createElement)(
+      "div",
+      { key: `document:${pane.id}:${pane.document?.title ?? ""}`, className: "bt-panel-view" },
+      (0, import_react48.createElement)(DocumentPane, { document: pane.document, onClose: () => actions.closePanel() })
+    ) : (0, import_react48.createElement)(
       "div",
       { key: `details:${pane.id}:${pane.renaming ? "rename" : ""}:${pane.tab ?? ""}`, className: "bt-panel-view" },
       (0, import_react48.createElement)(DetailsDrawer, {
@@ -22111,7 +22282,7 @@ function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useActivity
     previous.current = current;
     if (current) actions.followPanel?.(current);
   }, [current]);
-  const open = ui2.details ? { id: ui2.details, view: ui2.view ?? "details", renaming: ui2.renaming, tab: ui2.tab } : null;
+  const open = ui2.details ? { id: ui2.details, view: ui2.view ?? "details", renaming: ui2.renaming, tab: ui2.tab, document: ui2.document ?? null } : null;
   const [kept, setKept] = (0, import_react50.useState)(open);
   (0, import_react50.useEffect)(() => {
     if (open) {
@@ -22120,7 +22291,7 @@ function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useActivity
     }
     const timer = setTimeout(() => setKept(null), PANEL_LINGER_MS);
     return () => clearTimeout(timer);
-  }, [ui2.details, ui2.view, ui2.renaming, ui2.tab]);
+  }, [ui2.details, ui2.view, ui2.renaming, ui2.tab, ui2.document]);
   const pane = open ?? kept;
   const [settings, settingsLeaving] = useLinger(ui2.settings, DIALOG_EXIT_MS);
   const remoteBotId = ui2.remoteBotSettings && roster.byId[ui2.remoteBotSettings]?.remote ? ui2.remoteBotSettings : null;
@@ -23280,7 +23451,7 @@ function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageIma
       text2 !== "" || rest.length > 0 ? (0, import_react51.createElement)(
         "div",
         { className: "bt-ubody", title: clock3(data.time) },
-        foldBody({ text: text2, folding: foldingOf(roster.prefs), draw: (shown) => (0, import_react51.createElement)(UserText, { text: shown, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }) }),
+        foldBody({ text: text2, folding: foldingOf(roster.prefs), actions, sessionId, draw: (shown) => (0, import_react51.createElement)(UserText, { text: shown, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }) }),
         rest.map((block, index) => ui.JsonBlock ? (0, import_react51.createElement)(ui.JsonBlock, { key: index, label: t("Content"), payload: block }) : null)
       ) : null,
       referenceLabels.length > 0 ? (0, import_react51.createElement)("div", { className: "bt-urefs" }, t("Referenced {labels}", { labels: referenceLabels.join(t(", ")) })) : null
@@ -23462,7 +23633,7 @@ function apply(ctx) {
   } catch {
     friendLines = null;
   }
-  const ui2 = createSource({ details: null, view: "details", renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} });
+  const ui2 = createSource({ details: null, view: "details", document: null, renaming: false, tab: null, newChat: null, exchange: null, menu: null, voice: null, palette: null, quote: null, settings: null, remoteBotSettings: null, memory: null, toast: null, signIn: null, renameAgent: null, unread: savedUnread, reactions: savedReactions, visits: {} });
   const surface = createSource({ mode: readMode(), plain: false });
   let agentSessionCache = /* @__PURE__ */ new Set();
   try {
@@ -23480,7 +23651,7 @@ function apply(ctx) {
   };
   let expected = null;
   const setPlain = (plain) => surface.set((state) => state.plain === plain ? state : { ...state, plain });
-  const dropPanels = () => ui2.set((state) => state.details || state.renaming ? { ...state, details: null, view: "details", renaming: false, tab: null } : state);
+  const dropPanels = () => ui2.set((state) => state.details || state.renaming ? { ...state, details: null, view: "details", document: null, renaming: false, tab: null } : state);
   const seenKey = (id) => roster.getSnapshot().byId?.[id]?.id ?? id;
   const visitTails = {};
   const leaveVisits = (ids) => {
@@ -23835,7 +24006,7 @@ function apply(ctx) {
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {
-      ui2.set((state) => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, details: null, view: "details", renaming: false, tab: null }));
+      ui2.set((state) => ({ ...state, newChat: null, exchange: null, menu: null, palette: null, details: null, view: "details", document: null, renaming: false, tab: null }));
       setPlain(true);
       expected = sessionId;
       ctx.uiWorkspace.openSession(sessionId);
@@ -23937,8 +24108,14 @@ function apply(ctx) {
     toggleDetails: (id, force) => {
       ui2.set((state) => {
         const details = force || state.details !== id || state.view !== "details" ? id : null;
-        return { ...state, renaming: false, tab: null, details, view: "details" };
+        return { ...state, renaming: false, tab: null, document: null, details, view: "details" };
       });
+    },
+    // A long document opens beside the conversation it came from: the panel keeps
+    // that Session as its subject, so moving to another conversation closes it.
+    openDocument: ({ title, text: text2, sessionId } = {}) => {
+      if (!sessionId || String(text2 ?? "").trim() === "") return;
+      ui2.set((state) => ({ ...state, details: sessionId, view: "document", document: { title, text: text2 }, renaming: false, tab: null }));
     },
     // The open panel follows the main view; a subject with no browser (a group
     // chat, an outside Session) settles on the details view.
@@ -23946,15 +24123,16 @@ function apply(ctx) {
       ui2.set((state) => {
         if (!state.details || state.details === id) return state;
         const view = state.view === "browser" && roster.getSnapshot().byId[id] === void 0 ? "details" : state.view;
+        if (view === "document") return { ...state, details: id, view: "details", document: null, renaming: false, tab: null };
         return { ...state, details: id, view, renaming: false, tab: null };
       });
     },
     showDetails: (id, tab = null) => {
-      ui2.set((state) => ({ ...state, details: id, view: "details", renaming: false, tab }));
+      ui2.set((state) => ({ ...state, details: id, view: "details", document: null, renaming: false, tab }));
     },
     // Opening the conversation would move focus to its composer and blur the name field.
     renameBot: (id) => {
-      ui2.set((state) => ({ ...state, details: id, view: "details", renaming: true, tab: null }));
+      ui2.set((state) => ({ ...state, details: id, view: "details", document: null, renaming: true, tab: null }));
     },
     // `id` opens one Bot (page 'bots') or one group chat (page 'groups'). `back` is where
     // closing the page returns to; a page the inbox opened sends the queue back (#2541).
@@ -23997,7 +24175,7 @@ function apply(ctx) {
       if (mode !== "bot" && mode !== "agent") return;
       if (surface.getSnapshot().mode === mode) return;
       if (mode === "agent") {
-        ui2.set((state) => ({ ...state, details: null, view: "details", settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }));
+        ui2.set((state) => ({ ...state, details: null, view: "details", document: null, settings: null, remoteBotSettings: null, palette: null, newChat: null, menu: null, voice: null, exchange: null, memory: null, inbox: null, board: null, toast: null }));
       }
       writeMode(mode);
       surface.set((state) => ({ ...state, mode }));
@@ -24192,10 +24370,10 @@ function apply(ctx) {
   }
   actions.setPanelView = (view) => {
     if (view !== "details" && view !== "browser") return;
-    ui2.set((state) => state.details && state.view !== view ? { ...state, view } : state);
+    ui2.set((state) => state.details && state.view !== view ? { ...state, view, document: null } : state);
   };
   actions.closePanel = () => {
-    ui2.set((state) => state.details ? { ...state, details: null, view: "details", renaming: false, tab: null } : state);
+    ui2.set((state) => state.details ? { ...state, details: null, view: "details", document: null, renaming: false, tab: null } : state);
   };
   actions.flybotSlotEntries = (name) => ctx.slots.entries?.(name) ?? [];
   actions.signInEntry = () => ctx.slots.entries?.("settings.models.sign-in")?.[0] ?? null;

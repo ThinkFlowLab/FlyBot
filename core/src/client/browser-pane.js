@@ -10,6 +10,7 @@ import { BotMark } from './mark.js'
 import { STORAGE } from './storage.js'
 import { SPRING_SHAPE, springEasing } from './motion.js'
 import { DetailsDrawer } from './details-drawer.js'
+import { DocumentPane } from './message-fold.js'
 import { t } from './i18n.js'
 
 export const PANEL_LINGER_MS = 300
@@ -270,14 +271,16 @@ function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPages }) 
 }
 
 /**
- * One aside for the Bot's details and browser. `pane` is
- * `{ id, view: 'details'|'browser', renaming, tab }`; `id` is the Session id the
- * panel follows. Without the Desktop bridge the browser view never shows.
+ * One aside for the Bot's details, its browser, and a long document opened from a
+ * chat. `pane` is `{ id, view: 'details'|'browser'|'document', renaming, tab, document }`;
+ * `id` is the Session id the panel follows. Without the Desktop bridge the browser
+ * view never shows.
  */
 export function BotPanel({ pane, leaving, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }) {
   const bot = roster.byId[pane.id]
   const canBrowse = Boolean(bot && roster.browser === true && actions.browserShow)
-  const view = pane.view === 'browser' && canBrowse ? 'browser' : 'details'
+  const view = pane.view === 'browser' && canBrowse ? 'browser'
+    : pane.view === 'document' && pane.document ? 'document' : 'details'
   const tabState = useBrowserTabs(map => (bot ? (map[bot.id] ?? EMPTY_TABS) : EMPTY_TABS))
   const active = tabState.active
   const page = useBrowserPages(pages => (active ? pages[active] : null) ?? EMPTY_PAGE)
@@ -463,7 +466,7 @@ export function BotPanel({ pane, leaving, roster, actions, useSessions, useSessi
 
   const hasStrip = canBrowse && tabState.ids.length > 0
   return h('aside', {
-    ref: root, className: 'bt-panel', 'data-view': view, 'aria-label': view === 'browser' && bot ? t("{name}'s browser", { name: bot.name }) : t('Conversation details'),
+    ref: root, className: 'bt-panel', 'data-view': view, 'aria-label': view === 'browser' && bot ? t("{name}'s browser", { name: bot.name }) : view === 'document' ? (pane.document?.title || t('Document')) : t('Conversation details'),
     'data-leaving': leaving || undefined, 'aria-hidden': leaving || undefined, 'data-settling': settling || undefined,
     'data-instant': instant || undefined, 'data-dragging': dragging || undefined, style: { '--bt-panel-w': `${panelWidth}px` },
     onAnimationEnd: (event) => { if (event.target === event.currentTarget) setLanded(true) },
@@ -475,6 +478,9 @@ export function BotPanel({ pane, leaving, roster, actions, useSessions, useSessi
     hasStrip ? h(PanelStrip, { bot, subject: pane.id, view, ids: tabState.ids, active, reading, onView: switchView, actions: panelActions, useBrowserPages }) : null,
     view === 'browser' && bot
       ? h(BrowserView, { key: `browser:${active}`, bot, tabId: active, leaving, landed: landed && !settling, actions, useBrowserPages })
+      : view === 'document'
+        ? h('div', { key: `document:${pane.id}:${pane.document?.title ?? ''}`, className: 'bt-panel-view' },
+            h(DocumentPane, { document: pane.document, onClose: () => actions.closePanel() }))
       : h('div', { key: `details:${pane.id}:${pane.renaming ? 'rename' : ''}:${pane.tab ?? ''}`, className: 'bt-panel-view' },
           h(DetailsDrawer, {
             sessionId: pane.id, startRenaming: pane.renaming, startTab: pane.tab, hasStrip,

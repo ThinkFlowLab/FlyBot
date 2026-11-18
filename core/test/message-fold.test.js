@@ -12,7 +12,7 @@ const { outputFiles } = await build({
   stdin: {
     contents: [
       "export { Bubbles } from './src/client/cells.js'",
-      "export { FOLD_THRESHOLDS, foldingOf, previewOf, shouldFold } from './src/client/message-fold.js'",
+      "export { FOLD_THRESHOLDS, DocumentPane, foldingOf, previewOf, shouldFold } from './src/client/message-fold.js'",
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
@@ -45,7 +45,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { Bubbles, FOLD_THRESHOLDS, foldingOf, previewOf, shouldFold } = module.exports
+const { Bubbles, FOLD_THRESHOLDS, DocumentPane, foldingOf, previewOf, shouldFold } = module.exports
 
 // The tool cells' generic expander hands a component its props and nothing else,
 // so every element runs as a function of its properties here too.
@@ -144,4 +144,74 @@ test('#3114: a streaming reply and a short one are never folded', () => {
   assert.equal(text(short), 'A short reply.', 'the short reply is drawn whole')
   assert.equal(toggles(short).length, 0, 'a short message has no fold control')
   assert.ok(text(short).includes('A short reply.'))
+})
+
+// A runbook: two headings and more than the standard cap, with a line deep inside
+// it that only the whole draw can reach.
+const runbook = (steps = 10) => [
+  '# Runbook',
+  '',
+  'Keep this beside you while the service comes up.',
+  '',
+  ...Array.from({ length: steps }, (_, index) => `Step ${index + 1}: check the service and write down what you saw.`),
+  '',
+  '## Step 2',
+  '',
+  'Close the runbook when the last line passes.',
+].join('\n')
+
+test('#3114: a long document draws a card with its title and section count', () => {
+  const drawn = fresh({ text: runbook() })
+  const cards = classed(drawn, 'bt-doc-card')
+  assert.equal(cards.length, 1, 'the bubble carries a document card')
+  assert.equal(text(classed(drawn, 'bt-doc-card-title')[0]), 'Runbook')
+  assert.equal(text(classed(drawn, 'bt-doc-card-meta')[0]), '2 sections')
+  assert.ok(text(drawn).includes('Open beside the conversation'))
+  assert.ok(!text(drawn).includes('Step 10'), 'the card does not draw the body')
+})
+
+test('#3114: the card hands the whole text to the pane', () => {
+  const body = runbook()
+  const handed = []
+  const drawn = fresh({ text: body, actions: { ...actions, openDocument: payload => handed.push(payload) } })
+  const cards = classed(drawn, 'bt-doc-card')
+  assert.equal(cards.length, 1, 'there is a card to open')
+  cards[0].props.onClick({ preventDefault() {}, stopPropagation() {} })
+  assert.equal(handed.length, 1)
+  assert.equal(handed[0].title, 'Runbook')
+  assert.equal(handed[0].text, body)
+  assert.equal(handed[0].sessionId, 'chat')
+})
+
+test('#3114: a document card keeps the whole text one press away', () => {
+  const body = runbook()
+  const drawn = fresh({ text: body })
+  const controls = toggles(drawn)
+  assert.equal(controls.length, 1)
+  assert.equal(text(controls[0]), 'Show message text')
+  press(drawn)
+  const open = bubble({ text: body })
+  assert.equal(text(toggles(open)[0]), 'Hide message text')
+  assert.ok(text(open).includes('Step 10'), 'the whole text is drawn in place')
+  const plain = fresh({ text: numbered(20) })
+  assert.equal(toggles(plain).length, 1)
+  assert.equal(text(toggles(plain)[0]), 'Show more', 'a long reply with no sections still folds')
+  const none = fresh({ text: body, roster: { ...roster, prefs: { folding: { mode: 'none' } } } })
+  assert.equal(classed(none, 'bt-doc-card').length, 0, "mode:'none' draws no card")
+  assert.ok(text(none).includes('Step 10'), "mode:'none' draws the whole text")
+  const streaming = fresh({ text: body, streaming: true })
+  assert.equal(classed(streaming, 'bt-doc-card').length, 0, 'a streaming document draws no card')
+  assert.ok(text(streaming).includes('Step 10'), 'a streaming document is drawn whole')
+})
+
+test('#3114: the document pane draws the whole text and closes', () => {
+  const body = runbook()
+  let closed = 0
+  const pane = expand(DocumentPane({ document: { title: 'Runbook', text: body }, onClose: () => { closed += 1 } }))
+  assert.equal(classed(pane, 'bt-doc-pane').length, 1)
+  assert.equal(text(classed(pane, 'bt-doc-pane-title')[0]), 'Runbook')
+  assert.ok(text(pane).includes('Step 10'), 'the pane draws the whole text')
+  const close = walk(pane, item => item.props?.['aria-label'] === 'Close document')[0]
+  close.props.onClick()
+  assert.equal(closed, 1, 'the pane closes once')
 })

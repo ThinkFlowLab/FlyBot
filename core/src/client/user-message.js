@@ -195,7 +195,7 @@ export function UserMessageCell({ node, sessionId, useRoster, actions, renderMes
         : author && (incoming || multiHuman) ? h('span', { className: 'bt-uauthor' }, author.name, author.ownerName ? h('span', { className: 'bt-chip' }, t('Friend\'s Bot')) : null) : null,
       attachments.length > 0 ? h(Attachments, { attachments, renderMessageImages }) : null,
       text !== '' || rest.length > 0 ? h('div', { className: 'bt-ubody', title: clock(data.time) },
-        foldBody({ text, folding: foldingOf(roster.prefs), draw: shown => h(UserText, { text: shown, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }) }),
+        foldBody({ text, folding: foldingOf(roster.prefs), actions, sessionId, draw: shown => h(UserText, { text: shown, bots: mentionableBots(roster, sessionId, { fromFriend: Boolean(incoming && author.ownerName) }), referenceLabels, skillNames: data.skillNames ?? [], references, actions }) }),
         rest.map((block, index) => (ui.JsonBlock ? h(ui.JsonBlock, { key: index, label: t('Content'), payload: block }) : null))) : null,
       referenceLabels.length > 0 ? h('div', { className: 'bt-urefs' }, t('Referenced {labels}', { labels: referenceLabels.join(t(', ')) })) : null),
     h(MessageTools, { text, name: incoming ? author?.name : t('You'), sessionId, actions, contextAt, className: 'bt-utools' }))

@@ -205,6 +205,22 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-fold-toggle:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .bt-fold[data-folded] .bt-fold-body>:first-child{margin-top:0}
 .bt-fold[data-folded] .bt-fold-body>:last-child{margin-bottom:0}
+.bt-document-message{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;max-width:100%}
+.bt-doc-card{display:flex;align-items:center;gap:12px;width:min(100%,440px);box-sizing:border-box;margin:0;padding:12px 14px;border:.5px solid var(--bt-line-2);border-radius:14px;background:var(--bt-card);color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-doc-card:hover{background:var(--bt-hover)}
+.bt-doc-card-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;background:var(--bt-tag-bg);color:var(--bt-ink-2)}
+.bt-doc-card-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.bt-doc-card-title{font-size:14px;line-height:20px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-doc-card-meta{font-size:12px;line-height:16px;color:var(--bt-ink-3)}
+.bt-doc-card-go{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
+.bt-umsg .bt-doc-card{width:min(100%,320px)}
+.bt-doc-pane{display:flex;flex-direction:column;min-height:0;height:100%;background:var(--bt-main);color:var(--bt-ink)}
+.bt-doc-pane-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:none;padding:16px 16px 12px;border-bottom:.5px solid var(--bt-line)}
+.bt-doc-pane-copy{min-width:0}
+.bt-doc-pane-title{margin:0;font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.bt-doc-pane-hint{margin:4px 0 0;font-size:12px;line-height:16px;color:var(--bt-ink-3);overflow-wrap:anywhere}
+.bt-doc-pane-body{flex:1;min-height:0;overflow:auto;padding:16px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);overflow-wrap:anywhere}
+.bt-doc-pane-body [class*="_markdown"]{color:inherit}
 .bt-bubble [class*="_markdown"]>*+*{margin-top:10px}
 .bt-bubble [class*="_markdown"]{color:inherit!important;font-size:inherit!important;line-height:inherit!important}
 .bt-bubble p{margin:0}

@@ -1,0 +1,1 @@
+A long chat message that reads as a document (over the standard cap, with two headings or three `---` sections) now shows a card in the bubble — title, section count and **Open beside the conversation** — that opens the whole text in the panel, and **Show message text** reads it in place ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

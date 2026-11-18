@@ -30,13 +30,13 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
     previous.current = current
     if (current) actions.followPanel?.(current)
   }, [current])
-  const open = ui.details ? { id: ui.details, view: ui.view ?? 'details', renaming: ui.renaming, tab: ui.tab } : null
+  const open = ui.details ? { id: ui.details, view: ui.view ?? 'details', renaming: ui.renaming, tab: ui.tab, document: ui.document ?? null } : null
   const [kept, setKept] = useState(open)
   useEffect(() => {
     if (open) { setKept(open); return undefined }
     const timer = setTimeout(() => setKept(null), PANEL_LINGER_MS)
     return () => clearTimeout(timer)
-  }, [ui.details, ui.view, ui.renaming, ui.tab])
+  }, [ui.details, ui.view, ui.renaming, ui.tab, ui.document])
   const pane = open ?? kept
   const [settings, settingsLeaving] = useLinger(ui.settings, DIALOG_EXIT_MS)
   const remoteBotId = ui.remoteBotSettings && roster.byId[ui.remoteBotSettings]?.remote ? ui.remoteBotSettings : null
