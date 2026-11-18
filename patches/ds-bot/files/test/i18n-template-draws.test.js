@@ -61,12 +61,18 @@ test('the plugins on main are pinned, and a template draw nobody pinned fails', 
   assert.equal(Number.parseInt(out.stdout.trimEnd().split('\n').at(-1), 10), current.size, 'the summary line counts the pins')
 })
 
-// Acceptance: the list names the Approve-all row on main, and its identity is the skeleton the reader
-// sees, never the line a comment above it happens to move.
-test('the Approve-all template on main is a member, and 12 comment lines leave the set identical', () => {
-  const file = fileURLToPath(new URL('../../plugins/social/client.js', import.meta.url))
-  const source = readFileSync(file, 'utf8')
-  const member = scanTemplateDraws().filter(entry => entry.file === 'plugins/social/client.js' && entry.key === '{} 条 · to {}')
+// Acceptance: a row with two holes is a member of the list, and its identity is the skeleton the reader
+// sees, never the line a comment above it happens to move. The Approve-all draw this used to read on main
+// now goes through `tr()` (#3061), so the same shape is pinned here as a source rather than borrowed from
+// the repository — the scanner's promise is about any source, and the copy on main is no longer a draw.
+test('a two-hole template draw is a member, and 12 comment lines leave the set identical', () => {
+  const source = [
+    'const approveAllTitle = approveRecipients.length ? `${n} 条 · to ${who}` : `${n} 条`',
+    'const approveAllLabel = `Approve all (${n})`',
+    "h('button', { title: approveAllTitle }, approveAllLabel)",
+    '',
+  ].join('\n')
+  const member = templateDraws(source, 'plugins/social/client.js').filter(entry => entry.key === '{} 条 · to {}')
   assert.equal(member.length, 1, 'the Approve-all row names its two holes')
   const shifted = `${'// a comment above the draw\n'.repeat(12)}${source}`
   const keys = entries => entries.map(entry => `${entry.file}\u0000${entry.key}`).sort()

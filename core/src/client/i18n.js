@@ -232,6 +232,13 @@ const ZH = {
   'Not sent': '未发出',
   '{name} · Not sent': '{name} · 未发出',
   'Sent to {to}': '已发给 {to}',
+  // #3061: the approve-all button and its title, which used to draw english (and a chinese count) in
+  // every window.
+  'Approve all ({n})': '全部批准（{n}）',
+  '1 hold': '共 1 条',
+  '{n} holds': '共 {n} 条',
+  '1 hold · to {to}': '共 1 条 · 发给 {to}',
+  '{n} holds · to {to}': '共 {n} 条 · 发给 {to}',
   'Auto-sent to {to}': '已自动发给 {to}',
   'Not sent: delivery failed': '未发出：发送失败',
   '{from} → {to}': '{from} → {to}',

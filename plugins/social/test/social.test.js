@@ -4549,7 +4549,7 @@ test('#260: Approve all approves Bot Social holds too, not only local ones', asy
   const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
   assert.ok(all, 'Approve all is offered for Bot Social holds (they carry status: pending)')
   assert.deepEqual(all.children, ['Approve all (2)'], `the label carries the count, saw ${JSON.stringify(all.children)}`)
-  assert.equal(all.props.title, '2 条 · to Bob', `the title names the person, saw ${JSON.stringify(all.props.title)}`)
+  assert.equal(all.props.title, '2 holds · to Bob', `the title names the person, saw ${JSON.stringify(all.props.title)}`)
   await all.props.onClick()
   const decided = calls.filter(([endpoint]) => endpoint === 'social/decide-approval').map(([, payload]) => payload.approvalId)
   assert.deepEqual(decided.sort(), ['s1', 's2'])
@@ -4565,7 +4565,46 @@ test('#3011: Approve all says how many holds it sends and to whom', () => {
   const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
   assert.ok(all, 'Approve all is offered for three waiting holds')
   assert.deepEqual(all.children, ['Approve all (3)'], `the label carries the count, saw ${JSON.stringify(all.children)}`)
-  assert.equal(all.props.title, '3 条 · to Eve, Bob', `the title names each person once, saw ${JSON.stringify(all.props.title)}`)
+  assert.equal(all.props.title, '3 holds · to Eve, Bob', `the title names each person once, saw ${JSON.stringify(all.props.title)}`)
+})
+
+test('#3061: Approve all reads its label and tooltip in the language of the window', async () => {
+  const { walk, pluginOf } = loadSocialClient(async () => ({}))
+  const { DICTIONARY } = await import('../../../core/src/client/i18n.js')
+  // The same translator the host hands a plugin: the window's dictionary, then the english keys as
+  // written when a window has no entry.
+  const translate = (language) => (text, params) => {
+    const used = DICTIONARY[language]?.[text] ?? text
+    return String(used).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+  }
+  const hold = (id, to, toName) => ({ id, kind: 'outbound_message', status: 'pending', from: 'Chief', to, toName, text: id })
+  const items = [hold('h1', '@eve.home', 'Eve'), hold('h2', '@bob.home', 'Bob'), hold('h3', '@eve.home', 'Eve')]
+  const room = { id: 'room-1', participants: [{ handle: '@eve.home' }, { handle: '@bob.home' }] }
+  const draw = (items, t) => walk(pluginOf([items, [], true, true])
+    .ChatApprovalDock({ bot: { id: 'mine' }, roster: { bots: [] }, room, t }))
+    .find(node => node.props['data-flybot'] === 'approve-all')
+
+  // Three holds, two people: the english window reads the source strings.
+  const en = draw(items)
+  assert.deepEqual(en.children, ['Approve all (3)'], `the english label carries the count, saw ${JSON.stringify(en.children)}`)
+  assert.equal(en.props.title, '3 holds · to Eve, Bob', `the english title names each person once, saw ${JSON.stringify(en.props.title)}`)
+
+  // The chinese window reads the same sentence from its dictionary, so neither string stays English.
+  const zh = draw(items, translate('zh'))
+  assert.deepEqual(zh.children, ['全部批准（3）'], `the chinese label follows the window, saw ${JSON.stringify(zh.children)}`)
+  assert.equal(zh.props.title, '共 3 条 · 发给 Eve, Bob', `the chinese title follows the window, saw ${JSON.stringify(zh.props.title)}`)
+
+  // Holds whose person the dock cannot name keep the count alone — and that sentence follows too.
+  const unnamed = [
+    { id: 'u1', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@eve.home', text: 'u1' },
+    { id: 'u2', kind: 'outbound_message', status: 'pending', from: 'Chief', to: '@bob.home', text: 'u2' },
+  ]
+  const enAlone = draw(unnamed)
+  assert.deepEqual(enAlone.children, ['Approve all (2)'], `the english label counts both, saw ${JSON.stringify(enAlone.children)}`)
+  assert.equal(enAlone.props.title, '2 holds', `the english count alone, saw ${JSON.stringify(enAlone.props.title)}`)
+  const zhAlone = draw(unnamed, translate('zh'))
+  assert.deepEqual(zhAlone.children, ['全部批准（2）'], `the chinese label counts both, saw ${JSON.stringify(zhAlone.children)}`)
+  assert.equal(zhAlone.props.title, '共 2 条', `the chinese count follows the window, saw ${JSON.stringify(zhAlone.props.title)}`)
 })
 
 test('#3015: Approve all counts the holds it sends, not a failed one drawn beside them', async () => {
@@ -4582,7 +4621,7 @@ test('#3015: Approve all counts the holds it sends, not a failed one drawn besid
   const all = tree.find(node => node.props['data-flybot'] === 'approve-all')
   assert.ok(all, 'Approve all is offered while one hold is waiting')
   assert.deepEqual(all.children, ['Approve all (1)'], `the count is the holds the click sends, saw ${JSON.stringify(all.children)}`)
-  assert.equal(all.props.title, '1 条 · to Eve', `the title names only the person it sends to, saw ${JSON.stringify(all.props.title)}`)
+  assert.equal(all.props.title, '1 hold · to Eve', `the title names only the person it sends to, saw ${JSON.stringify(all.props.title)}`)
   await all.props.onClick()
   const decisions = calls.filter(([endpoint]) => endpoint === 'social/decide-approval' || endpoint === 'decide')
   assert.deepEqual(decisions.map(([endpoint, payload]) => [endpoint, payload.approvalId ?? payload.id]), [['social/decide-approval', 'w1']], `only the waiting hold is sent, saw ${JSON.stringify(decisions)}`)
@@ -5087,7 +5126,7 @@ test('#114: in-chat dock lists drafts with Approve all; others see a waiting lin
   const approveAll = tree.find(n => n.props['data-flybot'] === 'approve-all')
   assert.ok(approveAll, 'Approve all is offered for the two drafts')
   assert.ok(approveAll.children.includes('Approve all (2)'), `the label carries the count, saw ${JSON.stringify(approveAll.children)}`)
-  assert.equal(approveAll.props.title, '2 条', `with no person named the title is the count alone, saw ${JSON.stringify(approveAll.props.title)}`)
+  assert.equal(approveAll.props.title, '2 holds', `with no person named the title is the count alone, saw ${JSON.stringify(approveAll.props.title)}`)
   assert.equal(tree.filter(n => n.props['data-flybot'] === 'chat-approval').length, 2)
   assert.ok(tree.some(n => n.props.className === 'fs-draft' && n.children.includes('one')))
   assert.ok(tree.some(n => n.props.className === 'fs-sub' && n.children.includes('Chief → Hsliu')))
