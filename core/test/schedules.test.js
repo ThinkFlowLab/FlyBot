@@ -816,6 +816,30 @@ test('#2767: an inactive task prints no next run, and an active one keeps its li
   assert.ok(answer.includes('- "Live brief" (s-live) — next 2030-01-01T01:00:00.000Z, active, own chat, session w2'), answer)
 })
 
+// #3174: a row with no next run is not what the reader opens this list for. The sort key was the
+// instant, and a dead row has none (paused) or keeps a past one (a finished one-shot, #2767), so
+// both landed above every live task. A live row comes first; the dead ones keep their own order
+// after it, because they are still the Bot's tasks and still have to be listed.
+test('#3174: a row with no next run sorts after every live row', async (t) => {
+  const schedule = scheduleService()
+  const team = JSON.parse(JSON.stringify(TEAM))
+  team.pausedSchedules = { 's-paused': { id: 's-paused', sessionId: 'w2', record: { title: 'Paused brief', prompt: 'Sum up' }, pausedAt: 6 } }
+  const { ctx, home } = setup({ schedule }, team)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const task = (id, title, status, scheduledAt) => schedule.tasks.set(id, { sessionId: 'w2', status, record: { id, title, prompt: `${title} prompt`, scheduledAt } })
+  task('s-done', 'Finished one-shot', 'inactive', '2026-10-29T07:20:46.458Z')
+  task('s-live', 'Live brief', 'active', '2030-01-01T01:00:00.000Z')
+  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'w2' } })
+  const at = name => answer.indexOf(`- "${name}"`)
+  assert.ok(at('Live brief') >= 0 && at('Finished one-shot') >= 0 && at('Paused brief') >= 0, answer)
+  assert.ok(at('Live brief') < at('Finished one-shot'), `a live row comes before a finished one:\n${answer}`)
+  assert.ok(at('Live brief') < at('Paused brief'), `a live row comes before a paused one:\n${answer}`)
+  // The field each line carries is unchanged: only the order moves.
+  assert.ok(answer.includes('- "Live brief" (s-live) — next 2030-01-01T01:00:00.000Z, active, own chat, session w2'), answer)
+  assert.ok(answer.includes('- "Finished one-shot" (s-done) — no next run, inactive, own chat, session w2'), answer)
+  assert.ok(answer.includes('- "Paused brief" (s-paused) — no next run, paused, own chat, session w2'), answer)
+})
+
 // #1321: two owners on one host. `copyFrom` and `schedule-update` resolve a source Session the
 // way the page does, and the host knowing that Session is not the caller being allowed to read
 // its task: a copy or an edit may only touch a task of the caller's own user.
