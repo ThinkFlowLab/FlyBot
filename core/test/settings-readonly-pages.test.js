@@ -177,8 +177,8 @@ const expand = (node, out = [], depth = 0, deep = false) => {
   return out
 }
 
-const mount = (roster, key, id, name, calls = []) => {
-  const actions = makeActions(calls)
+const mount = (roster, key, id, name, calls = [], override = undefined) => {
+  const actions = override ?? makeActions(calls)
   slots = []
   effects = []
   index = 0
@@ -273,6 +273,25 @@ test('a writable window keeps every page as it is today (#2474)', () => {
   assert.ok(mount(baseRoster, 'connectors', null, 'ConnectorsPage').nodes.some(node => nameOf(node) === 'ConnectorRow'), 'Connectors keeps its live rows')
   assert.ok(mount(baseRoster, 'capabilities', null, 'CapabilitiesPage').nodes.some(node => nameOf(node) === 'CapabilityRow'), 'Capabilities keeps its rows')
   assert.ok(mount(baseRoster, 'secrets', null, 'SecretsPage').nodes.some(node => nameOf(node) === 'SecretRow'), 'Secrets keeps its rows')
+})
+
+// General → Message folding (#3114): the picker writes the mode through `set-prefs`, so the
+// host stores one team-wide choice and every window folds by it. The locked page keeps the
+// mode in use as text, like every other page here.
+test('Settings → General picks the message folding mode and writes it through set-prefs (#3114)', () => {
+  const roster = { ...baseRoster, prefs: { ...baseRoster.prefs, folding: { mode: 'compact' } } }
+  const written = []
+  const { nodes } = mount(roster, 'general', null, 'GeneralPage', [], { setPrefs: payload => { written.push(payload); return Promise.resolve(payload) } })
+  const pickers = nodes.filter(node => node.type === Segmented && node.props?.label === 'Message folding')
+  assert.equal(pickers.length, 1, 'General draws the folding picker')
+  const buttons = all(pickers[0]).filter(node => nameOf(node) === 'button')
+  assert.deepEqual(buttons.map(text), ['Compact', 'Standard', 'No folding'])
+  assert.deepEqual(buttons.map(button => button.props['aria-pressed']), [true, false, false], 'the stored mode is the one in use')
+  buttons[1].props.onClick()
+  assert.deepEqual(written, [{ folding: { mode: 'standard' } }], 'Standard asks the host to store standard')
+  const locked = mount({ ...roster, readOnly: SENTENCE }, 'general', null, 'GeneralPage').nodes
+  assert.equal(locked.filter(node => node.type === Segmented && node.props?.label === 'Message folding').length, 0, 'a locked page draws no folding picker')
+  assert.ok(text(locked).includes('Compact'), 'and keeps the mode in use as text')
 })
 
 // The window can be unlocked under a page that is already on screen: the other window holding
