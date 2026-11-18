@@ -233,13 +233,24 @@ export function install(rt) {
     const owner = rt.botOf?.(botId)?.ownerId
     const actor = owner === undefined ? undefined : { memberId: owner }
     try {
+      // #1751: one digest per Session. A task already there is adopted — the title on this Session
+      // and its daily rule are who it is — so a repeated reconcile, or a Project that lost the id,
+      // names the task that exists instead of writing a second. A task its owner paused is the
+      // digest too, and stays paused; only an ended row (`inactive` is all DSH has besides
+      // `active`) is replaced, or the stored id would name a task that can never fire.
+      const listed = await rt.scheduleEndpoint('schedules', {}, actor)
+      const existing = (listed?.tasks ?? []).find(task => task.sessionId === sessionId && task.title === DIGEST_TITLE
+        && task.kind === 'daily' && task.status !== 'inactive')
+      if (typeof existing?.id === 'string') return { scheduleId: existing.id }
+
       const view = await rt.scheduleEndpoint('schedule-create', {
         target: botId,
         title: DIGEST_TITLE,
         prompt: DIGEST_PROMPT,
         when: { kind: 'daily', time: DIGEST_TIME, timeZone: DIGEST_ZONE },
       }, actor)
-      const row = (view?.tasks ?? []).find(task => task.sessionId === sessionId && task.title === DIGEST_TITLE)
+      const row = (view?.tasks ?? []).find(task => task.sessionId === sessionId && task.title === DIGEST_TITLE
+        && task.kind === 'daily' && task.status !== 'inactive')
       return { scheduleId: row?.id ?? null }
     } catch (error) {
       return { error: error?.message ?? String(error) }
