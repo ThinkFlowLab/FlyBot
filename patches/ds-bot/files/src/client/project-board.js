@@ -500,7 +500,8 @@ export function metricsView(metrics, { tasks } = {}) {
 // #2985: a failed metrics read answers a machine reason, and the note printed it raw beside a
 // translated prefix. A zh window reads a sentence; an English window keeps the host's own token
 // exactly as it did, and a reason this client cannot name stays the host's words rather than a
-// guessed sentence. The detail of `read-failed:` rides in the sentence, cut short.
+// guessed sentence. The detail of `read-failed:` rides in the sentence whole: a cut line hid the
+// reason the note exists to give.
 const METRICS_REASON_KEYS = [
   [/^no-credentials$/, 'this machine has no GitHub token yet'],
   [/^no-fetch$/, 'this machine has no way to read GitHub yet'],
@@ -509,17 +510,12 @@ const METRICS_REASON_KEYS = [
   [/^no Project: /, 'this Project has nothing to read yet'],
 ]
 const READ_FAILED = /^read-failed:\s*(.+)$/
-const READ_DETAIL_MAX = 60
-const shortDetail = (detail) => {
-  const line = text(detail)
-  return line.length <= READ_DETAIL_MAX ? line : line.slice(0, READ_DETAIL_MAX - 1) + '\u2026'
-}
 
 function metricsReasonText(reason) {
   const code = text(reason)
   if (code === '' || !language().startsWith('zh')) return hostText(code)
   const readFailed = READ_FAILED.exec(code)
-  if (readFailed !== null) return t('reading GitHub failed ({detail})', { detail: shortDetail(readFailed[1]) })
+  if (readFailed !== null) return t('reading GitHub failed ({detail})', { detail: readFailed[1] })
   const named = METRICS_REASON_KEYS.find(([pattern]) => pattern.test(code))
   return named === undefined ? hostText(code) : t(named[1])
 }

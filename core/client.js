@@ -11893,16 +11893,11 @@ var METRICS_REASON_KEYS = [
   [/^no Project: /, "this Project has nothing to read yet"]
 ];
 var READ_FAILED = /^read-failed:\s*(.+)$/;
-var READ_DETAIL_MAX = 60;
-var shortDetail = (detail) => {
-  const line2 = text(detail);
-  return line2.length <= READ_DETAIL_MAX ? line2 : line2.slice(0, READ_DETAIL_MAX - 1) + "…";
-};
 function metricsReasonText(reason) {
   const code = text(reason);
   if (code === "" || !language().startsWith("zh")) return hostText(code);
   const readFailed = READ_FAILED.exec(code);
-  if (readFailed !== null) return t("reading GitHub failed ({detail})", { detail: shortDetail(readFailed[1]) });
+  if (readFailed !== null) return t("reading GitHub failed ({detail})", { detail: readFailed[1] });
   const named = METRICS_REASON_KEYS.find(([pattern]) => pattern.test(code));
   return named === void 0 ? hostText(code) : t(named[1]);
 }
