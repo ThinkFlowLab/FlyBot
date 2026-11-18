@@ -711,6 +711,9 @@ var ZH = {
   "Session filter": "会话筛选",
   "Direct chats": "单聊",
   Unread: "未读",
+  "No group chats": "没有群聊",
+  "No direct chats": "没有单聊",
+  "No unread chats": "没有未读会话",
   Secrets: "密钥",
   Appearance: "外观",
   Theme: "主题",
@@ -10920,6 +10923,12 @@ function SessionFilter({ value, onChange }) {
     }, label))
   );
 }
+function sessionFilterEmpty(filter) {
+  if (filter === "group") return t("No group chats");
+  if (filter === "direct") return t("No direct chats");
+  if (filter === "unread") return t("No unread chats");
+  return null;
+}
 function TeamSidebar(props) {
   const { wide, useRoster, useUi, useSessions, actions } = props;
   const listRef = (0, import_react19.useRef)(null);
@@ -10973,6 +10982,7 @@ function TeamSidebar(props) {
   const tree = showTree ? botTree([main, ...order.filter(listed).map((entry) => entry.item)], main.id, (id) => structure.parentOf(id)) : null;
   const visibleOrder = order.filter((entry) => !(tree && inTree(entry)) && !(inTree(entry) && structure?.include?.(entry.item.id) === false) && matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)));
   const showMain = !tree && main && matchesSessionFilter({ kind: "bot", item: main }, sessionFilter, unreadIds.has(main.id));
+  const filterEmpty = roster.ready && !showMain && !tree && visibleOrder.length === 0 ? sessionFilterEmpty(sessionFilter) : null;
   useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map((entry) => entry.item.id)].filter(Boolean).join(","));
   useLandOnMainBot(roster, useSessions, actions);
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide };
@@ -11011,6 +11021,7 @@ function TeamSidebar(props) {
       { ref: listRef, className: "bt-list", role: "region", "aria-label": t("Bot list") },
       tree ? (0, import_react19.createElement)("div", { className: "bt-tree", role: "group", "aria-label": t("Bot tree") }, tree.map((node) => (0, import_react19.createElement)(TreeNode, { key: node.bot.id, node, rowProps, markedUnread, collapsed, toggle, actions: structure?.nodeActions }))) : showMain ? (0, import_react19.createElement)(BotRow, { ...rowProps, bot: main, marked: markedUnread[main.id] === true }) : roster.ready ? null : (0, import_react19.createElement)("div", { className: "bt-hint" }, t("Setting up your Main Bot…")),
       visibleOrder.map((entry) => entry.kind === "bot" ? (0, import_react19.createElement)(BotRow, { key: entry.item.id, ...rowProps, bot: entry.item, marked: markedUnread[entry.item.id] === true }) : entry.kind === "room" ? (0, import_react19.createElement)(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true }) : (0, import_react19.createElement)(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true })),
+      filterEmpty ? (0, import_react19.createElement)("div", { className: "bt-hint bt-session-filter-empty" }, filterEmpty) : null,
       wide && sessionFilter === "all" ? (0, import_react19.createElement)(FlyBotSections, { roster, actions, renderBot: (bot) => (0, import_react19.createElement)(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null
     )
   );

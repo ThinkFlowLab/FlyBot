@@ -355,6 +355,14 @@ function SessionFilter({ value, onChange }) {
     }, label)))
 }
 
+// A filter that hides every row leaves a blank panel, so the list says which filter emptied it.
+function sessionFilterEmpty(filter) {
+  if (filter === 'group') return t('No group chats')
+  if (filter === 'direct') return t('No direct chats')
+  if (filter === 'unread') return t('No unread chats')
+  return null
+}
+
 export function TeamSidebar(props) {
   const { wide, useRoster, useUi, useSessions, actions } = props
   const listRef = useRef(null)
@@ -418,6 +426,9 @@ export function TeamSidebar(props) {
     !(inTree(entry) && structure?.include?.(entry.item.id) === false) &&
     matchesSessionFilter(entry, sessionFilter, unreadIds.has(entry.item.id)))
   const showMain = !tree && main && matchesSessionFilter({ kind: 'bot', item: main }, sessionFilter, unreadIds.has(main.id))
+  const filterEmpty = roster.ready && !showMain && !tree && visibleOrder.length === 0
+    ? sessionFilterEmpty(sessionFilter)
+    : null
   useListGlide(listRef, wide, [showMain && main ? main.id : null, ...visibleOrder.map(entry => entry.item.id)].filter(Boolean).join(','))
   useLandOnMainBot(roster, useSessions, actions)
   const rowProps = { roster, actions, useSessions, useUi, useSessionStatus: props.useSessionStatus, useSessionRetainInfo: props.useSessionRetainInfo, useActivity: props.useActivity, useWork: props.useWork, wide }
@@ -453,6 +464,7 @@ export function TeamSidebar(props) {
         : entry.kind === 'room'
           ? h(RoomRow, { key: entry.item.id, ...rowProps, room: entry.item, marked: markedUnread[entry.item.id] === true })
           : h(AgentRow, { key: entry.item.id, ...rowProps, agent: entry.item, marked: markedUnread[entry.item.id] === true }))),
+      filterEmpty ? h('div', { className: 'bt-hint bt-session-filter-empty' }, filterEmpty) : null,
       wide && sessionFilter === 'all' ? h(FlyBotSections, { roster, actions, renderBot: bot => h(BotRow, { key: bot.id, ...rowProps, bot, asRow: true, marked: markedUnread[bot.id] === true }) }) : null))
 }
 
