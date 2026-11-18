@@ -6,6 +6,18 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.36] - 2026-11-18
+
+### Fixed
+
+- The last four English controls on the approval cards — another owner's "Waiting for the owner's approval" line, the per-pair Auto-send from now on link on the in-chat card and on a held reply's bubble, and the friend panel's Decline button and pending tag — now follow the window's language ([#3032](https://github.com/ThinkFlowLab/FlyBot/issues/3032)).
+- Notes the host writes beside an approval card now follow the window's language: a Chinese window reads 等待主人批准 and 已拒绝。 instead of the English sentences, while every other language keeps the English words ([#3124](https://github.com/ThinkFlowLab/FlyBot/issues/3124)).
+- Every Chinese sentence on the Workflows page now names the feature 工作流: the empty state, the new, rename and delete buttons and their error toasts, the Workflow graphs tab, the reading hint and the created toast used to print the English word `Workflow` in the middle of Chinese copy whose page header already said 工作流 ([#3129](https://github.com/ThinkFlowLab/FlyBot/issues/3129)).
+- A model call no longer sends an output-token cap above the 12288 a provider endpoint accepts. A model row that declares more than that ceiling — or a caller asking for more — is clamped to it, so the request is answered instead of being refused whole with a 400 that lost the step's answer. A cap at or under the ceiling is sent unchanged, and a model declaring none is never given one.
+- The lines the host posts into a chat or room follow the window's language as well: a Chinese window reads 已加入、已离开房间、总负责人：…、房间现已开放，号码不再有效。 for join/leave/lead/started notices, 未发送：… for a line that was not delivered, and 没有为 … 发起调用：… for a typed @ that could not call a friend's Bot, instead of the English sentences; every other language keeps the English words ([#3133](https://github.com/ThinkFlowLab/FlyBot/issues/3133)).
+- The command palette now searches the whole text of a chat's messages, not only the opening the outline preview keeps: a word that appears past the first characters of a long reply lists a **Messages (full text)** group, and choosing a row opens that chat at the turn the line came from ([#3139](https://github.com/ThinkFlowLab/FlyBot/issues/3139)).
+- The **Approve all** line in a chat's approval dock now reports one entry per person: the same person failing twice is named once, and two people's failures are separated by a dot instead of running together, so a name is never read as the tail of the reason before it ([#3140](https://github.com/ThinkFlowLab/FlyBot/issues/3140)).
+
 ## [0.2.35] - 2026-11-17
 
 ### Fixed
@@ -1528,7 +1540,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.35...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.36...HEAD
+[0.2.36]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.35...v0.2.36
 [0.2.35]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...v0.2.35
 [0.2.34]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.33...v0.2.34
 [0.2.33]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.32...v0.2.33

@@ -1,1 +1,0 @@
-Notes the host writes beside an approval card now follow the window's language: a Chinese window reads 等待主人批准 and 已拒绝。 instead of the English sentences, while every other language keeps the English words ([#3124](https://github.com/ThinkFlowLab/FlyBot/issues/3124)).
