@@ -75,6 +75,14 @@ window.__ModuleLoader__.load({
       }
       return { text, title: rows.map(row => row.label).join('\n'), ids: rows.map(row => row.id) }
     }
+    // A host sentence the plugin does not know is drawn on one line — a status row, a note, the dock's
+    // alert — and it can be a whole paragraph. Cut it and mark the cut; the count is code points, so a
+    // cut never lands inside a surrogate pair (#2438).
+    const ERROR_TEXT_MAX = 200
+    const clipped = (text) => {
+      const chars = Array.from(String(text ?? ''))
+      return chars.length > ERROR_TEXT_MAX ? `${chars.slice(0, ERROR_TEXT_MAX - 1).join('')}…` : String(text ?? '')
+    }
     const errorText = (e) => {
       const code = String(e?.code ?? '')
       const http = code.match(/^HTTP_(\d+)$/)
@@ -88,7 +96,7 @@ window.__ModuleLoader__.load({
       // Only the raw server words map here. The "invite wasn't found" sentence also says "already used" (as one of its possible
       // causes), so matching those words would relabel every unknown or mistyped link as a used one.
       if (/invite_unavailable|invite is used|invite_used/i.test(message)) return 'This invite was already used. Ask your friend for a new one.'
-      return message
+      return clipped(message)
     }
 
     // Styles reuse ds-bot's sidebar tokens (--bt-ink, --bt-ink-2, --bt-ink-3, --bt-hover, --bt-line,
@@ -2686,7 +2694,7 @@ window.__ModuleLoader__.load({
         // (#3093) that record is the card's, whatever kind it is — a local hold the host marked failed
         // draws its own status, and a decision the host refused never reached a send to be described.
         const notSent = (failure) => {
-          const reason = String(failure?.message ?? failure).slice(0, 200)
+          const reason = clipped(failure?.message ?? failure)
           setError(reason)
           // A retry the host refused may be tried again; the id was never marked spent.
           if (retry) unmarkDockRetried(sessionId, item.id)
@@ -2749,6 +2757,9 @@ window.__ModuleLoader__.load({
       // #3029: the click sends several holds and they leave the dock at once, so the tail reports what
       // actually went out — one receipt for the people reached, and none when every send failed (those
       // cards keep their own error line).
+      // One click can fail for many people; the alert under the button is read at a glance, so it
+      // shows at most three rows and counts the rest in the window's own words.
+      const APPROVE_ALL_FAILED_ROWS = 3
       const approveAll = async () => {
         const tr = (text, params) => (typeof t === 'function'
           ? t(text, params)
@@ -2775,8 +2786,11 @@ window.__ModuleLoader__.load({
         // #3071: written once, after the last send, so no send in the batch can clear it again; the
         // receipt above still names only the people reached.
         if (failed.size) {
-          const entries = [...failed].map(([name, reasons]) => (name ? `${name}: ${reasons.join(', ')}` : reasons.join(', ')))
-          setError(entries.join(' · '))
+          const rows = [...failed].map(([name, reasons]) => (name ? `${name}: ${reasons.join(', ')}` : reasons.join(', ')))
+          const shown = rows.slice(0, APPROVE_ALL_FAILED_ROWS)
+          const rest = rows.length - shown.length
+          if (rest > 0) shown.push(tr('{count} more not shown', { count: rest }))
+          setError(shown.join(' · '))
         }
       }
       // #3011: the button says what it will send and to whom, so the blast radius of a click that

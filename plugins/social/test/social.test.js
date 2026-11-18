@@ -784,6 +784,22 @@ test('client.js registers a sidebar section and @ rows into the FlyBot registry'
   assert.deepEqual(JSON.parse(JSON.stringify(rows)), [{ name: 'Coder', description: '@coder.bob.home', section: 'Bots', value: '@coder.bob.home ' }])
 })
 
+test('P-812: an unknown host error longer than a paragraph is cut on a code point', async () => {
+  const registered = []
+  const sandbox = { window: { __ModuleLoader__: { load: r => registered.push(r) } }, setTimeout, clearTimeout, console }
+  sandbox.globalThis = sandbox
+  sandbox.__flybot__ = { slots: { register: () => () => {} }, call: async () => ({}) }
+  runInNewContext(readFileSync(new URL('../client.js', import.meta.url), 'utf8'), sandbox)
+  const plugin = registered[0].factory(() => ({ createElement: () => null, useEffect() {}, useState: v => [v, () => {}] }))
+  // A host sentence the plugin does not know is drawn on one status line; a whole paragraph cannot own it.
+  const text = plugin.errorText(new Error('🚀'.repeat(400)))
+  assert.ok(text.length < 500, `the reason is cut, saw ${text.length} characters`)
+  assert.match(text, /…$/, `the cut is marked, saw ${JSON.stringify(text.slice(-6))}`)
+  assert.ok(text.isWellFormed() && !/\p{Surrogate}/u.test(text), 'the cut lands on a code point, never inside an emoji')
+  // A message that fits is still returned word for word.
+  assert.equal(plugin.errorText(new Error('the hold is stale')), 'the hold is stale')
+})
+
 test('#967: a friend Bot the core does not list yet is inserted under the one name the core would chip', async () => {
   const { remoteMentionLabel } = await import('../../../core/src/shared/remote-label.js')
   const friends = [
