@@ -2538,6 +2538,9 @@ window.__ModuleLoader__.load({
 
     function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim, t } = {}) {
       useStyles()
+      // #3061: the dock's own strings read the window's dictionary. The host hands the translator down
+      // as a prop; without one the module translator (the one every other line here uses) answers.
+      const trIn = (text, params) => (typeof t === 'function' ? t(text, params) : tr(text, params))
       const locked = readOnlyReason(roster)
       const [items, setItems] = useState([])
       const [local, setLocal] = useState([])
@@ -2780,10 +2783,13 @@ window.__ModuleLoader__.load({
       // cannot be undone is readable before it.
       const toApprove = mine.filter(waiting)
       const approveRecipients = recipientNames(toApprove)
-      const approveAllLabel = `Approve all (${toApprove.length})`
+      // #3061: both strings go through the window's dictionary; the source is english and the count
+      // is the holds the click sends, the names are the people it reaches.
+      const approveAllLabel = trIn('Approve all ({n})', { n: toApprove.length })
+      // A failed hold counts in `mine` but not in the send, so one hold can be the whole batch (#3015).
       const approveAllTitle = approveRecipients.length
-        ? `${toApprove.length} 条 · to ${approveRecipients.join(', ')}`
-        : `${toApprove.length} 条`
+        ? trIn(toApprove.length === 1 ? '1 hold · to {to}' : '{n} holds · to {to}', { n: toApprove.length, to: approveRecipients.join(', ') })
+        : trIn(toApprove.length === 1 ? '1 hold' : '{n} holds', { n: toApprove.length })
       // #1640: this card is drawn exactly when the room's own card is decided somewhere this chat does
       // not draw. A held reply is decided on its own bubble here (#418); a Bot's hold is decided in a
       // chat this person can open (#254). A card we cannot place keeps the neutral sentence: the dock

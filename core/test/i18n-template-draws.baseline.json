@@ -1,7 +1,6 @@
 {
   "version": 1,
   "entries": [
-    "plugins/social/client.js:Approve all ({})",
     "plugins/social/client.js:Asked to join {}. It opens in your sidebar as soon as their FlyBot seats your Bots.",
     "plugins/social/client.js:Auto-send my Bots' replies to {}",
     "plugins/social/client.js:Auto-send {} → room",
@@ -28,8 +27,6 @@
     "plugins/social/client.js:{} Send your message again: it starts a new chat.",
     "plugins/social/client.js:{} failed: {}",
     "plugins/social/client.js:{} tried to start a chat with {}. {} is not shared with them.",
-    "plugins/social/client.js:{} 条",
-    "plugins/social/client.js:{} 条 · to {}",
     "plugins/social/client.js:{}'s replies to {} go out without asking you first.#1",
     "plugins/social/client.js:{}'s replies to {} go out without asking you first.#2",
     "plugins/timeline/client.js:Could not copy the report: {}",

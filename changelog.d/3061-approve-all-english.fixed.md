@@ -1,0 +1,1 @@
+The **Approve all** button in a chat's approval dock and the count in its tooltip now follow the window's language: a Chinese window reads 全部批准（3） and 共 3 条 · 发给 Eve, Bob instead of English, and an English window no longer reads 条 in its tooltip ([#3061](https://github.com/ThinkFlowLab/FlyBot/issues/3061)).
