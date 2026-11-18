@@ -914,6 +914,8 @@ var ZH = {
   Results: "结果",
   "No results": "没有结果",
   "Try a Bot name or words from a message": "试试 Bot 名字或消息里的词",
+  "Earlier part": "更早的 part",
+  "{count} more matches · add a word to narrow it": "还有 {count} 条 · 加一个词缩小范围",
   // Bot exchange
   "Bot exchange": "Bot 间对话",
   "Bot exchange transcript": "Bot 间对话记录",
@@ -5813,6 +5815,7 @@ button:hover .bt-you{background:color-mix(in srgb,var(--bt-ink) 9%,var(--bt-side
 :is(.bt-palette-row,.bt-palette-section,.bt-drop-list>.bt-option){position:relative;z-index:1}
 .bt-palette-section{padding:8px 8px 4px;font-size:12px;line-height:16px;color:var(--bt-ink-3);flex:none}
 .bt-palette-section:first-of-type{padding-top:0}
+.bt-palette-note{padding:2px 8px 8px;font-size:12px;line-height:16px;color:var(--bt-ink-3);flex:none}
 .bt-palette-row{flex:none;display:flex;align-items:center;gap:8px;height:49px;padding:6px 10px 6px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;box-sizing:border-box;width:100%}
 .bt-palette-row[aria-selected=true]{background:var(--bt-active)}
 .bt-palette-lead{flex:none;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
@@ -16553,16 +16556,19 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
   useEscape(close);
   const ids = [...roster.bots.map(currentPart), ...roster.rooms.map((item) => item.id)];
   const names = botNames(roster);
+  const chatOf2 = (id) => roster.byId[id]?.id ?? id;
   const found = useSessions((list) => {
-    if (wanted.length < 2) return "[]";
+    if (wanted.length < 2) return '{"hits":[],"turns":{}}';
     const hits = [];
+    const turns = {};
     for (const id of ids) {
       const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline;
       if (!Array.isArray(outline)) continue;
-      const hidden = roster.exchangeTurns[id] ?? [];
+      turns[chatOf2(id)] ??= outline.map((entry) => entry.turn);
+      const hidden2 = roster.exchangeTurns[id] ?? [];
       for (let index2 = outline.length - 1; index2 >= 0 && hits.length < 30; index2 -= 1) {
         const entry = outline[index2];
-        if (hidden.includes(entry.turn)) continue;
+        if (hidden2.includes(entry.turn)) continue;
         for (const raw of [entry.response, entry.prompt]) {
           const text2 = paletteText(raw, names);
           const at = text2.toLowerCase().indexOf(wanted);
@@ -16573,7 +16579,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
         }
       }
     }
-    return JSON.stringify(hits);
+    return JSON.stringify({ hits, turns });
   });
   const searchChats = actions.searchChats;
   (0, import_react35.useEffect)(() => {
@@ -16585,8 +16591,8 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       void searchChats(wanted, controller.signal).then(
-        (rows2) => {
-          if (current) setWholeText(Array.isArray(rows2) ? rows2 : []);
+        (value) => {
+          if (current) setWholeText({ rows: value?.rows ?? [], more: value?.more ?? 0 });
         },
         () => {
         }
@@ -16633,31 +16639,44 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     run: () => actions.openAgent(agent.id)
   }));
   if (agents.length) sections.push(["DSH Agent", agents]);
-  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
+  const outlineRead = JSON.parse(found);
+  const messages = outlineRead.hits.map(([id, turn, snippet]) => {
     const bot = roster.byId[id];
     const room2 = roster.roomsById[id];
     return {
-      key: `${id}:${turn}`,
+      key: `${chatOf2(id)}:${turn}`,
       title: bot?.name ?? room2?.name ?? t("Bot"),
       subtitle: snippet,
       avatar: bot ? (0, import_react35.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react35.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
-      run: () => actions.openSession(id)
+      run: () => actions.openSession(id, { turn })
     };
   });
   if (messages.length) sections.push([t("Messages"), messages]);
   const outlined = new Set(messages.map((row) => row.key));
-  const fullText = (wholeText ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map((row) => {
+  const inPart = (chat, turn) => {
+    const held = outlineRead.turns?.[chat];
+    return Array.isArray(held) && held.length > 0 ? held.includes(turn) : void 0;
+  };
+  const keyCounts = /* @__PURE__ */ new Map();
+  const fullText = (wholeText?.rows ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map((row) => {
     const bot = roster.byId[row.chat];
     const room2 = roster.roomsById[row.chat];
+    const here = inPart(row.chat, row.turn);
+    const at = `${row.chat}:${row.turn}`;
+    const count = (keyCounts.get(at) ?? 0) + 1;
+    keyCounts.set(at, count);
     return {
-      key: `${row.chat}:${row.turn}`,
+      key: count > 1 ? `${at}:${count}` : at,
       title: bot?.name ?? room2?.name ?? t("Bot"),
       subtitle: row.text,
       avatar: bot ? (0, import_react35.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react35.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
-      run: () => actions.openSession(row.chat, { turn: row.turn })
+      badge: here === false ? t("Earlier part") : void 0,
+      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn })
     };
   });
-  if (fullText.length) sections.push([t("Messages (full text)"), fullText]);
+  const hidden = wholeText?.more ?? 0;
+  const note = hidden > 0 ? t("{count} more matches · add a word to narrow it", { count: hidden }) : null;
+  if (fullText.length) sections.push([t("Messages (full text)"), fullText, note]);
   const commands = [
     { key: "cmd:new", icon: (0, import_react35.createElement)(PlusIcon), title: t("New chat"), run: () => actions.openNewChat("new") },
     { key: "cmd:bot", icon: (0, import_react35.createElement)(PlusIcon), title: t("Create Bot"), run: () => actions.openNewChat("create") },
@@ -16733,7 +16752,7 @@ ${shown}`, { axis: "y", ...QUICK_EDGES });
           (0, import_react35.createElement)("span", { className: "bt-palette-empty-icon", "aria-hidden": true }, (0, import_react35.createElement)(SearchIcon)),
           (0, import_react35.createElement)("span", { className: "bt-palette-empty-label" }, t("No results")),
           (0, import_react35.createElement)("span", { className: "bt-palette-empty-hint" }, t("Try a Bot name or words from a message"))
-        ) : sections.map(([title, items]) => (0, import_react35.createElement)(
+        ) : sections.map(([title, items, note2]) => (0, import_react35.createElement)(
           import_react35.Fragment,
           { key: title },
           (0, import_react35.createElement)("div", { className: "bt-palette-section", role: "presentation", "data-flip": `section:${title}` }, title),
@@ -16763,7 +16782,8 @@ ${shown}`, { axis: "y", ...QUICK_EDGES });
               ),
               row.badge ? (0, import_react35.createElement)("span", { className: "bt-palette-badge" }, row.badge) : null
             );
-          })
+          }),
+          note2 ? (0, import_react35.createElement)("div", { className: "bt-palette-note", role: "status" }, note2) : null
         ))
       )
     )
@@ -24014,7 +24034,7 @@ function apply(ctx) {
     },
     // The palette's whole-text message search (P-820): the host answers with the
     // caller's own chats, whole lines with the turn they belong to.
-    searchChats: (query, signal) => call("chats.search", { query }, signal).then((value) => value?.rows ?? []),
+    searchChats: (query, signal) => call("chats.search", { query }, signal).then((value) => ({ rows: value?.rows ?? [], more: value?.more ?? 0 })),
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {

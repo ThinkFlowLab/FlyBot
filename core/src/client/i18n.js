@@ -858,6 +858,8 @@ const ZH = {
   Results: '结果',
   'No results': '没有结果',
   'Try a Bot name or words from a message': '试试 Bot 名字或消息里的词',
+  'Earlier part': '更早的 part',
+  '{count} more matches · add a word to narrow it': '还有 {count} 条 · 加一个词缩小范围',
 
   // Bot exchange
   'Bot exchange': 'Bot 间对话',

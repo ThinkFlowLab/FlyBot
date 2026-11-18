@@ -33,12 +33,15 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
   useEscape(close)
   const ids = [...roster.bots.map(currentPart), ...roster.rooms.map(item => item.id)]
   const names = botNames(roster)
+  const chatOf = (id) => roster.byId[id]?.id ?? id
   const found = useSessions((list) => {
-    if (wanted.length < 2) return '[]'
+    if (wanted.length < 2) return '{"hits":[],"turns":{}}'
     const hits = []
+    const turns = {}
     for (const id of ids) {
       const outline = list.projectionsBySession?.[id]?.values?.turnOutline ?? list.byId[id]?.projectionValues?.turnOutline
       if (!Array.isArray(outline)) continue
+      turns[chatOf(id)] ??= outline.map(entry => entry.turn)
       const hidden = roster.exchangeTurns[id] ?? []
       for (let index = outline.length - 1; index >= 0 && hits.length < 30; index -= 1) {
         const entry = outline[index]
@@ -53,7 +56,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
         }
       }
     }
-    return JSON.stringify(hits)
+    return JSON.stringify({ hits, turns })
   })
   // The outline previews stop at 50/120 characters, so any hit past that budget is
   // invisible to the read above (P-820). The host searches the whole text over the
@@ -69,7 +72,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
     const controller = new AbortController()
     const timer = setTimeout(() => {
       void searchChats(wanted, controller.signal).then(
-        rows => { if (current) setWholeText(Array.isArray(rows) ? rows : []) },
+        value => { if (current) setWholeText({ rows: value?.rows ?? [], more: value?.more ?? 0 }) },
         () => {},
       )
     }, SEARCH_DEBOUNCE_MS)
@@ -96,13 +99,14 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
     run: () => actions.openAgent(agent.id),
   }))
   if (agents.length) sections.push(['DSH Agent', agents])
-  const messages = JSON.parse(found).map(([id, turn, snippet]) => {
+  const outlineRead = JSON.parse(found)
+  const messages = outlineRead.hits.map(([id, turn, snippet]) => {
     const bot = roster.byId[id]
     const room = roster.roomsById[id]
     return {
-      key: `${id}:${turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: snippet,
+      key: `${chatOf(id)}:${turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: snippet,
       avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
-      run: () => actions.openSession(id),
+      run: () => actions.openSession(id, { turn }),
     }
   })
   if (messages.length) sections.push([t('Messages'), messages])
@@ -110,16 +114,30 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
   // the same chat and turn is the same message, so it is not shown twice; a row whose chat
   // the roster does not hold is not the caller's to open.
   const outlined = new Set(messages.map(row => row.key))
-  const fullText = (wholeText ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
+  // The current part's own turn numbers are the only proof the client has of what it holds; a
+  // chat whose outline has not loaded proves nothing, and is left unmarked.
+  const inPart = (chat, turn) => {
+    const held = outlineRead.turns?.[chat]
+    return Array.isArray(held) && held.length > 0 ? held.includes(turn) : undefined
+  }
+  const keyCounts = new Map()
+  const fullText = (wholeText?.rows ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
     const bot = roster.byId[row.chat]
     const room = roster.roomsById[row.chat]
+    const here = inPart(row.chat, row.turn)
+    const at = `${row.chat}:${row.turn}`
+    const count = (keyCounts.get(at) ?? 0) + 1
+    keyCounts.set(at, count)
     return {
-      key: `${row.chat}:${row.turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
+      key: count > 1 ? `${at}:${count}` : at, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
       avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
-      run: () => actions.openSession(row.chat, { turn: row.turn }),
+      badge: here === false ? t('Earlier part') : undefined,
+      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn }),
     }
   })
-  if (fullText.length) sections.push([t('Messages (full text)'), fullText])
+  const hidden = wholeText?.more ?? 0
+  const note = hidden > 0 ? t('{count} more matches · add a word to narrow it', { count: hidden }) : null
+  if (fullText.length) sections.push([t('Messages (full text)'), fullText, note])
   const commands = [
     { key: 'cmd:new', icon: h(PlusIcon), title: t('New chat'), run: () => actions.openNewChat('new') },
     { key: 'cmd:bot', icon: h(PlusIcon), title: t('Create Bot'), run: () => actions.openNewChat('create') },
@@ -166,7 +184,7 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
               h('span', { className: 'bt-palette-empty-icon', 'aria-hidden': true }, h(SearchIcon)),
               h('span', { className: 'bt-palette-empty-label' }, t('No results')),
               h('span', { className: 'bt-palette-empty-hint' }, t('Try a Bot name or words from a message')))
-          : sections.map(([title, items]) => h(Fragment, { key: title },
+          : sections.map(([title, items, note]) => h(Fragment, { key: title },
               h('div', { className: 'bt-palette-section', role: 'presentation', 'data-flip': `section:${title}` }, title),
               items.map((row) => {
                 index += 1
@@ -180,5 +198,6 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
                   h('span', { className: 'bt-palette-title' }, row.title),
                   row.subtitle ? h('span', { className: 'bt-palette-sub' }, row.subtitle) : null),
                 row.badge ? h('span', { className: 'bt-palette-badge' }, row.badge) : null)
-              }))))))
+              }),
+              note ? h('div', { className: 'bt-palette-note', role: 'status' }, note) : null)))))
 }

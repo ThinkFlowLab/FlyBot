@@ -1318,7 +1318,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'You have {version}.': '当前版本 {version}。',
    'The update did not finish: {reason}': '更新没有完成：{reason}',
    "What's new": '更新说明',
-@@ -360,11 +360,111 @@ const ZH = {
+@@ -360,17 +360,119 @@ const ZH = {
    'DSH update': 'DSH 更新',
    'DSH {version}': 'DSH {version}',
    'Restart DSH to start using DSH {version}.': '重启 DSH 后开始使用 DSH {version}。',
@@ -1431,6 +1431,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    Commands: '命令',
    'Search Bots, chats and messages': '搜索 Bot、对话和消息',
    'Clear search': '清除搜索',
+   Results: '结果',
+   'No results': '没有结果',
+   'Try a Bot name or words from a message': '试试 Bot 名字或消息里的词',
++  'Earlier part': '更早的 part',
++  '{count} more matches · add a word to narrow it': '还有 {count} 条 · 加一个词缩小范围',
+ 
+   // Bot exchange
+   'Bot exchange': 'Bot 间对话',
 @@ -390,11 +390,18 @@ const ZH = {
    Reply: '回复',
    'More message actions': '更多操作',

@@ -49,14 +49,14 @@ const NAMES = botNames(ROSTER)
 
 // The same stored line as the Session outline holds it, so `previewOf` is asked the question a
 // sidebar row asks.
-const outlineOf = (raw) => ({ projectionsBySession: { s1: { values: { turnOutline: [{ turn: 1, prompt: raw }] } } }, byId: {} })
+const outlineOf = (raw, outline = [{ turn: 1, prompt: raw }], session = 's1') => ({ projectionsBySession: { [session]: { values: { turnOutline: outline } } }, byId: {} })
 
 // What the palette's message section found for `query` over that session's outline: [[session, turn, row]].
 function hits(query, raw) {
   let found
   const useSessions = (selector) => { found = selector(outlineOf(raw)); return found }
   CommandPalette({ start: query, token: 't', roster: ROSTER, actions: { closePalette() {}, openSession() {} }, useSessions })
-  return JSON.parse(found)
+  return JSON.parse(found).hits
 }
 
 // One stored shape, one row: the rendered row text must be byte-for-byte what `previewOf` reads of the
@@ -172,7 +172,7 @@ test('previewOf falls back to an older turn when the newest turn is empty', () =
 // promise lands: this harness runs the same bundle under a react whose useState setter
 // rerenders and whose useEffect runs with its cleanup — a minimal React for one component
 // tree. Layout effects stay inert: they place the glide thumb, and nothing here asserts motion.
-function livePalette({ start = '', raw = '', rows = [] } = {}) {
+function livePalette({ start = '', raw = '', rows = [], more = 0, outline, roster = ROSTER } = {}) {
   let live
   const instance = { cursor: 0, hooks: [], pending: [] }
   const react = {
@@ -197,9 +197,10 @@ function livePalette({ start = '', raw = '', rows = [] } = {}) {
   const actions = {
     closePalette() {}, reportError() {},
     openSession: (...args) => { calls.openSession.push(args) },
-    searchChats: (query, signal) => { calls.search.push([query, signal]); return Promise.resolve(rows) },
+    searchChats: (query, signal) => { calls.search.push([query, signal]); return Promise.resolve({ rows, more }) },
   }
-  const useSessions = (selector) => selector(outlineOf(raw))
+  const session = roster.bots[0] ? (roster.bots[0].sessionId ?? roster.bots[0].id) : 's1'
+  const useSessions = (selector) => selector(outlineOf(raw, outline, session))
   const module = { exports: {} }
   runInNewContext(outputFiles[0].text, {
     module, exports: module.exports,
@@ -221,7 +222,7 @@ function livePalette({ start = '', raw = '', rows = [] } = {}) {
       instance.rerun = false
       instance.cursor = 0
       instance.pending = []
-      live = module.exports.CommandPalette({ start, token: 't', roster: ROSTER, actions, useSessions })
+      live = module.exports.CommandPalette({ start, token: 't', roster, actions, useSessions })
       for (const { effect, deps } of instance.pending.splice(0)) {
         // Deps are compared per hook site: an effect with the same deps does not rerun.
         const prior = instance.effectStates ??= []
@@ -254,10 +255,17 @@ function livePalette({ start = '', raw = '', rows = [] } = {}) {
     walk(live, node => { const flip = node.props?.['data-flip']; if (typeof flip === 'string') out.push(node) })
     return out
   }
+  const texts = (className) => {
+    const out = []
+    walk(live, node => { if (node.props?.className === className) out.push([node.props.children].flat().join('')) })
+    return out
+  }
   return {
     calls, settle, run,
     sections: () => flips().map(node => node.props['data-flip']).filter(flip => flip.startsWith('section:')).map(flip => flip.slice('section:'.length)),
     rows: () => flips().map(node => node.props['data-flip']).filter(flip => !flip.startsWith('section:')),
+    notes: () => texts('bt-palette-note'),
+    badges: () => texts('bt-palette-badge'),
     choose: (key) => { const node = flips().find(node => node.props['data-flip'] === key); node?.props.onClick?.() },
   }
 }
@@ -275,7 +283,7 @@ test('P-820: a hit past the outline preview budget is found by the whole-text gr
 })
 
 test('P-820: choosing a whole-text row opens the chat at that turn', async () => {
-  const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 7, text: 'NEEDLE at the far end' }] })
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 7, prompt: 'a plain turn' }], rows: [{ chat: 's1', turn: 7, text: 'NEEDLE at the far end' }] })
   await palette.settle()
   palette.choose('s1:7')
   // The row object comes from the palette's realm, so the fields are read, not deep-equalled.
@@ -291,4 +299,86 @@ test('P-820: a row the outline already found is not shown twice', async () => {
   await palette.settle()
   assert.deepEqual(palette.sections(), ['Messages', 'Messages (full text)'], JSON.stringify(palette.sections()))
   assert.deepEqual(palette.rows(), ['s1:1', 's1:9'], JSON.stringify(palette.rows()))
+})
+
+// #3114. Each row now says what it is and lands where it points: an outline hit names its own
+// turn, a cap the host applied is counted rather than dropped in silence, two hits in one turn
+// are two rows, a hit the current part does not hold is marked instead of pretending to seek,
+// and a Bot whose current part id is not its own id still shows one row.
+test('#3114: choosing an outline message row opens the chat at that turn', () => {
+  const palette = livePalette({ start: 'needle', raw: 'the needle is right here' })
+  assert.deepEqual(palette.rows(), ['s1:1'], JSON.stringify(palette.rows()))
+  palette.choose('s1:1')
+  assert.equal(palette.calls.openSession.length, 1)
+  assert.equal(palette.calls.openSession[0][0], 's1')
+  assert.equal(palette.calls.openSession[0][1]?.turn, 1)
+})
+
+// The host caps the whole-text answer (OWN_CHAT_SEARCH = 20) and says how many it left out.
+// The palette keeps that count as a note under its own group: no row, no keyboard stop.
+test('#3114: the whole-text rows say how many the cap left out', async () => {
+  const rows = Array.from({ length: 20 }, (_, index) => ({ chat: 's1', turn: 100 + index, text: 'NEEDLE one of many' }))
+  const capped = livePalette({ start: 'needle', raw: 'a plain turn', rows, more: 5 })
+  await capped.settle()
+  assert.equal(capped.rows().length, 20, JSON.stringify(capped.rows()))
+  assert.deepEqual(capped.notes(), ['5 more matches · add a word to narrow it'])
+  const whole = livePalette({ start: 'needle', raw: 'a plain turn', rows, more: 0 })
+  await whole.settle()
+  assert.deepEqual(whole.notes(), [])
+})
+
+// A turn can hold two hits — a question and its answer both carry the words. They are two
+// rows, so each needs a key of its own; the first keeps the plain key it always had.
+test('#3114: two hits in one turn are two rows, each with its own key', async () => {
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 5, text: 'NEEDLE in the question' }, { chat: 's1', turn: 5, text: 'NEEDLE in the reply' }] })
+  await palette.settle()
+  assert.deepEqual(palette.rows(), ['s1:5', 's1:5:2'], JSON.stringify(palette.rows()))
+})
+
+// The current part's outline is the only list of turns the client can prove it holds. A hit
+// outside it is marked and opened without a turn: the seek that turn would need cannot land.
+test('#3114: a hit the current part does not hold is marked as an earlier part', async () => {
+  const elsewhere = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 12, text: 'NEEDLE far past this part' }] })
+  await elsewhere.settle()
+  assert.deepEqual(elsewhere.badges(), ['Earlier part'])
+  elsewhere.choose('s1:12')
+  assert.equal(elsewhere.calls.openSession.length, 1)
+  assert.equal(elsewhere.calls.openSession[0][0], 's1')
+  assert.equal(elsewhere.calls.openSession[0][1], undefined, 'no turn is passed for a row the current part does not hold')
+
+  const here = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 12, prompt: 'a plain turn' }], rows: [{ chat: 's1', turn: 12, text: 'NEEDLE inside this part' }] })
+  await here.settle()
+  assert.deepEqual(here.badges(), [])
+  here.choose('s1:12')
+  assert.equal(here.calls.openSession[0][1]?.turn, 12)
+})
+
+// A Bot's current part is a Session id of its own, while the host's rows name the Bot. The
+// same chat and turn must still be one row, not one per naming.
+test('#3114: a Bot whose part id is not its id is still deduped once', async () => {
+  const bot = { id: 'a', sessionId: 'pc', name: 'Chief' }
+  const roster = { bots: [bot], byId: { a: bot, pc: bot }, rooms: [], roomsById: {}, agents: [], exchangeTurns: {} }
+  const palette = livePalette({ start: 'needle', raw: 'the needle is right here', roster, rows: [{ chat: 'a', turn: 1, text: 'the needle is right here' }] })
+  await palette.settle()
+  assert.deepEqual(palette.sections(), ['Messages'], JSON.stringify(palette.sections()))
+  assert.deepEqual(palette.rows(), ['a:1'], JSON.stringify(palette.rows()))
+})
+
+// An exchange turn is inside the current part: its position is in the flow, so it keeps its
+// turn and gets no badge, even though the reply itself is drawn by nobody.
+test('#3114: a hidden exchange turn keeps its turn, with no badge', async () => {
+  const roster = { ...ROSTER, exchangeTurns: { s1: [5] } }
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 5, prompt: 'a plain turn' }], roster, rows: [{ chat: 's1', turn: 5, text: 'NEEDLE in the hidden reply' }] })
+  await palette.settle()
+  assert.deepEqual(palette.badges(), [])
+  palette.choose('s1:5')
+  assert.equal(palette.calls.openSession[0][1]?.turn, 5)
+})
+
+// One character is not a query: no host round-trip is spent and no message row is drawn.
+test('#3114: a query shorter than two characters asks nothing and renders no row', async () => {
+  const palette = livePalette({ start: 'n', raw: 'the needle is right here' })
+  await palette.settle()
+  assert.deepEqual(palette.calls.search, [])
+  assert.deepEqual(palette.rows().filter(key => !key.startsWith('cmd:')), [])
 })

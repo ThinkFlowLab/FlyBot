@@ -446,7 +446,7 @@ export function apply(ctx) {
     },
     // The palette's whole-text message search (P-820): the host answers with the
     // caller's own chats, whole lines with the turn they belong to.
-    searchChats: (query, signal) => call('chats.search', { query }, signal).then(value => value?.rows ?? []),
+    searchChats: (query, signal) => call('chats.search', { query }, signal).then(value => ({ rows: value?.rows ?? [], more: value?.more ?? 0 })),
     // The conversation replacements withdraw for a plain Session; set the surface
     // before the navigation so the Bot skin never flashes.
     openAgentSession: (sessionId) => {
