@@ -591,6 +591,26 @@ test('a current part condensed by a checkpoint is not called "in your context" (
   assert.match(out, /the url is https:\/\/example\.test\/xyz/, 'the newest lines are still shown')
 })
 
+// #2780: the bare read says "newest 12 of 15" (#1906), and a condensed current part hides the
+// same way, but its sentence named no count — a Bot reading three of fifteen messages read as
+// if that was all the part ever held.
+test('a condensed current part says how many of its messages it still shows (#2780)', async (t) => {
+  const history = { b: Array.from({ length: 15 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
+  const host = await start(t, undefined, history)
+  host.agentOf('b').session.deriveMessages = () => checkpointMessages(1)
+  const out = await host.tool('read_own_chat', { part: 1 }, 'b')
+  assert.equal(shownLines(out).length, 12, out)
+  assert.match(out, /newest 12 of 15/, `the read hid three messages without saying so: ${out}`)
+
+  // A short part shows all of them, and then no count clause is owed.
+  const short = { b: Array.from({ length: 3 }, (_, seq) => chatLine(seq, `message ${seq} in one part`)) }
+  const brief = await start(t, undefined, short)
+  brief.agentOf('b').session.deriveMessages = () => checkpointMessages(1)
+  const briefOut = await brief.tool('read_own_chat', { part: 1 }, 'b')
+  assert.equal(shownLines(briefOut).length, 3, briefOut)
+  assert.doesNotMatch(briefOut, /newest 3 of 3/, briefOut)
+})
+
 test('a current part with no checkpoint, and an ended or missing part, answer as before (#2774)', async (t) => {
   const history = { b: [chatLine(0, 'first line'), chatLine(1, 'second line')] }
   const host = await start(t, undefined, history)
