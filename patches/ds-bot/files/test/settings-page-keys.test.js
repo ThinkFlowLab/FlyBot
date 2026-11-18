@@ -81,15 +81,59 @@ test('PAGE_ICONS keys are settings pages', () => {
   assert.deepEqual(stray, [], `PAGE_ICONS keys that are not settings pages:\n${stray.join('\n')}`)
 })
 
-// The body picks the page with one `shown === '<key>'` per branch. A page in the list
-// with no branch opens a dialog with a header and an empty body.
+// A page counts as rendered only when its branch paints something: a bare `shown === 'about'`
+// keeps the literal and still opens an empty dialog. Usage never branches on `shown` at all —
+// its panel stays mounted behind `usageOpened`, and one call inside that block draws it (#3153).
+function usageBlock(source) {
+  const start = source.indexOf("usageOpened ? h('div', { key: 'usage'")
+  assert.ok(start >= 0, 'settings.js still gates the Usage panel on usageOpened')
+  const close = ': null)'
+  const end = source.indexOf(close, start)
+  assert.ok(end > start, `the usageOpened block still closes with ${close}`)
+  return source.slice(start, end + close.length)
+}
+
+// key -> the component that key's own render form draws, or undefined. `usage` is read inside
+// its usageOpened block, so moving `h(UsagePage, …)` out of that block no longer counts.
+function pinnedComponent(key, source) {
+  if (key !== 'usage') return undefined
+  return /h\((UsagePage),/.exec(usageBlock(source))?.[1]
+}
+
+function definedComponents(source) {
+  const names = new Set()
+  for (const match of source.matchAll(/(?:function|const|let)\s+([A-Z]\w*)/g)) names.add(match[1])
+  for (const match of source.matchAll(/import\s*\{([^}]+)\}/g)) {
+    for (const part of match[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop()?.trim()
+      if (name) names.add(name)
+    }
+  }
+  return names
+}
+
 test('every settings page has a rendered branch', () => {
   const source = readFileSync(join(clientRoot, 'settings.js'), 'utf8')
-  const branches = new Set([...source.matchAll(/shown === '([^']+)'/g)].map(match => match[1]))
+  // key -> the component its branch draws, read from `shown === '<key>' … ? h(<Component …`
+  const painted = new Map()
+  for (const line of source.split('\n')) {
+    for (const named of line.matchAll(/shown === '([^']+)'/g)) {
+      const drawn = /\?\s*h\(([A-Z]\w*)/.exec(line.slice(named.index))
+      if (drawn) painted.set(named[1], drawn[1])
+    }
+  }
   const pages = settingsPageKeys()
+  const branches = new Set([...source.matchAll(/shown === '([^']+)'/g)].map(match => match[1]))
 
-  const unrendered = pages.filter(key => !branches.has(key))
+  const unrendered = pages.filter(key => !painted.has(key) && pinnedComponent(key, source) === undefined)
   assert.deepEqual(unrendered, [], `settings pages with no rendered branch:\n${unrendered.join('\n')}`)
+
+  const components = definedComponents(source)
+  const loose = pages
+    .map(key => [key, painted.get(key) ?? pinnedComponent(key, source)])
+    .filter(([, name]) => name !== undefined && !components.has(name))
+    .map(([key, name]) => `${key} -> ${name}`)
+  assert.deepEqual(loose, [], `rendered branches that name an undefined component:\n${loose.join('\n')}`)
 
   const stray = [...branches].filter(key => !pages.includes(key))
   assert.deepEqual(stray, [], `rendered branches that name no settings page:\n${stray.join('\n')}`)
