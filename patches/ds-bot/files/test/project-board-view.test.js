@@ -715,9 +715,12 @@ function fakeLocale(active) {
   }
 }
 
-const metricsNote = (metrics) => {
+const metricsNoteNode = (metrics) => {
   const drawn = all(ProjectBoardPane({ project: { id: 'project-1', name: 'FlyBot' }, rows: [], metrics }))
-  const note = drawn.find(node => node.props?.className === 'bt-project-metrics-note')
+  return drawn.find(node => node.props?.className === 'bt-project-metrics-note') ?? null
+}
+const metricsNote = (metrics) => {
+  const note = metricsNoteNode(metrics)
   return note ? textOf(note) : ''
 }
 
@@ -743,6 +746,22 @@ test('#2985: a zh window reads the metrics reason as a sentence, never the host 
     assert.ok(!failedRead.includes('no-credentials'), 'a known reason never prints the host code')
     assert.match(failedRead, /^指标不可用：读取 GitHub 失败（/, 'the read-failed detail rides in the same sentence')
     assert.equal(metricsNote(unavailable('a token this client has never seen')), '指标不可用：a token this client has never seen', 'an unknown reason keeps the host words, never a guess')
+  } finally {
+    off()
+  }
+})
+
+// #3157: the note cut a long read-failed detail at 60 characters and appended `…`, so the reason
+// the note exists to give could not be read anywhere. The note now draws the whole sentence.
+test('a long read-failed detail is readable in full in the note', () => {
+  const detail = '/pulls answered 403: the token this Project reads with cannot list pull requests on the source repository'
+  const metrics = { ok: false, reason: `read-failed: ${detail}`, metrics: {}, running: [] }
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    const note = metricsNoteNode(metrics)
+    assert.ok(note, 'a failed read draws the note')
+    assert.equal(textOf(note), `指标不可用：读取 GitHub 失败（${detail}）`, 'the note reads the whole reason')
+    assert.ok(!textOf(note).includes('\u2026'), 'the note never cuts the reason it reports')
   } finally {
     off()
   }
