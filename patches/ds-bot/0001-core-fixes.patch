@@ -3376,7 +3376,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' })
  }
-@@ -48,6 +48,34 @@ export function relativeShort(ms) {
+@@ -48,6 +48,46 @@ export function relativeShort(ms) {
  export const contentText = content => (content ?? []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
  export const HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/
  export const currentPart = bot => bot.sessionId ?? bot.id
@@ -3407,6 +3407,18 @@ diff --git a/src/client/text.js b/src/client/text.js
 +  // With the list in hand only a destination that list knows is returned: a fresh part it has not
 +  // caught up with falls back to the chat it replaced, and nothing known at all is `undefined`.
 +  return destinations.find(id => sessions.byId?.[id] !== undefined)
++}
++// #3114: where a search row lands. A row that names its part is placed by that part: the part
++// opens when the chat owns it and the shell's session list holds it. A part that fails either
++// test is not opened — the chat's current part opens with no seek, because the same turn
++// number there is a different message.
++export function openTarget(roster, sessions, id, part) {
++  const bot = roster.byId?.[id]
++  if (bot === undefined) return { target: id, seek: true }
++  const current = currentPart(bot)
++  if (part === undefined || part === current) return { target: current, seek: true }
++  const owned = part === bot.sessionId || (bot.parts ?? []).includes(part)
++  return owned && sessions?.byId?.[part] !== undefined ? { target: part, seek: true } : { target: current, seek: false }
 +}
  // The prompts in a due scheduled task's message. DSH frames it for the model: one
  // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.

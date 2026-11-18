@@ -383,14 +383,16 @@ export function install(rt) {
           // The palette's whole-text rows (P-820). `view(actor)` is the narrowing `state` uses:
           // it keeps the actor's own Bots, and also the other-owner Bots a shared room carries so
           // the room renders. Those Bots' own chats are not room content, so only the sessions
-          // the actor owns are searched; a room's own parts stay, because the room is shared.
+          // the actor owns are searched; a room's own parts stay, because the room is shared. Only a Bot's own chat part is named `part` (#3114).
           await rt.load()
           const query = String(body.query ?? '')
           const scoped = view(actor)
           const sessionToChat = new Map()
+          const ownParts = new Set()
           for (const bot of scoped.bots) for (const part of [bot.sessionId, ...(bot.parts ?? [])]) {
             if (rt.authzEnforced?.() && !rt.sessionOwnedBy?.(actor, part)) continue
             sessionToChat.set(part, bot.id)
+            ownParts.add(part)
           }
           for (const room of scoped.rooms) for (const part of room.parts ?? []) if (!sessionToChat.has(part)) sessionToChat.set(part, room.id)
           const { rows, more } = await rt.searchHomeChat([...sessionToChat.keys()], query)
@@ -400,7 +402,10 @@ export function install(rt) {
               .map(row => {
                 const lower = row.text.toLowerCase()
                 const wanted = terms.find(term => lower.includes(term)) ?? ''
-                return { chat: sessionToChat.get(row.session) ?? null, turn: row.turn, text: excerpt(row.text, wanted) }
+                return {
+                  chat: sessionToChat.get(row.session) ?? null, turn: row.turn, text: excerpt(row.text, wanted),
+                  ...(ownParts.has(row.session) ? { part: row.session } : {}),
+                }
               })
               .filter(row => row.chat !== null),
             more,

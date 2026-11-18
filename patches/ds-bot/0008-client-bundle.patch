@@ -1997,7 +1997,7 @@ diff --git a/client.js b/client.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
  }
-@@ -1483,9 +1483,22 @@ function relativeShort(ms) {
+@@ -1483,9 +1483,30 @@ function relativeShort(ms) {
  var contentText = (content) => (content ?? []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
  var HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/;
  var currentPart = (bot) => bot.sessionId ?? bot.id;
@@ -2016,6 +2016,14 @@ diff --git a/client.js b/client.js
 +  ].filter((id) => id !== void 0);
 +  if (sessions === void 0) return destinations[0];
 +  return destinations.find((id) => sessions.byId?.[id] !== void 0);
++}
++function openTarget(roster, sessions, id, part) {
++  const bot = roster.byId?.[id];
++  if (bot === void 0) return { target: id, seek: true };
++  const current = currentPart(bot);
++  if (part === void 0 || part === current) return { target: current, seek: true };
++  const owned = part === bot.sessionId || (bot.parts ?? []).includes(part);
++  return owned && sessions?.byId?.[part] !== void 0 ? { target: part, seek: true } : { target: current, seek: false };
 +}
 +function reminderPrompts(text2) {
 +  const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
@@ -20289,7 +20297,7 @@ diff --git a/client.js b/client.js
        }
      };
      window.addEventListener("mousedown", onDown);
-@@ -7646,514 +7646,1048 @@ function MemoryDialog({ bot, actions, leaving = false }) {
+@@ -7646,514 +7646,1050 @@ function MemoryDialog({ bot, actions, leaving = false }) {
        window.removeEventListener("mousedown", onDown);
        window.removeEventListener("keydown", onKey, true);
      };
@@ -21542,7 +21550,7 @@ diff --git a/client.js b/client.js
 +  const fullText = (wholeText?.rows ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map((row) => {
 +    const bot = roster.byId[row.chat];
 +    const room2 = roster.roomsById[row.chat];
-+    const here = inPart(row.chat, row.turn);
++    const earlier = typeof row.part === "string" ? bot !== void 0 && row.part !== currentPart(bot) : inPart(row.chat, row.turn) === false;
 +    const at = `${row.chat}:${row.turn}`;
 +    const count = (keyCounts.get(at) ?? 0) + 1;
 +    keyCounts.set(at, count);
@@ -21551,8 +21559,10 @@ diff --git a/client.js b/client.js
 +      title: bot?.name ?? room2?.name ?? t("Bot"),
 +      subtitle: row.text,
 +      avatar: bot ? (0, import_react35.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react35.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
-+      badge: here === false ? t("Earlier part") : void 0,
-+      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn })
++      badge: earlier ? t("Earlier part") : void 0,
++      // A row lands where it points: another part opens that part at its turn, so the words are
++      // on screen; the current part keeps its seek; a row with no part keeps today's navigation.
++      run: earlier && row.part !== void 0 ? () => actions.openSession(row.chat, { part: row.part, turn: row.turn }) : earlier ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn })
 +    };
 +  });
 +  const hidden = wholeText?.more ?? 0;
@@ -28535,15 +28545,16 @@ diff --git a/client.js b/client.js
      // or the click appears to do nothing.
      isAgentSession: (id) => isAgentSessionId(id),
 -    openSession: (id) => {
-+    openSession: (id, { turn } = {}) => {
++    openSession: (id, { turn, part } = {}) => {
 +      noteNavigation("openSession", id);
        if (isAgentSessionId(id)) return actions.openAgentSession(id);
        ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
        setPlain(false);
-       const target = partFor(id);
+-      const target = partFor(id);
++      const { target, seek } = openTarget(roster.getSnapshot(), ctx.sessions.list.getSnapshot(), id, part);
        expected = target;
        ctx.uiWorkspace.openSession(target);
-+      seekTurn(turn);
++      if (seek) seekTurn(turn);
      },
 +    // The palette's whole-text message search (P-820): the host answers with the
 +    // caller's own chats, whole lines with the turn they belong to.
