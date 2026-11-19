@@ -1741,7 +1741,33 @@ var HOST_ZH = {
   "This DeepSeek Harness has no folder chooser": "这个 DeepSeek Harness 没有文件夹选择窗口",
   "This DeepSeek Harness cannot list folders": "这个 DeepSeek Harness 不能列出文件夹",
   "No FlyBot core update is available": "没有可用的 FlyBot 核心更新",
-  "saved by a newer FlyBot; update FlyBot": "由更新的 FlyBot 保存；请更新 FlyBot"
+  "saved by a newer FlyBot; update FlyBot": "由更新的 FlyBot 保存；请更新 FlyBot",
+  // #3114 cut 22: the Add friend panel — both headings, the paste box, both Bot pickers, the invite controls.
+  "Accept an invite": "接受邀请",
+  "Invite a friend": "邀请朋友",
+  "Paste invite link or code": "粘贴邀请链接或邀请码",
+  "Invite link or code": "邀请链接或邀请码",
+  "Talk through ": "通过",
+  "Which of your Bots talks": "哪个 Bot 替你说话",
+  "Talks for you. Not shared: your friend can't use it unless you invite them to it.": "这个 Bot 替你说话，不会被共享；除非你邀请，否则你的朋友用不了它。",
+  "Share ": "分享",
+  "Which of your Bots to share": "分享哪个 Bot",
+  "Your friend gets this Bot only.": "你的朋友只会拿到这个 Bot。",
+  "You are {me}": "你是 {me}",
+  "Copy invite link for {bot}": "复制给 {bot} 的邀请链接",
+  "Invite link for {bot}": "{bot} 的邀请链接",
+  "Copy with instructions": "连说明一起复制",
+  "Invite for {bot} copied with instructions.": "{bot} 的邀请已复制（含说明）。",
+  "Invite link for {bot} copied.": "{bot} 的邀请链接已复制。",
+  "Could not copy. Select the link and copy it by hand.": "复制失败。请选中链接手动复制。",
+  "{bots} {verb} back in your list.": "{bots} 又回到了你的列表里。",
+  "{who} shared {bot} with you.{note}": "{who} 把 {bot} 分享给了你。{note}",
+  "Joined {who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.{note}": "你已加入 {who} 的邀请，但对方的 Bot 还没加载出来。加载后它会出现在你的列表里；如果没有，请重新接受这个链接。{note}",
+  "Request sent to {who}. They show up here once they accept.": "已向 {who} 发出请求。对方接受后会出现在这里。",
+  "{name} is now a friend.": "{name} 现在成了你的朋友。",
+  "Declined {name}.": "已拒绝 {name}。",
+  "{what} failed: {why}": "{what} 失败：{why}",
+  "Your friend": "你的朋友"
 };
 Object.assign(ZH, HOST_ZH);
 var fill = (text2, params) => params ? text2.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text2;

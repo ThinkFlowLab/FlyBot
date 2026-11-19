@@ -8486,7 +8486,7 @@ test('#1033: only the same home\'s Bot is named as the link that keeps the frien
 
 test('#138: join success copy names the person and the Bot', () => {
   const src = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-  assert.match(src, /shared \$\{shared\} with you/)
+  assert.match(src, /shared \{bot\} with you/)
   assert.match(src, /Talk through /)
   // #228: the talk-through tooltip says plainly that Bot is not shared; nothing implies a grant back.
   assert.match(src, /Talks for you\. Not shared: your friend can't use it unless you invite them to it\./)
