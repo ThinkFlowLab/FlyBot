@@ -711,6 +711,7 @@ const ZH = {
   Pin: '置顶',
   Pinned: '已置顶',
   'Mark as Unread': '标为未读',
+  'Clear unread mark': '清除手动未读标记',
   'Group settings': '群设置',
   'Rename group': '重命名群聊',
   'Copy conversation ID': '复制对话 ID',

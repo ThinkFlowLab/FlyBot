@@ -1414,7 +1414,7 @@ diff --git a/src/client/cells.js b/src/client/cells.js
 diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 --- a/src/client/context-menu.js
 +++ b/src/client/context-menu.js
-@@ -4,6 +4,9 @@ import { currentPart } from './text.js'
+@@ -4,14 +4,18 @@ import { currentPart } from './text.js'
  import { GearIcon, PinIcon, UnreadIcon, PencilIcon, StarLineIcon, CopyIcon, HideIcon, TrashIcon, DuplicateIcon } from './icons.js'
  import { useEscape } from './overlay-hooks.js'
  import { t } from './i18n.js'
@@ -1422,9 +1422,11 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +import { pluginItems } from './flybot-registry.js'
 +import { LinkIcon } from './icons.js'
  
- export function ContextMenu({ menu, roster, actions, leaving = false }) {
+-export function ContextMenu({ menu, roster, actions, leaving = false }) {
++export function ContextMenu({ menu, roster, actions, leaving = false, unread }) {
    useEscape(() => actions.closeMenu())
-@@ -12,6 +12,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+   useEffect(() => {
+     const onDown = (event) => { if (!(event.target instanceof Element) || !event.target.closest('.bt-menu')) actions.closeMenu() }
      window.addEventListener('mousedown', onDown)
      return () => window.removeEventListener('mousedown', onDown)
    }, [])
@@ -1432,7 +1434,15 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
    const ref = useRef(null)
    const [place, setPlace] = useState({ left: menu.x, top: menu.y })
    useLayoutEffect(() => {
-@@ -27,28 +27,44 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+@@ -24,31 +24,52 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
+   const room = roster.roomsById[menu.id]
+   const entry = bot ?? room
+   if (entry === undefined) return null
++  // The manual unread mark is a local one (#3114): a chat already marked unread offers to
++  // clear it, and clearing drops only that key — a completion flag stays as it is.
++  const unreadItem = unread?.[menu.id] === true
++    ? [t('Clear unread mark'), UnreadIcon, () => actions.clearUnread(menu.id)]
++    : [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)]
    const isMainBot = isMainOf(roster, menu.id)
    const isTile = roster.mainBotId === menu.id
    const mainCount = (roster.mainBotIds ?? []).length
@@ -1462,7 +1472,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +  const groups = bot?.remote
 +    ? [
 +        [
-+          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
++          unreadItem,
 +        ],
 +        [
 +          [t('Bot settings'), GearIcon, () => actions.openSettings('bots', bot.id)],
@@ -1473,7 +1483,7 @@ diff --git a/src/client/context-menu.js b/src/client/context-menu.js
 +    : [
 +        [
 +          isTile || locked ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
-+          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
++          unreadItem,
 +        ],
 +        [
 +          // One way to edit a Bot (#385): its name is edited in Edit Bot too.
@@ -2756,7 +2766,7 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
  import { useLinger } from './motion.js'
  
  // How long a closing dialog or menu stays for its exit (see their [data-leaving] CSS).
-@@ -27,17 +27,21 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+@@ -27,24 +27,31 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
      previous.current = current
      if (current) actions.followPanel?.(current)
    }, [current])
@@ -2780,9 +2790,11 @@ diff --git a/src/client/overlays.js b/src/client/overlays.js
    return h(Fragment, null,
      pane ? createPortal(h(BotPanel, { pane, leaving: open === null, roster, actions, useSessions, useSessionStatus, useActivity, useWork, useBrowserTabs, useBrowserPages }), document.body) : null,
      ui.newChat ? createPortal(h(NewChat, { key: ui.newChat, mode: ui.newChat, roster, actions }), document.body) : null,
-@@ -46,5 +46,8 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
+     ui.palette ? createPortal(h(CommandPalette, { key: ui.palette.token, start: ui.palette.query, token: ui.palette.token, roster, actions, useSessions }), document.body) : null,
+     ui.exchange ? createPortal(h(ExchangeDialog, { pair: ui.exchange, roster, actions }), document.body) : null,
      ui.voice ? createPortal(h(VoiceMode, { key: ui.voice, sessionId: ui.voice, roster, actions, useSessions, useSessionStatus }), document.body) : null,
-     menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
+-    menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
++    menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, unread: ui.unread, leaving: menuLeaving }), document.body) : null,
      settings ? createPortal(h(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
 -    memory && roster.byId[memory] ? createPortal(h(MemoryDialog, { key: memory, bot: roster.byId[memory], actions, leaving: memoryLeaving }), document.body) : null)
 +    remoteBotSettings ? createPortal(h(RemoteBotSettingsSheet, { key: remoteBotSettings, bot: roster.byId[remoteBotSettings], roster, actions, leaving: remoteLeaving }), document.body) : null,
@@ -3806,7 +3818,14 @@ diff --git a/src/client/styles.js b/src/client/styles.js
  .bt-pill-mem{flex:none;display:inline-flex;width:0;margin-left:-8px;overflow:hidden;transition:${spring(SPRING_SHAPE, 'width', 'margin-left')}}
  .bt-pill[data-memory=updated] .bt-pill-mem{width:var(--bt-mem-w);margin-left:0;transition:${spring(SPRING_STRETCH, 'width', 'margin-left')}}
  .bt-pill-mem-in{flex:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--bt-ink-2);font-size:13px;font-weight:500;opacity:0;filter:blur(6px);transform:translateX(-8px);transition:opacity .14s ease,filter .18s ease,${spring(SPRING_SHAPE, 'transform')}}
-@@ -174,8 +174,31 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+@@ -171,11 +171,38 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
+ .bt-pill[aria-expanded=true] .bt-pill-go svg{transform:rotate(180deg)}
+ .bt-pill[data-memory=updated]:is(:hover,:focus-visible,[aria-expanded=true]) .bt-pill-go{width:0;margin-left:-8px;opacity:0;filter:blur(6px);transform:translateX(-6px)}
+ @media (prefers-reduced-motion:reduce){.bt-pill,.bt-pill-go,.bt-pill-go svg{transition:none!important}.bt-pill-go{filter:none}.bt-pill:active{transform:none}}
++.bt-head-unread{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:none;color:var(--bt-ink-3);cursor:pointer}
++.bt-head-unread:hover{background:var(--bt-hover);color:var(--bt-ink)}
++.bt-head-unread[aria-pressed=true]{color:var(--bt-accent)}
++.bt-head-unread svg{width:15px;height:15px}
  
  .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
  .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}

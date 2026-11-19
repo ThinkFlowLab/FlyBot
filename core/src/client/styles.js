@@ -193,6 +193,10 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-pill[aria-expanded=true] .bt-pill-go svg{transform:rotate(180deg)}
 .bt-pill[data-memory=updated]:is(:hover,:focus-visible,[aria-expanded=true]) .bt-pill-go{width:0;margin-left:-8px;opacity:0;filter:blur(6px);transform:translateX(-6px)}
 @media (prefers-reduced-motion:reduce){.bt-pill,.bt-pill-go,.bt-pill-go svg{transition:none!important}.bt-pill-go{filter:none}.bt-pill:active{transform:none}}
+.bt-head-unread{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:none;color:var(--bt-ink-3);cursor:pointer}
+.bt-head-unread:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-head-unread[aria-pressed=true]{color:var(--bt-accent)}
+.bt-head-unread svg{width:15px;height:15px}
 
 .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
 .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}

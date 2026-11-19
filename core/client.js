@@ -769,6 +769,7 @@ var ZH = {
   Pin: "置顶",
   Pinned: "已置顶",
   "Mark as Unread": "标为未读",
+  "Clear unread mark": "清除手动未读标记",
   "Group settings": "群设置",
   "Rename group": "重命名群聊",
   "Copy conversation ID": "复制对话 ID",
@@ -5286,6 +5287,10 @@ body[data-bt-motion=quiet] .bt-mark[data-poke]{cursor:default}
 .bt-pill[aria-expanded=true] .bt-pill-go svg{transform:rotate(180deg)}
 .bt-pill[data-memory=updated]:is(:hover,:focus-visible,[aria-expanded=true]) .bt-pill-go{width:0;margin-left:-8px;opacity:0;filter:blur(6px);transform:translateX(-6px)}
 @media (prefers-reduced-motion:reduce){.bt-pill,.bt-pill-go,.bt-pill-go svg{transition:none!important}.bt-pill-go{filter:none}.bt-pill:active{transform:none}}
+.bt-head-unread{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:none;color:var(--bt-ink-3);cursor:pointer}
+.bt-head-unread:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-head-unread[aria-pressed=true]{color:var(--bt-accent)}
+.bt-head-unread svg{width:15px;height:15px}
 
 .bt-astack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0}
 .bt-bubble{max-width:min(80%,560px,calc(100% - 82px));background:var(--bt-bubble);color:var(--bt-ink);border-radius:18px;padding:7px 12px;font-size:var(--dsh-content-font-size,14px);line-height:calc(var(--dsh-content-font-size,14px) + 8px);box-sizing:border-box;overflow-wrap:anywhere}
@@ -13161,6 +13166,24 @@ function MemoryNotice({ shown }) {
     (0, import_react24.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react24.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react24.createElement)(MemoryIcon)), label)
   );
 }
+function unreadEntryId(roster, sessionId) {
+  const bot = roster?.byId?.[sessionId];
+  const room2 = roster?.roomsById?.[sessionId];
+  return bot?.id ?? room2?.id ?? roster?.agentOf?.[sessionId] ?? sessionId;
+}
+function SessionUnreadToggle({ sessionId, roster, unread, actions }) {
+  const target = unreadEntryId(roster, sessionId);
+  const marked = unread?.[target] === true;
+  const label = marked ? t("Clear unread mark") : t("Mark as Unread");
+  return (0, import_react24.createElement)("button", {
+    type: "button",
+    className: "bt-head-unread",
+    "aria-pressed": marked,
+    "aria-label": label,
+    title: label,
+    onClick: () => marked ? actions.clearUnread(target) : actions.markUnread(target)
+  }, (0, import_react24.createElement)(UnreadIcon));
+}
 function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useBusyAcks, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
   const roster = useRoster((value) => value);
   const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
@@ -13170,6 +13193,7 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
   });
   const hiddenTurns = roster.exchangeTurns?.[sessionId];
   const visit = useUi((state) => state.visits?.[sessionId]);
+  const unread = useUi((state) => state.unread);
   const opening = useTurnClock((state) => {
     const first = openingTurn(state[sessionId], firstTurns, hiddenTurns);
     return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : "";
@@ -13220,7 +13244,8 @@ function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSe
     }),
     (0, import_react24.createElement)(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
     (0, import_react24.createElement)(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }),
-    (0, import_react24.createElement)(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive })
+    (0, import_react24.createElement)(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }),
+    (0, import_react24.createElement)(SessionUnreadToggle, { sessionId, roster, unread, actions })
   );
 }
 function useTranscriptView() {
@@ -20903,7 +20928,7 @@ function ProjectsPage({ roster, actions, run, call: call4 }) {
 
 // src/client/context-menu.js
 var import_react46 = require("react");
-function ContextMenu({ menu, roster, actions, leaving = false }) {
+function ContextMenu({ menu, roster, actions, leaving = false, unread }) {
   useEscape(() => actions.closeMenu());
   (0, import_react46.useEffect)(() => {
     const onDown = (event) => {
@@ -20925,13 +20950,14 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
   const room2 = roster.roomsById[menu.id];
   const entry = bot ?? room2;
   if (entry === void 0) return null;
+  const unreadItem = unread?.[menu.id] === true ? [t("Clear unread mark"), UnreadIcon, () => actions.clearUnread(menu.id)] : [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)];
   const isMainBot = isMainOf(roster, menu.id);
   const isTile = roster.mainBotId === menu.id;
   const mainCount = (roster.mainBotIds ?? []).length;
   const locked = typeof roster?.readOnly === "string" && roster.readOnly.trim() !== "";
   const groups = bot?.remote ? [
     [
-      [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
+      unreadItem
     ],
     [
       [t("Bot settings"), GearIcon, () => actions.openSettings("bots", bot.id)]
@@ -20941,7 +20967,7 @@ function ContextMenu({ menu, roster, actions, leaving = false }) {
   ] : [
     [
       isTile || locked ? null : [entry.pinned ? t("Unpin") : t("Pin"), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
-      [t("Mark as Unread"), UnreadIcon, () => actions.markUnread(menu.id)]
+      unreadItem
     ],
     [
       // One way to edit a Bot (#385): its name is edited in Edit Bot too.
@@ -22374,7 +22400,7 @@ function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useActivity
     ui2.palette ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(CommandPalette, { key: ui2.palette.token, start: ui2.palette.query, token: ui2.palette.token, roster, actions, useSessions }), document.body) : null,
     ui2.exchange ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(ExchangeDialog, { pair: ui2.exchange, roster, actions }), document.body) : null,
     ui2.voice ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(VoiceMode, { key: ui2.voice, sessionId: ui2.voice, roster, actions, useSessions, useSessionStatus }), document.body) : null,
-    menu ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(ContextMenu, { key: `${menu.kind ?? ""}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
+    menu ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(ContextMenu, { key: `${menu.kind ?? ""}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, unread: ui2.unread, leaving: menuLeaving }), document.body) : null,
     settings ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
     remoteBotSettings ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(RemoteBotSettingsSheet, { key: remoteBotSettings, bot: roster.byId[remoteBotSettings], roster, actions, leaving: remoteLeaving }), document.body) : null,
     memory && roster.byId[memory] ? (0, import_react_dom11.createPortal)((0, import_react50.createElement)(MemoryDialog, { key: memory, bot: roster.byId[memory], roster, actions, leaving: memoryLeaving }), document.body) : null,

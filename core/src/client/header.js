@@ -1,7 +1,7 @@
 import { createElement as h, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { currentPart, faceRowTitle, latestMemoryChange } from './text.js'
-import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon } from './icons.js'
+import { ArrowUpIcon, CloseIcon, ArrowDownIcon, MemoryIcon, UnreadIcon } from './icons.js'
 import { botState, BotAvatar, RoomAvatar } from './mark.js'
 import { clockLabel, movedOnSince, openingTurn, unseenSince } from './cells.js'
 import { ActivityIndicator } from './activity-row.js'
@@ -46,6 +46,27 @@ function MemoryNotice({ shown }) {
     h('span', { className: 'bt-pill-mem-in', ref: inner }, h('span', { className: 'bt-pill-mem-ico' }, h(MemoryIcon)), label))
 }
 
+// The manual unread mark is keyed by the sidebar's row id (a Bot id, a group id or an Agent
+// id) while the header holds the Session id; an unknown id is left alone (#3114).
+export function unreadEntryId(roster, sessionId) {
+  const bot = roster?.byId?.[sessionId]
+  const room = roster?.roomsById?.[sessionId]
+  return bot?.id ?? room?.id ?? roster?.agentOf?.[sessionId] ?? sessionId
+}
+
+// The header's local unread control: it marks this chat unread or clears that mark without
+// opening it, and it never writes the host's completion or pending-interaction flags —
+// those still clear only when the chat is opened.
+export function SessionUnreadToggle({ sessionId, roster, unread, actions }) {
+  const target = unreadEntryId(roster, sessionId)
+  const marked = unread?.[target] === true
+  const label = marked ? t('Clear unread mark') : t('Mark as Unread')
+  return h('button', {
+    type: 'button', className: 'bt-head-unread', 'aria-pressed': marked, 'aria-label': label, title: label,
+    onClick: () => (marked ? actions.clearUnread(target) : actions.markUnread(target)),
+  }, h(UnreadIcon))
+}
+
 export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useBusyAcks, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
   const roster = useRoster(value => value)
   const title = useSessions(list => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? '')
@@ -55,6 +76,7 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
   })
   const hiddenTurns = roster.exchangeTurns?.[sessionId]
   const visit = useUi(state => state.visits?.[sessionId])
+  const unread = useUi(state => state.unread)
   // The opening separator is the one page effect that stays with the pill: it needs a turn, so
   // the shell always draws the header for it, and it reads `useTurnClock`, which the installer
   // in header-effects.js deliberately does not carry.
@@ -106,7 +128,8 @@ export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus
     }),
     h(NewMessagePills, { key: sessionId, sessionId, hiddenTurns, useSessions, useUi, useTurnClock, actions }),
     h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, actions }),
-    h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }))
+    h(BusyAckBubble, { key: `busy-ack:${sessionId}`, sessionId, useRoster, useBusyAcks, useSessionStatus, useSession, useLive }),
+    h(SessionUnreadToggle, { sessionId, roster, unread, actions }))
 }
 
 // New-message pills. "N new messages ↓" takes Back to bottom's place when
