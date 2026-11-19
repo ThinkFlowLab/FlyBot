@@ -109,7 +109,9 @@ export function openTarget(roster, sessions, id, part) {
   const bot = roster.byId?.[id]
   if (bot === undefined) return { target: id, seek: true }
   const current = currentPart(bot)
-  if (part === undefined || part === current) return { target: current, seek: true }
+  // A part is a Session id string or nothing at all: a row that names nothing, or names something
+  // that is not a string (a number from an older host), asks for the current part and its turn.
+  if (typeof part !== 'string' || part === current) return { target: current, seek: true }
   const owned = part === bot.sessionId || (bot.parts ?? []).includes(part)
   return owned && sessions?.byId?.[part] !== undefined ? { target: part, seek: true } : { target: current, seek: false }
 }

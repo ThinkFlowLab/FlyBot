@@ -2021,7 +2021,7 @@ diff --git a/client.js b/client.js
 +  const bot = roster.byId?.[id];
 +  if (bot === void 0) return { target: id, seek: true };
 +  const current = currentPart(bot);
-+  if (part === void 0 || part === current) return { target: current, seek: true };
++  if (typeof part !== "string" || part === current) return { target: current, seek: true };
 +  const owned = part === bot.sessionId || (bot.parts ?? []).includes(part);
 +  return owned && sessions?.byId?.[part] !== void 0 ? { target: part, seek: true } : { target: current, seek: false };
 +}

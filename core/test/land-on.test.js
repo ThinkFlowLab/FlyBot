@@ -105,3 +105,13 @@ test('#3114: a named part is opened only when the chat owns it and the shell lis
   assert.deepEqual(at('friend', 'friend-1', { byId: {} }), { target: 'friend-2', seek: false }, 'a part the shell does not list: no seek')
   assert.deepEqual(at('gone', 'friend-1'), { target: 'gone', seek: true }, 'an id the roster does not hold')
 })
+
+// #3114: a part is a Session id string or nothing at all. A row that names something else — a
+// number, from an older host or a hand-built row — is not a part this chat could open, so it takes
+// the road of a row that names no part: the current part, and a seek there, never the no-seek
+// fallback a part this chat cannot reach gets.
+test('#3114: a part that is not a string opens the current part and keeps the seek', async () => {
+  const { openTarget } = await import('../src/client/text.js')
+  const withParts = { id: 'friend', sessionId: 'friend-2', parts: ['friend-1'] }
+  assert.deepEqual(openTarget({ byId: { ...roster.byId, friend: withParts } }, sessions, 'friend', 5), { target: 'friend-2', seek: true })
+})

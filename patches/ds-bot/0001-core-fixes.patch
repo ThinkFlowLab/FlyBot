@@ -3376,7 +3376,7 @@ diff --git a/src/client/text.js b/src/client/text.js
  function clock(ms) {
    return new Date(ms).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' })
  }
-@@ -48,6 +48,46 @@ export function relativeShort(ms) {
+@@ -48,6 +48,48 @@ export function relativeShort(ms) {
  export const contentText = content => (content ?? []).filter(block => block?.type === 'text').map(block => block.text).join('\n')
  export const HEADER = /^\[(Message from|Reply from|Group chat|Group post from|Bot team setup|Handoff · part|Secret card)[^\]]*\]\n?/
  export const currentPart = bot => bot.sessionId ?? bot.id
@@ -3416,7 +3416,9 @@ diff --git a/src/client/text.js b/src/client/text.js
 +  const bot = roster.byId?.[id]
 +  if (bot === undefined) return { target: id, seek: true }
 +  const current = currentPart(bot)
-+  if (part === undefined || part === current) return { target: current, seek: true }
++  // A part is a Session id string or nothing at all: a row that names nothing, or names something
++  // that is not a string (a number from an older host), asks for the current part and its turn.
++  if (typeof part !== 'string' || part === current) return { target: current, seek: true }
 +  const owned = part === bot.sessionId || (bot.parts ?? []).includes(part)
 +  return owned && sessions?.byId?.[part] !== undefined ? { target: part, seek: true } : { target: current, seek: false }
 +}
