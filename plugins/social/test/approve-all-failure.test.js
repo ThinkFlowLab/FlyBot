@@ -321,3 +321,29 @@ test('a reason longer than a paragraph is cut inside the line', async () => {
     assert.ok(!/\p{Surrogate}/u.test(line), 'no lone surrogate survives the cut')
   } finally { delete globalThis.__flybot__ }
 })
+
+// #3192: the row was a bare `div` carrying a class no stylesheet ever wrote — so a role="alert"
+// sentence about a failed batch read exactly like ordinary dock text, in no error colour and none of
+// the plugin's own line height. It is drawn as the plugin's status line in its error tone instead;
+// the alert role and the data-flybot hook stay, and #3158's cap and cut are untouched.
+test('#3192: the failure row is drawn in the dock\'s own error tone, not as bare text', async () => {
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const css = /const CSS = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
+  assert.ok(css.includes('.fs-status{padding:0;font-size:12px;line-height:17px;'),
+    'the shared status line still carries the type the row leans on')
+  assert.ok(css.includes('.fs-status[data-tone=error]{color:#e5484d}'),
+    'and the plugin\'s own error colour is the tone this row takes')
+
+  const app = loadDock()
+  const state = harness({ decide: () => new Error('the hold is stale') })
+  try {
+    const first = await openChat(app, state)
+    await find(first.tree, byFlybot('approve-all')).props.onClick()
+    const row = find(render(app.ChatApprovalDock, first.inst, state.props), byFlybot('chat-approval-error'))
+    assert.ok(row, 'the batch draws its one failure row')
+    assert.equal(row.props.role, 'alert', 'the row still announces itself to the reader')
+    assert.match(String(row.props.className), /\bfs-status\b/, `the row takes the status line, saw ${JSON.stringify(row.props.className)}`)
+    assert.equal(row.props['data-tone'], 'error', 'in the error tone, so it does not read as ordinary dock text')
+    assert.match(drawn(row), /the hold is stale/, 'and still says what failed')
+  } finally { delete globalThis.__flybot__ }
+})
