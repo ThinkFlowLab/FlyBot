@@ -47,6 +47,7 @@ test('#1176: a claim with no room here still waits, so the Join button stays', (
   const body = bodyOf('previewLocal')
   const claimed = body.indexOf('if (seen?.claimed) {')
   const branch = body.slice(claimed, body.indexOf('\n        }', claimed) + 1)
-  assert.match(branch, /Waiting for \$\{who\} to let you in/)
+  // The sentence is a dictionary key with a named `{who}` hole (#3114 cut 24), not a `${}` template.
+  assert.match(branch, /Waiting for \{who\} to let you in\./)
   assert.match(branch, /preview: \{/, 'the card stays for a knock nobody answered yet')
 })

@@ -116,7 +116,7 @@ test('#3114 cut 22: the baselines lose these draws and the dictionary gains the 
     assert.deepEqual(still, [], `${file.replace('.baseline.json', '')} still pins ${still[0]}`)
   }
   // The three baselines shrink by exactly these draws and nothing else does: the ratchet's numbers.
-  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [14, 18, 86])
+  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [13, 14, 55])
   // Every new key is the dictionary's, and each answers with Chinese.
   for (const key of [
     'Accept an invite', 'Invite a friend', 'Paste invite link or code',

@@ -1039,17 +1039,17 @@ window.__ModuleLoader__.load({
     const isoAt = (ms) => (Number.isFinite(Number(ms)) && Number(ms) > 0 ? new Date(Number(ms)).toISOString() : '')
     // One sentence per way a room link is refused (#876), never the generic "not an invite link".
     const LOCAL_REFUSAL_COPY = {
-      expired: 'That link has expired. Ask for a new one.',
-      revoked: 'That link was withdrawn. Ask for a new one.',
+      expired: tr('That link has expired. Ask for a new one.'),
+      revoked: tr('That link was withdrawn. Ask for a new one.'),
       // A link admits anyone it is given to (#892): this refusal is about this home's own earlier claim.
-      'claimed-elsewhere': 'You already joined with that link using other Bots. Leave the group first to join with different ones.',
-      'own-invite': 'That link is for this FlyBot\u2019s own room.',
-      busy: 'Too many tries for now. Wait a minute and try again.',
-      unknown: 'That link does not open any room. Check that it was copied whole.',
-      'lookup-failed': 'Bot Social could not look up that link right now. Try again.',
-      consumed: 'That link cannot seat these Bots. Ask for a new one.',
-      'not-addable': 'That room cannot take guests right now.',
-      'no-sender': 'This FlyBot has no Bot Social identity yet.',
+      'claimed-elsewhere': tr('You already joined with that link using other Bots. Leave the group first to join with different ones.'),
+      'own-invite': tr('That link is for this FlyBot’s own room.'),
+      busy: tr('Too many tries for now. Wait a minute and try again.'),
+      unknown: tr('That link does not open any room. Check that it was copied whole.'),
+      'lookup-failed': tr('Bot Social could not look up that link right now. Try again.'),
+      consumed: tr('That link cannot seat these Bots. Ask for a new one.'),
+      'not-addable': tr('That room cannot take guests right now.'),
+      'no-sender': tr('This FlyBot has no Bot Social identity yet.'),
     }
     const localRefusal = (code) => LOCAL_REFUSAL_COPY[String(code ?? '')] ?? LOCAL_REFUSAL_COPY['lookup-failed']
     // The preview card names a room the person has not entered (#798). `name` is that room's own
@@ -1184,7 +1184,7 @@ window.__ModuleLoader__.load({
             disabled: !!busy || (!!invite?.url && live), onClick: mint,
           }, invite?.url && live ? 'Link ready' : tr('Create link'))),
         invite?.unsupported
-          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, INVITE_UNSUPPORTED)
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, tr(INVITE_UNSUPPORTED))
           : null,
         invite?.revoked
           ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-revoked', role: 'status' }, tr('The link was withdrawn. Nobody can join with it now.'))
@@ -1538,11 +1538,11 @@ window.__ModuleLoader__.load({
         event?.preventDefault?.()
         const digits = String(typed ?? code).replace(/\D/g, '').slice(0, 6)
         if (digits.length !== 6) {
-          setStatus({ tone: 'error', text: 'Enter a 6-digit number.' })
+          setStatus({ tone: 'error', text: tr('Enter a 6-digit number.') })
           return
         }
         if (!selected.length) {
-          setStatus({ tone: 'error', text: 'Choose which of your Bots join.' })
+          setStatus({ tone: 'error', text: tr('Choose which of your Bots join.') })
           return
         }
         setBusy(true)
@@ -1581,7 +1581,7 @@ window.__ModuleLoader__.load({
         }
         setFailures(failed)
         if (!last) {
-          setStatus({ tone: 'error', text: failed[0]?.text || 'Could not join that room. Try another number.' })
+          setStatus({ tone: 'error', text: failed[0]?.text || tr('Could not join that room. Try another number.') })
           setBusy(false)
           return
         }
@@ -1639,12 +1639,12 @@ window.__ModuleLoader__.load({
       // per-Bot failure list, and one failure never hides the others.
       const joinTicket = async (text, ticket) => {
         if (!selected.length) {
-          setInvite({ link: text, status: { tone: 'error', text: 'Pick a Bot first.' } })
+          setInvite({ link: text, status: { tone: 'error', text: tr('Pick a Bot first.') } })
           return
         }
         setBusy(true)
         setFailures([])
-        setInvite({ link: text, status: { tone: 'hint', text: 'Joining with that link…' } })
+        setInvite({ link: text, status: { tone: 'hint', text: tr('Joining with that link…') } })
         try {
           const mine = []
           const joined = []
@@ -1655,7 +1655,7 @@ window.__ModuleLoader__.load({
             try {
               const result = await call('social/face-join-invite', { ticket, botId })
               if (result?.unsupported) {
-                setInvite({ link: text, status: { tone: 'error', text: INVITE_UNSUPPORTED } })
+                setInvite({ link: text, status: { tone: 'error', text: tr(INVITE_UNSUPPORTED) } })
                 return
               }
               last = result
@@ -1675,7 +1675,7 @@ window.__ModuleLoader__.load({
           }
           setFailures(failed)
           if (!last) {
-            setInvite({ link: text, status: { tone: 'error', text: failed[0]?.text || 'Could not join that room with that link.' } })
+            setInvite({ link: text, status: { tone: 'error', text: failed[0]?.text || tr('Could not join that room with that link.') } })
             return
           }
           setInvite({ link: text, status: null })
@@ -1696,7 +1696,7 @@ window.__ModuleLoader__.load({
         }
         const ticket = faceInviteTicket(text)
         if (!ticket) {
-          setInvite({ link: text, status: { tone: 'error', text: INVITE_LINK_COPY } })
+          setInvite({ link: text, status: { tone: 'error', text: tr(INVITE_LINK_COPY) } })
           return
         }
         // The card on screen for this ticket already answers the press (#824): asking again would cost
@@ -1705,7 +1705,7 @@ window.__ModuleLoader__.load({
         if (invite.preview?.ticket === ticket) return
         setBusy(true)
         setFailures([])
-        setInvite({ link: text, status: { tone: 'hint', text: 'Looking up that room…' } })
+        setInvite({ link: text, status: { tone: 'hint', text: tr('Looking up that room…') } })
         let seen = null
         try {
           seen = await call('social/face-invite-preview', { ticket })
@@ -1717,7 +1717,7 @@ window.__ModuleLoader__.load({
         // The invite feature itself is off on that server, so a join would answer the same sentence
         // and reach no route: the dialog stops here, the way the join path already did (#798).
         if (seen?.unsupported === true) {
-          setInvite({ link: text, status: { tone: 'error', text: INVITE_UNSUPPORTED } })
+          setInvite({ link: text, status: { tone: 'error', text: tr(INVITE_UNSUPPORTED) } })
           return
         }
         const card = invitePreview(seen)
@@ -1733,7 +1733,7 @@ window.__ModuleLoader__.load({
         if (invite.preview?.local && invite.preview.link === text) return
         setBusy(true)
         setFailures([])
-        setInvite({ link: text, status: { tone: 'hint', text: 'Looking up that room…' } })
+        setInvite({ link: text, status: { tone: 'hint', text: tr('Looking up that room…') } })
         let seen = null
         try {
           seen = (await host('room-invite-preview', { link: text }))?.preview ?? null
@@ -1751,29 +1751,29 @@ window.__ModuleLoader__.load({
         if (seen?.joined) {
           // #1176: the room is here however it arrived — a link this home claimed (#899), or the host
           // adding one of these Bots by add-member. Neither is a knock: no Join card, no claim sent.
-          setInvite({ link: text, status: { tone: 'hint', text: 'This group is already in your sidebar.' } })
+          setInvite({ link: text, status: { tone: 'hint', text: tr('This group is already in your sidebar.') } })
           return
         }
         if (seen?.claimed) {
           // #899: a claim with no room here is a knock nobody answered yet: say so, and let Join knock again.
-          const who = seen.owner || seen.lead || 'the group\u2019s owner'
-          setInvite({ link: text, status: { tone: 'hint', text: `Waiting for ${who} to let you in. If the group does not appear, press Join group to ask again.` }, preview: { ...(card ?? { name: 'A group on another FlyBot', lead: '', people: '', expiresAt: '', clockOffsetMs: 0 }), local: true, link: text } })
+          const who = seen.owner || seen.lead || tr('the group’s owner')
+          setInvite({ link: text, status: { tone: 'hint', text: tr('Waiting for {who} to let you in. If the group does not appear, press Join group to ask again.', { who }) }, preview: { ...(card ?? { name: tr('A group on another FlyBot'), lead: '', people: '', expiresAt: '', clockOffsetMs: 0 }), local: true, link: text } })
           return
         }
         if (!card) {
           // An older server has no record to read: the friend's knock is still the way in.
-          setInvite({ link: text, status: null, preview: { name: 'A group on another FlyBot', lead: '', people: '', expiresAt: '', clockOffsetMs: 0, local: true, link: text } })
+          setInvite({ link: text, status: null, preview: { name: tr('A group on another FlyBot'), lead: '', people: '', expiresAt: '', clockOffsetMs: 0, local: true, link: text } })
           return
         }
         setInvite({ link: text, status: null, preview: { ...card, local: true, link: text } })
       }
       const joinLocal = async (text) => {
         if (!selected.length) {
-          setInvite(current => ({ ...current, status: { tone: 'error', text: 'Pick a Bot first.' } }))
+          setInvite(current => ({ ...current, status: { tone: 'error', text: tr('Pick a Bot first.') } }))
           return
         }
         setBusy(true)
-        setInvite(current => ({ ...current, status: { tone: 'hint', text: 'Joining with that link…' } }))
+        setInvite(current => ({ ...current, status: { tone: 'hint', text: tr('Joining with that link…') } }))
         try {
           const result = await host('room-invite-ask', { link: text, accept: true, bots: selected })
           if (result?.refused) {
@@ -1789,21 +1789,22 @@ window.__ModuleLoader__.load({
               status: {
                 tone: 'error',
                 text: sent === 'hold'
-                  ? 'This FlyBot has not approved the request yet, so their group has not been asked.'
-                  : 'Their FlyBot was not asked. Check the link and try again.',
+                  ? tr('This FlyBot has not approved the request yet, so their group has not been asked.')
+                  : tr('Their FlyBot was not asked. Check the link and try again.'),
               },
             })
             return
           }
-          const name = invite.preview?.name && invite.preview.name !== 'A group on another FlyBot' ? `"${invite.preview.name}"` : 'the group'
-          setInvite({ link: '', status: { tone: 'ok', text: `Asked to join ${name}. It opens in your sidebar as soon as their FlyBot seats your Bots.` } })
+          // The placeholder name is drawn translated, so the comparison asks for the same translation.
+          const name = invite.preview?.name && invite.preview.name !== tr('A group on another FlyBot') ? `"${invite.preview.name}"` : tr('the group')
+          setInvite({ link: '', status: { tone: 'ok', text: tr('Asked to join {name}. It opens in your sidebar as soon as their FlyBot seats your Bots.', { name }) } })
         } catch (e) {
           setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
         } finally { setBusy(false) }
       }
       // One sentence per way a scan can fail, and the number field is untouched either way.
       const beginScan = () => {
-        setScan({ tone: 'hint', text: 'Point the camera at a FlyBot room code.' })
+        setScan({ tone: 'hint', text: tr('Point the camera at a FlyBot room code.') })
         startFaceScan((result) => {
           if (result?.fail) {
             setScan({ tone: 'error', text: FACE_SCAN_COPY[result.fail] ?? FACE_SCAN_COPY.camera })
@@ -1811,12 +1812,12 @@ window.__ModuleLoader__.load({
           }
           const raw = String(result?.raw ?? '')
           if (localInviteHandle(raw)) {
-            setScan({ tone: 'ok', text: 'Scanned a group link.' })
+            setScan({ tone: 'ok', text: tr('Scanned a group link.') })
             void previewLocal(raw)
             return
           }
           if (faceInviteTicket(raw)) {
-            setScan({ tone: 'ok', text: 'Scanned an invite link.' })
+            setScan({ tone: 'ok', text: tr('Scanned an invite link.') })
             void previewLink(raw)
             return
           }
@@ -1826,9 +1827,9 @@ window.__ModuleLoader__.load({
             return
           }
           setCode(digits)
-          setScan({ tone: 'ok', text: `Scanned ${digits}.` })
+          setScan({ tone: 'ok', text: tr('Scanned {code}.', { code: digits }) })
           if (selected.length) void join(null, { code: digits })
-          else setStatus({ tone: 'hint', text: `Scanned ${digits}. Pick a Bot to join.` })
+          else setStatus({ tone: 'hint', text: tr('Scanned {code}. Pick a Bot to join.', { code: digits }) })
         })
       }
       const members = room?.members ?? []
@@ -1889,7 +1890,7 @@ window.__ModuleLoader__.load({
                 }, tr('Enter chat')),
               }))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
             h('div', { className: 'fs-hint', 'data-flybot': 'face-join-about' }, tr(starting ? START_FACE_ABOUT : JOIN_OR_CREATE_ABOUT)),
-            h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
+            h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': tr('Your Bots') },
               bots.map(bot => h(FaceTile, {
                 key: bot.id,
                 bot: faceLook({ roster, local: bot }),
@@ -1898,7 +1899,7 @@ window.__ModuleLoader__.load({
                 selected: selected.includes(bot.id),
                 onToggle: () => toggle(bot.id),
               }))),
-            bots.length === 0 ? h('div', { className: 'fs-hint' }, 'Loading your Bots…') : null,
+            bots.length === 0 ? h('div', { className: 'fs-hint' }, tr('Loading your Bots…')) : null,
             h('div', { className: 'fs-hint', 'data-flybot': 'face-join-room' },
               tr('Room-only: friends do not see these Bots unless you invite them.')),
             h('div', { className: 'fs-line' },
@@ -2934,11 +2935,11 @@ window.__ModuleLoader__.load({
     // No camera, no platform decoder, or a camera the owner refused: one sentence each, and
     // typing the number keeps working. FlyBot never decodes pixels itself.
     const FACE_SCAN_COPY = {
-      'no-detector': 'This browser cannot scan codes. Type the 6-digit number instead.',
-      'no-camera': 'This browser cannot use a camera here. Type the 6-digit number instead.',
-      denied: 'FlyBot cannot use the camera. Allow the camera for this page, or type the 6-digit number instead.',
-      foreign: 'That is not a FlyBot room code. Ask for the 6-digit number instead.',
-      camera: 'The camera stopped before it read a code. Type the 6-digit number instead.',
+      'no-detector': tr('This browser cannot scan codes. Type the 6-digit number instead.'),
+      'no-camera': tr('This browser cannot use a camera here. Type the 6-digit number instead.'),
+      denied: tr('FlyBot cannot use the camera. Allow the camera for this page, or type the 6-digit number instead.'),
+      foreign: tr('That is not a FlyBot room code. Ask for the 6-digit number instead.'),
+      camera: tr('The camera stopped before it read a code. Type the 6-digit number instead.'),
     }
     const faceScanSupport = () => {
       if (typeof globalThis.BarcodeDetector !== 'function') return 'no-detector'
