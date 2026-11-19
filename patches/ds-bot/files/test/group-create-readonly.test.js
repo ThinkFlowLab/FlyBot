@@ -12,7 +12,7 @@ import { build } from 'esbuild'
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { NewGroupForm } from './src/client/group-settings.js'\nexport { NewChat } from './src/client/new-chat.js'",
+    contents: "export { DICTIONARY } from './src/client/i18n.js'\nexport { NewGroupForm } from './src/client/group-settings.js'\nexport { NewChat } from './src/client/new-chat.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -54,7 +54,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { NewGroupForm, NewChat } = module.exports
+const { NewGroupForm, NewChat, DICTIONARY } = module.exports
 
 const chief = { id: 'chief', name: 'Chief', remote: false }
 const scout = { id: 'scout', name: 'Scout', remote: false }
@@ -122,6 +122,9 @@ const press = (nodes, predicate) => {
 const chips = nodes => nodes.filter(node => hasClass(node, 'bt-ng-chip'))
 const groupCreate = nodes => nodes.filter(node => hasClass(node, 'bt-send') && ownText(node).trim() === 'Create group chat')
 const readOnlyLine = nodes => nodes.filter(node => hasClass(node, 'bt-read-only'))
+const nameField = nodes => nodes.filter(node => node.type === 'input' && node.props?.['aria-label'] === 'Group name')
+const noteOf = nodes => nodes.filter(node => hasClass(node, 'bt-note') && hasClass(node, 'bt-danger'))
+const rosterWithRoom = name => ({ ...base, rooms: [{ id: 'r-taken', name, named: true, members: ['chief', 'scout'], admin: 'chief' }] })
 
 // Settings → Group chats → Create group chat → NewGroupForm: pick an admin and one member, then
 // press Create. A locked window must not send create-room.
@@ -161,6 +164,25 @@ const newChatGroup = async (roster) => {
   return { calls, nodes, create }
 }
 
+const newChatNamed = async (roster, name) => {
+  const { calls, actions } = actionsOf()
+  const pane = mount(NewChat, { mode: 'group', roster, actions })
+  let nodes = pane.draw()
+  press(nodes, node => node.props?.role === 'option' && ownText(node).includes('Chief'))
+  await flush()
+  nodes = pane.draw()
+  press(nodes, node => node.props?.role === 'option' && ownText(node).includes('Scout'))
+  await flush()
+  nodes = pane.draw()
+  const field = nameField(nodes)
+  if (field[0]) field[0].props.onChange({ target: { value: name } })
+  nodes = pane.draw()
+  const create = groupCreate(nodes)[0]
+  if (create && !create.props.disabled) create.props.onClick()
+  await flush()
+  return { calls, nodes, create, field }
+}
+
 test('a read-only window draws no group-create control on the Settings form and sends nothing', async () => {
   const locked = await settingsGroup(rosterWith(SENTENCE))
   assert.equal(locked.calls.length, 0, 'no write action reaches the host')
@@ -196,4 +218,28 @@ test('a writable window keeps both group-create controls and still writes', asyn
     assert.equal(pane.calls[0][0], 'create-room')
     assert.equal(readOnlyLine(pane.nodes).length, 0, 'no read-only line in a writable window')
   }
+})
+
+test('#3114: the New… group pane offers a group name and sends it with create-room', async () => {
+  const pane = await newChatNamed(rosterWith(undefined), 'Launch')
+  assert.equal(pane.field.length, 1, 'the pane offers one name field')
+  assert.equal(pane.calls.length, 1, 'Create group chat reaches the host once')
+  assert.equal(pane.calls[0][2].name, 'Launch', 'the typed name goes with create-room')
+  assert.equal(DICTIONARY.zh['A group chat named {name} already exists'], '已经有叫「{name}」的群聊了')
+})
+
+test('#3114: a blank group name is left out, so the room keeps its member names', async () => {
+  const pane = await newChatNamed(rosterWith(undefined), '   ')
+  assert.equal(pane.field.length, 1, 'the pane still offers the field')
+  assert.equal(pane.calls.length, 1, 'the group is still made')
+  assert.equal('name' in pane.calls[0][2], false, 'a blank name sends no name key')
+})
+
+test('#3114: a group name another group already uses is refused before the write', async () => {
+  const pane = await newChatNamed(rosterWithRoom('Launch'), ' launch ')
+  assert.equal(pane.create?.props?.disabled, true, 'Create is disabled for a taken name')
+  assert.equal(pane.calls.length, 0, 'no create-room reaches the host')
+  const note = noteOf(pane.nodes)
+  assert.equal(note.length, 1, 'the pane says the name is taken')
+  assert.equal(ownText(note[0]).trim(), 'A group chat named Launch already exists')
 })

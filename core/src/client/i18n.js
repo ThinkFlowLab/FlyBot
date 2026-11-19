@@ -625,6 +625,7 @@ const ZH = {
   'Replace photo': '更换照片',
   'Upload photo': '上传照片',
   'A Bot named {name} already exists': '已经有叫 {name} 的 Bot 了',
+  'A group chat named {name} already exists': '已经有叫「{name}」的群聊了',
   'The Bot runs on this model. You can change it later in its details.': 'Bot 会使用这个模型。以后可以在详情里修改。',
   "Add a provider and a model in DeepSeek Harness first, or pick one in the Bot's chat later.": '请先在 DeepSeek Harness 里添加服务商和模型，或者稍后在 Bot 的对话里选择。',
   'Creating…': '创建中…',

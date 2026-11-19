@@ -496,6 +496,14 @@ diff --git a/client.js b/client.js
    // Group chat settings
    "Leave it empty to name the group after its members.": "留空就按成员命名。",
    "Every member reads it before speaking in this group.": "每位成员在这个群里发言前都会读到。",
+@@ -285,6 +285,7 @@ var ZH = {
+   "Replace photo": "更换照片",
+   "Upload photo": "上传照片",
+   "A Bot named {name} already exists": "已经有叫 {name} 的 Bot 了",
++  "A group chat named {name} already exists": "已经有叫「{name}」的群聊了",
+   "The Bot runs on this model. You can change it later in its details.": "Bot 会使用这个模型。以后可以在详情里修改。",
+   "Add a provider and a model in DeepSeek Harness first, or pick one in the Bot's chat later.": "请先在 DeepSeek Harness 里添加服务商和模型，或者稍后在 Bot 的对话里选择。",
+   "Creating…": "创建中…",
 @@ -303,6 +303,8 @@ var ZH = {
    "Harness default": "Harness 默认",
    Saving: "保存中",
@@ -2218,7 +2226,7 @@ diff --git a/client.js b/client.js
  var formatTokens = (count) => count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1e3 ? `${(count / 1e3).toFixed(1)}K` : String(count);
  function usageOf(list, ids) {
    let input = 0;
-@@ -1624,537 +1624,3127 @@ function usageOf(list, ids) {
+@@ -1624,537 +1624,3130 @@ function usageOf(list, ids) {
    const hit = input > 0 ? Math.round(cacheRead / input * 100) : 0;
    return t("{tokens} tok · Cache hit {hit}%", { tokens: formatTokens(input + output), hit });
  }
@@ -5792,6 +5800,9 @@ diff --git a/client.js b/client.js
 +.bt-readonly-line-head{padding:0 20px 8px}
 +.bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
 +.bt-nc-spacer{flex:1}
++.bt-nc-name{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-size:13px;box-sizing:border-box}
++.bt-nc-name input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
++.bt-nc-name+.bt-drop{top:82px}
 +.bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
 +.bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
 +.bt-nc-plus{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2);background:var(--bt-hover);flex:none}
@@ -10553,7 +10564,6 @@ diff --git a/client.js b/client.js
      }
 -    if (source.kind === "user-question-reply") return null;
 -    return (0, import_react6.createElement)("div", { className: "bt-event" }, contentText(data.content).slice(0, 80) || t("Update"));
--  }
 +    let timer;
 +    const leave = () => {
 +      setPhase((current) => current === "in" ? "out" : current);
@@ -10611,9 +10621,7 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  ), host);
- }
--function NewDivider() {
--  return (0, import_react6.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react6.createElement)("span", null, t("New")));
++}
 +
 +// src/shared/session-list-filter.js
 +var SESSION_FILTERS = ["all", "group", "direct", "unread"];
@@ -10628,39 +10636,20 @@ diff --git a/client.js b/client.js
 +  if (markedUnread?.[item.id]) return true;
 +  if (entry.kind === "agent") {
 +    return (item.sessions ?? []).some((id) => sessionStatusOf(statusMap, id)?.completionUnread === true);
-+  }
+   }
 +  if (entry.kind === "room") {
 +    return sessionStatusOf(statusMap, item.id)?.completionUnread === true;
 +  }
 +  const part = item.sessionId ?? item.id;
 +  const status = sessionStatusOf(statusMap, part);
 +  return status?.completionUnread === true || status?.pendingInteraction !== void 0;
- }
--function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
--  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
--  (0, import_react6.useEffect)(() => {
--    if (!open) turnProcess.setOpen(true);
--  }, [open, turnProcess]);
--  const turn = node?.location?.turn?.turn ?? node?.data?.turn;
--  const start = node?.location?.turn?.start?.time;
--  const hidden = useRoster((roster) => isHiddenTurn(roster, sessionId, turn));
--  (0, import_react6.useEffect)(() => {
--    actions.noteTurnTime(sessionId, turn, "first", start);
--  }, [sessionId, turn, start]);
--  const visit = useUi((state) => state.visits?.[sessionId]);
--  const fresh = useTurnClock((state) => {
--    const own = state[sessionId]?.[turn];
--    return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
--  });
--  return fresh ? (0, import_react6.createElement)(NewDivider) : null;
++}
 +function matchesSessionFilter(entry, filter, unread = false) {
 +  if (filter === "group") return entry?.kind === "room";
 +  if (filter === "direct") return entry?.kind === "bot" || entry?.kind === "agent";
 +  if (filter === "unread") return unread === true;
 +  return true;
- }
--function Nothing() {
--  return null;
++}
 +
 +// src/client/dsh-offer.js
 +var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
@@ -10671,16 +10660,8 @@ diff --git a/client.js b/client.js
 +  if (dsh.kind === "npm") return true;
 +  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
  }
--var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
--function clockLabel(time, now = Date.now()) {
--  const date = new Date(time);
--  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
--  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
--  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
--  if (days === 0) return t("Today {time}", { time: clock4 });
--  if (days === 1) return t("Yesterday {time}", { time: clock4 });
--  const sameYear = date.getFullYear() === new Date(now).getFullYear();
--  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
+-function NewDivider() {
+-  return (0, import_react6.createElement)("div", { className: "bt-new-sep", role: "separator", "aria-label": t("New messages") }, (0, import_react6.createElement)("span", null, t("New")));
 +
 +// src/client/overlay-hooks.js
 +var import_react14 = require("react");
@@ -10700,13 +10681,23 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
  }
--function nextTurnStart(turns, turn) {
--  let next;
--  for (const key in turns) {
--    const candidate = Number(key);
--    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
--  }
--  return next === void 0 ? void 0 : turns[next].first;
+-function TurnProcessCell({ node, sessionId, turnProcess, useRoster, useUi, useTurnClock, actions }) {
+-  const open = turnProcess === void 0 || !turnProcess.foldable || turnProcess.open;
+-  (0, import_react6.useEffect)(() => {
+-    if (!open) turnProcess.setOpen(true);
+-  }, [open, turnProcess]);
+-  const turn = node?.location?.turn?.turn ?? node?.data?.turn;
+-  const start = node?.location?.turn?.start?.time;
+-  const hidden = useRoster((roster) => isHiddenTurn(roster, sessionId, turn));
+-  (0, import_react6.useEffect)(() => {
+-    actions.noteTurnTime(sessionId, turn, "first", start);
+-  }, [sessionId, turn, start]);
+-  const visit = useUi((state) => state.visits?.[sessionId]);
+-  const fresh = useTurnClock((state) => {
+-    const own = state[sessionId]?.[turn];
+-    return !hidden && typeof visit?.seen === "number" && own?.first !== void 0 && own.first <= visit.seen && own.end !== void 0 && own.end > visit.seen && own.end <= visit.entered;
+-  });
+-  return fresh ? (0, import_react6.createElement)(NewDivider) : null;
 +function useDialogFocus(ref) {
 +  (0, import_react14.useEffect)(() => {
 +    const before = document.activeElement;
@@ -10719,14 +10710,8 @@ diff --git a/client.js b/client.js
 +    };
 +  }, []);
  }
--function openingTurn(turns, firstTurns, hiddenTurns) {
--  if (!turns || !firstTurns) return null;
--  const start = nextTurnStart(turns, -Infinity);
--  if (start === void 0) return null;
--  const turn = Number(Object.keys(turns).filter((key) => turns[key].first === start)[0]);
--  const listed = firstTurns.split(",").map(Number);
--  const earlier = listed.filter((entry) => entry < turn);
--  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
+-function Nothing() {
+-  return null;
 +function usePaneLeft() {
 +  const [paneLeft, setPaneLeft] = (0, import_react14.useState)(280);
 +  (0, import_react14.useLayoutEffect)(() => {
@@ -10735,16 +10720,16 @@ diff --git a/client.js b/client.js
 +  }, []);
 +  return paneLeft;
  }
--var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
--function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
--  const turn = location2.turn;
--  const time = location2.end.time;
--  (0, import_react6.useEffect)(() => {
--    actions.noteTurnTime(sessionId, turn, "end", time);
--  }, [sessionId, turn, time]);
--  const label = useTurnClock((state) => {
--    const start = nextTurnStart(state[sessionId] ?? {}, turn);
--    return start !== void 0 && start - time >= SEPARATOR_GAP_MS ? clockLabel(start) : "";
+-var SEPARATOR_GAP_MS = 30 * 60 * 1e3;
+-function clockLabel(time, now = Date.now()) {
+-  const date = new Date(time);
+-  const midnight = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+-  const days = Math.round((midnight(new Date(now)) - midnight(date)) / 864e5);
+-  const clock4 = date.toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit" });
+-  if (days === 0) return t("Today {time}", { time: clock4 });
+-  if (days === 1) return t("Yesterday {time}", { time: clock4 });
+-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+-  return `${date.toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } })} ${clock4}`;
 +
 +// src/client/member-status.js
 +var import_react15 = require("react");
@@ -10766,22 +10751,48 @@ diff --git a/client.js b/client.js
 +    const doing = workIn(room2, work, id);
 +    const approvals = askedIn(room2, work, id, doing);
 +    return { id, approvals, doing, here: doing !== void 0, state: approvals.length > 0 ? "ask" : doing ? "work" : "idle" };
-   });
++  });
+ }
+-function nextTurnStart(turns, turn) {
+-  let next;
+-  for (const key in turns) {
+-    const candidate = Number(key);
+-    if (candidate > turn && turns[key].first !== void 0 && (next === void 0 || candidate < next)) next = candidate;
+-  }
+-  return next === void 0 ? void 0 : turns[next].first;
++function busyMembers(room2, work, roster) {
++  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
++  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
+ }
+-function openingTurn(turns, firstTurns, hiddenTurns) {
+-  if (!turns || !firstTurns) return null;
+-  const start = nextTurnStart(turns, -Infinity);
+-  if (start === void 0) return null;
+-  const turn = Number(Object.keys(turns).filter((key) => turns[key].first === start)[0]);
+-  const listed = firstTurns.split(",").map(Number);
+-  const earlier = listed.filter((entry) => entry < turn);
+-  return listed.includes(turn) && earlier.every((entry) => hiddenTurns?.includes(entry)) ? { turn, start } : null;
++function splitBusy(busy) {
++  const here = busy.filter((entry) => entry.state === "work" && entry.here);
++  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
++  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
+ }
+-var unseenSince = (visit, time) => typeof visit?.seen === "number" && time > visit.seen && time <= visit.entered;
+-function TurnTailCell({ turn: location2, sessionId, useTurnClock, useUi, actions }) {
+-  const turn = location2.turn;
+-  const time = location2.end.time;
+-  (0, import_react6.useEffect)(() => {
+-    actions.noteTurnTime(sessionId, turn, "end", time);
+-  }, [sessionId, turn, time]);
+-  const label = useTurnClock((state) => {
+-    const start = nextTurnStart(state[sessionId] ?? {}, turn);
+-    return start !== void 0 && start - time >= SEPARATOR_GAP_MS ? clockLabel(start) : "";
+-  });
 -  const visit = useUi((state) => state.visits?.[sessionId]);
 -  const fresh = useTurnClock((state) => {
 -    if (typeof visit?.seen !== "number" || time > visit.seen) return false;
 -    const start = nextTurnStart(state[sessionId] ?? {}, turn);
 -    return start !== void 0 && start > visit.seen && start <= visit.entered;
-+}
-+function busyMembers(room2, work, roster) {
-+  const busy = memberWork(room2, work).filter((entry) => entry.state !== "idle" && roster.byId[entry.id]);
-+  return [...busy.filter((entry) => entry.state === "ask"), ...busy.filter((entry) => entry.state === "work")].map((entry) => ({ ...entry, bot: roster.byId[entry.id] }));
-+}
-+function splitBusy(busy) {
-+  const here = busy.filter((entry) => entry.state === "work" && entry.here);
-+  const rows = [...here.filter((entry) => entry.doing.speaking === true), ...here.filter((entry) => entry.doing.speaking !== true)].slice(0, ROWS_MAX);
-+  return { rows, rest: busy.filter((entry) => !rows.includes(entry)) };
-+}
 +function botGroupWork(botId, work, roster) {
 +  return Object.entries(work.rooms ?? {}).flatMap(([roomId, entries2]) => {
 +    const entry = entries2.find((item) => item.botId === botId);
@@ -12202,7 +12213,7 @@ diff --git a/client.js b/client.js
      )
 -  ), host);
 +  );
- }
++}
 +var INBOX_CSS = `
 +.bt-inbox-row{min-height:40px;padding:6px 8px;gap:10px}
 +.bt-inbox-mark{flex:none;width:36px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
@@ -12256,15 +12267,7 @@ diff --git a/client.js b/client.js
 +.bt-inbox-actions{flex:none;display:flex;align-items:center;gap:6px;align-self:center}
 +.bt-inbox-actions .bt-send{height:28px;font-size:12px}
 +`;
- 
--// src/client/dsh-offer.js
--var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
--var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
--var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
--function showsDshRow(dsh, app) {
--  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
--  if (dsh.kind === "npm") return true;
--  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
++
 +// src/shared/board-card.js
 +function taskCardKey(id) {
 +  const text2 = String(id ?? "").trim();
@@ -12281,14 +12284,14 @@ diff --git a/client.js b/client.js
 +  };
  }
  
--// src/client/sidebar.js
--var import_react8 = require("react");
--var import_react_dom3 = require("react-dom");
--var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
--function useMarkedUnread(id, active, marked, actions) {
--  (0, import_react8.useEffect)(() => {
--    if (active && marked) actions.clearUnread(id);
--  }, [active, marked]);
+-// src/client/dsh-offer.js
+-var APP_OFFER = /* @__PURE__ */ new Set(["available", "downloading", "verifying", "installing", "ready"]);
+-var bare = (value) => String(value ?? "").trim().replace(/^v/i, "").split("+")[0];
+-var sameVersion = (a, b) => bare(a) !== "" && bare(a) === bare(b);
+-function showsDshRow(dsh, app) {
+-  if (!dsh?.verified || !dsh.current || sameVersion(dsh.verified, dsh.current)) return false;
+-  if (dsh.kind === "npm") return true;
+-  return dsh.kind === "app" && APP_OFFER.has(app?.phase) && sameVersion(app.version, dsh.verified);
 +// src/client/board-card.js
 +var import_react17 = require("react");
 +var TASK_SKIN = {
@@ -12350,8 +12353,16 @@ diff --git a/client.js b/client.js
 +    footer,
 +    actions
 +  );
-+}
-+
+ }
+ 
+-// src/client/sidebar.js
+-var import_react8 = require("react");
+-var import_react_dom3 = require("react-dom");
+-var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
+-function useMarkedUnread(id, active, marked, actions) {
+-  (0, import_react8.useEffect)(() => {
+-    if (active && marked) actions.clearUnread(id);
+-  }, [active, marked]);
 +// src/client/kanban.js
 +var import_react18 = require("react");
 +var POLL_MS4 = 15e3;
@@ -15145,6 +15156,35 @@ diff --git a/client.js b/client.js
 -    }
 -    const rect = button.current.getBoundingClientRect();
 -    setOpen({ left: rect.left, bottom: window.innerHeight - rect.top + 8 });
+-  };
+-  const attach = () => {
+-    setOpen(null);
+-    button.current?.closest("[data-composer-card]")?.querySelector("input[type=file]")?.click();
+-  };
+-  const schedule = () => {
+-    setOpen(null);
+-    actions.openSettings("schedules", target);
+-  };
+-  const reference = () => {
+-    setOpen(null);
+-    actions.referenceChat(sessionId, inputActions?.captureInsertion?.());
+-  };
+-  const canReference = typeof inputActions?.captureInsertion === "function" && actions.canReferenceChat();
+-  return (0, import_react10.createElement)(
+-    import_react10.Fragment,
+-    null,
+-    (0, import_react10.createElement)("button", {
+-      ref: button,
+-      type: "button",
+-      className: "bt-plus",
+-      "aria-label": t("Add"),
+-      title: t("Add"),
+-      "aria-haspopup": "menu",
+-      "aria-expanded": Boolean(open),
+-      onMouseDown: keepComposerFocus,
+-      onClick: toggle
+-    }, (0, import_react10.createElement)(PlusIcon)),
+-    shown ? (0, import_react_dom5.createPortal)((0, import_react10.createElement)(
 +  }, [active]);
 +  return host;
 +}
@@ -15175,7 +15215,20 @@ diff --git a/client.js b/client.js
 +    },
 +    (0, import_react22.createElement)(BotMark, { bot, size: 28, state: "thinking", live: true }),
 +    (0, import_react22.createElement)(
-+      "div",
+       "div",
+-      {
+-        ref: menu,
+-        className: "bt-menu bt-menu-up bt-plus-menu",
+-        role: "menu",
+-        "aria-label": t("Add"),
+-        style: { left: shown.left, bottom: shown.bottom },
+-        "data-leaving": leaving || void 0
+-      },
+-      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: attach }, (0, import_react10.createElement)(PaperclipIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Add files"))),
+-      canReference ? (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onMouseDown: keepComposerFocus, onClick: reference }, (0, import_react10.createElement)(ChatsIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Reference a chat"))) : null,
+-      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: schedule }, (0, import_react10.createElement)(ClockIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))
+-    ), document.body) : null
+-  );
 +      { className: "bt-astack" },
 +      (0, import_react22.createElement)(
 +        "div",
@@ -15194,7 +15247,7 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  ), host);
-+}
+ }
 +var BUSY_ACK_CSS = `
 +.bt-busy-ack{display:flex;align-items:flex-end;gap:8px;width:100%;margin-top:var(--dsh-chat-flow-gap,12px);margin-bottom:4px}
 +.bt-busy-ack .bt-astack{align-items:flex-start}
@@ -15205,7 +15258,18 @@ diff --git a/client.js b/client.js
 +@keyframes bt-busy-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 +@media (prefers-reduced-motion:reduce){.bt-busy-dots>span{animation:none;opacity:.6}}
 +`;
-+
+ 
+-// src/client/at-menu.js
+-var BOTS_SOURCE = "ds-bot";
+-var CHATS_SOURCE = "ds-bot-chats";
+-var ROOM_ALL = ["all", "everyone", "所有人", "全体"];
+-var OTHER_CHATS_MAX = 8;
+-var conversationOf = (roster, sessionId) => {
+-  if (!roster.ready) return null;
+-  const room2 = roster.roomsById[sessionId];
+-  if (room2) return { room: room2 };
+-  const self = roster.byId[sessionId];
+-  return self ? { self } : null;
 +// src/client/project-board.js
 +var import_react23 = require("react");
 +var PROJECT_BOARD_CSS = `
@@ -15352,7 +15416,16 @@ diff --git a/client.js b/client.js
 +    return id === "" ? null : { kind: "bot", id };
 +  }
 +  return null;
-+};
+ };
+-function mentionRows(roster, sessionId, query = "") {
+-  const here = conversationOf(roster, sessionId);
+-  if (here === null) return null;
+-  const bots = here.room ? here.room.members.map((id) => roster.byId[id]).filter(Boolean) : roster.bots.filter((bot) => bot.id !== here.self.id);
+-  const needle = query.trim().toLowerCase();
+-  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
+-  const everyone = t("Everyone");
+-  if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
+-    rows.push({ room: here.room, text: `@${everyone} ` });
 +var decisionOf = (file) => {
 +  if (file === null || typeof file !== "object") return null;
 +  const path = text(file.path);
@@ -15365,10 +15438,7 @@ diff --git a/client.js b/client.js
 +    title: text(file.title),
 +    sha256: text(file.sha256),
 +    shortHash: text(file.sha256).slice(0, 12)
-   };
--  const attach = () => {
--    setOpen(null);
--    button.current?.closest("[data-composer-card]")?.querySelector("input[type=file]")?.click();
++  };
 +};
 +var meetingOf = (meeting, status) => {
 +  if (meeting === null || typeof meeting !== "object") return null;
@@ -15392,10 +15462,7 @@ diff --git a/client.js b/client.js
 +    // #1861: the host's participants with who each position speaks for, so the row can say a
 +    // Project Chief or an agent held it for someone rather than for themselves.
 +    participants: Array.isArray(meeting.participants) ? meeting.participants.map((participant) => ({ name: text(participant?.name), speaksFor: text(participant?.speaksFor) || null })).filter((participant) => participant.name !== "") : []
-   };
--  const schedule = () => {
--    setOpen(null);
--    actions.openSettings("schedules", target);
++  };
 +};
 +var listOf = (value) => Array.isArray(value) ? value.map((item) => decisionOf(item)).filter((item) => item !== null) : [];
 +var NO_WORKING_FOLDER = "no working folder: this Project names none";
@@ -15406,7 +15473,8 @@ diff --git a/client.js b/client.js
 +  if (named !== null && typeof named === "object") {
 +    const key = text(named.key);
 +    if (key !== "") return named.params !== null && typeof named.params === "object" ? { key, params: named.params } : { key };
-+  }
+   }
+-  return rows;
 +  const prose = text(record?.reason);
 +  if (prose.startsWith("unreadable: ")) return { host: prose };
 +  return fallbackParams === void 0 ? { key: fallbackKey } : { key: fallbackKey, params: fallbackParams };
@@ -15442,11 +15510,15 @@ diff --git a/client.js b/client.js
 +      empty: decided.length === 0 && pending.length === 0,
 +      emptyText: emptyLineOf(meetings, NO_MEETING)
 +    }
-   };
--  const reference = () => {
--    setOpen(null);
--    actions.referenceChat(sessionId, inputActions?.captureInsertion?.());
-+}
++  };
+ }
+-function chatRows(roster, list, sessionId) {
+-  const here = conversationOf(roster, sessionId);
+-  if (here === null) return [];
+-  const byId = list?.byId ?? {};
+-  const bots = roster.bots.filter((bot) => bot.id !== here.self?.id).map((bot) => {
+-    const id = currentPart(bot);
+-    return { sessionId: id, label: t("Chat with {name}", { name: bot.name }), bot, updatedAt: byId[id]?.updatedAt };
 +function projectBoardView({ project, rows, done, canManage, tasks, decisions, meetings, queues, metrics } = {}) {
 +  const isRow = (row) => row !== null && typeof row === "object" && text(row.id) !== "";
 +  const byId = new Map((Array.isArray(tasks) ? tasks : []).filter((task) => task !== null && typeof task === "object" && text(task.id) !== "").map((task) => [text(task.id), task]));
@@ -15479,36 +15551,7 @@ diff --git a/client.js b/client.js
 +      speaksFor: text(row.speaksFor) || null,
 +      board: boardOfRow(row, task)
 +    };
-   };
--  const canReference = typeof inputActions?.captureInsertion === "function" && actions.canReferenceChat();
--  return (0, import_react10.createElement)(
--    import_react10.Fragment,
--    null,
--    (0, import_react10.createElement)("button", {
--      ref: button,
--      type: "button",
--      className: "bt-plus",
--      "aria-label": t("Add"),
--      title: t("Add"),
--      "aria-haspopup": "menu",
--      "aria-expanded": Boolean(open),
--      onMouseDown: keepComposerFocus,
--      onClick: toggle
--    }, (0, import_react10.createElement)(PlusIcon)),
--    shown ? (0, import_react_dom5.createPortal)((0, import_react10.createElement)(
--      "div",
--      {
--        ref: menu,
--        className: "bt-menu bt-menu-up bt-plus-menu",
--        role: "menu",
--        "aria-label": t("Add"),
--        style: { left: shown.left, bottom: shown.bottom },
--        "data-leaving": leaving || void 0
--      },
--      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: attach }, (0, import_react10.createElement)(PaperclipIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Add files"))),
--      canReference ? (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onMouseDown: keepComposerFocus, onClick: reference }, (0, import_react10.createElement)(ChatsIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Reference a chat"))) : null,
--      (0, import_react10.createElement)("button", { type: "button", role: "menuitem", onClick: schedule }, (0, import_react10.createElement)(ClockIcon), (0, import_react10.createElement)("span", { className: "bt-menu-label" }, t("Scheduled task")))
--    ), document.body) : null
++  };
 +  const groups = PROJECT_SOURCES.map((source) => ({
 +    source,
 +    label: SOURCE_LABELS[source],
@@ -15520,7 +15563,37 @@ diff --git a/client.js b/client.js
 +    const source = text([...list, ...archived].find((row) => text(row.id) === id)?.source);
 +    const task = byId.get(id);
 +    return { id, key: `task:${id}`, title: text(task?.title) || text(task?.note) || null, priority: text(task?.priority) || null, board: boardOfRow({ source }, task), ...annotate(item) };
-+  });
+   });
+-  const team = /* @__PURE__ */ new Set([
+-    ...roster.bots.flatMap((bot) => [bot.id, currentPart(bot), ...bot.parts ?? []]),
+-    ...roster.rooms.flatMap((room2) => [room2.id, ...room2.parts ?? []])
+-  ]);
+-  const others = (list?.ids ?? []).map((id) => byId[id]).filter((row) => row !== void 0 && row.id !== sessionId && !team.has(row.id) && row.origin !== "subagent" && row.blank !== true).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, OTHER_CHATS_MAX).map((row) => ({ sessionId: row.id, label: row.displayTitle || row.title || row.id, updatedAt: row.updatedAt }));
+-  return [...bots, ...others];
+-}
+-function sessionMention(sessionId, label) {
+-  let binary = "";
+-  for (const byte of new TextEncoder().encode(JSON.stringify(sessionId))) binary += String.fromCharCode(byte);
+-  const payload = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+-  return `@[${label.replace(/[\\\]]/g, (mark) => `\\${mark}`)}](dsh-session:${payload})`;
+-}
+-function atSources({ roster, sessions, launched, iconFor }) {
+-  const bots = {
+-    trigger: "@",
+-    name: BOTS_SOURCE,
+-    order: -20,
+-    showGroupTitle: false,
+-    async candidates(session, { query }) {
+-      return (mentionRows(roster.getSnapshot(), session.sessionId, query) ?? []).map((row) => ({
+-        name: row.bot ? row.bot.name : t("Everyone"),
+-        ...row.bot?.role ? { description: row.bot.role } : {},
+-        ...row.room ? { description: t("{count} members", { count: row.room.members.length }) } : {},
+-        icon: iconFor(row),
+-        section: t("Bots"),
+-        value: row.text
+-      }));
+-    },
+-    onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
 +  const waiting = queueItems(queues?.waiting, (item) => ({ role: text(item.role) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }));
 +  const inflight = queueItems(queues?.inflight, (item) => ({ holder: text(item.holder) || null, state: item.stalled === true ? "stalled" : "running" }));
 +  const blocked = queueItems(queues?.blocked, (item) => ({ reason: text(item.reason) || null, waitedMs: Number.isFinite(item.waitedMs) ? item.waitedMs : null }));
@@ -15545,7 +15618,26 @@ diff --git a/client.js b/client.js
 +    emptyText: "No cards yet.",
 +    record: projectBoardRecord({ decisions, meetings }),
 +    metrics: metricsView(metrics, { tasks })
-+  };
+   };
+-  const chats = {
+-    trigger: "@",
+-    name: CHATS_SOURCE,
+-    order: -10,
+-    showGroupTitle: false,
+-    async candidates(session) {
+-      if (!launched(session.sessionId)) return [];
+-      return chatRows(roster.getSnapshot(), sessions.list.getSnapshot(), session.sessionId).map((row) => ({
+-        name: row.bot ? row.bot.name : row.label,
+-        ...row.updatedAt ? { description: relativeShort(row.updatedAt) } : {},
+-        icon: row.bot ? iconFor(row) : "session",
+-        section: row.bot ? t("Bots") : t("Conversations"),
+-        value: JSON.stringify({ sessionId: row.sessionId, label: row.label })
+-      }));
+-    },
+-    onPick({ candidate }) {
+-      const { sessionId, label } = JSON.parse(candidate.value);
+-      const mention = sessionMention(sessionId, label);
+-      return { insert: { source: CHATS_SOURCE, ref: mention, label, appearance: "session", clipboardText: mention } };
 +}
 +function projectRowNode(row, onOpen) {
 +  const open = row.board === null ? void 0 : () => onOpen?.(row.board);
@@ -15563,7 +15655,10 @@ diff --git a/client.js b/client.js
 +      onKeyDown: open === void 0 ? void 0 : (event) => {
 +        if (event.key === "Enter" || event.key === " ") open();
 +      }
-+    },
+     },
+-    codec: { clipboardText: (ref) => ref, serialize: (ref) => Promise.resolve(ref) }
+-  };
+-  return [bots, chats];
 +    (0, import_react23.createElement)("span", { className: "bt-project-column" }, t(row.column)),
 +    (0, import_react23.createElement)(
 +      "span",
@@ -15579,32 +15674,18 @@ diff --git a/client.js b/client.js
 +    row.speaksFor === null ? null : (0, import_react23.createElement)("span", { className: "bt-project-speaks-for", "data-speaks-for": row.speaksFor }, t("for {user}", { user: row.speaksFor })),
 +    row.priority === null ? null : (0, import_react23.createElement)("span", { className: "bt-project-priority" }, row.priority),
 +    row.runId === null ? null : (0, import_react23.createElement)("span", { className: "bt-project-ref" }, row.nodeId === null ? row.runId : `${row.runId} · ${row.nodeId}`)
-   );
++  );
  }
 -
--// src/client/at-menu.js
--var BOTS_SOURCE = "ds-bot";
--var CHATS_SOURCE = "ds-bot-chats";
--var ROOM_ALL = ["all", "everyone", "所有人", "全体"];
--var OTHER_CHATS_MAX = 8;
--var conversationOf = (roster, sessionId) => {
--  if (!roster.ready) return null;
--  const room2 = roster.roomsById[sessionId];
--  if (room2) return { room: room2 };
--  const self = roster.byId[sessionId];
--  return self ? { self } : null;
--};
--function mentionRows(roster, sessionId, query = "") {
--  const here = conversationOf(roster, sessionId);
--  if (here === null) return null;
--  const bots = here.room ? here.room.members.map((id) => roster.byId[id]).filter(Boolean) : roster.bots.filter((bot) => bot.id !== here.self.id);
--  const needle = query.trim().toLowerCase();
--  const rows = bots.filter((bot) => bot.name.toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
--  const everyone = t("Everyone");
--  if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
--    rows.push({ room: here.room, text: `@${everyone} ` });
--  }
--  return rows;
+-// src/client/speech.js
+-var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
+-var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
+-async function speechCatalog(speech) {
+-  const result = await speech.catalog();
+-  if (!result?.ok) throw new Error(result?.error?.message ?? "Speech catalog failed");
+-  const catalog = result.value;
+-  const provider = catalog.providers.find((item) => item.id === catalog.selection.providerId);
+-  return { catalog, usable: USABLE.has(provider?.preparation?.phase) };
 +function ProjectBoardRows({ view, onOpen }) {
 +  if (view.empty) return (0, import_react23.createElement)("div", { className: "bt-project-empty" }, t(view.emptyText));
 +  return view.groups.map((group) => (0, import_react23.createElement)(
@@ -15614,13 +15695,27 @@ diff --git a/client.js b/client.js
 +    group.rows.map((row) => projectRowNode(row, onOpen))
 +  ));
  }
--function chatRows(roster, list, sessionId) {
--  const here = conversationOf(roster, sessionId);
--  if (here === null) return [];
--  const byId = list?.byId ?? {};
--  const bots = roster.bots.filter((bot) => bot.id !== here.self?.id).map((bot) => {
--    const id = currentPart(bot);
--    return { sessionId: id, label: t("Chat with {name}", { name: bot.name }), bot, updatedAt: byId[id]?.updatedAt };
+-function waveBytes(samples, rate = 16e3) {
+-  const bytes = new Uint8Array(44 + samples.length * 2);
+-  const view = new DataView(bytes.buffer);
+-  const ascii = (at, text) => {
+-    for (let index = 0; index < text.length; index += 1) bytes[at + index] = text.charCodeAt(index);
+-  };
+-  ascii(0, "RIFF");
+-  view.setUint32(4, 36 + samples.length * 2, true);
+-  ascii(8, "WAVEfmt ");
+-  view.setUint32(16, 16, true);
+-  view.setUint16(20, 1, true);
+-  view.setUint16(22, 1, true);
+-  view.setUint32(24, rate, true);
+-  view.setUint32(28, rate * 2, true);
+-  view.setUint16(32, 2, true);
+-  view.setUint16(34, 16, true);
+-  ascii(36, "data");
+-  view.setUint32(40, samples.length * 2, true);
+-  samples.forEach((sample, index) => {
+-    const value = Math.max(-1, Math.min(1, sample));
+-    view.setInt16(44 + index * 2, value < 0 ? Math.round(value * 32768) : Math.round(value * 32767), true);
 +function ProjectDoneGroup({ view, onOpen }) {
 +  if (view.done.rows.length === 0) return null;
 +  return (0, import_react23.createElement)(
@@ -15676,12 +15771,7 @@ diff --git a/client.js b/client.js
 +      board: boardOfRow({ source: text(row.source) }, task)
 +    };
    });
--  const team = /* @__PURE__ */ new Set([
--    ...roster.bots.flatMap((bot) => [bot.id, currentPart(bot), ...bot.parts ?? []]),
--    ...roster.rooms.flatMap((room2) => [room2.id, ...room2.parts ?? []])
--  ]);
--  const others = (list?.ids ?? []).map((id) => byId[id]).filter((row) => row !== void 0 && row.id !== sessionId && !team.has(row.id) && row.origin !== "subagent" && row.blank !== true).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, OTHER_CHATS_MAX).map((row) => ({ sessionId: row.id, label: row.displayTitle || row.title || row.id, updatedAt: row.updatedAt }));
--  return [...bots, ...others];
+-  return bytes;
 +  return {
 +    available: source?.ok === true,
 +    reason: text(source?.reason) || null,
@@ -15691,11 +15781,10 @@ diff --git a/client.js b/client.js
 +    emptyText: "No metrics read yet."
 +  };
  }
--function sessionMention(sessionId, label) {
--  let binary = "";
--  for (const byte of new TextEncoder().encode(JSON.stringify(sessionId))) binary += String.fromCharCode(byte);
--  const payload = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
--  return `@[${label.replace(/[\\\]]/g, (mark) => `\\${mark}`)}](dsh-session:${payload})`;
+-function base64Of(bytes) {
+-  let text = "";
+-  for (let index = 0; index < bytes.length; index += 32768) text += String.fromCharCode(...bytes.subarray(index, index + 32768));
+-  return btoa(text);
 +var METRICS_REASON_KEYS = [
 +  [/^no-credentials$/, "this machine has no GitHub token yet"],
 +  [/^no-fetch$/, "this machine has no way to read GitHub yet"],
@@ -15730,23 +15819,25 @@ diff --git a/client.js b/client.js
 +    )
 +  );
  }
--function atSources({ roster, sessions, launched, iconFor }) {
--  const bots = {
--    trigger: "@",
--    name: BOTS_SOURCE,
--    order: -20,
--    showGroupTitle: false,
--    async candidates(session, { query }) {
--      return (mentionRows(roster.getSnapshot(), session.sessionId, query) ?? []).map((row) => ({
--        name: row.bot ? row.bot.name : t("Everyone"),
--        ...row.bot?.role ? { description: row.bot.role } : {},
--        ...row.room ? { description: t("{count} members", { count: row.room.members.length }) } : {},
--        icon: iconFor(row),
--        section: t("Bots"),
--        value: row.text
--      }));
--    },
--    onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
+-var captureError = (kind, cause) => Object.assign(new Error(kind), { kind, cause });
+-async function openCapture() {
+-  const devices = navigator.mediaDevices;
+-  if (!devices?.getUserMedia || typeof MediaRecorder === "undefined") throw captureError("unavailable");
+-  let stream;
+-  try {
+-    stream = await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+-  } catch (error) {
+-    throw captureError(error?.name === "NotAllowedError" ? "blocked" : "failed", error);
+-  }
+-  const audio = new AudioContext();
+-  const analyser = audio.createAnalyser();
+-  analyser.fftSize = 512;
+-  audio.createMediaStreamSource(stream).connect(analyser);
+-  const frame = new Float32Array(analyser.fftSize);
+-  const recorder = new MediaRecorder(stream);
+-  const chunks = [];
+-  recorder.ondataavailable = (event) => {
+-    if (event.data.size > 0) chunks.push(event.data);
 +function ProjectRunningTable({ view, onOpen }) {
 +  if (view.running.length === 0) return (0, import_react23.createElement)("section", { className: "bt-project-running", "data-running": "0" }, (0, import_react23.createElement)("h4", null, t("Running tasks")), (0, import_react23.createElement)("div", { className: "bt-project-empty" }, t("Nothing is running.")));
 +  return (0, import_react23.createElement)(
@@ -15832,25 +15923,15 @@ diff --git a/client.js b/client.js
 +    const settle = (answer) => setOpen((current) => current !== null && current.path === path ? { path, answer } : current);
 +    call4("project-decision", { id: projectId, path }).then(settle, (error) => settle({ ok: false, reason: String(error?.message ?? error) }));
    };
--  const chats = {
--    trigger: "@",
--    name: CHATS_SOURCE,
--    order: -10,
--    showGroupTitle: false,
--    async candidates(session) {
--      if (!launched(session.sessionId)) return [];
--      return chatRows(roster.getSnapshot(), sessions.list.getSnapshot(), session.sessionId).map((row) => ({
--        name: row.bot ? row.bot.name : row.label,
--        ...row.updatedAt ? { description: relativeShort(row.updatedAt) } : {},
--        icon: row.bot ? iconFor(row) : "session",
--        section: row.bot ? t("Bots") : t("Conversations"),
--        value: JSON.stringify({ sessionId: row.sessionId, label: row.label })
--      }));
--    },
--    onPick({ candidate }) {
--      const { sessionId, label } = JSON.parse(candidate.value);
--      const mention = sessionMention(sessionId, label);
--      return { insert: { source: CHATS_SOURCE, ref: mention, label, appearance: "session", clipboardText: mention } };
+-  recorder.start();
+-  let closed = false;
+-  const close = () => {
+-    if (closed) return;
+-    closed = true;
+-    if (recorder.state !== "inactive") recorder.stop();
+-    stream.getTracks().forEach((track) => track.stop());
+-    void audio.close().catch(() => {
+-    });
 +  const decisionBody = (file) => {
 +    if (open === null || open.path !== file.path) return null;
 +    const answer = open.answer;
@@ -15914,8 +15995,7 @@ diff --git a/client.js b/client.js
 +      "data-decisions": String(decisions.count),
 +      ...decisions.total === null ? {} : { "data-decisions-total": String(decisions.total) },
 +      "data-meetings": String(meetings.count)
-     },
--    codec: { clipboardText: (ref) => ref, serialize: (ref) => Promise.resolve(ref) }
++    },
 +    (0, import_react23.createElement)("h4", null, t("Decisions")),
 +    decisions.empty ? (0, import_react23.createElement)("div", { className: "bt-project-empty bt-project-record-empty" }, emptyLine(decisions.emptyText)) : decisionRows,
 +    moreLine(decisions.hidden, "decisions-more"),
@@ -15935,12 +16015,18 @@ diff --git a/client.js b/client.js
 +  const addOwner = (id) => {
 +    const clean = text(id);
 +    if (clean !== "" && !owner.includes(clean)) owner.push(clean);
-+  };
+   };
 +  addOwner(project?.ownerUserId);
 +  for (const id of idList(project?.ownerUserIds)) addOwner(id);
 +  const maintainers = idList(stored.maintainers).filter((id) => !owner.includes(id));
 +  const members = idList(stored.members).filter((id) => !owner.includes(id) && !maintainers.includes(id));
-+  return {
+   return {
+-    level() {
+-      if (closed) return 0;
+-      analyser.getFloatTimeDomainData(frame);
+-      let sum = 0;
+-      for (const sample of frame) sum += sample * sample;
+-      return Math.min(1, Math.sqrt(sum / frame.length) * 4);
 +    chief: botIdOf(project?.chief),
 +    agent: botIdOf(project?.assistant),
 +    roles: { owner, maintainers, members },
@@ -15949,19 +16035,8 @@ diff --git a/client.js b/client.js
 +    // `project-read` record answers no rank, and the panel never re-derives the host's policy.
 +    role: text(project?.role),
 +    choices: idList(project?.choices)
-   };
--  return [bots, chats];
- }
--
--// src/client/speech.js
--var VOICE_BUNDLE = "@deepseek-ai/dsh-experimental-voice-input-bundle";
--var USABLE = /* @__PURE__ */ new Set(["ready", "standby", "waking"]);
--async function speechCatalog(speech) {
--  const result = await speech.catalog();
--  if (!result?.ok) throw new Error(result?.error?.message ?? "Speech catalog failed");
--  const catalog = result.value;
--  const provider = catalog.providers.find((item) => item.id === catalog.selection.providerId);
--  return { catalog, usable: USABLE.has(provider?.preparation?.phase) };
++  };
++}
 +var teamRow = (role, label, botId, onOpenBot, onOpenDossier) => (0, import_react23.createElement)(
 +  "div",
 +  {
@@ -15997,12 +16072,17 @@ diff --git a/client.js b/client.js
 +    onClick: (event) => {
 +      event?.stopPropagation();
 +      onOpenDossier?.({ role, label, botId });
-+    },
+     },
+-    cancel: close,
+-    async finish(maxSeconds) {
+-      if (closed || recorder.state === "inactive") {
+-        close();
+-        return null;
 +    onKeyDown: (event) => {
 +      if (event.key === "Enter" || event.key === " ") {
 +        event?.stopPropagation();
 +        onOpenDossier?.({ role, label, botId });
-+      }
+       }
 +    }
 +  }, t("Dossier"))
 +);
@@ -16045,30 +16125,7 @@ diff --git a/client.js b/client.js
 +      )
 +    )
 +  );
- }
--function waveBytes(samples, rate = 16e3) {
--  const bytes = new Uint8Array(44 + samples.length * 2);
--  const view = new DataView(bytes.buffer);
--  const ascii = (at, text) => {
--    for (let index = 0; index < text.length; index += 1) bytes[at + index] = text.charCodeAt(index);
--  };
--  ascii(0, "RIFF");
--  view.setUint32(4, 36 + samples.length * 2, true);
--  ascii(8, "WAVEfmt ");
--  view.setUint32(16, 16, true);
--  view.setUint16(20, 1, true);
--  view.setUint16(22, 1, true);
--  view.setUint32(24, rate, true);
--  view.setUint32(28, rate * 2, true);
--  view.setUint16(32, 2, true);
--  view.setUint16(34, 16, true);
--  ascii(36, "data");
--  view.setUint32(40, samples.length * 2, true);
--  samples.forEach((sample, index) => {
--    const value = Math.max(-1, Math.min(1, sample));
--    view.setInt16(44 + index * 2, value < 0 ? Math.round(value * 32768) : Math.round(value * 32767), true);
--  });
--  return bytes;
++}
 +function dossierRowOf(team, botId) {
 +  const id = text(botId);
 +  if (id === "") return null;
@@ -16118,11 +16175,7 @@ diff --git a/client.js b/client.js
 +      (0, import_react23.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
 +    )
 +  );
- }
--function base64Of(bytes) {
--  let text = "";
--  for (let index = 0; index < bytes.length; index += 32768) text += String.fromCharCode(...bytes.subarray(index, index + 32768));
--  return btoa(text);
++}
 +function projectAgentFor(bot, selfId) {
 +  if (bot === null || typeof bot !== "object" || bot.remote !== void 0) return null;
 +  const projectId = text(bot.projectId);
@@ -16139,16 +16192,33 @@ diff --git a/client.js b/client.js
 +  const open = async () => {
 +    let target = agentId;
 +    if (target === "") {
-+      try {
+       try {
+-        await new Promise((resolve) => {
+-          recorder.onstop = resolve;
+-          recorder.stop();
+-        });
+-        stream.getTracks().forEach((track) => track.stop());
+-        const blob = new Blob(chunks, { type: recorder.mimeType });
+-        if (blob.size === 0) return null;
+-        const decoded = await audio.decodeAudioData(await blob.arrayBuffer());
+-        const length = Math.max(1, Math.floor(Math.min(decoded.duration, maxSeconds) * 16e3));
+-        const offline = new OfflineAudioContext(1, length, 16e3);
+-        const source = offline.createBufferSource();
+-        source.buffer = decoded;
+-        source.connect(offline.destination);
+-        source.start();
+-        return waveBytes((await offline.startRendering()).getChannelData(0));
+-      } finally {
+-        close();
 +        const record = await (read ?? call)("project-read", { id });
 +        target = botIdOf(record?.project?.assistant);
 +      } catch {
 +        target = "";
-+      }
+       }
 +      if (target !== "") setAgentId(target);
-+    }
+     }
 +    if (target !== "") onOpen?.(target);
-+  };
+   };
 +  if (id === "" || !present) return null;
 +  return (0, import_react23.createElement)("button", {
 +    type: "button",
@@ -16193,15 +16263,11 @@ diff --git a/client.js b/client.js
 +    (0, import_react23.createElement)(ProjectBoardRecord, { record: view.record, projectId: view.projectId, call: call4 })
 +  );
  }
--var captureError = (kind, cause) => Object.assign(new Error(kind), { kind, cause });
--async function openCapture() {
--  const devices = navigator.mediaDevices;
--  if (!devices?.getUserMedia || typeof MediaRecorder === "undefined") throw captureError("unavailable");
--  let stream;
--  try {
--    stream = await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
--  } catch (error) {
--    throw captureError(error?.name === "NotAllowedError" ? "blocked" : "failed", error);
+-async function transcribeWave(speech, catalog, wave, signal) {
+-  if (wave.byteLength > catalog.maxAudioBytes) throw captureError("too-long");
+-  const result = await speech.transcribe({ audioBase64: base64Of(wave), ...catalog.selection }, signal);
+-  if (!result?.ok) throw Object.assign(new Error(result?.error?.message ?? "Transcription failed"), { kind: "service" });
+-  return String(result.value?.text ?? "").trim();
 +function ProjectSettingsPanel({ project, assistantMine, actions, call: request, onClose, onSaved, locked = false, readOnly = "" } = {}) {
 +  const save = request ?? call;
 +  const [kind, setKind] = (0, import_react23.useState)("bot");
@@ -16225,16 +16291,7 @@ diff --git a/client.js b/client.js
 +        (0, import_react23.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
 +      )
 +    );
-   }
--  const audio = new AudioContext();
--  const analyser = audio.createAnalyser();
--  analyser.fftSize = 512;
--  audio.createMediaStreamSource(stream).connect(analyser);
--  const frame = new Float32Array(analyser.fftSize);
--  const recorder = new MediaRecorder(stream);
--  const chunks = [];
--  recorder.ondataavailable = (event) => {
--    if (event.data.size > 0) chunks.push(event.data);
++  }
 +  const run = async (endpoint, payload, done) => {
 +    try {
 +      const result = await save(endpoint, payload);
@@ -16245,16 +16302,7 @@ diff --git a/client.js b/client.js
 +      setStatus(hostText(error?.message ?? String(error)));
 +      return null;
 +    }
-   };
--  recorder.start();
--  let closed = false;
--  const close = () => {
--    if (closed) return;
--    closed = true;
--    if (recorder.state !== "inactive") recorder.stop();
--    stream.getTracks().forEach((track) => track.stop());
--    void audio.close().catch(() => {
--    });
++  };
 +  return (0, import_react23.createElement)(
 +    "div",
 +    { className: "bt-project-panel", "data-panel": "project-settings" },
@@ -16320,13 +16368,21 @@ diff --git a/client.js b/client.js
 +      (0, import_react23.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => onClose?.() }, t("Back to board"))
 +    )
 +  );
-+}
+ }
+-function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
+-  let spokeAt = 0;
+-  let quietSince = 0;
+-  return (level, now) => {
+-    if (level >= loud) {
+-      spokeAt ||= now;
+-      quietSince = 0;
+-      return "speech";
 +function ProjectMembersPanel({ project, rows, onClose } = {}) {
 +  const owners = [];
 +  const add = (id) => {
 +    const clean = text(id);
 +    if (clean !== "" && !owners.includes(clean)) owners.push(clean);
-   };
++  };
 +  add(project?.ownerUserId);
 +  for (const id of Array.isArray(project?.ownerUserIds) ? project.ownerUserIds : []) add(id);
 +  const boardMembers = [];
@@ -16392,20 +16448,7 @@ diff --git a/client.js b/client.js
 +  const queues = { waiting: board?.waiting, inflight: board?.inflight, blocked: board?.blocked, counts: board?.counts ?? null };
 +  const base = record?.project ?? project;
 +  const withRole = { ...base, role: project.role ?? null, choices: Array.isArray(project.choices) ? project.choices : [] };
-   return {
--    level() {
--      if (closed) return 0;
--      analyser.getFloatTimeDomainData(frame);
--      let sum = 0;
--      for (const sample of frame) sum += sample * sample;
--      return Math.min(1, Math.sqrt(sum / frame.length) * 4);
--    },
--    cancel: close,
--    async finish(maxSeconds) {
--      if (closed || recorder.state === "inactive") {
--        close();
--        return null;
--      }
++  return {
 +    project: withRole,
 +    assistantMine: record?.assistantMine ?? null,
 +    rows: board?.tasks ?? [],
@@ -16468,24 +16511,7 @@ diff --git a/client.js b/client.js
 +    const loadBoard = () => readProjectBoard(read, wanted, team.current);
 +    const refresh = async (first) => {
 +      const gen = teamGen.current;
-       try {
--        await new Promise((resolve) => {
--          recorder.onstop = resolve;
--          recorder.stop();
--        });
--        stream.getTracks().forEach((track) => track.stop());
--        const blob = new Blob(chunks, { type: recorder.mimeType });
--        if (blob.size === 0) return null;
--        const decoded = await audio.decodeAudioData(await blob.arrayBuffer());
--        const length = Math.max(1, Math.floor(Math.min(decoded.duration, maxSeconds) * 16e3));
--        const offline = new OfflineAudioContext(1, length, 16e3);
--        const source = offline.createBufferSource();
--        source.buffer = decoded;
--        source.connect(offline.destination);
--        source.start();
--        return waveBytes((await offline.startRendering()).getChannelData(0));
--      } finally {
--        close();
++      try {
 +        const next = await loadBoard();
 +        if (!gone) {
 +          const newer = teamGen.current !== gen;
@@ -16494,7 +16520,7 @@ diff --git a/client.js b/client.js
 +        }
 +      } catch {
 +        if (!gone && first) setState({ project: null, rows: [], canManage: false, tasks: [] });
-       }
++      }
 +    };
 +    void refresh(true);
 +    const timer = setInterval(() => {
@@ -16519,6 +16545,9 @@ diff --git a/client.js b/client.js
 +      setState((previous) => previous === null ? previous : { ...previous, team: answer });
 +    } catch {
      }
+-    if (!spokeAt) return "waiting";
+-    if (level < quiet) quietSince ||= now;
+-    return quietSince && now - quietSince >= quietMs ? "done" : "speech";
    };
 +  if (state === null || !present) return null;
 +  return (0, import_react23.createElement)(
@@ -16593,12 +16622,19 @@ diff --git a/client.js b/client.js
 +    )
 +  );
  }
--async function transcribeWave(speech, catalog, wave, signal) {
--  if (wave.byteLength > catalog.maxAudioBytes) throw captureError("too-long");
--  const result = await speech.transcribe({ audioBase64: base64Of(wave), ...catalog.selection }, signal);
--  if (!result?.ok) throw Object.assign(new Error(result?.error?.message ?? "Transcription failed"), { kind: "service" });
--  return String(result.value?.text ?? "").trim();
-+
+ 
+-// src/client/overlay-hooks.js
+-var import_react11 = require("react");
+-var escapeLayers = [];
+-var onEscapeKey = (event) => {
+-  if (event.key === "Escape") escapeLayers.at(-1)?.current();
+-};
+-function useEscape(onClose) {
+-  const ref = (0, import_react11.useRef)(onClose);
+-  ref.current = onClose;
+-  (0, import_react11.useEffect)(() => {
+-    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
+-    escapeLayers.push(ref);
 +// src/client/header.js
 +var import_react24 = require("react");
 +var import_react_dom6 = require("react-dom");
@@ -16616,20 +16652,7 @@ diff --git a/client.js b/client.js
 +    return () => clearTimeout(timer);
 +  }, [seen]);
 +  return shown;
- }
--function turnDetector({ loud = 0.12, quiet = 0.06, quietMs = 1200 } = {}) {
--  let spokeAt = 0;
--  let quietSince = 0;
--  return (level, now) => {
--    if (level >= loud) {
--      spokeAt ||= now;
--      quietSince = 0;
--      return "speech";
--    }
--    if (!spokeAt) return "waiting";
--    if (level < quiet) quietSince ||= now;
--    return quietSince && now - quietSince >= quietMs ? "done" : "speech";
--  };
++}
 +function MemoryNotice({ shown }) {
 +  const inner = (0, import_react24.useRef)(null);
 +  const [width, setWidth] = (0, import_react24.useState)(0);
@@ -16642,20 +16665,7 @@ diff --git a/client.js b/client.js
 +    { className: "bt-pill-mem", "aria-hidden": true, style: { "--bt-mem-w": `${width}px` } },
 +    (0, import_react24.createElement)("span", { className: "bt-pill-mem-in", ref: inner }, (0, import_react24.createElement)("span", { className: "bt-pill-mem-ico" }, (0, import_react24.createElement)(MemoryIcon)), label)
 +  );
- }
--
--// src/client/overlay-hooks.js
--var import_react11 = require("react");
--var escapeLayers = [];
--var onEscapeKey = (event) => {
--  if (event.key === "Escape") escapeLayers.at(-1)?.current();
--};
--function useEscape(onClose) {
--  const ref = (0, import_react11.useRef)(onClose);
--  ref.current = onClose;
--  (0, import_react11.useEffect)(() => {
--    if (escapeLayers.length === 0) window.addEventListener("keydown", onEscapeKey);
--    escapeLayers.push(ref);
++}
 +function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useBusyAcks, useMemoryNews, useTurnClock, useUi, useLive, actions }) {
 +  const roster = useRoster((value) => value);
 +  const title = useSessions((list) => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? "");
@@ -18142,11 +18152,11 @@ diff --git a/client.js b/client.js
 -      setListing(next);
 -      setView("browse");
 -    }).catch((failure) => setProblem(failure?.message ?? String(failure)));
--  };
+   };
 -  const pickNative = () => {
 -    close();
 -    void run(Promise.resolve(actions.folderPick()).then((path) => path ? onPick(path) : void 0));
-   };
+-  };
 -  const typed = () => {
 -    const path = draft.trim();
 -    if (path !== "") choose(path);
@@ -19532,11 +19542,11 @@ diff --git a/client.js b/client.js
    counts.set(botId, count);
 -  for (const listener of countListeners) listener();
 +  notify();
-+}
+ }
 +function noteFailure(botId, reason) {
 +  failures.set(botId, reason);
 +  notify();
- }
++}
 +var countState = (botId) => ({ count: counts.get(botId) ?? null, failure: failures.get(botId) ?? null });
  function useMemoryCount(botId, actions) {
 -  const [count, setCount] = (0, import_react17.useState)(counts.get(botId) ?? null);
@@ -20213,6 +20223,13 @@ diff --git a/client.js b/client.js
 +    (0, import_react33.createElement)("span", { className: "bt-set-copy" }, showLabel ? (0, import_react33.createElement)("span", { className: "bt-bs-label" }, label) : null, hint ? (0, import_react33.createElement)("span", { className: "bt-set-hint" }, hint) : null),
 +    (0, import_react33.createElement)(Switch, { on, label, disabled, onChange })
 +  );
++}
++function modelHint(bot, roster) {
++  const shown = modelOf(bot, roster);
++  if (shown === void 0) return t("Pick the model this Bot runs on.");
++  if (!shown.served && (roster.models ?? []).length > 0) return t("This model is not available now. Pick another one.");
++  if (bot.appliedModel && bot.appliedModel === bot.model) return t("Every message of this Bot runs on it.");
++  return t("Applies from the next message.");
  }
 -function MemoryDialog({ bot, actions, leaving = false }) {
 -  const { view, error, load, show } = useMemoryView(bot.id, actions);
@@ -20229,13 +20246,6 @@ diff --git a/client.js b/client.js
 -  useEscape(close);
 -  (0, import_react17.useEffect)(() => {
 -    if (!menu) return void 0;
-+function modelHint(bot, roster) {
-+  const shown = modelOf(bot, roster);
-+  if (shown === void 0) return t("Pick the model this Bot runs on.");
-+  if (!shown.served && (roster.models ?? []).length > 0) return t("This model is not available now. Pick another one.");
-+  if (bot.appliedModel && bot.appliedModel === bot.model) return t("Every message of this Bot runs on it.");
-+  return t("Applies from the next message.");
-+}
 +function ShapeRing({ shape, size }) {
 +  const maskId = (0, import_react33.useRef)("");
 +  if (maskId.current === "") maskId.current = `bt-ring-${nextMarkSerial()}`;
@@ -20381,10 +20391,25 @@ diff --git a/client.js b/client.js
 -        (0, import_react17.createElement)("button", { ref: dotsRef, type: "button", className: "bt-icon-btn", "aria-label": t("Memory options"), "aria-haspopup": "menu", "aria-expanded": menu, onClick: () => setMenu((value) => !value) }, (0, import_react17.createElement)(DotsIcon)),
 -        (0, import_react17.createElement)("button", { type: "button", className: "bt-icon-btn", "aria-label": t("Close memory"), onClick: close }, (0, import_react17.createElement)(CloseIcon)),
 -        menuShown ? (0, import_react17.createElement)(
+-          "div",
+-          { ref: menuRef, className: "bt-menu bt-mem-menu", role: "menu", "aria-label": t("Memory options"), "data-leaving": menuLeaving || void 0 },
+-          (0, import_react17.createElement)(
+-            "button",
+-            { type: "button", role: "menuitem", onClick: openEntries },
+-            (0, import_react17.createElement)("span", { className: "bt-menu-label" }, t("All entries")),
+-            (0, import_react17.createElement)("span", { className: "bt-menu-hint" }, String(count))
+-          ),
+-          (0, import_react17.createElement)(
+-            "button",
+-            { type: "button", role: "menuitem", disabled: count === 0 || view?.summarizing, onClick: regenerate },
+-            (0, import_react17.createElement)("span", { className: "bt-menu-label" }, t("Regenerate summary"))
+-          )
+-        ) : null
 +        { ref: glide.box, role: "tablist", "aria-label": t("Avatar source"), className: "bt-avedit-tabs" },
 +        (0, import_react33.createElement)("span", { ref: glide.thumb, className: "bt-thumb", "aria-hidden": true }),
 +        [["bot", "Bot"], ["upload", "Upload"]].map(([id, label]) => (0, import_react33.createElement)("button", { key: id, type: "button", role: "tab", className: "bt-avedit-tab", "aria-selected": tab === id, onClick: () => setTab(id) }, t(label)))
-+      ),
+       ),
+-      (0, import_react17.createElement)(
 +      (0, import_react33.createElement)("button", {
 +        type: "button",
 +        className: "bt-avedit-tab bt-avedit-reset",
@@ -20417,11 +20442,15 @@ diff --git a/client.js b/client.js
 +      hasPhoto ? (0, import_react33.createElement)("img", { src: look.image, alt: "" }) : null,
 +      (0, import_react33.createElement)("div", null, t("Drag, drop, or paste an image")),
 +      (0, import_react33.createElement)(
-+        "div",
+         "div",
+-        { className: "bt-mem-body" },
+-        error ? (0, import_react17.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, hostText(error)) : null,
+-        view === null ? error ? null : (0, import_react17.createElement)(Skeleton) : page === "entries" ? (0, import_react17.createElement)(Entries, { bot, view, remove }) : (0, import_react17.createElement)(Summary, { bot, view, regenerate })
 +        { className: "bt-actions", style: { justifyContent: "center" } },
 +        (0, import_react33.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => fileRef.current?.click() }, hasPhoto ? t("Replace") : t("Browse files")),
 +        hasPhoto ? (0, import_react33.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => run(actions.updateBot(bot.id, { avatar: hasShape(bot.avatar?.shape) ? { shape: bot.avatar.shape } : null })) }, t("Remove photo")) : null
-+      ),
+       ),
+-      (0, import_react17.createElement)(
 +      (0, import_react33.createElement)("input", { ref: fileRef, type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", hidden: true, onChange: (event) => {
 +        const file = event.target.files?.[0];
 +        event.target.value = "";
@@ -20465,28 +20494,35 @@ diff --git a/client.js b/client.js
 +      "div",
 +      { className: "bt-bs" },
 +      (0, import_react33.createElement)(
-+        "div",
+         "div",
+-        { className: "bt-mem-foot" },
+-        answer ? (0, import_react17.createElement)(Reply, { answer, dismiss: () => setAnswer(null) }) : null,
+-        (0, import_react17.createElement)(
+-          "form",
+-          { className: "bt-mem-ask", onSubmit: ask },
+-          (0, import_react17.createElement)("input", {
+-            ref: inputRef,
+-            className: "bt-mem-input",
+-            value: text,
+-            maxLength: 2e3,
+-            disabled: view === null,
+-            placeholder: t("Ask or update"),
+-            "aria-label": t("Ask about or update {name}'s memory", { name: bot.name }),
+-            onChange: (event) => setText(event.target.value)
+-          }),
+-          (0, import_react17.createElement)(
+-            "button",
+-            { type: "submit", className: "bt-mem-send", disabled: busy || text.trim() === "", "aria-label": t("Send") },
+-            busy ? (0, import_react17.createElement)("span", { className: "bt-mem-spin", "aria-hidden": true }) : (0, import_react17.createElement)(ArrowUpIcon)
+-          )
 +        { className: "bt-bs-hero" },
 +        (0, import_react33.createElement)(BotMark, { bot, size: 64, live: false }),
 +        (0, import_react33.createElement)(
-           "div",
--          { ref: menuRef, className: "bt-menu bt-mem-menu", role: "menu", "aria-label": t("Memory options"), "data-leaving": menuLeaving || void 0 },
--          (0, import_react17.createElement)(
--            "button",
--            { type: "button", role: "menuitem", onClick: openEntries },
--            (0, import_react17.createElement)("span", { className: "bt-menu-label" }, t("All entries")),
--            (0, import_react17.createElement)("span", { className: "bt-menu-hint" }, String(count))
--          ),
--          (0, import_react17.createElement)(
--            "button",
--            { type: "button", role: "menuitem", disabled: count === 0 || view?.summarizing, onClick: regenerate },
--            (0, import_react17.createElement)("span", { className: "bt-menu-label" }, t("Regenerate summary"))
--          )
--        ) : null
++          "div",
 +          { className: "bt-bs-who" },
 +          (0, import_react33.createElement)("span", { className: "bt-bs-name" }, bot.name),
 +          (0, import_react33.createElement)("span", { className: "bt-bs-sub" }, [bot.role, isMainBot ? t("Main Bot") : ""].filter(Boolean).join(" · ") || t("Bot"))
-+        )
+         )
 +      ),
 +      (0, import_react33.createElement)(
 +        Card,
@@ -20554,8 +20590,7 @@ diff --git a/client.js b/client.js
 +        { className: "bt-set-row bt-bs-row" },
 +        (0, import_react33.createElement)("span", { className: "bt-set-copy" }, (0, import_react33.createElement)("span", { className: "bt-set-hint" }, modelHint(bot, roster))),
 +        (0, import_react33.createElement)(ModelMenu, { bot, roster, actions, run })
-       ),
--      (0, import_react17.createElement)(
++      ),
 +      bot.model ? (0, import_react33.createElement)(ModelTestRow, { bot, modelName: modelOf(bot, roster)?.name }) : null
 +    ),
 +    (0, import_react33.createElement)(
@@ -20588,10 +20623,7 @@ diff --git a/client.js b/client.js
 +      Card,
 +      { title: t("Main Bot") },
 +      onlyMain ? (0, import_react33.createElement)(
-         "div",
--        { className: "bt-mem-body" },
--        error ? (0, import_react17.createElement)("div", { className: "bt-error", role: "alert", style: { padding: 0 } }, hostText(error)) : null,
--        view === null ? error ? null : (0, import_react17.createElement)(Skeleton) : page === "entries" ? (0, import_react17.createElement)(Entries, { bot, view, remove }) : (0, import_react17.createElement)(Summary, { bot, view, regenerate })
++        "div",
 +        { className: "bt-set-row bt-bs-row" },
 +        (0, import_react33.createElement)(
 +          "span",
@@ -20616,30 +20648,7 @@ diff --git a/client.js b/client.js
 +        { type: "button", className: "bt-set-row bt-bs-row", onClick: duplicate },
 +        (0, import_react33.createElement)("span", { className: "bt-set-copy" }, (0, import_react33.createElement)("span", { className: "bt-bs-label" }, t("Duplicate")), (0, import_react33.createElement)("span", { className: "bt-set-hint" }, t("A copy with the same job and model, and fresh memory."))),
 +        (0, import_react33.createElement)("span", { className: "bt-chevron" }, (0, import_react33.createElement)(ChevronRightIcon))
-       ),
--      (0, import_react17.createElement)(
--        "div",
--        { className: "bt-mem-foot" },
--        answer ? (0, import_react17.createElement)(Reply, { answer, dismiss: () => setAnswer(null) }) : null,
--        (0, import_react17.createElement)(
--          "form",
--          { className: "bt-mem-ask", onSubmit: ask },
--          (0, import_react17.createElement)("input", {
--            ref: inputRef,
--            className: "bt-mem-input",
--            value: text,
--            maxLength: 2e3,
--            disabled: view === null,
--            placeholder: t("Ask or update"),
--            "aria-label": t("Ask about or update {name}'s memory", { name: bot.name }),
--            onChange: (event) => setText(event.target.value)
--          }),
--          (0, import_react17.createElement)(
--            "button",
--            { type: "submit", className: "bt-mem-send", disabled: busy || text.trim() === "", "aria-label": t("Send") },
--            busy ? (0, import_react17.createElement)("span", { className: "bt-mem-spin", "aria-hidden": true }) : (0, import_react17.createElement)(ArrowUpIcon)
--          )
--        )
++      ),
 +      isMainBot ? null : (0, import_react33.createElement)(
 +        "button",
 +        { type: "button", className: "bt-set-row bt-bs-row bt-bs-danger", "data-confirm": confirming || void 0, onClick: remove },
@@ -21964,7 +21973,7 @@ diff --git a/client.js b/client.js
          className: "bt-input",
          autoFocus: !inline,
          value: name,
-@@ -8284,75 +8284,114 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
+@@ -8284,75 +8284,117 @@ function CreateBot({ roster, actions, start, brief = "", onBack, canGoBack, onCr
            }
          }
        }),
@@ -22041,6 +22050,7 @@ diff --git a/client.js b/client.js
 +  const [compose, setCompose] = (0, import_react37.useState)(mode !== "new");
 +  const [admin, setAdmin] = (0, import_react37.useState)(null);
 +  const [message, setMessage] = (0, import_react37.useState)("");
++  const [groupName, setGroupName] = (0, import_react37.useState)("");
 +  const [busy, setBusy] = (0, import_react37.useState)(false);
 +  const [error, setError] = (0, import_react37.useState)("");
 +  const [fix, setFix] = (0, import_react37.useState)(null);
@@ -22062,6 +22072,8 @@ diff --git a/client.js b/client.js
 +  const matches = pool.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
 +  const exact = bots.some((bot) => bot.name.toLowerCase() === wanted);
    const pickedBots = picked.map((id) => roster.byId[id]).filter(Boolean);
++  const finalGroupName = groupName.trim();
++  const groupNameClash = finalGroupName === "" ? void 0 : (roster.rooms ?? []).find((room2) => (room2.name ?? "").trim().toLowerCase() === finalGroupName.toLowerCase());
    const run = async (task) => {
      if (busy) return;
      setError("");
@@ -22072,7 +22084,8 @@ diff --git a/client.js b/client.js
      try {
        await task();
      } catch (failure) {
-       setError(failure?.message ?? String(failure));
+-      setError(failure?.message ?? String(failure));
++      setError(hostText(failure?.message ?? String(failure)));
 +      setFix(ungrantedLocalFix(failure?.details) ?? null);
      } finally {
        setBusy(false);
@@ -22135,14 +22148,14 @@ diff --git a/client.js b/client.js
 -    const text = message.trim();
 -    const room2 = await actions.createRoom([admin, ...picked], { admin, ...text ? {} : { greet: true } });
 -    if (text) await actions.send(room2.id, text);
-+    if (locked || admin === null || picked.length === 0) return;
++    if (locked || admin === null || picked.length === 0 || groupNameClash) return;
 +    const text2 = message.trim();
 +    const { members, remotes } = splitRoomPicks(roster, [admin, ...picked]);
 +    const participants = remotes.length === 0 ? void 0 : [
 +      ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
 +      ...remotes
 +    ];
-+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {} });
++    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...finalGroupName !== "" && !groupNameClash ? { name: finalGroupName } : {} });
 +    if (text2) await actions.send(room2.id, text2);
      actions.openSession(room2.id);
      close();
@@ -22307,7 +22320,7 @@ diff --git a/client.js b/client.js
            ref: inputRef,
            autoFocus: true,
            value: query,
-@@ -8517,20 +8517,20 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
+@@ -8517,20 +8517,34 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
              } else if (event.key === "Backspace" && query === "") unpick();
            }
          }),
@@ -22315,7 +22328,8 @@ diff --git a/client.js b/client.js
 +        group && admin !== null ? locked ? readOnlyLine(import_react37.createElement, roster, actions, { key: "readonly-admin" }) : (0, import_react37.createElement)("button", {
            type: "button",
            className: "bt-send bt-to-create",
-           disabled: busy || picked.length === 0,
+-          disabled: busy || picked.length === 0,
++          disabled: busy || picked.length === 0 || groupNameClash !== void 0,
            title: picked.length === 0 ? t("Add at least one more Bot") : void 0,
            onClick: createGroup
          }, t("Create group chat")) : null,
@@ -22323,6 +22337,20 @@ diff --git a/client.js b/client.js
 +        (0, import_react37.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Close new chat"), onClick: close }, "×")
        ),
 -      (0, import_react20.createElement)("div", { ref: drop, className: "bt-drop" }, (0, import_react20.createElement)(
++      // Optional: a blank name leaves the host to name the room, and a taken one is refused here.
++      group && admin !== null && !menuOnly ? (0, import_react37.createElement)(
++        "div",
++        { className: "bt-nc-name" },
++        (0, import_react37.createElement)("span", { className: "bt-to-label" }, t("Group name")),
++        (0, import_react37.createElement)("input", {
++          value: groupName,
++          maxLength: 60,
++          placeholder: t("Name after members"),
++          "aria-label": t("Group name"),
++          onChange: (event) => setGroupName(event.target.value)
++        }),
++        groupNameClash ? (0, import_react37.createElement)("span", { className: "bt-note bt-danger" }, t("A group chat named {name} already exists", { name: groupNameClash.name })) : null
++      ) : null,
 +      (0, import_react37.createElement)("div", { ref: drop, className: "bt-drop" }, (0, import_react37.createElement)(
          "div",
          { ref: glide.box, role: "listbox", "aria-label": t("Recipients"), className: "bt-drop-list" },
