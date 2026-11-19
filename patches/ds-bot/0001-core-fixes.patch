@@ -7626,7 +7626,7 @@ diff --git a/src/host/memory.js b/src/host/memory.js
 diff --git a/src/host/models.js b/src/host/models.js
 --- a/src/host/models.js
 +++ b/src/host/models.js
-@@ -5,6 +5,33 @@ import { normalize, splitRef } from './text.js'
+@@ -5,6 +5,48 @@ import { normalize, splitRef } from './text.js'
  
  const CATALOG_TTL_MS = 10_000
  const ROUTE_WAIT_MS = 30_000
@@ -7638,6 +7638,21 @@ diff --git a/src/host/models.js b/src/host/models.js
 +// answer is lost even though the rest of the call was fine (#3132). A model row can
 +// declare more than the endpoint accepts, so the cap is clamped on the way out.
 +const OUTBOUND_MAX_TOKENS = 12_288
++// That ceiling is one endpoint's, not every provider's (#3198). #3132 recorded it on the
++// `opencsitool` route, whose proxy answered `litellm.BadRequestError: DashscopeException …
++// expected a value <= 12288` for `opencsitool/DeepSeek-V4.1-Flash-1017`, so the clamp tests
++// that DSH route key. Another route carries its own endpoint's limit and DSH sends what the
++// model row declares; writing 12288 there would cut an answer the provider would have given.
++const DASHSCOPE_ROUTE = 'opencsitool'
++
++// A route with no provider key cannot be placed against that evidence. A cap that is too
++// low only shortens an answer, while a 400 loses it whole, so an unplaceable route keeps
++// the clamp rather than risk the failure #3132 recorded.
++function takesDashScopeCap(options) {
++  const provider = options?.provider
++  if (typeof provider !== 'string' || provider === '') return true
++  return provider === DASHSCOPE_ROUTE
++}
 +
 +// The outcome of a connection test as a code only (#409). A provider's own text can
 +// echo part of a key, so none of it leaves the host: the client words each code.
@@ -7660,17 +7675,19 @@ diff --git a/src/host/models.js b/src/host/models.js
  
  export function install(rt) {
    const { ctx, state } = rt
-@@ -16,6 +16,25 @@ export function install(rt) {
+@@ -16,6 +16,27 @@ export function install(rt) {
    const reasoningCache = new Map()
    ctx.on?.('llm/adapters-updated', () => { catalogCache = { at: 0, value: [] }; reasoningCache.clear() })
  
 +  // The clamp sits on `llm/stream`, the seam every model call crosses — a Bot's turn and
-+  // its checkpoint, a workflow step, the host's own request. `next` cannot take new
-+  // options (the constraint secrets.js and images.js document), so a call that needs the
-+  // cap set starts over with a copy and passes this listener the second time, carrying
-+  // 12288. The caller's object is never written to: DSH compares a prepared call's config
-+  // and throws INVALID_PREPARED_CALL when one changes underneath it.
++  // its checkpoint, a workflow step, the host's own request. It is the DashScope route's
++  // ceiling, so a call on any other route is passed straight on (see DASHSCOPE_ROUTE).
++  // `next` cannot take new options (the constraint secrets.js and images.js document), so
++  // a call that needs the cap set starts over with a copy and passes this listener the
++  // second time, carrying 12288. The caller's object is never written to: DSH compares a
++  // prepared call's config and throws INVALID_PREPARED_CALL when one changes underneath it.
 +  ctx.on?.('llm/stream', (options, next) => {
++    if (!takesDashScopeCap(options)) return next()
 +    const asked = options?.maxTokens
 +    if (Number.isFinite(asked)) return asked > OUTBOUND_MAX_TOKENS ? ctx.llm.stream({ ...options, maxTokens: OUTBOUND_MAX_TOKENS }) : next()
 +    return (async function* clampDeclaredCap() {

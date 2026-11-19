@@ -9,6 +9,10 @@ import { fakeContext } from './fake-ctx.js'
 
 const CEILING = 12_288
 const MODEL = 'opencsitool/DeepSeek-V4.1-Flash-1017'
+// #3198: the ceiling is DashScope's, reached through the `opencsitool` route that #3132
+// recorded; another provider's endpoint accepts more, so the cap is not its business.
+const OTHER_PROVIDER = 'deepseek-official'
+const OTHER_MODEL = `${OTHER_PROVIDER}/DeepSeek-V4.1-Flash-1017`
 
 const user = text => ({ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text }] })
 const request = (overrides = {}) => ({
@@ -57,6 +61,13 @@ test('a model row declaring more than the endpoint takes is asked for 12288, and
   assert.equal(asked.maxTokens, undefined, 'the caller\'s object is untouched')
 })
 
+test('a model row declaring more than the ceiling is left alone on a route whose endpoint accepts it', async () => {
+  const { ask } = bench({ info: { [OTHER_MODEL]: { defaultMaxTokens: 16_384 } } })
+  const { sent, count } = await ask(request({ provider: OTHER_PROVIDER }))
+  assert.equal('maxTokens' in sent, false, 'the declared default is filled by DSH, not written here')
+  assert.equal(count, 1, 'one provider request, not two')
+})
+
 test('a model row under the ceiling keeps what it declares, and nothing is invented', async () => {
   const { ask } = bench({ info: { [MODEL]: { defaultMaxTokens: 4_096 } } })
   const { sent } = await ask(request())
@@ -70,6 +81,21 @@ test('a caller that asks for more than the ceiling is clamped to it, and its own
   assert.equal(sent.maxTokens, CEILING)
   assert.equal(count, 1)
   assert.equal(asked.maxTokens, 20_000)
+})
+
+test('a caller asking for more than the ceiling keeps its value on a route whose endpoint accepts it', async () => {
+  const { ask } = bench({ info: { [OTHER_MODEL]: { defaultMaxTokens: 16_384 } } })
+  const asked = request({ provider: OTHER_PROVIDER, maxTokens: 20_000 })
+  const { sent, count } = await ask(asked)
+  assert.equal(sent.maxTokens, 20_000, 'the caller\'s request reaches the provider unchanged')
+  assert.equal(count, 1, 'one provider request, not two')
+  assert.equal(asked.maxTokens, 20_000)
+})
+
+test('a route that cannot be named keeps the clamp', async () => {
+  const { ask } = bench({ info: { [MODEL]: { defaultMaxTokens: 16_384 } } })
+  const { sent } = await ask(request({ provider: undefined, maxTokens: 20_000 }))
+  assert.equal(sent.maxTokens, CEILING, 'an unplaceable route keeps the proven-safe cap')
 })
 
 test('a caller at or under the ceiling is passed through unchanged', async () => {
