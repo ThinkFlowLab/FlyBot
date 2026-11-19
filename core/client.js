@@ -652,6 +652,7 @@ var ZH = {
   "Replace photo": "更换照片",
   "Upload photo": "上传照片",
   "A Bot named {name} already exists": "已经有叫 {name} 的 Bot 了",
+  "A group chat named {name} already exists": "已经有叫「{name}」的群聊了",
   "The Bot runs on this model. You can change it later in its details.": "Bot 会使用这个模型。以后可以在详情里修改。",
   "Add a provider and a model in DeepSeek Harness first, or pick one in the Bot's chat later.": "请先在 DeepSeek Harness 里添加服务商和模型，或者稍后在 Bot 的对话里选择。",
   "Creating…": "创建中…",
@@ -5431,6 +5432,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-readonly-line-head{padding:0 20px 8px}
 .bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
 .bt-nc-spacer{flex:1}
+.bt-nc-name{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-size:13px;box-sizing:border-box}
+.bt-nc-name input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
+.bt-nc-name+.bt-drop{top:82px}
 .bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
 .bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
 .bt-nc-plus{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2);background:var(--bt-hover);flex:none}
@@ -16987,6 +16991,7 @@ function NewChat({ mode, roster, actions }) {
   const [compose, setCompose] = (0, import_react37.useState)(mode !== "new");
   const [admin, setAdmin] = (0, import_react37.useState)(null);
   const [message, setMessage] = (0, import_react37.useState)("");
+  const [groupName, setGroupName] = (0, import_react37.useState)("");
   const [busy, setBusy] = (0, import_react37.useState)(false);
   const [error, setError] = (0, import_react37.useState)("");
   const [fix, setFix] = (0, import_react37.useState)(null);
@@ -17006,6 +17011,8 @@ function NewChat({ mode, roster, actions }) {
   const matches = pool.filter((bot) => !picked.includes(bot.id) && bot.id !== admin && (wanted === "" || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? "").toLowerCase().includes(wanted)));
   const exact = bots.some((bot) => bot.name.toLowerCase() === wanted);
   const pickedBots = picked.map((id) => roster.byId[id]).filter(Boolean);
+  const finalGroupName = groupName.trim();
+  const groupNameClash = finalGroupName === "" ? void 0 : (roster.rooms ?? []).find((room2) => (room2.name ?? "").trim().toLowerCase() === finalGroupName.toLowerCase());
   const run = async (task) => {
     if (busy) return;
     setError("");
@@ -17016,7 +17023,7 @@ function NewChat({ mode, roster, actions }) {
     try {
       await task();
     } catch (failure) {
-      setError(failure?.message ?? String(failure));
+      setError(hostText(failure?.message ?? String(failure)));
       setFix(ungrantedLocalFix(failure?.details) ?? null);
     } finally {
       setBusy(false);
@@ -17088,14 +17095,14 @@ function NewChat({ mode, roster, actions }) {
     return afterCreate({ id: bot.id, text: message, actions });
   };
   const makeGroup = async () => {
-    if (locked || admin === null || picked.length === 0) return;
+    if (locked || admin === null || picked.length === 0 || groupNameClash) return;
     const text2 = message.trim();
     const { members, remotes } = splitRoomPicks(roster, [admin, ...picked]);
     const participants = remotes.length === 0 ? void 0 : [
       ...members.map((id) => ({ kind: "bot", id, role: id === admin ? "admin" : "member" })),
       ...remotes
     ];
-    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {} });
+    const room2 = await actions.createRoom(members, { admin, ...participants ? { participants } : {}, ...finalGroupName !== "" && !groupNameClash ? { name: finalGroupName } : {} });
     if (text2) await actions.send(room2.id, text2);
     actions.openSession(room2.id);
     close();
@@ -17261,12 +17268,26 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
         group && admin !== null ? locked ? readOnlyLine(import_react37.createElement, roster, actions, { key: "readonly-admin" }) : (0, import_react37.createElement)("button", {
           type: "button",
           className: "bt-send bt-to-create",
-          disabled: busy || picked.length === 0,
+          disabled: busy || picked.length === 0 || groupNameClash !== void 0,
           title: picked.length === 0 ? t("Add at least one more Bot") : void 0,
           onClick: createGroup
         }, t("Create group chat")) : null,
         (0, import_react37.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Close new chat"), onClick: close }, "×")
       ),
+      // Optional: a blank name leaves the host to name the room, and a taken one is refused here.
+      group && admin !== null && !menuOnly ? (0, import_react37.createElement)(
+        "div",
+        { className: "bt-nc-name" },
+        (0, import_react37.createElement)("span", { className: "bt-to-label" }, t("Group name")),
+        (0, import_react37.createElement)("input", {
+          value: groupName,
+          maxLength: 60,
+          placeholder: t("Name after members"),
+          "aria-label": t("Group name"),
+          onChange: (event) => setGroupName(event.target.value)
+        }),
+        groupNameClash ? (0, import_react37.createElement)("span", { className: "bt-note bt-danger" }, t("A group chat named {name} already exists", { name: groupNameClash.name })) : null
+      ) : null,
       (0, import_react37.createElement)("div", { ref: drop, className: "bt-drop" }, (0, import_react37.createElement)(
         "div",
         { ref: glide.box, role: "listbox", "aria-label": t("Recipients"), className: "bt-drop-list" },

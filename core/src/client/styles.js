@@ -339,6 +339,9 @@ button.bt-q-opt:active{background:var(--bt-active)}
 .bt-readonly-line-head{padding:0 20px 8px}
 .bt-readonly-line-head>.bt-hint{padding:0;text-align:left}
 .bt-nc-spacer{flex:1}
+.bt-nc-name{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-size:13px;box-sizing:border-box}
+.bt-nc-name input{flex:1;min-width:120px;border:0;outline:none;background:none;color:var(--bt-ink);font-size:14px;height:26px}
+.bt-nc-name+.bt-drop{top:82px}
 .bt-nc-compose{padding:0 16px 14px;display:flex;justify-content:center}
 .bt-nc-card{display:flex;align-items:flex-end;gap:6px;width:100%;max-width:var(--dsh-chat-content-width,748px);min-height:44px;padding:4px 6px;border-radius:22px;border:1px solid var(--bt-line-2);background:var(--bt-main);box-shadow:0 2px 8px -2px rgba(0,0,0,.06);box-sizing:border-box}
 .bt-nc-plus{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--bt-ink-2);background:var(--bt-hover);flex:none}

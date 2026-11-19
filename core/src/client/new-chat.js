@@ -5,7 +5,7 @@ import { useEscape, usePaneLeft } from './overlay-hooks.js'
 import { CreateBot } from './create-bot.js'
 import { afterCreate } from './bot-draft.js'
 import { QUICK_EDGES, useFlip, useGlide, useMorph } from './motion.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 import { readOnlyLine } from './read-only.js'
 import { lockedWindow } from './schedules.js'
 import { newChatActionRows } from './flybot-registry.js'
@@ -21,6 +21,7 @@ export function NewChat({ mode, roster, actions }) {
   // A new group chat picks its admin first, then the other members.
   const [admin, setAdmin] = useState(null)
   const [message, setMessage] = useState('')
+  const [groupName, setGroupName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // A group with a friend's Bot refused because one of my Bots is not shared with that friend:
@@ -46,6 +47,9 @@ export function NewChat({ mode, roster, actions }) {
   const matches = pool.filter(bot => !picked.includes(bot.id) && bot.id !== admin && (wanted === '' || bot.name.toLowerCase().includes(wanted) || pickerBotLabel(bot).toLowerCase().includes(wanted) || (bot.role ?? '').toLowerCase().includes(wanted)))
   const exact = bots.some(bot => bot.name.toLowerCase() === wanted)
   const pickedBots = picked.map(id => roster.byId[id]).filter(Boolean)
+  const finalGroupName = groupName.trim()
+  // roster.findRooms' normalize trims and folds case, so the pane refuses the same names first.
+  const groupNameClash = finalGroupName === '' ? undefined : (roster.rooms ?? []).find(room => (room.name ?? '').trim().toLowerCase() === finalGroupName.toLowerCase())
   const run = async (task) => {
     if (busy) return
     setError('')
@@ -54,7 +58,7 @@ export function NewChat({ mode, roster, actions }) {
     setInviteLink('')
     setBusy(true)
     try { await task() } catch (failure) {
-      setError(failure?.message ?? String(failure))
+      setError(hostText(failure?.message ?? String(failure)))
       setFix(ungrantedLocalFix(failure?.details) ?? null)
     } finally { setBusy(false) }
   }
@@ -130,14 +134,14 @@ export function NewChat({ mode, roster, actions }) {
   // The admin and at least one more Bot make a group; a message typed below goes with it,
   // else the admin opens by asking what the group is for.
   const makeGroup = async () => {
-    if (locked || admin === null || picked.length === 0) return
+    if (locked || admin === null || picked.length === 0 || groupNameClash) return
     const text = message.trim()
     const { members, remotes } = splitRoomPicks(roster, [admin, ...picked])
     const participants = remotes.length === 0 ? undefined : [
       ...members.map(id => ({ kind: 'bot', id, role: id === admin ? 'admin' : 'member' })),
       ...remotes,
     ]
-    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}) })
+    const room = await actions.createRoom(members, { admin, ...(participants ? { participants } : {}), ...(finalGroupName !== '' && !groupNameClash ? { name: finalGroupName } : {}) })
     if (text) await actions.send(room.id, text)
     actions.openSession(room.id)
     close()
@@ -254,10 +258,18 @@ export function NewChat({ mode, roster, actions }) {
         group && admin !== null ? (locked
           ? readOnlyLine(h, roster, actions, { key: 'readonly-admin' })
           : h('button', {
-            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0,
+            type: 'button', className: 'bt-send bt-to-create', disabled: busy || picked.length === 0 || groupNameClash !== undefined,
             title: picked.length === 0 ? t('Add at least one more Bot') : undefined, onClick: createGroup,
           }, t('Create group chat'))) : null,
         h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Close new chat'), onClick: close }, '×')),
+      // Optional: a blank name leaves the host to name the room, and a taken one is refused here.
+      group && admin !== null && !menuOnly ? h('div', { className: 'bt-nc-name' },
+        h('span', { className: 'bt-to-label' }, t('Group name')),
+        h('input', {
+          value: groupName, maxLength: 60, placeholder: t('Name after members'), 'aria-label': t('Group name'),
+          onChange: event => setGroupName(event.target.value),
+        }),
+        groupNameClash ? h('span', { className: 'bt-note bt-danger' }, t('A group chat named {name} already exists', { name: groupNameClash.name })) : null) : null,
       h('div', { ref: drop, className: 'bt-drop' }, h('div', { ref: glide.box, role: 'listbox', 'aria-label': t('Recipients'), className: 'bt-drop-list' },
         h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }),
         options.length === 0 ? h('div', { className: 'bt-hint' }, mode === 'search' ? t('No Bots match') : t('Type a name to create a Bot'))
