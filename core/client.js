@@ -1823,7 +1823,14 @@ var HOST_ZH = {
   "QR code for this room invite": "这个房间邀请的二维码",
   "Scan to open this room": "扫码打开这个房间",
   "Anyone with the link can join while the room is open.": "只要房间还开着，拿到链接的人都能加入。",
-  "Bot Social did not send an invite. Try again.": "Bot Social 没有发来邀请，请重试。"
+  "Bot Social did not send an invite. Try again.": "Bot Social 没有发来邀请，请重试。",
+  // #3114 cut 26: the invite hint on a Bot's Sharing page and the rooms a grant reaches.
+  "Invite grants {bot} only.": "邀请只把 {bot} 授权给对方。",
+  "Invite grants {bot} only. Revoke anytime in People with access.": "邀请只把 {bot} 授权给对方。随时可以在「可访问的人」里撤销。",
+  "In use in {n} room: ": "正在 {n} 个房间里使用：",
+  "In use in {n} rooms: ": "正在 {n} 个房间里使用：",
+  "This room only: ": "只在这个房间使用：",
+  " +{n} more": "，还有 {n} 个"
 };
 Object.assign(ZH, HOST_ZH);
 var fill = (text2, params) => params ? text2.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text2;
