@@ -458,6 +458,15 @@ var ZH = {
   "Open settings to set up a custom model": "打开设置配置自定义模型",
   "FlyBot": "FlyBot",
   "FlyBot core": "FlyBot 核心",
+  // Social's two notice cards (#3114): the share request and the accepted invite read in the
+  // window's language. `Dismiss` and `your Bot` already carry their Chinese above.
+  "A friend": "一位好友",
+  "{name} accepted your invite. They can message {bot}. You cannot message them until they share a Bot with you.": "{name} 接受了你的邀请，可以给 {bot} 发消息。在对方分享一个 Bot 给你之前，你还不能给对方发消息。",
+  "You asked them to share a Bot.": "你已经请对方分享一个 Bot。",
+  "Ask them to share a Bot": "请对方分享一个 Bot",
+  "{name} tried to start a chat with {bot}. {bot} is not shared with them.": "{name} 想和 {bot} 开始聊天，但 {bot} 没有分享给对方。",
+  "Open {bot}'s Sharing": "打开 {bot} 的分享",
+  "Share {bot}…": "分享 {bot}…",
   // Header
   "Message {name}": "给 {name} 发消息",
   Message: "发消息",
