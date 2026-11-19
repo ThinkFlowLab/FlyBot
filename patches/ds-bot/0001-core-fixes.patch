@@ -2055,7 +2055,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,34 @@ const HOST_ZH = {
+@@ -905,6 +905,40 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -2087,6 +2087,12 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Declined {name}.': '已拒绝 {name}。',
 +  '{what} failed: {why}': '{what} 失败：{why}',
 +  'Your friend': '你的朋友',
++  // #3114 cut 25: the invite card in an open face-to-face room.
++  'Link ready': '链接已就绪',
++  'QR code for this room invite': '这个房间邀请的二维码',
++  'Scan to open this room': '扫码打开这个房间',
++  'Anyone with the link can join while the room is open.': '只要房间还开着，拿到链接的人都能加入。',
++  'Bot Social did not send an invite. Try again.': 'Bot Social 没有发来邀请，请重试。',
  }
  Object.assign(ZH, HOST_ZH)
  

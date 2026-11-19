@@ -1150,7 +1150,7 @@ window.__ModuleLoader__.load({
           const value = await call('social/face-invite', { roomId })
           if (value?.unsupported) setInvite({ unsupported: true })
           else if (value?.url) setInvite({ url: String(value.url), ticket: value.ticket, expiresAt: value.expiresAt })
-          else setInvite({ error: 'Bot Social did not send an invite. Try again.' })
+          else setInvite({ error: tr('Bot Social did not send an invite. Try again.') })
         } catch (e) {
           setInvite({ error: errorText(e) })
         } finally { setBusy(false) }
@@ -1182,7 +1182,7 @@ window.__ModuleLoader__.load({
           h('button', {
             type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-invite-mint',
             disabled: !!busy || (!!invite?.url && live), onClick: mint,
-          }, invite?.url && live ? 'Link ready' : tr('Create link'))),
+          }, invite?.url && live ? tr('Link ready') : tr('Create link'))),
         invite?.unsupported
           ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, tr(INVITE_UNSUPPORTED))
           : null,
@@ -1196,13 +1196,13 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'fs-invite-live', 'data-flybot': 'face-invite-live' },
             h(QrImage, {
               text: invite.url, kind: 'face-invite-qr', at: invite.expiresAt || 'open', attrs: { 'data-url': invite.url },
-              label: 'QR code for this room invite', hint: 'Scan to open this room',
+              label: tr('QR code for this room invite'), hint: tr('Scan to open this room'),
             }),
             h('div', { className: 'fs-invite-link' },
               h('code', { className: 'fs-invite-url', 'data-flybot': 'face-invite-url' }, invite.url),
-              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-copy', onClick: copy }, copied ? 'Copied' : tr('Copy link'))),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-copy', onClick: copy }, copied ? tr('Copied') : tr('Copy link'))),
             h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-count' },
-              invite.expiresAt ? countdownLine(countdown(invite.expiresAt)) : 'Anyone with the link can join while the room is open.'),
+              invite.expiresAt ? countdownLine(countdown(invite.expiresAt)) : tr('Anyone with the link can join while the room is open.')),
             h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-revoke', disabled: !!busy, onClick: revoke }, tr('Withdraw link')))
           : null)
     }

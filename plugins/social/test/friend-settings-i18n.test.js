@@ -149,7 +149,7 @@ test('#3114 cut 23: the two baselines lose these draws and nothing else', () => 
     entriesOf('i18n-plugins.baseline.json').length,
     entriesOf('i18n-template-draws.baseline.json').length,
     entriesOf('i18n-missing-entries.baseline.json').length,
-  ], [13, 14, 55])
+  ], [12, 14, 51])
   // People with access is reused, never added twice; the same for the friend's own fallback name.
   assert.equal(zh['Your friend'], '你的朋友')
 })

@@ -1,0 +1,1 @@
+The invite card inside an open face-to-face room now follows the window's language: its Link ready button, the QR's name and hint, the Copied state, the no-deadline line and the error a mint with no link comes back with ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
