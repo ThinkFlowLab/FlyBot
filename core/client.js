@@ -10902,9 +10902,12 @@ var import_react21 = require("react");
 var import_react_dom4 = require("react-dom");
 var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
 function useMarkedUnread(id, active, marked, actions) {
+  const wasActive = (0, import_react21.useRef)(false);
   (0, import_react21.useEffect)(() => {
-    if (active && marked) actions.clearUnread(id);
-  }, [active, marked]);
+    const opened = marked && active && !wasActive.current;
+    wasActive.current = active;
+    if (opened) actions.clearUnread(id);
+  }, [active, marked, id]);
 }
 var PinMark = () => (0, import_react21.createElement)("span", { className: "bt-pin", "aria-hidden": true }, (0, import_react21.createElement)(PinMarkIcon));
 var useApproval = (useWork, match) => useWork ? useWork((work) => (work.approvals ?? []).some(match)) : false;
