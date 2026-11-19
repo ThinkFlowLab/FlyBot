@@ -1,0 +1,1 @@
+A scheduled task's form now names the time zone its rule runs in: "Every day at 09:00" carries the zone it was saved with instead of silently meaning this device's zone, a Once task's date and time are read in that zone, and the row and the edit form name the same one ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

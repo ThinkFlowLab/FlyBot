@@ -1212,6 +1212,7 @@ const ZH = {
   'What for': '用途',
   Activity: '活跃度',
   'Time range': '时间范围',
+  'Time zone': '时区',
   'All usage': '全部用量',
   'Group usage by': '用量分组',
   'By Bot': '按 Bot',

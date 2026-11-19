@@ -1258,6 +1258,7 @@ var ZH = {
   "What for": "用途",
   Activity: "活跃度",
   "Time range": "时间范围",
+  "Time zone": "时区",
   "All usage": "全部用量",
   "Group usage by": "用量分组",
   "By Bot": "按 Bot",
@@ -3943,6 +3944,59 @@ function useSchedules(actions) {
 }
 var schedulesReadFailure = (failure) => typeof failure === "string" && failure !== "" ? t("The scheduled tasks could not be read: {reason}", { reason: failure }) : null;
 var localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+function timeZoneOptions(current) {
+  const supported = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  const zone = String(current ?? "").trim();
+  const list = supported.length > 0 ? ["UTC", ...supported] : ["UTC", "Asia/Shanghai"];
+  if (zone !== "") list.unshift(zone);
+  return [...new Set(list.filter(Boolean))];
+}
+function zoneParts(ms, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timeZone || "UTC",
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).formatToParts(new Date(ms));
+  const value = (type) => Number(parts.find((part) => part.type === type)?.value);
+  return Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"));
+}
+function wallClockInput(ms, timeZone) {
+  const at = Number(ms);
+  if (!Number.isFinite(at)) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: String(timeZone ?? "").trim() || localZone(),
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).formatToParts(new Date(at));
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  return value("year") ? `${value("year")}-${value("month")}-${value("day")}T${value("hour")}:${value("minute")}` : "";
+}
+function instantFromWallClock(wall, timeZone) {
+  const match = String(wall ?? "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) throw new Error("Pick a date and time");
+  const asUtc = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] ?? 0));
+  const zone = String(timeZone ?? "").trim() || "UTC";
+  let instant2 = asUtc;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const shown = zoneParts(instant2, zone);
+    if (shown === asUtc) break;
+    instant2 -= shown - asUtc;
+  }
+  if (zoneParts(instant2, zone) === asUtc) return new Date(instant2).toISOString();
+  for (const probe of [instant2 - 36e5, instant2 + 36e5, instant2 - 72e5, instant2 + 72e5]) {
+    if (zoneParts(probe, zone) === asUtc) return new Date(probe).toISOString();
+  }
+  throw new Error("Pick a date and time");
+}
 var clock2 = (time) => String(time ?? "").slice(0, 5);
 var when = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms);
 function dayAndTime(ms) {
@@ -4117,10 +4171,6 @@ function inAnHour() {
 }
 var KINDS = [["at", "Once"], ["daily", "Every day"], ["weekly", "Every week"], ["every", "Repeat"]];
 var UNITS = [["seconds", 1, "second", "seconds"], ["minutes", 60, "minute", "minutes"], ["hours", 3600, "hour", "hours"], ["days", 86400, "day", "days"]];
-function localInput(ms) {
-  const date = new Date(ms);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 function formStart(task) {
   const seconds = task?.kind === "every" ? Number(task.everySeconds) : 3600;
   const [unit, size] = seconds % 86400 === 0 ? ["days", 86400] : seconds % 3600 === 0 ? ["hours", 3600] : seconds % 60 === 0 ? ["minutes", 60] : ["seconds", 1];
@@ -4129,13 +4179,20 @@ function formStart(task) {
     title: task?.title ?? "",
     prompt: task?.prompt ?? "",
     kind: once ? "at" : task?.kind ?? "daily",
-    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
+    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? wallClockInput(Date.parse(task.scheduledAt), task?.timeZone || localZone()) : inAnHour(),
     time: task?.time ? clock2(task.time) : "09:00",
     weekdays: task?.kind === "weekly" && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
     count: Math.max(1, Math.round(seconds / size)),
     unit,
     timeZone: task?.timeZone || localZone()
   };
+}
+function whenFromForm({ kind, at, time, weekdays, timeZone, count, unit } = {}) {
+  const zone = String(timeZone ?? "").trim() || localZone();
+  if (kind === "cron") return { kind: "keep" };
+  if (kind === "at") return { kind, at: instantFromWallClock(at, zone), timeZone: zone };
+  if (kind === "every") return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
+  return { kind, time, timeZone: zone, ...kind === "weekly" ? { weekdays } : {} };
 }
 function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const first = formStart(task);
@@ -4148,14 +4205,10 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
   const [weekdays, setWeekdays] = (0, import_react4.useState)(first.weekdays);
   const [count, setCount] = (0, import_react4.useState)(first.count);
   const [unit, setUnit] = (0, import_react4.useState)(first.unit);
+  const [timeZone, setTimeZone] = (0, import_react4.useState)(first.timeZone);
   const [busy, setBusy] = (0, import_react4.useState)(false);
   const [error, setError] = (0, import_react4.useState)("");
-  const timing = () => {
-    if (kind === "cron") return { kind: "keep" };
-    if (kind === "at") return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone };
-    if (kind === "every") return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) };
-    return { kind, time, timeZone: first.timeZone, ...kind === "weekly" ? { weekdays } : {} };
-  };
+  const timing = () => whenFromForm({ kind, at, time, weekdays, timeZone, count, unit });
   const submit = (event) => {
     event.preventDefault();
     if (busy || target === "") return;
@@ -4234,6 +4287,20 @@ function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
         ) : null
       )
     ),
+    // Which 09:00 this is: only the rules DSH keeps a zone for show it — a repeat interval has
+    // none, and a cron rule is kept as stored unless the kind changes (#3110).
+    kind === "at" || kind === "daily" || kind === "weekly" ? (0, import_react4.createElement)(
+      "label",
+      { className: "bt-set-row bt-bs-row" },
+      (0, import_react4.createElement)("span", { className: "bt-set-copy" }, (0, import_react4.createElement)("span", { className: "bt-bs-label" }, t("Time zone"))),
+      (0, import_react4.createElement)("select", {
+        className: "bt-select bt-task-timezone",
+        "data-flybot": "task-timezone",
+        value: timeZone,
+        "aria-label": t("Time zone"),
+        onChange: (event) => setTimeZone(event.target.value)
+      }, timeZoneOptions(timeZone).map((zone) => (0, import_react4.createElement)("option", { key: zone, value: zone }, zone)))
+    ) : null,
     error ? (0, import_react4.createElement)("div", { className: "bt-set-row" }, (0, import_react4.createElement)("span", { className: "bt-danger bt-set-hint", role: "alert" }, error)) : null,
     (0, import_react4.createElement)(
       "div",
