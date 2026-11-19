@@ -791,7 +791,7 @@ test('#2232: Quiet hours and the form announce a refusal, not only print it', as
   const start = formStart(ACTIVE)
   seeded.push(
     { available: true, tasks: [] }, true, null, false, '', '22:00', '07:00',
-    'b1', start.title, start.prompt, start.kind, start.at, start.time, start.weekdays, start.count, start.unit, false, sentence,
+    'b1', start.title, start.prompt, start.kind, start.at, start.time, start.weekdays, start.count, start.unit, start.timeZone, false, sentence,
   )
   const formShown = render(SchedulesPage({ roster: ROSTER, actions: formActions, start: 'b1' }))
   const formAlerts = alertsOf(formShown)

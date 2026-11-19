@@ -1607,6 +1607,14 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Added: {text}': '已添加：{text}',
    'Added to team memory: {text}': '已加入团队记忆：{text}',
    'Updated: {text}': '已更新：{text}',
+@@ -677,6 +677,7 @@ const ZH = {
+   'What for': '用途',
+   Activity: '活跃度',
+   'Time range': '时间范围',
++  'Time zone': '时区',
+   'All usage': '全部用量',
+   'Group usage by': '用量分组',
+   'By Bot': '按 Bot',
 @@ -697,11 +697,11 @@ const ZH = {
    'Compared with the {count} days before': '与再往前 {count} 天相比',
    '{share}% of all usage from {span}': '占 {span} 全部用量的 {share}%',
@@ -2764,7 +2772,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
        .finally(() => { if (!stopped) timer = setTimeout(load, POLL_MS) })
      load()
      return () => { stopped = true; clearTimeout(timer); listeners.delete(setView) }
-@@ -33,6 +33,12 @@ export function useSchedules(actions) {
+@@ -33,13 +33,82 @@ export function useSchedules(actions) {
    return view
  }
  
@@ -2775,9 +2783,66 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  : null)
 +
  const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
++
++// The form sends an IANA zone with the rules that carry one (#3110). This runtime's own list is
++// the choices; a zone already on the task stays listed even when the runtime omits it.
++export function timeZoneOptions(current) {
++  const supported = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
++  const zone = String(current ?? '').trim()
++  const list = supported.length > 0 ? ['UTC', ...supported] : ['UTC', 'Asia/Shanghai']
++  if (zone !== '') list.unshift(zone)
++  return [...new Set(list.filter(Boolean))]
++}
++
++// The wall clock a zone shows for an instant, as the parts of a datetime-local value.
++function zoneParts(ms, timeZone) {
++  const parts = new Intl.DateTimeFormat('en-US', {
++    timeZone: timeZone || 'UTC', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
++    hour: '2-digit', minute: '2-digit', second: '2-digit',
++  }).formatToParts(new Date(ms))
++  const value = type => Number(parts.find(part => part.type === type)?.value)
++  return Date.UTC(value('year'), value('month') - 1, value('day'), value('hour'), value('minute'), value('second'))
++}
++
++// A stored instant as a datetime-local value in the zone the task keeps (#3110), not this device's.
++export function wallClockInput(ms, timeZone) {
++  const at = Number(ms)
++  if (!Number.isFinite(at)) return ''
++  const parts = new Intl.DateTimeFormat('en-US', {
++    timeZone: String(timeZone ?? '').trim() || localZone(), hourCycle: 'h23',
++    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
++  }).formatToParts(new Date(at))
++  const value = type => parts.find(part => part.type === type)?.value
++  return value('year') ? `${value('year')}-${value('month')}-${value('day')}T${value('hour')}:${value('minute')}` : ''
++}
++
++// The instant a wall clock names in a zone (#3110). DSH stores the instant; a wall clock the zone
++// skips (a DST gap) is refused rather than moved to another hour.
++export function instantFromWallClock(wall, timeZone) {
++  const match = String(wall ?? '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/)
++  if (!match) throw new Error('Pick a date and time')
++  const asUtc = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] ?? 0))
++  const zone = String(timeZone ?? '').trim() || 'UTC'
++  let instant = asUtc
++  // Two passes settle the offset: the first guess is read back in the zone, and the difference
++  // between what it shows and what we meant is the offset to remove.
++  for (let pass = 0; pass < 3; pass += 1) {
++    const shown = zoneParts(instant, zone)
++    if (shown === asUtc) break
++    instant -= shown - asUtc
++  }
++  if (zoneParts(instant, zone) === asUtc) return new Date(instant).toISOString()
++  // A clock the zone gains (a DST gap) has no instant: refuse it, as the host refuses a time it
++  // cannot run.
++  for (const probe of [instant - 3_600_000, instant + 3_600_000, instant - 7_200_000, instant + 7_200_000]) {
++    if (zoneParts(probe, zone) === asUtc) return new Date(probe).toISOString()
++  }
++  throw new Error('Pick a date and time')
++}
++
  const clock = time => String(time ?? '').slice(0, 5)
  const when = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms)
-@@ -40,6 +40,12 @@ function dayAndTime(ms) {
+ function dayAndTime(ms) {
    const sameYear = new Date(ms).getFullYear() === new Date().getFullYear()
    return when(ms, { ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
  }
@@ -2825,7 +2890,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const at = instant(task.scheduledAt)
 +  return at === '' ? timingText(task) : t('Next: {time}', { time: at })
 +}
-+
+ 
+-function TaskRow({ task, actions, onView, showBot, roster }) {
 +// The last run, in one line: when, and how it went (src/host/schedules.js).
 +export function lastRunText(run) {
 +  if (run === undefined || !Number.isFinite(run.at)) return ''
@@ -2849,8 +2915,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const names = carriedConnectors(bot, roster?.connectors).map(connector => connector.name)
 +  return names.length === 0 ? t('Runs with no connectors') : t('Runs with {names}', { names: names.join(', ') })
 +}
- 
--function TaskRow({ task, actions, onView, showBot, roster }) {
++
 +// #2930: the host stores the reach a task was set with (`carriedAtSet`) beside the one it would take
 +// now (`carried`). When the two moved apart the row says so — the run itself still uses the current
 +// reach, because DSH has no hook before a delivery to pin either. An order change is not a change,
@@ -2933,7 +2998,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
        type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
        'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
      }, confirming ? t('Delete') : h(TrashIcon)))
-@@ -106,41 +106,78 @@ function inAnHour() {
+@@ -106,41 +106,75 @@ function inAnHour() {
    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
  }
  const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
@@ -2941,11 +3006,6 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +// The form says one unit with one count ("1 minute"), so each unit carries both words.
 +const UNITS = [['seconds', 1, 'second', 'seconds'], ['minutes', 60, 'minute', 'minutes'], ['hours', 3600, 'hour', 'hours'], ['days', 86400, 'day', 'days']]
 +
-+// A stored instant as the value of a datetime-local input, in this browser's zone.
-+function localInput(ms) {
-+  const date = new Date(ms)
-+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-+}
 +// What the form starts with: a new task's defaults, or the edited task's own values.
 +// A cron rule has no control here, so it is kept unless another kind is picked.
 +export function formStart(task) {
@@ -2956,7 +3016,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    title: task?.title ?? '',
 +    prompt: task?.prompt ?? '',
 +    kind: once ? 'at' : task?.kind ?? 'daily',
-+    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? localInput(Date.parse(task.scheduledAt)) : inAnHour(),
++    at: once && !Number.isNaN(Date.parse(task.scheduledAt)) ? wallClockInput(Date.parse(task.scheduledAt), task?.timeZone || localZone()) : inAnHour(),
 +    time: task?.time ? clock(task.time) : '09:00',
 +    weekdays: task?.kind === 'weekly' && Array.isArray(task.weekdays) ? task.weekdays : [1, 2, 3, 4, 5],
 +    count: Math.max(1, Math.round(seconds / size)),
@@ -2966,6 +3026,17 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +}
  
 -function TaskForm({ roster, actions, start, onDone, onCancel }) {
++// The form's timing as the host takes it (#3110): the zone the form shows is the one a daily or
++// weekly rule carries, and the one a Once task's wall clock is read in. A repeat interval is a
++// duration, so it carries no zone at all.
++export function whenFromForm({ kind, at, time, weekdays, timeZone, count, unit } = {}) {
++  const zone = String(timeZone ?? '').trim() || localZone()
++  if (kind === 'cron') return { kind: 'keep' }
++  if (kind === 'at') return { kind, at: instantFromWallClock(at, zone), timeZone: zone }
++  if (kind === 'every') return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
++  return { kind, time, timeZone: zone, ...(kind === 'weekly' ? { weekdays } : {}) }
++}
++
 +function TaskForm({ roster, actions, start, task, onDone, onCancel }) {
    // A task goes to a Bot's chat or to a group chat, where it reads as your message.
 -  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
@@ -2989,22 +3060,15 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const [weekdays, setWeekdays] = useState(first.weekdays)
 +  const [count, setCount] = useState(first.count)
 +  const [unit, setUnit] = useState(first.unit)
++  const [timeZone, setTimeZone] = useState(first.timeZone)
    const [busy, setBusy] = useState(false)
    const [error, setError] = useState('')
-   const timing = () => {
+-  const timing = () => {
 -    if (kind === 'at') return { kind, at: new Date(at).toISOString() }
 -    if (kind === 'every') return { kind, minutes: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
 -    return { kind, time, timeZone: localZone(), ...(kind === 'weekly' ? { weekdays } : {}) }
-+    if (kind === 'cron') return { kind: 'keep' }
-+    // A once task is an instant; the host reads its wall clock in this zone when quiet
-+    // hours are on (#1166). The others carry their zone with the time itself.
-+    if (kind === 'at') return { kind, at: new Date(at).toISOString(), timeZone: first.timeZone }
-+    // Seconds, not minutes: DSH takes any interval of 60s or more, so a 90s repeat must
-+    // survive the form instead of being rounded to two minutes (#1651).
-+    if (kind === 'every') return { kind, seconds: Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1]) }
-+    // An edited task keeps its own time zone; a new one takes this browser's.
-+    return { kind, time, timeZone: first.timeZone, ...(kind === 'weekly' ? { weekdays } : {}) }
-   }
+-  }
++  const timing = () => whenFromForm({ kind, at, time, weekdays, timeZone, count, unit })
    const submit = (event) => {
      event.preventDefault()
 -    if (busy) return
@@ -3037,13 +3101,26 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
          kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
          kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
            key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
-@@ -162,76 +162,252 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
+@@ -162,76 +162,265 @@ function TaskForm({ roster, actions, start, onDone, onCancel }) {
            h('span', { className: 'bt-task-every' }, t('Every')),
            h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
            h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
 -            UNITS.map(([id, , label]) => h('option', { key: id, value: id }, t(label))))) : null)),
 -    error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
 +            UNITS.map(([id, , one, many]) => h('option', { key: id, value: id }, t(Number(count) === 1 ? one : many))))) : null)),
++    // Which 09:00 this is: only the rules DSH keeps a zone for show it — a repeat interval has
++    // none, and a cron rule is kept as stored unless the kind changes (#3110).
++    kind === 'at' || kind === 'daily' || kind === 'weekly'
++      ? h('label', { className: 'bt-set-row bt-bs-row' },
++        h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Time zone'))),
++        h('select', {
++          className: 'bt-select bt-task-timezone',
++          'data-flybot': 'task-timezone',
++          value: timeZone,
++          'aria-label': t('Time zone'),
++          onChange: event => setTimeZone(event.target.value),
++        }, timeZoneOptions(timeZone).map(zone => h('option', { key: zone, value: zone }, zone))))
++      : null,
 +    error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error)) : null,
      h('div', { className: 'bt-set-row bt-task-foot' },
        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
@@ -3160,9 +3237,9 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
            h('h3', { className: 'bt-task-head' }, avatar, name),
 -          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, onView: publish }))))),
 +          h(TaskList, { tasks, editing, roster, actions, locked, onEdit: edit, onDone: shown, onCancel: () => setEditing(null) }))),
-   ]
- }
- 
++  ]
++}
++
 +// One chat's rows; the task being edited opens the form in its place, and so does the one
 +// being copied, which opens only the target picker.
 +function TaskList({ tasks, editing, roster, actions, locked, onEdit, onDone, onCancel, extra = [] }) {
@@ -3184,7 +3261,7 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +  const others = [
 +    ...roster.bots.filter(bot => bot.id !== task.botId).map(bot => [bot.id, bot.name]),
 +    ...roster.rooms.filter(room => room.id !== task.roomId).map(room => [room.id, room.name]),
-+  ]
+   ]
 +  const [target, setTarget] = useState('')
 +  const [busy, setBusy] = useState(false)
 +  const [error, setError] = useState('')
@@ -3204,8 +3281,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +    h('button', { type: 'submit', className: 'bt-soft bt-soft-sm', disabled: busy || target === '' }, busy ? t('Copying…') : t('Copy')),
 +    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
 +    error ? h('span', { className: 'bt-danger bt-set-hint', role: 'alert' }, error) : null)
-+}
-+
+ }
+ 
  // A Bot's tasks in its settings form, with the way to add one.
  export function BotSchedules({ bot, roster, actions }) {
    const view = useSchedules(actions)
@@ -3250,10 +3327,8 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +          onCancel: () => setEditing(null),
 +          extra: locked ? [] : [h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task'))],
 +        }))
- }
- 
--// The details panel's line: the Bot's next tasks, or how to add one.
--export function ScheduleSummary({ bot, actions }) {
++}
++
 +// The panel's rows: three of them, a title carrying the real count above three, and one row
 +// saying what the cap hid (#2030). A Bot's details line and a group chat's section share it, so
 +// the two surfaces cannot describe the same list differently.
@@ -3266,8 +3341,10 @@ diff --git a/src/client/schedules.js b/src/client/schedules.js
 +      shown.map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules') },
 +        h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, nextText(task)))),
 +      hidden > 0 ? h('button', { key: 'more', type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules') }, t('{count} more not shown', { count: hidden })) : null))
-+}
-+
+ }
+ 
+-// The details panel's line: the Bot's next tasks, or how to add one.
+-export function ScheduleSummary({ bot, actions }) {
 +// The details panel's line: the Bot's next tasks, or how to add one. Paused and finished
 +// tasks are the Bot's tasks too, so only a Bot with none at all gets the empty state (#2024).
 +// The rows open the settings list, where a bot id would open the new-task form instead — the
