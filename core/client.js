@@ -2098,6 +2098,14 @@ function landingPart(roster, last, mainId, { stay = false, view = "", sessions }
   if (sessions === void 0) return destinations[0];
   return destinations.find((id) => sessions.byId?.[id] !== void 0);
 }
+function openTarget(roster, sessions, id, part) {
+  const bot = roster.byId?.[id];
+  if (bot === void 0) return { target: id, seek: true };
+  const current = currentPart(bot);
+  if (typeof part !== "string" || part === current) return { target: current, seek: true };
+  const owned = part === bot.sessionId || (bot.parts ?? []).includes(part);
+  return owned && sessions?.byId?.[part] !== void 0 ? { target: part, seek: true } : { target: current, seek: false };
+}
 function reminderPrompts(text2) {
   const one = /^reminder_prompt_json: (.*)$/m.exec(text2);
   const batch = /^reminders_json: (.*)$/m.exec(text2);
@@ -16661,7 +16669,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
   const fullText = (wholeText?.rows ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map((row) => {
     const bot = roster.byId[row.chat];
     const room2 = roster.roomsById[row.chat];
-    const here = inPart(row.chat, row.turn);
+    const earlier = typeof row.part === "string" ? bot !== void 0 && row.part !== currentPart(bot) : inPart(row.chat, row.turn) === false;
     const at = `${row.chat}:${row.turn}`;
     const count = (keyCounts.get(at) ?? 0) + 1;
     keyCounts.set(at, count);
@@ -16670,8 +16678,10 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
       title: bot?.name ?? room2?.name ?? t("Bot"),
       subtitle: row.text,
       avatar: bot ? (0, import_react35.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react35.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
-      badge: here === false ? t("Earlier part") : void 0,
-      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn })
+      badge: earlier ? t("Earlier part") : void 0,
+      // A row lands where it points: another part opens that part at its turn, so the words are
+      // on screen; the current part keeps its seek; a row with no part keeps today's navigation.
+      run: earlier && row.part !== void 0 ? () => actions.openSession(row.chat, { part: row.part, turn: row.turn }) : earlier ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn })
     };
   });
   const hidden = wholeText?.more ?? 0;
@@ -24022,15 +24032,15 @@ function apply(ctx) {
     // The full-pane overlays sit above the conversation, so opening one must dismiss them
     // or the click appears to do nothing.
     isAgentSession: (id) => isAgentSessionId(id),
-    openSession: (id, { turn } = {}) => {
+    openSession: (id, { turn, part } = {}) => {
       noteNavigation("openSession", id);
       if (isAgentSessionId(id)) return actions.openAgentSession(id);
       ui2.set((state) => state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state);
       setPlain(false);
-      const target = partFor(id);
+      const { target, seek } = openTarget(roster.getSnapshot(), ctx.sessions.list.getSnapshot(), id, part);
       expected = target;
       ctx.uiWorkspace.openSession(target);
-      seekTurn(turn);
+      if (seek) seekTurn(turn);
     },
     // The palette's whole-text message search (P-820): the host answers with the
     // caller's own chats, whole lines with the turn they belong to.

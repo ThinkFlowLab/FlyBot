@@ -1731,7 +1731,7 @@ diff --git a/src/client/index.js b/src/client/index.js
 +import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession, stateAnswerIsStale, stateRequest } from './sources.js'
  import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
 -import { MENTION_ORIGIN, currentPart } from './text.js'
-+import { currentPart, landingPart, setPluginTools } from './text.js'
++import { currentPart, landingPart, openTarget, setPluginTools } from './text.js'
 +import { mentionCss } from './mention-style.js'
  import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 -import { lookOf } from './mark.js'
@@ -1964,14 +1964,15 @@ diff --git a/src/client/index.js b/src/client/index.js
    // A Bot id, or any part of its chat, opens the Bot's current part.
    const partFor = (id) => {
      const bot = roster.getSnapshot().byId[id]
-@@ -337,11 +337,27 @@ export function apply(ctx) {
+@@ -337,23 +337,44 @@ export function apply(ctx) {
      for (const [id, owner] of pendingAdopt) if (owner === agentId && !ids.includes(id)) ids.push(id)
      return ids
    }
-+  // The palette's whole-text rows name the turn the hit belongs to (P-820). DSH opens a
++  // The palette's whole-text rows name the turn the hit belongs to and its part (#3114). DSH opens a
 +  // session by id only, so the turn is found where the message pills already look: the
 +  // flow's own DOM. A turn the host has not loaded lands on the nearest view — the row's
 +  // snippet still shows the words — and the seek gives up rather than spin.
++  // A part that could not be opened gives the seek up too: the same turn number is another line.
 +  const seekTurn = (turn) => {
 +    if (!Number.isInteger(turn) || turn < 0 || typeof document === 'undefined') return
 +    let tries = 0
@@ -1988,16 +1989,17 @@ diff --git a/src/client/index.js b/src/client/index.js
      // or the click appears to do nothing.
      isAgentSession: id => isAgentSessionId(id),
 -    openSession: (id) => {
-+    openSession: (id, { turn } = {}) => {
++    openSession: (id, { turn, part } = {}) => {
 +      noteNavigation('openSession', id)
        // A DSH Agent Session id lands on the plain surface, not the Bot skin.
        if (isAgentSessionId(id)) return actions.openAgentSession(id)
        ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
-@@ -349,11 +349,15 @@ export function apply(ctx) {
-       const target = partFor(id)
+       setPlain(false)
+-      const target = partFor(id)
++      const { target, seek } = openTarget(roster.getSnapshot(), ctx.sessions.list.getSnapshot(), id, part)
        expected = target
        ctx.uiWorkspace.openSession(target)
-+      seekTurn(turn)
++      if (seek) seekTurn(turn)
      },
 +    // The palette's whole-text message search (P-820): the host answers with the
 +    // caller's own chats, whole lines with the turn they belong to.
@@ -2877,7 +2879,7 @@ diff --git a/src/client/palette.js b/src/client/palette.js
        badge: room.hidden ? t('Hidden') : undefined,
        run: async () => { if (room.hidden) await actions.setFlags(room.id, { hidden: false }); actions.openSession(room.id) },
      })),
-@@ -67,21 +67,50 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
+@@ -67,21 +67,56 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
      run: () => actions.openAgent(agent.id),
    }))
    if (agents.length) sections.push(['DSH Agent', agents])
@@ -2909,15 +2911,21 @@ diff --git a/src/client/palette.js b/src/client/palette.js
 +  const fullText = (wholeText?.rows ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
 +    const bot = roster.byId[row.chat]
 +    const room = roster.roomsById[row.chat]
-+    const here = inPart(row.chat, row.turn)
++    // A row that names its part is placed by that part (#3114); a row without one keeps the
++    // outline's answer, the only proof the client has about what the part it holds contains.
++    const earlier = typeof row.part === 'string' ? bot !== undefined && row.part !== currentPart(bot) : inPart(row.chat, row.turn) === false
 +    const at = `${row.chat}:${row.turn}`
 +    const count = (keyCounts.get(at) ?? 0) + 1
 +    keyCounts.set(at, count)
 +    return {
 +      key: count > 1 ? `${at}:${count}` : at, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
 +      avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
-+      badge: here === false ? t('Earlier part') : undefined,
-+      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn }),
++      badge: earlier ? t('Earlier part') : undefined,
++      // A row lands where it points: another part opens that part at its turn, so the words are
++      // on screen; the current part keeps its seek; a row with no part keeps today's navigation.
++      run: earlier && row.part !== undefined
++        ? () => actions.openSession(row.chat, { part: row.part, turn: row.turn })
++        : earlier ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn }),
 +    }
 +  })
 +  const hidden = wholeText?.more ?? 0

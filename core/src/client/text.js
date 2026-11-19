@@ -101,6 +101,20 @@ export function landingPart(roster, last, mainId, { stay = false, view = '', ses
   // caught up with falls back to the chat it replaced, and nothing known at all is `undefined`.
   return destinations.find(id => sessions.byId?.[id] !== undefined)
 }
+// #3114: where a search row lands. A row that names its part is placed by that part: the part
+// opens when the chat owns it and the shell's session list holds it. A part that fails either
+// test is not opened — the chat's current part opens with no seek, because the same turn
+// number there is a different message.
+export function openTarget(roster, sessions, id, part) {
+  const bot = roster.byId?.[id]
+  if (bot === undefined) return { target: id, seek: true }
+  const current = currentPart(bot)
+  // A part is a Session id string or nothing at all: a row that names nothing, or names something
+  // that is not a string (a number from an older host), asks for the current part and its turn.
+  if (typeof part !== 'string' || part === current) return { target: current, seek: true }
+  const owned = part === bot.sessionId || (bot.parts ?? []).includes(part)
+  return owned && sessions?.byId?.[part] !== undefined ? { target: part, seek: true } : { target: current, seek: false }
+}
 // The prompts in a due scheduled task's message. DSH frames it for the model: one
 // task as `reminder_prompt_json: "…"`, several as `reminders_json: [{reminder_prompt}]`.
 export function reminderPrompts(text) {

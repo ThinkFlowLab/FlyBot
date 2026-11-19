@@ -124,15 +124,21 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
   const fullText = (wholeText?.rows ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
     const bot = roster.byId[row.chat]
     const room = roster.roomsById[row.chat]
-    const here = inPart(row.chat, row.turn)
+    // A row that names its part is placed by that part (#3114); a row without one keeps the
+    // outline's answer, the only proof the client has about what the part it holds contains.
+    const earlier = typeof row.part === 'string' ? bot !== undefined && row.part !== currentPart(bot) : inPart(row.chat, row.turn) === false
     const at = `${row.chat}:${row.turn}`
     const count = (keyCounts.get(at) ?? 0) + 1
     keyCounts.set(at, count)
     return {
       key: count > 1 ? `${at}:${count}` : at, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: row.text,
       avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
-      badge: here === false ? t('Earlier part') : undefined,
-      run: here === false ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn }),
+      badge: earlier ? t('Earlier part') : undefined,
+      // A row lands where it points: another part opens that part at its turn, so the words are
+      // on screen; the current part keeps its seek; a row with no part keeps today's navigation.
+      run: earlier && row.part !== undefined
+        ? () => actions.openSession(row.chat, { part: row.part, turn: row.turn })
+        : earlier ? () => actions.openSession(row.chat) : () => actions.openSession(row.chat, { turn: row.turn }),
     }
   })
   const hidden = wholeText?.more ?? 0

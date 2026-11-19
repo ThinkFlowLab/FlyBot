@@ -88,3 +88,30 @@ test('#1306: a destination the session list does not know is never handed to the
   assert.equal(landingPart({ byId: { friend: fresh, chief } }, last, 'chief', { stay: true, sessions: gone }), 'chief-2', 'a fresh part the list has not caught up with, the chat it replaced gone: the Main Bot')
   assert.equal(landingPart({ byId: { friend: fresh, chief } }, last, 'chief', { stay: true, sessions }), 'friend-1', 'the fresh part is unknown, the chat it replaced is known: stay on that chat')
 })
+
+// #3114: a message row names the part it was said in. That part opens only when the chat owns
+// it and the shell's session list holds it; a part that fails either test is not opened at all,
+// and the row falls back to the chat's current part with no seek — the same turn number there
+// is a different message. An id the roster does not hold keeps the id fallback it always had.
+// The fix exports this, so it is resolved here: a missing export fails this case alone.
+test('#3114: a named part is opened only when the chat owns it and the shell lists it', async () => {
+  const { openTarget } = await import('../src/client/text.js')
+  const bot = { id: 'friend', sessionId: 'friend-2', parts: ['friend-1'] }
+  const at = (id, part, known = sessions) => openTarget({ byId: { ...roster.byId, friend: bot } }, known, id, part)
+  assert.deepEqual(at('friend', 'friend-1'), { target: 'friend-1', seek: true }, 'a part the chat owns and the list holds')
+  assert.deepEqual(at('friend', 'friend-2'), { target: 'friend-2', seek: true }, 'the part that is already open')
+  assert.deepEqual(at('friend'), { target: 'friend-2', seek: true }, 'no part: the current part, as before')
+  assert.deepEqual(at('friend', 'chief-2'), { target: 'friend-2', seek: false }, 'a part another chat owns: no seek')
+  assert.deepEqual(at('friend', 'friend-1', { byId: {} }), { target: 'friend-2', seek: false }, 'a part the shell does not list: no seek')
+  assert.deepEqual(at('gone', 'friend-1'), { target: 'gone', seek: true }, 'an id the roster does not hold')
+})
+
+// #3114: a part is a Session id string or nothing at all. A row that names something else — a
+// number, from an older host or a hand-built row — is not a part this chat could open, so it takes
+// the road of a row that names no part: the current part, and a seek there, never the no-seek
+// fallback a part this chat cannot reach gets.
+test('#3114: a part that is not a string opens the current part and keeps the seek', async () => {
+  const { openTarget } = await import('../src/client/text.js')
+  const withParts = { id: 'friend', sessionId: 'friend-2', parts: ['friend-1'] }
+  assert.deepEqual(openTarget({ byId: { ...roster.byId, friend: withParts } }, sessions, 'friend', 5), { target: 'friend-2', seek: true })
+})

@@ -382,3 +382,30 @@ test('#3114: a query shorter than two characters asks nothing and renders no row
   assert.deepEqual(palette.calls.search, [])
   assert.deepEqual(palette.rows().filter(key => !key.startsWith('cmd:')), [])
 })
+
+// A row that names its part is placed by that part (#3114): a hit the host puts in an earlier
+// part opens that part and still seeks its turn there. The outline holds no turn of that part,
+// so the row's own part is the only thing that can say where the words were said — and the row
+// still says `Earlier part`, because the part it names is not the one the view holds.
+test('#3114: a hit the host places in an earlier part opens that part at its turn', async () => {
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 12, part: 's1-old', text: 'NEEDLE far past this part' }] })
+  await palette.settle()
+  assert.deepEqual(palette.badges(), ['Earlier part'])
+  palette.choose('s1:12')
+  assert.equal(palette.calls.openSession.length, 1)
+  assert.equal(palette.calls.openSession[0][0], 's1')
+  assert.equal(palette.calls.openSession[0][1]?.part, 's1-old')
+  assert.equal(palette.calls.openSession[0][1]?.turn, 12)
+})
+
+// The part that is already open is no earlier part: the row keeps its seek and names no part,
+// so the navigation is the one it always was, and a hit the host says is here is not marked.
+// The part is named, so this one case pins that naming it does not change the answer.
+test('#3114: a hit in the current part keeps its own seek', async () => {
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 1, prompt: 'a plain turn' }], rows: [{ chat: 's1', turn: 1, part: 's1', text: 'NEEDLE inside this part' }] })
+  await palette.settle()
+  assert.deepEqual(palette.badges(), [])
+  palette.choose('s1:1')
+  assert.equal(palette.calls.openSession[0][1]?.turn, 1)
+  assert.equal(palette.calls.openSession[0][1]?.part, undefined, 'the current part is not named as another part')
+})

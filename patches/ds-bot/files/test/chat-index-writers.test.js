@@ -367,6 +367,30 @@ test('chats.search answers through the channel with only the caller\'s chats (P-
   }
 })
 
+// #3114. A row already names the turn the hit belongs to; it now names the part too, so the
+// client can open that part instead of only marking the hit as earlier. The part is the part's
+// own Session id — the same `session` the index rows carry — and it is only for a Bot's own
+// chat: a room's row is not a part the palette may open, so it carries none.
+test('#3114: a chats.search row names the part the hit was said in', async (t) => {
+  const home = scratch(t, 'ds-bot-index-part-')
+  HISTORY.older = [turnStart(0, 4), line(1, 'a plain line'), turnStart(2, 5), line(3, NEEDLE_LINE)]
+  try {
+    const seeded = seed()
+    seeded.bots.a.segments = [{ sessionId: 'older', endedAt: T0 + 9000 }]
+    const host = await start(t, home, { saved: seeded })
+    assert.notEqual(host.route, undefined, 'the channel registered its /api/bot route')
+    const response = await host.route.fetch(new Request('http://localhost/api/bot', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint: 'chats.search', payload: { query: 'needle' } }),
+    }))
+    const result = await response.json()
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.deepEqual(result.value.rows.map(row => [row.chat, row.part, row.turn]), [['a', 'older', 5]], JSON.stringify(result.value))
+  } finally {
+    delete HISTORY.older
+  }
+})
+
 // The same view, the security case: a shared room renders because it keeps the other member's
 // Bot in `bots`, and that Bot's own chat is not room content. owner-1 sits in `r1` with
 // owner-2's Bot `b`; `duo` is b's own chat. Searching it as owner-1 must answer nothing, while
@@ -398,6 +422,7 @@ test('chats.search never reads another member\'s Bot own chat through a shared r
     assert.equal(shared.ok, true, JSON.stringify(shared))
     assert.deepEqual(shared.value.rows.map(row => row.chat), ['r1'], JSON.stringify(shared.value))
     assert.match(shared.value.rows[0].text, /hello from the room/)
+    assert.equal('part' in shared.value.rows[0], false, 'a room row names no part: the member part is not a chat to open')
 
     // What the fix restores: the refused read the state view already refused, at both layers.
     const refused = await host.route.fetch(new Request('http://localhost/api/bot', {

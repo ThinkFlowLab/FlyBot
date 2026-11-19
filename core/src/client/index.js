@@ -7,7 +7,7 @@ import { isHex } from './inks.js'
 import { SHAPES, markupCache } from './characters.js'
 import { countCards, createSource, EMPTY_ROSTER, indexRoster, isAgentSession, stateAnswerIsStale, stateRequest } from './sources.js'
 import { themeCss, shellTokens, registry, registerShape, registerTheme, allThemes } from './themes.js'
-import { currentPart, landingPart, setPluginTools } from './text.js'
+import { currentPart, landingPart, openTarget, setPluginTools } from './text.js'
 import { mentionCss } from './mention-style.js'
 import { SHELL_CSS, CONVERSATION_CSS, installStyles, installCompiledStyles } from './styles.js'
 import { installBrandChrome, installTabTitle } from './brand.js'
@@ -414,10 +414,11 @@ export function apply(ctx) {
     for (const [id, owner] of pendingAdopt) if (owner === agentId && !ids.includes(id)) ids.push(id)
     return ids
   }
-  // The palette's whole-text rows name the turn the hit belongs to (P-820). DSH opens a
+  // The palette's whole-text rows name the turn the hit belongs to and its part (#3114). DSH opens a
   // session by id only, so the turn is found where the message pills already look: the
   // flow's own DOM. A turn the host has not loaded lands on the nearest view — the row's
   // snippet still shows the words — and the seek gives up rather than spin.
+  // A part that could not be opened gives the seek up too: the same turn number is another line.
   const seekTurn = (turn) => {
     if (!Number.isInteger(turn) || turn < 0 || typeof document === 'undefined') return
     let tries = 0
@@ -433,16 +434,16 @@ export function apply(ctx) {
     // The full-pane overlays sit above the conversation, so opening one must dismiss them
     // or the click appears to do nothing.
     isAgentSession: id => isAgentSessionId(id),
-    openSession: (id, { turn } = {}) => {
+    openSession: (id, { turn, part } = {}) => {
       noteNavigation('openSession', id)
       // A DSH Agent Session id lands on the plain surface, not the Bot skin.
       if (isAgentSessionId(id)) return actions.openAgentSession(id)
       ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
       setPlain(false)
-      const target = partFor(id)
+      const { target, seek } = openTarget(roster.getSnapshot(), ctx.sessions.list.getSnapshot(), id, part)
       expected = target
       ctx.uiWorkspace.openSession(target)
-      seekTurn(turn)
+      if (seek) seekTurn(turn)
     },
     // The palette's whole-text message search (P-820): the host answers with the
     // caller's own chats, whole lines with the turn they belong to.
