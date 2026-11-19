@@ -145,7 +145,7 @@ test('#3114 cut 20: the three baselines lose these draws', () => {
   }
   // The baselines shrink by exactly these draws and nothing else does: the totals are the ratchet's
   // numbers, and a later cut that moves them moves these numbers with it.
-  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [13, 14, 55])
+  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [12, 14, 51])
 
   // A host with no translator keeps the English it drew before this change, character for
   // character — `tr()` replaces a string only when the host answers for it.

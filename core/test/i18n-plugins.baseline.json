@@ -2,8 +2,7 @@
   "version": 1,
   "entries": [
     "plugins/social/client.js:Close",
-    "plugins/social/client.js:Copied#1",
-    "plugins/social/client.js:Copied#2",
+    "plugins/social/client.js:Copied",
     "plugins/social/client.js:Copy",
     "plugins/social/client.js:Your Bot Social handle",
     "plugins/timeline/client.js:Close",

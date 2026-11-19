@@ -1317,7 +1317,7 @@ diff --git a/client.js b/client.js
    "The admin must be a member of the group": "管理员必须是群成员",
    "Unknown group chat": "找不到这个群聊",
    "Hand the admin role to another member instead of leaving the group without one": "请把管理员交给其他成员，不要让群聊没有管理员",
-@@ -951,10 +951,38 @@ var HOST_ZH = {
+@@ -951,10 +951,44 @@ var HOST_ZH = {
    "The model wrote nothing": "模型没有输出内容",
    "Write the entry to save.": "请写下要保存的内容。",
    "This DeepSeek Harness has no folder chooser": "这个 DeepSeek Harness 没有文件夹选择窗口",
@@ -1350,7 +1350,13 @@ diff --git a/client.js b/client.js
 +  "{name} is now a friend.": "{name} 现在成了你的朋友。",
 +  "Declined {name}.": "已拒绝 {name}。",
 +  "{what} failed: {why}": "{what} 失败：{why}",
-+  "Your friend": "你的朋友"
++  "Your friend": "你的朋友",
++  // #3114 cut 25: the invite card in an open face-to-face room.
++  "Link ready": "链接已就绪",
++  "QR code for this room invite": "这个房间邀请的二维码",
++  "Scan to open this room": "扫码打开这个房间",
++  "Anyone with the link can join while the room is open.": "只要房间还开着，拿到链接的人都能加入。",
++  "Bot Social did not send an invite. Try again.": "Bot Social 没有发来邀请，请重试。"
  };
  Object.assign(ZH, HOST_ZH);
 -var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;

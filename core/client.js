@@ -1817,7 +1817,13 @@ var HOST_ZH = {
   "{name} is now a friend.": "{name} 现在成了你的朋友。",
   "Declined {name}.": "已拒绝 {name}。",
   "{what} failed: {why}": "{what} 失败：{why}",
-  "Your friend": "你的朋友"
+  "Your friend": "你的朋友",
+  // #3114 cut 25: the invite card in an open face-to-face room.
+  "Link ready": "链接已就绪",
+  "QR code for this room invite": "这个房间邀请的二维码",
+  "Scan to open this room": "扫码打开这个房间",
+  "Anyone with the link can join while the room is open.": "只要房间还开着，拿到链接的人都能加入。",
+  "Bot Social did not send an invite. Try again.": "Bot Social 没有发来邀请，请重试。"
 };
 Object.assign(ZH, HOST_ZH);
 var fill = (text2, params) => params ? text2.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text2;
