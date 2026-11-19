@@ -3362,27 +3362,27 @@ window.__ModuleLoader__.load({
     // One invite control for Add friend and a Bot's Sharing (#499): one button makes the link and copies
     // it; then the link shows with the same Copy link / Copy with instructions / New link, and every copy
     // note names the Bot. A plain render helper without hooks: each caller keeps its own state.
-    const INVITE_COPY_FAILED = 'Could not copy. Select the link and copy it by hand.'
-    const inviteCopied = (botName, withText) => (withText ? `Invite for ${botName} copied with instructions.` : `Invite link for ${botName} copied.`)
+    const inviteCopyFailed = () => tr('Could not copy. Select the link and copy it by hand.')
+    const inviteCopied = (botName, withText) => (withText ? tr('Invite for {bot} copied with instructions.', { bot: botName }) : tr('Invite link for {bot} copied.', { bot: botName }))
     // Call it straight from a click where possible, so the clipboard write keeps its permission.
     const copyInvite = (text, botName, withText = false) => {
       const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
-      if (!text || !clip?.writeText) return Promise.resolve({ tone: 'error', text: INVITE_COPY_FAILED })
-      return Promise.resolve(clip.writeText(text)).then(() => ({ tone: 'ok', text: inviteCopied(botName, withText) }), () => ({ tone: 'error', text: INVITE_COPY_FAILED }))
+      if (!text || !clip?.writeText) return Promise.resolve({ tone: 'error', text: inviteCopyFailed() })
+      return Promise.resolve(clip.writeText(text)).then(() => ({ tone: 'ok', text: inviteCopied(botName, withText) }), () => ({ tone: 'error', text: inviteCopyFailed() }))
     }
     function inviteControls({ botName, invite, busy, onMint, onCopy, onNew } = {}) {
       // The button names the Bot the link shares; a long name ends in an ellipsis instead of being clipped.
       if (!invite) {
         return h('div', { className: 'fs-line', 'data-flybot': 'invite-line' },
-          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', title: `Copy invite link for ${botName}`, style: { flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }, disabled: busy, onClick: onMint }, `Copy invite link for ${botName}`))
+          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', title: tr('Copy invite link for {bot}', { bot: botName }), style: { flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }, disabled: busy, onClick: onMint }, tr('Copy invite link for {bot}', { bot: botName })))
       }
       // The link first, then Copy link as the one primary action; a new link is a quiet text button (#230).
       return h(Fragment, null,
-        h('input', { className: 'fs-input fs-invite-link', readOnly: true, value: invite.link, 'aria-label': `Invite link for ${botName}`, 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() }),
+        h('input', { className: 'fs-input fs-invite-link', readOnly: true, value: invite.link, 'aria-label': tr('Invite link for {bot}', { bot: botName }), 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() }),
         h('div', { className: 'fs-line fs-invite-actions' },
-          h('button', { type: 'button', className: 'fs-btn fs-btn-primary fs-btn-fit', 'data-flybot': 'copy-link', onClick: () => onCopy(invite.link, false) }, 'Copy link'),
-          invite.text ? h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => onCopy(invite.text, true) }, 'Copy with instructions') : null,
-          h('button', { type: 'button', className: 'fs-link fs-invite-new', 'data-flybot': 'new-invite-link', disabled: busy, onClick: onNew }, 'New link')))
+          h('button', { type: 'button', className: 'fs-btn fs-btn-primary fs-btn-fit', 'data-flybot': 'copy-link', onClick: () => onCopy(invite.link, false) }, tr('Copy link')),
+          invite.text ? h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => onCopy(invite.text, true) }, tr('Copy with instructions')) : null,
+          h('button', { type: 'button', className: 'fs-link fs-invite-new', 'data-flybot': 'new-invite-link', disabled: busy, onClick: onNew }, tr('New link'))))
     }
 
     // How long an accepted invite's result shows before Add friend closes on its own (#499).
@@ -3441,7 +3441,7 @@ window.__ModuleLoader__.load({
           const text = errorText(e)
           setStatus(text === ALREADY_HAVE
             ? { tone: 'info', text }
-            : { tone: 'error', text: /^This invite was already used/.test(text) ? text : `${label} failed: ${text}` })
+            : { tone: 'error', text: /^This invite was already used/.test(text) ? text : tr('{what} failed: {why}', { what: label, why: text }) })
         } finally {
           setBusy(false)
         }
@@ -3468,7 +3468,7 @@ window.__ModuleLoader__.load({
           if (r?.alreadyHave) {
             // Nothing changed unless a hidden or removed Bot really came back (#496).
             const back = (r.restored ?? []).map(bot => botWithOwner(bot.name, bot.owner)).filter(Boolean)
-            if (back.length) return `${back.join(' and ')} ${back.length > 1 ? 'are' : 'is'} back in your list.`
+            if (back.length) return tr('{bots} {verb} back in your list.', { bots: back.join(' and '), verb: back.length > 1 ? 'are' : 'is' })
             const have = botWithOwner(r.botName, r.ownerName)
             // #1000: a re-accept completes the pair now, so the line says what the click did instead of
             // leaving the other direction silently absent.
@@ -3477,15 +3477,15 @@ window.__ModuleLoader__.load({
             }
             return { tone: 'info', text: have ? `You already have ${have}.` : ALREADY_HAVE }
           }
-          const who = r.inviterName ?? r.inviter ?? 'Your friend'
+          const who = r.inviterName ?? r.inviter ?? tr('Your friend')
           const shared = r.inviterBotName || r.sharedBot
           if (r.status === 'active') {
             // A join that brought no Bot says so instead of claiming one was shared, and stays open.
             if (shared) accepted = r
             const backNote = r.sharedBack ? ` ${sharedBackLine(r.sharedBackBotName)}` : ''
-            return shared ? `${who} shared ${shared} with you.${backNote}` : `Joined ${who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.${backNote}`
+            return shared ? tr('{who} shared {bot} with you.{note}', { who, bot: shared, note: backNote }) : tr("Joined {who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.{note}", { who, note: backNote })
           }
-          return `Request sent to ${who}. They show up here once they accept.`
+          return tr('Request sent to {who}. They show up here once they accept.', { who })
         })
         // The result shows for a moment, then the panel closes on its own and opens the new friend's
         // Bot when it is already listed: no second click on Done (#499).
@@ -3500,7 +3500,7 @@ window.__ModuleLoader__.load({
       }
       const respond = (item, decision) => run(decision === 'accept' ? 'Accepting' : 'Declining', async () => {
         await call('social/respond', { relationshipId: item.relationshipId, decision })
-        return decision === 'accept' ? `${item.name ?? item.handle} is now a friend.` : `Declined ${item.name ?? item.handle}.`
+        return decision === 'accept' ? tr('{name} is now a friend.', { name: item.name ?? item.handle }) : tr('Declined {name}.', { name: item.name ?? item.handle })
       })
       const incoming = overview?.incoming ?? []
       const outgoing = overview?.outgoing ?? []
@@ -3510,31 +3510,31 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'bt-social-add', 'data-flybot': 'add-friend' },
         h('div', { className: 'fs-face-head' },
           h('div', { className: 'fs-label fs-label-plain' }, tr('Add friend'))),
-        me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, `You are ${me}`) : null,
-        h('div', { className: 'fs-label', 'data-flybot': 'accept-heading' }, 'Accept an invite'),
+        me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, tr('You are {me}', { me })) : null,
+        h('div', { className: 'fs-label', 'data-flybot': 'accept-heading' }, tr('Accept an invite')),
         h('form', { onSubmit: join, className: 'fs-card bt-social-join', 'data-flybot': 'accept-group' },
           // The paste box takes the full width on its own row and wraps, so a whole link is readable (#343,
           // #499). Typing clears an error that no longer applies; Enter accepts, as in a one-line box.
           h('textarea', {
-            className: 'fs-input fs-paste', rows: 2, style: { width: '100%' }, value: code, spellCheck: false, placeholder: 'Paste invite link or code', 'aria-label': 'Invite link or code',
+            className: 'fs-input fs-paste', rows: 2, style: { width: '100%' }, value: code, spellCheck: false, placeholder: tr('Paste invite link or code'), 'aria-label': tr('Invite link or code'),
             onChange: (e) => { setCode(e.target.value); if (status?.tone === 'error') setStatus(null) },
             onKeyDown: (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent?.isComposing) { e.preventDefault(); e.currentTarget?.form?.requestSubmit?.() } },
           }),
           // Accepting grants only the invited Bot to you. The Bot you talk through is not shared, so
           // there is nothing to pick with one Bot (#228).
-          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: "Talks for you. Not shared: your friend can't use it unless you invite them to it." },
-            h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
-            h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: tr("Talks for you. Not shared: your friend can't use it unless you invite them to it.") },
+            h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, tr('Talk through ')),
+            h('select', { className: 'fs-input', value: joiner, 'aria-label': tr('Which of your Bots talks'), onChange: e => setJoiner(e.target.value) },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
           h('div', { className: 'fs-line' },
             h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, tr('Accept invite')))),
-        h('div', { className: 'fs-label', 'data-flybot': 'invite-heading' }, 'Invite a friend'),
+        h('div', { className: 'fs-label', 'data-flybot': 'invite-heading' }, tr('Invite a friend')),
         h('div', { className: 'fs-card', 'data-flybot': 'invite-group' },
           // Which Bot the link shares is a labelled picker on its own line, not a bare `C…`; a name too long
           // for the sidebar is whole in the tooltip and in the button's tooltip below (#343).
-          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'share-as', title: 'Your friend gets this Bot only.' },
-            h('span', { className: 'fs-join-as-label' }, 'Share '),
-            h('select', { className: 'fs-input', value: sharing, title: shareName, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'share-as', title: tr('Your friend gets this Bot only.') },
+            h('span', { className: 'fs-join-as-label' }, tr('Share ')),
+            h('select', { className: 'fs-input', value: sharing, title: shareName, 'aria-label': tr('Which of your Bots to share'), 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
               mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
           // The same invite control as the Bot's Sharing (#499).
           inviteControls({ botName: made?.botName || shareName, invite: made, busy, onMint: () => mint(true), onCopy: copyMade, onNew: () => mint(false) })),

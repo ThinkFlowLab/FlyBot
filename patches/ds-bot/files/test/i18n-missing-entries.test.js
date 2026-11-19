@@ -82,7 +82,7 @@ test('the scan counts copy tables and copy props, not data', () => {
 test('the widened scan names every copy attribute and skips placeholder examples', () => {
   const source = [
     "h(Button, { title: 'Archive this room', 'aria-label': 'Archive this room' })",
-    "h('input', { placeholder: 'Paste invite link or code' })",
+    "h('input', { placeholder: 'Type a room name' })",
     "h('input', { placeholder: 'https://social.example' })",
     "h('input', { placeholder: 'github, composio' })",
     "h(Picture, { alt: 'A picture of the room' })",
@@ -93,7 +93,7 @@ test('the widened scan names every copy attribute and skips placeholder examples
   assert.deepEqual(keys, [
     'Archive this room',
     'Archive this room',
-    'Paste invite link or code',
+    'Type a room name',
     'A picture of the room',
     'Type a name',
     'Explains the row',
