@@ -62,7 +62,7 @@ test('the scan counts copy tables and copy props, not data', () => {
     "const REFUSAL_COPY = { expired: 'Too late.', busy: 'Wait a moment.' }",
     "const STATE_TEXT = { connected: t => t('Connected') }",
     "const INVITE_UNSUPPORTED = 'Invites need a newer Bot Social.'",
-    "setStatus({ tone: 'error', text: 'Enter a 6-digit number.' })",
+    "setStatus({ tone: 'error', text: 'Type the 6-digit number.' })",
     "setInvite({ status: { tone: 'error', text: INVITE_UNSUPPORTED } })",
     "h('div', { className: 'fs-status', role: status === 'done' ? 'status' : 'note' }, tr('Member'))",
     "h(QrImage, { text: qrText, kind: 'face-qr', label: 'QR code for this room', hint: 'Scan this to join' })",
@@ -72,7 +72,7 @@ test('the scan counts copy tables and copy props, not data', () => {
   assert.deepEqual(missingCopy(source, 'plugins/sample/client.js').map(entry => entry.key), [
     'Too late.',
     'Wait a moment.',
-    'Enter a 6-digit number.',
+    'Type the 6-digit number.',
     'Invites need a newer Bot Social.',
     'QR code for this room',
     'Scan this to join',
