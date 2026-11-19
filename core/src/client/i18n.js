@@ -219,6 +219,20 @@ const ZH = {
   // Sidebar and account menu
   'Bot list': 'Bot 列表',
   'Bot tree': 'Bot 树',
+  // #3114 cut 19: the Bot tree's sidebar — the Archived Bots group, its status tags, and the
+  // reorganization notice's title, Undo/Dismiss, "and N more" line and kept names.
+  'Archived bots': '已归档的 Bot',
+  'Archived ({count})': '已归档（{count}）',
+  'Tree reorganized': 'Bot 树已重组',
+  'Tree reorganization undone': '已撤销 Bot 树重组',
+  'and {count} more': '还有 {count} 条',
+  'Kept: {names}': '保留：{names}',
+  'archived · merged into {name}': '已归档 · 并入 {name}',
+  archived: '已归档',
+  retired: '已退役',
+  idle: '空闲',
+  'outside the tree': '不在树中',
+  Undo: '撤销',
   'no longer shared': '已不再共享',
   'Messages waiting for your approval': '等你批准的消息',
   'Waiting for approval': '等待批准',

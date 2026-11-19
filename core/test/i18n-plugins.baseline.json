@@ -16,7 +16,6 @@
     "plugins/timeline/client.js:Window",
     "plugins/tree/client.js:Bot tree",
     "plugins/tree/client.js:Copy invite link",
-    "plugins/tree/client.js:Dismiss",
     "plugins/workflow/client.js:Instructions"
   ]
 }

@@ -10,6 +10,15 @@ window.__ModuleLoader__.load({
   id: '@flybot/tree',
   factory: (require) => {
     const { createElement: h, useEffect, useState, useCallback } = require('react')
+    // The window's translator when the host has one; without it this panel keeps today's English
+    // word for word, and a placeholder the caller did not pass stays a placeholder (#3114).
+    const tr = (text, params) => {
+      const fn = globalThis.__flybot__?.t
+      if (typeof fn === 'function') {
+        try { return fn(text, params) } catch { /* fall through to the English */ }
+      }
+      return String(text).replace(/\{(\w+)\}/g, (_, key) => (params && key in params ? String(params[key]) : `{${key}}`))
+    }
 
     // Browser API (the injected flybot service, ds-bot's FlyBotClient): bots() -> [{ id, name, fields: { [plugin]: {...} } }]
     // (sync or a Promise) and fields.on('change', fn). It has no on('bot.removed'); removals are picked up
@@ -225,7 +234,7 @@ window.__ModuleLoader__.load({
         return [
           {
             id: 'copy-invite',
-            label: 'Copy invite link',
+            label: tr('Copy invite link'),
             visible: can && readOnly !== true,
             run: async () => {
               const result = await copyInvite(flybot, id, 'link')
@@ -433,14 +442,14 @@ window.__ModuleLoader__.load({
     function ReorgCard({ run, busy = false, note = null, locked = false, onUndo, onDismiss }) {
       const lines = run.summary ?? []
       const undone = Boolean(run.undone)
-      return h('div', { className: 'flybot-reorg', role: 'status', 'aria-label': 'Tree reorganized' },
-        h('div', { className: 'flybot-reorg-title' }, undone ? 'Tree reorganization undone' : 'Tree reorganized', h('span', { className: 'flybot-reorg-time' }, clock(run.at))),
+      return h('div', { className: 'flybot-reorg', role: 'status', 'aria-label': tr('Tree reorganized') },
+        h('div', { className: 'flybot-reorg-title' }, undone ? tr('Tree reorganization undone') : tr('Tree reorganized'), h('span', { className: 'flybot-reorg-time' }, clock(run.at))),
         h('ul', { className: 'flybot-reorg-list' }, ...lines.slice(0, NOTICE_LINES).map((line, i) => h('li', { key: i }, line)),
-          lines.length > NOTICE_LINES ? h('li', { key: 'more' }, `and ${lines.length - NOTICE_LINES} more`) : null),
-        undone && run.undone.kept?.length ? h('div', { className: 'flybot-reorg-note' }, `Kept: ${run.undone.kept.join('; ')}`) : null,
+          lines.length > NOTICE_LINES ? h('li', { key: 'more' }, tr('and {count} more', { count: lines.length - NOTICE_LINES })) : null),
+        undone && run.undone.kept?.length ? h('div', { className: 'flybot-reorg-note' }, tr('Kept: {names}', { names: run.undone.kept.join('; ') })) : null,
         locked ? null : h('div', { className: 'flybot-reorg-actions' },
-          undone ? null : h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onUndo }, 'Undo'),
-          h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onDismiss }, 'Dismiss')),
+          undone ? null : h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onUndo }, tr('Undo')),
+          h('button', { type: 'button', className: 'flybot-reorg-btn', disabled: busy, onClick: onDismiss }, tr('Dismiss'))),
         note ? h('div', { className: 'flybot-reorg-note', role: 'alert' }, note) : null)
     }
     function makeReorgNotice(flybot) {
@@ -479,11 +488,11 @@ window.__ModuleLoader__.load({
     // deleting it stays the owner's own click in the Bot menu).
     function statusOf(bot) {
       const own = bot?.fields?.['flybot-tree'] ?? {}
-      if (own.archived) return own.archived.reason === 'merged' && own.archived.intoName ? `archived · merged into ${own.archived.intoName}` : 'archived'
-      if (own.retired === true) return 'retired'
-      if (own.idle !== undefined && own.idle !== null) return 'idle'
+      if (own.archived) return own.archived.reason === 'merged' && own.archived.intoName ? tr('archived · merged into {name}', { name: own.archived.intoName }) : tr('archived')
+      if (own.retired === true) return tr('retired')
+      if (own.idle !== undefined && own.idle !== null) return tr('idle')
       // A Bot that fits no role group while every matching level is full: the sidebar says so instead of passing it off as Chief's child.
-      if (bot && bot.isMain !== true && !bot.remote && own.retired !== true && own.parent === undefined && own.treeRole === undefined) return 'outside the tree'
+      if (bot && bot.isMain !== true && !bot.remote && own.retired !== true && own.parent === undefined && own.treeRole === undefined) return tr('outside the tree')
       return null
     }
     function makeStatusTag(statuses) {
@@ -506,10 +515,10 @@ window.__ModuleLoader__.load({
     })
     function ArchivedView({ bots = [], expanded = false, onToggle, openBot }) {
       if (bots.length === 0) return null
-      return h('section', { className: 'flybot-tree flybot-tree-archived', 'aria-label': 'Archived bots' },
+      return h('section', { className: 'flybot-tree flybot-tree-archived', 'aria-label': tr('Archived bots') },
         h('button', { type: 'button', className: 'flybot-tree-head', 'aria-expanded': expanded, onClick: onToggle },
           h('span', { className: 'flybot-tree-chev', 'aria-hidden': true }, '▾'),
-          h('span', { className: 'flybot-tree-title' }, `Archived (${bots.length})`)),
+          h('span', { className: 'flybot-tree-title' }, tr('Archived ({count})', { count: bots.length }))),
         expanded
           ? h('ul', { className: 'flybot-tree-list', role: 'group' }, bots.map(b => {
               const tag = statusOf(b)

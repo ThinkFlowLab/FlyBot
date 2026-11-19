@@ -33,10 +33,7 @@
     "plugins/timeline/client.js:busy {} (model {} · tools {}) · no running turn {} · {} turn{}{}{}",
     "plugins/timeline/client.js:{} request{} not answered yet.",
     "plugins/timeline/client.js:{}: model {}%, tools {}%, no running turn {}%",
-    "plugins/tree/client.js:Archived ({})",
     "plugins/tree/client.js:Collapse {}",
-    "plugins/tree/client.js:Copy invite link for {}",
-    "plugins/tree/client.js:Kept: {}",
-    "plugins/tree/client.js:and {} more"
+    "plugins/tree/client.js:Copy invite link for {}"
   ]
 }
