@@ -1,0 +1,1 @@
+A Bot's Sharing page now reads in the window's language: the People-with-access card and the share-with-a-friend card stop drawing bare English in a Chinese window ([#3215](https://github.com/ThinkFlowLab/FlyBot/issues/3215)).

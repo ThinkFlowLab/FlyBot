@@ -3652,7 +3652,7 @@ window.__ModuleLoader__.load({
       const grants = view?.grants ?? []
       // #2446: People with access is a read, so a read-only window keeps the list and its
       // Auto-send state, and only the two writes (Revoke, the Auto-send switch) go.
-      const note = readOnly ? 'One row per Bot. Default: nobody, Chief included.' : ACCESS_NOTE
+      const note = tr(readOnly ? 'One row per Bot. Default: nobody, Chief included.' : ACCESS_NOTE)
       // One Auto-send switch per person, however many of their Bots are rows (#995).
       const autoShown = new Set()
       // A room the grant rows already named must not come back under "This room only" (#955).
@@ -3667,16 +3667,16 @@ window.__ModuleLoader__.load({
       )
       // Revoke drops the share and the rooms that use it. Ask once, inline, as Leave does (#1073).
       const revokeAsk = (grant) => {
-        const who = grant.name || grant.grantee || 'this person'
+        const who = grant.name || grant.grantee || tr('this person')
         const n = roomList(grant.rooms).length
         return n > 0
-          ? `Revoke ${who}? They lose this Bot in ${n} room${n === 1 ? '' : 's'}.`
-          : `Revoke ${who}? They lose this Bot.`
+          ? tr(n === 1 ? 'Revoke {who}? They lose this Bot in {n} room.' : 'Revoke {who}? They lose this Bot in {n} rooms.', { who, n })
+          : tr('Revoke {who}? They lose this Bot.', { who })
       }
       return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
         h('div', { className: 'fs-name' }, tr('People with access')),
         h('div', { className: 'fs-hint fs-face-note' }, note),
-        grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
+        grants.length === 0 ? h('div', { className: 'fs-hint' }, tr('Nobody has this Bot yet. Copy an invite link above and send it to a friend.')) : null,
         grants.map((grant) => {
           const grantUsage = roomHint('use', grant.rooms)
           const identity = accessIdentity(grant)
@@ -3697,33 +3697,33 @@ window.__ModuleLoader__.load({
           showAuto ? (readOnly
             ? h('span', {
               className: 'fs-hint fs-access-auto', 'data-flybot': 'access-auto-state',
-              title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.`,
-            }, grant.autoSend === true ? 'Auto-send on' : 'Auto-send off')
-            : h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
+              title: tr('{name}’s replies to {who} go out without asking you first.', { name: bot.name || 'This Bot', who: grant.person || grant.home }),
+            }, grant.autoSend === true ? tr('Auto-send on') : tr('Auto-send off'))
+            : h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: tr('{name}’s replies to {who} go out without asking you first.', { name: bot.name || 'This Bot', who: grant.person || grant.home }) },
               h('input', {
                 type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
-                'aria-label': `Auto-send ${bot.name || 'this Bot'} → ${grant.person || grant.home}`,
+                'aria-label': tr('Auto-send {name} → {who}', { name: bot.name || 'this Bot', who: grant.person || grant.home }),
                 onChange: e => { void toggleAutoSend(grant, e.target.checked) },
               }),
-              'Auto-send')) : null,
+              tr('Auto-send'))) : null,
           readOnly ? null
             : confirming
             ? h('span', { className: 'fs-leave-ask fs-access-ask', 'data-flybot': 'revoke-grant-confirm' },
               h('span', { className: 'fs-hint' }, revokeAsk(grant)),
               h('button', {
                 type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
-                'data-flybot': 'revoke-grant-yes', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
+                'data-flybot': 'revoke-grant-yes', 'aria-label': tr('Revoke {name}', { name: grant.name || grant.grantee }),
                 onClick: () => revoke(grant),
-              }, busy === grant.id ? 'Revoking…' : 'Revoke'),
+              }, busy === grant.id ? tr('Revoking…') : tr('Revoke')),
               h('button', {
                 type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
                 'data-flybot': 'revoke-grant-no', onClick: () => setAsking(''),
               }, tr('Keep')))
             : h('button', {
               type: 'button', className: 'fs-btn', disabled: Boolean(busy),
-              'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
+              'data-flybot': 'revoke-grant', 'aria-label': tr('Revoke {name}', { name: grant.name || grant.grantee }),
               onClick: () => setAsking(grantKey),
-            }, 'Revoke'))
+            }, tr('Revoke')))
         }),
         roomOnlyUsage ? h('div', { className: 'fs-hint', title: roomOnlyUsage.title }, roomOnlyUsage.text) : null,
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
@@ -3915,7 +3915,7 @@ window.__ModuleLoader__.load({
         // label over while its grant is still in flight and post two grants at once.
         if (busy) return
         // #1128: the button is disabled; a click that still arrives says why instead of posting a grant.
-        if (friend.removed === true) { setNote({ tone: 'error', text: friend.reason || 'That Bot was removed from that home.' }); return }
+        if (friend.removed === true) { setNote({ tone: 'error', text: friend.reason || tr('That Bot was removed from that home.') }); return }
         setBusy(friendKey(friend))
         setNote(null)
         try {
@@ -3942,11 +3942,11 @@ window.__ModuleLoader__.load({
       const list = friends ?? []
       const loading = friends === null
       return h('div', { className: 'fs fs-card', 'data-flybot': 'share-with-friend' },
-        h('div', { className: 'fs-name' }, 'Share with a friend'),
-        h('div', { className: 'fs-hint' }, `One click shares ${bot.name || 'this Bot'} with someone you already know. No invite link. They can decline; you can Revoke in People with access.`),
-        loading ? h('div', { className: 'fs-hint' }, 'Loading friends…') : null,
+        h('div', { className: 'fs-name' }, tr('Share with a friend')),
+        h('div', { className: 'fs-hint' }, tr('One click shares {name} with someone you already know. No invite link. They can decline; you can Revoke in People with access.', { name: bot.name || 'this Bot' })),
+        loading ? h('div', { className: 'fs-hint' }, tr('Loading friends…')) : null,
         !loading && list.length === 0 && !listError
-          ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, tr('No friends left to share with. Invite someone new above, or they already have this Bot.'))
           : null,
         list.map(friend => h('div', { key: friendKey(friend), className: 'fs-line', 'data-flybot': 'share-friend-row' },
           h('div', { className: 'fs-col' },
@@ -3955,7 +3955,7 @@ window.__ModuleLoader__.load({
               ? h('span', { className: 'fs-sub' }, friend.handle || friend.home)
               : null,
             friend.removed === true
-              ? h('span', { className: 'fs-sub', 'data-flybot': 'share-friend-removed' }, friend.reason || 'That Bot was removed from that home.')
+              ? h('span', { className: 'fs-sub', 'data-flybot': 'share-friend-removed' }, friend.reason || tr('That Bot was removed from that home.'))
               : null),
           h('button', {
             type: 'button',
@@ -3965,9 +3965,9 @@ window.__ModuleLoader__.load({
             // #3062: one share at a time, so no row invites a click while any share is sending.
             disabled: !!busy || friend.removed === true,
             'data-flybot': 'share-friend',
-            'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
+            'aria-label': tr('Share {name} with {who}', { name: bot.name || 'this Bot', who: friend.name || friend.home }),
             onClick: () => { void share(friend) },
-          }, busy === friendKey(friend) ? 'Sharing…' : 'Share'))),
+          }, busy === friendKey(friend) ? tr('Sharing…') : tr('Share')))),
         note ? h('div', { className: 'fs-status', 'data-tone': note.tone, 'data-flybot': 'share-note', role: 'status' }, note.text) : null,
         listError
           ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'share-list-error', role: 'status' }, listError,
