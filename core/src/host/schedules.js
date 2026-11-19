@@ -37,6 +37,10 @@ import { output } from './tools.js'
 import { retiredBot } from './store.js'
 
 const MAX_TITLE = 120
+// #3197: a row is one line of text, so a name that carries a line break has to be folded before it
+// is inserted — otherwise one task paints two rows and the forged one reads like a real line. The
+// same rule `tasks.js` keeps for a title.
+const fold = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
 // How long a due task may stay undelivered while the app runs before it counts as failed.
 const MISSED_MS = 120_000
 const CHECK_MS = 60_000
@@ -382,7 +386,9 @@ export function install(rt) {
     const prompt = String(body.prompt ?? '').trim()
     if (title === '') throw invalid('Give the task a name')
     // #1895: the bound counts code points, so a name of emoji is measured as a reader counts it.
-    if (codePoints(title) > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
+    // #3197: and it counts the name the row shows, so the fold happens first — line breaks cannot
+    // be refused for characters the answer folds away, and folding cannot let a long name through.
+    if (codePoints(fold(title)) > MAX_TITLE) throw invalid(`Keep the name under ${MAX_TITLE} characters`)
     if (prompt === '') throw invalid('Say what the Bot should do')
     return { sessionId: bot ? rt.chatOf(bot.id) : room.id, title, prompt }
   }
@@ -697,7 +703,7 @@ export function install(rt) {
         rows.push({
           at: when ?? '',
           live: status === 'active' && when !== undefined,
-          line: `- "${entry.title ?? 'untitled'}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
+          line: `- "${entry.title == null ? 'untitled' : fold(entry.title)}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
         })
       }
       for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
