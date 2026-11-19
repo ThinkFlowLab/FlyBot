@@ -1317,7 +1317,7 @@ diff --git a/client.js b/client.js
    "The admin must be a member of the group": "管理员必须是群成员",
    "Unknown group chat": "找不到这个群聊",
    "Hand the admin role to another member instead of leaving the group without one": "请把管理员交给其他成员，不要让群聊没有管理员",
-@@ -951,10 +951,44 @@ var HOST_ZH = {
+@@ -951,10 +951,51 @@ var HOST_ZH = {
    "The model wrote nothing": "模型没有输出内容",
    "Write the entry to save.": "请写下要保存的内容。",
    "This DeepSeek Harness has no folder chooser": "这个 DeepSeek Harness 没有文件夹选择窗口",
@@ -1356,7 +1356,14 @@ diff --git a/client.js b/client.js
 +  "QR code for this room invite": "这个房间邀请的二维码",
 +  "Scan to open this room": "扫码打开这个房间",
 +  "Anyone with the link can join while the room is open.": "只要房间还开着，拿到链接的人都能加入。",
-+  "Bot Social did not send an invite. Try again.": "Bot Social 没有发来邀请，请重试。"
++  "Bot Social did not send an invite. Try again.": "Bot Social 没有发来邀请，请重试。",
++  // #3114 cut 26: the invite hint on a Bot's Sharing page and the rooms a grant reaches.
++  "Invite grants {bot} only.": "邀请只把 {bot} 授权给对方。",
++  "Invite grants {bot} only. Revoke anytime in People with access.": "邀请只把 {bot} 授权给对方。随时可以在「可访问的人」里撤销。",
++  "In use in {n} room: ": "正在 {n} 个房间里使用：",
++  "In use in {n} rooms: ": "正在 {n} 个房间里使用：",
++  "This room only: ": "只在这个房间使用：",
++  " +{n} more": "，还有 {n} 个"
  };
  Object.assign(ZH, HOST_ZH);
 -var fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;

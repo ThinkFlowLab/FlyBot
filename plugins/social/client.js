@@ -58,11 +58,13 @@ window.__ModuleLoader__.load({
     const roomHint = (kind, rooms, skip) => {
       const rows = roomList(rooms, skip)
       if (!rows.length) return null
-      const head = kind === 'use' ? `In use in ${rows.length} room${rows.length === 1 ? '' : 's'}: ` : 'This room only: '
+      const head = kind === 'use'
+        ? tr(rows.length === 1 ? 'In use in {n} room: ' : 'In use in {n} rooms: ', { n: rows.length })
+        : tr('This room only: ')
       const build = (count, clip) => {
         const pick = rows.slice(0, count).map(row => (clip ? clipRoom(row.label) : row.label))
         const rest = rows.length - pick.length
-        return head + pick.join(', ') + (rest > 0 ? ` +${rest} more` : '')
+        return head + pick.join(', ') + (rest > 0 ? tr(' +{n} more', { n: rest }) : '')
       }
       const top = Math.min(ROOM_HINT_NAMES, rows.length)
       // Short lists print whole names; a long-lived share falls back to clipped names so the count still shows.
@@ -3857,7 +3859,9 @@ window.__ModuleLoader__.load({
       const copy = (text, withText) => { void copyInvite(text, bot.name, withText).then(setNote) }
       // Revoke is mentioned once People with access has someone to revoke (#499).
       return h('div', { className: 'fs fs-card', 'data-flybot': 'invite-to-bot' },
-        h('div', { className: 'fs-hint', 'data-flybot': 'invite-hint-sharing' }, revocable ? `Invite grants ${bot.name} only. Revoke anytime in People with access.` : `Invite grants ${bot.name} only.`),
+        h('div', { className: 'fs-hint', 'data-flybot': 'invite-hint-sharing' }, revocable
+          ? tr('Invite grants {bot} only. Revoke anytime in People with access.', { bot: bot.name })
+          : tr('Invite grants {bot} only.', { bot: bot.name })),
         inviteControls({ botName: bot.name, invite, busy, onMint: () => create(true), onCopy: copy, onNew: () => create(false) }),
         note ? h('div', { className: 'fs-status', role: 'status', 'data-tone': note.tone }, note.text) : null)
     }

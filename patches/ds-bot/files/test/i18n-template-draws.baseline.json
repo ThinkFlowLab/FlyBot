@@ -3,8 +3,6 @@
   "entries": [
     "plugins/social/client.js:Auto-send {} → room",
     "plugins/social/client.js:Auto-send {}'s room messages",
-    "plugins/social/client.js:Invite grants {} only.",
-    "plugins/social/client.js:Invite grants {} only. Revoke anytime in People with access.",
     "plugins/social/client.js:{} Send your message again: it starts a new chat.",
     "plugins/timeline/client.js:Could not copy the report: {}",
     "plugins/timeline/client.js:Last {}",
