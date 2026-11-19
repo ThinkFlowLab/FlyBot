@@ -208,8 +208,8 @@ test('the widening only adds pins and never admits a glyph', () => {
     'plugins/timeline/client.js:Timeline#1',
     'plugins/timeline/client.js:Timeline#2',
     'plugins/timeline/client.js:Timeline#3',
-    'plugins/tree/client.js:Tree reorganized#1',
-    'plugins/tree/client.js:Tree reorganized#2',
+    'plugins/tree/client.js:Tree',
+    'plugins/tree/client.js:No child bots yet. Ask Chief to take on a task and it will create child bots.',
   ]) assert.ok(current.has(entry), `${entry} is pinned`)
   for (const pin of current) assert.match(pin, /\p{L}/u, `${pin} names a sentence, not a glyph`)
 })

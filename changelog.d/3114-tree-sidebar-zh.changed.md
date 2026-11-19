@@ -1,0 +1,1 @@
+The Bot tree's sidebar copy — the Archived Bots group, its status tags, and the reorganization notice's title, Undo/Dismiss buttons, "and N more" line and kept names — now follows the window's language, so a Chinese window no longer reads English there; a window without a translator still reads today's English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
