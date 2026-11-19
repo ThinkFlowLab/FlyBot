@@ -160,7 +160,7 @@ diff --git a/client.js b/client.js
    Content: "内容",
    "Referenced {labels}": "引用了 {labels}",
    ", ": "、",
-@@ -78,21 +78,131 @@ var ZH = {
+@@ -78,21 +78,146 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -238,6 +238,21 @@ diff --git a/client.js b/client.js
 +  "Revoke {who}? They lose this Bot in {n} room.": "撤销 {who} 的授权？对方将在 {n} 个房间里失去这个 Bot。",
 +  "Revoke {who}? They lose this Bot in {n} rooms.": "撤销 {who} 的授权？对方将在 {n} 个房间里失去这个 Bot。",
 +  "this person": "这个人",
++  // #3114 cut 21: the face-to-face waiting room — its number, QR hint, roster heading and alone
++  // line, Enter chat and the Leave question, which every window drew as bare English.
++  "Anyone with the number can still join.": "只要房间还开着，拿到号码的人都能加入。",
++  "The room is open. The number is no longer valid.": "房间已经开了，这个号码不再有效。",
++  "Who has joined": "谁已加入",
++  "Waiting for others to join…": "正在等其他人加入…",
++  "Enter chat": "进入聊天",
++  "Leave this room?": "离开这个房间？",
++  Leave: "离开",
++  Stay: "留下",
++  mine: "我的",
++  "Room number": "房间号码",
++  "Room number {code}": "房间号码 {code}",
++  "QR code for room number {code}": "房间号码 {code} 的二维码",
++  "Scan this with FlyBot to join": "用 FlyBot 扫描加入",
 +  "Share with a friend": "分享给朋友",
 +  "One click shares {name} with someone you already know. No invite link. They can decline; you can Revoke in People with access.": "一键把 {name} 分享给你已经认识的人，不需要邀请链接。对方可以拒绝，你也可以在「可访问的人」里撤销。",
 +  "Loading friends…": "正在加载朋友…",
