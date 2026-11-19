@@ -3312,26 +3312,26 @@ window.__ModuleLoader__.load({
     // Someone accepted an invite to one of my Bots (#1054). One-way stays; this card is the inviter's
     // feedback and the one step that asks them to share a Bot back. Asking does not grant anything.
     function acceptNoticeSentence(item) {
-      const who = item?.owner ? `${item.name} (${item.owner})` : (item?.name || 'A friend')
-      const bot = item?.botName || 'your Bot'
-      return `${who} accepted your invite. They can message ${bot}. You cannot message them until they share a Bot with you.`
+      const who = item?.owner ? `${item.name} (${item.owner})` : (item?.name || tr('A friend'))
+      const bot = item?.botName || tr('your Bot')
+      return tr('{name} accepted your invite. They can message {bot}. You cannot message them until they share a Bot with you.', { name: who, bot })
     }
     function AcceptNotices({ items, onAsk, onDismiss, locked = false } = {}) {
       if (!Array.isArray(items) || items.length === 0) return null
       return h('div', { className: 'fs-share-requests', 'data-flybot': 'accept-notices' },
         items.map((item) => h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'accept-notice' },
           h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-text' }, acceptNoticeSentence(item)),
-          item.asked ? h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-asked' }, 'You asked them to share a Bot.') : null,
+          item.asked ? h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-asked' }, tr('You asked them to share a Bot.')) : null,
           // #2219: asking and dismissing are writes; a read-only window still reads the notice.
           locked ? null : h('div', { className: 'fs-line' },
-            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'accept-notice-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'accept-notice-dismiss', onClick: () => onDismiss?.(item) }, tr('Dismiss')),
             h('button', {
               type: 'button',
               className: 'fs-btn fs-btn-sm fs-btn-primary',
               'data-flybot': 'accept-notice-ask',
               disabled: item.asked === true,
               onClick: () => { if (!item.asked) onAsk?.(item) },
-            }, 'Ask them to share a Bot')))))
+            }, tr('Ask them to share a Bot'))))))
     }
 
     // "Share this Bot?" (#336): a friend's Bot tried to start a chat with one of my Bots that is not
@@ -3342,20 +3342,20 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'fs-share-requests', 'data-flybot': 'share-requests' },
         items.map((item) => {
           const who = item.owner ? `${item.name} (${item.owner})` : item.name
-          const bot = item.botName || 'your Bot'
+          const bot = item.botName || tr('your Bot')
           return h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'share-request' },
-            h('div', { className: 'fs-hint', 'data-flybot': 'share-request-text' }, `${who} tried to start a chat with ${bot}. ${bot} is not shared with them.`),
+            h('div', { className: 'fs-hint', 'data-flybot': 'share-request-text' }, tr('{name} tried to start a chat with {bot}. {bot} is not shared with them.', { name: who, bot })),
             h('div', { className: 'fs-line' },
               // #2219: dismissing is a write; opening the Sharing page is navigation and stays.
-              locked ? null : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'share-request-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+              locked ? null : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'share-request-dismiss', onClick: () => onDismiss?.(item) }, tr('Dismiss')),
               h('button', {
                 type: 'button',
                 className: 'fs-btn fs-btn-sm fs-btn-primary',
                 'data-flybot': 'share-request-open',
-                title: `Open ${bot}'s Sharing`,
+                title: tr("Open {bot}'s Sharing", { bot }),
                 disabled: typeof actions?.openSettings !== 'function',
                 onClick: () => actions.openSettings('bots', item.botId),
-              }, `Share ${bot}…`)))
+              }, tr('Share {bot}…', { bot }))))
         }))
     }
 
