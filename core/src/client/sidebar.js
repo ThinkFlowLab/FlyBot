@@ -22,11 +22,15 @@ import { ProjectsNav } from './projects-nav.js'
 // -------------------------------------------------------------------------
 // Sidebar
 
-// Manual "Mark as Unread" lasts until the conversation is opened again.
+// Manual "Mark as Unread" is a local mark: opening the conversation clears it, and a
+// mark made on the conversation already on screen lasts until it is left and opened again.
 function useMarkedUnread(id, active, marked, actions) {
+  const wasActive = useRef(false)
   useEffect(() => {
-    if (active && marked) actions.clearUnread(id)
-  }, [active, marked])
+    const opened = marked && active && !wasActive.current
+    wasActive.current = active
+    if (opened) actions.clearUnread(id)
+  }, [active, marked, id])
 }
 
 const PinMark = () => h('span', { className: 'bt-pin', 'aria-hidden': true }, h(PinMarkIcon))

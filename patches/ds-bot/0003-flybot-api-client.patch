@@ -3110,7 +3110,7 @@ diff --git a/src/client/questions.js b/src/client/questions.js
 diff --git a/src/client/sidebar.js b/src/client/sidebar.js
 --- a/src/client/sidebar.js
 +++ b/src/client/sidebar.js
-@@ -1,16 +1,23 @@
+@@ -1,25 +1,36 @@
 -import { createElement as h, Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 +import { FlyBotSections, FlyBotAccountHeader, useSidebarStructure, botTree } from './flybot-slots.js'
 +import { Component, createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -3137,6 +3137,22 @@ diff --git a/src/client/sidebar.js b/src/client/sidebar.js
  
  // -------------------------------------------------------------------------
  // Sidebar
+ 
+-// Manual "Mark as Unread" lasts until the conversation is opened again.
++// Manual "Mark as Unread" is a local mark: opening the conversation clears it, and a
++// mark made on the conversation already on screen lasts until it is left and opened again.
+ function useMarkedUnread(id, active, marked, actions) {
++  const wasActive = useRef(false)
+   useEffect(() => {
+-    if (active && marked) actions.clearUnread(id)
+-  }, [active, marked])
++    const opened = marked && active && !wasActive.current
++    wasActive.current = active
++    if (opened) actions.clearUnread(id)
++  }, [active, marked, id])
+ }
+ 
+ const PinMark = () => h('span', { className: 'bt-pin', 'aria-hidden': true }, h(PinMarkIcon))
 @@ -37,77 +37,151 @@ const workKeys = text => (text === '' ? [] : text.split(',').map((key) => {
  }))
  const workLine = (lead, tool, more) => h(Shimmer, null, `${lead} · ${workPhrase(tool)}…${more > 0 ? ` +${more}` : ''}`)
