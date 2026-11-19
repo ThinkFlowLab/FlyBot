@@ -8,7 +8,7 @@ import { useSidebarStructure } from './flybot-slots.js'
 import { pluginItems } from './flybot-registry.js'
 import { LinkIcon } from './icons.js'
 
-export function ContextMenu({ menu, roster, actions, leaving = false }) {
+export function ContextMenu({ menu, roster, actions, leaving = false, unread }) {
   useEscape(() => actions.closeMenu())
   useEffect(() => {
     const onDown = (event) => { if (!(event.target instanceof Element) || !event.target.closest('.bt-menu')) actions.closeMenu() }
@@ -28,6 +28,11 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
   const room = roster.roomsById[menu.id]
   const entry = bot ?? room
   if (entry === undefined) return null
+  // The manual unread mark is a local one (#3114): a chat already marked unread offers to
+  // clear it, and clearing drops only that key — a completion flag stays as it is.
+  const unreadItem = unread?.[menu.id] === true
+    ? [t('Clear unread mark'), UnreadIcon, () => actions.clearUnread(menu.id)]
+    : [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)]
   const isMainBot = isMainOf(roster, menu.id)
   const isTile = roster.mainBotId === menu.id
   const mainCount = (roster.mainBotIds ?? []).length
@@ -37,7 +42,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
   const groups = bot?.remote
     ? [
         [
-          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+          unreadItem,
         ],
         [
           [t('Bot settings'), GearIcon, () => actions.openSettings('bots', bot.id)],
@@ -48,7 +53,7 @@ export function ContextMenu({ menu, roster, actions, leaving = false }) {
     : [
         [
           isTile || locked ? null : [entry.pinned ? t('Unpin') : t('Pin'), PinIcon, () => actions.setFlags(menu.id, { pinned: !entry.pinned })],
-          [t('Mark as Unread'), UnreadIcon, () => actions.markUnread(menu.id)],
+          unreadItem,
         ],
         [
           // One way to edit a Bot (#385): its name is edited in Edit Bot too.

@@ -1289,11 +1289,12 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Harness settings': 'Harness 设置',
    'Back to Bots': '返回 Bot 列表',
    'Close settings': '关闭设置',
-@@ -324,7 +324,6 @@ const ZH = {
+@@ -324,7 +324,7 @@ const ZH = {
    Pin: '置顶',
    Pinned: '已置顶',
    'Mark as Unread': '标为未读',
 -  'Rename Bot': '重命名 Bot',
++  'Clear unread mark': '清除手动未读标记',
    'Group settings': '群设置',
    'Rename group': '重命名群聊',
    'Copy conversation ID': '复制对话 ID',
