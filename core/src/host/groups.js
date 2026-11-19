@@ -979,17 +979,26 @@ export function install(rt) {
         void rt.save().catch(() => {})
       }
       const partsNote = parts.length > 1 ? `\n\nYour own chat has ${parts.length} parts: ${rt.partIndex(parts)}. Call read_own_chat with part N for the note that closed an earlier part, or with words to search all parts.` : ''
+      // A window another dsh keeps read-only answers with the rows that window indexed, so its
+      // newest messages can be missing. The read says where the index stops: `more: 0` alone
+      // read as the whole chat while the newest line sat unindexed in the log (#P-652).
+      const stopped = found => {
+        if (found?.stop === undefined) return ''
+        return found.stop.at === undefined
+          ? '\nThe chat index in this window holds nothing yet, and this window is read-only: messages the other window has not indexed are not in this answer.'
+          : `\nThe chat index in this window is read-only and stops at ${found.stop.at}; the other window has not indexed anything newer, so a message after that is not in this answer.`
+      }
       if (query === '' && around !== '') {
         const found = await rt.aroundOwnChat(botId, around)
         if (found.error) return `${found.error}${partsNote}`
-        if (found.lines.length === 0) return `Nothing was said around ${around}.${partsNote}`
+        if (found.lines.length === 0) return `Nothing was said around ${around}.${stopped(found)}${partsNote}`
         if (found.guessedPart) {
           // The anchor names no part, so this read can only guess: say so, and never report
           // the guess as an exact hit (#2710).
-          return `Your own chat around ${around} in the part that is current now; that anchor names no part, so the part is a guess (name one as "part N #<seq>"):\n${found.lines.join('\n')}${partsNote}`
+          return `Your own chat around ${around} in the part that is current now; that anchor names no part, so the part is a guess (name one as "part N #<seq>"):\n${found.lines.join('\n')}${stopped(found)}${partsNote}`
         }
         const heading = found.exact ? `around ${around}` : `with no message at ${around}; the nearest ones`
-        return `Your own chat ${heading} (oldest first):\n${found.lines.join('\n')}${partsNote}`
+        return `Your own chat ${heading} (oldest first):\n${found.lines.join('\n')}${stopped(found)}${partsNote}`
       }
       if (query === '' && number !== undefined) {
         const part = parts[number - 1]
@@ -1009,26 +1018,29 @@ export function install(rt) {
             // keeps the unchanged sentence rather than failing this read.
           }
           if (checkpoints === 0) return `Part ${number} is the current one; it is in your context.${partsNote}`
-          const { lines, more } = await rt.latestOwnChat(botId, { askingId: id })
+          const latest = await rt.latestOwnChat(botId, { askingId: id })
+          const { lines, more } = latest
           // The cap hides the rest, so the sentence says how many of how many this read shows:
           // the bare sentence let 12 of 15 read as the whole of it (#2780).
           const newest = more > 0 ? `its newest ${lines.length} of ${lines.length + more} messages` : `its newest ${lines.length} messages`
-          return `Part ${number} is the current one, but its earlier messages are condensed into [Checkpoint ${checkpoints}], so only ${newest} are still in your context:\n${lines.join('\n')}\nSearch it with words to read the rest word for word.${partsNote}`
+          return `Part ${number} is the current one, but its earlier messages are condensed into [Checkpoint ${checkpoints}], so only ${newest} are still in your context:\n${lines.join('\n')}\nSearch it with words to read the rest word for word.${stopped(latest)}${partsNote}`
         }
         return `Part ${number} of your own chat (${rt.clock(part.startedAt)} – ${rt.clock(part.endedAt)}). The handoff note that closed it:\n${rt.noteText(part) ?? '(none: the part ended on a context overflow)'}${partsNote}`
       }
       if (query === '') {
-        const { lines, more } = await rt.latestOwnChat(botId, { askingId: id })
-        if (lines.length === 0) return `Your own chat is empty.${partsNote}`
+        const latest = await rt.latestOwnChat(botId, { askingId: id })
+        const { lines, more } = latest
+        if (lines.length === 0) return `Your own chat is empty.${stopped(latest)}${partsNote}`
         const heading = more > 0 ? `Your own chat (newest ${lines.length} of ${lines.length + more}, oldest first)` : 'Your own chat (oldest first)'
-        return `${heading}:\n${lines.join('\n')}${partsNote}`
+        return `${heading}:\n${lines.join('\n')}${stopped(latest)}${partsNote}`
       }
-      const { lines, every, more } = await rt.searchOwnChat(botId, query, { askingId: id })
-      if (lines.length === 0) return `Nothing in your own chat mentions "${query}".${partsNote}`
+      const found = await rt.searchOwnChat(botId, query, { askingId: id })
+      const { lines, every, more } = found
+      if (lines.length === 0) return `Nothing in your own chat mentions "${query}".${stopped(found)}${partsNote}`
       const heading = every ? `messages mentioning "${query}"` : `no message has all of "${query}"; messages with the most of these words`
       // A capped search says how much it left out, so a message that is missing never reads as gone (#1906).
       const leftOut = more > 0 ? `\n${more} more not shown; search with narrower words, or read around one of these anchors.` : ''
-      return `Your own chat, ${heading} (oldest first):\n${lines.join('\n')}${leftOut}${partsNote}`
+      return `Your own chat, ${heading} (oldest first):\n${lines.join('\n')}${leftOut}${stopped(found)}${partsNote}`
     },
   }))
 

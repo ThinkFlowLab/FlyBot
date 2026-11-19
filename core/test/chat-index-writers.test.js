@@ -142,6 +142,7 @@ async function start(t, home, { heldBy, gate, saved } = {}) {
   const ctx = fakeContext()
   const warnings = []
   ctx.logger.warn = (...args) => warnings.push(args.map(part => String(part)).join(' '))
+  let pages = 0
   let route
   const registered = ctx.connection.fetch.register
   ctx.connection.fetch.register = (options) => { route = options; return registered(options) }
@@ -152,6 +153,7 @@ async function start(t, home, { heldBy, gate, saved } = {}) {
       resolveAgent: async sessionId => ({ agent: { session: { id: sessionId, seq: (HISTORY[sessionId]?.at(-1)?.seq ?? -1) + 1 }, followup() {} } }),
       selectModel: async () => {},
       page: async ({ address, beforeSeq, maxMessages } = {}) => {
+        pages += 1
         if (gate !== undefined) await gate()
         const all = (HISTORY[address?.sessionId] ?? []).filter(event => beforeSeq === undefined || event.seq < beforeSeq)
         const records = maxMessages === undefined ? all : all.slice(-maxMessages)
@@ -169,7 +171,11 @@ async function start(t, home, { heldBy, gate, saved } = {}) {
   // parts, returns `{lines: []}` and never calls `sessionController.page()`, so the party
   // this test's gate waits for never arrives. Wait for the load the host relies on.
   await rt.load()
-  const host = { home, ctx, rt, route, warnings, stop: () => ctx.dispose() }
+  const host = {
+    home, ctx, rt, route, warnings, pages: () => pages,
+    tool: (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId } }),
+    stop: () => ctx.dispose(),
+  }
   t.after(() => host.stop())
   return host
 }
@@ -261,9 +267,15 @@ test('a read-only window reads the index and leaves it alone (#2711)', async (t)
     const reader = await start(t, home, { heldBy: process.ppid })
     await reader.rt.load()
     assert.notEqual(reader.rt.readOnly(), undefined, 'this window must be read-only for the case to mean anything')
+    // The writer stopped before indexing the fourth line, so its index ends at seq 2. A read
+    // answered from it showed three lines without a word about the cut, and `more: 0` made
+    // that read as the whole chat while the fourth line sat in the log (#3194).
     const read = await reader.rt.latestOwnChat('a', {})
     assert.deepEqual(anchorsOf(read), ['0', '1', '2'])
     assert.equal(read.more, 0)
+    assert.equal(typeof read.stop?.at, 'string', 'the read says where the index stops')
+    const out = await reader.tool('read_own_chat', {}, 'solo')
+    assert.match(out, /this window is read-only and stops at \S+ \S+;/, `the read says where the index stops: ${out}`)
     assert.deepEqual(readFileSync(indexPath), before, 'the read-only window wrote the index')
     assert.equal(statSync(indexPath).mtimeMs, stamp)
     assert.equal(rowsOf(home), 3)
@@ -283,11 +295,34 @@ test('a read-only window reads the index while the writer still holds the home (
     const reader = await start(t, home, { heldBy: process.ppid })
     await reader.rt.load()
     assert.notEqual(reader.rt.readOnly(), undefined)
-    assert.deepEqual(anchorsOf(await reader.rt.latestOwnChat('a', {})), ['0', '1', '2'])
+    // The index stops at the writer's last catch-up, and the fourth line is newer (#3194):
+    // every read says where it stops, so a missing message is visibly newer than the cut.
+    const read = await reader.rt.latestOwnChat('a', {})
+    assert.deepEqual(anchorsOf(read), ['0', '1', '2'])
+    assert.equal(typeof read.stop?.at, 'string')
+    const found = await reader.rt.searchOwnChat('a', 'fourth', {})
+    assert.equal(typeof found.stop?.at, 'string')
+    const around = await reader.rt.aroundOwnChat('a', 'part 1 #3')
+    assert.equal(typeof around.stop?.at, 'string')
     assert.equal(rowsOf(home), 3, 'the reader added a message the writer had not indexed')
   } finally {
     HISTORY.solo.pop()
   }
+})
+
+test('a read-only window whose index is caught up answers from the index and reads no log (#3194)', async (t) => {
+  const home = scratch(t)
+  const writer = await start(t, home)
+  assert.deepEqual(anchorsOf(await writer.rt.latestOwnChat('a', {})), ['0', '1', '2'])
+  await writer.stop()
+
+  const reader = await start(t, home, { heldBy: process.ppid })
+  await reader.rt.load()
+  assert.notEqual(reader.rt.readOnly(), undefined)
+  const read = await reader.rt.latestOwnChat('a', {})
+  assert.deepEqual(anchorsOf(read), ['0', '1', '2'])
+  assert.equal(read.stop, undefined, 'a caught-up index needs no cut sentence')
+  assert.equal(reader.pages(), 0, 'the read fell back to the logs although the index was caught up')
 })
 
 test('a read-only window creates no index where there is none (#2711)', async (t) => {
