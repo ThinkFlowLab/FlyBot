@@ -143,9 +143,9 @@ test('#3114 cut 20: the three baselines lose these draws', () => {
     const still = keys.map(key => `plugins/social/client.js:${key}`).filter(id => entries.includes(id))
     assert.deepEqual(still, [], `${file.replace('.baseline.json', '')} still pins ${still[0]}`)
   }
-  // The two baselines shrink by exactly these draws and nothing else does: the totals are the
-  // ratchet's numbers (16 / 27 / 132), and the third baseline is untouched.
-  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [16, 27, 132])
+  // The two baselines shrink by exactly these draws and nothing else does: the third baseline is
+  // untouched at 16, and a later cut that moves the other two totals moves these numbers with it.
+  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [16, 25, 115])
 
   // A host with no translator keeps the English it drew before this change, character for
   // character — `tr()` replaces a string only when the host answers for it.

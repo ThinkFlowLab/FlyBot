@@ -468,7 +468,7 @@ window.__ModuleLoader__.load({
       const mark = h('span', { className: 'fs-tile-mark' },
         h(FaceAvatar, { bot, size: 48 }),
         mine
-          ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: 'mine', 'aria-label': 'mine' })
+          ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: tr('mine'), 'aria-label': tr('mine') })
           : null,
         pick && selected
           ? h('span', { className: 'fs-tile-check', 'data-flybot': 'face-pick-check', 'aria-hidden': true }, '✓')
@@ -533,7 +533,7 @@ window.__ModuleLoader__.load({
     function FacePersonTile({ person, look } = {}) {
       const bots = person.members.map(member => faceTileParts(member).name)
       const who = person.name || (person.mine ? 'You' : 'Someone')
-      const label = person.mine && person.name ? `${person.name} (you)` : who
+      const label = person.mine && person.name ? tr('{name} (you)', { name: person.name }) : who
       const handles = person.members.map(faceMemberHandle).filter(Boolean)
       return h('li', {
         className: 'fs-tile',
@@ -545,7 +545,7 @@ window.__ModuleLoader__.load({
       },
         h('span', { className: 'fs-tile-mark' },
           h(FaceAvatar, { bot: look(person.members[0]), size: 48 }),
-          person.mine ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: 'mine', 'aria-label': 'mine' }) : null),
+          person.mine ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: tr('mine'), 'aria-label': tr('mine') }) : null),
         h('span', { className: 'fs-tile-name', 'data-flybot': 'face-owner', title: label }, label),
         h('span', { className: 'fs-tile-sub', 'data-flybot': 'face-bot', title: bots.join(', ') }, bots.join(', ')))
     }
@@ -570,13 +570,13 @@ window.__ModuleLoader__.load({
     function ConfirmLeave({ busy, onLeave, flybot = 'face-leave', size = 'fs-btn fs-btn-sm', beside = null } = {}) {
       const [ask, setAsk] = useState(false)
       if (!ask) {
-        const leave = h('button', { type: 'button', className: size, 'data-flybot': flybot, disabled: !!busy, onClick: () => setAsk(true) }, 'Leave')
+        const leave = h('button', { type: 'button', className: size, 'data-flybot': flybot, disabled: !!busy, onClick: () => setAsk(true) }, tr('Leave'))
         return beside ? h(Fragment, null, leave, beside) : leave
       }
       return h('span', { className: 'fs-leave-ask', 'data-flybot': 'face-leave-confirm' },
-        h('span', { className: 'fs-hint' }, 'Leave this room?'),
-        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-yes', disabled: !!busy, onClick: () => { setAsk(false); onLeave?.() } }, 'Leave'),
-        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-no', onClick: () => setAsk(false) }, 'Stay'))
+        h('span', { className: 'fs-hint' }, tr('Leave this room?')),
+        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-yes', disabled: !!busy, onClick: () => { setAsk(false); onLeave?.() } }, tr('Leave')),
+        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-no', onClick: () => setAsk(false) }, tr('Stay')))
     }
 
     // Auto-send is one switch per Bot of mine in the room (#457, owner decision: option a), each
@@ -1128,8 +1128,8 @@ window.__ModuleLoader__.load({
       if (!digits) return null
       return h(QrImage, {
         text: faceQrText(digits), kind: 'face-qr', at, offsetMs,
-        attrs: { 'data-code': digits }, label: `QR code for room number ${digits}`,
-        hint: 'Scan this with FlyBot to join',
+        attrs: { 'data-code': digits }, label: tr('QR code for room number {code}', { code: digits }),
+        hint: tr('Scan this with FlyBot to join'),
       })
     }
     // An invite into a room that already exists: the QR is the link, so a phone camera opens it and
@@ -1346,8 +1346,8 @@ window.__ModuleLoader__.load({
     function FaceWaitCode({ code, qrAt, qrOffsetMs } = {}) {
       const digits = String(code || '').replace(/\D/g, '').slice(0, 6)
       if (digits.length !== 6) return null
-      return h('div', { className: 'fs-wait-code', 'data-flybot': 'face-wait-code', 'aria-label': `Room number ${digits}` },
-        h('div', { className: 'fs-wait-code-label' }, 'Room number'),
+      return h('div', { className: 'fs-wait-code', 'data-flybot': 'face-wait-code', 'aria-label': tr('Room number {code}', { code: digits }) },
+        h('div', { className: 'fs-wait-code-label' }, tr('Room number')),
         h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits),
         h(FaceQr, { code: digits, at: qrAt, offsetMs: qrOffsetMs }))
     }
@@ -1867,16 +1867,16 @@ window.__ModuleLoader__.load({
               qrOffsetMs: room.clockOffsetMs,
             }),
             h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
-              ? (room.expiresAt ? countdownLine(countdown(room.expiresAt, room.clockOffsetMs)) : 'Anyone with the number can still join.')
-              : 'The room is open. The number is no longer valid.'),
+              ? (room.expiresAt ? countdownLine(countdown(room.expiresAt, room.clockOffsetMs)) : tr('Anyone with the number can still join.'))
+              : tr('The room is open. The number is no longer valid.')),
             h('div', { className: 'fs-wait-body' },
-              h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
+              h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': tr('Who has joined') },
                 facePeople(members, member => memberIsMine(member, bots, room)).map(person => h(FacePersonTile, {
                   key: person.key,
                   person,
                   look: member => faceLook({ roster, remoteChats, bots, member, mine: room.mineBots }),
                 }))),
-              othersIn(members, member => memberIsMine(member, bots, room)) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
+              othersIn(members, member => memberIsMine(member, bots, room)) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, tr('Waiting for others to join…')),
               failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
                 failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
               status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null),
@@ -1886,7 +1886,7 @@ window.__ModuleLoader__.load({
                 beside: h('button', {
                   type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter',
                   disabled: !!busy || !room.roomId, onClick: enter,
-                }, 'Enter chat'),
+                }, tr('Enter chat')),
               }))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
             h('div', { className: 'fs-hint', 'data-flybot': 'face-join-about' }, tr(starting ? START_FACE_ABOUT : JOIN_OR_CREATE_ABOUT)),
             h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
@@ -3151,8 +3151,8 @@ window.__ModuleLoader__.load({
             qrOffsetMs: snapshot?.clockOffsetMs,
           }),
           h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
-            expiresAt ? countdownLine(countdown(expiresAt, snapshot?.clockOffsetMs)) : 'Anyone with the number can still join.'),
-          h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
+            expiresAt ? countdownLine(countdown(expiresAt, snapshot?.clockOffsetMs)) : tr('Anyone with the number can still join.')),
+          h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': tr('Who has joined') },
             facePeople(members, mineMember).map(person => h(FacePersonTile, {
               key: person.key,
               person,
@@ -3161,7 +3161,7 @@ window.__ModuleLoader__.load({
                 ? faceLook({ roster, local: roster.byId[member.id] })
                 : faceLook({ roster, member })),
             }))),
-          othersIn(members, mineMember) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
+          othersIn(members, mineMember) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, tr('Waiting for others to join…')),
           locked ? null : h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
             h(ConfirmLeave, {
               busy,
@@ -3176,7 +3176,7 @@ window.__ModuleLoader__.load({
                   await call('social/face-start', { roomId: room.id, faceRoomId: face?.roomId })
                   if (room.id && typeof actions?.openSession === 'function') actions.openSession(room.id)
                 }),
-              }, 'Enter chat'),
+              }, tr('Enter chat')),
             })),
           note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
       }
