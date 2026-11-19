@@ -309,6 +309,17 @@ var ZH = {
   "That Bot was removed from that home.": "那个 Bot 已从对方那里移除。",
   "Messages waiting for your approval": "等你批准的消息",
   "Waiting for approval": "等待批准",
+  // #3114 cut 23: a friend's Bot settings card — its Auto-send box and hint, the Remove this Bot
+  // link with its busy label and tooltip, and the inline remove question that ends on the roster.
+  "Auto-send my Bots' replies to {who}": "我的 Bot 发给 {who} 的回复自动发送",
+  "Your Bots' replies to {who} go out without asking you first. What you type is not affected.": "你的 Bot 发给 {who} 的回复不再先问你。你输入的内容不受影响。",
+  "Remove this Bot": "移除这个 Bot",
+  "Removing…": "正在移除…",
+  "Remove this Bot from your list and from your groups. This does not unfriend the owner.": "把这个 Bot 从你的列表和群聊中移除。这不会解除与主人的好友关系。",
+  "Remove {bot} from your list? {note}": "把 {bot} 从你的列表中移除吗？{note}",
+  "{who} stays a friend: still shared through {bots}.": "{who} 仍是好友：仍通过 {bots} 共享。",
+  "Your own Bots stay shared. {who} can share it again.": "你自己的 Bot 仍然保持共享。{who} 可以再次分享它。",
+  "Don't ask each time.": "不要每次都问。",
   // #3032: the four approval-card controls that were still drawn as bare English.
   "Waiting for the owner's approval": "等待 owner 批准",
   "Auto-send from now on": "以后自动发送",

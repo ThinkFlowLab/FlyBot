@@ -553,7 +553,7 @@ window.__ModuleLoader__.load({
     const AUTO_SEND_NOTE = "Don't ask each time."
 
     function FaceAutoSend({ on, busy, onChange, bot } = {}) {
-      return h('label', { className: 'fs-auto fs-face-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'face-auto-bot' },
+      return h('label', { className: 'fs-auto fs-face-auto', title: tr(AUTO_SEND_NOTE), 'data-flybot': 'face-auto-bot' },
         h('input', {
           type: 'checkbox',
           checked: on === true,
@@ -2890,7 +2890,7 @@ window.__ModuleLoader__.load({
 
     function FriendBotRow({ bot, chat, renderBot, busy, onRemove }) {
       const [menu, setMenu] = useState(false)
-      const label = busy ? 'Removing…' : 'Remove this Bot'
+      const label = busy ? tr('Removing…') : tr('Remove this Bot')
       return h('div', {
         className: 'fs-row-wrap',
         'data-flybot': 'friend-bot',
@@ -2913,7 +2913,7 @@ window.__ModuleLoader__.load({
           onClick: (event) => { event?.stopPropagation?.(); onRemove?.(bot) },
         }, busy ? '…' : '×'),
         menu ? h('div', { className: 'fs-menu', role: 'menu', 'data-flybot': 'friend-bot-menu' },
-          h('button', { type: 'button', role: 'menuitem', onClick: () => { setMenu(false); onRemove?.(bot) } }, 'Remove this Bot')) : null)
+          h('button', { type: 'button', role: 'menuitem', onClick: () => { setMenu(false); onRemove?.(bot) } }, tr('Remove this Bot'))) : null)
     }
 
     // Every home counts down to Bot Social's one deadline (#458): `offsetMs` is how far the server's
@@ -3757,7 +3757,7 @@ window.__ModuleLoader__.load({
         } finally { setSaving(false) }
       }
       const named = remote.homeName || remote.owner || ''
-      const who = named || home || 'Your friend'
+      const who = named || home || tr('Your friend')
       // #1001: a friend stays in the list while any of their Bots is still shared with any of mine, so
       // removing this one leaves the friend behind with no reason given. Name the link that keeps them:
       // the other Bots of the same friend the roster still lists. With none, there is nothing to name and
@@ -3767,8 +3767,8 @@ window.__ModuleLoader__.load({
         .map(other => String(other.name ?? '').trim())
         .filter(name => name !== '')
       const keepLine = stillLinked.length > 0
-        ? `${who} stays a friend: still shared through ${stillLinked.join(', ')}.`
-        : `Your own Bots stay shared. ${who} can share it again.`
+        ? tr('{who} stays a friend: still shared through {bots}.', { who, bots: stillLinked.join(', ') })
+        : tr('Your own Bots stay shared. {who} can share it again.', { who })
       // Asked inline, like Leave on a face room (#230), not with the browser's confirm box.
       const removeBot = async () => {
         setAsking(false)
@@ -3786,25 +3786,25 @@ window.__ModuleLoader__.load({
         // Auto-send for all my Bots to this person (#417 says what it covers; one Bot's own is in its Sharing).
         // The box holds the setting only; the destructive link sits apart, below it (#274).
         h('div', { className: 'fs-card fs-friend-auto', 'data-flybot': 'friend-auto-box' },
-          h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
+          h('label', { className: 'fs-auto', title: tr(AUTO_SEND_NOTE), 'data-flybot': 'friend-auto-send' },
             h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
-            `Auto-send my Bots' replies to ${who}`),
-          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`)),
+            tr("Auto-send my Bots' replies to {who}", { who })),
+          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, tr("Your Bots' replies to {who} go out without asking you first. What you type is not affected.", { who }))),
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
-            h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? ${keepLine}`),
+            h('span', { className: 'fs-hint' }, tr('Remove {bot} from your list? {note}', { bot: botWithOwner(bot.name, named), note: keepLine })),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, tr('Remove')),
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, tr('Keep')))
           : h('button', {
             type: 'button',
             className: 'fs-link',
             'data-flybot': 'remove-friend-bot',
-            title: 'Remove this Bot from your list and from your groups. This does not unfriend the owner.',
-            'aria-label': busy ? 'Removing…' : 'Remove this Bot',
+            title: tr('Remove this Bot from your list and from your groups. This does not unfriend the owner.'),
+            'aria-label': busy ? tr('Removing…') : tr('Remove this Bot'),
             'aria-busy': busy || undefined,
             disabled: !!busy,
             onClick: () => setAsking(true),
-          }, busy ? 'Removing…' : 'Remove this Bot')),
+          }, busy ? tr('Removing…') : tr('Remove this Bot'))),
         error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
     }
 
