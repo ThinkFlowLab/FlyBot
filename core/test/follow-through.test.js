@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { resumeText } from '../src/host/resume.js'
 import { stripWrittenCalls, writesToolCall } from '../src/host/turns.js'
 
 // Chief in its own chat 'a'; Writer, the admin of group 'r1', speaks there from 'gb'.
@@ -186,6 +187,38 @@ test('a group turn cut off by a restart is picked up once, and the group is told
   await settle(() => third.agentOf('r1').calls.length === 1)
   assert.equal(third.agentOf('r1').calls[0].source.again, true)
   assert.equal(third.agentOf('gb').calls.length, 0)
+})
+
+// #3234: the note the restart line quotes is bounded to 200 code points, not 200 UTF-16 units. A cut
+// landing inside an emoji used to keep the lone high surrogate, and the harness flattens that on the
+// wire with `toWellFormed`, so the user read a `U+FFFD` glyph in the middle of their own reason.
+test('#3234: an approval note cut at 200 keeps an emoji whole and never stores half of one', async (t) => {
+  mockTimers(t)
+  const askWith = (host, sessionId, reason) => host.ctx.listeners.get('approval/request')[0](
+    { agent: { session: { id: sessionId } }, toolName: 'pwsh', reason }, () => 'from-dsh')
+  // 200 code points, 201 UTF-16 units: a unit cut lands inside the emoji, so the note keeps the
+  // 199 units before it and drops the emoji whole (`cut` bounds units, on purpose).
+  const insideEmoji = 'x'.repeat(199) + '😀'
+  const home = freshHome(t)
+  const host = await start(home)
+  await openRoomTurn(t, host)
+  void askWith(host, 'gb', insideEmoji)
+  await settle(() => inflight(home).gb?.approval !== undefined)
+  const note = inflight(home).gb.approval.reason
+  assert.equal(note, 'x'.repeat(199))
+  assert.ok(note.isWellFormed(), 'the note keeps a lone surrogate')
+  assert.ok(insideEmoji.startsWith(note) && note.length <= 200)
+  assert.ok(resumeText(inflight(home).gb).isWellFormed(), 'the restart line is flattened to a replacement glyph')
+
+  // The control fits the same 200 units exactly, so it is unchanged.
+  const beforeCut = 'x'.repeat(198) + '😀'
+  const controlHome = freshHome(t)
+  const control = await start(controlHome)
+  await openRoomTurn(t, control)
+  void askWith(control, 'gb', beforeCut)
+  await settle(() => inflight(controlHome).gb?.approval !== undefined)
+  assert.equal(inflight(controlHome).gb.approval.reason, beforeCut)
+  assert.ok(inflight(controlHome).gb.approval.reason.isWellFormed())
 })
 
 test('a request cut off by a restart goes on under the same exchange; own-chat work resumes in the chat', async (t) => {
