@@ -154,7 +154,10 @@ export function renderSummary({ mode = 'report', rows = [], note = '' } = {}) {
     const verb = verbOf(row)
     const bucket = verb === 'would enqueue' ? 'would-enqueue' : verb
     counts[bucket] += 1
-    const detail = row.command ? `\`${row.command}\`` : String(row.reason ?? '')
+    // A failed press answers with the reason, never with the command it sent: the reader already knows
+    // what was tried — the row says it failed — and the reason is the only text that explains why the
+    // round is one enqueue short (#3257).
+    const detail = row.action === 'failed' || !row.command ? String(row.reason ?? '') : `\`${row.command}\``
     lines.push(`- #${row.number} (${row.tier || 'tier unknown'}, ${short(row.sha)}): ${verb} — ${detail}`)
   }
   if (rows.length === 0) lines.push('- no open pull request this round')
