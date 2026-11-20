@@ -279,3 +279,61 @@ test('#1861: the decision card exposes the participants and their proxies', asyn
     { name: 'Owner', speaksFor: null, stance: null, silent: false },
   ])
 })
+
+// #3203: the Dissent record is read back from the positions as they stand now, not stamped once
+// when someone first dissents. A withdrawn objection leaves the record (the Dissent line and the
+// participant's own row agree), and every objection that still stands is named with its author.
+test('#3203: a withdrawn dissent leaves the record, and the participant row agrees with it', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Should Stage 4 reuse the existing store?', ['Chief', 'Dev', 'Reviewer'])
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'the existing store is fine' })
+  await meeting({ action: 'position', meeting: id, as: 'Dev', stance: 'agree', text: 'the existing store' })
+  const stance = await meeting({ action: 'position', meeting: id, as: 'Reviewer', stance: 'dissent', text: 'a second store is cleaner to audit' })
+  assert.match(stance, /dissent: a second store is cleaner to audit — Reviewer/, 'the live dissent is on the view')
+  const view = await meeting({ action: 'position', meeting: id, as: 'Reviewer', stance: 'agree', text: 'the existing store is fine after all' })
+  assert.doesNotMatch(view, /a second store is cleaner to audit/, 'the withdrawn objection is no longer the meeting dissent')
+  assert.doesNotMatch(view, /^dissent:/m, 'the view names no standing dissent')
+  assert.match(view, /- Reviewer: agree — the existing store is fine after all/, 'the participant row says agree')
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Keep the existing store.', evidence: [{ pr: 3203 }] })
+  assert.equal(rt.state.meetings[id].dissent, undefined, 'the withdrawn dissent is not stored')
+  const body = readFileSync(join(dir, rt.state.meetings[id].decisionFile), 'utf8')
+  assert.match(body, /## Dissent\n\nnone recorded/)
+  assert.doesNotMatch(body, /a second store is cleaner to audit/)
+  assert.match(body, /\*\*Reviewer\*\* — agree — the existing store is fine after all/)
+})
+
+test('#3203: two dissenters are both on the record with their own authors', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Should Stage 4 reuse the existing store?', ['Chief', 'Dev', 'Reviewer'])
+  const first = await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'dissent', text: 'two people must sign' })
+  assert.match(first, /dissent: two people must sign — Chief/)
+  const second = await meeting({ action: 'position', meeting: id, as: 'Dev', stance: 'dissent', text: 'a second signature is a second risk' })
+  assert.match(second, /dissent: two people must sign — Chief/, 'the first dissenter stays on the view')
+  assert.match(second, /dissent: a second signature is a second risk — Dev/, 'the second dissenter is on the view too')
+  await meeting({ action: 'position', meeting: id, as: 'Reviewer', stance: 'agree', text: 'the existing store' })
+  await meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Keep the existing store.', evidence: [{ pr: 3203 }] })
+  const body = readFileSync(join(dir, rt.state.meetings[id].decisionFile), 'utf8')
+  assert.match(body, /two people must sign — \*\*Chief\*\*/, 'the first objection is archived with its author')
+  assert.match(body, /a second signature is a second risk — \*\*Dev\*\*/, 'the second objection is archived with its author')
+})
+
+test('#3203: decide keeps the explicit dissent override, and an empty one is still refused', async (t) => {
+  const { rt, dir, meeting, open, stop } = await boot()
+  t.after(stop)
+  const id = await open('Should Stage 4 reuse the existing store?', ['Chief', 'Dev'])
+  await meeting({ action: 'position', meeting: id, as: 'Chief', stance: 'agree', text: 'the existing store' })
+  await meeting({ action: 'position', meeting: id, as: 'Dev', stance: 'agree', text: 'no second store' })
+  await assert.rejects(
+    meeting({ action: 'decide', meeting: id, owner: 'Chief', decision: 'Keep the existing store.', dissent: { text: '   ' }, evidence: [{ pr: 3203 }] }),
+    /a dissent needs the objection it records/,
+  )
+  await meeting({
+    action: 'decide', meeting: id, owner: 'Chief', decision: 'Keep the existing store.',
+    dissent: { text: 'the objection raised in the thread still stands', owner: 'Chief' }, evidence: [{ pr: 3203 }],
+  })
+  assert.deepEqual(rt.state.meetings[id].dissent, { text: 'the objection raised in the thread still stands', owner: 'Chief' })
+  const body = readFileSync(join(dir, rt.state.meetings[id].decisionFile), 'utf8')
+  assert.match(body, /the objection raised in the thread still stands — \*\*Chief\*\*/)
+})
