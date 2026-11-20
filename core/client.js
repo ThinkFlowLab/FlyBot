@@ -16904,11 +16904,13 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
   }));
   if (agents.length) sections.push(["DSH Agent", agents]);
   const outlineRead = JSON.parse(found);
+  const partOf2 = (chat, part) => typeof part === "string" ? part : currentPart(roster.byId[chat] ?? { id: chat });
+  const rowKey = (chat, part, turn) => `${chat}:${partOf2(chat, part)}:${turn}`;
   const messages = outlineRead.hits.map(([id, turn, snippet]) => {
     const bot = roster.byId[id];
     const room2 = roster.roomsById[id];
     return {
-      key: `${chatOf2(id)}:${turn}`,
+      key: rowKey(chatOf2(id), id, turn),
       title: bot?.name ?? room2?.name ?? t("Bot"),
       subtitle: snippet,
       avatar: bot ? (0, import_react35.createElement)(BotAvatar, { bot, size: 24, badge: false, live: false }) : (0, import_react35.createElement)(RoomAvatar, { room: room2, roster, size: 24 }),
@@ -16922,11 +16924,11 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
     return Array.isArray(held) && held.length > 0 ? held.includes(turn) : void 0;
   };
   const keyCounts = /* @__PURE__ */ new Map();
-  const fullText = (wholeText?.rows ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map((row) => {
+  const fullText = (wholeText?.rows ?? []).filter((row) => row?.chat !== void 0 && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(rowKey(row.chat, row.part, row.turn))).map((row) => {
     const bot = roster.byId[row.chat];
     const room2 = roster.roomsById[row.chat];
     const earlier = typeof row.part === "string" ? bot !== void 0 && row.part !== currentPart(bot) : inPart(row.chat, row.turn) === false;
-    const at = `${row.chat}:${row.turn}`;
+    const at = rowKey(row.chat, row.part, row.turn);
     const count = (keyCounts.get(at) ?? 0) + 1;
     keyCounts.set(at, count);
     return {
