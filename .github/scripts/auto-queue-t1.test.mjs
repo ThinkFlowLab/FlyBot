@@ -466,3 +466,74 @@ test('#3253: the round prints the summary to stdout, byte for byte what it write
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// A failed press (#3257)
+//
+// A press that fails leaves the round with nothing else to say: `enqueued=0`, so no dispatch follows,
+// and the summary is the only record. Until this section it printed the command it had just sent —
+// answering "why did this fail?" with "here is what I sent" — while the reason `act()` already held in
+// `row.reason` never reached the page. Slice B on `#3254` measured it as byte-identical on the base and
+// on the tip, so it is pinned here in both readers: the pure renderer and the CLI's real stdout.
+test('#3257: a failed row prints the reason even when it also carries the command', () => {
+  const row = {
+    number: 4001,
+    tier: 'T1',
+    sha: HEAD,
+    action: 'failed',
+    reason: 'HTTP 500: Internal Server Error',
+    command: COMMAND,
+  }
+  const text = renderSummary({ mode: 'execute', rows: [row] })
+  assert.match(text, /- #4001 \(T1, 4a1c2d3e\): failed — HTTP 500: Internal Server Error/)
+  assert.doesNotMatch(
+    text,
+    /failed — `gh pr merge/,
+    'a failed row that answers with the command it sent tells the reader nothing about the failure',
+  )
+  assert.match(text, /auto-queue-t1: mode=execute enqueued=0 refused=0 failed=1/)
+})
+
+test('#3257: the other four row shapes keep their exact text', () => {
+  const rows = [
+    { number: 4001, tier: 'T0', sha: HEAD, action: 'enqueue', command: COMMAND },
+    { number: 4002, tier: 'T2', sha: HEAD, action: 'refuse', reason: 'tier T2 is judged by a reviewer' },
+    {
+      number: 4003,
+      tier: 'T0',
+      sha: HEAD,
+      action: 'moved',
+      reason: 'the head moved to ffffffff after the decision; the next round decides again',
+    },
+  ]
+  const text = renderSummary({ mode: 'execute', rows })
+  assert.ok(
+    text.includes(`- #4001 (T0, 4a1c2d3e): enqueued — \`${COMMAND}\``),
+    'an enqueued row still carries the command it ran',
+  )
+  assert.ok(text.includes('- #4002 (T2, 4a1c2d3e): refused — tier T2 is judged by a reviewer'))
+  assert.ok(
+    text.includes(
+      '- #4003 (T0, 4a1c2d3e): moved — the head moved to ffffffff after the decision; the next round decides again',
+    ),
+  )
+  const report = renderSummary({ mode: 'report', rows })
+  assert.ok(report.includes(`- #4001 (T0, 4a1c2d3e): would enqueue — \`${COMMAND}\``))
+})
+
+test('#3257: a merge the API refused reaches stdout and the summary file with its reason', () => {
+  const { run, dir, writes, summary, text } = roundWith({ mergeErr: 'HTTP 500: Internal Server Error' })
+  try {
+    assert.equal(run.status, 0, run.stderr)
+    assert.deepEqual(
+      writes(),
+      [`pr merge 4001 --auto --squash --match-head-commit ${HEAD}`],
+      'one attempt, and no dispatch: nothing was enqueued',
+    )
+    assert.match(text, /- #4001 \(T1, 4a1c2d3e\): failed — HTTP 500: Internal Server Error/)
+    assert.doesNotMatch(text, /failed — `gh pr merge/, 'the log line is the reason, not the command it sent')
+    assert.match(text, /auto-queue-t1: mode=execute enqueued=0 refused=0 failed=1/)
+    assert.equal(readFileSync(summary, 'utf8'), text, 'the file a reader opens says the same thing as the log')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
