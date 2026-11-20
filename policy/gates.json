@@ -12,10 +12,12 @@
     ".github/scripts/enqueue-guard.mjs",
     ".github/scripts/enqueue-rules.mjs",
     ".github/scripts/gate-check.mjs",
+    ".github/agent/",
     ".github/workflows/test.yml",
     ".github/workflows/merge-gate.yml",
     ".github/workflows/enqueue-guard.yml",
     ".github/workflows/docker.yml",
+    ".github/workflows/risk-tier.yml",
     "policy/"
   ]
 }
