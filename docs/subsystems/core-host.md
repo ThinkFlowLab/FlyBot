@@ -800,9 +800,15 @@ no second store, no UI-only path and no cron.
   positions, options and evidence, writes the `blockingAnswer`, clears the blocked stamp and moves
   the meeting back to `deliberating`. `decided` is terminal — `resume` on it is refused `closed`.
 - **Positions.** An invited participant records `agree`, `dissent` or `abstain` with a line of text.
-  A name that was not invited is refused `not-invited`; a dissent with text is also kept as the
-  meeting's standing dissent, owned by the participant who recorded it. A participant who never
-  answers and is not recorded `silent` keeps the meeting from closing.
+  A name that was not invited is refused `not-invited`; a dissent with text is the meeting's
+  standing dissent, owned by the participant who recorded it. Since #3203 that dissent is read back
+  from the positions as they stand now instead of stamped once: a participant who later records
+  another stance takes their objection with them (once nobody dissents, the Dissent section and the
+  archived file print `none recorded`), and when two participants dissent both objections are on the
+  record under their own names. The stored single `dissent` follows the positions (the first
+  objection that still stands); an explicit `dissent` passed to `decide` stays an override that is
+  printed beside the standing ones, and a `decide` without one recomputes the record before writing
+  it. A participant who never answers and is not recorded `silent` keeps the meeting from closing.
 - **The governance check is code.** `governanceRefusal(meeting)` is the one refusal `decide` runs
   before it writes anything: every invited participant has a position or is recorded silent, the
   decision names an `owner`, a dissent carries its own `owner`, and the decision states what was

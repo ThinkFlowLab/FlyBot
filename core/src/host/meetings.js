@@ -136,6 +136,44 @@ export function proxyRefusal(meeting) {
   return undefined
 }
 
+// #3203: what the meeting's dissent *is* gets read back from the positions as they stand now,
+// not stamped once when the first participant dissents. A participant who changes their stance
+// takes their objection with them, and every participant who still dissents stays on the record
+// under their own name — one owner per objection, so a second dissenter does not overwrite the
+// first.
+const recordedDissent = participant => {
+  const position = participant?.position
+  if (position?.stance !== 'dissent') return undefined
+  const text = oneLine(position.text, TEXT_MAX)
+  return text === '' ? undefined : { text, owner: participant.name }
+}
+
+const standingDissents = meeting => (Array.isArray(meeting.participants) ? meeting.participants : [])
+  .map(recordedDissent)
+  .filter(record => record !== undefined)
+
+// What the view and the archived file print: the standing dissents, plus an explicit `dissent` a
+// `decide` set (the override the tool offers) when it names an objection the positions do not
+// already carry. A decided record keeps that line as history; an open one reads only the
+// positions, so a stale stamp from an older build cannot outlive the stance behind it.
+const dissentRecords = meeting => {
+  const standing = standingDissents(meeting)
+  const recorded = meeting.status === 'decided' ? meeting.dissent : undefined
+  const text = oneLine(recorded?.text, TEXT_MAX)
+  if (text === '') return standing
+  const owner = oneLine(recorded.owner, NAME_MAX)
+  if (standing.some(record => record.owner === owner && record.text === text)) return standing
+  return [{ text, owner }, ...standing]
+}
+
+// The stored single `dissent` follows the positions: the first objection that still stands, or
+// none at all. It stays the shape the governance check and older readers know.
+const syncDissent = meeting => {
+  const [first] = standingDissents(meeting)
+  if (first === undefined) delete meeting.dissent
+  else meeting.dissent = first
+}
+
 export function governanceRefusal(meeting) {
   if (!OPEN_STATES.has(meeting.status)) return `the meeting is ${meeting.status}, not open or deliberating`
   const proxied = proxyRefusal(meeting)
@@ -202,9 +240,10 @@ const decisionBody = (meeting, file, at) => {
     lines.push(`- **${participant.name}** — ${said}${proxy === '' ? '' : ` (speaks for ${proxy})`}`)
   }
   lines.push('', '## Dissent', '')
-  lines.push(meeting.dissent === undefined
-    ? 'none recorded'
-    : `${oneLine(meeting.dissent.text, TEXT_MAX)} — **${oneLine(meeting.dissent.owner, NAME_MAX)}**`)
+  const dissents = dissentRecords(meeting)
+  if (dissents.length === 0) lines.push('none recorded')
+  else if (dissents.length === 1) lines.push(`${dissents[0].text} — **${dissents[0].owner}**`)
+  else for (const record of dissents) lines.push(`- ${record.text} — **${record.owner}**`)
   lines.push('', '## Status', '', 'accepted', '')
   lines.push('## Links', '', `- Decision file: ${file}`)
   if (meeting.issue !== undefined) lines.push(`- Issue: #${meeting.issue}`)
@@ -278,9 +317,7 @@ export function install(rt) {
     if (spokenFor === '') delete participant.speaksFor
     else participant.speaksFor = spokenFor
     participant.position = { stance: chosen, text: oneLine(text, TEXT_MAX), at: now, ...(spokenFor === '' ? {} : { speaksFor: spokenFor }) }
-    if (chosen === 'dissent' && oneLine(text, TEXT_MAX) !== '') {
-      meeting.dissent = { text: oneLine(text, TEXT_MAX), owner: name }
-    }
+    syncDissent(meeting)
     if (meeting.status === 'open') meeting.status = 'deliberating'
     meeting.updatedAt = now
     return meeting
@@ -384,6 +421,10 @@ export function install(rt) {
       const ownerName = oneLine(args.dissent?.owner, NAME_MAX)
       if (text === '') throw refuse('invalid', 'a dissent needs the objection it records')
       candidate.dissent = { text, owner: ownerName }
+    } else {
+      // #3203: the record follows the positions at the moment it is written, so a dissent that
+      // was withdrawn before `decide` never reaches the file.
+      syncDissent(candidate)
     }
     const reason = governanceRefusal(candidate)
     if (reason !== undefined) throw refuse('governance', reason)
@@ -521,7 +562,7 @@ export function install(rt) {
     lines.push(`level: ${level}${(meeting.recipients ?? []).length === 0 ? '' : ` | recipients: ${(meeting.recipients ?? []).join(', ')}`}`)
     const paused = advanceRefusal(meeting)
     if (paused !== undefined) lines.push(`paused: ${paused}`)
-    if (meeting.dissent !== undefined) lines.push(`dissent: ${meeting.dissent.text} — ${meeting.dissent.owner}`)
+    for (const record of dissentRecords(meeting)) lines.push(`dissent: ${record.text} — ${record.owner}`)
     if (meeting.blockingQuestion !== undefined) lines.push(`blocking: ${meeting.blockingQuestion}`)
     if (meeting.blockingAnswer !== undefined) lines.push(`answer: ${meeting.blockingAnswer}`)
     if (meeting.decisionFile !== undefined) lines.push(`decision file: ${meeting.decisionFile}`, `tasks: ${meeting.taskIds.join(', ') || 'none'}`)
