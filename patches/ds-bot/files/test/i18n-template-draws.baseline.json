@@ -1,7 +1,6 @@
 {
   "version": 1,
   "entries": [
-    "plugins/social/client.js:{} Send your message again: it starts a new chat.",
     "plugins/timeline/client.js:Could not copy the report: {}",
     "plugins/timeline/client.js:Last {}",
     "plugins/timeline/client.js:Looking back: window ends at {}.",
