@@ -1476,6 +1476,8 @@ const ZH = {
   'Run Bots as a tree under a coordinator.': '把 Bot 组织成树，由协调者带队。',
   'Read the team activity as a timeline.': '用时间线查看团队活动。',
   'Run workflow graphs across several Bots.': '跨多个 Bot 运行工作流图。',
+  // #3114 cut 37: the Project plugin's purpose; the four above are the other four plugins'.
+  'Run a Project: Project State, its board, its own Chief, its team and its assistant.': '运行一个项目：Project State、它的看板、它自己的 Chief、它的团队和助手。',
   'Scheduled tasks · {count}': '定时任务 · {count}',
   'Every day': '每天',
   'Every {count} days': '每 {count} 天',
