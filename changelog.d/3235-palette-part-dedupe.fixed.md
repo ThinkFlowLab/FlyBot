@@ -1,1 +1,0 @@
-⌘K search no longer drops a message from an older part when that part's turn number repeats one the current part already matched. Two parts of the same chat render as two rows, and each row opens the part it came from ([#3235](https://github.com/ThinkFlowLab/FlyBot/issues/3235)).

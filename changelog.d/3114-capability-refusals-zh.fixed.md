@@ -1,1 +1,0 @@
-The Capabilities page now says, in a Chinese window, why a pack cannot be saved and why a capability is no longer there: the refusal that carries the child capability name, and the two that carry a capability name or an unapproved stdio MCP name, read Chinese, with the name exactly as the host wrote it ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

@@ -1,1 +1,0 @@
-A meeting's Dissent section and its archived `dissent:` line now follow the positions as they stand: a participant who withdraws an objection takes it off the record, and when two participants dissent both objections stay on the record under their own names ([#3203](https://github.com/ThinkFlowLab/FlyBot/issues/3203)).
