@@ -1656,6 +1656,10 @@ var ZH = {
   // so the ids that read emits are keys of their own (#1813).
   running: "运行中",
   stalled: "已停滞",
+  // The running table's Status column reads the host task ids through the same lookup (#3114);
+  // `claimed` and `working` are the only two states that table can hold.
+  claimed: "已认领",
+  working: "进行中",
   // The pending decision card is still open, deliberating or blocked (#3114): the ids the host
   // keys the card by are keys of their own, beside the lease states above.
   open: "待讨论",

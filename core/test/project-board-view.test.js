@@ -1107,3 +1107,28 @@ test('#3114 cut 35: a meeting still open, deliberating or blocked reads its stat
     off()
   }
 })
+
+// #3114 cut 36: the running table's Status column already reads `t(row.status)`; the two states the
+// host actually emits had no dictionary keys, so a zh window drew `claimed` / `working` bare.
+const runningRecord = () => ({
+  project: { id: 'project-1', name: 'FlyBot' }, rows: [], canManage: false, decisions: { dir: '/team/flybot', files: [] }, meetings: { decided: [], pending: [], reason: '' },
+  metrics: {
+    ok: true, metrics: {}, running: [
+      { id: 'task-c', title: 'Claim it', status: 'claimed', who: 'Dev', sinceMs: 1000, source: 'group', lastActivityAt: 1 },
+      { id: 'task-w', title: 'Work it', status: 'working', who: 'Dev', sinceMs: 2000, source: 'bot', lastActivityAt: 1 },
+      { id: 'task-h', title: 'Hold it', status: 'on-hold', who: 'Dev', sinceMs: 3000, source: 'workflow', lastActivityAt: 1 },
+    ],
+  },
+})
+// The Status span is picked by its class alone; `data-task-id` stays the host id and is not the copy.
+const runningStatuses = () => all(ProjectBoardPane(runningRecord()))
+  .filter(node => node.props?.className === 'bt-project-running-status').map(textOf)
+test('#3114 cut 36: a running task reads its status in the window language', () => {
+  assert.deepEqual(runningStatuses(), ['claimed', 'working', 'on-hold'], 'an English window is unchanged')
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.deepEqual(runningStatuses(), ['已认领', '进行中', 'on-hold'], 'the two in-flight states read in the window language; an unknown id stays as it came')
+  } finally {
+    off()
+  }
+})

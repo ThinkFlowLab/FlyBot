@@ -1946,7 +1946,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'Working folder': '工作文件夹',
    'Working folder: {folder}': '工作文件夹：{folder}',
    Folder: '文件夹',
-@@ -838,6 +838,99 @@ const ZH = {
+@@ -838,6 +838,103 @@ const ZH = {
    'Up one level': '上一级',
    'No folders inside.': '里面没有文件夹。',
    'Some folders are not shown.': '还有一些文件夹没有显示。',
@@ -1971,6 +1971,10 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  // so the ids that read emits are keys of their own (#1813).
 +  running: '运行中',
 +  stalled: '已停滞',
++  // The running table's Status column reads the host task ids through the same lookup (#3114);
++  // `claimed` and `working` are the only two states that table can hold.
++  claimed: '已认领',
++  working: '进行中',
 +  // The pending decision card is still open, deliberating or blocked (#3114): the ids the host
 +  // keys the card by are keys of their own, beside the lease states above.
 +  open: '待讨论',
