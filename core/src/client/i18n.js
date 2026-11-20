@@ -393,6 +393,8 @@ const ZH = {
   'Add capability': '添加能力',
   'No capabilities saved': '还没有保存能力',
   Type: '类型',
+  // #3114: the Description field of the capability form (capability-settings.js:69) is a label.
+  Description: '描述',
   'MCP server': 'MCP 服务',
   Skill: '技能',
   Pack: '能力包',
@@ -1843,6 +1845,14 @@ const HOST_ZH = {
   'Not sent: this answer has no Feishu chat to go to.': '没发出去：这条回答没有可去的飞书群。',
   'Not sent: connect Feishu first, so the answer has a way out.': '没发出去：请先连接飞书，回答才有出去的路。',
   'Connect Feishu first': '请先连接飞书',
+  // #3114: the six fixed sentences a refused capability save leaves on the form. The two
+  // "text values" sentences are the host's template filled with its own field name.
+  'Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.': '能力名只能用小写字母、数字和单个连字符；「github」和「composio」是保留名。',
+  'Enter a command for the MCP server.': '请填写 MCP 服务器的命令。',
+  'Enter a valid HTTP or HTTPS URL.': '请填写有效的 HTTP 或 HTTPS 地址。',
+  'A capability cannot change its kind. Delete it and save a new one.': '能力类型不能改。请删掉它，再新建一个。',
+  'Environment variables must contain text values.': '环境变量里只能填文本值。',
+  'Headers must contain text values.': '请求头里只能填文本值。',
 }
 Object.assign(ZH, HOST_ZH)
 
