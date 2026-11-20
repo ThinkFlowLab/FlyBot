@@ -7,6 +7,7 @@ import { createServer } from 'node:http'
 import { createPlane } from '../index.js'
 import { DuplicateInstanceError, openStore } from './store.mjs'
 import { verifyOperator } from './credentials.mjs'
+import { WorkspaceRoleError } from './workspace-roles.mjs'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 
@@ -16,6 +17,15 @@ function reply(status, body) {
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim() !== ''
+}
+
+// A membership refusal is a status, not a thrown 500: the role error names it.
+const MEMBER_ERROR_STATUS = { invalid_role: 400, forbidden: 403, workspace_not_found: 404, account_not_found: 404, member_exists: 409 }
+
+function memberReply(error) {
+  const status = error instanceof WorkspaceRoleError ? MEMBER_ERROR_STATUS[error.code] : undefined
+  if (!status) throw error
+  return reply(status, { error: error.code })
 }
 
 function parseBody(body) {
@@ -51,6 +61,33 @@ export async function handle(request, { plane, store } = {}) {
     } catch (error) {
       if (error instanceof DuplicateInstanceError) return reply(409, { error: 'duplicate_instance' })
       throw error
+    }
+  }
+
+  const members = path.match(/^\/api\/workspaces\/([^/]+)\/members$/)
+  if (members) {
+    const workspaceId = decodeURIComponent(members[1])
+    if (method === 'GET') {
+      try {
+        return reply(200, { members: plane.listWorkspaceMembers(workspaceId, account.id) })
+      } catch (error) {
+        return memberReply(error)
+      }
+    }
+    if (method !== 'POST') return reply(405, { error: 'method_not_allowed' })
+    let body
+    try {
+      body = parseBody(request.body)
+    } catch {
+      return reply(400, { error: 'invalid_json' })
+    }
+    if (!body || typeof body !== 'object') return reply(400, { error: 'invalid_request' })
+    if (!nonEmpty(body.accountId)) return reply(400, { error: 'invalid_request' })
+    try {
+      const member = plane.addWorkspaceMember(workspaceId, account.id, { accountId: body.accountId, role: body.role })
+      return reply(201, { member })
+    } catch (error) {
+      return memberReply(error)
     }
   }
 
