@@ -1,0 +1,1 @@
+The face-to-face room’s Auto-send switches (`Auto-send Chief → room` and the checkbox’s own name) and the sidebar’s `Past rooms` fold now read in the window’s language instead of English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

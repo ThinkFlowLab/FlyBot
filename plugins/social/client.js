@@ -555,15 +555,16 @@ window.__ModuleLoader__.load({
     const AUTO_SEND_NOTE = "Don't ask each time."
 
     function FaceAutoSend({ on, busy, onChange, bot } = {}) {
+      const who = bot || tr('my Bot')
       return h('label', { className: 'fs-auto fs-face-auto', title: tr(AUTO_SEND_NOTE), 'data-flybot': 'face-auto-bot' },
         h('input', {
           type: 'checkbox',
           checked: on === true,
           disabled: !!busy,
-          'aria-label': `Auto-send ${bot || 'my Bot'}'s room messages`,
+          'aria-label': tr("Auto-send {bot}'s room messages", { bot: who }),
           onChange: e => onChange?.(e.target.checked),
         }),
-        `Auto-send ${bot || 'my Bot'} → room`)
+        tr('Auto-send {bot} → room', { bot: who }))
     }
 
     // Leave asks once (#182): leaving ends my part in the room for good.
@@ -3096,7 +3097,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
           h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: togglePast },
             h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
-            'Past rooms',
+            tr('Past rooms'),
             h('span', { className: 'fs-count' }, String(past.length))),
           pastOpen ? past.map(room => card(room, true)) : null))
     }
