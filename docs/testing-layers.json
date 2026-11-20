@@ -274,6 +274,15 @@
       "gate": false,
       "runs": "daily 02:30 Asia/Shanghai, and workflow_dispatch",
       "reason": "The release-beat watchdog (#1209, second half): reads the newest `v*` tag, and files at most one `Release beat missing: <date>` issue per day when no tag carries today. It runs no tests of its own, does not touch release.yml, and gates nothing."
+    },
+    {
+      "id": "auto-queue-t1",
+      "workflow": ".github/workflows/auto-queue-t1.yml",
+      "kind": "workflow-only",
+      "layer": "none",
+      "gate": false,
+      "runs": "`Test` completed, every 5 minutes, and workflow_dispatch",
+      "reason": "Starts the merge-queue entry of a T0/T1 pull request, which no `pass` label ever triggers (#3248). Report mode writes \"would enqueue / refused + reason\" to the job summary and presses nothing; the decision function is tested by `.github/scripts/auto-queue-t1.test.mjs` in the L1 `scripts` suite, so this workflow has no test file of its own and produces no required check."
     }
   ]
 }
