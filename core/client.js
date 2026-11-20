@@ -1071,6 +1071,10 @@ var ZH = {
   Reactions: "表情",
   "Message actions": "消息操作",
   Download: "下载",
+  // #3114 cut 32: the remote file chip's hover title. The name is the sender's data and is filled
+  // in untranslated; the two words that make the chip safe to click — untrusted, and a remote Bot —
+  // stay in the sentence.
+  "Download {name} (untrusted file from a remote Bot)": "下载 {name}（来自远程 Bot 的不可信文件）",
   "Clipboard unavailable": "剪贴板不可用，请手动选择文字复制",
   "Could not copy message": "未能复制消息，请重试或手动选择文字复制",
   "Could not download message": "未能下载消息，请重试或复制正文",
@@ -8248,7 +8252,7 @@ function RemoteFiles({ files, plugin, botId }) {
     { className: "bt-file-chips" },
     files.map((file) => (0, import_react12.createElement)(
       "button",
-      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download2(file) },
+      { key: file.id, type: "button", className: "bt-file-chip", disabled: busy === file.id, title: t("Download {name} (untrusted file from a remote Bot)", { name: file.name }), onClick: () => download2(file) },
       `📎 ${file.name} · ${fileSize(file.size)}`
     )),
     error ? (0, import_react12.createElement)("span", { className: "bt-file-error", role: "alert" }, error) : null

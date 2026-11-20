@@ -1,0 +1,1 @@
+A remote file chip in a chat now explains its download in a zh window: the hover title says the file comes from a remote Bot and is untrusted, while the file name stays exactly as the sender sent it ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

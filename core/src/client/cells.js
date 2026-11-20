@@ -460,7 +460,7 @@ function RemoteFiles({ files, plugin, botId }) {
     }
   }
   return h('div', { className: 'bt-file-chips' },
-    files.map(file => h('button', { key: file.id, type: 'button', className: 'bt-file-chip', disabled: busy === file.id, title: `Download ${file.name} (untrusted file from a remote Bot)`, onClick: () => download(file) },
+    files.map(file => h('button', { key: file.id, type: 'button', className: 'bt-file-chip', disabled: busy === file.id, title: t('Download {name} (untrusted file from a remote Bot)', { name: file.name }), onClick: () => download(file) },
       `📎 ${file.name} · ${fileSize(file.size)}`)),
     error ? h('span', { className: 'bt-file-error', role: 'alert' }, error) : null)
 }
