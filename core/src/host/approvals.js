@@ -82,7 +82,7 @@ export function install(rt) {
       at: Date.now(),
     }
     pending.set(id, entry)
-    rt.noteApproval?.(sessionId, { tool: entry.tool, reason: entry.reason.slice(0, 200) })
+    rt.noteApproval?.(sessionId, { tool: entry.tool, reason: cut(entry.reason, 200).text })
     const settled = () => {
       pending.delete(id)
       rt.noteApproval?.(sessionId, undefined)
