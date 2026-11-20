@@ -28,6 +28,11 @@ or orchestrator, only the default changes.
 - Routes the HTTP surface as a pure function (`plane/src/server.mjs`): `POST/GET
   /api/instances`, `GET /api/instances/:id`, `POST /api/instances/:id/{start,stop}`. Every
   instance route checks the operator token first, then `instance.ownerId === token.accountId`.
+- Keeps workspace membership (`plane/src/workspace-roles.mjs`): `workspace.members` with the
+  three roles `owner / admin / member`, the creator as the only owner, and an older
+  `plane.json` read with its owner seeded into the membership instead of rejected.
+  `GET` / `POST /api/workspaces/:id/members` read the list and add a member; a bare id is
+  resolved by the caller's role, and a role does not reach the instance routes yet.
 - Materializes an instance's compose project (`plane/src/lifecycle.mjs`): `compose.yaml` plus
   `control.env` (0600), loopback port, project `flybot-<id>`. It does **not** run `docker
   compose up`; `runner` is an unused injection point for the next slice.
@@ -47,6 +52,10 @@ await plane.stopInstance(instance.id)
 `createInstance()` returns the instance and, exactly once, `controlToken`. `getInstance()` and
 `listInstances()` never include the token or its hash. `createPlane` accepts `{ dataDir,
 store, backend, clock }`; `clock` is injectable for deterministic tests.
+`listWorkspaceMembers(workspaceId, actorId)` answers the member list, and
+`addWorkspaceMember(workspaceId, actorId, { accountId, role })` adds one, throwing
+`WorkspaceRoleError` with `invalid_role` / `member_exists` / `forbidden` / `workspace_not_found` /
+`account_not_found`.
 
 ## CLI
 
@@ -71,6 +80,6 @@ bundles.
 npm --prefix plane test
 ```
 
-20 cases: ownership/403, 401, per-owner listing, duplicate creation (409), persistence, 400s,
+25 cases: ownership/403, 401, per-owner listing, duplicate creation (409), persistence, 400s,
 start/stop/restart, unknown id (404), credential separation and storage, compose materialization,
-idempotency and the zero-spawn guarantee.
+idempotency, workspace membership and the zero-spawn guarantee.

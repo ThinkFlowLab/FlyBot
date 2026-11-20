@@ -7,6 +7,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { seedMembers } from './workspace-roles.mjs'
 
 export const STORE_VERSION = 1
 
@@ -62,6 +63,7 @@ export class Store {
     parsed.accounts ??= []
     parsed.workspaces ??= []
     parsed.instances ??= []
+    for (const workspace of parsed.workspaces) seedMembers(workspace)
     return parsed
   }
 
@@ -95,7 +97,7 @@ export class Store {
   ensureWorkspace({ id, ownerId, createdAt }) {
     let workspace = this.getWorkspace(id, ownerId)
     if (!workspace) {
-      workspace = { id, ownerId, createdAt }
+      workspace = seedMembers({ id, ownerId, createdAt })
       this.#data.workspaces.push(workspace)
       this.save()
     }
@@ -109,6 +111,22 @@ export class Store {
         (workspace) => workspace.id === id && (ownerId === undefined || workspace.ownerId === ownerId),
       ) ?? null
     )
+  }
+
+  // The candidates for a bare workspace id: two owners may each own a "ws-1", so a caller picks
+  // the one it has a role in instead of taking the first.
+  workspacesWithId(id) {
+    return this.#data.workspaces.filter((workspace) => workspace.id === id)
+  }
+
+  updateWorkspaceMembers(workspace, members) {
+    const stored = this.#data.workspaces.find(
+      (candidate) => candidate.id === workspace.id && candidate.ownerId === workspace.ownerId,
+    )
+    if (!stored) throw new Error(`no workspace ${workspace.id} owned by ${workspace.ownerId}`)
+    stored.members = members
+    this.save()
+    return stored
   }
 
   listInstances(ownerId) {

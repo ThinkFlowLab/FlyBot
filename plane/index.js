@@ -11,8 +11,10 @@ import { randomBytes } from 'node:crypto'
 import { openStore, InstanceNotFoundError } from './src/store.mjs'
 import { mintControlToken, hashToken } from './src/credentials.mjs'
 import { MemoryBackend } from './src/lifecycle.mjs'
+import { WorkspaceRoleError, canAddMembers, canRead, withMember } from './src/workspace-roles.mjs'
 
 export { DuplicateInstanceError, InstanceNotFoundError, openStore } from './src/store.mjs'
+export { ROLES, WorkspaceRoleError, canAddMembers, canRead, memberOf, roleOf } from './src/workspace-roles.mjs'
 export { LifecycleBackend, MemoryBackend, ComposeBackend, NotImplementedError, hostPortFor } from './src/lifecycle.mjs'
 export {
   mintOperatorToken,
@@ -47,6 +49,31 @@ export function createPlane({ dataDir, store, backend = new MemoryBackend(), clo
     if (outcome?.hostPort !== undefined) patch.hostPort = outcome.hostPort
     if (outcome?.composePath !== undefined) patch.composePath = outcome.composePath
     return publicRecord(theStore.updateInstance(id, patch))
+  }
+
+  // A workspace id is owner-scoped, so two owners both have a "ws-1": pick the candidate the
+  // caller has the role for. No candidate is a missing workspace; candidates it cannot enter are
+  // forbidden, so a member of somebody else's workspace learns nothing about it.
+  function workspaceFor(workspaceId, actorId, allowed) {
+    const candidates = theStore.workspacesWithId(workspaceId)
+    if (candidates.length === 0) throw new WorkspaceRoleError('workspace_not_found', `no workspace ${workspaceId}`)
+    const workspace = candidates.find((candidate) => allowed(candidate, actorId))
+    if (!workspace) throw new WorkspaceRoleError('forbidden', `not a member of workspace ${workspaceId}`)
+    return workspace
+  }
+
+  // The actor always comes from the verified account, never from the request body.
+  function listWorkspaceMembers(workspaceId, actorId) {
+    const workspace = workspaceFor(workspaceId, actorId, canRead)
+    return workspace.members.map((member) => ({ ...member }))
+  }
+
+  function addWorkspaceMember(workspaceId, actorId, { accountId, role } = {}) {
+    const workspace = workspaceFor(workspaceId, actorId, canAddMembers)
+    if (!theStore.getAccount(accountId)) throw new WorkspaceRoleError('account_not_found', `no account ${accountId}`)
+    const member = withMember(workspace, { accountId, role }, now())
+    theStore.updateWorkspaceMembers(workspace, workspace.members)
+    return { ...member }
   }
 
   async function createInstance({ workspaceId, name, ownerId } = {}) {
@@ -99,5 +126,8 @@ export function createPlane({ dataDir, store, backend = new MemoryBackend(), clo
     return theStore.listInstances(ownerId).map(publicRecord)
   }
 
-  return { createInstance, startInstance, stopInstance, getInstance, listInstances }
+  return {
+    createInstance, startInstance, stopInstance, getInstance, listInstances,
+    listWorkspaceMembers, addWorkspaceMember,
+  }
 }
