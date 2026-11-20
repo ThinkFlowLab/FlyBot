@@ -20,7 +20,10 @@ import { fileURLToPath } from 'node:url'
 import { createGate, loadRules } from './risk-gate.mjs'
 
 // A change to either of these is never queued by this trigger: the code that decides must not be the
-// code that decides whether it may decide (#3248, owner constraint 3).
+// code that decides whether it may decide (#3248, owner constraint 3). The test file is deliberately
+// absent: it is not this workflow's own code path, and `.github/**` scores T3 today, so a change to it
+// still needs a PASS. That protection is the tier rule, not this list (#3253) — if the tier loosens,
+// nothing else here stops a pull request from editing the test that this list's behaviour rests on.
 export const SELF_PATHS = Object.freeze([
   '.github/scripts/auto-queue-t1.mjs',
   '.github/workflows/auto-queue-t1.yml',
@@ -317,7 +320,10 @@ function main() {
   const out = arg('--summary')
   if (out) appendFileSync(out, summary)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary)
-  if (!out && !process.env.GITHUB_STEP_SUMMARY) process.stdout.write(summary)
+  // The decision also goes to the log, always: the REST API hands back a run's log text but not its step
+  // summary, so without this line a round that a person did not open the run page for leaves nothing
+  // quotable behind (#3253). Same bytes as the file, so a reader can compare the two.
+  process.stdout.write(summary)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
