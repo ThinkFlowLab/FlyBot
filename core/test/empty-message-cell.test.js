@@ -8,8 +8,15 @@ import { build } from 'esbuild'
 // with nothing in it, under the trace row of the turn that produced it. The draw is checked where a
 // person reads it: the bubbles of one message (a Bot's own chat) and a group chat's reply rows.
 async function load(entry) {
+  // #3114 cut 32: one entry exports the cells and the dictionary they read, so `installLocale` binds
+  // the copy `t` reaches. Two separate bundles would bind a dictionary no cell ever looks at.
   const bundle = await build({
-    entryPoints: [fileURLToPath(new URL(`../src/client/${entry}`, import.meta.url))],
+    stdin: {
+      contents: `export * from ${JSON.stringify(fileURLToPath(new URL(`../src/client/${entry}`, import.meta.url)))}\nexport { DICTIONARY, installLocale } from ${JSON.stringify(fileURLToPath(new URL('../src/client/i18n.js', import.meta.url)))}`,
+      resolveDir: fileURLToPath(new URL('../src/client', import.meta.url)),
+      sourcefile: 'cells-and-dictionary.js',
+      loader: 'js',
+    },
     bundle: true, format: 'cjs', platform: 'node', write: false,
     external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
   })
@@ -46,7 +53,7 @@ const find = (node, match) => {
 }
 const count = (node, cls) => find(node, item => String(item.props?.className ?? '').split(/\s+/).includes(cls)).length
 
-const { Bubbles, GroupReplies, RemoteMessage } = await load('cells.js')
+const { Bubbles, GroupReplies, RemoteMessage, DICTIONARY, installLocale } = await load('cells.js')
 
 const chief = { id: 'chief', name: 'Chief', color: 'green' }
 const writer = { id: 'writer', name: 'Writer', color: 'blue' }
@@ -90,4 +97,36 @@ test("#2123: a friend's line with no text keeps its files and draws no empty bub
   const attached = RemoteMessage({ source: { ...source, attachments: [{ name: 'log.txt', size: 12 }] }, text: '', roster, actions, sessionId: 'chat', msgKey: 'chat:turn:2' })
   assert.equal(count(attached, 'bt-bubble'), 0, 'the attachment stays, the empty bubble does not')
   assert.equal(count(attached, 'bt-remote-msg'), 1)
+})
+
+// #3114 cut 32: the chips' hover title is a sentence, so the window's language decides it; the file
+// name is the sender's data and rides through `{name}` untranslated.
+const CHIP_FILES = [
+  { id: 'f1', name: 'log.txt', size: 12, mime: 'text/plain' },
+  { id: 'f2', name: '报告 2026.pdf', size: 2048, mime: 'application/pdf' },
+]
+const fill = (text, params) => text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match))
+const inLang = (active, draw) => {
+  const zh = key => active.startsWith('zh') ? DICTIONARY.zh[key] ?? key : key
+  const off = installLocale({ register: () => () => {}, bind: () => (key, params) => fill(zh(key), params ?? {}), getLocale: () => ({ active }) })
+  try { return draw() } finally { off() }
+}
+const chipTitles = files => find(expand(RemoteMessage({
+  source: { remote: { handle: '@coder.bob.home', senderName: 'Bob’s Coder' }, senderName: 'Bob’s Coder', attachments: files },
+  text: '', roster, actions, sessionId: 'chat', msgKey: 'chat:turn:3',
+}), ['RemoteFiles']), node => node.props?.className === 'bt-file-chip').map(node => node.props.title)
+
+test('#3114 cut 32: a zh window reads the remote file chip as an untrusted file from a remote Bot', () => {
+  assert.deepEqual(inLang('zh-CN', () => chipTitles(CHIP_FILES)), [
+    '下载 log.txt（来自远程 Bot 的不可信文件）',
+    '下载 报告 2026.pdf（来自远程 Bot 的不可信文件）',
+  ])
+})
+
+test('#3114 cut 32: an English window keeps the chip title exactly as it reads today', () => {
+  assert.deepEqual(inLang('en', () => chipTitles(CHIP_FILES)), [
+    'Download log.txt (untrusted file from a remote Bot)',
+    'Download 报告 2026.pdf (untrusted file from a remote Bot)',
+  ])
+  assert.equal(DICTIONARY.zh['Download {name} (untrusted file from a remote Bot)'], '下载 {name}（来自远程 Bot 的不可信文件）')
 })
