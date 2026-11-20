@@ -123,7 +123,7 @@ test('#3114 cut 26: the two baselines lose these draws and the dictionary gains 
   }
   // The baselines shrink by exactly these draws and nothing else does: the totals are the ratchet's
   // numbers, and a later cut that moves them moves these numbers with it.
-  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [12, 10, 47])
+  assert.deepEqual([entriesOf('i18n-plugins.baseline.json').length, entriesOf('i18n-template-draws.baseline.json').length, entriesOf('i18n-missing-entries.baseline.json').length], [12, 9, 46])
   // Every new key is the dictionary's, each answer character for character — the four keys that end
   // in a space and the one that starts with it included, so a trimmed copy is caught here.
   assert.deepEqual(Object.entries({

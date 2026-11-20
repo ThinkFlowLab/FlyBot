@@ -383,6 +383,11 @@ var ZH = {
   "{n} holds · to {to}": "共 {n} 条 · 发给 {to}",
   "Auto-sent to {to}": "已自动发给 {to}",
   "Not sent: delivery failed": "未发出：发送失败",
+  // The paused friend chat's notice (#3114 cut 28); Bot Social's reason fills `{reason}` untranslated.
+  "Chat paused": "聊天已暂停",
+  "Bot Social paused the last chat with this Bot.": "Bot Social 暂停了与这个 Bot 的上一次聊天。",
+  "Bot Social paused the last chat with this Bot ({reason}).": "Bot Social 暂停了与这个 Bot 的上一次聊天（{reason}）。",
+  "{note} Send your message again: it starts a new chat.": "{note}请重新发送消息：这会开始一段新聊天。",
   "{from} → {to}": "{from} → {to}",
   "+{count} more": "另有 {count} 条",
   "{count} more not shown": "还有 {count} 条未显示",
