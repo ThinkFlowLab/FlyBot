@@ -362,6 +362,11 @@ var ZH = {
   // #3032: the four approval-card controls that were still drawn as bare English.
   "Waiting for the owner's approval": "等待 owner 批准",
   "Auto-send from now on": "以后自动发送",
+  // #3114 cut 27: the face-to-face room's Auto-send switch and the sidebar's Past rooms fold.
+  "Auto-send {bot} → room": "{bot} 发给房间的消息自动发送",
+  "Auto-send {bot}'s room messages": "自动发送 {bot} 在房间里的消息",
+  "my Bot": "我的 Bot",
+  "Past rooms": "历史房间",
   Decline: "拒绝",
   pending: "等待中",
   "Decide on the reply bubble above.": "在上面的回复气泡里批准。",
