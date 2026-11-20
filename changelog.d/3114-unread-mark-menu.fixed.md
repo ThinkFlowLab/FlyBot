@@ -1,1 +1,0 @@
-**Clear unread mark** is now offered on a chat that is already marked unread — in its row menu and in the conversation header — so the local mark can be cleared without opening the chat, and clearing it does not acknowledge system unread ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

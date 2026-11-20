@@ -1,1 +1,0 @@
-The Add friend panel now reads in the window's language: its headings, the invite paste box, both Bot pickers and the Copy link / Copy with instructions / New link controls no longer draw bare English in a Chinese window ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

@@ -6,6 +6,38 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.38] - 2026-11-20
+
+### Added
+
+- Settings → General now has a **Document cards** switch for the long-document cards; switched off, a long document folds like any other reply instead of showing a card or **Show message text**, and the choice is saved for the whole team ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A long chat message that reads as a document (over the standard cap, with two headings or three `---` sections) now shows a card in the bubble — title, section count and **Open beside the conversation** — that opens the whole text in the panel, and **Show message text** reads it in place ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- Settings → General now has a **Message folding** choice — Compact, Standard or No folding — for how much of a long chat message shows before it folds, and the choice is saved for the whole team ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- Name a new group chat in the sidebar **+** pane and refuse a name another group chat already has before the room is made, with the Chinese note shown under the name field (#3114).
+- A history search hit that was said in an earlier part of a chat now opens that part and lands on the message, instead of only being labelled `Earlier part` and dropping the reader at the start of the current part; a hit in a part the chat does not own, or that the session list no longer holds, stays on the current part and does not jump to a same-numbered turn that is another message ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- History search in the command palette now lands on what each row names: a message row opens the chat at its own turn, two hits in one turn are two rows, and a hit the current part does not hold is marked `Earlier part` instead of trying to scroll somewhere it cannot reach. When the 20-row cap hides more matches the group says how many and asks for one more word, and a Bot whose current part is a Session of its own no longer lists the same message twice ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A scheduled task's form now names the time zone its rule runs in: "Every day at 09:00" carries the zone it was saved with instead of silently meaning this device's zone, a Once task's date and time are read in that zone, and the row and the edit form name the same one ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+
+### Changed
+
+- A friend's Bot settings now read in the window's language: its Auto-send box and hint, the Remove this Bot link with its busy label and tooltip, and the inline remove question no longer draw bare English in a Chinese window ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The Social panel's share-request and invite-accepted cards — their sentence, hint line, buttons, and the **Open …'s Sharing** title — now follow the window's language, so a Chinese window no longer draws English there; a window without a translator still reads today's English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The Bot tree's sidebar copy — the Archived Bots group, its status tags, and the reorganization notice's title, Undo/Dismiss buttons, "and N more" line and kept names — now follows the window's language, so a Chinese window no longer reads English there; a window without a translator still reads today's English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+
+### Fixed
+
+- The invite card inside an open face-to-face room now follows the window's language: its Link ready button, the QR's name and hint, the Copied state, the no-deadline line and the error a mint with no link comes back with ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The **Join by number or link** / **Start a face-to-face room** dialog now follows the window's language: the Bot picker, the six-digit field and its refusals, the link and scan rows, their status lines, and every invite and camera refusal a join can hit ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A Bot its owner has emergency-stopped on Bot Social now reads as one sentence on **Share with a friend**, a face-to-face join or invite preview, and **Add friend** — *One of these Bots is emergency-stopped on Bot Social. Its owner can resume it in My Bots on that server, then try again.* — instead of the server's own `bot is frozen (emergency stop)`, the bare `bot_frozen` code, or the MCP tool name on the invite path; the refusal keeps its code and its room, because a stop is a state the owner can end ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- **Mark as Unread** on the chat you are already reading now keeps its unread dot until you leave that chat and open it again, instead of clearing itself at once ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A Bot’s Sharing page now reads in the window’s language where it still did not: the hint above the invite link (with and without the Revoke tail) and the rooms each grant reaches, including the “+N more” count and the room-only line ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- **Clear unread mark** is now offered on a chat that is already marked unread — in its row menu and in the conversation header — so the local mark can be cleared without opening the chat, and clearing it does not acknowledge system unread ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The diagnostics report's `state backups:` line now draws a backup's name on one line, the way it draws every other text it carries: a control character in a name — a line break, a carriage return, a Unicode separator — is folded to a space and runs of whitespace are collapsed before the home is abbreviated and a saved-key shape is hidden, so a name from the folder can no longer open a line of its own in a report pasted into a public issue ([#3173](https://github.com/ThinkFlowLab/FlyBot/issues/3173)).
+- `bot_schedules` now lists a Bot's live scheduled tasks before the ones with no next run, so a paused task or a finished one-shot no longer sits at the top of the list ([#3174](https://github.com/ThinkFlowLab/FlyBot/issues/3174)).
+- A Bot's Sharing page now reads in the window's language: the People-with-access card and the share-with-a-friend card stop drawing bare English in a Chinese window ([#3215](https://github.com/ThinkFlowLab/FlyBot/issues/3215)).
+- A face-to-face waiting room now reads in the window's language: its number, QR hint, roster heading, Enter chat and Leave question no longer draw bare English in a Chinese window.
+- The Add friend panel now reads in the window's language: its headings, the invite paste box, both Bot pickers and the Copy link / Copy with instructions / New link controls no longer draw bare English in a Chinese window ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+
 ## [0.2.37] - 2026-11-19
 
 ### Added
@@ -1558,7 +1590,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.37...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.38...HEAD
+[0.2.38]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.37...v0.2.38
 [0.2.37]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.36...v0.2.37
 [0.2.36]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.35...v0.2.36
 [0.2.35]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.34...v0.2.35

@@ -1,1 +1,0 @@
-The **Join by number or link** / **Start a face-to-face room** dialog now follows the window's language: the Bot picker, the six-digit field and its refusals, the link and scan rows, their status lines, and every invite and camera refusal a join can hit ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

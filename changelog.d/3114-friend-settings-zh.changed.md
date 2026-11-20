@@ -1,1 +1,0 @@
-A friend's Bot settings now read in the window's language: its Auto-send box and hint, the Remove this Bot link with its busy label and tooltip, and the inline remove question no longer draw bare English in a Chinese window ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
