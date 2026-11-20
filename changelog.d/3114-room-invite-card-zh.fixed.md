@@ -1,0 +1,1 @@
+Pasted room-invite cards now read Chinese in a zh window: the lead line, the people line, the countdown, the two clock answers, the Clear button and the nameless fallback. A card already on screen follows a language switch, and the room name, counts and clock the server sent stay as they came ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

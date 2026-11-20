@@ -151,6 +151,14 @@ var ZH = {
   "Scan with FlyBot to join this group": "用 FlyBot 扫码加入这个群",
   "Copy link": "复制链接",
   "{time} left to join": "还剩 {time} 可加入",
+  // #3114: the room-invite preview card, which is drawn wherever an invite is pasted. `This link
+  // has expired` is its own sentence, not the `This link has expired.` above: a card that borrowed
+  // that entry would draw a full stop the English card never had.
+  "Lead: {lead}": "总负责人：{lead}",
+  "{members} in the room": "房间里 {members} 人",
+  "{members} / {max} in the room": "房间里 {members} / {max} 人",
+  "This link has expired": "这条链接已过期",
+  "Open while the room is open": "房间开着的时候都能加入",
   "Works until you withdraw it.": "在你撤回之前一直有效。",
   "Withdraw link": "撤回链接",
   "1 earlier link still works.": "还有 1 个之前的链接仍然有效。",
@@ -3514,27 +3522,42 @@ function invitePreviewOf(seen) {
   const people2 = Number.isFinite(members) && Number.isFinite(maxMembers) ? `${members} / ${maxMembers} in the room` : Number.isFinite(members) ? `${members} in the room` : "";
   const expiresAt = typeof seen.expiresAt === "string" ? seen.expiresAt : "";
   if (!name && !lead && !people2 && !expiresAt) return null;
-  return { name, lead, people: people2, expiresAt, clockOffsetMs: Number(seen.clockOffsetMs) || 0 };
+  return {
+    name,
+    lead,
+    people: people2,
+    expiresAt,
+    clockOffsetMs: Number(seen.clockOffsetMs) || 0,
+    members: Number.isFinite(members) ? members : null,
+    maxMembers: Number.isFinite(maxMembers) ? maxMembers : null
+  };
 }
 function inviteCountdown(expiresAt, offsetMs = 0) {
   const at = Date.parse(expiresAt) - (Number(offsetMs) || 0);
-  if (!Number.isFinite(at)) return "Open while the room is open";
+  if (!Number.isFinite(at)) return t("Open while the room is open");
   const left = Math.max(0, at - Date.now());
-  if (left <= 0) return "This link has expired";
+  if (left <= 0) return t("This link has expired");
   const total = Math.max(1, Math.ceil(left / 1e3));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
+  return t("{time} left to join", { time: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}` });
 }
-function RoomInvitePreview({ h: h52, preview, kind = "face-link-preview", busy = false, joinLabel = "Join", clearLabel = "Clear", showClear = true, onJoin, onClear, now } = {}) {
+var invitePeople = (preview) => {
+  const members = inviteMemberCount(preview.members);
+  if (!Number.isFinite(members)) return preview.people || "";
+  const max = inviteMemberCount(preview.maxMembers);
+  return Number.isFinite(max) ? t("{members} / {max} in the room", { members, max }) : t("{members} in the room", { members });
+};
+function RoomInvitePreview({ h: h52, preview, kind = "face-link-preview", busy = false, joinLabel = t("Join"), clearLabel = t("Clear"), showClear = true, onJoin, onClear, now } = {}) {
   if (!preview || typeof h52 !== "function") return null;
   const at = `${kind}`;
   const child = (name) => `${at}-${name}`;
   const countdown = now === void 0 ? inviteCountdown(preview.expiresAt, preview.clockOffsetMs) : inviteCountdownAt(preview.expiresAt, preview.clockOffsetMs, now);
+  const people2 = invitePeople(preview);
   return h52(
     "div",
     { className: "fs-preview", "data-flybot": at, role: "status" },
-    h52("div", { className: "fs-preview-name", "data-flybot": child("name") }, preview.name || "Face-to-face room"),
-    preview.lead ? h52("div", { className: "fs-preview-meta", "data-flybot": child("lead") }, `Lead: ${preview.lead}`) : null,
-    preview.people ? h52("div", { className: "fs-preview-meta", "data-flybot": child("members") }, preview.people) : null,
+    h52("div", { className: "fs-preview-name", "data-flybot": child("name") }, preview.name || t("Face-to-face room")),
+    preview.lead ? h52("div", { className: "fs-preview-meta", "data-flybot": child("lead") }, t("Lead: {lead}", { lead: preview.lead })) : null,
+    people2 ? h52("div", { className: "fs-preview-meta", "data-flybot": child("members") }, people2) : null,
     preview.expiresAt ? h52("div", { className: "fs-preview-meta", "data-flybot": child("expiry") }, countdown) : null,
     onJoin || onClear ? h52(
       "div",
@@ -3558,11 +3581,11 @@ function RoomInvitePreview({ h: h52, preview, kind = "face-link-preview", busy =
 }
 function inviteCountdownAt(expiresAt, offsetMs, now) {
   const at = Date.parse(expiresAt) - (Number(offsetMs) || 0);
-  if (!Number.isFinite(at)) return "Open while the room is open";
+  if (!Number.isFinite(at)) return t("Open while the room is open");
   const left = Math.max(0, at - Number(now || 0));
-  if (left <= 0) return "This link has expired";
+  if (left <= 0) return t("This link has expired");
   const total = Math.max(1, Math.ceil(left / 1e3));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} left to join`;
+  return t("{time} left to join", { time: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}` });
 }
 
 // src/client/approval-claims.js

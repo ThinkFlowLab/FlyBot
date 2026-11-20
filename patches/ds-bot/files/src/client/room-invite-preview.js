@@ -7,6 +7,11 @@
 // draw the same card. Everything the card says comes from a server reply, so the strings are
 // cleaned here, at the last place before a person reads them — the same rules the server applies to
 // a room name (`cleanFaceName`): one line, no controls, brackets, markup or @, capped.
+//
+// The words around those values follow the window's language, looked up per draw: a caller keeps
+// the preview in its own state, so a translated sentence must never be built into what it stores.
+import { t } from './i18n.js'
+
 export const INVITE_PREVIEW_NAME_MAX = 60
 
 // Untrusted fence markers are stripped to a fixed point: one pass can remove a match and assemble a
@@ -54,33 +59,51 @@ export function invitePreviewOf(seen) {
     : Number.isFinite(members) ? `${members} in the room` : ''
   const expiresAt = typeof seen.expiresAt === 'string' ? seen.expiresAt : ''
   if (!name && !lead && !people && !expiresAt) return null
-  return { name, lead, people, expiresAt, clockOffsetMs: Number(seen.clockOffsetMs) || 0 }
+  // The counts travel beside the sentence: a caller stores this preview, so the sentence it holds
+  // stays the English one, and the card builds the line in the window's language when it draws.
+  return {
+    name, lead, people, expiresAt, clockOffsetMs: Number(seen.clockOffsetMs) || 0,
+    members: Number.isFinite(members) ? members : null,
+    maxMembers: Number.isFinite(maxMembers) ? maxMembers : null,
+  }
 }
 
 // Every home counts down to the server's one deadline (#458): `offsetMs` is how far the server's
 // clock runs ahead of this one (0 unless the skew is real). m:ss, so the line visibly ticks.
 export function inviteCountdown(expiresAt, offsetMs = 0) {
   const at = Date.parse(expiresAt) - (Number(offsetMs) || 0)
-  if (!Number.isFinite(at)) return 'Open while the room is open'
+  if (!Number.isFinite(at)) return t('Open while the room is open')
   const left = Math.max(0, at - Date.now())
-  if (left <= 0) return 'This link has expired'
+  if (left <= 0) return t('This link has expired')
   const total = Math.max(1, Math.ceil(left / 1000))
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} left to join`
+  return t('{time} left to join', { time: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` })
+}
+
+// The people line is built where the card is drawn, from the counts as they arrived (#3114): a
+// preview that only carries the sentence (today's `people`) still draws that sentence unchanged.
+const invitePeople = (preview) => {
+  const members = inviteMemberCount(preview.members)
+  if (!Number.isFinite(members)) return preview.people || ''
+  const max = inviteMemberCount(preview.maxMembers)
+  return Number.isFinite(max)
+    ? t('{members} / {max} in the room', { members, max })
+    : t('{members} in the room', { members })
 }
 
 // `kind` prefixes every `data-flybot` name, so each surface keeps the hook its tests and its CSS
 // already use while sharing this one tree of elements.
-export function RoomInvitePreview({ h, preview, kind = 'face-link-preview', busy = false, joinLabel = 'Join', clearLabel = 'Clear', showClear = true, onJoin, onClear, now } = {}) {
+export function RoomInvitePreview({ h, preview, kind = 'face-link-preview', busy = false, joinLabel = t('Join'), clearLabel = t('Clear'), showClear = true, onJoin, onClear, now } = {}) {
   if (!preview || typeof h !== 'function') return null
   const at = `${kind}`
   const child = (name) => `${at}-${name}`
   const countdown = now === undefined
     ? inviteCountdown(preview.expiresAt, preview.clockOffsetMs)
     : inviteCountdownAt(preview.expiresAt, preview.clockOffsetMs, now)
+  const people = invitePeople(preview)
   return h('div', { className: 'fs-preview', 'data-flybot': at, role: 'status' },
-    h('div', { className: 'fs-preview-name', 'data-flybot': child('name') }, preview.name || 'Face-to-face room'),
-    preview.lead ? h('div', { className: 'fs-preview-meta', 'data-flybot': child('lead') }, `Lead: ${preview.lead}`) : null,
-    preview.people ? h('div', { className: 'fs-preview-meta', 'data-flybot': child('members') }, preview.people) : null,
+    h('div', { className: 'fs-preview-name', 'data-flybot': child('name') }, preview.name || t('Face-to-face room')),
+    preview.lead ? h('div', { className: 'fs-preview-meta', 'data-flybot': child('lead') }, t('Lead: {lead}', { lead: preview.lead })) : null,
+    people ? h('div', { className: 'fs-preview-meta', 'data-flybot': child('members') }, people) : null,
     preview.expiresAt ? h('div', { className: 'fs-preview-meta', 'data-flybot': child('expiry') }, countdown) : null,
     onJoin || onClear
       ? h('div', { className: 'fs-preview-foot', 'data-flybot': child('foot') },
@@ -103,9 +126,9 @@ export function RoomInvitePreview({ h, preview, kind = 'face-link-preview', busy
 // then reproducible in a test without freezing the machine's clock.
 export function inviteCountdownAt(expiresAt, offsetMs, now) {
   const at = Date.parse(expiresAt) - (Number(offsetMs) || 0)
-  if (!Number.isFinite(at)) return 'Open while the room is open'
+  if (!Number.isFinite(at)) return t('Open while the room is open')
   const left = Math.max(0, at - Number(now || 0))
-  if (left <= 0) return 'This link has expired'
+  if (left <= 0) return t('This link has expired')
   const total = Math.max(1, Math.ceil(left / 1000))
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} left to join`
+  return t('{time} left to join', { time: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` })
 }
