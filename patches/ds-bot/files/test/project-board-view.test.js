@@ -1069,3 +1069,41 @@ test('#3114 cut 34: a decided meeting whose file is gone reads in the window lan
     off()
   }
 })
+
+// #3114 cut 35: a meeting still open, deliberating or blocked drew the host id on the Project
+// board. The three ids are keys of their own, the same shape `running` / `stalled` already uses.
+// Only the drawn state is the page's copy: `data-status`, the question and the level stay the
+// host's own, and a status the client cannot name is drawn as it came, never guessed.
+const pendingRecord = () => ({
+  project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false, decisions: { dir: '/team/flybot', files: [] },
+  meetings: {
+    decided: [],
+    pending: [
+      { id: 'meeting-a', date: '2026-10-30', question: 'Which board carries the record?', status: 'open', level: 'ordinary' },
+      { id: 'meeting-b', date: '2026-10-31', question: 'Should the board page?', status: 'deliberating', level: 'major' },
+      { id: 'meeting-c', date: '2026-11-01', question: 'Which stream carries it?', status: 'blocked', level: 'severe', blockingQuestion: 'Which stream carries it?' },
+      { id: 'meeting-d', date: '2026-11-02', question: 'Which board carries the next record?', status: 'on-hold', level: 'ordinary' },
+    ], reason: '',
+  },
+})
+// `.bt-project-status` is drawn once per pending row, so the row is found by its key and the span by its class.
+const pendingRow = id => all(ProjectBoardPane(pendingRecord())).find(node => node.props?.key === `meeting:${id}`)
+const statusOf = id => textOf(all(pendingRow(id)).find(node => node.props?.className === 'bt-project-status'))
+
+test('#3114 cut 35: a meeting still open, deliberating or blocked reads its state in the window language', () => {
+  assert.equal(statusOf('meeting-c'), 'blocked', 'an English window is unchanged')
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.equal(statusOf('meeting-a'), '待讨论', 'an open meeting reads its state in Chinese')
+    assert.equal(statusOf('meeting-b'), '讨论中', 'a deliberating meeting reads its state in Chinese')
+    assert.equal(statusOf('meeting-c'), '待答复', 'a blocked meeting reads its state in Chinese')
+    assert.equal(statusOf('meeting-d'), 'on-hold', 'a status the client cannot name is drawn as it came')
+    const statuses = ['meeting-a', 'meeting-b', 'meeting-c', 'meeting-d'].map(id => pendingRow(id).props['data-status'])
+    assert.deepEqual(statuses, ['open', 'deliberating', 'blocked', 'on-hold'], 'the attribute stays the host id')
+    const blocked = pendingRow('meeting-c')
+    assert.match(textOf(blocked), /Which stream carries it\?/, 'the host blocking question stays as it came')
+    assert.match(textOf(blocked), /严重/, 'the level still reads in the window language')
+  } finally {
+    off()
+  }
+})
