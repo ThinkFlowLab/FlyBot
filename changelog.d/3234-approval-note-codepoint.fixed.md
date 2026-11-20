@@ -1,1 +1,0 @@
-The approval note that a restart quotes back in the chat is now cut on a code point boundary, so a reason whose 200th UTF-16 unit fell inside an emoji no longer comes back with a replacement glyph in the middle of the user's own text ([#3234](https://github.com/ThinkFlowLab/FlyBot/issues/3234)).

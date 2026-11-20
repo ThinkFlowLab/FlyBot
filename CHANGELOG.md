@@ -6,6 +6,29 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-11-21
+
+### Fixed
+
+- The Capabilities page now reads Chinese in a zh window: the Description label, and the six fixed refusals a failed save leaves — the capability name rule and a fixed kind, a missing MCP command, a bad HTTP(S) URL, and non-text environment or header values.
+- The Capabilities page now says, in a Chinese window, why a pack cannot be saved and why a capability is no longer there: the refusal that carries the child capability name, and the two that carry a capability name or an unapproved stdio MCP name, read Chinese, with the name exactly as the host wrote it ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A decided meeting whose decision file is gone now says so in a Chinese window instead of drawing the English words `decision file gone` ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A meeting that is still open, deliberating or blocked now reads that state in Chinese on the Project board instead of the host ids `open` / `deliberating` / `blocked` ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A running task on the Project board now reads `claimed` / `working` in Chinese instead of the host task ids ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The Project plugin's row on Settings → Plugins now reads its purpose in Chinese instead of English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A friend chat Bot Social paused now says so in the window’s language, title and “send your message again” line included ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- A remote file chip in a chat now explains its download in a zh window: the hover title says the file comes from a remote Bot and is untrusted, while the file name stays exactly as the sender sent it ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The face-to-face room’s Auto-send switches (`Auto-send Chief → room` and the checkbox’s own name) and the sidebar’s `Past rooms` fold now read in the window’s language instead of English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- Pasted room-invite cards now read Chinese in a zh window: the lead line, the people line, the countdown, the two clock answers, the Clear button and the nameless fallback. A card already on screen follows a language switch, and the room name, counts and clock the server sent stay as they came ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+- The approve-all failure row is now drawn in the dock's own error tone instead of plain body text, so a batch whose sends failed stands out under the button the way every other status line in Bot Social does ([#3192](https://github.com/ThinkFlowLab/FlyBot/issues/3192)).
+- A Bot's `read_own_chat` in a read-only window (the second dsh on one team folder) used to answer with the rows the other window had indexed and read as complete, so the newest messages were missing without a word; every answer now says where that index stops and that a newer message is not in it, and a caught-up window answers exactly as before ([#3194](https://github.com/ThinkFlowLab/FlyBot/issues/3194)).
+- `bot_schedules` now draws a task's name on one line: a line break or carriage return in the title is folded to a space and runs of whitespace are collapsed before the row is built, so one task can no longer paint a second row that reads like a real line. The stored record keeps what `schedule-create` was given, and the 120-character bound counts the folded name a reader sees ([#3197](https://github.com/ThinkFlowLab/FlyBot/issues/3197)).
+- The 12288-token output cap now applies only to the DashScope route whose 400 it encodes, so a call on any other provider keeps the output budget it asked for — or the one its model row declares — instead of being silently cut to 12288 ([#3198](https://github.com/ThinkFlowLab/FlyBot/issues/3198)).
+- A meeting's Dissent section and its archived `dissent:` line now follow the positions as they stand: a participant who withdraws an objection takes it off the record, and when two participants dissent both objections stay on the record under their own names ([#3203](https://github.com/ThinkFlowLab/FlyBot/issues/3203)).
+- The approval note that a restart quotes back in the chat is now cut on a code point boundary, so a reason whose 200th UTF-16 unit fell inside an emoji no longer comes back with a replacement glyph in the middle of the user's own text ([#3234](https://github.com/ThinkFlowLab/FlyBot/issues/3234)).
+- ⌘K search no longer drops a message from an older part when that part's turn number repeats one the current part already matched. Two parts of the same chat render as two rows, and each row opens the part it came from ([#3235](https://github.com/ThinkFlowLab/FlyBot/issues/3235)).
+- The Connectors page's Feishu row reads in the window's language — its failed-connect line, and the sentence a refused connect, disconnect, mode, allowed-sender or send leaves — together with the Composio search hint and app-limit sentence; the host's own data (address, status code, open_id) stays exactly as the host wrote it ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
+
 ## [0.2.38] - 2026-11-20
 
 ### Added
@@ -1590,7 +1613,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.38...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.39...HEAD
+[0.2.39]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.38...v0.2.39
 [0.2.38]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.37...v0.2.38
 [0.2.37]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.36...v0.2.37
 [0.2.36]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.35...v0.2.36

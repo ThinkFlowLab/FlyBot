@@ -1,1 +1,0 @@
-A meeting that is still open, deliberating or blocked now reads that state in Chinese on the Project board instead of the host ids `open` / `deliberating` / `blocked` ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

@@ -1,1 +1,0 @@
-The Capabilities page now reads Chinese in a zh window: the Description label, and the six fixed refusals a failed save leaves — the capability name rule and a fixed kind, a missing MCP command, a bad HTTP(S) URL, and non-text environment or header values.
