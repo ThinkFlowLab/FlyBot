@@ -100,11 +100,16 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
   }))
   if (agents.length) sections.push(['DSH Agent', agents])
   const outlineRead = JSON.parse(found)
+  // A row's identity is the part that holds it, not chat+turn: turn numbers restart in every
+  // part, so an older part's turn 1 is a different message from this part's turn 1 (#3235).
+  // A row that names no part is the part the client holds; a room has none and keeps its id.
+  const partOf = (chat, part) => typeof part === 'string' ? part : currentPart(roster.byId[chat] ?? { id: chat })
+  const rowKey = (chat, part, turn) => `${chat}:${partOf(chat, part)}:${turn}`
   const messages = outlineRead.hits.map(([id, turn, snippet]) => {
     const bot = roster.byId[id]
     const room = roster.roomsById[id]
     return {
-      key: `${chatOf(id)}:${turn}`, title: bot?.name ?? room?.name ?? t('Bot'), subtitle: snippet,
+      key: rowKey(chatOf(id), id, turn), title: bot?.name ?? room?.name ?? t('Bot'), subtitle: snippet,
       avatar: bot ? h(BotAvatar, { bot, size: 24, badge: false, live: false }) : h(RoomAvatar, { room, roster, size: 24 }),
       run: () => actions.openSession(id, { turn }),
     }
@@ -121,13 +126,13 @@ export function CommandPalette({ start, token, roster, actions, useSessions }) {
     return Array.isArray(held) && held.length > 0 ? held.includes(turn) : undefined
   }
   const keyCounts = new Map()
-  const fullText = (wholeText?.rows ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(`${row.chat}:${row.turn}`)).map(row => {
+  const fullText = (wholeText?.rows ?? []).filter(row => row?.chat !== undefined && (roster.byId[row.chat] || roster.roomsById[row.chat]) && !outlined.has(rowKey(row.chat, row.part, row.turn))).map(row => {
     const bot = roster.byId[row.chat]
     const room = roster.roomsById[row.chat]
     // A row that names its part is placed by that part (#3114); a row without one keeps the
     // outline's answer, the only proof the client has about what the part it holds contains.
     const earlier = typeof row.part === 'string' ? bot !== undefined && row.part !== currentPart(bot) : inPart(row.chat, row.turn) === false
-    const at = `${row.chat}:${row.turn}`
+    const at = rowKey(row.chat, row.part, row.turn)
     const count = (keyCounts.get(at) ?? 0) + 1
     keyCounts.set(at, count)
     return {

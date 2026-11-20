@@ -260,8 +260,26 @@ function livePalette({ start = '', raw = '', rows = [], more = 0, outline, roste
     walk(live, node => { if (node.props?.className === className) out.push([node.props.children].flat().join('')) })
     return out
   }
+  // Rows grouped by the section they render under: #3235's acceptance reads a row by the
+  // section it is in, never by a key, because two sections can otherwise look swapped.
+  const grouped = () => {
+    const out = []
+    for (const node of flips()) {
+      const flip = node.props['data-flip']
+      if (flip.startsWith('section:')) { out.push({ title: flip.slice('section:'.length), keys: [], badges: [], nodes: [] }); continue }
+      const section = out.at(-1)
+      if (section === undefined) continue
+      let badge
+      walk(node, child => { if (badge === undefined && child.props?.className === 'bt-palette-badge') badge = [child.props.children].flat().join('') })
+      section.keys.push(flip)
+      section.badges.push(badge)
+      section.nodes.push(node)
+    }
+    return out
+  }
   return {
-    calls, settle, run,
+    calls, settle, run, grouped,
+    chooseAt: (title, index) => { grouped().find(section => section.title === title)?.nodes[index]?.props.onClick?.() },
     sections: () => flips().map(node => node.props['data-flip']).filter(flip => flip.startsWith('section:')).map(flip => flip.slice('section:'.length)),
     rows: () => flips().map(node => node.props['data-flip']).filter(flip => !flip.startsWith('section:')),
     notes: () => texts('bt-palette-note'),
@@ -279,13 +297,13 @@ test('P-820: a hit past the outline preview budget is found by the whole-text gr
   await palette.settle()
   assert.deepEqual(palette.calls.search.map(([query]) => query), ['needle'], 'the host search was asked for the query')
   assert.deepEqual(palette.sections(), ['Messages (full text)'], JSON.stringify(palette.sections()))
-  assert.deepEqual(palette.rows(), ['s1:7'])
+  assert.deepEqual(palette.rows(), ['s1:s1:7'])
 })
 
 test('P-820: choosing a whole-text row opens the chat at that turn', async () => {
   const palette = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 7, prompt: 'a plain turn' }], rows: [{ chat: 's1', turn: 7, text: 'NEEDLE at the far end' }] })
   await palette.settle()
-  palette.choose('s1:7')
+  palette.choose('s1:s1:7')
   // The row object comes from the palette's realm, so the fields are read, not deep-equalled.
   assert.equal(palette.calls.openSession.length, 1)
   assert.equal(palette.calls.openSession[0][0], 's1')
@@ -298,7 +316,7 @@ test('P-820: a row the outline already found is not shown twice', async () => {
   const palette = livePalette({ start: 'needle', raw: 'the needle is right here', rows: [{ chat: 's1', turn: 1, text: 'the needle is right here' }, { chat: 's1', turn: 9, text: 'another NEEDLE far past the budget' }] })
   await palette.settle()
   assert.deepEqual(palette.sections(), ['Messages', 'Messages (full text)'], JSON.stringify(palette.sections()))
-  assert.deepEqual(palette.rows(), ['s1:1', 's1:9'], JSON.stringify(palette.rows()))
+  assert.deepEqual(palette.rows(), ['s1:s1:1', 's1:s1:9'], JSON.stringify(palette.rows()))
 })
 
 // #3114. Each row now says what it is and lands where it points: an outline hit names its own
@@ -307,8 +325,8 @@ test('P-820: a row the outline already found is not shown twice', async () => {
 // and a Bot whose current part id is not its own id still shows one row.
 test('#3114: choosing an outline message row opens the chat at that turn', () => {
   const palette = livePalette({ start: 'needle', raw: 'the needle is right here' })
-  assert.deepEqual(palette.rows(), ['s1:1'], JSON.stringify(palette.rows()))
-  palette.choose('s1:1')
+  assert.deepEqual(palette.rows(), ['s1:s1:1'], JSON.stringify(palette.rows()))
+  palette.choose('s1:s1:1')
   assert.equal(palette.calls.openSession.length, 1)
   assert.equal(palette.calls.openSession[0][0], 's1')
   assert.equal(palette.calls.openSession[0][1]?.turn, 1)
@@ -332,7 +350,7 @@ test('#3114: the whole-text rows say how many the cap left out', async () => {
 test('#3114: two hits in one turn are two rows, each with its own key', async () => {
   const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 5, text: 'NEEDLE in the question' }, { chat: 's1', turn: 5, text: 'NEEDLE in the reply' }] })
   await palette.settle()
-  assert.deepEqual(palette.rows(), ['s1:5', 's1:5:2'], JSON.stringify(palette.rows()))
+  assert.deepEqual(palette.rows(), ['s1:s1:5', 's1:s1:5:2'], JSON.stringify(palette.rows()))
 })
 
 // The current part's outline is the only list of turns the client can prove it holds. A hit
@@ -341,7 +359,7 @@ test('#3114: a hit the current part does not hold is marked as an earlier part',
   const elsewhere = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 12, text: 'NEEDLE far past this part' }] })
   await elsewhere.settle()
   assert.deepEqual(elsewhere.badges(), ['Earlier part'])
-  elsewhere.choose('s1:12')
+  elsewhere.choose('s1:s1:12')
   assert.equal(elsewhere.calls.openSession.length, 1)
   assert.equal(elsewhere.calls.openSession[0][0], 's1')
   assert.equal(elsewhere.calls.openSession[0][1], undefined, 'no turn is passed for a row the current part does not hold')
@@ -349,7 +367,7 @@ test('#3114: a hit the current part does not hold is marked as an earlier part',
   const here = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 12, prompt: 'a plain turn' }], rows: [{ chat: 's1', turn: 12, text: 'NEEDLE inside this part' }] })
   await here.settle()
   assert.deepEqual(here.badges(), [])
-  here.choose('s1:12')
+  here.choose('s1:s1:12')
   assert.equal(here.calls.openSession[0][1]?.turn, 12)
 })
 
@@ -361,7 +379,7 @@ test('#3114: a Bot whose part id is not its id is still deduped once', async () 
   const palette = livePalette({ start: 'needle', raw: 'the needle is right here', roster, rows: [{ chat: 'a', turn: 1, text: 'the needle is right here' }] })
   await palette.settle()
   assert.deepEqual(palette.sections(), ['Messages'], JSON.stringify(palette.sections()))
-  assert.deepEqual(palette.rows(), ['a:1'], JSON.stringify(palette.rows()))
+  assert.deepEqual(palette.rows(), ['a:pc:1'], JSON.stringify(palette.rows()))
 })
 
 // An exchange turn is inside the current part: its position is in the flow, so it keeps its
@@ -371,7 +389,7 @@ test('#3114: a hidden exchange turn keeps its turn, with no badge', async () => 
   const palette = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 5, prompt: 'a plain turn' }], roster, rows: [{ chat: 's1', turn: 5, text: 'NEEDLE in the hidden reply' }] })
   await palette.settle()
   assert.deepEqual(palette.badges(), [])
-  palette.choose('s1:5')
+  palette.choose('s1:s1:5')
   assert.equal(palette.calls.openSession[0][1]?.turn, 5)
 })
 
@@ -391,7 +409,7 @@ test('#3114: a hit the host places in an earlier part opens that part at its tur
   const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows: [{ chat: 's1', turn: 12, part: 's1-old', text: 'NEEDLE far past this part' }] })
   await palette.settle()
   assert.deepEqual(palette.badges(), ['Earlier part'])
-  palette.choose('s1:12')
+  palette.choose('s1:s1-old:12')
   assert.equal(palette.calls.openSession.length, 1)
   assert.equal(palette.calls.openSession[0][0], 's1')
   assert.equal(palette.calls.openSession[0][1]?.part, 's1-old')
@@ -405,7 +423,49 @@ test('#3114: a hit in the current part keeps its own seek', async () => {
   const palette = livePalette({ start: 'needle', raw: 'a plain turn', outline: [{ turn: 1, prompt: 'a plain turn' }], rows: [{ chat: 's1', turn: 1, part: 's1', text: 'NEEDLE inside this part' }] })
   await palette.settle()
   assert.deepEqual(palette.badges(), [])
-  palette.choose('s1:1')
+  palette.choose('s1:s1:1')
   assert.equal(palette.calls.openSession[0][1]?.turn, 1)
   assert.equal(palette.calls.openSession[0][1]?.part, undefined, 'the current part is not named as another part')
+})
+
+// #3235. Turn numbers restart in every part, so `chat:turn` is not an identity: an older part's
+// turn 1 is a different message from this part's turn 1. The dedupe used to eat it, and with it
+// the whole `Messages (full text)` section; the row must render, keep its badge, and open the
+// part it came from.
+test('#3235: an older part\'s hit survives a same-numbered hit in this part', async () => {
+  const palette = livePalette({
+    start: 'needle', raw: 'the needle is right here', outline: [{ turn: 1, prompt: 'the needle is right here' }],
+    rows: [{ chat: 's1', turn: 1, part: 's1-old', text: 'NEEDLE said in an older part' }],
+  })
+  await palette.settle()
+  const sections = palette.grouped()
+  assert.deepEqual(sections.map(section => section.title), ['Messages', 'Messages (full text)'], JSON.stringify(sections.map(section => section.title)))
+  assert.equal(sections[1].keys.length, 1, JSON.stringify(sections[1].keys))
+  assert.deepEqual(sections[1].badges, ['Earlier part'])
+  assert.notEqual(sections[0].keys[0], sections[1].keys[0], 'the two rows must not share one key')
+  palette.chooseAt('Messages (full text)', 0)
+  assert.equal(palette.calls.openSession.length, 1)
+  assert.equal(palette.calls.openSession[0][0], 's1')
+  assert.equal(palette.calls.openSession[0][1]?.part, 's1-old')
+  assert.equal(palette.calls.openSession[0][1]?.turn, 1)
+})
+
+// Two parts can both hold a turn 5. They are two messages: their keys must differ, and each row
+// still opens the part it names.
+test('#3235: the same chat and turn in two parts get keys of their own', async () => {
+  const rows = [
+    { chat: 's1', turn: 5, part: 's1-a', text: 'NEEDLE in part A' },
+    { chat: 's1', turn: 5, part: 's1-b', text: 'NEEDLE in part B' },
+  ]
+  const palette = livePalette({ start: 'needle', raw: 'a plain turn', rows })
+  await palette.settle()
+  const [whole] = palette.grouped()
+  assert.deepEqual(whole.title, 'Messages (full text)')
+  assert.deepEqual(whole.keys, ['s1:s1-a:5', 's1:s1-b:5'], JSON.stringify(whole.keys))
+  palette.chooseAt('Messages (full text)', 0)
+  assert.equal(palette.calls.openSession[0][1]?.part, 's1-a')
+  const second = livePalette({ start: 'needle', raw: 'a plain turn', rows })
+  await second.settle()
+  second.chooseAt('Messages (full text)', 1)
+  assert.equal(second.calls.openSession[0][1]?.part, 's1-b')
 })
