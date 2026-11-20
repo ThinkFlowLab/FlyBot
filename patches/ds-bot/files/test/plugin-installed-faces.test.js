@@ -7,6 +7,7 @@
 // The Project surfaces themselves are gated by `projectPresent()` (#2877), so this file does
 // not draw a Projects page for a missing plugin: that answer removes the page instead.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
@@ -14,7 +15,8 @@ import { build } from 'esbuild'
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { PluginsView, ProjectsList } from './src/client/settings.js'",
+    contents: "export { PluginsView, ProjectsList } from './src/client/settings.js'\n"
+      + "export { DICTIONARY, installLocale } from './src/client/i18n.js'",
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -55,7 +57,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { PluginsView, ProjectsList } = module.exports
+const { PluginsView, ProjectsList, DICTIONARY, installLocale } = module.exports
 
 const draw = (node, out = [], depth = 0) => {
   if (Array.isArray(node)) { for (const item of node) draw(item, out, depth); return out }
@@ -150,4 +152,19 @@ test('a project whose Chief was created draws no error line (#2869)', () => {
     call: () => Promise.resolve({}),
   }))
   assert.equal(byClass(nodes, 'bt-project-chief-error').length, 0)
+})
+
+// #3114 cut 37: the fifth plugin's purpose had no zh key, so a zh window read the English sentence.
+const purposes = [...readFileSync(new URL('../src/host/plugins.js', import.meta.url), 'utf8').matchAll(/purpose: (['"])((?:(?!\1).)+)\1/g)].map(match => match[2])
+
+test('#3114 cut 37: every plugin purpose reads in the window language', () => {
+  const plugins = purposes.map((purpose, at) => plugin({ id: `p${at}`, name: `P${at}`, package: `@flybot/p${at}`, purpose }))
+  const shown = () => text(draw(PluginsView({ answer: { plugins } })))
+  for (const purpose of purposes) assert.ok(shown().includes(purpose), `the English window keeps ${purpose}`)
+  const off = installLocale({ register: () => {}, bind: () => key => DICTIONARY.zh[key] ?? key, getLocale: () => ({ active: 'zh' }) })
+  try {
+    const zh = shown()
+    for (const purpose of purposes) assert.equal(zh.includes(purpose), false, `"${purpose}" still reads English in a zh window`)
+    assert.match(zh, /运行一个项目/)
+  } finally { off() }
 })

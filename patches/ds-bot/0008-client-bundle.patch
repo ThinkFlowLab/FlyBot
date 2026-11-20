@@ -1081,7 +1081,7 @@ diff --git a/client.js b/client.js
    "Model call": "模型调用",
    "This window": "这个窗口",
    "Error log": "错误日志",
-@@ -821,12 +821,33 @@ var ZH = {
+@@ -821,12 +821,35 @@ var ZH = {
    "Add at least one more Bot": "再至少添加一个 Bot",
    Members: "成员",
    // Connectors and scheduled tasks
@@ -1100,6 +1100,8 @@ diff --git a/client.js b/client.js
 +  "Run Bots as a tree under a coordinator.": "把 Bot 组织成树，由协调者带队。",
 +  "Read the team activity as a timeline.": "用时间线查看团队活动。",
 +  "Run workflow graphs across several Bots.": "跨多个 Bot 运行工作流图。",
++  // #3114 cut 37: the Project plugin's purpose; the four above are the other four plugins'.
++  "Run a Project: Project State, its board, its own Chief, its team and its assistant.": "运行一个项目：Project State、它的看板、它自己的 Chief、它的团队和助手。",
 +  "Scheduled tasks · {count}": "定时任务 · {count}",
    "Every day": "每天",
    "Every {count} days": "每 {count} 天",
