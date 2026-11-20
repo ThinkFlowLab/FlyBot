@@ -196,3 +196,35 @@ test('#3114 cut 31: an English window reads the same form and the same refusals 
     assert.equal(await refusedForm(raw), raw, `"${raw}" draws exactly as the host wrote it`)
   }
 })
+
+// #3114 cut 33: a pack refusal names the child capability that is gone; the name is data and is copied untouched.
+test('#3114 cut 33: a zh window reads the pack refusal with the child name untouched', async () => {
+  await inLang('zh', async () => {
+    assert.equal(await refusedForm('Packs can include only saved MCP servers and skills. web-search is not one.'),
+      '能力包里只能放已保存的 MCP 服务和技能；web-search 不是其中之一。')
+    assert.equal(await refusedForm('Packs can include only saved MCP servers and skills. 报告.2026 is not one.'),
+      '能力包里只能放已保存的 MCP 服务和技能；报告.2026 不是其中之一。')
+  })
+})
+
+// #3114 cut 33: the two refusals a stale row leaves on the same page (another window, or a Bot's own delete_capability), which land in the dialog's own `run`.
+test('#3114 cut 33: a zh window reads the stale-row capability refusals where the dialog shows them', async () => {
+  await inLang('zh', async () => {
+    const props = { page: 'capabilities', roster, actions, useUpdate: () => ({}) }
+    let tree = expand(SettingsDialog, props)
+    const page = all(tree).find(node => node?.type === CapabilitiesPage)
+    assert.ok(page, 'the dialog draws the Capabilities page')
+    for (const [raw, chinese] of [
+      ['No capability named web-search.', '找不到叫 web-search 的能力。'],
+      ['No unapproved stdio MCP named web-search.', '找不到叫 web-search 的待批准 stdio MCP 服务。'],
+    ]) {
+      // api.js translated the host sentence before it threw, so the stub hands over what it threw.
+      page.props.run(Promise.reject(new Error(hostText(raw))))
+      await flush()
+      tree = render(SettingsDialog, props)
+      const alert = all(tree).find(node => node?.props?.role === 'alert')
+      assert.ok(alert, `"${raw}" is on screen`)
+      assert.equal(text(alert), chinese)
+    }
+  })
+})
