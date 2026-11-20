@@ -1,1 +1,0 @@
-Settings → General now has a **Document cards** switch for the long-document cards; switched off, a long document folds like any other reply instead of showing a card or **Show message text**, and the choice is saved for the whole team ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

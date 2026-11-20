@@ -1,1 +1,0 @@
-**Mark as Unread** on the chat you are already reading now keeps its unread dot until you leave that chat and open it again, instead of clearing itself at once ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

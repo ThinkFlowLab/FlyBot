@@ -1,1 +1,0 @@
-Settings → General now has a **Message folding** choice — Compact, Standard or No folding — for how much of a long chat message shows before it folds, and the choice is saved for the whole team ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

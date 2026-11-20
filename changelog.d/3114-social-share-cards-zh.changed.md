@@ -1,1 +1,0 @@
-The Social panel's share-request and invite-accepted cards — their sentence, hint line, buttons, and the **Open …'s Sharing** title — now follow the window's language, so a Chinese window no longer draws English there; a window without a translator still reads today's English ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).

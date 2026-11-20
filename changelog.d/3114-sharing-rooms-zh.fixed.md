@@ -1,1 +1,0 @@
-A Bot’s Sharing page now reads in the window’s language where it still did not: the hint above the invite link (with and without the Revoke tail) and the rooms each grant reaches, including the “+N more” count and the room-only line ([#3114](https://github.com/ThinkFlowLab/FlyBot/issues/3114)).
