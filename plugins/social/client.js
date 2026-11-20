@@ -2853,7 +2853,7 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'fs-chat-actions' },
             h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll, title: approveAllTitle }, approveAllLabel))
           : null,
-        error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
         mine.map(item => h(ChatApproval, {
           // #3044: a decision in flight locks every card, not only its own.
           // #3071: a click on one card clears the previous line here, where the person acted.
