@@ -1738,6 +1738,13 @@ const HOST_ERRORS = [
   [/^Feishu refused the message \((.+)\)$/, '飞书拒收这条消息（$1）'],
   [/^Pick up to (\d+) apps$/, '最多选 $1 个应用'],
   [/^Composio answered (\d+)([\s\S]*)$/, 'Composio 返回了 $1$2'],
+  // #3114 cut 33: the Capabilities page's three refusals that carry a name. Anchored at both ends
+  // because the whole host message arrives here (api.js); the name is data and is copied through, so a
+  // dot, a bracket or a line break in it can never be read as part of the sentence. `stdio` stays as
+  // the host wrote it: it names the transport the Allow button is about.
+  [/^Packs can include only saved MCP servers and skills\. (.+) is not one\.$/, '能力包里只能放已保存的 MCP 服务和技能；$1 不是其中之一。'],
+  [/^No capability named (.+)\.$/, '找不到叫 $1 的能力。'],
+  [/^No unapproved stdio MCP named (.+)\.$/, '找不到叫 $1 的待批准 stdio MCP 服务。'],
 ]
 const HOST_ZH = {
   'Request failed': '请求失败',

@@ -64,3 +64,42 @@ test('#1813: the Project board queue states read in Chinese', () => {
   // The board keeps emitting the lowercase ids; only the Chinese dictionary changes.
   assert.equal(t('running'), 'running')
 })
+
+// #3114 cut 33: the Capabilities page's three refusals that carry a name. `(.+)` is the name and
+// String.replace copies it through, so a dot or a bracket in a team file's name is data, not syntax.
+test('#3114 cut 33: the capability refusals that carry a name read in Chinese, and the name stays as it is', () => {
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.equal(hostText('Packs can include only saved MCP servers and skills. web-search is not one.'),
+      '能力包里只能放已保存的 MCP 服务和技能；web-search 不是其中之一。')
+    assert.equal(hostText('No capability named web-search.'), '找不到叫 web-search 的能力。')
+    assert.equal(hostText('No unapproved stdio MCP named web-search.'), '找不到叫 web-search 的待批准 stdio MCP 服务。')
+    // A name is whatever the team file holds, so a dot or a bracket is copied and never parsed.
+    assert.equal(hostText('No capability named a.b.'), '找不到叫 a.b 的能力。')
+    assert.equal(hostText('No capability named a(b).'), '找不到叫 a(b) 的能力。')
+    // The one shape that cannot be told from a name holding ". ": the name is still copied verbatim.
+    assert.equal(hostText('No capability named web-search. Try again.'), '找不到叫 web-search. Try again 的能力。')
+    // Sentences this cut leaves in English: no closing full stop, text before the sentence, a line
+    // break in the name, a pack line without its stop, a stdio line without its stop, and the
+    // endpoint fallback no caller reaches.
+    for (const message of [
+      'No capability named web-search',
+      'The host said: No capability named web-search.',
+      'No capability named web-\nsearch.',
+      'Packs can include only saved MCP servers and skills. web-search is not one',
+      'No unapproved stdio MCP named web-search',
+      'Unknown capability operation.',
+    ]) assert.equal(hostText(message), message)
+  } finally {
+    off()
+  }
+})
+
+// A window that is not zh gets the host's sentence, not a translation of it (these three have no key).
+test('#3114 cut 33: an English window keeps the capability refusals as the host wrote them', () => {
+  for (const message of [
+    'Packs can include only saved MCP servers and skills. web-search is not one.',
+    'No capability named web-search.',
+    'No unapproved stdio MCP named web-search.',
+  ]) assert.equal(hostText(message), message)
+})
