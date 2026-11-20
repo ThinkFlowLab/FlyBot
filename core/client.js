@@ -12835,7 +12835,7 @@ function ProjectBoardRecord({ record, projectId, call: call4 }) {
     proxyRow(meeting),
     // A decided meeting whose file is gone still reads as decided; the missing path says so
     // instead of the row disappearing with the file.
-    meeting.path === "" ? (0, import_react23.createElement)("span", { className: "bt-project-missing" }, "decision file gone") : (0, import_react23.createElement)("span", { className: "bt-project-path" }, meeting.path)
+    meeting.path === "" ? (0, import_react23.createElement)("span", { className: "bt-project-missing" }, t("decision file gone")) : (0, import_react23.createElement)("span", { className: "bt-project-path" }, meeting.path)
   ));
   const pendingRows = meetings.pending.map((meeting) => (0, import_react23.createElement)(
     "div",

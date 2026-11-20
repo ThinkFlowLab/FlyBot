@@ -648,7 +648,7 @@ function ProjectBoardRecord({ record, projectId, call }) {
     // A decided meeting whose file is gone still reads as decided; the missing path says so
     // instead of the row disappearing with the file.
     meeting.path === ''
-      ? h('span', { className: 'bt-project-missing' }, 'decision file gone')
+      ? h('span', { className: 'bt-project-missing' }, t('decision file gone'))
       : h('span', { className: 'bt-project-path' }, meeting.path)))
   // #1831: a pending decision card carries its level, who it is addressed to, and — for a severe
   // card — the host's own refusal to advance it. The words are the host's; the badge only says

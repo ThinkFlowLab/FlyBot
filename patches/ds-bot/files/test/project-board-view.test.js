@@ -1035,3 +1035,37 @@ test('#2041: the overlay hands the board its own read, so a row opens through it
   assert.deepEqual(plain(asked), [{ name: 'project-decision', payload: { id: 'project-1', path } }], 'the overlay own read carried the ask')
   assert.match(textIn(redraw()), /Opened through the overlay/, 'the answer is drawn under the row')
 })
+
+// #3114 cut 34: a decided meeting whose decision file is gone says so in the window's language. The
+// question, the speaker and a present path are host data; only the page's own line is a dictionary key.
+const goneRecord = () => ({
+  project: { id: 'project-1', name: 'FlyBot' }, rows, canManage: false, decisions: { dir: '/team/flybot', files: [] },
+  meetings: {
+    decided: [
+      { id: 'meeting-d', date: '2026-10-30', question: 'Which board carries the record?', owner: 'Chief', path: '' },
+      { id: 'meeting-e', date: '2026-10-31', question: 'Which board carries the next record?', owner: 'Chief', path: 'decisions/2026-10-31-next.md' },
+    ],
+    pending: [], reason: '',
+  },
+})
+// `.bt-project-missing` is drawn on the team block too (`Not set`), so the row is found by its status.
+const spanIn = (id, className) => {
+  const row = all(ProjectBoardPane(goneRecord())).find(node => node.props?.['data-status'] === 'decided' && node.props?.key === `meeting:${id}`)
+  return all(row).find(node => node.props?.className === className)
+}
+
+test('#3114 cut 34: a decided meeting whose file is gone reads in the window language', () => {
+  assert.equal(textOf(spanIn('meeting-d', 'bt-project-missing')), 'decision file gone', 'an English window is unchanged')
+  const off = installLocale(fakeLocale('zh'))
+  try {
+    assert.equal(textOf(spanIn('meeting-d', 'bt-project-missing')), '决策文件已不在', 'a zh window reads the line in Chinese')
+    assert.equal(textOf(spanIn('meeting-e', 'bt-project-path')), 'decisions/2026-10-31-next.md', 'a zh window never translates a path')
+    const row = all(ProjectBoardPane(goneRecord())).find(node => node.props?.['data-status'] === 'decided')
+    assert.equal(row.props['data-status'], 'decided', 'the row still reads decided')
+    assert.match(textOf(row), /Which board carries the record\?/, 'the question is host data and stays')
+    assert.match(textOf(row), /@Chief/, 'the speaker stays as the host named it')
+    assert.match(textOf(row), /决策文件已不在/)
+  } finally {
+    off()
+  }
+})
