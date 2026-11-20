@@ -4002,9 +4002,14 @@ window.__ModuleLoader__.load({
         return () => { live = false; clearInterval(timer) }
       }, [handle])
       if (!handle || !paused) return null
+      // The notice speaks the window's language (#3114); Bot Social's reason is server data and stays
+      // as it arrived. A host with no translator keeps today's English, word for word.
+      const note = paused.reason
+        ? tr('Bot Social paused the last chat with this Bot ({reason}).', { reason: paused.reason })
+        : tr('Bot Social paused the last chat with this Bot.')
       return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-paused', role: 'status' },
-        h('div', { className: 'fs-label' }, 'Chat paused'),
-        h('div', { className: 'fs-draft' }, `${paused.reason ? `Bot Social paused the last chat with this Bot (${paused.reason}).` : 'Bot Social paused the last chat with this Bot.'} Send your message again: it starts a new chat.`))
+        h('div', { className: 'fs-label' }, tr('Chat paused')),
+        h('div', { className: 'fs-draft' }, tr('{note} Send your message again: it starts a new chat.', { note })))
     }
 
     // + menu marks (#385), drawn like the host's line icons: people nearby, and a person to add.
