@@ -10,7 +10,11 @@ import { build } from 'esbuild'
 
 const { outputFiles } = await build({
   stdin: {
-    contents: "export { SettingsDialog } from './src/client/settings.js'",
+    contents: [
+      "export { SettingsDialog } from './src/client/settings.js'",
+      "export { CapabilitiesPage } from './src/client/capability-settings.js'",
+      "export { hostText, installLocale } from './src/client/i18n.js'",
+    ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
@@ -51,7 +55,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { SettingsDialog } = module.exports
+const { SettingsDialog, CapabilitiesPage, hostText, installLocale } = module.exports
 
 const render = (component, props) => { index = 0; return component(props) }
 const flush = async () => {
@@ -95,4 +99,100 @@ test('a refused write in Settings stays in view instead of scrolling away with t
   const scrolling = nodes.find(node => typeof node.props?.className === 'string' && node.props.className.includes('bt-settings-scroll'))
   assert.ok(scrolling, 'the page is the scrolling box under the dialog heading')
   assert.equal(inside(alert, scrolling), false, 'the refusal must sit outside the scrolling page, not above it')
+})
+
+// #3114 cut 31: the Capabilities form and the six fixed refusals its save can leave. The page
+// already draws `t(label)` (capability-settings.js:19) and the host sentence is translated before it
+// is thrown (api.js:38), so the dictionary is the only place these cases can be red.
+const REFUSALS = [
+  ['Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.',
+    '能力名只能用小写字母、数字和单个连字符；「github」和「composio」是保留名。'],
+  ['Enter a command for the MCP server.', '请填写 MCP 服务器的命令。'],
+  ['Enter a valid HTTP or HTTPS URL.', '请填写有效的 HTTP 或 HTTPS 地址。'],
+  ['A capability cannot change its kind. Delete it and save a new one.', '能力类型不能改。请删掉它，再新建一个。'],
+  ['Environment variables must contain text values.', '环境变量里只能填文本值。'],
+  ['Headers must contain text values.', '请求头里只能填文本值。'],
+]
+
+const fakeLocale = (active) => {
+  const dicts = new Map()
+  return {
+    register: (ns, locale, dict) => { dicts.set(`${ns}:${locale}`, dict); return () => dicts.delete(`${ns}:${locale}`) },
+    bind: ns => (key, params) => {
+      const text = (active === 'zh' ? dicts.get(`${ns}:zh`)?.[key] : undefined) ?? key
+      return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
+    },
+    getLocale: () => ({ active }),
+  }
+}
+
+// The locale service is global to the bundled i18n module: open the window, then close it again.
+const inLang = async (active, body) => {
+  const off = installLocale(fakeLocale(active))
+  try { await body() } finally { off() }
+}
+
+// A fresh hook board for the component under test, so one case cannot read the last one's state.
+const expand = (component, props) => { slots = []; index = 0; effects = []; return render(component, props) }
+
+// A field is a component: its label is on screen only once the field itself is drawn.
+const nameOf = (root, label) => all(root)
+  .filter(node => typeof node?.type === 'function' && typeof node?.props?.label === 'string').some(node => text(node.type(node.props)) === label)
+
+const capabilityProps = (saveCapability) => ({
+  roster: { ...roster, capabilities: [] },
+  actions: { saveCapability, deleteCapability: async () => {}, approveCapability: async () => {} },
+  run: () => {},
+})
+
+// React is handed the form as a component, and this harness draws only what a test names: press
+// Add capability, take the node the page drew, and draw that component by hand.
+const capabilityForm = (saveCapability) => {
+  const props = capabilityProps(saveCapability)
+  const add = all(expand(CapabilitiesPage, props)).find(node => node?.props?.onClick)
+  assert.ok(add, 'the page draws its Add capability button')
+  add.props.onClick()
+  const opened = all(render(CapabilitiesPage, props)).find(node => node?.props?.draft && typeof node.props.setDraft === 'function')
+  assert.ok(opened, 'Add capability opens the form')
+  return opened
+}
+
+// A save the host refused. api.js:38 translates the host's sentence before it throws, so the stub
+// does the same and the form draws what it drew in the window: the refusal, not the raw host text.
+const refusedForm = async (raw) => {
+  const opened = capabilityForm(async () => { throw new Error(hostText(raw)) })
+  const form = all(expand(opened.type, opened.props)).find(node => node?.type === 'form')
+  assert.ok(form, 'the form draws itself')
+  await form.props.onSubmit({ preventDefault() {} })
+  const alert = all(render(opened.type, opened.props)).find(node => node?.props?.role === 'alert')
+  return alert ? text(alert) : ''
+}
+
+test('#3114 cut 31: a zh window reads the capability form labels in Chinese', async () => {
+  await inLang('zh', async () => {
+    const opened = capabilityForm(async () => {})
+    const tree = expand(opened.type, opened.props)
+    assert.equal(nameOf(tree, '描述'), true, 'the Description label is a Chinese word')
+    assert.equal(nameOf(tree, '参数（每行一个）'), true, 'the rest of the form reads Chinese too')
+    assert.equal(nameOf(tree, 'Description'), false, 'no English Description label is left')
+  })
+})
+
+test('#3114 cut 31: a zh window reads every fixed host refusal on the form in Chinese', async () => {
+  await inLang('zh', async () => {
+    for (const [raw, chinese] of REFUSALS) {
+      assert.equal(await refusedForm(raw), chinese, `"${raw}" reads Chinese where the host wrote it`)
+    }
+  })
+})
+
+test('#3114 cut 31: an English window reads the same form and the same refusals unchanged', async () => {
+  const opened = capabilityForm(async () => {})
+  const tree = expand(opened.type, opened.props)
+  assert.equal(nameOf(tree, 'Description'), true, 'the Description label is still English')
+  assert.equal(nameOf(tree, 'Arguments (one per line)'), true, 'the rest of the form is still English')
+  for (const [raw] of REFUSALS) {
+    assert.equal(hostText(raw), raw, `"${raw}" is untouched without a zh window`)
+    assert.equal(await refusedForm(raw), raw, `"${raw}" draws exactly as the host wrote it`)
+  }
 })
