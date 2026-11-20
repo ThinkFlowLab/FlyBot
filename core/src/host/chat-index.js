@@ -218,6 +218,7 @@ export function install(rt) {
         from: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq >= ? ORDER BY seq LIMIT ?'),
         countAll: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
         countVisible: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?)) AND NOT (session = ? AND seq >= ?)'),
+        newestTime: db.prepare('SELECT MAX(time) AS t FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
       }
     } catch (error) {
       db.close()
@@ -229,6 +230,27 @@ export function install(rt) {
     chatIndex = undefined
     indexOpening = undefined
   }, 'ds-bot: chat index')
+
+  // A window another host keeps read-only adds nothing to the index: it answers with the rows
+  // that host wrote. When that host has not caught up with a part's own log — the user is still
+  // talking in it, or it stopped before indexing its last messages — the newest lines are
+  // missing, and a capped `more: 0` read as the whole chat. A read that stops short says where
+  // it stops, so a message missing from the answer is visibly newer than the cut (#P-652).
+  async function indexStop(index, parts) {
+    if (index.writable) return undefined
+    let behind = false
+    for (const part of parts) {
+      const agent = await rt.resolveAgent(part.sessionId).catch(() => undefined)
+      if (agent === undefined) continue
+      if ((index.mark.get(part.sessionId)?.through ?? -1) < Number(agent.session.seq) - 1) {
+        behind = true
+        break
+      }
+    }
+    if (!behind) return undefined
+    const { t } = index.newestTime.get(JSON.stringify(parts.map(part => part.sessionId)))
+    return { at: t === null ? undefined : rt.clock(t) }
+  }
 
   // Adds what a part said since its mark. Reads of one part wait for each other within this
   // installation; two installations over one home meet again inside the transaction below.
@@ -322,19 +344,19 @@ export function install(rt) {
     // A part that cannot be read now is searched as far as it was indexed.
     for (const part of parts) await catchUp(index, part).catch(error => rt.warn('ds-bot: indexing %s failed: %s', part.sessionId, error))
     const turn = askingId !== undefined && askingId === parts.at(-1)?.sessionId ? index.mark.get(askingId)?.turn : undefined
-    return { index, parts, hidden: turn === undefined || turn < 0 ? undefined : { session: askingId, from: turn } }
+    return { index, parts, stop: await indexStop(index, parts), hidden: turn === undefined || turn < 0 ? undefined : { session: askingId, from: turn } }
   }
 
   // Messages with all the words, best first; with none of them having all, those with
   // the most of them. Shown oldest first. `more` is how many hits the cap left out (#1906).
   async function searchOwnChat(botId, query, { askingId, limit = OWN_CHAT_SEARCH } = {}) {
     const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, SEARCH_TERMS_MAX)
-    const { index, parts, hidden } = await indexedParts(botId, askingId)
+    const { index, parts, hidden, stop } = await indexedParts(botId, askingId)
     if (index === null) return { ...(await scanOwnChat(botId, query, limit)), every: true }
     const sessions = parts.map(part => part.sessionId)
     const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
     const found = matchedRows(index, sessions, terms, limit, hidden)
-    return { lines: found.rows.sort(byTime).map(row => rowLine(parts, row, terms)), every: found.every, more: found.more }
+    return { lines: found.rows.sort(byTime).map(row => rowLine(parts, row, terms)), every: found.every, more: found.more, stop }
   }
 
   // The rows a query matches, best first, and how many the cap left out (#1906): the core
@@ -386,7 +408,7 @@ export function install(rt) {
 
   // The latest messages across all parts, oldest first; `more` is how many the cap left out (#1906).
   async function latestOwnChat(botId, { askingId, limit = OWN_CHAT_READ } = {}) {
-    const { index, parts, hidden } = await indexedParts(botId, askingId)
+    const { index, parts, hidden, stop } = await indexedParts(botId, askingId)
     if (index === null) return scanOwnChat(botId, '', limit)
     const rows = []
     for (const part of [...parts].reverse()) {
@@ -398,7 +420,7 @@ export function install(rt) {
     const total = hidden === undefined
       ? index.countAll.get(JSON.stringify(sessions)).n
       : index.countVisible.get(JSON.stringify(sessions), hidden.session, hidden.from).n
-    return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length) }
+    return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length), stop }
   }
 
   // The messages around an anchor, in its part. A bare `#<seq>` — an anchor printed before
@@ -406,7 +428,7 @@ export function install(rt) {
   // but `guessedPart` says so and `exact` is then false: the seq a Bot saved named no part,
   // so the message it finds may be a different one (#2710).
   async function aroundOwnChat(botId, anchor) {
-    const { index, parts } = await indexedParts(botId)
+    const { index, parts, stop } = await indexedParts(botId)
     if (index === null) return { error: 'Anchors need the chat index, which is unavailable here. Search with words instead.' }
     const found = /(?:part\s*)?(\d+)?\s*#\s*(\d+)/i.exec(anchor)
     if (found === null) return { error: `"${anchor}" is not an anchor. Anchors look like "part 2 #1234", or "#1234" in the current part.` }
@@ -422,6 +444,7 @@ export function install(rt) {
       exact: !guessedPart && rows.some(row => row.seq === seq),
       guessedPart,
       lines: rows.map(row => rowLine(parts, row, [], row.seq === seq ? ANCHOR_LINE_MAX : OWN_CHAT_LINE_MAX)),
+      stop,
     }
   }
 

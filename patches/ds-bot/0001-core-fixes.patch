@@ -4652,7 +4652,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
          } catch (error) {
            if (fresh) rt.warn('ds-bot: no chat index, read_own_chat scans the logs: %s', error)
          }
-@@ -100,24 +100,66 @@ export function install(rt) {
+@@ -100,24 +100,67 @@ export function install(rt) {
      return opening
    }
  
@@ -4728,15 +4728,37 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
          from: db.prepare('SELECT text, session, seq, time, who FROM lines WHERE session = ? AND seq >= ? ORDER BY seq LIMIT ?'),
 +        countAll: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
 +        countVisible: db.prepare('SELECT COUNT(*) AS n FROM lines WHERE session IN (SELECT value FROM json_each(?)) AND NOT (session = ? AND seq >= ?)'),
++        newestTime: db.prepare('SELECT MAX(time) AS t FROM lines WHERE session IN (SELECT value FROM json_each(?))'),
        }
      } catch (error) {
        db.close()
-@@ -130,16 +130,18 @@ export function install(rt) {
+@@ -130,16 +130,39 @@ export function install(rt) {
      indexOpening = undefined
    }, 'ds-bot: chat index')
  
 -  // Adds what a part said since its mark. Reads of one part wait for each other, so no
 -  // line is added twice.
++  // A window another host keeps read-only adds nothing to the index: it answers with the rows
++  // that host wrote. When that host has not caught up with a part's own log — the user is still
++  // talking in it, or it stopped before indexing its last messages — the newest lines are
++  // missing, and a capped `more: 0` read as the whole chat. A read that stops short says where
++  // it stops, so a message missing from the answer is visibly newer than the cut (#P-652).
++  async function indexStop(index, parts) {
++    if (index.writable) return undefined
++    let behind = false
++    for (const part of parts) {
++      const agent = await rt.resolveAgent(part.sessionId).catch(() => undefined)
++      if (agent === undefined) continue
++      if ((index.mark.get(part.sessionId)?.through ?? -1) < Number(agent.session.seq) - 1) {
++        behind = true
++        break
++      }
++    }
++    if (!behind) return undefined
++    const { t } = index.newestTime.get(JSON.stringify(parts.map(part => part.sessionId)))
++    return { at: t === null ? undefined : rt.clock(t) }
++  }
++
 +  // Adds what a part said since its mark. Reads of one part wait for each other within this
 +  // installation; two installations over one home meet again inside the transaction below.
    const catchingUp = new Map()
@@ -4825,7 +4847,12 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
    }
    const rowLine = (parts, row, terms = [], max = OWN_CHAT_LINE_MAX) => {
      const lower = row.text.toLowerCase()
-@@ -202,19 +202,29 @@ export function install(rt) {
+@@ -198,23 +198,33 @@ export function install(rt) {
+     // A part that cannot be read now is searched as far as it was indexed.
+     for (const part of parts) await catchUp(index, part).catch(error => rt.warn('ds-bot: indexing %s failed: %s', part.sessionId, error))
+     const turn = askingId !== undefined && askingId === parts.at(-1)?.sessionId ? index.mark.get(askingId)?.turn : undefined
+-    return { index, parts, hidden: turn === undefined || turn < 0 ? undefined : { session: askingId, from: turn } }
++    return { index, parts, stop: await indexStop(index, parts), hidden: turn === undefined || turn < 0 ? undefined : { session: askingId, from: turn } }
    }
  
    // Messages with all the words, best first; with none of them having all, those with
@@ -4833,13 +4860,14 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +  // the most of them. Shown oldest first. `more` is how many hits the cap left out (#1906).
    async function searchOwnChat(botId, query, { askingId, limit = OWN_CHAT_SEARCH } = {}) {
      const terms = [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))].slice(0, SEARCH_TERMS_MAX)
-     const { index, parts, hidden } = await indexedParts(botId, askingId)
+-    const { index, parts, hidden } = await indexedParts(botId, askingId)
 -    if (index === null) return { lines: await scanOwnChat(botId, query, limit), every: true }
++    const { index, parts, hidden, stop } = await indexedParts(botId, askingId)
 +    if (index === null) return { ...(await scanOwnChat(botId, query, limit)), every: true }
      const sessions = parts.map(part => part.sessionId)
 +    const byTime = (a, b) => (a.time - b.time) || (sessions.indexOf(a.session) - sessions.indexOf(b.session)) || (a.seq - b.seq)
 +    const found = matchedRows(index, sessions, terms, limit, hidden)
-+    return { lines: found.rows.sort(byTime).map(row => rowLine(parts, row, terms)), every: found.every, more: found.more }
++    return { lines: found.rows.sort(byTime).map(row => rowLine(parts, row, terms)), every: found.every, more: found.more, stop }
 +  }
 +
 +  // The rows a query matches, best first, and how many the cap left out (#1906): the core
@@ -4858,7 +4886,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
      if (rows.length === 0 && terms.length > 1) {
        every = false
        const found = new Map()
-@@ -227,11 +227,30 @@ export function install(rt) {
+@@ -227,13 +227,32 @@ export function install(rt) {
          }
        }
        rows = [...found.values()].sort((a, b) => (b.count - a.count) || (b.row.time - a.row.time)).slice(0, limit).map(hit => hit.row)
@@ -4868,8 +4896,9 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
      }
 -    return { lines: rows.sort(byTime).map(row => rowLine(parts, row, terms)), every }
 +    return { rows, every, more: total === undefined ? 0 : Math.max(0, total - rows.length) }
-+  }
-+
+   }
+ 
+-  // The latest messages across all parts, oldest first.
 +  // The whole-text search behind the palette's "Messages (full text)" group (P-820): the
 +  // outline previews stop at 50/120 characters, so a hit past that budget is invisible to
 +  // the outline read. The sessions are the caller's to name — the channel lists the caller's
@@ -4884,14 +4913,16 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +    const sessions = [...new Set(sessionIds)]
 +    for (const sessionId of sessions) await catchUp(index, { sessionId }).catch(error => rt.warn('ds-bot: indexing %s failed: %s', sessionId, error))
 +    return matchedRows(index, sessions, terms, limit, undefined)
-   }
- 
--  // The latest messages across all parts, oldest first.
++  }
++
 +  // The latest messages across all parts, oldest first; `more` is how many the cap left out (#1906).
    async function latestOwnChat(botId, { askingId, limit = OWN_CHAT_READ } = {}) {
-     const { index, parts, hidden } = await indexedParts(botId, askingId)
+-    const { index, parts, hidden } = await indexedParts(botId, askingId)
++    const { index, parts, hidden, stop } = await indexedParts(botId, askingId)
      if (index === null) return scanOwnChat(botId, '', limit)
-@@ -241,21 +241,35 @@ export function install(rt) {
+     const rows = []
+     for (const part of [...parts].reverse()) {
+@@ -241,21 +241,36 @@ export function install(rt) {
        rows.push(...index.before.all(part.sessionId, below, limit - rows.length))
        if (rows.length >= limit) break
      }
@@ -4900,7 +4931,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +    const total = hidden === undefined
 +      ? index.countAll.get(JSON.stringify(sessions)).n
 +      : index.countVisible.get(JSON.stringify(sessions), hidden.session, hidden.from).n
-+    return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length) }
++    return { lines: rows.reverse().map(row => rowLine(parts, row)), more: Math.max(0, total - rows.length), stop }
    }
  
 -  // The messages around an anchor, in its part.
@@ -4909,7 +4940,8 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +  // but `guessedPart` says so and `exact` is then false: the seq a Bot saved named no part,
 +  // so the message it finds may be a different one (#2710).
    async function aroundOwnChat(botId, anchor) {
-     const { index, parts } = await indexedParts(botId)
+-    const { index, parts } = await indexedParts(botId)
++    const { index, parts, stop } = await indexedParts(botId)
      if (index === null) return { error: 'Anchors need the chat index, which is unavailable here. Search with words instead.' }
      const found = /(?:part\s*)?(\d+)?\s*#\s*(\d+)/i.exec(anchor)
      if (found === null) return { error: `"${anchor}" is not an anchor. Anchors look like "part 2 #1234", or "#1234" in the current part.` }
@@ -4926,6 +4958,7 @@ diff --git a/src/host/chat-index.js b/src/host/chat-index.js
 +      exact: !guessedPart && rows.some(row => row.seq === seq),
 +      guessedPart,
 +      lines: rows.map(row => rowLine(parts, row, [], row.seq === seq ? ANCHOR_LINE_MAX : OWN_CHAT_LINE_MAX)),
++      stop,
 +    }
    }
  
