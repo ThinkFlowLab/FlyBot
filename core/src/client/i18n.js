@@ -1713,6 +1713,17 @@ const HOST_ERRORS = [
   [/^A Project memory entry needs text$/, '项目记忆条目需要文字'],
   [/^A Project memory entry is at most (\d+) characters$/, '项目记忆条目最多 $1 个字符'],
   [/^Unknown Project (\S+)$/, '找不到项目 $1'],
+  // #3114 cut 29: the Connectors page's Feishu row, and two Composio leftovers on the same page.
+  // The four below carry the host's own data — a webhook origin, a status code, Feishu's own error
+  // code, Composio's message — and copy it through: data is never translated.
+  [/^A Feishu webhook must be https on (.+)$/, '飞书 webhook 必须是 $1 上的 https 地址'],
+  [/^Feishu answered (\d+)$/, '飞书返回了 $1'],
+  [/^Feishu did not accept the webhook \((.+)\)$/, '飞书不接受这个 webhook（$1）'],
+  [/^Not sent: Feishu refused the answer \((.+)\)$/, '没发出去：飞书拒收（$1）'],
+  // `connector-send` names the notifier's own refusal, and its fallback literal, in the brackets.
+  [/^Feishu refused the message \((.+)\)$/, '飞书拒收这条消息（$1）'],
+  [/^Pick up to (\d+) apps$/, '最多选 $1 个应用'],
+  [/^Composio answered (\d+)([\s\S]*)$/, 'Composio 返回了 $1$2'],
 ]
 const HOST_ZH = {
   'Request failed': '请求失败',
@@ -1801,6 +1812,29 @@ const HOST_ZH = {
   'In use in {n} rooms: ': '正在 {n} 个房间里使用：',
   'This room only: ': '只在这个房间使用：',
   ' +{n} more': '，还有 {n} 个',
+  // #3114 cut 29: the Connectors page's Feishu row in a Chinese window — the line under a failed
+  // connect, and the sentence a refused connect, disconnect, mode, allowed-sender or send leaves.
+  // A sentence with data in it is one of the HOST_ERRORS patterns above, not an entry here.
+  'Could not reach Feishu': '连不上飞书',
+  'Feishu addresses must start with https://': '飞书地址必须以 https:// 开头',
+  'A Feishu App ID and App Secret are both needed before the long connection can dial.': '自建应用的长连接需要飞书 App ID 和 App Secret 才能拨号',
+  'the Feishu long connection did not open': '飞书长连接没有建立',
+  'Paste the webhook URL Feishu gave you': '请粘贴飞书给你的 webhook 地址',
+  'Feishu did not answer in time — the test message may already be in the chat; check before connecting again': '飞书没有及时答复——测试消息可能已经发到群里；再连接前先确认一下',
+  'Feishu did not answer in time — the message may already be in the chat; check before sending again': '飞书没有及时答复——消息可能已经发到群里；再发送前先确认一下',
+  'Feishu is rate-limiting this webhook; try again in a minute': '飞书正在限流这个 webhook；请过一分钟再试',
+  'Paste the App ID and App Secret Feishu gave the app': '请粘贴飞书给这个应用的 App ID 和 App Secret',
+  'Feishu did not accept this App ID and App Secret': '飞书不接受这个 App ID 和 App Secret',
+  'Choose how to connect Feishu first': '请先选择飞书的连接方式',
+  'This connector has no allowed senders': '这个连接器没有允许发送的人',
+  'Paste the open_id of the sender to allow': '请粘贴要允许的发送者 open_id',
+  'Connect Feishu as an app first': '请先把飞书按自建应用连接',
+  'Type a message first': '请先输入消息',
+  'Not sent: could not reach Feishu': '没发出去：连不上飞书',
+  'Not sent: Feishu refused the app token while sending the answer': '没发出去：发送时飞书不认这个应用 token',
+  'Not sent: this answer has no Feishu chat to go to.': '没发出去：这条回答没有可去的飞书群。',
+  'Not sent: connect Feishu first, so the answer has a way out.': '没发出去：请先连接飞书，回答才有出去的路。',
+  'Connect Feishu first': '请先连接飞书',
 }
 Object.assign(ZH, HOST_ZH)
 

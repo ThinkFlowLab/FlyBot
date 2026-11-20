@@ -30,6 +30,7 @@
     "src/host/usage.js",
     "src/client/connectors.js",
     "test/connectors.test.js",
+    "test/connectors-feishu-zh.test.js",
     "test/work-dir.test.js",
     "src/client/schedules.js",
     "README.md",

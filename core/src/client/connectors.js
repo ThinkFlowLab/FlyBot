@@ -5,7 +5,7 @@ import { ConnectorIcon } from './icons.js'
 import { SwitchRow } from './bot-settings.js'
 import { lockedWindow } from './schedules.js'
 import { ConnectorBots, usageText } from './connector-bots.js'
-import { t } from './i18n.js'
+import { hostText, t } from './i18n.js'
 import { copiedToClipboard } from '../shared/remote-label.js'
 
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
@@ -42,7 +42,9 @@ const ABOUT = {
 
 function statusText(connector) {
   if (connector.state === 'connecting') return t('Connecting…')
-  if (connector.state === 'error') return t('Could not connect: {error}', { error: connector.error ?? '' })
+  // The host wrote the failure; a zh window reads it in Chinese, and the host's own data inside it
+  // (an origin, a status code, an open_id) is copied through as written (#3243).
+  if (connector.state === 'error') return t('Could not connect: {error}', { error: hostText(connector.error ?? '') })
   if (connector.state === 'ready' && connector.kind === 'channel') {
     return connector.mode === 'app' ? t('Connected: app, over the long connection') : t('Connected: custom bot webhook')
   }
@@ -138,7 +140,7 @@ export function AppPicker({ apps, onChange, search, statuses = {} }) {
     apps.length > 0 ? h('div', { className: 'bt-states', 'aria-label': t('Picked apps') }, apps.map(slug =>
       h(AppChip, { key: slug, name: nameOf(slug), status: statuses[slug], onRemove: () => onChange(apps.filter(app => app !== slug)) }))) : null,
     h('input', { className: 'bt-input', type: 'search', value: query, spellCheck: false, 'aria-label': t('Search apps'), placeholder: t('Search Composio apps'), onChange: event => setQuery(event.target.value) }),
-    failed ? h('span', { className: 'bt-set-hint' }, t('Could not search Composio: {error}', { error: failed })) : null,
+    failed ? h('span', { className: 'bt-set-hint' }, t('Could not search Composio: {error}', { error: hostText(failed) })) : null,
     h('div', { className: 'bt-states', 'aria-label': t('Apps to add') }, results.length === 0
       ? h('span', { className: 'bt-set-hint' }, t('No apps match'))
       : results.map(app => h('button', { key: app.slug, type: 'button', className: 'bt-state', 'aria-pressed': false, onClick: () => { names.current.set(app.slug, app.name); onChange([...apps, app.slug]) } }, app.name))))
@@ -275,7 +277,7 @@ function ConnectorRow({ connector, roster, actions }) {
         h('span', { className: 'bt-connector-link' }),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setPicking(false); setError(null) } }, t('Cancel')),
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || apps.length === 0, onClick: saveApps }, busy ? t('Connecting…') : t('Save')))) : null,
-    error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
+    error ? h('div', { className: 'bt-connector-error', role: 'alert' }, hostText(error)) : null)
 }
 
 // Settings → Connectors: one row per connector.

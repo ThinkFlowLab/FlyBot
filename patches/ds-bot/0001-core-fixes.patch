@@ -272,16 +272,17 @@ diff --git a/src/client/browser-pane.js b/src/client/browser-pane.js
 diff --git a/src/client/connectors.js b/src/client/connectors.js
 --- a/src/client/connectors.js
 +++ b/src/client/connectors.js
-@@ -1,41 +1,233 @@
+@@ -1,41 +1,235 @@
 -import { createElement as h, useRef, useState } from 'react'
 +import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
  import { useMorph } from './motion.js'
  import { MaskedInput } from './secret-card.js'
+-import { t } from './i18n.js'
 +import { ConnectorIcon } from './icons.js'
 +import { SwitchRow } from './bot-settings.js'
 +import { lockedWindow } from './schedules.js'
 +import { ConnectorBots, usageText } from './connector-bots.js'
- import { t } from './i18n.js'
++import { hostText, t } from './i18n.js'
 +import { copiedToClipboard } from '../shared/remote-label.js'
  
  const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
@@ -320,7 +321,10 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
  
  function statusText(connector) {
    if (connector.state === 'connecting') return t('Connecting…')
-   if (connector.state === 'error') return t('Could not connect: {error}', { error: connector.error ?? '' })
+-  if (connector.state === 'error') return t('Could not connect: {error}', { error: connector.error ?? '' })
++  // The host wrote the failure; a zh window reads it in Chinese, and the host's own data inside it
++  // (an origin, a status code, an open_id) is copied through as written (#3243).
++  if (connector.state === 'error') return t('Could not connect: {error}', { error: hostText(connector.error ?? '') })
 +  if (connector.state === 'ready' && connector.kind === 'channel') {
 +    return connector.mode === 'app' ? t('Connected: app, over the long connection') : t('Connected: custom bot webhook')
 +  }
@@ -417,7 +421,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +    apps.length > 0 ? h('div', { className: 'bt-states', 'aria-label': t('Picked apps') }, apps.map(slug =>
 +      h(AppChip, { key: slug, name: nameOf(slug), status: statuses[slug], onRemove: () => onChange(apps.filter(app => app !== slug)) }))) : null,
 +    h('input', { className: 'bt-input', type: 'search', value: query, spellCheck: false, 'aria-label': t('Search apps'), placeholder: t('Search Composio apps'), onChange: event => setQuery(event.target.value) }),
-+    failed ? h('span', { className: 'bt-set-hint' }, t('Could not search Composio: {error}', { error: failed })) : null,
++    failed ? h('span', { className: 'bt-set-hint' }, t('Could not search Composio: {error}', { error: hostText(failed) })) : null,
 +    h('div', { className: 'bt-states', 'aria-label': t('Apps to add') }, results.length === 0
 +      ? h('span', { className: 'bt-set-hint' }, t('No apps match'))
 +      : results.map(app => h('button', { key: app.slug, type: 'button', className: 'bt-state', 'aria-pressed': false, onClick: () => { names.current.set(app.slug, app.name); onChange([...apps, app.slug]) } }, app.name))))
@@ -549,6 +553,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 -        h('a', { className: 'bt-connector-link', href: TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' }, t('Create a token on GitHub')),
 -        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setError(null) } }, t('Cancel')),
 -        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || token.trim() === '', onClick: connect }, busy ? t('Connecting…') : t('Connect')))) : null,
+-    error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
 +        h('a', { className: 'bt-connector-link', href: channel ? (chosen?.link ?? FEISHU_WEBHOOK_URL) : gateway ? COMPOSIO_KEY_URL : TOKEN_URL, target: '_blank', rel: 'noopener noreferrer' },
 +          channel ? t(chosen?.linkLabel ?? 'Get a webhook URL in Feishu') : gateway ? t('Get a Composio API key') : t('Create a token on GitHub')),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setForm(false); setToken(''); setValues({}); setError(null) } }, t('Cancel')),
@@ -560,7 +565,7 @@ diff --git a/src/client/connectors.js b/src/client/connectors.js
 +        h('span', { className: 'bt-connector-link' }),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => { setPicking(false); setError(null) } }, t('Cancel')),
 +        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || apps.length === 0, onClick: saveApps }, busy ? t('Connecting…') : t('Save')))) : null,
-     error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null)
++    error ? h('div', { className: 'bt-connector-error', role: 'alert' }, hostText(error)) : null)
  }
  
  // Settings → Connectors: one row per connector.
@@ -2027,7 +2032,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    [/^HTTP (\d+)$/, '请求失败（HTTP $1）'],
    [/^GitHub answered (\d+)$/, 'GitHub 返回了 $1'],
    [/^Keep the name under (\d+) characters$/, '名字不能超过 $1 个字'],
-@@ -872,6 +872,16 @@ const HOST_ERRORS = [
+@@ -872,6 +872,27 @@ const HOST_ERRORS = [
    [/^No entry in [\s\S]* matches "([\s\S]*)"\.[\s\S]*$/, '找不到「$1」这条记忆'],
    [/^"([\s\S]*)" matches (\d+) entries in [\s\S]*$/, '「$1」对应了 $2 条记忆，请说得更具体'],
    [/^Memory cannot change now: [\s\S]*$/, '现在不能修改记忆：另一个 dsh 正在使用这个 Bot 团队'],
@@ -2041,6 +2046,17 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  [/^A Project memory entry needs text$/, '项目记忆条目需要文字'],
 +  [/^A Project memory entry is at most (\d+) characters$/, '项目记忆条目最多 $1 个字符'],
 +  [/^Unknown Project (\S+)$/, '找不到项目 $1'],
++  // #3114 cut 29: the Connectors page's Feishu row, and two Composio leftovers on the same page.
++  // The four below carry the host's own data — a webhook origin, a status code, Feishu's own error
++  // code, Composio's message — and copy it through: data is never translated.
++  [/^A Feishu webhook must be https on (.+)$/, '飞书 webhook 必须是 $1 上的 https 地址'],
++  [/^Feishu answered (\d+)$/, '飞书返回了 $1'],
++  [/^Feishu did not accept the webhook \((.+)\)$/, '飞书不接受这个 webhook（$1）'],
++  [/^Not sent: Feishu refused the answer \((.+)\)$/, '没发出去：飞书拒收（$1）'],
++  // `connector-send` names the notifier's own refusal, and its fallback literal, in the brackets.
++  [/^Feishu refused the message \((.+)\)$/, '飞书拒收这条消息（$1）'],
++  [/^Pick up to (\d+) apps$/, '最多选 $1 个应用'],
++  [/^Composio answered (\d+)([\s\S]*)$/, 'Composio 返回了 $1$2'],
  ]
  const HOST_ZH = {
    'Request failed': '请求失败',
@@ -2065,7 +2081,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,47 @@ const HOST_ZH = {
+@@ -905,6 +905,70 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -2110,6 +2126,29 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'In use in {n} rooms: ': '正在 {n} 个房间里使用：',
 +  'This room only: ': '只在这个房间使用：',
 +  ' +{n} more': '，还有 {n} 个',
++  // #3114 cut 29: the Connectors page's Feishu row in a Chinese window — the line under a failed
++  // connect, and the sentence a refused connect, disconnect, mode, allowed-sender or send leaves.
++  // A sentence with data in it is one of the HOST_ERRORS patterns above, not an entry here.
++  'Could not reach Feishu': '连不上飞书',
++  'Feishu addresses must start with https://': '飞书地址必须以 https:// 开头',
++  'A Feishu App ID and App Secret are both needed before the long connection can dial.': '自建应用的长连接需要飞书 App ID 和 App Secret 才能拨号',
++  'the Feishu long connection did not open': '飞书长连接没有建立',
++  'Paste the webhook URL Feishu gave you': '请粘贴飞书给你的 webhook 地址',
++  'Feishu did not answer in time — the test message may already be in the chat; check before connecting again': '飞书没有及时答复——测试消息可能已经发到群里；再连接前先确认一下',
++  'Feishu did not answer in time — the message may already be in the chat; check before sending again': '飞书没有及时答复——消息可能已经发到群里；再发送前先确认一下',
++  'Feishu is rate-limiting this webhook; try again in a minute': '飞书正在限流这个 webhook；请过一分钟再试',
++  'Paste the App ID and App Secret Feishu gave the app': '请粘贴飞书给这个应用的 App ID 和 App Secret',
++  'Feishu did not accept this App ID and App Secret': '飞书不接受这个 App ID 和 App Secret',
++  'Choose how to connect Feishu first': '请先选择飞书的连接方式',
++  'This connector has no allowed senders': '这个连接器没有允许发送的人',
++  'Paste the open_id of the sender to allow': '请粘贴要允许的发送者 open_id',
++  'Connect Feishu as an app first': '请先把飞书按自建应用连接',
++  'Type a message first': '请先输入消息',
++  'Not sent: could not reach Feishu': '没发出去：连不上飞书',
++  'Not sent: Feishu refused the app token while sending the answer': '没发出去：发送时飞书不认这个应用 token',
++  'Not sent: this answer has no Feishu chat to go to.': '没发出去：这条回答没有可去的飞书群。',
++  'Not sent: connect Feishu first, so the answer has a way out.': '没发出去：请先连接飞书，回答才有出去的路。',
++  'Connect Feishu first': '请先连接飞书',
  }
  Object.assign(ZH, HOST_ZH)
  
