@@ -117,6 +117,14 @@ const ZH = {
   'Scan with FlyBot to join this group': '用 FlyBot 扫码加入这个群',
   'Copy link': '复制链接',
   '{time} left to join': '还剩 {time} 可加入',
+  // #3114: the room-invite preview card, which is drawn wherever an invite is pasted. `This link
+  // has expired` is its own sentence, not the `This link has expired.` above: a card that borrowed
+  // that entry would draw a full stop the English card never had.
+  'Lead: {lead}': '总负责人：{lead}',
+  '{members} in the room': '房间里 {members} 人',
+  '{members} / {max} in the room': '房间里 {members} / {max} 人',
+  'This link has expired': '这条链接已过期',
+  'Open while the room is open': '房间开着的时候都能加入',
   'Works until you withdraw it.': '在你撤回之前一直有效。',
   'Withdraw link': '撤回链接',
   '1 earlier link still works.': '还有 1 个之前的链接仍然有效。',

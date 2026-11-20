@@ -3,6 +3,7 @@
 // surface gets depends only on `kind` — not on which surface asked.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { DICTIONARY, installLocale } from '../src/client/i18n.js'
 import {
   RoomInvitePreview, cleanInviteName, inviteCountdown, inviteCountdownAt,
   inviteMemberCount, invitePreviewOf,
@@ -86,4 +87,67 @@ test('#876: the deadline line is shared copy, and an expired one says so', () =>
   assert.equal(inviteCountdownAt('2000-01-01T00:00:00.000Z', 0, Date.now()), 'This link has expired')
   assert.equal(inviteCountdown('not a date'), 'Open while the room is open')
   assert.equal(cleanInviteName('  ', 'a room'), 'a room')
+})
+
+// #3114 cut 30: the card is drawn in the window's language, and it is drawn afresh each time —
+// a plugin keeps the preview it was handed in its own `invite` state, so a translated string must
+// never be built there. These cases read the client's real dictionary, not a copy of it.
+const fill = (text, params) => text.replace(/\{(\w+)\}/g, (match, name) => (name in (params ?? {}) ? String(params[name]) : match))
+const withLocale = (tag, run) => {
+  const off = installLocale({
+    register: () => () => {},
+    bind: () => (key, params) => fill(tag === 'zh' && Object.hasOwn(DICTIONARY.zh, key) ? DICTIONARY.zh[key] : key, params),
+    getLocale: () => ({ active: tag }),
+  })
+  try { return run() } finally { off() }
+}
+const deadline = '2099-01-01T00:00:00.000Z'
+// A fixed `now` one minute and five seconds before the deadline: the render is then reproducible
+// without freezing the machine's clock (#1839).
+const now = Date.parse(deadline) - 65_000
+const draw = (card, at = now) => RoomInvitePreview({ h, preview: card, now: at, onJoin() {}, onClear() {} })
+const line = (tree, kind) => byKind(tree, `face-link-preview-${kind}`)[0].children.join('')
+const foot = (tree) => byKind(tree, 'face-link-preview-foot')[0].children.map(button => button.children[0])
+
+test('#3114 cut 30: a zh window reads the lead, the people and the deadline in Chinese', () => {
+  const card = invitePreviewOf({ name: 'Saturday room', lead: 'Chief', members: 3, maxMembers: 8, expiresAt: deadline })
+  const tree = withLocale('zh', () => draw(card))
+  assert.equal(line(tree, 'name'), 'Saturday room')
+  assert.equal(line(tree, 'lead'), '总负责人：Chief')
+  assert.equal(line(tree, 'members'), '房间里 3 / 8 人')
+  assert.match(line(tree, 'expiry'), /^还剩 \d+:\d\d 可加入$/)
+  assert.deepEqual(foot(tree), ['清空', '加入'])
+})
+
+test('#3114 cut 30: the nameless fallback and the two clock answers read Chinese too', () => {
+  const card = invitePreviewOf({ lead: 'Chief', expiresAt: deadline })
+  const tree = withLocale('zh', () => draw(card))
+  assert.equal(line(tree, 'name'), '面对面房间')
+  withLocale('zh', () => {
+    assert.equal(inviteCountdown('not a date'), '房间开着的时候都能加入')
+    assert.equal(inviteCountdownAt('2000-01-01T00:00:00.000Z', 0, Date.parse('2025-01-01T00:00:00.000Z')), '这条链接已过期')
+  })
+})
+
+test('#3114 cut 30: the room name, the counts and the clock the server sent stay as they came', () => {
+  const card = invitePreviewOf({ name: 'Saturday room', members: '3', maxMembers: '8', expiresAt: deadline })
+  assert.equal(card.people, '3 / 8 in the room', 'the English line is still what a reader of the data gets')
+  const tree = withLocale('zh', () => draw(card))
+  assert.equal(line(tree, 'name'), 'Saturday room', 'a name the server sent is not translated')
+  assert.equal(line(tree, 'members'), '房间里 3 / 8 人')
+  assert.match(line(tree, 'expiry'), /^还剩 \d+:\d\d 可加入$/, 'the digits are still the count the server sent, m:ss')
+  const single = withLocale('zh', () => draw(invitePreviewOf({ members: 2 })))
+  assert.equal(line(single, 'members'), '房间里 2 人')
+})
+
+test('#3114 cut 30: a card built in English follows a language switch when it is drawn', () => {
+  const card = invitePreviewOf({ name: 'Saturday room', lead: 'Chief', members: 3, maxMembers: 8, expiresAt: deadline })
+  assert.equal(line(draw(card), 'members'), '3 / 8 in the room')
+  const chinese = withLocale('zh', () => draw(card))
+  assert.equal(line(chinese, 'lead'), '总负责人：Chief')
+  assert.equal(line(chinese, 'members'), '房间里 3 / 8 人')
+  assert.match(line(chinese, 'expiry'), /^还剩 \d+:\d\d 可加入$/)
+  const back = draw(card)
+  assert.equal(line(back, 'lead'), 'Lead: Chief')
+  assert.equal(line(back, 'members'), '3 / 8 in the room')
 })
