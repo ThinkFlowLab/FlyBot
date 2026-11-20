@@ -1656,6 +1656,11 @@ var ZH = {
   // so the ids that read emits are keys of their own (#1813).
   running: "运行中",
   stalled: "已停滞",
+  // The pending decision card is still open, deliberating or blocked (#3114): the ids the host
+  // keys the card by are keys of their own, beside the lease states above.
+  open: "待讨论",
+  deliberating: "讨论中",
+  blocked: "待答复",
   "Projects": "项目",
   "New Project": "新建项目",
   "Project name": "项目名称",
@@ -12846,7 +12851,7 @@ function ProjectBoardRecord({ record, projectId, call: call4 }) {
     recipientText(meeting.recipients) === null ? null : (0, import_react23.createElement)("span", { className: "bt-project-recipients" }, recipientText(meeting.recipients)),
     meeting.advance.allowed ? null : (0, import_react23.createElement)("span", { className: "bt-project-paused" }, meeting.advance.reason),
     proxyRow(meeting),
-    (0, import_react23.createElement)("span", { className: "bt-project-status" }, meeting.status)
+    (0, import_react23.createElement)("span", { className: "bt-project-status" }, t(meeting.status))
   ));
   const moreLine = (hidden, key) => hidden > 0 ? (0, import_react23.createElement)("div", { key, className: "bt-project-more" }, t("{count} more not shown", { count: hidden })) : null;
   const emptyLine = (state) => text(state?.host) !== "" ? hostText(state.host) : t(state?.key ?? "", state?.params);

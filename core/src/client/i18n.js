@@ -1613,6 +1613,11 @@ const ZH = {
   // so the ids that read emits are keys of their own (#1813).
   running: '运行中',
   stalled: '已停滞',
+  // The pending decision card is still open, deliberating or blocked (#3114): the ids the host
+  // keys the card by are keys of their own, beside the lease states above.
+  open: '待讨论',
+  deliberating: '讨论中',
+  blocked: '待答复',
   'Projects': '项目',
   'New Project': '新建项目',
   'Project name': '项目名称',

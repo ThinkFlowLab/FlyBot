@@ -660,7 +660,7 @@ function ProjectBoardRecord({ record, projectId, call }) {
     recipientText(meeting.recipients) === null ? null : h('span', { className: 'bt-project-recipients' }, recipientText(meeting.recipients)),
     meeting.advance.allowed ? null : h('span', { className: 'bt-project-paused' }, meeting.advance.reason),
     proxyRow(meeting),
-    h('span', { className: 'bt-project-status' }, meeting.status)))
+    h('span', { className: 'bt-project-status' }, t(meeting.status))))
   // #2021: one line under a capped list says how many rows the host left out. A host that sends no
   // total, or one that matches the rows drawn, renders nothing at all.
   const moreLine = (hidden, key) => (hidden > 0
