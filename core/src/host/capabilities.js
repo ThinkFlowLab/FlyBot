@@ -60,8 +60,10 @@ const withoutUserinfo = text => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/
 // #3281: a `command` holding a whole command line is split on whitespace and read the same way, while
 // a `command` that is a single bare token stays unmasked, the same limit as a bare `args` token. After
 // a credential-looking flag the next token is the value even when it begins with `-`, so
-// `--api-key --verbose` stores `--api-key [hidden]` and a second `--api-key` is masked as a value;
-// that over-mask is the accepted cost.
+// `--api-key --verbose` stores `--api-key [hidden]`; that over-mask is the accepted cost.
+// #3288: a token that is itself a credential flag is not that value — `--api-key --api-key sk-live-…`
+// and `--api-key --token sk-live-…` are read on their own, so the literal behind the second flag is
+// collected too instead of being skipped with the name.
 const CREDENTIAL_NAME = /(key|token|secret|auth|password|passwd|credential|signature|cookie|session|bearer|hmac)|(?<![a-z0-9])(pat|sig|pass)(?![a-z0-9])/i
 const FLAG = /^--?([\w-]+)$/
 const INLINE_FLAG = /^--?([^=]+)=(.*)$/
@@ -87,6 +89,13 @@ const withoutCredentialValues = (text, config) => {
     const flag = FLAG.exec(token)
     const next = argv[index + 1]
     if (!flag || !CREDENTIAL_NAME.test(flag[1]) || typeof next !== 'string') continue
+    // #3288: a second credential flag is not a value. Reading it on its own is what collects the
+    // literal behind it; swallowing it skipped that token and left the literal in the sentence.
+    const nextFlag = FLAG.exec(next)
+    const nextInline = INLINE_FLAG.exec(next)
+    const nextIsCredentialFlag = Boolean((nextFlag && CREDENTIAL_NAME.test(nextFlag[1]))
+      || (nextInline && CREDENTIAL_NAME.test(nextInline[1])))
+    if (nextIsCredentialFlag) continue
     collect(flag[1], next)
     index += 1
   }
