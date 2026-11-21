@@ -57,6 +57,11 @@ const withoutUserinfo = text => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/
 // read as an assignment. A bare token is never a literal: `node` or `server.js` cannot be told from a
 // program name, but a literal that is also a header or environment value is masked wherever the
 // body repeats it, the command position included.
+// #3281: a `command` holding a whole command line is split on whitespace and read the same way, while
+// a `command` that is a single bare token stays unmasked, the same limit as a bare `args` token. After
+// a credential-looking flag the next token is the value even when it begins with `-`, so
+// `--api-key --verbose` stores `--api-key [hidden]` and a second `--api-key` is masked as a value;
+// that over-mask is the accepted cost.
 const CREDENTIAL_NAME = /(key|token|secret|auth|password|passwd|credential|signature|cookie|session|bearer|hmac)|(?<![a-z0-9])(pat|sig|pass)(?![a-z0-9])/i
 const FLAG = /^--?([\w-]+)$/
 const INLINE_FLAG = /^--?([^=]+)=(.*)$/
@@ -67,7 +72,11 @@ const withoutCredentialValues = (text, config) => {
     if (typeof value === 'string' && value.length >= 6 && CREDENTIAL_NAME.test(name)) values.push(value)
   }
   for (const [name, value] of Object.entries({ ...config?.headers, ...config?.env })) collect(name, value)
-  const argv = [config?.command, ...(Array.isArray(config?.args) ? config.args : [])]
+  const command = config?.command
+  const commandTokens = typeof command === 'string' && /[ \t]/.test(command)
+    ? command.split(/[ \t]+/).filter(Boolean)
+    : [command]
+  const argv = [...commandTokens, ...(Array.isArray(config?.args) ? config.args : [])]
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]
     if (typeof token !== 'string') continue
@@ -77,7 +86,7 @@ const withoutCredentialValues = (text, config) => {
     if (assignment) { collect(assignment[1], assignment[2]); continue }
     const flag = FLAG.exec(token)
     const next = argv[index + 1]
-    if (!flag || !CREDENTIAL_NAME.test(flag[1]) || typeof next !== 'string' || next.startsWith('-')) continue
+    if (!flag || !CREDENTIAL_NAME.test(flag[1]) || typeof next !== 'string') continue
     collect(flag[1], next)
     index += 1
   }

@@ -717,13 +717,16 @@ test('a sig, hmac or pass header name masks its value while assign, compass and 
 // #3278: the two things #3275 fixed stay fixed — a value under six characters is left alone rather
 // than eating the words around it, and the mask still runs before the 300-character cut, so a literal
 // inside the kept part is gone and only the tail past the cut is dropped.
+// #3281 test-quality item: the under-six value is pinned behind a credential-looking flag and is
+// exactly five characters, so deleting `value.length >= 6` in `capabilities.js` turns this test red
+// instead of passing because the flag name itself never matched a credential.
 test('an argv literal under six characters stays and an argv literal is masked before the three-hundred cut', async t => {
   const state = team()
   state.capabilities = {
     items: {
       long: {
         name: 'long', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
-        args: ['server.js', '--pin', 'abcde', '--api-key', 'sk-live-abcdef123456'],
+        args: ['server.js', '--api-key', 'abcde', '--api-key', 'sk-live-abcdef123456'],
         env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
       },
     },
@@ -732,13 +735,13 @@ test('an argv literal under six characters stays and an argv literal is masked b
   t.after(() => env.dispose())
   const { ctx, rt, mounts, skills } = env
   await rt.changeCapabilityAttachment('attach', { name: 'long' }, 'worker')
-  const quoted = `server exited: --pin abcde ${'x'.repeat(170)} --api-key sk-live-abcdef123456 ${'z'.repeat(200)}`
+  const quoted = `server exited: --api-key abcde ${'x'.repeat(170)} --api-key sk-live-abcdef123456 ${'z'.repeat(200)}`
   ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
   await rt.scheduleCapabilitiesReconcile()
   const status = rt.capabilityStatusesView().worker.long
   assert.equal(status.state, 'error')
   assert.equal(status.error.length, 300, 'the stored reason is still cut at 300 characters')
-  assert.equal(status.error.startsWith('server exited: --pin abcde '), true, 'a five-character value is left alone')
+  assert.equal(status.error.startsWith('server exited: --api-key abcde '), true, 'a five-character value behind a credential flag is left alone')
   assert.equal(status.error.includes('--api-key [hidden]'), true, 'the mask ran before the cut')
   assert.equal(status.error.includes('sk-live-abcdef123456'), false)
 })
@@ -832,4 +835,93 @@ test('an http capability saved before this fix shows no header literal on any su
   assert.equal(status.error, masked, 'one masked sentence, built once; an ordinary header survives')
   assert.equal(surfaces.listed.includes(masked), true)
   assert.equal(surfaces.prompt.includes(masked), true)
+})
+
+// #3281: a stdio entry can be saved from a pasted line, so `command` itself may hold a whole command
+// line (`node server.js --api-key …`). When it contains whitespace it is split into tokens and read
+// with the same rules as `args`, so the literal after a credential-looking flag is masked in the
+// stored reason. A command that is a single bare token stays unmasked: it cannot be told from a
+// program name, the same documented limit as a bare `args` token.
+test('an error that quotes a stdio command line stored in `command` masks the credential literal', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      inline: {
+        name: 'inline', kind: 'mcp', description: 'Local server', transport: 'stdio',
+        command: 'node server.js --api-key sk-live-abcdef123456 --password=hunter2-secret -e SERVICE_TOKEN=tok-abcdef123',
+        args: [], env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'inline' }, 'worker')
+  const quoted = 'spawn node server.js --api-key sk-live-abcdef123456 --password=hunter2-secret -e SERVICE_TOKEN=tok-abcdef123 ENOENT'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.inline
+  assert.equal(status.state, 'error')
+  assert.equal(
+    status.error,
+    'spawn node server.js --api-key [hidden] --password=[hidden] -e SERVICE_TOKEN=[hidden] ENOENT',
+    'the inline command line is read with the same flag, inline and assignment rules as args',
+  )
+  const stored = JSON.stringify(rt.capabilityStatusesView())
+  assert.equal(stored.includes('sk-live-abcdef123456'), false)
+  assert.equal(stored.includes('hunter2-secret'), false)
+  assert.equal(stored.includes('tok-abcdef123'), false)
+})
+
+// #3281: a generated credential can begin with `-`, and the token after a credential-looking flag is
+// that flag's value even then. The accepted cost is that `--api-key --verbose` stores `--api-key
+// [hidden]`; it is recorded in `docs/subsystems/core-host.md`, the fragment and the pull request body.
+test('a dash-prefixed credential value after a credential flag is masked', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      dash: {
+        name: 'dash', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--api-key', '-s3cr3t-abcdef', '--verbose'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'dash' }, 'worker')
+  const quoted = 'spawn node ENOENT: node server.js --api-key -s3cr3t-abcdef --verbose'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.dash
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, 'spawn node ENOENT: node server.js --api-key [hidden] --verbose', 'a value beginning with - is still the flag value')
+  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('s3cr3t-abcdef'), false)
+})
+
+// #3281 accepted cost: a following flag is taken as the value and masked, so `--api-key --verbose`
+// reads `--api-key [hidden]`. The test pins the cost exactly; the doc, the fragment and the pull
+// request body say the same sentence.
+test('a flag directly after a credential flag is masked as its value', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      bare: {
+        name: 'bare', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--api-key', '--verbose'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'bare' }, 'worker')
+  const quoted = 'server exited: node server.js --api-key --verbose'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.bare
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, 'server exited: node server.js --api-key [hidden]', 'the accepted cost: a following flag is masked')
 })
