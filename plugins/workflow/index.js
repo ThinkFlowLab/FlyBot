@@ -143,7 +143,10 @@ export function apply(ctx, config = {}) {
     fb.api.handle('workflow/create', body => service.create(body)),
     fb.api.handle('workflow/rename', body => service.rename(body)),
     fb.api.handle('workflow/delete', body => service.delete(body)),
-    fb.api.handle('workflow/assign', body => service.assign(body)),
+    // #3282: a refused start throws, so the Bots API reports it as `{ ok: false, error }` instead
+    // of putting `{ ok: false }` inside the success envelope a caller reads first (service.js
+    // `assignEndpoint`). Every other endpoint keeps answering its value.
+    fb.api.handle('workflow/assign', body => service.assignEndpoint(body)),
     fb.api.handle('workflow/concurrency', body => service.setConcurrency(body)),
     fb.api.handle('workflow/step-timeout', body => service.setStepTimeout(body)),
     fb.api.handle('workflow/set-model', body => service.setModel(body)),

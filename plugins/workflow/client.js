@@ -2284,7 +2284,10 @@ window.__ModuleLoader__.load({
         setError('')
         if (String(target).startsWith('bot:')) {
           const botId = String(target).slice(4)
-          const value = await call('workflow/assign', { botId, taskId: task.id, title: task.title })
+          // #3282: the host reports a refused start as a failed answer (`ok: false`), which
+          // `call()` throws, so this dialog reads it through `settledCall` — the same
+          // `{ ok: false, error }` it already knows how to show.
+          const value = await stageCall('workflow/assign', { botId, taskId: task.id, title: task.title }, 'Could not assign this task')
           if (value?.ok === false) { setError(value.error ?? ''); return }
           const host = globalThis.__flybot__?.host
           if (typeof host === 'function') {
@@ -2299,7 +2302,7 @@ window.__ModuleLoader__.load({
         // #2495: hand the card's own facts over, and say so explicitly even when it holds none —
         // an omitted `brief` keeps whatever an earlier call cached under this task id.
         const brief = typeof task.brief === 'string' ? task.brief : ''
-        const value = await call('workflow/assign', { workflowId: target, taskId: task.id, title: task.title, brief })
+        const value = await stageCall('workflow/assign', { workflowId: target, taskId: task.id, title: task.title, brief }, 'Could not assign this task')
         if (value?.ok === false) { setError(value.error ?? ''); return }
         setPack(value)
         setOpenId(target)
