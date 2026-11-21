@@ -7,6 +7,8 @@
     ".github/scripts/review-gate.mjs",
     ".github/scripts/pass-label.mjs",
     ".github/scripts/risk-gate.mjs",
+    ".github/agent/risk-rules.json",
+    ".github/scripts/risk-gate.test.mjs",
     "scripts/self-test-catalog.mjs",
     ".github/scripts/policy-sign.mjs",
     ".github/scripts/enqueue-guard.mjs",
