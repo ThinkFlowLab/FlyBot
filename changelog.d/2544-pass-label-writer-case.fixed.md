@@ -1,0 +1,1 @@
+A pull request whose PASS verdict names its writer in a different letter case than the review policy roster no longer loses that record: the `pass` label job compares names the way `review-gate` and `merge-gate` already do, so a PASS the gates accept now labels the pull request instead of being silently dropped ([#2544](https://github.com/ThinkFlowLab/FlyBot/issues/2544)).
