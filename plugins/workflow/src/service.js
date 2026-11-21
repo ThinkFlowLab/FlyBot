@@ -66,6 +66,56 @@ export const STOP_RELEASE_RETRIES = 2
 // deadline for an answer that may never come.
 export const SPAWN_DEADLINE_MS = 60 * 1000
 
+// #3282: which Bot a spawn was for, in the words a person uses for the node ("Claim" (claim)).
+// A missing name or id still yields a label, so a message never reads "node undefined".
+function nodeLabel(spec) {
+  const name = String(spec?.nodeName ?? spec?.name ?? '').trim()
+  const id = String(spec?.nodeId ?? '').trim()
+  if (name && id) return `"${name}" (${id})`
+  if (name) return `"${name}"`
+  if (id) return `"${id}"`
+  return 'a node'
+}
+
+function formatMs(ms) {
+  return `${(Math.max(0, Number(ms) || 0) / 1000).toFixed(1)}s`
+}
+
+// The host's own sentence is the reason a node Bot was refused; these are the shapes worth
+// naming on top of it, so a reader does not have to recognise the host's wording (#3282).
+const SPAWN_REASONS = [
+  [/unknown model|no such model|model .{0,40}(not found|not available|missing|unknown)|cannot (find|resolve) (the )?model/i, 'model-missing'],
+  [/already exists|name .{0,20}not available|drawn clash|invisible characters/i, 'name-taken'],
+  [/max ?children|no (free )?(slot|room|space)|at capacity|too many (bot|child)|slot limit|children limit/i, 'no-slot'],
+  [/did not answer|timed? ?out|timeout/i, 'no-answer'],
+]
+
+function spawnReasonOf(text) {
+  const said = String(text ?? '')
+  for (const [pattern, reason] of SPAWN_REASONS) if (pattern.test(said)) return reason
+  return 'refused'
+}
+
+// A node Bot the host refused keeps the node and the reason beside the host's text, so the
+// refusal names the Bot to look at instead of arriving as one unlabelled sentence (#3282).
+function spawnFailure(error, spec, workflowId) {
+  const text = String(error?.message ?? error ?? '').trim() || 'the host refused to create this Bot'
+  const failure = error instanceof Error ? error : new Error(text)
+  const nodeName = String(spec?.name ?? '').trim()
+  const nodeId = String(spec?.nodeId ?? '').trim()
+  const reason = spawnReasonOf(text)
+  const named = nodeLabel({ nodeName, nodeId })
+  failure.message = reason === 'refused'
+    ? `node ${named} could not create its Bot: ${text}`
+    : `node ${named} could not create its Bot (${reason}): ${text}`
+  failure.code = 'spawn-failed'
+  failure.nodeId = nodeId
+  failure.nodeName = nodeName
+  failure.reason = reason
+  failure.details = { reason, workflowId, nodeId, nodeName }
+  return failure
+}
+
 function stepTimeoutValue(raw) {
   const value = Number(raw)
   if (!Number.isInteger(value) || value < MIN_STEP_TIMEOUT_MINUTES || value > MAX_STEP_TIMEOUT_MINUTES) {
@@ -435,16 +485,53 @@ export function createWorkflowService({
     write()
   }
 
+  // #3282: a bare deadline said only that the host was slow. The spawn loop reports where it got
+  // to — the node it is waiting on, the Bots the host already answered, and how long each took —
+  // so the sentence can name the node and the reason, and a lane whose node count no longer fits
+  // this host's speed says so instead of reading as a silent hang.
+  function spawnTimeoutText(progress) {
+    const seconds = Math.round(SPAWN_DEADLINE_MS / 1000)
+    const total = progress?.total ?? 0
+    const created = progress?.created ?? []
+    const current = progress?.current ?? null
+    const rest = []
+    if (total > 0) {
+      const made = created.map(one => (one.ms > 0 ? `${one.label} in ${formatMs(one.ms)}` : one.label))
+      rest.push(`${created.length} of ${total} node Bots were created${created.length > 0 ? ` (${made.join(', ')})` : ''}`)
+    }
+    if (current) {
+      const waited = current.startedAt > 0 ? now() - current.startedAt : 0
+      rest.push(`node ${current.label} still had no Bot${waited > 0 ? ` after ${formatMs(waited)}` : ''}`)
+    }
+    // The average turns "slow" into a number the owner can act on: six nodes at eleven seconds
+    // each cannot fit a sixty-second deadline, whatever the settings say.
+    const average = created.length > 0 ? created.reduce((sum, one) => sum + (one.ms > 0 ? one.ms : 0), 0) / created.length : 0
+    if (average > 0 && total > 0) {
+      const needed = Math.round((average * total) / 1000)
+      if (needed > seconds) rest.push(`a lane of ${total} nodes needs about ${needed}s on this host at ${formatMs(average)} per Bot, past the ${seconds}s deadline`)
+    }
+    return rest.length === 0
+      ? `the host did not create the run Bots within ${seconds}s`
+      : `the host did not create the run Bots within ${seconds}s: ${rest.join('; ')}`
+  }
+
   // #2748 C4: a host that never answers a spawn must not keep the card out of the
   // queue with the call hanging. The wait is bounded; on the deadline the start is
   // refused, and the Bots a late answer creates are released rather than leaked.
-  function boundedSpawn(pending) {
+  function boundedSpawn(pending, progress) {
     return new Promise((resolve, reject) => {
       let settled = false
       const handle = setTimer(() => {
         settled = true
-        const error = new Error(`the host did not create the run Bots within ${Math.round(SPAWN_DEADLINE_MS / 1000)}s`)
+        const error = new Error(spawnTimeoutText(progress))
         error.code = 'spawn-timeout'
+        // #3282: the node the host never answered, and the reason, travel with the refusal.
+        error.reason = 'no-answer'
+        if (progress?.current?.nodeId) {
+          error.nodeId = progress.current.nodeId
+          error.nodeName = progress.current.nodeName
+        }
+        error.details = { reason: 'no-answer', ...(error.nodeId ? { nodeId: error.nodeId, nodeName: error.nodeName } : {}) }
         Promise.resolve(pending)
           .then(ids => releaseAll(Object.values(ids ?? {}), release, warn))
           // A late answer that failed carries the ids it had already made on the error
@@ -730,7 +817,17 @@ export function createWorkflowService({
   }
 
   function refuse(error) {
-    return { ok: false, error: error?.message ?? String(error) }
+    // #3282: a start the host refused says which node it was and why next to the sentence, so a
+    // caller that shows one line still names the Bot to look at. Every other refusal keeps the
+    // answer it always had.
+    const answer = { ok: false, error: error?.message ?? String(error) }
+    if (error?.code === 'spawn-failed' || error?.code === 'spawn-timeout') {
+      answer.code = 'spawn-failed'
+      if (error.nodeId) answer.nodeId = error.nodeId
+      if (error.nodeName) answer.nodeName = error.nodeName
+      if (error.reason) answer.reason = error.reason
+    }
+    return answer
   }
 
   function gateStarted(item, run, result) {
@@ -1312,10 +1409,31 @@ export function createWorkflowService({
         try {
           // #1544: the caller that started the run and the Bot that saved the graph cap the connectors
           // this run may use; the host intersects them with each node's `tools`.
-          ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawn, item.model ?? '', {
+          // #3282: the loop reports the node it is on and the Bots already made, so the deadline
+          // below can name the node that never answered instead of one bare sentence.
+          const progress = { total: item.nodes.length, created: [], current: null }
+          const spawnNode = async (spec) => {
+            const startedAt = now()
+            const nodeId = String(spec?.nodeId ?? '')
+            const nodeName = String(spec?.name ?? '')
+            progress.current = { nodeId, nodeName, label: nodeLabel({ nodeId, nodeName }), startedAt }
+            try {
+              const id = await spawn(spec)
+              // A host that answers an empty id is a refusal too, and it has to name the node the
+              // way a thrown one does: spawnAll() would otherwise refuse it without a node context.
+              if (typeof id !== 'string' || id === '') throw new Error('the host returned no Bot id')
+              progress.created.push({ nodeId, nodeName, label: progress.current.label, ms: Math.max(0, now() - startedAt) })
+              progress.current = null
+              return id
+            } catch (error) {
+              progress.current = null
+              throw spawnFailure(error, spec, item.id)
+            }
+          }
+          ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawnNode, item.model ?? '', {
             callerBotId: task.callerBotId,
             authorBotId: item.authoredBy,
-          }))
+          }), progress)
         } catch (error) {
           await releaseAll(error.spawned ?? [], release, warn)
           return refuse(error)
@@ -1824,6 +1942,36 @@ export function createWorkflowService({
       if (evidence) task.evidence = evidence
       if (typeof spawn !== 'function') return answer(enqueue(item, task))
       return hostSerial(() => Promise.resolve(enqueue(item, task)).then(answer))
+    },
+    // #3282: the Bots API answers every endpoint that returns as `{ ok: true, value }`
+    // (core/src/host/channel.js `ok()`), so a refused start reached the caller inside a success
+    // envelope and one of them dispatched the same task twice. A refusal has to cross that
+    // boundary the way the API can report it — thrown, which the host turns into
+    // `{ ok: false, error: { code, message, details } }` — so this is the one entry point that
+    // refuses by throwing. `assign()` keeps its own `{ ok: false }` answer for the in-process
+    // callers (the drain, `ingest`, `runNamed`, the tools and the plugin's own tests).
+    assignEndpoint(body = {}) {
+      const workflowId = cleanLine(body.workflowId ?? body.id, 80)
+      const taskId = cleanLine(body.taskId ?? body.id, 80)
+      const lift = (value) => {
+        if (!value || value.ok !== false) return value
+        const failure = new Error(value.error ?? 'The task could not be started')
+        const details = {
+          ...(workflowId ? { workflowId } : {}),
+          ...(taskId ? { taskId } : {}),
+          ...(value.reason ? { reason: value.reason } : {}),
+          ...(value.nodeId ? { nodeId: value.nodeId } : {}),
+          ...(value.nodeName ? { nodeName: value.nodeName } : {}),
+          ...(value.ignored ? { ignored: value.ignored } : {}),
+        }
+        // `bot/refused` is the code the host already reports for a refusal whose sentence is
+        // meant for the person who acted (core/src/host/channel.js `errorCode`).
+        failure.code = 'bot/refused'
+        failure.details = details
+        throw failure
+      }
+      const value = this.assign(body)
+      return value && typeof value.then === 'function' ? value.then(lift) : lift(value)
     },
     setConcurrency(body = {}) {
       const workflowId = String(body.workflowId ?? '')

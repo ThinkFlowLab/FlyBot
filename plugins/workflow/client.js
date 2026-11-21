@@ -206,6 +206,10 @@ window.__ModuleLoader__.load({
     // silently either. Same shape as readWorkflows()/workflowCallError() in
     // core/src/client/workflows.js, kept here because this page reads the plugin's own calls.
     const CALL_TIMEOUT_MS = 10000
+    // A start waits for its node Bots before it answers, and the host refuses it at its own
+    // 60 s deadline (`SPAWN_DEADLINE_MS`), so cutting the call at 10 s would report a failure
+    // for a dispatch that then starts (#3282).
+    const ASSIGN_TIMEOUT_MS = 70000
     function callError(failure, fallback) {
       if (typeof failure === 'string' && failure.trim()) return failure.trim()
       const message = typeof failure?.message === 'string' ? failure.message.trim() : ''
@@ -2284,7 +2288,10 @@ window.__ModuleLoader__.load({
         setError('')
         if (String(target).startsWith('bot:')) {
           const botId = String(target).slice(4)
-          const value = await call('workflow/assign', { botId, taskId: task.id, title: task.title })
+          // #3282: the host reports a refused start as a failed answer (`ok: false`), which
+          // `call()` throws, so this dialog reads it through `settledCall` — the same
+          // `{ ok: false, error }` it already knows how to show.
+          const value = await settledCall(call, 'workflow/assign', { botId, taskId: task.id, title: task.title }, 'Could not assign this task', ASSIGN_TIMEOUT_MS)
           if (value?.ok === false) { setError(value.error ?? ''); return }
           const host = globalThis.__flybot__?.host
           if (typeof host === 'function') {
@@ -2299,7 +2306,7 @@ window.__ModuleLoader__.load({
         // #2495: hand the card's own facts over, and say so explicitly even when it holds none —
         // an omitted `brief` keeps whatever an earlier call cached under this task id.
         const brief = typeof task.brief === 'string' ? task.brief : ''
-        const value = await call('workflow/assign', { workflowId: target, taskId: task.id, title: task.title, brief })
+        const value = await settledCall(call, 'workflow/assign', { workflowId: target, taskId: task.id, title: task.title, brief }, 'Could not assign this task', ASSIGN_TIMEOUT_MS)
         if (value?.ok === false) { setError(value.error ?? ''); return }
         setPack(value)
         setOpenId(target)
