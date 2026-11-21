@@ -2047,7 +2047,7 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
  })
  
  test('read-only secret reload does not requeue capability reconciliation', async t => {
-@@ -425,3 +425,90 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
+@@ -425,3 +425,221 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
    assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
    assert.equal(rt.capabilityStatusesView().chief.team, undefined)
  })
@@ -2137,6 +2137,137 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
 +  const saved = await env.rt.capabilitySave({ ...mcp('plain'), transport: 'streamable-http', url: 'https://host/mcp' }, { ui: true })
 +  assert.equal(saved.url, 'https://host/mcp')
 +  assert.equal(env.rt.state.capabilities.items.plain.url, 'https://host/mcp')
++})
++
++// #3275: a `streamable-http` transport builds its error from the server's own response body
++// (`Error POSTing to endpoint: <body>`), and a server that echoes a request header writes a value
++// the user configured into a stored reason that the system prompt prints on every turn.
++// `redactSecrets` replaces saved keys only, so a literal header value is masked by the name that
++// promises a credential — and only that name, so an ordinary header in the same body survives.
++const quoting = (name, headers) => ({
++  items: {
++    [name]: {
++      name, kind: 'mcp', description: 'Echo service', transport: 'streamable-http',
++      url: 'https://host/mcp', headers, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
++    },
++  },
++})
++
++test('an error that echoes a configured header value stores it masked', async t => {
++  const state = team()
++  state.capabilities = quoting('echo', { 'X-Tenant-Key': 'abc123', Accept: 'application/json' })
++  const env = await setup({ state })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.changeCapabilityAttachment('attach', { name: 'echo' }, 'worker')
++  const quoted = 'Error POSTing to endpoint: {"error":"unauthorized","echoed":"X-Tenant-Key: abc123","accept":"application/json"}'
++  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
++  await rt.scheduleCapabilitiesReconcile()
++  const status = rt.capabilityStatusesView().worker.echo
++  assert.equal(status.state, 'error')
++  assert.equal(status.error, 'Error POSTing to endpoint: {"error":"unauthorized","echoed":"X-Tenant-Key: [hidden]","accept":"application/json"}', 'the exact stored sentence: the header name and an ordinary header survive, the credential value is gone')
++  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('abc123'), false)
++})
++
++test('an error that echoes a configured environment value stores it masked', async t => {
++  const state = team()
++  state.capabilities = {
++    items: {
++      stdio: {
++        name: 'stdio', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node', args: [],
++        env: { SERVICE_TOKEN: 'tok-abcdef', PATH_KEEP: '/usr/bin' }, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
++      },
++    },
++  }
++  const env = await setup({ state })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.changeCapabilityAttachment('attach', { name: 'stdio' }, 'worker')
++  const quoted = 'server exited with SERVICE_TOKEN=tok-abcdef'
++  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
++  await rt.scheduleCapabilitiesReconcile()
++  const status = rt.capabilityStatusesView().worker.stdio
++  assert.equal(status.state, 'error')
++  assert.equal(status.error, 'server exited with SERVICE_TOKEN=[hidden]', 'the exact stored sentence')
++  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('tok-abcdef'), false)
++})
++
++// #3275, from the security read at `57bdaa6a`: a cookie is a whole session credential, and the names
++// that promise one have to say so — a server that echoes `Cookie: sid=…` otherwise writes the session
++// into the prompt every turn.
++test('an error that echoes a cookie value stores the whole session credential masked', async t => {
++  const state = team()
++  state.capabilities = quoting('cookie-echo', { Cookie: 'sid=supersecretsession42', Accept: 'application/json' })
++  const env = await setup({ state })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.changeCapabilityAttachment('attach', { name: 'cookie-echo' }, 'worker')
++  const quoted = 'Error POSTing to endpoint: {"error":"unauthorized","echoed":"Cookie: sid=supersecretsession42","accept":"application/json"}'
++  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
++  await rt.scheduleCapabilitiesReconcile()
++  const status = rt.capabilityStatusesView().worker['cookie-echo']
++  assert.equal(status.state, 'error')
++  assert.equal(status.error, 'Error POSTing to endpoint: {"error":"unauthorized","echoed":"Cookie: [hidden]","accept":"application/json"}', 'the whole cookie value is gone and the ordinary header survives')
++  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('supersecretsession42'), false)
++})
++
++// #3275, same read: `X-Github-Pat` is a credential while `X-Patch-Id` and `X-Path-Id` are ordinary
++// names that merely begin with those three letters — so `pat` counts as a whole segment, never as a
++// prefix.
++test('a PAT header name is masked while "patch" and "path" names are not', async t => {
++  const state = team()
++  state.capabilities = quoting('pat-echo', {
++    'X-Github-Pat': 'ghp-abcdef123456', 'X-Patch-Id': 'patch-9000', 'X-Path-Id': 'path-9000', Accept: 'application/json',
++  })
++  const env = await setup({ state })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.changeCapabilityAttachment('attach', { name: 'pat-echo' }, 'worker')
++  const quoted = 'Error POSTing to endpoint: {"pat":"X-Github-Pat: ghp-abcdef123456","patch":"X-Patch-Id: patch-9000","path":"X-Path-Id: path-9000","accept":"application/json"}'
++  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
++  await rt.scheduleCapabilitiesReconcile()
++  const status = rt.capabilityStatusesView().worker['pat-echo']
++  assert.equal(status.state, 'error')
++  assert.equal(status.error, 'Error POSTing to endpoint: {"pat":"X-Github-Pat: [hidden]","patch":"X-Patch-Id: patch-9000","path":"X-Path-Id: path-9000","accept":"application/json"}', 'only the PAT value is masked; the two lookalike names keep their values')
++  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('ghp-abcdef123456'), false)
++})
++
++// #3275, same read: one value can contain another (`Bearer abc123XYZ` carries the `abc123` of the key
++// beside it), so the values are replaced longest first — the way `secrets.js` sorts its own — and the
++// answer does not depend on the order the two entries were written in.
++for (const [label, headers] of [
++  ['the key first', { 'X-Api-Key': 'abc123', Authorization: 'Bearer abc123XYZ' }],
++  ['the authorization first', { Authorization: 'Bearer abc123XYZ', 'X-Api-Key': 'abc123' }],
++]) {
++  test(`an error that echoes two credential values masks the longer one whole, ${label}`, async t => {
++    const state = team()
++    state.capabilities = quoting('pair-echo', headers)
++    const env = await setup({ state })
++    t.after(() => env.dispose())
++    const { ctx, rt, mounts, skills } = env
++    await rt.changeCapabilityAttachment('attach', { name: 'pair-echo' }, 'worker')
++    const quoted = 'Error POSTing to endpoint: {"auth":"Bearer abc123XYZ"}'
++    ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
++    await rt.scheduleCapabilitiesReconcile()
++    const status = rt.capabilityStatusesView().worker['pair-echo']
++    assert.equal(status.state, 'error')
++    assert.equal(status.error, 'Error POSTing to endpoint: {"auth":"[hidden]"}', 'the longer value is replaced whole, so no tail of it survives')
++    assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('XYZ'), false)
++  })
++}
++
++test('a plain reason is stored exactly as the transport gave it', async t => {
++  const state = team()
++  state.capabilities = quoting('plain-error', {})
++  const env = await setup({ state })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.changeCapabilityAttachment('attach', { name: 'plain-error' }, 'worker')
++  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error('401 bad credentials') } }) })
++  await rt.scheduleCapabilitiesReconcile()
++  const status = rt.capabilityStatusesView().worker['plain-error']
++  assert.equal(status.state, 'error')
++  assert.equal(status.error, '401 bad credentials')
 +})
 diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 --- a/test/dsh-update.test.js
