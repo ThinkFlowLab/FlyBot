@@ -43,24 +43,58 @@ export function runCaps(callerBotId, authorBotId) {
   return [...new Set(ids)]
 }
 
-export async function spawnAll(nodes, roster, spawn, workflowModel = '', caps = {}) {
-  const made = []
+// #3286: a host answers a spawn in about ten seconds, so a six-node lane created one
+// Bot at a time needs ~66s and cannot fit the 60s batch deadline around a start. Four
+// at a time finishes the same lane in two waves (~20s); a caller may pass a narrower
+// or wider width as the last argument (tests use it to hold the waves still).
+export const SPAWN_CONCURRENCY = 4
+
+export async function spawnAll(nodes, roster, spawn, workflowModel = '', caps = {}, concurrency = SPAWN_CONCURRENCY) {
+  const list = Array.isArray(nodes) ? nodes : []
+  const width = Number.isInteger(concurrency) && concurrency > 0 ? concurrency : SPAWN_CONCURRENCY
   const capping = runCaps(caps.callerBotId, caps.authorBotId)
-  try {
-    const ephemeral = {}
-    for (const node of nodes) {
+  // `made` is the order the host answered in: it is what `error.spawned` reports, so a
+  // failed start releases in the order the Bots came up, not the order they were asked for.
+  const made = []
+  const byIndex = new Map()
+  let next = 0
+  let failure = null
+
+  const create = async () => {
+    for (;;) {
+      // Checked before taking the next index, so a refusal stops new spawns at once; the
+      // ones already in flight are still awaited below and still land in `made`.
+      if (failure !== null) return
+      const index = next
+      next += 1
+      if (index >= list.length) return
+      const node = list[index]
       const spec = nodeConfig(node, roster, workflowModel)
       if (capping.length > 0) spec.cappedBy = capping
-      const id = await spawn(spec)
-      if (typeof id !== 'string' || id === '') throw new Error('The run could not start a Bot')
+      let id
+      try {
+        id = await spawn(spec)
+        if (typeof id !== 'string' || id === '') throw new Error('The run could not start a Bot')
+      } catch (error) {
+        if (failure === null) failure = error
+        return
+      }
       made.push(id)
-      ephemeral[node.id] = id
+      byIndex.set(index, id)
     }
-    return ephemeral
-  } catch (error) {
-    error.spawned = made
-    throw error
   }
+
+  const workers = []
+  for (let i = 0; i < Math.min(width, list.length); i += 1) workers.push(create())
+  await Promise.all(workers)
+  if (failure !== null) {
+    failure.spawned = made.slice()
+    throw failure
+  }
+  // Keys follow the graph's nodes, whatever order the host answered in.
+  const ephemeral = {}
+  for (let i = 0; i < list.length; i += 1) ephemeral[list[i].id] = byIndex.get(i)
+  return ephemeral
 }
 
 // Returns the ids whose release failed: that Bot is still there, so the caller

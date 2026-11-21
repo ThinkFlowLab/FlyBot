@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto'
 import { copyFileSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { releaseAll, spawnAll } from './ephemeral.js'
+import { SPAWN_CONCURRENCY, releaseAll, spawnAll } from './ephemeral.js'
 import {
   chainLabel, cleanLine, cleanPorts, cleanPrompt, cleanTools, completeNode, cutCodePoints, doneCount, edgeOutputs, failNode, freshStatus,
   layerMarks, firstBranchValue, missingProviders, missingVerdicts, nodeById, normalizeGraph, orderedIds, readStepResult, resolveInputs, retryNode,
@@ -503,12 +503,13 @@ export function createWorkflowService({
       const waited = current.startedAt > 0 ? now() - current.startedAt : 0
       rest.push(`node ${current.label} still had no Bot${waited > 0 ? ` after ${formatMs(waited)}` : ''}`)
     }
-    // The average turns "slow" into a number the owner can act on: six nodes at eleven seconds
-    // each cannot fit a sixty-second deadline, whatever the settings say.
+    // The average turns "slow" into a number the owner can act on: the lane needs as many
+    // waves of SPAWN_CONCURRENCY as its node count requires (#3286).
     const average = created.length > 0 ? created.reduce((sum, one) => sum + (one.ms > 0 ? one.ms : 0), 0) / created.length : 0
     if (average > 0 && total > 0) {
-      const needed = Math.round((average * total) / 1000)
-      if (needed > seconds) rest.push(`a lane of ${total} nodes needs about ${needed}s on this host at ${formatMs(average)} per Bot, past the ${seconds}s deadline`)
+      const waves = Math.ceil(total / SPAWN_CONCURRENCY)
+      const needed = Math.round((average * waves) / 1000)
+      if (needed > seconds) rest.push(`a lane of ${total} nodes needs about ${needed}s on this host at ${formatMs(average)} per Bot with ${SPAWN_CONCURRENCY} spawned at a time, past the ${seconds}s deadline`)
     }
     return rest.length === 0
       ? `the host did not create the run Bots within ${seconds}s`
@@ -1411,23 +1412,28 @@ export function createWorkflowService({
           // this run may use; the host intersects them with each node's `tools`.
           // #3282: the loop reports the node it is on and the Bots already made, so the deadline
           // below can name the node that never answered instead of one bare sentence.
-          const progress = { total: item.nodes.length, created: [], current: null }
+          // #3286: with several spawns in flight, "the node the host is on" is a set, not one
+          // slot. The message names the node started last that the host has not answered yet.
+          const progress = { total: item.nodes.length, created: [], current: null, pending: new Map() }
           const spawnNode = async (spec) => {
             const startedAt = now()
             const nodeId = String(spec?.nodeId ?? '')
             const nodeName = String(spec?.name ?? '')
-            progress.current = { nodeId, nodeName, label: nodeLabel({ nodeId, nodeName }), startedAt }
+            const label = nodeLabel({ nodeId, nodeName })
+            progress.pending.set(nodeId, { nodeId, nodeName, label, startedAt })
+            progress.current = progress.pending.get(nodeId)
             try {
               const id = await spawn(spec)
               // A host that answers an empty id is a refusal too, and it has to name the node the
               // way a thrown one does: spawnAll() would otherwise refuse it without a node context.
               if (typeof id !== 'string' || id === '') throw new Error('the host returned no Bot id')
-              progress.created.push({ nodeId, nodeName, label: progress.current.label, ms: Math.max(0, now() - startedAt) })
-              progress.current = null
+              progress.created.push({ nodeId, nodeName, label, ms: Math.max(0, now() - startedAt) })
               return id
             } catch (error) {
-              progress.current = null
               throw spawnFailure(error, spec, item.id)
+            } finally {
+              progress.pending.delete(nodeId)
+              progress.current = [...progress.pending.values()].at(-1) ?? null
             }
           }
           ephemeral = await boundedSpawn(spawnAll(item.nodes, bots() ?? [], spawnNode, item.model ?? '', {
