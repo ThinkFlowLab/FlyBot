@@ -1,0 +1,1 @@
+The `policy-sign` gate now reads a merge-queue ref with the same parser as `merge-gate`, so a queue built on a branch with a slash in its name (`release/1.0`) is judged instead of silently passing, and a merge-group run whose ref names no pull request fails the check instead of exiting 0 with "nothing to sign" ([#2671](https://github.com/ThinkFlowLab/FlyBot/issues/2671)).

@@ -18,6 +18,7 @@
 // that could not run is not a licence, the same rule the host's own reads follow.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { prFromHeadRef } from './pr-ref.mjs'
 
 export const POLICY_PATH = fileURLToPath(new URL('../../policy/gates.json', import.meta.url))
 
@@ -110,17 +111,21 @@ export function judge({ files = [], body = '', author = '', comments = [], head 
 
 const API = 'https://api.github.com'
 
+function readEvent(env) {
+  try { return JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')) } catch { return undefined }
+}
+
 // The pull request this run is about: its own event, the queue branch for a merge-group entry, or
 // `--pr` by hand. Anything else (a push to main, a manual run) carries no pull request to judge.
+// The queue ref is read by `pr-ref.mjs`, the same parser `merge-gate` uses (#2671): a base branch may
+// contain slashes, and a tail that is not a sha names no pull request on either side.
 export function pullRequestNumber(argv = process.argv.slice(2), env = process.env) {
   const at = argv.indexOf('--pr')
   if (at !== -1 && argv[at + 1] !== undefined) return Number(argv[at + 1])
-  let event = {}
-  try { event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')) } catch { return undefined }
+  const event = readEvent(env)
+  if (event === undefined) return undefined
   if (event.pull_request?.number !== undefined) return event.pull_request.number
-  const ref = event.merge_group?.head_ref ?? ''
-  const match = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-/.exec(ref)
-  return match === null ? undefined : Number(match[1])
+  return prFromHeadRef(event.merge_group?.head_ref ?? '')?.pr
 }
 
 // GitHub's own REST API, with the job's token: the workflow already has `pull-requests: read`, and
@@ -158,6 +163,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   })()
   const number = pullRequestNumber(argv, env)
   if (number === undefined) {
+    // A merge-group entry always points at a pull request, so a queue ref this script cannot read is
+    // a failure, not "nothing to sign": the gate would otherwise pass an entry it never judged while
+    // `merge-gate` judged the same payload (#2671). A push or a manual run really carries no pull
+    // request to sign.
+    const event = readEvent(env)
+    if (event?.merge_group !== undefined) {
+      const ref = event.merge_group?.head_ref ?? ''
+      process.stdout.write(`::error::policy-sign cannot read a pull request from this queue ref: ${ref}\n`)
+      return 1
+    }
     process.stdout.write('policy-sign: this run carries no pull request, so there is nothing to sign\n')
     return 0
   }
