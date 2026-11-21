@@ -460,7 +460,8 @@ test('#654: the queue entry keeps the policy — no PASS, a PASS at the base, an
 })
 
 test('#654: a T1 queue entry passes without a PASS, as the pull_request report says it would', () => {
-  const files = ['core/src/client/panel.js']
+  // P-807: the client change carries its fragment, so the entry's body rule is satisfied as a real one is.
+  const files = ['core/src/client/panel.js', 'changelog.d/654-client-panel.fixed.md']
   const queue = runQueue({ files, comments: [] })
   assert.equal(queue.ok, true, queue.reasons.join('; '))
   assert.equal(queue.tier, 'T1')

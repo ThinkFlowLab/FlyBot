@@ -1594,3 +1594,43 @@ test('#2287: a real hold is still a stop, on an opening line and with the word i
     assert.match(r.reasons.join('; '), /6597499995/)
   }
 })
+
+// P-807: a change a user sees has to leave a release note behind. The surface is a path, not a title
+// prefix: `fix(` is the author's own account of the change, and a `docs:` title can carry it too.
+const UI_FILE = 'plugins/social/client.js'
+const FRAGMENT = 'changelog.d/9999-client-panel.fixed.md'
+
+test('P-807: a user-visible change with no changelog fragment and no exemption is refused, and the file is named', () => {
+  const r = run({ files: [UI_FILE], comments: [comment()] })
+  assert.equal(r.ok, false, r.reasons.join('; '))
+  assert.match(r.reasons.join('; '), /changelog fragment/)
+  assert.match(r.reasons.join('; '), /plugins\/social\/client\.js/)
+  // A one-word "not needed" is not a reason: the line has to say something.
+  const empty = run({ files: [UI_FILE], comments: [comment()], body: `${HEADERS}Fixes #602\nChangelog-not-needed: none\n` })
+  assert.equal(empty.ok, false, empty.reasons.join('; '))
+  assert.match(empty.reasons.join('; '), /changelog fragment/)
+})
+
+test('P-807: the fragment in the diff is enough', () => {
+  const r = run({ files: [UI_FILE, FRAGMENT], comments: [comment()] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('P-807: a "changelog-not-needed:" line with a real reason is enough', () => {
+  const body = `${HEADERS}Fixes #602\nChangelog-not-needed: the panel only reuses copy that is already in the changelog; no user-visible text moves.\n`
+  const r = run({ files: [UI_FILE], comments: [comment()], body })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+})
+
+test('P-807: a change to tests and docs only is not user-visible, so it is not refused', () => {
+  const r = run({ files: ['core/test/social.test.js', 'docs/release-runbook.md'] })
+  assert.equal(r.ok, true, r.reasons.join('; '))
+  assert.doesNotMatch(r.reasons.join('; '), /changelog fragment/)
+})
+
+test('P-807: the rule also holds on a fork pull request, which skips the issue and label rules', () => {
+  const r = run({ files: [UI_FILE], comments: [comment()], headRepo: 'HugoXK/FlyBot' })
+  assert.equal(r.ok, false, r.reasons.join('; '))
+  assert.match(r.reasons.join('; '), /changelog fragment/)
+  assert.match(r.reasons.join('; '), /plugins\/social\/client\.js/)
+})

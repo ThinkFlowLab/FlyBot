@@ -35,6 +35,20 @@ const RECORD_ONLY = /^[\s>*+-]*(?:record only\s*[—–-]+\s*do not (?:merge|que
 // The rules only hold where the branch is ours: a fork is exempt, because we cannot push to its head
 // and the owner keeps their own workflow there (#711/#713).
 const ISSUE_REF = /^[\s>#-]*(?:fixes|closes)\s*(?:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#\d+/im
+
+// P-807: what a release notes entry is for. The user-visible surface is a path, not a title prefix:
+// `fix(` is the author's own account of the change, and a `docs:` title can carry a client edit too.
+const USER_VISIBLE = [/^core\/src\/client\//, /^plugins\/[^/]+\/client\.js$/]
+const fileNames = (files) => (files ?? []).map((f) => String(typeof f === 'string' ? f : f?.filename ?? ''))
+const hasChangelogFragment = (files) => fileNames(files).some((path) => /^changelog\.d\/[^/]+\.md$/i.test(path) && !/readme/i.test(path))
+// The exemption mirrors `Docs-not-needed:`: one body line, with a reason long enough to say something.
+const CHANGELOG_NOT_NEEDED = /^[\s>*#-]*changelog-not-needed:[ \t]*(\S.*?)[ \t]*$/im
+const changelogReasons = (body, files) => {
+  const visible = fileNames(files).filter((path) => USER_VISIBLE.some((re) => re.test(path)))
+  if (!visible.length || hasChangelogFragment(files)) return []
+  if ((CHANGELOG_NOT_NEEDED.exec(String(body ?? ''))?.[1] ?? '').trim().length >= 10) return []
+  return [`user-visible change with no changelog fragment: ${visible.join(', ')} — add a changelog.d/<slug>.<kind>.md fragment (README.md does not count), or a "changelog-not-needed: <reason>" line in the body`]
+}
 // #943: the body says who owns the pull request and who reviews it. `Owner:`/`Reviewer:` were a
 // sentence in AGENTS.md that nothing read: #940 went from opened to merged in about seven minutes with
 // the largest diff of the day, and its body carried neither line.
@@ -522,6 +536,9 @@ export function guard({ pr, head, labels, body, files, mechanicalRelease, fork, 
       reasons.push(...checkpointReasons(body, { pr, files }))
     }
   }
+  // P-807: not about whose branch it is — a fork's change ships to users through this repository too — so
+  // this reads outside the fork exemption, and a merged pull request is history, not a request.
+  if (!draft && !merged) reasons.push(...changelogReasons(body, files))
   const ok = result.ok && !quiet && reasons.length === 0
   return {
     ...result,
