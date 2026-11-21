@@ -41,6 +41,30 @@ export function expandCapabilityNames(capabilities, library) {
 // system prompt every turn, so userinfo is dropped before the sentence is stored.
 const withoutUserinfo = text => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/gi, '$1')
 
+// #3275: a failing transport builds its error from the server's own response body, so a server that
+// echoes a request header writes a value the user configured into the stored reason the system
+// prompt prints every turn. `redactSecrets` replaces saved key values only, so a header or
+// environment name that promises a credential masks its own value wherever the body repeats it. A
+// value under six characters is left alone: replacing it everywhere would eat the words around it.
+// The literal is not refused at input instead — it is legal today, an entry saved before this exists
+// in the field, and what such a value may be kept at rest is the separate open question in #3276.
+// `pat` counts as a whole segment: `X-Github-Pat` is a credential while `X-Patch-Id` and `X-Path-Id`
+// are ordinary names that merely begin with the same three letters.
+const CREDENTIAL_NAME = /(key|token|secret|auth|password|passwd|credential|signature|cookie|session|bearer)|(?<![a-z0-9])pat(?![a-z0-9])/i
+const withoutCredentialValues = (text, config) => {
+  // Longest value first, the way `secrets.js` sorts its own before it builds one pattern: one
+  // credential can contain another (`Bearer abc123XYZ` carries the `abc123` of the key beside it),
+  // and replacing the short one first would leave the longer one's tail in the stored sentence.
+  // Sorting makes the answer the same whichever order the two entries were written in.
+  const values = Object.entries({ ...config?.headers, ...config?.env })
+    .filter(([name, value]) => CREDENTIAL_NAME.test(name) && typeof value === 'string' && value.length >= 6)
+    .map(([, value]) => value)
+    .sort((a, b) => b.length - a.length)
+  let out = text
+  for (const value of values) out = out.split(value).join('[hidden]')
+  return out
+}
+
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const strings = value => {
   if (value === undefined) return []
@@ -318,7 +342,7 @@ export function install(rt) {
     } catch (error) {
       await drop()
       const joined = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed'
-      const message = withoutUserinfo(rt.redactSecrets(joined)).slice(0, 300)
+      const message = withoutCredentialValues(withoutUserinfo(rt.redactSecrets(joined)), config).slice(0, 300)
       statusSet(bot.id, name, sessionId, { state: 'error', error: message })
     }
   }
