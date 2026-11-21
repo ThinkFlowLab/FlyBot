@@ -48,20 +48,45 @@ const withoutUserinfo = text => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/
 // value under six characters is left alone: replacing it everywhere would eat the words around it.
 // The literal is not refused at input instead — it is legal today, an entry saved before this exists
 // in the field, and what such a value may be kept at rest is the separate open question in #3276.
-// `pat` counts as a whole segment: `X-Github-Pat` is a credential while `X-Patch-Id` and `X-Path-Id`
-// are ordinary names that merely begin with the same three letters.
-const CREDENTIAL_NAME = /(key|token|secret|auth|password|passwd|credential|signature|cookie|session|bearer)|(?<![a-z0-9])pat(?![a-z0-9])/i
+// `pat`, `sig` and `pass` count as a whole segment: `X-Github-Pat` is a credential while `X-Patch-Id`
+// and `X-Path-Id` are ordinary names that merely begin with the same three letters, and `X-Sig` /
+// `X-Pass` are credentials while `assign`, `compass` and `bypass` are ordinary names.
+// #3278: a stdio server is started with the literal on its argv, and a failure to start quotes that
+// argv back, so the values are read from the command and the args as well — a token after a
+// credential-looking flag is the literal, `--flag=value` is the same pair, and a `NAME=value` token is
+// read as an assignment. A bare token is never a literal: `node` or `server.js` cannot be told from a
+// program name, but a literal that is also a header or environment value is masked wherever the
+// body repeats it, the command position included.
+const CREDENTIAL_NAME = /(key|token|secret|auth|password|passwd|credential|signature|cookie|session|bearer|hmac)|(?<![a-z0-9])(pat|sig|pass)(?![a-z0-9])/i
+const FLAG = /^--?([\w-]+)$/
+const INLINE_FLAG = /^--?([^=]+)=(.*)$/
+const ASSIGNMENT = /^([A-Za-z_][\w-]*)=(.*)$/
 const withoutCredentialValues = (text, config) => {
+  const values = []
+  const collect = (name, value) => {
+    if (typeof value === 'string' && value.length >= 6 && CREDENTIAL_NAME.test(name)) values.push(value)
+  }
+  for (const [name, value] of Object.entries({ ...config?.headers, ...config?.env })) collect(name, value)
+  const argv = [config?.command, ...(Array.isArray(config?.args) ? config.args : [])]
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]
+    if (typeof token !== 'string') continue
+    const inline = INLINE_FLAG.exec(token)
+    if (inline) { collect(inline[1], inline[2]); continue }
+    const assignment = ASSIGNMENT.exec(token)
+    if (assignment) { collect(assignment[1], assignment[2]); continue }
+    const flag = FLAG.exec(token)
+    const next = argv[index + 1]
+    if (!flag || !CREDENTIAL_NAME.test(flag[1]) || typeof next !== 'string' || next.startsWith('-')) continue
+    collect(flag[1], next)
+    index += 1
+  }
   // Longest value first, the way `secrets.js` sorts its own before it builds one pattern: one
   // credential can contain another (`Bearer abc123XYZ` carries the `abc123` of the key beside it),
   // and replacing the short one first would leave the longer one's tail in the stored sentence.
   // Sorting makes the answer the same whichever order the two entries were written in.
-  const values = Object.entries({ ...config?.headers, ...config?.env })
-    .filter(([name, value]) => CREDENTIAL_NAME.test(name) && typeof value === 'string' && value.length >= 6)
-    .map(([, value]) => value)
-    .sort((a, b) => b.length - a.length)
   let out = text
-  for (const value of values) out = out.split(value).join('[hidden]')
+  for (const value of [...new Set(values)].sort((a, b) => b.length - a.length)) out = out.split(value).join('[hidden]')
   return out
 }
 
