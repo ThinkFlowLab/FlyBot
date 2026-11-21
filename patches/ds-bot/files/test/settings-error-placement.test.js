@@ -101,7 +101,7 @@ test('a refused write in Settings stays in view instead of scrolling away with t
   assert.equal(inside(alert, scrolling), false, 'the refusal must sit outside the scrolling page, not above it')
 })
 
-// #3114 cut 31: the Capabilities form and the six fixed refusals its save can leave. The page
+// #3114 cut 31: the Capabilities form and the fixed refusals its save can leave. The page
 // already draws `t(label)` (capability-settings.js:19) and the host sentence is translated before it
 // is thrown (api.js:38), so the dictionary is the only place these cases can be red.
 const REFUSALS = [
@@ -109,6 +109,9 @@ const REFUSALS = [
     '能力名只能用小写字母、数字和单个连字符；「github」和「composio」是保留名。'],
   ['Enter a command for the MCP server.', '请填写 MCP 服务器的命令。'],
   ['Enter a valid HTTP or HTTPS URL.', '请填写有效的 HTTP 或 HTTPS 地址。'],
+  // #3273: the seventh refusal, from the security read at 6b401ebb.
+  ['Enter the URL without a username or password. Save the credential as a secret and reference it in a header.',
+    '地址里不要写用户名或密码。请把凭据保存为密钥，并在请求头里引用它。'],
   ['A capability cannot change its kind. Delete it and save a new one.', '能力类型不能改。请删掉它，再新建一个。'],
   ['Environment variables must contain text values.', '环境变量里只能填文本值。'],
   ['Headers must contain text values.', '请求头里只能填文本值。'],

@@ -1,5 +1,7 @@
-// Prompt: one section whose text depends only on the rendering Session's own Bot
-// record, so the prefix stays byte-stable across turns and roster changes.
+// Prompts: two sections. The identity section's text depends only on the rendering
+// Session's own Bot record, so the cached prefix stays byte-stable across turns and roster
+// changes. The capability section names the attached capabilities that cannot be used right
+// now; it renders to nothing while every one of them is ready.
 
 const TEAM_RULES = [
   '## How your Bot team works',
@@ -77,10 +79,40 @@ export function install(rt) {
     return ''
   }
 
+  // #3273: the Bot has to learn about a broken capability from its own prompt, not after it
+  // has already promised the work and the first call fails. Only the two states the user can
+  // act on are named; everything else (ready, connecting) renders to nothing.
+  const capabilitiesFor = (id) => {
+    const self = rt.selfOf(id)
+    const bot = rt.botOf(self)
+    if (bot === undefined) return ''
+    const statuses = (rt.capabilityStatusesView?.() ?? {})[bot.id] ?? {}
+    const kinds = new Map((rt.capabilityLibraryView?.() ?? []).map(item => [item.name, item.kind]))
+    const lines = []
+    for (const [name, status] of Object.entries(statuses)) {
+      if (status.state !== 'error' && status.state !== 'needs-approval') continue
+      // The reason comes from the host already redacted and cut to 300 characters; collapse
+      // its whitespace so one capability stays one line. An empty reason would leave a
+      // dangling dash, so it falls back to a sentence of its own.
+      const reason = String(status.state === 'error' ? status.error ?? 'not connected' : 'needs user approval')
+        .replace(/\s+/g, ' ').trim() || 'not connected'
+      lines.push(`- ${name} (${kinds.get(name) ?? 'capability'}): ${reason} — tell the user before acting.`)
+    }
+    if (lines.length === 0) return ''
+    return ['# Capabilities that need attention', ...lines].join('\n')
+  }
+
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'bot-identity',
     order: 640,
     interpolate: false,
     text: context => promptFor(context?.agent?.id),
   }), 'ds-bot: identity section')
+
+  ctx.effect(() => ctx.systemPrompt.section({
+    name: 'bot-capabilities',
+    order: 700,
+    interpolate: false,
+    text: context => capabilitiesFor(context?.agent?.id),
+  }), 'ds-bot: capability section')
 }

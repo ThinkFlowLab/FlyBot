@@ -2047,7 +2047,7 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
  })
  
  test('read-only secret reload does not requeue capability reconciliation', async t => {
-@@ -425,3 +425,39 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
+@@ -425,3 +425,90 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
    assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
    assert.equal(rt.capabilityStatusesView().chief.team, undefined)
  })
@@ -2086,6 +2086,57 @@ diff --git a/test/capabilities.test.js b/test/capabilities.test.js
 +  assert.equal(kept, 'a'.repeat(1999), 'the 2000th unit was the first half of the pair, so the pair is dropped, not split')
 +  assert.ok(description.startsWith(kept), 'a code-point prefix of the description the peer sent')
 +  assert.ok(kept.length <= 2000, 'the budget of 2000 UTF-16 units is unchanged')
++})
++
++// #3273, from the security read at 6b401ebb: an inline credential in a URL is a shape
++// `redactSecrets` cannot know (it replaces saved key values), so the host refuses it on the way in
++// and masks userinfo on the way out — the string never reaches a status line, and therefore never
++// reaches the system prompt section that prints one.
++const USERINFO_REFUSAL = 'Enter the URL without a username or password. Save the credential as a secret and reference it in a header.'
++
++test('a capability URL that carries a username or password is refused, and nothing is stored', async t => {
++  const env = await setup()
++  t.after(() => env.dispose())
++  const { rt } = env
++  for (const url of ['https://alice:s3cr3t-pa55@host/mcp', 'https://alice@host/mcp']) {
++    await assert.rejects(
++      rt.capabilitySave({ ...mcp('inline'), transport: 'streamable-http', url }, { ui: true }),
++      error => error.message === USERINFO_REFUSAL,
++    )
++  }
++  assert.equal(rt.state.capabilities.items.inline, undefined, 'a refused save leaves no item')
++  assert.equal(JSON.stringify(rt.state).includes('s3cr3t-pa55'), false)
++})
++
++test('an error that quotes a URL saved before this fix stores it with the userinfo masked', async t => {
++  const state = team()
++  state.capabilities = {
++    items: {
++      inline: {
++        name: 'inline', kind: 'mcp', description: 'Saved before the refusal', transport: 'streamable-http',
++        url: 'https://alice:s3cr3t-pa55@host/mcp', headers: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
++      },
++    },
++  }
++  const env = await setup({ state })
++  t.after(() => env.dispose())
++  const { ctx, rt, mounts, skills } = env
++  await rt.changeCapabilityAttachment('attach', { name: 'inline' }, 'worker')
++  const quoted = 'Request cannot be constructed from a URL that includes credentials: https://alice:s3cr3t-pa55@host/mcp'
++  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new TypeError(quoted) } }) })
++  await rt.scheduleCapabilitiesReconcile()
++  const status = rt.capabilityStatusesView().worker.inline
++  assert.equal(status.state, 'error')
++  assert.equal(status.error, 'Request cannot be constructed from a URL that includes credentials: https://host/mcp', 'the exact stored sentence: the scheme and host stay, the userinfo is gone')
++  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('s3cr3t-pa55'), false)
++})
++
++test('a plain HTTPS URL still saves', async t => {
++  const env = await setup()
++  t.after(() => env.dispose())
++  const saved = await env.rt.capabilitySave({ ...mcp('plain'), transport: 'streamable-http', url: 'https://host/mcp' }, { ui: true })
++  assert.equal(saved.url, 'https://host/mcp')
++  assert.equal(env.rt.state.capabilities.items.plain.url, 'https://host/mcp')
 +})
 diff --git a/test/dsh-update.test.js b/test/dsh-update.test.js
 --- a/test/dsh-update.test.js
