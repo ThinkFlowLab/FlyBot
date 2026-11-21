@@ -1912,6 +1912,9 @@ var HOST_ZH = {
   'Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.': "能力名只能用小写字母、数字和单个连字符；「github」和「composio」是保留名。",
   "Enter a command for the MCP server.": "请填写 MCP 服务器的命令。",
   "Enter a valid HTTP or HTTPS URL.": "请填写有效的 HTTP 或 HTTPS 地址。",
+  // #3273: a URL carrying userinfo is refused instead of stored, so the credential never reaches
+  // a status line and never reaches the system prompt.
+  "Enter the URL without a username or password. Save the credential as a secret and reference it in a header.": "地址里不要写用户名或密码。请把凭据保存为密钥，并在请求头里引用它。",
   "A capability cannot change its kind. Delete it and save a new one.": "能力类型不能改。请删掉它，再新建一个。",
   "Environment variables must contain text values.": "环境变量里只能填文本值。",
   "Headers must contain text values.": "请求头里只能填文本值。"

@@ -2120,7 +2120,7 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
    'The admin must be a member of the group': '管理员必须是群成员',
    'Unknown group chat': '找不到这个群聊',
    'Hand the admin role to another member instead of leaving the group without one': '请把管理员交给其他成员，不要让群聊没有管理员',
-@@ -905,6 +905,78 @@ const HOST_ZH = {
+@@ -905,6 +905,81 @@ const HOST_ZH = {
    'Write the entry to save.': '请写下要保存的内容。',
    'This DeepSeek Harness has no folder chooser': '这个 DeepSeek Harness 没有文件夹选择窗口',
    'This DeepSeek Harness cannot list folders': '这个 DeepSeek Harness 不能列出文件夹',
@@ -2193,6 +2193,9 @@ diff --git a/src/client/i18n.js b/src/client/i18n.js
 +  'Use a capability name with lowercase letters, digits, and single hyphens; "github" and "composio" are reserved.': '能力名只能用小写字母、数字和单个连字符；「github」和「composio」是保留名。',
 +  'Enter a command for the MCP server.': '请填写 MCP 服务器的命令。',
 +  'Enter a valid HTTP or HTTPS URL.': '请填写有效的 HTTP 或 HTTPS 地址。',
++  // #3273: a URL carrying userinfo is refused instead of stored, so the credential never reaches
++  // a status line and never reaches the system prompt.
++  'Enter the URL without a username or password. Save the credential as a secret and reference it in a header.': '地址里不要写用户名或密码。请把凭据保存为密钥，并在请求头里引用它。',
 +  'A capability cannot change its kind. Delete it and save a new one.': '能力类型不能改。请删掉它，再新建一个。',
 +  'Environment variables must contain text values.': '环境变量里只能填文本值。',
 +  'Headers must contain text values.': '请求头里只能填文本值。',
@@ -4541,6 +4544,18 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
+@@ -33,6 +33,11 @@ export function expandCapabilityNames(capabilities, library) {
+   return expanded
+ }
+ 
++// #3273: `redactSecrets` replaces saved key values, so a password written into a URL is a shape it
++// cannot know. A transport error quotes that URL back verbatim, and the status line reaches the
++// system prompt every turn, so userinfo is dropped before the sentence is stored.
++const withoutUserinfo = text => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/gi, '$1')
++
+ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+ const strings = value => {
+   if (value === undefined) return []
 @@ -92,7 +92,7 @@ export function install(rt) {
      const item = {
        name,
@@ -4550,6 +4565,21 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
        createdBy: previous?.createdBy ?? (ui ? null : botId),
        createdAt: previous?.createdAt ?? now,
        updatedAt: now,
+@@ -109,10 +109,10 @@ export function install(rt) {
+         Object.assign(item, { transport, command, args, env, approved: ui ? true : changed ? false : previous.approved === true })
+       } else {
+         const url = String(body.url ?? '').trim()
+-        try {
+-          const parsed = new URL(url)
+-          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error()
+-        } catch { throw new Error('Enter a valid HTTP or HTTPS URL.') }
++        let parsed
++        try { parsed = new URL(url) } catch { throw new Error('Enter a valid HTTP or HTTPS URL.') }
++        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Enter a valid HTTP or HTTPS URL.')
++        if (parsed.username !== '' || parsed.password !== '') throw new Error('Enter the URL without a username or password. Save the credential as a secret and reference it in a header.')
+         Object.assign(item, { transport, url, headers: stringMap(body.headers, 'Headers'), approved: true })
+       }
+     } else if (kind === 'skill') {
 @@ -139,7 +139,7 @@ export function install(rt) {
      await rt.load()
      writeCheck()
@@ -4581,6 +4611,16 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    const mountOne = async (agent, bot, agentMounts, name) => {
      const sessionId = agent.session.id
+@@ -308,7 +308,8 @@ export function install(rt) {
+       statusSet(bot.id, name, sessionId, { state: 'ready' })
+     } catch (error) {
+       await drop()
+-      const message = rt.redactSecrets([error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed').slice(0, 300)
++      const joined = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed'
++      const message = withoutUserinfo(rt.redactSecrets(joined)).slice(0, 300)
+       statusSet(bot.id, name, sessionId, { state: 'error', error: message })
+     }
+   }
 @@ -454,7 +454,7 @@ export function install(rt) {
      if (endpoint === 'capability-approve') {
        await rt.load()
@@ -8248,7 +8288,14 @@ diff --git a/src/host/models.js b/src/host/models.js
 diff --git a/src/host/prompt.js b/src/host/prompt.js
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -4,33 +4,46 @@
+@@ -1,36 +1,51 @@
+-// Prompt: one section whose text depends only on the rendering Session's own Bot
+-// record, so the prefix stays byte-stable across turns and roster changes.
++// Prompts: two sections. The identity section's text depends only on the rendering
++// Session's own Bot record, so the cached prefix stays byte-stable across turns and roster
++// changes. The capability section names the attached capabilities that cannot be used right
++// now; it renders to nothing while every one of them is ready.
+ 
  const TEAM_RULES = [
    '## How your Bot team works',
    '- Every Bot is its own long-lived conversation with the user, with its own memory and computer.',
@@ -8313,6 +8360,47 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
          '',
          rt.isMain(self) ? `${MAIN_RULES}\n\n${TEAM_RULES}` : TEAM_RULES,
        ].join('\n')
+@@ -62,10 +62,40 @@ export function install(rt) {
+     return ''
+   }
+ 
++  // #3273: the Bot has to learn about a broken capability from its own prompt, not after it
++  // has already promised the work and the first call fails. Only the two states the user can
++  // act on are named; everything else (ready, connecting) renders to nothing.
++  const capabilitiesFor = (id) => {
++    const self = rt.selfOf(id)
++    const bot = rt.botOf(self)
++    if (bot === undefined) return ''
++    const statuses = (rt.capabilityStatusesView?.() ?? {})[bot.id] ?? {}
++    const kinds = new Map((rt.capabilityLibraryView?.() ?? []).map(item => [item.name, item.kind]))
++    const lines = []
++    for (const [name, status] of Object.entries(statuses)) {
++      if (status.state !== 'error' && status.state !== 'needs-approval') continue
++      // The reason comes from the host already redacted and cut to 300 characters; collapse
++      // its whitespace so one capability stays one line. An empty reason would leave a
++      // dangling dash, so it falls back to a sentence of its own.
++      const reason = String(status.state === 'error' ? status.error ?? 'not connected' : 'needs user approval')
++        .replace(/\s+/g, ' ').trim() || 'not connected'
++      lines.push(`- ${name} (${kinds.get(name) ?? 'capability'}): ${reason} — tell the user before acting.`)
++    }
++    if (lines.length === 0) return ''
++    return ['# Capabilities that need attention', ...lines].join('\n')
++  }
++
+   ctx.effect(() => ctx.systemPrompt.section({
+     name: 'bot-identity',
+     order: 640,
+     interpolate: false,
+     text: context => promptFor(context?.agent?.id),
+   }), 'ds-bot: identity section')
++
++  ctx.effect(() => ctx.systemPrompt.section({
++    name: 'bot-capabilities',
++    order: 700,
++    interpolate: false,
++    text: context => capabilitiesFor(context?.agent?.id),
++  }), 'ds-bot: capability section')
+ }
 diff --git a/src/host/resume.js b/src/host/resume.js
 --- a/src/host/resume.js
 +++ b/src/host/resume.js
@@ -14061,7 +14149,7 @@ diff --git a/test/images.test.js b/test/images.test.js
 diff --git a/test/install.test.js b/test/install.test.js
 --- a/test/install.test.js
 +++ b/test/install.test.js
-@@ -29,13 +29,23 @@ function start(state, { config = {}, services } = {}) {
+@@ -29,24 +29,37 @@ function start(state, { config = {}, services } = {}) {
  }
  
  // Listeners run, and tools are listed, in the order they are registered.
@@ -14085,7 +14173,13 @@ diff --git a/test/install.test.js b/test/install.test.js
      'on session/event',
      'effect ds-bot: agent tool restrict retry',
      'on agent/created',
-@@ -47,6 +47,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
+     'effect ds-bot: identity section',
+     'prompt bot-identity 640',
++    'effect ds-bot: capability section',
++    'prompt bot-capabilities 700',
+     'on agent/pre-step (prepend)',
+     'tool list_bots',
+     'tool message_bot',
      'tool stop_bot',
      'tool create_bot',
      'tool update_bot',
@@ -16223,6 +16317,42 @@ diff --git a/test/models.test.js b/test/models.test.js
 diff --git a/test/prompt.test.js b/test/prompt.test.js
 --- a/test/prompt.test.js
 +++ b/test/prompt.test.js
+@@ -3,11 +3,11 @@ import { test } from 'node:test'
+ import { install } from '../src/host/prompt.js'
+ import { fakeContext } from './fake-ctx.js'
+ 
+-function start() {
++function start({ statuses = {}, library = [] } = {}) {
+   const ctx = fakeContext()
+   const bots = new Map([
+-    ['main', { name: 'Chief' }],
+-    ['worker', { name: 'Dev', instructions: 'Check files.' }],
++    ['main', { id: 'main', name: 'Chief' }],
++    ['worker', { id: 'worker', name: 'Dev', instructions: 'Check files.' }],
+   ])
+   install({
+     ctx,
+@@ -15,9 +15,19 @@ function start() {
+     botOf: id => bots.get(id),
+     roomOf: id => id === 'room' ? {} : undefined,
+     isMain: id => id === 'main',
++    capabilityStatusesView: () => statuses,
++    capabilityLibraryView: () => library,
+   })
+   const prompt = id => ctx.sections.get('bot-identity').text({ agent: { id } })
+-  return { ctx, prompt }
++  // The host's own join: sections in order, empty ones dropped, one blank line between
++  // (dsh-system-prompt renderSections). Rendering here keeps the byte-level assertion real.
++  const render = id => [...ctx.sections.values()]
++    .sort((a, b) => a.order - b.order)
++    .map(section => section.text({ agent: { id } }))
++    .filter(text => text.length > 0)
++    .join('\n\n')
++  const capabilities = id => ctx.sections.get('bot-capabilities')?.text({ agent: { id } })
++  return { ctx, prompt, render, capabilities }
+ }
+ 
+ test('Bots get a scoped progress rule without changing the private/group prompt prefix', (t) => {
 @@ -25,7 +25,7 @@ test('Bots get a scoped progress rule without changing the private/group prompt
    t.after(() => ctx.dispose())
    const rules = [
@@ -16232,7 +16362,7 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
    ]
    for (const id of ['main', 'worker']) {
      for (const rule of rules) {
-@@ -43,3 +43,40 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
+@@ -43,3 +43,152 @@ test('the group relay and non-Bot sessions do not get progress instructions', (t
    assert.doesNotMatch(prompt('room'), /progress|milestone/)
    assert.equal(prompt('outside'), '')
  })
@@ -16272,6 +16402,118 @@ diff --git a/test/prompt.test.js b/test/prompt.test.js
 +  // A Bot that is addressed answers exactly as before: the reply rule is still there, unchanged.
 +  const replyRule = '- When a "[Reply from …]" arrives, tell the user the outcome if it matters to them.'
 +  for (const id of ['main', 'worker']) assert.ok(prompt(id).split('\n').includes(replyRule), `${id} still answers a reply`)
++})
++
++// #3273: a Bot must not promise work for one of its own capabilities that cannot be reached.
++// The identity section stays byte-stable (the prompt prefix is cached), so the state lives in a
++// second section that renders to nothing whenever every attached capability is usable.
++test('#3273: a capability whose connection failed is named before the Bot acts', (t) => {
++  const { ctx, render, prompt, capabilities } = start({
++    statuses: { worker: { github: { state: 'error', error: '401 bad credentials' } } },
++    library: [{ name: 'github', kind: 'mcp' }],
++  })
++  t.after(() => ctx.dispose())
++  const text = render('worker')
++  assert.equal(capabilities('worker').split('\n')[0], '# Capabilities that need attention', 'the section carries its own title, so the list is not read as a continuation of the identity block')
++  assert.equal(capabilities('worker').split('# Capabilities that need attention').length - 1, 1, 'one title, once')
++  assert.ok(
++    text.split('\n').includes('- github (mcp): 401 bad credentials — tell the user before acting.'),
++    `the failed capability and its reason are on one line:\n${text}`,
++  )
++  assert.equal(text.slice(0, prompt('worker').length), prompt('worker'), 'the identity section is untouched')
++  assert.doesNotMatch(prompt('worker'), /401 bad credentials/, 'the identity section stays byte-stable')
++})
++
++test('#3273: a capability waiting for the user is named the same way', (t) => {
++  const { ctx, render } = start({
++    statuses: { worker: { github: { state: 'needs-approval' } } },
++    library: [{ name: 'github', kind: 'mcp' }],
++  })
++  t.after(() => ctx.dispose())
++  const text = render('worker')
++  assert.ok(
++    text.split('\n').includes('- github (mcp): needs user approval — tell the user before acting.'),
++    `the unapproved capability asks the Bot to say so first:\n${text}`,
++  )
++})
++
++test('#3273: only the capabilities that are not usable are listed, ready ones are silent', (t) => {
++  const { ctx, capabilities } = start({
++    statuses: {
++      worker: {
++        github: { state: 'error', error: '401 bad credentials' },
++        linear: { state: 'ready' },
++        slack: { state: 'needs-approval' },
++      },
++    },
++    library: [{ name: 'github', kind: 'mcp' }, { name: 'linear', kind: 'mcp' }, { name: 'slack', kind: 'pack' }],
++  })
++  t.after(() => ctx.dispose())
++  const listed = capabilities('worker').split('\n').filter(line => line.startsWith('- '))
++  assert.deepEqual(listed, [
++    '- github (mcp): 401 bad credentials — tell the user before acting.',
++    '- slack (pack): needs user approval — tell the user before acting.',
++  ])
++})
++
++// Test found by mutation that a healthy render compared only against another render of the same
++// code proves nothing: a trailing space added to the identity text passes both sides. The claim is
++// that the healthy prompt *is* the identity text, so its exact head and its exact last line are
++// pinned here as literals, and the capability section has to contribute the empty string.
++const IDENTITY_LAST_RULE = '- When you cannot continue without an answer, pass ask with the one question on that task. On a group card, worked in your own chat, call ask_user for the user, and post one short question in the group only when a person there has to decide. On your own chat\'s other tasks, ask_user. When the answer arrives, pass answer with what they said and update the task. Do not leave the task waiting without that question.'
++const IDENTITY_HEADS = {
++  main: "# Your identity\nYou are Chief, a Bot on the user's team in FlyBot.",
++  worker: "# Your identity\nYou are Dev, a Bot on the user's team in FlyBot.",
++}
++
++test('#3273: a healthy Bot renders exactly the prompt it renders today', (t) => {
++  const healthy = start({ statuses: { main: {}, worker: { github: { state: 'ready' } } }, library: [{ name: 'github', kind: 'mcp' }] })
++  const none = start()
++  t.after(() => healthy.ctx.dispose())
++  t.after(() => none.ctx.dispose())
++  assert.deepEqual([...healthy.ctx.sections.keys()].sort(), ['bot-capabilities', 'bot-identity'])
++  assert.equal(healthy.ctx.sections.get('bot-identity').order, 640)
++  assert.equal(healthy.ctx.sections.get('bot-capabilities').order, 700)
++  for (const id of ['main', 'worker']) {
++    assert.equal(healthy.capabilities(id), '', 'nothing unhealthy renders no section text at all')
++    const text = healthy.render(id)
++    assert.ok(text.startsWith(IDENTITY_HEADS[id]), `${id}: the rendered prompt starts on the identity title and the Bot's own line, byte for byte`)
++    assert.ok(text.endsWith(IDENTITY_LAST_RULE), `${id}: the rendered prompt ends on the last identity rule — no separator, no blank line, no trailing space`)
++    assert.equal(text.trimEnd(), text, `${id}: no trailing whitespace`)
++    assert.equal(healthy.render(id), none.render(id), 'byte for byte the prompt a Bot with no capabilities gets')
++    assert.equal(none.render(id), none.prompt(id), 'the rendered prompt is the identity section alone — no extra section, no blank line')
++  }
++  // A relay session is not a Bot: it never carries capability state.
++  assert.equal(healthy.render('room'), healthy.prompt('room'))
++})
++
++test('#3273: one Bot never sees another Bot\'s capability state, and a failure is whole-Bot', (t) => {
++  const { ctx, capabilities, render } = start({
++    statuses: {
++      main: { github: { state: 'ready' } },
++      worker: { github: { state: 'error', error: '401 bad credentials' } },
++    },
++    library: [{ name: 'github', kind: 'mcp' }],
++  })
++  t.after(() => ctx.dispose())
++  assert.equal(capabilities('main'), '', 'the Chief sees no line for a Worker capability that is down')
++  assert.equal(render('main').includes('401 bad credentials'), false)
++  assert.ok(capabilities('worker').includes('- github (mcp): 401 bad credentials'), 'the Bot whose capability is down sees it')
++  // The status view aggregates per Bot across its Sessions, the same way list_capabilities does:
++  // a failure reached in one Session is the whole Bot's failure, so the group Session reads it too.
++  assert.equal(render('group-worker'), render('worker'))
++})
++
++test('#3273: an error with no reason still reads as a sentence', (t) => {
++  const { ctx, capabilities } = start({
++    statuses: { worker: { github: { state: 'error', error: '   ' }, linear: { state: 'error', error: '' } } },
++    library: [{ name: 'github', kind: 'mcp' }, { name: 'linear', kind: 'mcp' }],
++  })
++  t.after(() => ctx.dispose())
++  assert.deepEqual(capabilities('worker').split('\n').filter(line => line.startsWith('- ')), [
++    '- github (mcp): not connected — tell the user before acting.',
++    '- linear (mcp): not connected — tell the user before acting.',
++  ], 'an empty or whitespace-only reason becomes "not connected", never a dangling dash')
 +})
 diff --git a/test/schedules.test.js b/test/schedules.test.js
 --- a/test/schedules.test.js

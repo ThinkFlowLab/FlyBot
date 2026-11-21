@@ -36,6 +36,11 @@ export function expandCapabilityNames(capabilities, library) {
   return expanded
 }
 
+// #3273: `redactSecrets` replaces saved key values, so a password written into a URL is a shape it
+// cannot know. A transport error quotes that URL back verbatim, and the status line reaches the
+// system prompt every turn, so userinfo is dropped before the sentence is stored.
+const withoutUserinfo = text => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/gi, '$1')
+
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const strings = value => {
   if (value === undefined) return []
@@ -112,10 +117,10 @@ export function install(rt) {
         Object.assign(item, { transport, command, args, env, approved: ui ? true : changed ? false : previous.approved === true })
       } else {
         const url = String(body.url ?? '').trim()
-        try {
-          const parsed = new URL(url)
-          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error()
-        } catch { throw new Error('Enter a valid HTTP or HTTPS URL.') }
+        let parsed
+        try { parsed = new URL(url) } catch { throw new Error('Enter a valid HTTP or HTTPS URL.') }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Enter a valid HTTP or HTTPS URL.')
+        if (parsed.username !== '' || parsed.password !== '') throw new Error('Enter the URL without a username or password. Save the credential as a secret and reference it in a header.')
         Object.assign(item, { transport, url, headers: stringMap(body.headers, 'Headers'), approved: true })
       }
     } else if (kind === 'skill') {
@@ -312,7 +317,8 @@ export function install(rt) {
       statusSet(bot.id, name, sessionId, { state: 'ready' })
     } catch (error) {
       await drop()
-      const message = rt.redactSecrets([error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed').slice(0, 300)
+      const joined = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed'
+      const message = withoutUserinfo(rt.redactSecrets(joined)).slice(0, 300)
       statusSet(bot.id, name, sessionId, { state: 'error', error: message })
     }
   }
