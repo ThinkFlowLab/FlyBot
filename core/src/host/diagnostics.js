@@ -52,6 +52,12 @@ const CREDENTIALS = [
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=*-]{8,}/gi, '$1 [hidden]'],
   [/([?&#](?:token|access_token|api_key|apikey|key|secret|password)=)[^&\s"']+/gi, '$1[hidden]'],
   [/(["']?(?:api[_-]?key|authorization|x-api-key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
+  // #3291: `sig`, `hmac` and `pass` name credentials too. This list is the one the report and the
+  // downloaded log are cleaned with, and it was narrower than the list `capabilities.js` masks a
+  // capability body with, so a log line echoing `X-Sig: …`, `X-Hmac: …` or `X-Pass: …` kept the value.
+  // `sig` and `pass` count as a whole segment the way `pat` does there, so `assign`, `compass` and
+  // `bypass` are ordinary names; `hmac` is not part of any ordinary word.
+  [/(["']?(?:hmac|(?<![a-z0-9])(?:sig|pass)(?![a-z0-9]))["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
 ]
 
 // A path under a home can be deeper than the bound is long (#2964): `~/.local/share/deepseek-harness/

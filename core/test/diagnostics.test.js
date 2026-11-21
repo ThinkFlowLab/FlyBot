@@ -42,6 +42,37 @@ test('cleanText hides standalone credentials it was never given', () => {
   assert.equal(out, '[hidden] [hidden] [hidden] [hidden] [hidden] [hidden]')
 })
 
+// #3291: the diagnostics mask had a second, narrower name list than `capabilities.js`: `sig`,
+// `hmac` and `pass` were masked where a capability body is stored, but a log line or report that
+// echoed `X-Sig: …`, `X-Hmac: …` or `X-Pass: …` kept the value verbatim. One test per name, so a
+// list entry that misses one of the three cannot pass behind the other two.
+test('cleanText hides the value of a sig header', () => {
+  assert.equal(cleanText('X-Sig: abcdef123456', { home: '' }), 'X-Sig: [hidden]')
+  assert.equal(cleanText('{"sig":"abcdef123456"}', { home: '' }), '{"sig":"[hidden]"}')
+})
+
+test('cleanText hides the value of an hmac header', () => {
+  assert.equal(cleanText('X-Hmac: abcdef123456', { home: '' }), 'X-Hmac: [hidden]')
+  assert.equal(cleanText('{"hmac":"abcdef123456"}', { home: '' }), '{"hmac":"[hidden]"}')
+})
+
+test('cleanText hides the value of a pass header', () => {
+  assert.equal(cleanText('X-Pass: abcdef123456', { home: '' }), 'X-Pass: [hidden]')
+  assert.equal(cleanText('{"pass":"abcdef123456"}', { home: '' }), '{"pass":"[hidden]"}')
+})
+
+// The same three names stay bounded as a whole segment, the way `pat` is in `capabilities.js`:
+// `assign`, `compass` and `bypass` are ordinary names. The name the list already had keeps working,
+// a JSON body is masked through its quotes, and a value under six characters is left alone.
+test('cleanText keeps assign, compass and bypass and leaves a five-character value', () => {
+  assert.equal(
+    cleanText('assign: abcdef123456 compass: abcdef123456 bypass: abcdef123456', { home: '' }),
+    'assign: abcdef123456 compass: abcdef123456 bypass: abcdef123456',
+  )
+  assert.equal(cleanText('x-api-key: abcdef123456', { home: '' }), 'x-api-key: [hidden]')
+  assert.equal(cleanText('X-Sig: abc12', { home: '' }), 'X-Sig: abc12')
+})
+
 function host(home, extra = {}) {
   const warnings = []
   const disposers = []
