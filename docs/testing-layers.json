@@ -164,6 +164,15 @@
       "role": "Writes the `enqueue-guard` check run a merge on the fork requires: the decision of `enqueue-guard.mjs`, on the live head, from code taken from `main`. The ruleset refuses a merge while it is red (#812)."
     },
     {
+      "id": "stop-request",
+      "workflow": ".github/workflows/stop-request.yml",
+      "kind": "workflow-only",
+      "layer": "none",
+      "gate": false,
+      "runs": "issue_comment (created) on a pull request",
+      "reason": "Takes an entry out of the merge queue when a stop request posted after its required checks have run names the live tip (#3280). It is not a required check and writes only the dequeue and its note; the decision is `.github/scripts/stop-request.mjs`, tested by `.github/scripts/stop-request.test.mjs` in the L1 `scripts` suite, so this workflow has no test file of its own."
+    },
+    {
       "id": "docker",
       "workflow": ".github/workflows/docker.yml",
       "kind": "workflow-only",
