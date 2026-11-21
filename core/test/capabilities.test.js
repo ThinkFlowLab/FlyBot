@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -647,4 +647,189 @@ test('a plain reason is stored exactly as the transport gave it', async t => {
   const status = rt.capabilityStatusesView().worker['plain-error']
   assert.equal(status.state, 'error')
   assert.equal(status.error, '401 bad credentials')
+})
+
+// #3278: a stdio server is started with the literal on its argv, and a failure to start quotes that
+// argv back, so the mask reads the command and the args the way it reads a header: the token after a
+// credential-looking flag is the literal, `--flag=value` is the same pair, and a `NAME=value` token is
+// read as an assignment. An ordinary flag in the same argv keeps its value.
+test('an error that quotes a stdio server argv stores the credential literal masked', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      stdio: {
+        name: 'stdio', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--api-key', 'sk-live-abcdef123456', '-e', 'SERVICE_TOKEN=tok-abcdef123', '--password=hunter2-secret', '--verbose'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'stdio' }, 'worker')
+  const quoted = 'server exited: node server.js --api-key sk-live-abcdef123456 -e SERVICE_TOKEN=tok-abcdef123 --password=hunter2-secret --verbose'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.stdio
+  assert.equal(status.state, 'error')
+  assert.equal(
+    status.error,
+    'server exited: node server.js --api-key [hidden] -e SERVICE_TOKEN=[hidden] --password=[hidden] --verbose',
+    'every argv literal is masked; the program and the ordinary flag survive',
+  )
+  const stored = JSON.stringify(rt.capabilityStatusesView())
+  assert.equal(stored.includes('sk-live-abcdef123456'), false)
+  assert.equal(stored.includes('tok-abcdef123'), false)
+  assert.equal(stored.includes('hunter2-secret'), false)
+})
+
+// #3278, from the security read at `48f1eb43`: `sig`, `hmac` and `pass` were still missing from the
+// name list, so a body echoing `X-Sig: …`, `X-Hmac: …` or `X-Pass: …` stored the value verbatim.
+// `sig` and `pass` count as a whole segment the way `pat` does, so `assign`, `compass` and `bypass` are
+// ordinary names that keep their values.
+test('a sig, hmac or pass header name masks its value while assign, compass and bypass keep theirs', async t => {
+  const state = team()
+  state.capabilities = quoting('name-echo', {
+    'X-Sig': 'sig-abcdef123', 'X-Hmac': 'hmac-abcdef123', 'X-Pass': 'pass-abcdef123',
+    'X-Assign': 'assign-9000', 'X-Compass': 'compass-9000', 'X-Bypass': 'bypass-9000',
+  })
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'name-echo' }, 'worker')
+  const quoted = 'Error POSTing to endpoint: {"sig":"sig-abcdef123","hmac":"hmac-abcdef123","pass":"pass-abcdef123","assign":"assign-9000","compass":"compass-9000","bypass":"bypass-9000"}'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker['name-echo']
+  assert.equal(status.state, 'error')
+  assert.equal(
+    status.error,
+    'Error POSTing to endpoint: {"sig":"[hidden]","hmac":"[hidden]","pass":"[hidden]","assign":"assign-9000","compass":"compass-9000","bypass":"bypass-9000"}',
+    'the three new names mask; the three lookalike names keep their values',
+  )
+  const stored = JSON.stringify(rt.capabilityStatusesView())
+  assert.equal(stored.includes('sig-abcdef123'), false)
+  assert.equal(stored.includes('hmac-abcdef123'), false)
+  assert.equal(stored.includes('pass-abcdef123'), false)
+})
+
+// #3278: the two things #3275 fixed stay fixed — a value under six characters is left alone rather
+// than eating the words around it, and the mask still runs before the 300-character cut, so a literal
+// inside the kept part is gone and only the tail past the cut is dropped.
+test('an argv literal under six characters stays and an argv literal is masked before the three-hundred cut', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      long: {
+        name: 'long', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--pin', 'abcde', '--api-key', 'sk-live-abcdef123456'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'long' }, 'worker')
+  const quoted = `server exited: --pin abcde ${'x'.repeat(170)} --api-key sk-live-abcdef123456 ${'z'.repeat(200)}`
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.long
+  assert.equal(status.state, 'error')
+  assert.equal(status.error.length, 300, 'the stored reason is still cut at 300 characters')
+  assert.equal(status.error.startsWith('server exited: --pin abcde '), true, 'a five-character value is left alone')
+  assert.equal(status.error.includes('--api-key [hidden]'), true, 'the mask ran before the cut')
+  assert.equal(status.error.includes('sk-live-abcdef123456'), false)
+})
+
+// #3278 acceptance 2: the entry that fails here may have been saved before this fix, so the tests
+// start from a store written by the old version and make one new start failure. The literal must be
+// gone from every surface a reader can see — the status answer, the `list_capabilities` text, the
+// system-prompt line and the log — and the first three must repeat the same masked sentence, which
+// is what proves they read one stored reason built at one place (`capabilities.js:370`) instead of
+// masking it four times. The saved config keeps the literal: the Settings editor reads it back by
+// design, and #3276 owns that question.
+const surfacesFor = async (env, name, warnings) => {
+  const status = env.rt.capabilityStatusesView().worker[name] ?? {}
+  return {
+    status: JSON.stringify(status),
+    listed: await env.ctx.registeredTools.get('list_capabilities').execute({}, { agent: { id: 'worker' } }),
+    prompt: env.ctx.sections.get('bot-capabilities').text({ agent: { id: 'worker' } }),
+    warnings: warnings.join('\n'),
+  }
+}
+
+test('a stdio capability saved before this fix shows no argv or env literal on any surface', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      legacy: {
+        name: 'legacy', kind: 'mcp', description: 'Saved before this fix', transport: 'stdio',
+        command: 'node', args: ['server.js', '--api-key', 'sk-live-abcdef123456'],
+        env: { SERVICE_TOKEN: 'tok-abcdef123' }, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  state.bots.worker.capabilities = ['legacy']
+  const warnings = []
+  const env = await setup({ state, beforeLoad: ({ ctx }) => { ctx.logger.warn = (...args) => warnings.push(args.join(' ')) } })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const quoted = 'server exited: node server.js --api-key sk-live-abcdef123456 -e SERVICE_TOKEN=tok-abcdef123'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const masked = 'server exited: node server.js --api-key [hidden] -e SERVICE_TOKEN=[hidden]'
+  const surfaces = await surfacesFor(env, 'legacy', warnings)
+  for (const [surface, text] of Object.entries(surfaces)) {
+    for (const literal of ['sk-live-abcdef123456', 'tok-abcdef123']) {
+      assert.equal(text.includes(literal), false, `${surface} carries no literal`)
+    }
+  }
+  const status = rt.capabilityStatusesView().worker.legacy
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, masked, 'one masked sentence, built once')
+  assert.equal(surfaces.listed.includes(masked), true, 'the tool listing repeats the stored reason')
+  assert.equal(surfaces.prompt.includes(masked), true, 'the prompt line repeats the stored reason')
+  // The reason is not part of the team state, so nothing rewrites it at rest and no migration exists.
+  await rt.save()
+  const saved = JSON.parse(readFileSync(join(env.home, 'state.json'), 'utf8'))
+  assert.equal(JSON.stringify(saved).includes('[hidden]'), false, 'the masked reason is memory-only')
+  assert.deepEqual(saved.capabilities.items.legacy.args, ['server.js', '--api-key', 'sk-live-abcdef123456'], 'the config itself is unchanged')
+  // Detaching the item empties every line, which is the proof that the store is their only source.
+  await rt.changeCapabilityAttachment('detach', { name: 'legacy', bot: 'Worker' }, 'chief')
+  await rt.scheduleCapabilitiesReconcile()
+  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes(masked), false)
+  assert.equal(ctx.sections.get('bot-capabilities').text({ agent: { id: 'worker' } }), '')
+})
+
+test('an http capability saved before this fix shows no header literal on any surface', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      legacy: {
+        name: 'legacy', kind: 'mcp', description: 'Saved before this fix', transport: 'streamable-http',
+        url: 'https://host/mcp', headers: { 'X-Sig': 'sig-abcdef123', Accept: 'application/json' },
+        approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  state.bots.worker.capabilities = ['legacy']
+  const warnings = []
+  const env = await setup({ state, beforeLoad: ({ ctx }) => { ctx.logger.warn = (...args) => warnings.push(args.join(' ')) } })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const quoted = 'Error POSTing to endpoint: {"sig":"sig-abcdef123","accept":"application/json"}'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const masked = 'Error POSTing to endpoint: {"sig":"[hidden]","accept":"application/json"}'
+  const surfaces = await surfacesFor(env, 'legacy', warnings)
+  for (const [surface, text] of Object.entries(surfaces)) {
+    assert.equal(text.includes('sig-abcdef123'), false, `${surface} carries no literal`)
+  }
+  const status = rt.capabilityStatusesView().worker.legacy
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, masked, 'one masked sentence, built once; an ordinary header survives')
+  assert.equal(surfaces.listed.includes(masked), true)
+  assert.equal(surfaces.prompt.includes(masked), true)
 })
