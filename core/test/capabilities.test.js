@@ -925,3 +925,91 @@ test('a flag directly after a credential flag is masked as its value', async t =
   assert.equal(status.state, 'error')
   assert.equal(status.error, 'server exited: node server.js --api-key [hidden]', 'the accepted cost: a following flag is masked')
 })
+
+// #3288: two credential flags in a row (`--api-key --api-key sk-live-…`) are how a pasted command
+// line repeats an option. Read from the first flag alone, the second flag name is taken as its value
+// and the scan skips it, so the literal behind it is never collected and the stored reason quotes it.
+// A token that is itself a credential flag is therefore read on its own instead of swallowed.
+test('a repeated credential flag leaves the literal behind it masked', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      repeated: {
+        name: 'repeated', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--api-key', '--api-key', 'sk-live-abcdef123456'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  state.bots.worker.capabilities = ['repeated']
+  const warnings = []
+  const env = await setup({ state, beforeLoad: ({ ctx }) => { ctx.logger.warn = (...args) => warnings.push(args.join(' ')) } })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const quoted = 'spawn node ENOENT: node server.js --api-key --api-key sk-live-abcdef123456'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const masked = 'spawn node ENOENT: node server.js --api-key --api-key [hidden]'
+  const surfaces = await surfacesFor(env, 'repeated', warnings)
+  for (const [surface, text] of Object.entries(surfaces)) {
+    assert.equal(text.includes('sk-live-abcdef123456'), false, `${surface} carries no literal`)
+  }
+  const status = rt.capabilityStatusesView().worker.repeated
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, masked, 'the literal behind the repeated flag is masked')
+  assert.equal(surfaces.listed.includes(masked), true)
+  assert.equal(surfaces.prompt.includes(masked), true)
+})
+
+// #3288: the same read with a different credential flag next door (`--api-key --token sk-live-…`).
+// The second flag name is not a value either, so its own value is collected and the sentence keeps
+// two flag names and one masked literal.
+test('a different credential flag after a credential flag keeps its own value masked', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      pair: {
+        name: 'pair', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--api-key', '--token', 'sk-live-abcdef123456'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  state.bots.worker.capabilities = ['pair']
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const quoted = 'spawn node server.js ENOENT: --api-key --token sk-live-abcdef123456'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.pair
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, 'spawn node server.js ENOENT: --api-key --token [hidden]', 'the second flag is read as a flag')
+  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('sk-live-abcdef123456'), false)
+})
+
+// #3288: the `--flag=value` form of the same pair. The inline flag is read on its own, so its value
+// is collected instead of the whole token being stored as a value that was never masked.
+test('a credential flag written as flag=value after a credential flag keeps its value masked', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      inline: {
+        name: 'inline', kind: 'mcp', description: 'Local server', transport: 'stdio', command: 'node',
+        args: ['server.js', '--api-key', '--token=sk-live-abcdef123456'],
+        env: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  state.bots.worker.capabilities = ['inline']
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const quoted = 'spawn node ENOENT: --api-key --token=sk-live-abcdef123456'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.inline
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, 'spawn node ENOENT: --api-key --token=[hidden]', 'an inline credential flag keeps its value masked')
+  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('sk-live-abcdef123456'), false)
+})
