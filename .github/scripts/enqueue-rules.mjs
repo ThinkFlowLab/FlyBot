@@ -3,7 +3,7 @@
 // read the same text: the guard that prints the command, and `merge-gate.mjs`, whose required check is
 // the only gate on a `merge_group` entry today (#960). A second copy of these rules would be two
 // answers to one question, which is #812's kill condition.
-import { parseReport } from './review-gate.mjs'
+import { parseReport, isConclusionSource } from './review-gate.mjs'
 
 const SHORT = 12
 // AGENTS.md → Merge gates rule 2: the `hold` label is paired with a comment saying
@@ -17,9 +17,10 @@ const SHORT = 12
 // #2091: a comment written on one line of the diff (`pulls/{pr}/comments`, `kind: 'review-comment'`) is a
 // request and never a conclusion. `stopRequestAt` reads all three faces, because a person's "do not
 // merge" is the same request in whichever box it is typed; the conclusion readers take the two faces a
-// Verifier block is written in, so adding the third input cannot add a way to record a PASS. One
-// predicate, used by every reader that parses a body for a conclusion.
-export const isConclusionSource = (r) => r?.kind !== 'review-comment'
+// Verifier block is written in, so adding the third input cannot add a way to record a PASS. The
+// predicate itself is `isConclusionSource` in `review-gate.mjs`, re-exported here so the guard and
+// `merge-gate.mjs` keep one import.
+export { isConclusionSource }
 
 const RECORD_ONLY = /^[\s>*+-]*(?:record only\s*[—–-]+\s*do not (?:merge|queue)(?:\s*[/／]\s*仅记录[、,，]?\s*禁止入队)?|仅记录[、,，]?\s*禁止入队)\s*[.。]?\s*$/im
 // AGENTS.md → Claim: a pull request says `Fixes #N` in its body, and one issue carries one pull request.

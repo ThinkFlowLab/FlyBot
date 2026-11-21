@@ -125,6 +125,14 @@ function parseCorrection(line) {
   return { by, tip: tip[1].toLowerCase() }
 }
 
+// #2091: a comment written on one line of the diff (`pulls/{pr}/comments`, `kind: 'review-comment'`) is a
+// request and never a conclusion. `stopRequestAt` reads all three faces, because a person's "do not merge"
+// is the same request in whichever box it is typed; a conclusion is written in one of the other two, so
+// adding the third input cannot add a way to record a PASS. One predicate, asked by every reader that
+// parses a body for a conclusion. It lives here because this module owns what a conclusion is;
+// `enqueue-rules.mjs` re-exports it, so its callers keep one import.
+export const isConclusionSource = (r) => r?.kind !== 'review-comment'
+
 // The last Verifier block in one body: a comment may hold an earlier review that a later
 // one replaced, and only the last block is the verdict the reviewer stands behind.
 export function parseReport(body) {
@@ -595,6 +603,29 @@ function arg(name) {
   return i > 0 ? process.argv[i + 1] : undefined
 }
 
+// #2092/#2120/#2870: the rows every gate reader parses, in one place. This file's copy had drifted from
+// `enqueue-guard.mjs:67` and `merge-gate.mjs:224`: it carried no `id` (the handle a decision prints, and
+// the one `conclusionAt` and `stopRequestAt` answer with), no review `state` (the whole of a
+// CHANGES_REQUESTED review with no body, which `stopRequestAt` reads as "asked for changes"), dropped a
+// review whose body is empty (#2119: "Request changes" is the one refusal a person writes without
+// typing), and never read the comments written on one line of the diff (#2091).
+export function reportsFrom({ comments = [], reviews = [], reviewComments = [] } = {}) {
+  return [
+    ...comments.map((c) => ({
+      id: c.id, kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body,
+      at: c.created_at, association: c.author_association, url: c.html_url,
+    })),
+    ...reviews.map((v) => ({
+      id: v.id, kind: 'review', state: v.state, login: v.user?.login, type: v.user?.type, body: v.body,
+      at: v.submitted_at, association: v.author_association, url: v.html_url,
+    })),
+    ...reviewComments.filter((c) => (c.body ?? '').trim()).map((c) => ({
+      id: c.id, kind: 'review-comment', login: c.user?.login, type: c.user?.type, body: c.body,
+      at: c.created_at, association: c.author_association, url: c.html_url,
+    })),
+  ]
+}
+
 function main() {
   const policyPath = arg('--policy') || process.env.REVIEW_POLICY || fileURLToPath(new URL('../agent/review-policy.json', import.meta.url))
   const repo = arg('--repo') || process.env.GH_REPO
@@ -607,12 +638,11 @@ function main() {
   const author = pull.user?.login
   if (!head) throw new Error(`pull request ${pr} has no head sha`)
 
-  const reports = [
-    ...list(`repos/${repo}/issues/${pr}/comments?per_page=100`).map((c) => ({ kind: 'comment', login: c.user?.login, type: c.user?.type, body: c.body, at: c.created_at, association: c.author_association, url: c.html_url })),
-    ...list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`)
-      .filter((v) => (v.body ?? '').trim())
-      .map((v) => ({ kind: 'review', login: v.user?.login, type: v.user?.type, body: v.body, at: v.submitted_at, association: v.author_association, url: v.html_url })),
-  ]
+  const reports = reportsFrom({
+    comments: list(`repos/${repo}/issues/${pr}/comments?per_page=100`),
+    reviews: list(`repos/${repo}/pulls/${pr}/reviews?per_page=100`),
+    reviewComments: list(`repos/${repo}/pulls/${pr}/comments?per_page=100`),
+  })
 
   const policy = loadPolicy(policyPath)
   // #1317: the changed-file list, read here so a tip that moved only because `main` moved can be told
@@ -623,7 +653,10 @@ function main() {
   // changes only what its own run reads. `loadSigners` is fail-closed on its own; `decide` refuses when the
   // policy lists a roster and this is missing.
   const signers = loadSigners({ policy, path: arg('--signers') || process.env.VERDICT_SIGNERS || fileURLToPath(new URL('../agent/signers.json', import.meta.url)) })
-  const result = decide({ head, author, reports, policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers, gh, changedPaths })
+  // Only the two faces a Verifier block is written in are conclusions (#2091): the same filter
+  // `merge-gate.mjs:127` applies, so a comment on one line of the diff cannot pass here and be refused
+  // there. `adminsFor` still reads every row — a login is a login wherever it wrote.
+  const result = decide({ head, author, reports: reports.filter(isConclusionSource), policy, body: pull.body, admins: adminsFor({ gh, repo, reports, policy, author }), repo, pr, signers, gh, changedPaths })
   console.log(`review-gate (report only): PR #${pr} tip ${String(head).slice(0, SHORT)} — ${result.ok ? `PASS by ${result.by}` : result.reason}`)
   const text = render(result, { pr, head, author })
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + '\n')
