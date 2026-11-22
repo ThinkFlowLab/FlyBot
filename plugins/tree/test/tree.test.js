@@ -1749,6 +1749,33 @@ test('#450: a merge carries the archived Bot\'s own memory into the kept Bot', a
   assert.equal(moved.meta.source, 'merged')
 })
 
+// #450 item 1: the merge leaves a handoff record, not a copy of the archived Bot's chat. The kept
+// Bot's prompt names the Bot it inherited from (name and id, so it can be traced back) and the
+// host records the same line in the kept Bot's memory; the archived Bot is only read.
+test('#450: a merge leaves the kept Bot a handoff line that points back at the archived Bot', async () => {
+  const DAY = 24 * 60 * 60 * 1000
+  let clock = Date.UTC(2026, 9, 19, 12)
+  const { m, tree, kids } = await fullChief(8, ['Cooking', 'Shopping', 'Grocery', 'Editor', 'Budget'], { now: () => clock })
+  const dup = await m.flybot.bot.create({ name: 'editor', role: 'editor stuff', systemPrompt: 'Own editor prompt' })
+  m.setMemory(dup, [{ text: 'The user drafts in Markdown', meta: { added: '2026-10-01' } }])
+  await tree.tidy() // merge grace
+  clock += 2 * DAY
+  await tree.tidy()
+  assert.equal(f(m, dup, 'archived').reason, 'merged')
+  const kept = kids.Editor
+  // 1. The kept Bot's prompt has the handoff line, with the archived Bot's name and id.
+  assert.match(sp(m, kept), new RegExp(`Inherited from editor \\(source ${dup}, merged \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\): role "editor stuff"`))
+  assert.match(sp(m, kept), /no child Bots moved; its chat and memory stay on the archived Bot/)
+  // 2. The host recorded the same note in the kept Bot's own memory, with the source as metadata.
+  const note = (m.memories.get(kept) ?? []).find(entry => entry.meta?.source === 'handoff')
+  assert.ok(note, JSON.stringify(m.memories.get(kept)))
+  assert.equal(note.meta.from, dup)
+  // 3. The archived Bot keeps its own memory and its own prompt; nothing was copied into it.
+  assert.deepEqual(m.memories.get(dup), [{ text: 'The user drafts in Markdown', meta: { added: '2026-10-01' } }], 'the archived Bot keeps its own memory')
+  assert.equal(sp(m, dup), 'Own editor prompt', 'the archived Bot keeps its own prompt, only the tree block removed')
+  assert.doesNotMatch(sp(m, dup), /Inherited from/)
+})
+
 test('#635: move_bot moves a bot with its subtree and refreshes the prompts', async () => {
   const m = await setup()
   const a = await make(m, m.root, 'A')

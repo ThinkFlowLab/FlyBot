@@ -265,6 +265,7 @@ The host's own files carry the user's content — a Bot's memory and the memory 
 ### Plugin memory seam (#450 item 1)
 
 - `memory.js` exposes `rt.botMemoryRead(botId)` (a Bot's own entries, capped at 200) and `rt.botMemoryAppend(botId, text, meta)` (one entry through the ordinary path — secret-scanned, size-capped, journaled). `hooks.js` gates them as `flybot.memory` for a plugin the host names in `flybot.memoryPlugins` (empty by default). The tree uses it to carry a merged Bot's memory into the kept Bot. Tests: the `flybot.memory` case in `core/test/flybot.test.js`.
+- `src/host/handoff.js` is the merge handoff beside `parts.js`'s part handoff: `createHandoff(rt, { allow })` builds `flybot.handoff.note({ from, to, note })` for `hooks.js`, on the same `flybot.memoryPlugins` allow-list. It validates the two Bot ids and the note (1–200 characters after whitespace is collapsed; every refusal is a short `code` and writes nothing), writes the note into the **`to`** Bot's memory through `rt.botMemoryAppend` (`source: handoff`, `from`, `at`), reads the `from` Bot only, and answers `{ ok: true, ref: { bot, name, at } }`. The source name and id in the entry prefix are clipped (40 / 24 characters) so the entry stays under `MEMORY_LIMITS.entry`. Tests: `core/test/handoff.test.js`, the `flybot.handoff` case in `core/test/flybot.test.js`.
 
 ### Decisions a Bot records (#396)
 

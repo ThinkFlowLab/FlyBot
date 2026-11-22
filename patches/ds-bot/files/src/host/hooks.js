@@ -21,6 +21,7 @@ import { SOURCE_KIND } from './constants.js'
 import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { faceMentions, mentionedByHandle } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
+import { createHandoff } from './handoff.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
@@ -114,6 +115,8 @@ export function install(rt) {
   const bypassGrants = config?.flybot?.bypass ?? {}
   // Plugins the host allows to read and write a Bot's own memory (#450 item 1). Empty by default.
   const memoryPlugins = new Set(config?.flybot?.memoryPlugins ?? [])
+  // The merge handoff note (#450 item 1) is a memory write, so it takes the same allow-list.
+  const handoffNote = createHandoff(rt, { allow: memoryPlugins })
   // A sanctioned, capped model call for a named plugin (#450). Empty allow-list by default.
   // A per-plugin default model (#579): a call from a plugin named here uses it unless it names one.
   const modelAsk = createPluginModel(rt, { allow: config?.flybot?.modelPlugins ?? [], models: config?.flybot?.modelFor ?? {} })
@@ -1264,6 +1267,10 @@ export function install(rt) {
           .catch(error => ({ ok: false, code: String(error?.code ?? 'failed').slice(0, 40) }))
       },
     },
+    // The merge handoff note (#450 item 1): one line for the Bot that keeps a merged Bot's role.
+    // The note is written into THAT Bot's memory (never the archived one) and the source reference
+    // comes back for the plugin's prompt line. Same allow-list as memory; never throws.
+    handoff: { note: input => handoffNote(plugin, input) },
     // A sanctioned, capped model call for THIS plugin (#450): allow-listed by config, text only,
     // no side effect. Resolves `{ ok: true, text }` or `{ ok: false, code }`.
     model: { ask: input => modelAsk(plugin, input) },

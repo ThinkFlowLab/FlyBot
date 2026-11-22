@@ -380,6 +380,25 @@ export interface ModelAsk {
 }
 export type ModelAnswer = { ok: true; text: string } | { ok: false; code: string }
 
+/** A merge handoff note (#450 item 1): two live Bots and the one line the kept Bot keeps. */
+export interface HandoffNote {
+  /** The Bot that was archived (only read). */
+  from: BotId
+  /** The Bot that keeps the role: the note is recorded in its own memory. */
+  to: BotId
+  /** One line, 1 to `HANDOFF.note` (200) characters; the host prefixes it with the source. */
+  note: string
+}
+
+/** The source reference `flybot.handoff.note` answers for a plugin's prompt line. */
+export interface HandoffRef {
+  bot: BotId
+  name: string
+  /** ISO time the note was recorded. */
+  at: string
+}
+export type HandoffAnswer = { ok: true; ref: HandoffRef } | { ok: false; code: string }
+
 /** What `flybot.projectHost()` answers: the core runtime and the shared pure helpers (#2830). */
 export interface ProjectHost {
   runtime: Record<string, unknown>
@@ -416,6 +435,16 @@ export interface FlyBot {
     read(botId: BotId): MemoryEntry[]
     append(botId: BotId, text: string, meta?: Record<string, string>): Promise<{ ok: boolean; code?: string }>
   }
+  /**
+   * The merge handoff (#450 item 1): one line from a Bot that is being archived into the Bot that
+   * keeps its role. It takes the same `config.flybot.memoryPlugins` allow-list as `memory`, because
+   * the note is a memory write: the host records it in the `to` Bot's own memory (metadata
+   * `source: handoff`, `from`, `at`), reads the `from` Bot only, and answers the source reference
+   * `{ ok: true, ref: { bot, name, at } }` for the plugin's prompt line. A refused call writes
+   * nothing: `{ ok: false, code }` — `no-source`, `source-gone`, `no-target`, `target-gone`,
+   * `same-bot`, `bad-note`, `empty-note`, `note-too-long`, `read-only`, `not-allowed`, `no-api`.
+   */
+  handoff: { note(input: HandoffNote): Promise<HandoffAnswer> }
   /**
    * A sanctioned, capped model call for this plugin (#450). Off unless the host names the
    * plugin in config.flybot.modelPlugins; text only (no side effect), capped input/output and

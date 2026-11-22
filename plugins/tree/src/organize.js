@@ -51,6 +51,20 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
       if (result?.ok !== true) return
     }
   }
+  // The one line a merge leaves with the kept Bot (#450 item 1): what came over, and where the rest
+  // stays. `note` is what the host records in the kept Bot's memory; `ref` is the source reference it
+  // answers, and the prompt line falls back to the id the tree already stores when the seam is absent.
+  async function handoffNote(fromId, toId, fromNode, moved) {
+    const role = [...String(fromNode?.role ?? '').trim()].slice(0, 80).join('')
+    const note = `role "${role || 'general bot'}"; ${moved === 0 ? 'no child Bots moved' : `${moved} child Bot${moved === 1 ? '' : 's'} moved to you`}; its chat and memory stay on the archived Bot`
+    const out = { note }
+    if (typeof fb.handoffNote !== 'function') return out
+    try {
+      const result = await fb.handoffNote({ from: fromId, to: toId, note })
+      if (result?.ok === true && result.ref && typeof result.ref.bot === 'string') out.ref = result.ref
+    } catch (error) { warn('flybot-tree: could not record the merge handoff note:', error?.message ?? error) }
+    return out
+  }
   // Hide / unhide in the core sidebar (bot.hidden). Optional on older hosts without bot.update.
   const hideBot = (id, hidden) => {
     if (typeof fb.updateBot !== 'function') return
@@ -509,7 +523,8 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
         for (const c of kids) move(run, c.id, keep)
         run.actions.push({ op: 'merge', bot: dup, name: nodes[dup].name, into: keep, intoName: nodes[keep].name })
         if (archive(run, dup, 'merged', { into: keep, intoName: nodes[keep].name })) {
-          set(keep, 'mergedFrom', [...(get(keep, 'mergedFrom') ?? []), { id: dup, name: nodes[dup].name, at: t }].slice(-10))
+          const handoff = await handoffNote(dup, keep, nodes[dup], kids.length)
+          set(keep, 'mergedFrom', [...(get(keep, 'mergedFrom') ?? []), { id: dup, name: nodes[dup].name, at: t, note: handoff.note, ...(handoff.ref ? { ref: handoff.ref } : {}) }].slice(-10))
           merged.add(dup)
           await handoffMemory(dup, keep)
         }
