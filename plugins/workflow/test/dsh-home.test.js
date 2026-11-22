@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
+import { homeEnv } from './platform.js'
 
 const fakeFlybot = (handlers) => {
   const fb = {
@@ -28,12 +29,14 @@ async function startAt(cwd, handlers) {
 }
 
 async function withEnv(env, run) {
-  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, cwd: process.cwd() }
+  // USERPROFILE too: `os.homedir()` reads HOME on POSIX and USERPROFILE on Windows, so a case
+  // that set only HOME would leave the runner's own home in place there (#3298).
+  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, cwd: process.cwd() }
   Object.assign(process.env, env)
   try {
     return await run()
   } finally {
-    for (const key of ['DSH_HOME', 'HOME']) {
+    for (const key of ['DSH_HOME', 'HOME', 'USERPROFILE']) {
       if (saved[key] === undefined) delete process.env[key]
       else process.env[key] = saved[key]
     }
@@ -48,7 +51,7 @@ test('the workflow store lands in the DSH home whatever the working directory', 
   const a = mkdtempSync(join(tmpdir(), 'flybot-workflow-cwd-a-'))
   const b = mkdtempSync(join(tmpdir(), 'flybot-workflow-cwd-b-'))
   try {
-    await withEnv({ DSH_HOME: '', HOME: home }, async () => {
+    await withEnv({ DSH_HOME: '', ...homeEnv(home) }, async () => {
       const first = await startAt(a, new Map())
       try {
         const created = first.plugin.service.create({ name: 'Root', nodes: [{ id: 'n1', name: 'Step', prompt: 'Do the thing' }], layers: [['n1']] })
@@ -79,7 +82,7 @@ test('a blank DSH_HOME counts as unset and ~ expands like the core', async () =>
   const home = mkdtempSync(join(tmpdir(), 'flybot-workflow-home-'))
   const cwd = mkdtempSync(join(tmpdir(), 'flybot-workflow-cwd-'))
   try {
-    await withEnv({ DSH_HOME: '  ', HOME: home }, async () => {
+    await withEnv({ DSH_HOME: '  ', ...homeEnv(home) }, async () => {
       const run = await startAt(cwd, new Map())
       try {
         assert.equal(run.plugin.service.create({ name: 'Blank', nodes: [{ id: 'n1', name: 'Step', prompt: 'Do the thing' }], layers: [['n1']] }).ok, true)
