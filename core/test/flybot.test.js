@@ -1126,6 +1126,21 @@ test('#450: flybot.memory reads and writes a Bot only for an allow-listed plugin
   assert.ok(listed.memory.read('a').some(entry => entry.text === 'The user prefers tea'))
 })
 
+test('#450: flybot.handoff leaves a merge note in the kept Bot, gated like memory', async (t) => {
+  const { fb, stop } = await start({ flybot: { memoryPlugins: ['probe'] } })
+  t.after(stop)
+  assert.deepEqual(await fb.scope('stranger').handoff.note({ from: 'a', to: 'b', note: 'x' }), { ok: false, code: 'not-allowed' })
+  const probe = fb.scope('probe')
+  assert.deepEqual(await probe.handoff.note({ from: 'a', to: 'b', note: 7 }), { ok: false, code: 'bad-note' })
+  const result = await probe.handoff.note({ from: 'a', to: 'b', note: 'role "Boss"; no child Bots moved' })
+  assert.equal(result.ok, true)
+  assert.equal(result.ref.bot, 'a')
+  assert.equal(result.ref.name, 'Chief')
+  const kept = probe.memory.read('b')
+  assert.ok(kept.some(entry => entry.meta.source === 'handoff' && entry.meta.from === 'a' && entry.text.startsWith('Chief (a) was merged into you')), JSON.stringify(kept))
+  assert.deepEqual(probe.memory.read('a'), [], 'the archived Bot is only read')
+})
+
 test('onboarding announces the first Main Bot to plugins', async (t) => {
   const { fb, call, stop } = await start({ empty: true })
   t.after(stop)

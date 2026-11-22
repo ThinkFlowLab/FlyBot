@@ -71,7 +71,17 @@ export function createTree(fb, { limits, rootName = 'Root', rootBotId, adoptExis
       }
     }
     const merged = fb.getField(id, 'mergedFrom')
-    if (Array.isArray(merged) && merged.length) notes.push(`You took over the role of ${merged.map(m => m.name).join(', ')} (merged into you; the old Bot is archived with its own chat history).`)
+    if (Array.isArray(merged) && merged.length) {
+      notes.push(`You took over the role of ${merged.map(m => m.name).join(', ')} (merged into you; the old Bot is archived with its own chat history).`)
+      // #450 item 1: the merge's handoff line. It names the Bot it came from and its id — the source
+      // reference the host answered, or the id the tree recorded — so the kept Bot can be told
+      // exactly whose role it took over, without a copy of the archived Bot's chat.
+      for (const m of merged) {
+        if (typeof m.note !== 'string' || m.note === '') continue
+        const source = typeof m.ref?.bot === 'string' ? m.ref.bot : m.id
+        notes.push(`Inherited from ${m.name} (source ${source}, merged ${stamp(m.at)}): ${m.note}.`)
+      }
+    }
     return notes
   }
   // Prompt injection: only the tree's marked block is replaced; other text (e.g. Chief's own) stays.

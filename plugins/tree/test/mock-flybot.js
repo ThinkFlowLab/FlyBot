@@ -19,7 +19,7 @@ export function toParameterMap(p) {
   return Object.fromEntries(Object.entries(p.properties).map(([k, s]) => [k, { ...keep(s), ...(req.has(k) ? { required: true } : {}) }]))
 }
 
-export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
+export function createMockFlybot({ modelAnswer = 'dev', modelOk = true, memory = true, handoff = true } = {}) {
   const modelAsks = []
   let answer = modelAnswer
   let ok = modelOk
@@ -33,7 +33,7 @@ export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
   const grants = new Map()
   let seq = 0
   const granted = b => (grants.get(b?.id) ?? []).some(g => !g.roomId)
-  const view = b => b && { id: b.id, name: b.name, isMain: b.isMain === true, granted: granted(b), createdAt: b.createdAt, createdBy: null, systemPrompt: b.systemPrompt ?? '', fields: clone(b.fields), ...(b.hidden === true ? { hidden: true } : {}) }
+  const view = b => b && { id: b.id, name: b.name, role: b.role, isMain: b.isMain === true, granted: granted(b), createdAt: b.createdAt, createdBy: null, systemPrompt: b.systemPrompt ?? '', fields: clone(b.fields), ...(b.hidden === true ? { hidden: true } : {}) }
   const fire = (ev, payload) => { for (const fn of [...listeners[ev]]) fn({ ...payload }) }
   const onFor = plugin => (ev, fn, { all = false } = {}) => {
     if (!listeners[ev]) throw new Error(`flybot: unknown event ${ev}`)
@@ -85,10 +85,22 @@ export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
       fields,
       readOnly: () => false,
       // The plugin memory seam (#450 item 1): reads a Bot's own entries, appends one.
-      memory: {
+      ...(memory ? { memory: {
         read: id => clone(memories.get(id) ?? []),
         append: async (id, text, meta) => { memories.set(id, [...(memories.get(id) ?? []), { text: String(text), meta: meta ?? {} }]); return { ok: true } },
-      },
+      } } : {}),
+      // The merge handoff seam (#450 item 1): the note lands in the kept Bot's own memory, with the
+      // source Bot and time as metadata; answers the source reference hooks.js builds.
+      ...(handoff ? { handoff: {
+        note: async ({ from, to, note: text } = {}) => {
+          if (!bots.has(from)) return { ok: false, code: 'source-gone' }
+          if (!bots.has(to)) return { ok: false, code: 'target-gone' }
+          if (typeof text !== 'string' || text.trim() === '') return { ok: false, code: 'bad-note' }
+          const at = new Date().toISOString()
+          memories.set(to, [...(memories.get(to) ?? []), { text, meta: { source: 'handoff', from, at } }])
+          return { ok: true, ref: { bot: from, name: bots.get(from).name, at } }
+        },
+      } } : {}),
       // The sanctioned plugin model call (#450): records each ask; the answer is configurable.
       model: { ask: async (input) => { modelAsks.push(input); return ok ? { ok: true, text: answer } : { ok: false, code: 'not-allowed' } } },
       bot: {
@@ -98,10 +110,10 @@ export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
         isRemote: ref => isRemote(ref) || remote.has(ref),
         hasAnyGrant: id => granted(bots.get(id)),
         hasGrant: (id, peer) => (grants.get(id) ?? []).some(g => !peer || g.grantee === peer),
-        create: async ({ name, systemPrompt, fields: f } = {}) => {
+        create: async ({ name, role, systemPrompt, fields: f } = {}) => {
           await Promise.resolve() // really async, like the host
           const id = `bot${++seq}`
-          bots.set(id, { id, name, createdAt: seq, systemPrompt: systemPrompt ?? '', fields: f && Object.keys(f).length ? { [plugin]: clone(f) } : {} })
+          bots.set(id, { id, name, role, createdAt: seq, systemPrompt: systemPrompt ?? '', fields: f && Object.keys(f).length ? { [plugin]: clone(f) } : {} })
           for (const [key, value] of Object.entries(f ?? {})) fire('change', { botId: id, plugin, key, value: clone(value), prev: undefined })
           fire('bot.created', view(bots.get(id)))
           return id

@@ -30,6 +30,9 @@ export const ARCHIVE_NAME_RE = /^(?:归档|Archive)[-—–＿_\s]+/u
 export const stripArchivePrefix = name => { const n = String(name ?? ''); return ARCHIVE_NAME_RE.test(n) ? n.replace(ARCHIVE_NAME_RE, '').trim() : n.trim() }
 const ACTIVITY_WRITE_MS = 60 * 60 * 1000
 const MAX_TOOLS = 8
+// #450 item 1: the merge copies at most this many memory entries, oldest first. The handoff line
+// quotes it for a copy above one, and handoffMemory uses it for the slice.
+const MAX_HANDOFF_MEMORY = 20
 
 /** Own prompt text without the tree's block: part of a Bot's description. */
 const ownText = prompt => { const s = String(prompt ?? ''); const i = s.indexOf(BLOCK_START); return (i >= 0 ? s.slice(0, i) : s).trim() }
@@ -38,18 +41,41 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
   const cfg = { ...DEFAULT_TIDY, ...Object.fromEntries(Object.entries(tidyConfig).filter(([, v]) => Number.isFinite(v) && v >= 0)) }
   const get = (id, key) => fb.getField(id, key)
   const set = (id, key, value) => fb.setField(id, key, value)
-  // A merge carries the archived Bot's own memory into the kept Bot, so nothing is lost (#450
-  // item 1). Best effort: without the memory seam, or when the kept Bot's memory is full, the
-  // merge still stands. At most 20 entries, oldest first.
+  // A merge copies up to MAX_HANDOFF_MEMORY of the archived Bot's own memory entries into the
+  // kept Bot (#450 item 1); the originals stay on the archived Bot. Best effort: without the memory
+  // seam, or when the kept Bot's memory is full, the merge still stands. Answers how many entries
+  // were actually copied, so the handoff line names the real number.
   async function handoffMemory(fromId, toId) {
-    if (typeof fb.memoryRead !== 'function' || typeof fb.memoryAppend !== 'function') return
+    if (typeof fb.memoryRead !== 'function' || typeof fb.memoryAppend !== 'function') return 0
     let entries
-    try { entries = fb.memoryRead(fromId) ?? [] } catch { return }
-    for (const entry of entries.slice(0, 20)) {
+    try { entries = fb.memoryRead(fromId) ?? [] } catch { return 0 }
+    let copied = 0
+    for (const entry of entries.slice(0, MAX_HANDOFF_MEMORY)) {
       let result
-      try { result = await fb.memoryAppend(toId, entry.text, { ...entry.meta, source: 'merged' }) } catch { return }
-      if (result?.ok !== true) return
+      try { result = await fb.memoryAppend(toId, entry.text, { ...entry.meta, source: 'merged' }) } catch { break }
+      if (result?.ok !== true) break
+      copied++
     }
+    return copied
+  }
+  // The one line a merge leaves with the kept Bot (#450 item 1): what came over, where the originals
+  // stay, and how many memory entries were copied. `note` is what the host records in the kept Bot's
+  // memory; `ref` is the source reference it answers, and the prompt line falls back to the id the
+  // tree already stores when the seam answers no-api.
+  async function handoffNote(fromId, toId, fromNode, moved, copied) {
+    // 40 characters, not 80: the copy sentence is longer, and the whole note must stay under the
+    // host's 200-character cap so a traced merge also lands in memory.
+    const role = [...String(fromNode?.role ?? '').trim()].slice(0, 40).join('')
+    const memory = copied === 0 ? 'no memory entries were copied into yours'
+      : copied === 1 ? '1 memory entry was copied into yours'
+      : `up to ${MAX_HANDOFF_MEMORY} memory entries were copied into yours`
+    const note = `role "${role || 'general bot'}"; ${moved === 0 ? 'no child Bots moved' : `${moved} child Bot${moved === 1 ? '' : 's'} moved to you`}; its chat and the originals stay on the archived Bot, and ${memory}`
+    const out = { note }
+    try {
+      const result = await fb.handoffNote({ from: fromId, to: toId, note })
+      if (result?.ok === true && result.ref && typeof result.ref.bot === 'string') out.ref = result.ref
+    } catch (error) { warn('flybot-tree: could not record the merge handoff note:', error?.message ?? error) }
+    return out
   }
   // Hide / unhide in the core sidebar (bot.hidden). Optional on older hosts without bot.update.
   const hideBot = (id, hidden) => {
@@ -509,9 +535,10 @@ export function createOrganizer({ fb, limits, snapshot, childrenOf, depthOf, war
         for (const c of kids) move(run, c.id, keep)
         run.actions.push({ op: 'merge', bot: dup, name: nodes[dup].name, into: keep, intoName: nodes[keep].name })
         if (archive(run, dup, 'merged', { into: keep, intoName: nodes[keep].name })) {
-          set(keep, 'mergedFrom', [...(get(keep, 'mergedFrom') ?? []), { id: dup, name: nodes[dup].name, at: t }].slice(-10))
+          const copied = await handoffMemory(dup, keep)
+          const handoff = await handoffNote(dup, keep, nodes[dup], kids.length, copied)
+          set(keep, 'mergedFrom', [...(get(keep, 'mergedFrom') ?? []), { id: dup, name: nodes[dup].name, at: t, note: handoff.note, ...(handoff.ref ? { ref: handoff.ref } : {}) }].slice(-10))
           merged.add(dup)
-          await handoffMemory(dup, keep)
         }
       }
     }

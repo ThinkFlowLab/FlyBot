@@ -118,6 +118,11 @@ FlyBot's plugin API surface on top of the patched core: host hooks, client slots
 - **Off unless named.** The host config `flybot.memoryPlugins` is an allow-list; an unnamed plugin's `read` returns `[]` and its `append` resolves `{ ok: false, code: 'not-allowed' }`. The list is empty by default.
 - Bounded and safe: at most 200 entries are read; an entry with a secret or over the entry size is refused; `append` never throws into the caller (it resolves a short `code`). A read-only host refuses the write. Tests: the `flybot.memory` case in `core/test/flybot.test.js`.
 
+### The merge handoff note (#450 item 1)
+
+- `flybot.handoff.note({ from, to, note })` is the one line a merge leaves with the Bot that keeps the merged Bot's role (`plugins/tree`). It takes the **same** `flybot.memoryPlugins` allow-list as `flybot.memory`, because the note is a memory write: `core/src/host/handoff.js` records it in the `to` Bot's own memory through the ordinary path (entry text `<name> (<id>) was merged into you: <note>`, metadata `source: handoff`, `from`, `at`), reads the `from` Bot only, and answers `{ ok: true, ref: { bot, name, at } }` — the source reference a plugin puts in its prompt line. An unnamed plugin is refused, and a refused call writes nothing.
+- Typed and bounded: both ids must name live Bots and differ (`no-source`, `source-gone`, `no-target`, `target-gone`, `same-bot`); `note` must be a string of 1 to 200 characters after whitespace is collapsed (`bad-note`, `empty-note`, `note-too-long`); a read-only host answers `read-only`, and an older core without `rt.botMemoryAppend` answers `no-api`. The source name and id in the entry prefix are clipped to 40 and 24 characters so the entry stays under the memory entry cap. Tests: `core/test/handoff.test.js` and the `flybot.handoff` case in `core/test/flybot.test.js`.
+
 ## Tests
 
 `core/test/flybot.test.js`, `core/test/flybot-client.test.js`, `core/test/plugin-model.test.js` via `npm test`.
