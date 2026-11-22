@@ -83,6 +83,9 @@ async function start(t) {
   ctx.connection.fetch.register = (options) => { route = options; return register(options) }
   const rt = createRuntime(ctx, { home })
   provideFlyBot(ctx, rt.flybot)
+  // The search reads the roster `rt.load()` fills; without waiting, Windows' slower start
+  // answered the first case from no parts at all (#3293). Every later case ran after the load.
+  await rt.load()
   t.after(async () => {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })

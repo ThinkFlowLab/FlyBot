@@ -13411,15 +13411,23 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
  }
  
  const settle = async (check) => {
-@@ -113,6 +113,7 @@ const settle = async (check) => {
+@@ -113,6 +113,15 @@ const settle = async (check) => {
    while (!check() && Date.now() < until) await new Promise(resolve => setImmediate(resolve))
    assert.ok(check(), 'condition not reached')
  }
++// Read the saved log only after the store's write chain has settled. A read that overlaps the
++// temp-file rename holds `state.json` open, and Windows answers the rename with EPERM (the test
++// saw `state write failed: EPERM` in the nightlies). The settle loops watch the in-memory
++// `rt.state` the save copies from, so the file is read once, at rest (#3293).
++const savedLog = async (host) => {
++  await host.rt.savesSettled()
++  return JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
++}
 +const plain = value => JSON.parse(JSON.stringify(value))
  const text = message => message.content.map(block => block.text ?? '').join('\n')
  const kinds = result => result.replies.map(reply => [reply.kind ?? 'message', reply.name])
  
-@@ -287,3 +287,334 @@ test('members still at work show in the team view and in the prompts of the othe
+@@ -287,3 +287,333 @@ test('members still at work show in the team view and in the prompts of the othe
    host.finish('gc', '没问题。')
    await settle(() => result() !== undefined)
  })
@@ -13553,14 +13561,13 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +
 +test('a Bot status essay is stored as the stub the next speaker sees (#1251)', async (t) => {
 +  const host = await start(t)
-+  const log = () => JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
 +  const result = host.round('c1', host.say('@Writer 汇报一下'))
 +  await settle(() => host.agentOf('gb').calls.length === 1)
 +  host.begin('gb')
 +  host.finish('gb', STATUS_ESSAY)
 +  await settle(() => result() !== undefined)
-+  await settle(() => log().length === 2)
-+  const stored = log().at(-1)
++  await settle(() => host.rt.state.rooms.r1.log.length === 2)
++  const stored = (await savedLog(host)).at(-1)
 +  assert.equal(stored.botId, 'b')
 +  assert.equal(stored.text, compactStatus(STATUS_ESSAY))
 +  assert.ok(!stored.text.includes('ESSAY_TAIL'), 'the essay body is not in the store')
@@ -13572,12 +13579,12 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +
 +test('a person\'s long line is stored whole, never stubbed (#1251)', async (t) => {
 +  const host = await start(t)
-+  const log = () => JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
 +  const person = `@Writer 这段是用户写的长文。${'word '.repeat(120)}PERSON_TAIL`
 +  const result = host.round('c1', host.say(person))
-+  await settle(() => log().length === 1)
-+  assert.equal(log()[0].text, person)
-+  assert.equal(log()[0].botId, undefined)
++  await settle(() => host.rt.state.rooms.r1.log.length === 1)
++  const [stored] = await savedLog(host)
++  assert.equal(stored.text, person)
++  assert.equal(stored.botId, undefined)
 +  await settle(() => host.agentOf('gb').calls.length === 1)
 +  host.begin('gb')
 +  host.finish('gb', '[PASS]')
@@ -13586,24 +13593,23 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +
 +test('a short Bot handoff is stored verbatim, not collapsed (#1251)', async (t) => {
 +  const host = await start(t)
-+  const log = () => JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
 +  const handoff = '#1234 PASS @abcdef1 → @Writer'
 +  const result = host.round('c1', host.say('@Writer 报一句'))
 +  await settle(() => host.agentOf('gb').calls.length === 1)
 +  host.begin('gb')
 +  host.finish('gb', handoff)
 +  await settle(() => result() !== undefined)
-+  await settle(() => log().at(-1)?.text === handoff)
-+  assert.equal(log().at(-1).text, handoff)
++  await settle(() => host.rt.state.rooms.r1.log.at(-1)?.text === handoff)
++  assert.equal((await savedLog(host)).at(-1).text, handoff)
 +})
 +
 +test('a kind-carrying room line stays verbatim in the store (#1251)', async (t) => {
 +  const host = await start(t)
-+  const log = () => JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
 +  const query = 'the merge queue and the review verdict on the last tip'
 +  await host.tool('read_own_chat', { query }, 'gb')
-+  await settle(() => log().length === 1)
-+  assert.deepEqual([log()[0].kind, log()[0].text], ['lookup', query])
++  await settle(() => host.rt.state.rooms.r1.log.length === 1)
++  const [line] = await savedLog(host)
++  assert.deepEqual([line.kind, line.text], ['lookup', query])
 +  // A real post from this home cannot carry a long kind line (a lookup query is capped at 80 characters
 +  // and an event line carries ''); a peer-chosen kind arrives on a fenced line, and the fence is decided
 +  // before this exemption (room-context.js). So the exemption itself is pinned on the gate's own decision.
@@ -13617,19 +13623,20 @@ diff --git a/test/group-work.test.js b/test/group-work.test.js
 +
 +test('a read_own_chat query or anchor cut at its bound never splits a surrogate pair (#1916)', async (t) => {
 +  const host = await start(t)
-+  const log = () => JSON.parse(readFileSync(join(host.home, 'state.json'), 'utf8')).rooms.r1.log
 +  const query = `${'a'.repeat(79)}\u{1F600}permalink`
 +  await host.tool('read_own_chat', { query }, 'gb')
-+  await settle(() => log().length === 1)
-+  assert.equal(log()[0].text.isWellFormed(), true)
-+  assert.ok(log()[0].text.length <= 80, `query is ${log()[0].text.length} units`)
-+  assert.equal(utf8Prefix(query, log()[0].text), true, 'the stored query is a byte prefix of the input')
++  await settle(() => host.rt.state.rooms.r1.log.length === 1)
++  const [queryLine] = await savedLog(host)
++  assert.equal(queryLine.text.isWellFormed(), true)
++  assert.ok(queryLine.text.length <= 80, `query is ${queryLine.text.length} units`)
++  assert.equal(utf8Prefix(query, queryLine.text), true, 'the stored query is a byte prefix of the input')
 +  const around = `${'b'.repeat(39)}\u{1F600}anchor`
 +  await host.tool('read_own_chat', { around }, 'gb')
-+  await settle(() => log().length === 2)
-+  assert.equal(log()[1].text.isWellFormed(), true)
-+  assert.ok(log()[1].text.length <= `around ${'b'.repeat(39)}`.length, `anchor is ${log()[1].text.length} units`)
-+  assert.equal(utf8Prefix(`around ${around}`, log()[1].text), true, 'the stored anchor is a byte prefix of the input')
++  await settle(() => host.rt.state.rooms.r1.log.length === 2)
++  const anchorLine = (await savedLog(host))[1]
++  assert.equal(anchorLine.text.isWellFormed(), true)
++  assert.ok(anchorLine.text.length <= `around ${'b'.repeat(39)}`.length, `anchor is ${anchorLine.text.length} units`)
++  assert.equal(utf8Prefix(`around ${around}`, anchorLine.text), true, 'the stored anchor is a byte prefix of the input')
 +})
 +
 +// #1916: the task lead's name goes into every other member's system prompt, and a Bot name is the

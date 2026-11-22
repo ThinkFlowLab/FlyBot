@@ -8,13 +8,13 @@ import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, rea
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 import { install as installAuthz } from '../src/host/authz.js'
 import { createWorkflowStore, install, PRESETS } from '../src/host/workflow-store.js'
 import { WORKFLOW_VERSION } from '../src/shared/workflow.js'
 import { copyOfPreset, differingFields, workflowBytes, workflowDocument } from '../src/shared/workflow-doc.js'
 import { repoDevWorkflow } from '../src/shared/workflow-repo-dev.js'
 import { blankWorkflow } from '../src/shared/workflow-blank.js'
+import { assertMode, win32 } from './platform.js'
 
 const withDir = (run) => {
   const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
@@ -393,7 +393,7 @@ test('#2079: a linked workflow file refuses a save instead of writing through it
   unlinkSync(link)
   assert.equal(store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } }).ok, true)
   assert.equal(existsSync(link), true)
-  assert.equal(statSync(link).mode & 0o077, 0, 'a newly created definition is not group- or world-readable')
+  assertMode(link, '0600', 'a newly created definition is not group- or world-readable')
 })
 
 test('#2079: a linked project file refuses to become the default', (t) => {
@@ -547,6 +547,10 @@ const unlistableFolder = (t) => {
 }
 
 test('#2614: a workflow folder that cannot be listed refuses the list instead of answering empty', (t) => {
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0311 cannot make a folder unlistable, so this refusal cannot be built')
+    return
+  }
   if (process.getuid?.() === 0) {
     t.skip('root ignores the folder permission bits')
     return
@@ -572,6 +576,10 @@ test('#2614: a workflow folder that cannot be listed refuses the list instead of
 })
 
 test('#2614: a save that landed in an unlistable folder says wrote: true and refuses the list', (t) => {
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0311 cannot make a folder unlistable, so this refusal cannot be built')
+    return
+  }
   if (process.getuid?.() === 0) {
     t.skip('root ignores the folder permission bits')
     return
@@ -695,8 +703,11 @@ test('#2681: a definition at this build own version with unknown fields still sa
 // `workflow/not-found` while the bytes are being rewritten. The writer now stages a private temp
 // name in the same folder and renames it over the target, so every read sees either the previous
 // complete bytes or the new complete bytes.
-const WORKFLOW_STORE_MODULE = fileURLToPath(new URL('../src/host/workflow-store.js', import.meta.url))
-const WORKFLOW_TEST_HARNESS = fileURLToPath(new URL('./harness-resolve.mjs', import.meta.url))
+// File URLs, not paths: an ESM specifier and `--import` read a bare Windows path as a URL
+// with the scheme `d:`, so both child processes died with ERR_UNSUPPORTED_ESM_URL_SCHEME
+// before saving a byte (#3293).
+const WORKFLOW_STORE_MODULE = new URL('../src/host/workflow-store.js', import.meta.url).href
+const WORKFLOW_TEST_HARNESS = new URL('./harness-resolve.mjs', import.meta.url).href
 
 // A definition that is cheap to validate and big to write: the size lives in the node names, so the
 // renderer's work stays small while the bytes are the ones a real worksheet can carry.
@@ -802,7 +813,12 @@ test('#2762: a reader in a second process never catches a half-written definitio
   assert.equal(readFileSync(file, 'utf8'), workflowBytes(beta), 'the last complete save landed whole')
 })
 
-test('#2762: a kill -9 inside the write leaves the previous complete definition, and list() still has it', { timeout: 120_000 }, async (t) => {
+test(`#2762: a kill -9 inside the write leaves the previous complete definition, and list() still has it${win32 ? ' (skipped on Windows: no POSIX kill -9 to stop the child inside the write)' : ''}`, {
+  timeout: 120_000,
+  // Windows stops a child with TerminateProcess, not a POSIX signal, so the crash cannot be
+  // aimed inside the write window this case is about (#3293).
+  skip: win32 ? 'Windows has no POSIX kill -9: TerminateProcess cannot be aimed inside the write window' : undefined,
+}, async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-crash-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const dir = join(root, 'workflows')
