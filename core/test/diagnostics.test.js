@@ -74,6 +74,48 @@ test('cleanText keeps assign, compass and bypass and leaves a five-character val
   assert.equal(cleanText('X-Sig: abc12', { home: '' }), 'X-Sig: abc12')
 })
 
+// A header-shaped credential is a hyphenated field name whose last segment is a credential word,
+// so `X-Pat`, `X-Github-Pat`, `X-Token`, `X-Auth`, `X-Cookie`, `X-Session`, `X-Credential`,
+// `X-Amz-Signature`, `X-Key` and `X-Signature` are masked with `passwd` joined to the bare names.
+// One `assert` per name, so a list entry that misses one name cannot pass behind the others.
+test('cleanText hides a header-shaped credential name', () => {
+  const value = 'abcdef123456'
+  for (const name of [
+    'X-Pat', 'X-Github-Pat', 'X-Token', 'X-Auth', 'X-Cookie',
+    'X-Session', 'X-Credential', 'X-Amz-Signature', 'X-Key', 'X-Signature',
+  ]) {
+    assert.equal(cleanText(`${name}: ${value}`, { home: '' }), `${name}: [hidden]`, name)
+  }
+  // A JSON key is quoted on both sides and masked the same way.
+  assert.equal(cleanText('{"X-Session":"abcdef123456"}', { home: '' }), '{"X-Session":"[hidden]"}')
+})
+
+test('cleanText hides the value of a passwd field', () => {
+  assert.equal(cleanText('passwd: abcdef123456', { home: '' }), 'passwd: [hidden]')
+  assert.equal(cleanText('{"passwd":"abcdef123456"}', { home: '' }), '{"passwd":"[hidden]"}')
+})
+
+// The other half of the same list: an ordinary hyphenated name is not a credential, and a bare
+// `Signature:` stays readable on purpose. Masking every name that holds `signature`, `auth`,
+// `session` or `token` would eat `auth: failed to connect`, `session: expired at noon` and
+// `token: refresh failed` — prose about a credential, not a credential — which is the widening
+// #3291 refused. A value under six characters is left alone.
+test('cleanText keeps ordinary hyphenated names and a bare Signature', () => {
+  const value = 'abcdef123456'
+  for (const name of ['X-Patch-Id', 'X-Path-Id', 'X-Request-Id', 'session-count', 'key-name']) {
+    assert.equal(cleanText(`${name}: ${value}`, { home: '' }), `${name}: ${value}`, name)
+  }
+  assert.equal(
+    cleanText('author: abcdef123456 compass: abcdef123456 bypass: abcdef123456 assign: abcdef123456 status: abcdef123456', { home: '' }),
+    'author: abcdef123456 compass: abcdef123456 bypass: abcdef123456 assign: abcdef123456 status: abcdef123456',
+  )
+  assert.equal(cleanText('auth: failed to connect', { home: '' }), 'auth: failed to connect')
+  assert.equal(cleanText('session: expired at noon', { home: '' }), 'session: expired at noon')
+  assert.equal(cleanText('token: refresh failed', { home: '' }), 'token: refresh failed')
+  assert.equal(cleanText('Signature: abcdef123456', { home: '' }), 'Signature: abcdef123456')
+  assert.equal(cleanText('X-Token: abc12', { home: '' }), 'X-Token: abc12')
+})
+
 function host(home, extra = {}) {
   const warnings = []
   const disposers = []

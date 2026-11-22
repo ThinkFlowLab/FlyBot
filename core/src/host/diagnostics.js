@@ -57,7 +57,16 @@ const CREDENTIALS = [
   // capability body with, so a log line echoing `X-Sig: …`, `X-Hmac: …` or `X-Pass: …` kept the value.
   // `sig` and `pass` count as a whole segment the way `pat` does there, so `assign`, `compass` and
   // `bypass` are ordinary names; `hmac` is not part of any ordinary word.
-  [/(["']?(?:hmac|(?<![a-z0-9])(?:sig|pass)(?![a-z0-9]))["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
+  [/(["']?(?:hmac|passwd|(?<![a-z0-9])(?:sig|pass)(?![a-z0-9]))["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
+  // A header-shaped name is a hyphenated field name whose last segment is a credential word, so
+  // `X-Pat`, `X-Github-Pat`, `X-Token`, `X-Auth`, `X-Cookie`, `X-Session`, `X-Credential`,
+  // `X-Amz-Signature`, `X-Key` and `X-Signature` are masked the way `capabilities.js` masks a
+  // stored capability body. The whole last segment has to be the credential word, so `X-Patch-Id`,
+  // `X-Path-Id`, `X-Request-Id`, `session-count` and `key-name` keep their text. A bare
+  // `Signature:` stays readable on purpose: masking every name holding `signature`, `auth`,
+  // `session` or `token` would eat `auth: failed to connect` and `session: expired at noon`,
+  // which is the widening #3291 refused.
+  [/(["']?(?:[a-z0-9]+-)+(?:key|token|auth|cookie|session|credential|signature|pat|sig|pass)["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
 ]
 
 // A path under a home can be deeper than the bound is long (#2964): `~/.local/share/deepseek-harness/
