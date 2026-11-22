@@ -2,11 +2,12 @@
 // packed install (`plugin add github:…&path:/plugins/social`) can load (#153).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { importPackedPlugin, outboundImports, specifiersOf } from '../../scripts/lint-plugins.mjs'
+import { extractPackedTarball, importPackedPlugin, outboundImports, specifiersOf } from '../../scripts/lint-plugins.mjs'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const fake = (files) => {
@@ -60,6 +61,32 @@ test('social, tree, timeline and workflow runtime sources stay inside their pack
   assert.deepEqual(outboundImports(join(repo, 'plugins/tree')), [])
   assert.deepEqual(outboundImports(join(repo, 'plugins/timeline')), [])
   assert.deepEqual(outboundImports(join(repo, 'plugins/workflow')), [])
+})
+
+test('a packed plugin extracts with the destination as cwd, so tar never receives a drive path (#3296)', () => {
+  // GNU tar reads the `C:` of `C:\…` as a remote `host:path` and fails with "Cannot connect to C:
+  // resolve failed" when the archive or `-C` carries a drive path (#3296). A POSIX path only has that
+  // shape — a colon before the first slash — while it is cwd-relative, so the case builds one instead
+  // of trusting the platform; on Windows every temp path already has it.
+  const root = mkdtempSync(join(tmpdir(), 'plugin-pack-3296-'))
+  const dest = process.platform === 'win32'
+    ? join(root, 'flybot-pack-3296')
+    : join('C:\\Users\\runneradmin\\AppData\\Local\\Temp', `flybot-pack-${basename(root)}`)
+  const cwd = process.cwd()
+  try {
+    process.chdir(root)
+    mkdirSync(dest, { recursive: true })
+    const [info] = JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', resolve(dest)], {
+      cwd: join(repo, 'plugins/project'),
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    }))
+    const packed = extractPackedTarball(join(dest, info.filename), dest)
+    assert.ok(existsSync(join(packed, 'package.json')), 'the packed package.json was extracted')
+  } finally {
+    process.chdir(cwd)
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('packed @flybot/social, @flybot/tree, @flybot/timeline and @flybot/workflow import', async () => {

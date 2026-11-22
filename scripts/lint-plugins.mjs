@@ -5,7 +5,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { builtinModules } from 'node:module'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 
@@ -92,15 +92,23 @@ export function outboundImports(pluginDir, pkg = JSON.parse(readFileSync(join(pl
   return problems
 }
 
+// GNU tar reads `C:\…` — a colon before the first slash — as a remote `host:path` and dies with
+// "Cannot connect to C: resolve failed", so neither the archive nor `-C` may carry a drive path (#3296).
+// The archive goes in by bare name, resolved against `cwd`, and the destination is that `cwd`; no
+// argument then holds a colon, which also keeps this portable to the bsdtar Windows ships (`--force-local`
+// would not be).
+export function extractPackedTarball(tarball, destDir) {
+  execFileSync('tar', ['-xzf', basename(tarball)], { cwd: destDir })
+  return join(destDir, 'package')
+}
+
 export function packPlugin(pluginDir, destDir) {
   const [info] = JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', destDir], {
     cwd: pluginDir,
     encoding: 'utf8',
     shell: process.platform === 'win32',
   }))
-  const tgz = join(destDir, info.filename)
-  execFileSync('tar', ['-xzf', tgz, '-C', destDir])
-  return join(destDir, 'package')
+  return extractPackedTarball(join(destDir, info.filename), destDir)
 }
 
 export async function importPackedPlugin(pluginDir) {
