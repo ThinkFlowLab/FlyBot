@@ -11,6 +11,7 @@ import { install as installStore } from '../src/host/store.js'
 import { failureLine, install as installTurns, turnFailure } from '../src/host/turns.js'
 import { errorCode } from '../src/host/channel.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
+import { deniedCode } from './platform.js'
 
 test('cleanText hides keys, tokens and the home folder', () => {
   const home = '/home/user'
@@ -478,7 +479,7 @@ test('a journal file the report may not read still answers its size and time (#2
   writeFileSync(path, '')
   chmodSync(path, 0o000)
   const info = lstatSync(path)
-  assert.throws(() => readFileSync(path), /EACCES/, 'this file cannot be read at all')
+  assert.throws(() => readFileSync(path), new RegExp(deniedCode()), 'this file cannot be read at all')
 
   const report = await host(home, { journal: { path, status: () => ({ recording: true }) }, config: { diagnosticsFile: false } }).diagnostics.report({})
   assert.equal(report.facts.journalFile, `~/journal/state.jsonl (0 bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
@@ -511,8 +512,8 @@ test('the report says the diagnostics log could not be written (#2383)', async (
   const report = await rt.diagnostics.report({})
   quiet.mock.restore()
 
-  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES)', 'the report carries the reason, not only stderr')
-  assert.match(report.markdown, /^diagnostics log: not written \(EACCES\)$/m)
+  assert.equal(report.facts.diagnosticsLog, `not written (${deniedCode()})`, 'the report carries the reason, not only stderr')
+  assert.match(report.markdown, new RegExp(`^diagnostics log: not written \\(${deniedCode()}\\)$`, 'm'))
   assert.equal(stderr.filter(line => /not written/.test(line)).length, 1, 'stderr keeps its one line')
   assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
   assert.equal(readFileSync(logPath, 'utf8'), 'OLD LINE\n', 'the leaf keeps its bytes')
@@ -622,10 +623,10 @@ test('the report names the reason the last append met (#2383)', async (t) => {
 
   assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the link keeps its bytes')
   assert.equal(readFileSync(logPath, 'utf8'), 'OLD LINE\n', 'the leaf keeps its bytes')
-  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES)', 'the reason is the one the last attempt met')
-  assert.match(report.markdown, /^diagnostics log: not written \(EACCES\)$/m)
+  assert.equal(report.facts.diagnosticsLog, `not written (${deniedCode()})`, 'the reason is the one the last attempt met')
+  assert.match(report.markdown, new RegExp(`^diagnostics log: not written \\(${deniedCode()}\\)$`, 'm'))
   assert.equal(stderr.filter(line => /is not a plain file of its own/.test(line)).length, 1, 'the stderr latch keeps its one guard line')
-  assert.equal(stderr.filter(line => /not written: EACCES/.test(line)).length, 1, 'the failure keeps its one line')
+  assert.equal(stderr.filter(line => new RegExp(`not written: ${deniedCode()}`).test(line)).length, 1, 'the failure keeps its one line')
 })
 
 // The two ordinary states, in the shape #2134 gave the journal: off adds no line at all, on says
@@ -1939,6 +1940,6 @@ test('a clear that cannot truncate the leaf still says so on one line', async (t
   quiet.mock.restore()
 
   assert.deepEqual(result, { leaf: 'kept', rotated: 'none' }, 'the leaf says it was left alone')
-  assert.deepEqual(stderr, ['[ds-bot] diagnostics log not truncated: EACCES'], 'one line, the code and never the folder')
+  assert.deepEqual(stderr.filter(line => new RegExp(`not truncated: ${deniedCode()}`).test(line)), [`[ds-bot] diagnostics log not truncated: ${deniedCode()}`])
   assert.equal(readFileSync(logPath, 'utf8'), old, 'the lines the answer did not claim to clear are still there')
 })
