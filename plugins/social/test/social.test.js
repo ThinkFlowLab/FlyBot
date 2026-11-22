@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { apply as applyDsBot } from 'ds-bot'
 import { fakeContext } from './fake-ctx.js'
+import { escapeRe, sep } from './platform.js'
 import { apply as applySocial, inject, name } from '../index.js'
 import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFaceAutoSend, holdIsBlanket, homeHandleOf, isTurnFailureNotice, onboard, onboardHome, nextOnboardDisplayName, mapJoinInviteError, parseInviteInput, inviteLink, registerUnavailable, startSocial, TURN_FAILURE_NOTICES, unavailableMessage } from '../src/social.js'
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
@@ -15256,12 +15257,14 @@ test('#3048: a hidden folder refusal names the segment it hit and the copy that 
   const hidden = join(home, 'proj', '.cache', 'notes.md')
   writeFileSync(hidden, 'x')
   const refused = await tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [hidden] }, 'b').then(() => undefined, error => error)
-  const outermost = hidden.match(/(?:^|\/)(\.[^/]+)/)[1]
+  // The product reads the segments with `path.sep` (`fileProblem` in src/social.js), so the expected
+  // segment is read the same way: a POSIX-only `/` split finds nothing in a `C:\…` path (#3298).
+  const outermost = hidden.split(sep).filter(Boolean).find(part => part.startsWith('.'))
   const reason = refused.message.slice(refused.message.indexOf('cannot be attached: '))
   assert.ok(reason.startsWith(`cannot be attached: ${outermost} is a hidden file or folder, so it stays private`), reason)
   assert.match(reason, /copy the file to a folder that is not hidden \(for example your home folder\) and attach that copy/)
-  assert.doesNotMatch(reason, /notes\.md|proj|\.cache\//, 'the segment it hit, not the path')
-  assert.doesNotMatch(reason, /\//, 'the reason names one segment and carries no path')
+  assert.doesNotMatch(reason, new RegExp(`notes\\.md|proj|\\.cache${escapeRe(sep)}`), 'the segment it hit, not the path')
+  assert.doesNotMatch(reason, new RegExp(escapeRe(sep)), 'the reason names one segment and carries no path')
   // The way out is real: the same file copied out of the dot folder is either an ordinary document,
   // or it meets a different, outer dot folder — never the one the refusal just named.
   const copy = join(home, 'proj', 'notes.md')
