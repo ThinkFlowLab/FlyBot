@@ -510,6 +510,63 @@ test('an error that quotes a URL saved before this fix stores it with the userin
   assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('s3cr3t-pa55'), false)
 })
 
+// A transport that may put its credential only in the URL has to use the query, and a server that
+// answers 401 echoes the URL it was given. `withoutUserinfo` strips the userinfo and
+// `withoutCredentialValues` reads headers, env and argv, so a `?token=` value reached the stored
+// reason the system prompt prints every turn.
+const endpointRefusal = url => `Error POSTing to endpoint (HTTP 401): ${url}`
+
+test('an error that quotes a URL stores the query credential masked', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const url = 'https://host/sse?token=sk-live-abcdef123456'
+  await rt.capabilitySave({ ...mcp('remote'), transport: 'streamable-http', url }, { ui: true })
+  await rt.changeCapabilityAttachment('attach', { name: 'remote' }, 'worker')
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(endpointRefusal(url)) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.remote
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, 'Error POSTing to endpoint (HTTP 401): https://host/sse?token=[hidden]', 'the query credential is masked and the address the server answered on stays')
+  assert.equal(JSON.stringify(rt.capabilityStatusesView()).includes('sk-live-abcdef123456'), false)
+})
+
+test('an error that quotes a URL keeps a query that names no credential', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  const url = 'https://host/sse?limit=50&page=2'
+  await rt.capabilitySave({ ...mcp('remote'), transport: 'streamable-http', url }, { ui: true })
+  await rt.changeCapabilityAttachment('attach', { name: 'remote' }, 'worker')
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new Error(endpointRefusal(url)) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.remote
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, endpointRefusal(url), 'an ordinary query is the address, not a credential')
+})
+
+test('a URL saved with userinfo still loses it, and its query stays', async t => {
+  const state = team()
+  state.capabilities = {
+    items: {
+      inline: {
+        name: 'inline', kind: 'mcp', description: 'Saved before the refusal', transport: 'streamable-http',
+        url: 'https://alice:s3cr3t-pa55@host/mcp?limit=50', headers: {}, approved: true, createdBy: 'worker', createdAt: 1, updatedAt: 1,
+      },
+    },
+  }
+  const env = await setup({ state })
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.changeCapabilityAttachment('attach', { name: 'inline' }, 'worker')
+  const quoted = 'Request cannot be constructed from a URL that includes credentials: https://alice:s3cr3t-pa55@host/mcp?limit=50'
+  ctx.emit('agent/created', { agent: testAgent('worker', mounts, skills, { awaitMount: async () => { throw new TypeError(quoted) } }) })
+  await rt.scheduleCapabilitiesReconcile()
+  const status = rt.capabilityStatusesView().worker.inline
+  assert.equal(status.state, 'error')
+  assert.equal(status.error, 'Request cannot be constructed from a URL that includes credentials: https://host/mcp?limit=50', 'the userinfo is gone as before and no query pair was touched')
+})
+
 test('a plain HTTPS URL still saves', async t => {
   const env = await setup()
   t.after(() => env.dispose())
