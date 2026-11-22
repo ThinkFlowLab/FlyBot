@@ -1967,6 +1967,6 @@ test('a clear that cannot truncate the leaf still says so on one line', async (t
   quiet.mock.restore()
 
   assert.deepEqual(result, { leaf: 'kept', rotated: 'none' }, 'the leaf says it was left alone')
-  assert.deepEqual(stderr.filter(line => new RegExp(`not truncated: ${deniedCode()}`).test(line)), [`[ds-bot] diagnostics log not truncated: ${deniedCode()}`])
+  assert.deepEqual(stderr, [`[ds-bot] diagnostics log not truncated: ${deniedCode()}`], 'one line, the code and never the folder')
   assert.equal(readFileSync(logPath, 'utf8'), old, 'the lines the answer did not claim to clear are still there')
 })
