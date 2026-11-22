@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -275,5 +277,73 @@ test('a plain temporary file a crashed writer left behind (one name) is overwrit
   assert.equal(trace.flush(), true)
   assert.ok(!existsSync(temporary))
   assert.equal(JSON.parse(readFileSync(join(dir, 'trace-000001.json'), 'utf8')).records.length, 1)
+  trace.close()
+})
+
+// Windows refuses `fsync` on a directory handle (EPERM from FlushFileBuffers; EINVAL on a filesystem
+// without directory flushes). It is the last step of `writeWhole`, after the temporary file was
+// synced and renamed, so the segment's bytes are already durable when it throws: the write must
+// count as saved, or the published segment is rewritten on every flush and the cap and the lock
+// hand-off never settle (#3298). A Linux directory fsync is a no-op success, so the case replaces
+// the `fsyncSync` binding `store.js` imports (node:module keeps that binding live) for as long as it
+// runs, and refuses only directory handles: the file sync stays real, and a failing *file* sync
+// would still reach the caller instead of being swallowed.
+const refuseDirectorySync = (t, code) => {
+  const real = fs.fsyncSync
+  const seen = { files: 0 }
+  fs.fsyncSync = (fd) => {
+    if (fs.fstatSync(fd).isDirectory()) throw Object.assign(new Error(`${code}: fsync failed`), { code })
+    seen.files += 1
+    return real(fd)
+  }
+  syncBuiltinESMExports()
+  t.after(() => {
+    fs.fsyncSync = real
+    syncBuiltinESMExports()
+  })
+  return seen
+}
+
+test('a directory fsync the platform refuses still saves the segment (Windows EPERM)', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const seen = refuseDirectorySync(t, 'EPERM')
+  const trace = openTrace({ dir, now: () => 10_000 })
+  trace.append(rec(9_000))
+  assert.equal(trace.flush(), true, 'the bytes are durable once the file was synced and renamed')
+  assert.equal(trace.stats().failing, false, 'a refused directory sync is not a failed write')
+  assert.equal(seen.files, 1, 'the segment itself was synced before the directory was')
+  assert.equal(trace.flush(), true, 'a flush with nothing new succeeds too')
+  assert.equal(seen.files, 1, 'a saved segment is not rewritten by the next flush')
+  trace.close()
+  const reopened = openTrace({ dir, now: () => 10_000 })
+  assert.deepEqual(reopened.records().map(r => r.t), [9_000])
+  reopened.close()
+})
+
+test('a directory fsync refused with EINVAL is tolerated the same way', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const seen = refuseDirectorySync(t, 'EINVAL')
+  const trace = openTrace({ dir, now: () => 10_000 })
+  trace.append(rec(9_000))
+  assert.equal(trace.flush(), true)
+  assert.equal(trace.stats().failing, false)
+  assert.equal(seen.files, 1)
+  trace.close()
+  const reopened = openTrace({ dir, now: () => 10_000 })
+  assert.deepEqual(reopened.records().map(r => r.t), [9_000])
+  reopened.close()
+})
+
+test('a rotation still prunes to the cap when the directory fsync is refused', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  refuseDirectorySync(t, 'EPERM')
+  const trace = openTrace({ dir, segmentRecords: 2, segments: 2, flushMs: 60_000, now: () => 1_000_000 })
+  for (const at of [1, 2, 3, 4, 5, 6]) trace.append(rec(at))
+  assert.equal(trace.flush(), true)
+  assert.deepEqual(files(dir).filter(name => /^trace-\d{6}\.json$/.test(name)), ['trace-000002.json', 'trace-000003.json'])
+  assert.deepEqual(trace.records().map(r => r.t), [3, 4, 5, 6])
   trace.close()
 })
