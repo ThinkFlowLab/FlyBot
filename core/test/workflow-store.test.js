@@ -15,6 +15,7 @@ import { WORKFLOW_VERSION } from '../src/shared/workflow.js'
 import { copyOfPreset, differingFields, workflowBytes, workflowDocument } from '../src/shared/workflow-doc.js'
 import { repoDevWorkflow } from '../src/shared/workflow-repo-dev.js'
 import { blankWorkflow } from '../src/shared/workflow-blank.js'
+import { assertMode, win32 } from './platform.js'
 
 const withDir = (run) => {
   const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-'))
@@ -393,7 +394,7 @@ test('#2079: a linked workflow file refuses a save instead of writing through it
   unlinkSync(link)
   assert.equal(store.save({ definition: { ...blankWorkflow, id: 'mine', name: 'Mine' } }).ok, true)
   assert.equal(existsSync(link), true)
-  assert.equal(statSync(link).mode & 0o077, 0, 'a newly created definition is not group- or world-readable')
+  assertMode(link, '0600', 'a newly created definition is not group- or world-readable')
 })
 
 test('#2079: a linked project file refuses to become the default', (t) => {
@@ -547,6 +548,10 @@ const unlistableFolder = (t) => {
 }
 
 test('#2614: a workflow folder that cannot be listed refuses the list instead of answering empty', (t) => {
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0311 cannot make a folder unlistable, so this refusal cannot be built')
+    return
+  }
   if (process.getuid?.() === 0) {
     t.skip('root ignores the folder permission bits')
     return
@@ -572,6 +577,10 @@ test('#2614: a workflow folder that cannot be listed refuses the list instead of
 })
 
 test('#2614: a save that landed in an unlistable folder says wrote: true and refuses the list', (t) => {
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0311 cannot make a folder unlistable, so this refusal cannot be built')
+    return
+  }
   if (process.getuid?.() === 0) {
     t.skip('root ignores the folder permission bits')
     return

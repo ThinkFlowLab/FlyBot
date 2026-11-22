@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -8,6 +8,7 @@ import { apply } from '../index.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
 import { canUse, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
 import { fakeContext } from './fake-ctx.js'
+import { assertMode } from './platform.js'
 
 // Test values are random on every run, so a leak can only come from this run.
 const fresh = () => `t-${randomBytes(12).toString('hex')}`
@@ -106,7 +107,7 @@ test('an unplanted temp name still writes the file, at 0600 (#2864)', async (t) 
 
   assert.equal(result.ok, true, JSON.stringify(result.error))
   const file = join(bench.home, 'secrets.json')
-  assert.equal(statSync(file).mode & 0o777, 0o600, 'the file is private, as the host made it (#2698)')
+  assertMode(file, '0600', 'the file is private, as the host made it (#2698)')
   assert.equal(readFileSync(file, 'utf8').includes('OWN_TEMP'), true)
   assert.equal(existsSync(secretTemp(bench.home, 'own-temp')), false, 'the temp name is renamed away')
 })
@@ -219,8 +220,7 @@ test('a card saves a key the Bot never sees, and the shell gets it', async (t) =
   assert.match((await bench.call('secret-set', { requestId: request.id, value })).error.message, /already answered/)
 
   const file = join(bench.home, 'secrets.json')
-  // Windows has no POSIX mode bits: a writable file always stats as 0o666 there.
-  if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600)
+  assertMode(file, '0600')
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).secrets[0].value, value)
   assert.deepEqual(readdirSync(bench.home).filter(name => name.endsWith('.tmp')), [])
   team = await bench.view()
