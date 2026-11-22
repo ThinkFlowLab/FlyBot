@@ -4,6 +4,7 @@
 // completion or pending-interaction flags — opening the chat is what acknowledges those.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { build } from 'esbuild'
 import { indexRoster } from '../src/client/sources.js'
@@ -16,7 +17,9 @@ const { outputFiles } = await build({
       "import * as header from './src/client/header.js'",
       'export { header }',
     ].join('\n'),
-    resolveDir: new URL('..', import.meta.url).pathname,
+    // `pathname` of a file URL keeps the leading slash before a Windows drive (`/D:/...`),
+    // which esbuild cannot resolve; `fileURLToPath` gives the path the platform understands.
+    resolveDir: fileURLToPath(new URL('..', import.meta.url)),
   },
   bundle: true, format: 'cjs', platform: 'node', write: false, logLevel: 'silent',
   external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],

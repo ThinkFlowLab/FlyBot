@@ -10,11 +10,13 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, w
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 
-const RESUME = fileURLToPath(new URL('../src/host/resume.js', import.meta.url))
+// A file URL, not a path: `--import` and an ESM specifier both parse a bare Windows path
+// (`D:\\...`) as the URL scheme `d:`, so the child died with ERR_UNSUPPORTED_ESM_URL_SCHEME
+// before it ran a line (#3293). The URL form is the one both platforms accept.
+const RESUME = new URL('../src/host/resume.js', import.meta.url).href
 // The core modules resolve `@deepseek-ai/*` through this hook; the child processes need it too.
-const HARNESS = fileURLToPath(new URL('./harness-resolve.mjs', import.meta.url))
+const HARNESS = new URL('./harness-resolve.mjs', import.meta.url).href
 
 const NOTE = {
   turns: { 'sess-cut-off': { botId: 'bot-1', since: 1, turn: 3, trigger: { role: 'request', exchangeId: 'ex-1', senderSessionId: 'sess-peer' } } },

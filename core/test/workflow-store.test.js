@@ -8,7 +8,6 @@ import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, rea
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 import { install as installAuthz } from '../src/host/authz.js'
 import { createWorkflowStore, install, PRESETS } from '../src/host/workflow-store.js'
 import { WORKFLOW_VERSION } from '../src/shared/workflow.js'
@@ -704,8 +703,11 @@ test('#2681: a definition at this build own version with unknown fields still sa
 // `workflow/not-found` while the bytes are being rewritten. The writer now stages a private temp
 // name in the same folder and renames it over the target, so every read sees either the previous
 // complete bytes or the new complete bytes.
-const WORKFLOW_STORE_MODULE = fileURLToPath(new URL('../src/host/workflow-store.js', import.meta.url))
-const WORKFLOW_TEST_HARNESS = fileURLToPath(new URL('./harness-resolve.mjs', import.meta.url))
+// File URLs, not paths: an ESM specifier and `--import` read a bare Windows path as a URL
+// with the scheme `d:`, so both child processes died with ERR_UNSUPPORTED_ESM_URL_SCHEME
+// before saving a byte (#3293).
+const WORKFLOW_STORE_MODULE = new URL('../src/host/workflow-store.js', import.meta.url).href
+const WORKFLOW_TEST_HARNESS = new URL('./harness-resolve.mjs', import.meta.url).href
 
 // A definition that is cheap to validate and big to write: the size lives in the node names, so the
 // renderer's work stays small while the bytes are the ones a real worksheet can carry.
