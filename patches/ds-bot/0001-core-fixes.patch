@@ -4544,7 +4544,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
    }
    return name
  }
-@@ -33,6 +33,78 @@ export function expandCapabilityNames(capabilities, library) {
+@@ -33,6 +33,93 @@ export function expandCapabilityNames(capabilities, library) {
    return expanded
  }
  
@@ -4620,6 +4620,21 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 +  return out
 +}
 +
++// The query is where a transport may carry the credential it needs when the protocol allows only a
++// URL, and a server that answers 401 echoes the address it was given. `withoutUserinfo` strips the
++// userinfo and the values above come from the headers, the env and the argv, so a `?token=` value
++// reached the stored reason the system prompt prints every turn. Only the value of a pair whose
++// name promises a credential goes: the rest of the address, and a query the server needs such as
++// `?limit=50`, keep their text.
++const QUERY_PAIR = /([?&]([^=&#\s"']+)=)([^&#\s"']+)/g
++const QUERY_TRAILING = /[)\].,;:!?]+$/
++const withoutQueryCredentials = text => text.replace(QUERY_PAIR, (whole, lead, name, value) => {
++  if (!CREDENTIAL_NAME.test(name)) return whole
++  const trailing = value.match(QUERY_TRAILING)?.[0] ?? ''
++  const bare = value.slice(0, value.length - trailing.length)
++  return bare.length >= 6 ? `${lead}[hidden]${trailing}` : whole
++})
++
  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
  const strings = value => {
    if (value === undefined) return []
@@ -4684,7 +4699,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
        await drop()
 -      const message = rt.redactSecrets([error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed').slice(0, 300)
 +      const joined = [error, error?.cause].filter(Boolean).map(part => String(part?.message ?? part)).join(': ') || 'Connection failed'
-+      const message = withoutCredentialValues(withoutUserinfo(rt.redactSecrets(joined)), config).slice(0, 300)
++      const message = withoutCredentialValues(withoutQueryCredentials(withoutUserinfo(rt.redactSecrets(joined))), config).slice(0, 300)
        statusSet(bot.id, name, sessionId, { state: 'error', error: message })
      }
    }
