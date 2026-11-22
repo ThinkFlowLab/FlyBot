@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { install } from '../src/host/decisions.js'
+import { win32 } from './platform.js'
 
 const KEPT = 2_000
 const SITUATION = 'The Bot team in /data/example is open in another dsh (Web or Desktop, pid 4242). This window shows the team but cannot change it; close the other one and reload.'
@@ -52,7 +53,11 @@ const optionsOnDisk = path => readFileSync(path, 'utf8').split('\n').filter(Bool
 // Both writers trim, so both take the temp path the fixed name gave to every writer on the home.
 // Five pairs, because a single pair can meet or miss the collision window depending on timing: the
 // answer is that no pair of them fails, over the same log, one after the other.
-test('#2724: two writers on one home both record their decision, and no write fails on a shared temp name', async (t) => {
+// Windows is skipped, not weakened: its `rename` refuses to replace a file another writer is
+// replacing at the same instant, so two writers cannot both land and the case cannot be built there.
+test(`#2724: two writers on one home both record their decision, and no write fails on a shared temp name${win32 ? ' (skipped on Windows: two writers cannot replace one log at the same instant)' : ''}`, {
+  skip: win32 ? 'Windows rename refuses to replace the target while another writer replaces it, so the second record_decision is refused; POSIX rename(2) replaces unconditionally' : undefined,
+}, async (t) => {
   const dir = home(t)
   const log = join(dir, 'decisions.jsonl')
   writeFileSync(log, seed())

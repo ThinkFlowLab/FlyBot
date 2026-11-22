@@ -760,7 +760,12 @@ for (let at = 0; at < Number(rounds); at++) store.save({ definition: at % 2 === 
 process.stdout.write('@@done\\n')
 `
 
-test('#2762: a reader in a second process never catches a half-written definition', { timeout: 90_000 }, async (t) => {
+test(`#2762: a reader in a second process never catches a half-written definition${win32 ? ' (skipped on Windows: the reader holds the target and the save cannot be replaced)' : ''}`, {
+  timeout: 90_000,
+  // The reader polls the file while the child saves: Windows refuses a `rename` onto a name another
+  // handle holds open, so the writer is refused and this POSIX shape cannot be built there (#3293).
+  skip: win32 ? 'Windows refuses to replace a file a reader holds open, so the writer cannot save while the reader polls; the torn-file window is POSIX-only' : undefined,
+}, async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-torn-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const dir = join(root, 'workflows')

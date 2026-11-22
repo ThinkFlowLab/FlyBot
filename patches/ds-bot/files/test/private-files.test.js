@@ -15,7 +15,7 @@ import { apply } from '../index.js'
 import { install as installImages } from '../src/host/images.js'
 import { install as installResume } from '../src/host/resume.js'
 import { fakeContext } from './fake-ctx.js'
-import { assertMode } from './platform.js'
+import { assertMode, win32 } from './platform.js'
 
 const TEAM = {
   version: 1,
@@ -41,12 +41,24 @@ const TEAM = {
 // there and names why 0600/0700 cannot be observed (#3293).
 const tick = (ms = 40) => new Promise(resolve => setTimeout(resolve, ms))
 
+// Every host opened over a scratch home, stopped before the home is removed: node runs a test's
+// `after` hooks in the order they were added, so a removal registered first would reach a live
+// SQLite index or read-only window and Windows answers EPERM (#3293). One teardown per test keeps
+// the removal last instead of retrying over a live writer.
+const opens = []
+
 // A scratch root widened to 0755, then a home under it, created the way `mkdir(..., { recursive:
 // true })` leaves it under `umask 022`. `apply` gets a home that already exists at 0755.
 function scratch(t) {
   const dir = mkdtempSync(join(tmpdir(), 'ds-bot-private-'))
   chmodSync(dir, 0o755)
-  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }))
+  t.after(async () => {
+    for (const open of opens.filter(entry => entry.home.startsWith(dir))) {
+      opens.splice(opens.indexOf(open), 1)
+      await open.stop()
+    }
+    rmSync(dir, { recursive: true, force: true })
+  })
   const home = join(dir, 'dsh', 'bot')
   mkdirSync(home, { recursive: true })
   assertMode(home, '0755', 'the scratch home must start world-readable, or this test proves nothing')
@@ -74,7 +86,9 @@ function start(home, config = {}) {
   apply(ctx, { home, ...config })
   const call = async (endpoint, payload) => (await route.fetch(new Request('http://localhost/api/bot', { method: 'POST', body: JSON.stringify({ endpoint, payload }) }))).json()
   const tool = (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId } })
-  return { ctx, call, tool, stop: async () => { await ctx.dispose() } }
+  const host = { ctx, call, tool, stop: async () => { await ctx.dispose() } }
+  opens.push({ home, stop: host.stop })
+  return host
 }
 
 test('Bot memory, its topics and its snapshot are private, and a narrowed file stays narrowed', async (t) => {
@@ -83,7 +97,6 @@ test('Bot memory, its topics and its snapshot are private, and a narrowed file s
   t.after(() => process.umask(before))
   const { home } = scratch(t)
   const host = start(home)
-  t.after(host.stop)
 
   await host.tool('remember', { text: '- 用户的家庭住址是杭州西湖区文三路 100 号 [source: part 1 #1]' }, 'b2')
   await tick()
@@ -102,10 +115,20 @@ test('Bot memory, its topics and its snapshot are private, and a narrowed file s
   assertMode(snapshot, '0600')
 
   // The owner narrows the file by hand; the next rewrite must keep that, not put 0600 back.
+  // Windows has no mode bits: chmod 0400 sets the read-only attribute, and Windows refuses to
+  // replace a read-only name, so the rewrite is refused and said so instead of landing. The file
+  // then keeps the one entry it had and is still narrow — that is what "keeps it" means there (#3293).
   chmodSync(entry, 0o400)
-  await host.tool('remember', { text: '- 用户偏好 DeepSeek 模型 [source: part 1 #2]' }, 'b2')
+  const second = await host.tool('remember', { text: '- 用户偏好 DeepSeek 模型 [source: part 1 #2]' }, 'b2')
   await tick()
-  assert.match(readFileSync(entry, 'utf8'), /DeepSeek/)
+  if (win32) {
+    assert.doesNotMatch(second, /next conversation/, `a refused write is not reported as saved, got: ${second}`)
+    assert.match(second, /EPERM|EACCES/, `the answer names the code the platform refused with, got: ${second}`)
+    assert.match(readFileSync(entry, 'utf8'), /杭州西湖区/, 'the entry the file had is intact')
+    assert.doesNotMatch(readFileSync(entry, 'utf8'), /DeepSeek/, 'a refused write leaves no entry behind')
+  } else {
+    assert.match(readFileSync(entry, 'utf8'), /DeepSeek/)
+  }
   assertMode(entry, '0400')
 })
 
@@ -116,7 +139,6 @@ test('the saved team is private, also when it was seeded 0600', async (t) => {
   const { home } = scratch(t)
   const state = join(home, 'state.json')
   const host = start(home)
-  t.after(host.stop)
   assertMode(state, '0600')
 
   await host.call('state', {})
@@ -135,7 +157,6 @@ test('the decision log is private', async (t) => {
   t.after(() => process.umask(before))
   const { home } = scratch(t)
   const host = start(home, { decisions: true })
-  t.after(host.stop)
   await host.ctx.flybot.ready()
 
   const out = await host.tool('record_decision', { option: '把客户的报价单直接发到公开群', choice: 'rejected', why: '泄露报价' }, 'b2')
@@ -187,7 +208,6 @@ test('the chat index of every part is private, SQLite or not', async (t) => {
   t.after(() => process.umask(before))
   const { home } = scratch(t)
   const host = start(home)
-  t.after(host.stop)
 
   try { await host.tool('read_own_chat', { query: '银行卡' }, 'b2') } catch { /* no SQLite: nothing to check */ }
   await tick(150)
