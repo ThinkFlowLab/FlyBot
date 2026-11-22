@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
+import { win32 } from './platform.js'
 
 // A stand-in for the FlyBot service: every endpoint `apply` registers is kept with its options, and
 // the host warn channel is recorded. Nothing here starts a network.
@@ -121,9 +122,17 @@ test('#2945: an unreadable Settings server file is the same refusal', async (t) 
   if (process.getuid?.() === 0) return t.skip('root reads a file chmod 000, so this arm cannot run here')
   const home = homeOf(t)
   const override = join(home, 'bot', 'flybot-social-server.json')
-  writeFileSync(override, JSON.stringify({ server: 'https://picked-in-settings.test' }))
-  chmodSync(override, 0o000)
-  assert.throws(() => readFileSync(override, 'utf8'), 'the file really is unreadable to this process')
+  // A path that exists but cannot be read is the refusal under test. POSIX takes the read bit away;
+  // Windows has none (`chmod 000` only clears the write attribute, and its owner still reads the
+  // file), so the path that cannot be read as a file is a directory — the read answers EISDIR, which
+  // is not the `ENOENT` that means "nothing saved yet", so the same "cannot be read" branch runs and
+  // answers the same sentence (#3298). Both arms really are unreadable to this process.
+  if (win32) mkdirSync(override, { recursive: true })
+  else {
+    writeFileSync(override, JSON.stringify({ server: 'https://picked-in-settings.test' }))
+    chmodSync(override, 0o000)
+  }
+  assert.throws(() => readFileSync(override, 'utf8'), 'the path really is unreadable to this process')
   const { handlers, warns } = await appliedAt(home)
   const refused = await refusalOf(handlers, 'social/server')
   assert.ok(refused.message.includes(override), `the refusal names the path: ${refused.message}`)

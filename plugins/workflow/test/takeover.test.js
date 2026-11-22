@@ -15,10 +15,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { moduleUrl } from './platform.js'
 
 const REPO = fileURLToPath(new URL('../../..', import.meta.url))
-const SERVICE = `${REPO}plugins/workflow/src/service.js`
-const LOCK = `${REPO}core/src/host/home-lock.js`
+// A child imports a module by URL, never by a path: an absolute Windows path is `C:\…`, which the
+// ESM loader refuses as an unsupported scheme (`d:`) before the script runs at all, so the same
+// specifier is built for both platforms (#3298).
+const SERVICE = moduleUrl(REPO, 'plugins/workflow/src/service.js')
+const LOCK = moduleUrl(REPO, 'core/src/host/home-lock.js')
 const J = JSON.stringify
 const NOW = 1_700_000_000_000
 const DELIVERY = 'delivery'

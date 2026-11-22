@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { openTrace, TraceLocked } from '../src/store.js'
+import { win32 } from './platform.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'flybot-timeline-store-'))
 const files = dir => readdirSync(dir).sort()
@@ -93,7 +94,12 @@ test('one writer: a live holder is respected, a dead one is taken over, a second
 // that exists but cannot be listed takes the lock (creating `writer.lock` needs only `+wx`) and
 // then throws on the listing; the only release used to be `close()`, which that path never reached,
 // so the process held the directory for good and the lock file stayed for every later process.
-test('a refused open releases the writer lock for the next open in this process', (t) => {
+test(`a refused open releases the writer lock for the next open in this process${win32 ? ' (skipped on Windows: chmod cannot make a folder unlistable for its owner, so nothing refuses the open once the writer lock is taken)' : ''}`, {
+  // The open has to take the writer lock and then fail in the listing. POSIX reaches that with a
+  // folder whose mode removes the read bit; Windows has no such bit (chmod only sets the read-only
+  // attribute, and its owner still lists the folder), so this one shape cannot be built there (#3298).
+  skip: win32 ? 'Windows has no POSIX mode bits: a folder cannot be made unlistable for its owner, so an open cannot be refused after it took the writer lock' : undefined,
+}, (t) => {
   const root = mkdtempSync(join(tmpdir(), 'flybot-timeline-store-'))
   const dir = join(root, 'trace')
   mkdirSync(dir, { recursive: true })

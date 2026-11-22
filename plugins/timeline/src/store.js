@@ -69,14 +69,31 @@ const tempWritable = (path) => {
   } catch (error) { return error?.code === 'ENOENT' }
 }
 
+// The rename publishes a segment; flushing the directory is the extra step that makes that rename
+// survive a crash, and not every platform has it: Windows refuses a directory handle it did not open
+// for writing (`FlushFileBuffers` answers EPERM), and a filesystem without directory flushes answers
+// EINVAL. Such a refusal says nothing about the segment, which is already renamed into place — read
+// as a failed write it kept a published segment "unsaved", warned on every flush and left every newer
+// segment off the disk altogether (#3298). A real I/O error still fails the write.
+const noDirectoryFlush = new Set(['EPERM', 'EINVAL'])
+const flushDirectory = (dir) => {
+  const directory = openSync(dir, 'r')
+  try {
+    fsyncSync(directory)
+  } catch (error) {
+    if (!noDirectoryFlush.has(error?.code)) throw error
+  } finally {
+    closeSync(directory)
+  }
+}
+
 function writeWhole(dir, path, value) {
   const temporary = `${path}.tmp`
   if (!tempWritable(temporary)) throw new Error(`Not saved: ${temporary} is not a plain file of its own, so the trace segment was not written there.`)
   const file = openSync(temporary, 'w', 0o600)
   try { writeFileSync(file, JSON.stringify(value)); fsyncSync(file) } finally { closeSync(file) }
   renameSync(temporary, path)
-  const directory = openSync(dir, 'r')
-  try { fsyncSync(directory) } finally { closeSync(directory) }
+  flushDirectory(dir)
 }
 
 const segmentName = n => `trace-${String(n).padStart(6, '0')}.json`

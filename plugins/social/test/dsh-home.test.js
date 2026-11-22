@@ -9,6 +9,7 @@ import { isAbsolute, join } from 'node:path'
 import { test } from 'node:test'
 import { apply } from '../index.js'
 import { dshHomeOf } from '../src/dsh-home.js'
+import { homeEnv } from './platform.js'
 
 const fakeFlybot = (handlers) => {
   const fb = {
@@ -44,12 +45,14 @@ async function statusAt(cwd) {
 }
 
 async function withEnv(env, run) {
-  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, cwd: process.cwd() }
+  // USERPROFILE too: `os.homedir()` reads HOME on POSIX and USERPROFILE on Windows, so a case
+  // that set only HOME would leave the runner's own home in place there (#3298).
+  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, cwd: process.cwd() }
   Object.assign(process.env, env)
   try {
     return await run()
   } finally {
-    for (const key of ['DSH_HOME', 'HOME']) {
+    for (const key of ['DSH_HOME', 'HOME', 'USERPROFILE']) {
       if (saved[key] === undefined) delete process.env[key]
       else process.env[key] = saved[key]
     }
@@ -63,7 +66,7 @@ test('the credentials file follows the DSH home whatever the working directory',
   const b = mkdtempSync(join(tmpdir(), 'flybot-social-cwd-b-'))
   try {
     credentialsAt(home, 'https://peer.test')
-    await withEnv({ DSH_HOME: '', HOME: home }, async () => {
+    await withEnv({ DSH_HOME: '', ...homeEnv(home) }, async () => {
       const first = await statusAt(a)
       const second = await statusAt(b)
       assert.equal(isAbsolute(dshHomeOf()), true, 'the resolved root is absolute')
@@ -80,13 +83,13 @@ test('the credentials file follows the DSH home whatever the working directory',
 test('a blank DSH_HOME counts as unset and ~ expands like the core', async () => {
   const home = mkdtempSync(join(tmpdir(), 'flybot-social-home-'))
   try {
-    await withEnv({ DSH_HOME: '  ', HOME: home }, () => {
+    await withEnv({ DSH_HOME: '  ', ...homeEnv(home) }, () => {
       assert.equal(dshHomeOf(), join(home, '.dsh'))
     })
-    await withEnv({ DSH_HOME: '~/.dsh', HOME: home }, () => {
+    await withEnv({ DSH_HOME: '~/.dsh', ...homeEnv(home) }, () => {
       assert.equal(dshHomeOf(), join(home, '.dsh'))
     })
-    await withEnv({ DSH_HOME: '~/data', HOME: home }, () => {
+    await withEnv({ DSH_HOME: '~/data', ...homeEnv(home) }, () => {
       assert.equal(dshHomeOf(), join(home, 'data'))
     })
   } finally {
