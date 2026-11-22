@@ -813,7 +813,12 @@ test('#2762: a reader in a second process never catches a half-written definitio
   assert.equal(readFileSync(file, 'utf8'), workflowBytes(beta), 'the last complete save landed whole')
 })
 
-test('#2762: a kill -9 inside the write leaves the previous complete definition, and list() still has it', { timeout: 120_000 }, async (t) => {
+test(`#2762: a kill -9 inside the write leaves the previous complete definition, and list() still has it${win32 ? ' (skipped on Windows: no POSIX kill -9 to stop the child inside the write)' : ''}`, {
+  timeout: 120_000,
+  // Windows stops a child with TerminateProcess, not a POSIX signal, so the crash cannot be
+  // aimed inside the write window this case is about (#3293).
+  skip: win32 ? 'Windows has no POSIX kill -9: TerminateProcess cannot be aimed inside the write window' : undefined,
+}, async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'flybot-workflows-crash-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const dir = join(root, 'workflows')

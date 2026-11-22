@@ -11,6 +11,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+// Windows stops a child with TerminateProcess, not a POSIX signal, so a crash cannot be aimed
+// inside the write window the `kill -9` case builds (#3293). The other cases never kill.
+const win32 = process.platform === 'win32'
+
 // A file URL, not a path: `--import` and an ESM specifier both parse a bare Windows path
 // (`D:\\...`) as the URL scheme `d:`, so the child died with ERR_UNSUPPORTED_ESM_URL_SCHEME
 // before it ran a line (#3293). The URL form is the one both platforms accept.
@@ -106,7 +110,10 @@ const scratch = (t) => {
   return home
 }
 
-test('a write cut off by kill -9 keeps the complete notes on disk, and the next start picks them up', { timeout: 60_000 }, async (t) => {
+test(`a write cut off by kill -9 keeps the complete notes on disk, and the next start picks them up${win32 ? ' (skipped on Windows: no POSIX kill -9 to stop the child inside the write)' : ''}`, {
+  timeout: 60_000,
+  skip: win32 ? 'Windows has no POSIX kill -9: TerminateProcess cannot be aimed inside the write window' : undefined,
+}, async (t) => {
   const home = scratch(t)
   writeFileSync(join(home, 'inflight.json'), NOTE_TEXT, { mode: 0o600 })
 

@@ -8,6 +8,7 @@ import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 import { ROOM_WORK_GRACE_MS } from '../src/host/constants.js'
 import { prepareFixture, checkWorker, verifyArtifact, requirement, question, answer } from '../dev/room-collaboration/fixture.mjs'
+import { win32 } from './platform.js'
 
 const implementation = `export function totalPaid(orders, region) {
   return orders.filter(row => row.status === 'paid' && (region === undefined || row.region === region))
@@ -158,6 +159,10 @@ async function collaborate(t, { source = implementation, accept = true } = {}) {
 }
 
 test('the fixture checks still pass when the working directory is reached through a symlink', t => {
+  if (win32) {
+    t.skip('Windows resolves a junction to an extended-length path that Node --permission does not match, so the permissioned child cannot start; the check itself is Linux/macOS')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'flybot-room-symlink-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
   const real = join(home, 'fixture')
@@ -170,6 +175,10 @@ test('the fixture checks still pass when the working directory is reached throug
 })
 
 test('a check reached through a symlinked working directory still fails when the code is broken', t => {
+  if (win32) {
+    t.skip('Windows resolves a junction to an extended-length path that Node --permission does not match, so the permissioned child cannot start; the check itself is Linux/macOS')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'flybot-room-symlink-red-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
   const real = join(home, 'fixture')

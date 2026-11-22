@@ -11,7 +11,7 @@ import { install as installStore } from '../src/host/store.js'
 import { failureLine, install as installTurns, turnFailure } from '../src/host/turns.js'
 import { errorCode } from '../src/host/channel.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
-import { deniedCode } from './platform.js'
+import { deniedCode, win32 } from './platform.js'
 
 test('cleanText hides keys, tokens and the home folder', () => {
   const home = '/home/user'
@@ -472,6 +472,10 @@ test('a journal file the report may not read still answers its size and time (#2
     t.skip('root reads a file without its read bit')
     return
   }
+  if (win32) {
+    t.skip('Windows has no POSIX read bit: chmod only sets the read-only attribute, so a file cannot be made unreadable')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
   const path = join(home, 'journal', 'state.jsonl')
@@ -655,6 +659,10 @@ test('the report says the diagnostics log could not be read (#2604)', async (t) 
     t.skip('root reads a file without its read bit')
     return
   }
+  if (win32) {
+    t.skip('Windows has no POSIX read bit: chmod only sets the read-only attribute, so the log cannot be made unreadable')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   mkdirSync(join(home, 'logs'), { recursive: true })
   const logPath = join(home, 'logs', 'diagnostics.jsonl')
@@ -688,6 +696,10 @@ test('the report says the diagnostics log could not be read (#2604)', async (t) 
 test('a failed read of the log keeps the errors this host recorded since start-up (#2604)', async (t) => {
   if (process.getuid?.() === 0) {
     t.skip('root reads a file without its read bit')
+    return
+  }
+  if (win32) {
+    t.skip('Windows has no POSIX read bit: chmod only sets the read-only attribute, so the log cannot be made unreadable')
     return
   }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
@@ -917,7 +929,8 @@ test('a team file linking to a folder keeps the leaf sentence, not the read-thro
 test('a team file linking to a file it cannot read keeps the leaf sentence, not the read-through-link one', {
   // Root reads a file without its read bits, so the case cannot be built there; the runner marks
   // it skipped instead of asserting something the kernel never enforces.
-  skip: process.getuid?.() === 0 ? 'root reads a file without its read bits' : undefined,
+  skip: process.getuid?.() === 0 ? 'root reads a file without its read bits'
+    : win32 ? 'Windows has no POSIX read bit: chmod only sets the read-only attribute, so the link target cannot be made unreadable' : undefined,
 }, async (t) => {
   const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
   const target = join(elsewhere, 'unreadable.json')
@@ -974,6 +987,10 @@ test('one readable backup is named with its size and age, and no other line move
 })
 
 test('a backup whose lstat fails is named with its code and the report still prints', async (t) => {
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 000 on a home does not deny lstat, so this failure cannot be built')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => {
     try { chmodSync(home, 0o700) } catch { /* the home is already gone */ }
@@ -1623,6 +1640,10 @@ test('#2358: clear truncates the leaf when the folder refuses the removal', asyn
     t.skip('root removes from a folder without its write bit')
     return
   }
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0555 does not refuse a removal, so this failure cannot be built')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   const logs = join(home, 'logs')
   t.after(() => {
@@ -1696,6 +1717,10 @@ test('#2360: clear reports a rotated copy that could not be removed, and truncat
 test('#2360: clear reports a folder that refused the removal, and truncates anyway', async (t) => {
   if (process.getuid?.() === 0) {
     t.skip('root removes from a folder without its write bit')
+    return
+  }
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0555 does not refuse a removal, so this failure cannot be built')
     return
   }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
