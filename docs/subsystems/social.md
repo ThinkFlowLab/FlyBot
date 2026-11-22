@@ -242,6 +242,8 @@ The plugin's discarded `.catch(() => {})` calls carry a one-line reason comment 
 
 Covered by the plugin's own tests under `plugins/social/` / core test suite as wired. Packaged-install import (#153) is `scripts/lint-plugins.mjs` plus `.github/scripts/plugin-imports.test.mjs`.
 
+The suite also runs on `windows-latest` (#3298): the `dsh-home` cases set `USERPROFILE` as well as `HOME`, because that is the variable `os.homedir()` reads there, and the cases that need an unwritable or unreadable file put a directory at the path instead of relying on `chmod`, which on Windows only toggles the read-only attribute.
+
 ## Common mistakes
 
 - Putting social logic under `core/`.

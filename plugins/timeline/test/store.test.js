@@ -94,6 +94,10 @@ test('one writer: a live holder is respected, a dead one is taken over, a second
 // then throws on the listing; the only release used to be `close()`, which that path never reached,
 // so the process held the directory for good and the lock file stayed for every later process.
 test('a refused open releases the writer lock for the next open in this process', (t) => {
+  // The refused listing is made with POSIX mode bits (`0o300` on the directory). Windows `chmod`
+  // only toggles the read-only attribute and cannot take `r` away from a directory, so this arm
+  // has no way to fail the listing there.
+  if (process.platform === 'win32') return t.skip('win32: no POSIX mode bits, so a directory cannot be made unlistable')
   const root = mkdtempSync(join(tmpdir(), 'flybot-timeline-store-'))
   const dir = join(root, 'trace')
   mkdirSync(dir, { recursive: true })

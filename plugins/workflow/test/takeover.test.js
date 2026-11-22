@@ -14,11 +14,11 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 
-const REPO = fileURLToPath(new URL('../../..', import.meta.url))
-const SERVICE = `${REPO}plugins/workflow/src/service.js`
-const LOCK = `${REPO}core/src/host/home-lock.js`
+// The child imports these by specifier, and only a `file://` URL is one on Windows
+// (`C:\...` answers ERR_UNSUPPORTED_ESM_URL_SCHEME, protocol 'd:').
+const SERVICE = new URL('../src/service.js', import.meta.url).href
+const LOCK = new URL('../../../core/src/host/home-lock.js', import.meta.url).href
 const J = JSON.stringify
 const NOW = 1_700_000_000_000
 const DELIVERY = 'delivery'

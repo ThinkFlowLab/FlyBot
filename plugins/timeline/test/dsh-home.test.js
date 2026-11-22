@@ -29,12 +29,14 @@ function traceDirAt(cwd) {
 }
 
 function withEnv(env, run) {
-  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, cwd: process.cwd() }
+  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, cwd: process.cwd() }
   Object.assign(process.env, env)
+  // Windows resolves a bare home from USERPROFILE, not HOME (os.homedir()).
+  if (process.platform === 'win32' && env.HOME !== undefined) process.env.USERPROFILE = env.HOME
   try {
     return run()
   } finally {
-    for (const key of ['DSH_HOME', 'HOME']) {
+    for (const key of ['DSH_HOME', 'HOME', 'USERPROFILE']) {
       if (saved[key] === undefined) delete process.env[key]
       else process.env[key] = saved[key]
     }
@@ -71,8 +73,10 @@ test('a blank DSH_HOME counts as unset and ~ expands like the core', () => {
     withEnv({ DSH_HOME: '~/.dsh', HOME: home }, () => {
       assert.equal(traceDirAt(cwd), join(home, '.dsh', 'bot', 'flybot-timeline'))
     })
-    withEnv({ DSH_HOME: '/var/lib/flybot', HOME: home }, () => {
-      assert.equal(traceDirAt(cwd), '/var/lib/flybot/bot/flybot-timeline')
+    // An absolute DSH_HOME is used as it is; on Windows that absolute path carries a drive letter.
+    const absolute = process.platform === 'win32' ? join(tmpdir(), 'flybot-timeline-absolute') : '/var/lib/flybot'
+    withEnv({ DSH_HOME: absolute, HOME: home }, () => {
+      assert.equal(traceDirAt(cwd), join(absolute, 'bot', 'flybot-timeline'))
     })
   } finally {
     rmSync(home, { recursive: true, force: true })

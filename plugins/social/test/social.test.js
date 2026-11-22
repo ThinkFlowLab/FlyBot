@@ -15256,12 +15256,12 @@ test('#3048: a hidden folder refusal names the segment it hit and the copy that 
   const hidden = join(home, 'proj', '.cache', 'notes.md')
   writeFileSync(hidden, 'x')
   const refused = await tool('message_friend_bot', { to: '@coder.bob.home', message: 'x', files: [hidden] }, 'b').then(() => undefined, error => error)
-  const outermost = hidden.match(/(?:^|\/)(\.[^/]+)/)[1]
+  const outermost = hidden.split(/[\\/]/).find(part => part.startsWith('.') && part !== '.' && part !== '..')
   const reason = refused.message.slice(refused.message.indexOf('cannot be attached: '))
   assert.ok(reason.startsWith(`cannot be attached: ${outermost} is a hidden file or folder, so it stays private`), reason)
   assert.match(reason, /copy the file to a folder that is not hidden \(for example your home folder\) and attach that copy/)
   assert.doesNotMatch(reason, /notes\.md|proj|\.cache\//, 'the segment it hit, not the path')
-  assert.doesNotMatch(reason, /\//, 'the reason names one segment and carries no path')
+  assert.doesNotMatch(reason, /[\\/]/, 'the reason names one segment and carries no path')
   // The way out is real: the same file copied out of the dot folder is either an ordinary document,
   // or it meets a different, outer dot folder — never the one the refusal just named.
   const copy = join(home, 'proj', 'notes.md')

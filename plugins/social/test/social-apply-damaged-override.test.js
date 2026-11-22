@@ -118,11 +118,18 @@ test('#2945: a damaged Settings server file leaves the plugin installed and says
 })
 
 test('#2945: an unreadable Settings server file is the same refusal', async (t) => {
-  if (process.getuid?.() === 0) return t.skip('root reads a file chmod 000, so this arm cannot run here')
+  const windows = process.platform === 'win32'
+  if (!windows && process.getuid?.() === 0) return t.skip('root reads a file chmod 000, so this arm cannot run here')
   const home = homeOf(t)
   const override = join(home, 'bot', 'flybot-social-server.json')
-  writeFileSync(override, JSON.stringify({ server: 'https://picked-in-settings.test' }))
-  chmodSync(override, 0o000)
+  // A file the process cannot read: `chmod 000` where POSIX mode bits work, and a directory at
+  // the same path on Windows, where `chmod` only toggles the read-only attribute (a directory
+  // reads as EISDIR there and on POSIX alike).
+  if (windows) mkdirSync(override)
+  else {
+    writeFileSync(override, JSON.stringify({ server: 'https://picked-in-settings.test' }))
+    chmodSync(override, 0o000)
+  }
   assert.throws(() => readFileSync(override, 'utf8'), 'the file really is unreadable to this process')
   const { handlers, warns } = await appliedAt(home)
   const refused = await refusalOf(handlers, 'social/server')

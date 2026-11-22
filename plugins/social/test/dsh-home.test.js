@@ -44,12 +44,14 @@ async function statusAt(cwd) {
 }
 
 async function withEnv(env, run) {
-  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, cwd: process.cwd() }
+  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, cwd: process.cwd() }
   Object.assign(process.env, env)
+  // Windows resolves a bare home from USERPROFILE, not HOME (os.homedir()).
+  if (process.platform === 'win32' && env.HOME !== undefined) process.env.USERPROFILE = env.HOME
   try {
     return await run()
   } finally {
-    for (const key of ['DSH_HOME', 'HOME']) {
+    for (const key of ['DSH_HOME', 'HOME', 'USERPROFILE']) {
       if (saved[key] === undefined) delete process.env[key]
       else process.env[key] = saved[key]
     }

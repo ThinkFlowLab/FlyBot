@@ -6,7 +6,7 @@
 // instead, and a start refuses a file that exists but does not parse rather than reading it as
 // "nothing configured" — the difference is a fresh Bot Social home onboarded over the old one.
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -63,13 +63,25 @@ test('a failed credentials write leaves the previous file byte for byte', (t) =>
   const before = readFileSync(path, 'utf8')
   // The temp file cannot be created while the directory is read-only; the file in it is still
   // writable, so the truncate-then-write shape would replace the credentials without failing.
-  chmodSync(home, 0o500)
+  // Windows `chmod` only toggles the read-only attribute and cannot take that write permission
+  // away, so there the temporary *name* is a directory instead (`writeCredentials` refuses a name
+  // that is not a plain file): the write cannot land either way, and the previous bytes must
+  // survive it.
+  const temp = `${path}.${process.pid}.tmp`
+  const windows = process.platform === 'win32'
+  if (windows) mkdirSync(temp)
+  else chmodSync(home, 0o500)
   try {
-    assert.throws(() => writeCredentials(path, { token: 'tok-NEW-9999' }), (error) => error?.code === 'EACCES' || error?.code === 'EPERM')
+    assert.throws(() => writeCredentials(path, { token: 'tok-NEW-9999' }), (error) => windows
+      ? /is not a plain file of its own/.test(String(error?.message))
+      : error?.code === 'EACCES' || error?.code === 'EPERM')
     assert.equal(readFileSync(path, 'utf8'), before, 'the credentials are byte for byte what they were')
-    assert.deepEqual(readdirSync(home).sort(), ['flybot-social.json'], 'a failed write leaves no intermediate file behind')
+    const expected = windows ? ['flybot-social.json', `flybot-social.json.${process.pid}.tmp`] : ['flybot-social.json']
+    assert.deepEqual(readdirSync(home).sort(), expected.sort(), 'a failed write leaves no intermediate file behind')
+    if (windows) assert.equal(statSync(temp).isDirectory(), true, 'the name that could not be written is still the directory it was')
   } finally {
-    chmodSync(home, 0o700)
+    if (windows) rmSync(temp, { recursive: true, force: true })
+    else chmodSync(home, 0o700)
   }
 })
 
