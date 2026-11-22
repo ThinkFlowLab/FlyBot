@@ -19,7 +19,7 @@ export function toParameterMap(p) {
   return Object.fromEntries(Object.entries(p.properties).map(([k, s]) => [k, { ...keep(s), ...(req.has(k) ? { required: true } : {}) }]))
 }
 
-export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
+export function createMockFlybot({ modelAnswer = 'dev', modelOk = true, memory = true, handoff = true } = {}) {
   const modelAsks = []
   let answer = modelAnswer
   let ok = modelOk
@@ -85,13 +85,13 @@ export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
       fields,
       readOnly: () => false,
       // The plugin memory seam (#450 item 1): reads a Bot's own entries, appends one.
-      memory: {
+      ...(memory ? { memory: {
         read: id => clone(memories.get(id) ?? []),
         append: async (id, text, meta) => { memories.set(id, [...(memories.get(id) ?? []), { text: String(text), meta: meta ?? {} }]); return { ok: true } },
-      },
+      } } : {}),
       // The merge handoff seam (#450 item 1): the note lands in the kept Bot's own memory, with the
       // source Bot and time as metadata; answers the source reference hooks.js builds.
-      handoff: {
+      ...(handoff ? { handoff: {
         note: async ({ from, to, note: text } = {}) => {
           if (!bots.has(from)) return { ok: false, code: 'source-gone' }
           if (!bots.has(to)) return { ok: false, code: 'target-gone' }
@@ -100,7 +100,7 @@ export function createMockFlybot({ modelAnswer = 'dev', modelOk = true } = {}) {
           memories.set(to, [...(memories.get(to) ?? []), { text, meta: { source: 'handoff', from, at } }])
           return { ok: true, ref: { bot: from, name: bots.get(from).name, at } }
         },
-      },
+      } } : {}),
       // The sanctioned plugin model call (#450): records each ask; the answer is configurable.
       model: { ask: async (input) => { modelAsks.push(input); return ok ? { ok: true, text: answer } : { ok: false, code: 'not-allowed' } } },
       bot: {

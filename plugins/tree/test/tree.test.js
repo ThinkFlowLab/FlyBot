@@ -1141,6 +1141,15 @@ test('adapter refuses a flybot API version it was not written for', async () => 
   assert.throws(() => createAdapter({ ...m.flybot, scope: m.flybot.scope, version: FLYBOT_API + 1 }), /needs flybot API v1/)
 })
 
+test('#450: the adapter answers no-api when the older core has no memory or handoff seam', async () => {
+  const { createAdapter } = await import('../src/adapter.js')
+  const m = createMockFlybot({ memory: false, handoff: false })
+  const fb = createAdapter(m.flybot)
+  assert.deepEqual(await fb.handoffNote({ from: 'a', to: 'b', note: 'x' }), { ok: false, code: 'no-api' })
+  assert.deepEqual(fb.memoryRead('a'), [])
+  assert.deepEqual(await fb.memoryAppend('a', 'x', {}), { ok: false, code: 'no-api' })
+})
+
 // #446 (owner decision 2026-10-19 21:27): every Bot is placed in the tree under its limits, by role.
 // A full level is regrouped by role under a suitable existing lead or a new lead with a clear role;
 // there is no "least-loaded child" fallback. Duplicates are merged and archived, never deleted; a
@@ -1765,7 +1774,7 @@ test('#450: a merge leaves the kept Bot a handoff line that points back at the a
   const kept = kids.Editor
   // 1. The kept Bot's prompt has the handoff line, with the archived Bot's name and id.
   assert.match(sp(m, kept), new RegExp(`Inherited from editor \\(source ${dup}, merged \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\): role "editor stuff"`))
-  assert.match(sp(m, kept), /no child Bots moved; its chat and memory stay on the archived Bot/)
+  assert.match(sp(m, kept), /no child Bots moved; its chat and the originals stay on the archived Bot, and 1 memory entry was copied into yours/)
   // 2. The host recorded the same note in the kept Bot's own memory, with the source as metadata.
   const note = (m.memories.get(kept) ?? []).find(entry => entry.meta?.source === 'handoff')
   assert.ok(note, JSON.stringify(m.memories.get(kept)))
@@ -1774,6 +1783,60 @@ test('#450: a merge leaves the kept Bot a handoff line that points back at the a
   assert.deepEqual(m.memories.get(dup), [{ text: 'The user drafts in Markdown', meta: { added: '2026-10-01' } }], 'the archived Bot keeps its own memory')
   assert.equal(sp(m, dup), 'Own editor prompt', 'the archived Bot keeps its own prompt, only the tree block removed')
   assert.doesNotMatch(sp(m, dup), /Inherited from/)
+})
+
+test('#450: the handoff line says when no memory entries were copied', async () => {
+  const DAY = 24 * 60 * 60 * 1000
+  let clock = Date.UTC(2026, 9, 19, 12)
+  const { m, tree, kids } = await fullChief(8, ['Cooking', 'Shopping', 'Grocery', 'Editor', 'Budget'], { now: () => clock })
+  const dup = await m.flybot.bot.create({ name: 'editor', role: 'editor stuff', systemPrompt: 'Own editor prompt' })
+  await tree.tidy() // merge grace
+  clock += 2 * DAY
+  await tree.tidy()
+  assert.equal(f(m, dup, 'archived').reason, 'merged')
+  assert.match(sp(m, kids.Editor), /no child Bots moved; its chat and the originals stay on the archived Bot, and no memory entries were copied into yours/)
+  assert.equal((m.memories.get(kids.Editor) ?? []).filter(entry => entry.meta?.source === 'merged').length, 0, 'nothing was copied, so the line must not claim a copy')
+})
+
+test('#450: the handoff line names the 20-entry memory cap when more than one entry came over', async () => {
+  const DAY = 24 * 60 * 60 * 1000
+  let clock = Date.UTC(2026, 9, 19, 12)
+  const { m, tree, kids } = await fullChief(8, ['Cooking', 'Shopping', 'Grocery', 'Editor', 'Budget'], { now: () => clock })
+  const dup = await m.flybot.bot.create({ name: 'editor', role: 'editor stuff', systemPrompt: 'Own editor prompt' })
+  m.setMemory(dup, [
+    { text: 'One', meta: { added: '2026-10-01' } },
+    { text: 'Two', meta: { added: '2026-10-02' } },
+    { text: 'Three', meta: { added: '2026-10-03' } },
+  ])
+  await tree.tidy() // merge grace
+  clock += 2 * DAY
+  await tree.tidy()
+  assert.equal(f(m, dup, 'archived').reason, 'merged')
+  assert.match(sp(m, kids.Editor), /no child Bots moved; its chat and the originals stay on the archived Bot, and up to 20 memory entries were copied into yours/)
+  const copied = (m.memories.get(kids.Editor) ?? []).filter(entry => entry.meta?.source === 'merged')
+  assert.equal(copied.length, 3, 'the three entries were copied')
+})
+
+test('#450: an older core without the handoff seam keeps the id the tree stores', async () => {
+  const DAY = 24 * 60 * 60 * 1000
+  let clock = Date.UTC(2026, 9, 19, 12)
+  const m = createMockFlybot({ handoff: false, memory: false })
+  const chief = m.addBot({ name: 'Chief', isMain: true })
+  const { tree } = plugin.apply({ flybot: m.flybot }, { maxChildren: 8, dailyTidy: false, now: () => clock })
+  await tree.ensureRoot()
+  const kids = {}
+  for (const name of ['Cooking', 'Shopping', 'Grocery', 'Editor', 'Budget']) kids[name] = (await m.call(chief, 'create_child_bot', { name, role_description: `${name} stuff` })).created.id
+  const dup = await m.flybot.bot.create({ name: 'editor', role: 'editor stuff', systemPrompt: 'Own editor prompt' })
+  await tree.tidy() // merge grace
+  clock += 2 * DAY
+  await tree.tidy()
+  assert.equal(f(m, dup, 'archived').reason, 'merged')
+  assert.match(sp(m, kids.Editor), new RegExp(`Inherited from editor \\(source ${dup}, merged \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\): role "editor stuff"`))
+  assert.match(sp(m, kids.Editor), /no memory entries were copied into yours/)
+  const record = f(m, kids.Editor, 'mergedFrom').at(-1)
+  assert.equal(record.id, dup)
+  assert.equal(record.ref, undefined, 'no host reference: the prompt falls back to the stored id')
+  assert.equal(m.memories.get(kids.Editor), undefined, 'no memory seam, no copied entries')
 })
 
 test('#635: move_bot moves a bot with its subtree and refreshes the prompts', async () => {
