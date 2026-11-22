@@ -82,7 +82,13 @@ test('#P-hardlink: a temp name is writable only when it is absent or a plain fil
     const temp = join(dir, 'state.json.123.tmp')
     assert.equal(tempWritable(temp), true, 'absent is a writer\'s to create')
     writeFileSync(join(dir, 'not-a-dir'), 'x')
-    assert.equal(tempWritable(join(dir, 'not-a-dir', 'state.json.123.tmp')), false, 'a check that cannot run (ENOTDIR) is not a licence')
+    // Windows answers a path that runs through a plain file with ENOENT, so ENOTDIR — the
+    // POSIX "the check could not run" — cannot be built there. A path `lstat` cannot parse at
+    // all (a NUL in a name) asks the same rule on every platform: only ENOENT is a licence.
+    const uncheckable = process.platform === 'win32'
+      ? join(dir, 'state\u0000.json.123.tmp')
+      : join(dir, 'not-a-dir', 'state.json.123.tmp')
+    assert.equal(tempWritable(uncheckable), false, 'a check that cannot run (ENOTDIR) is not a licence')
     writeFileSync(temp, 'left by a crash\n')
     assert.equal(tempWritable(temp), true, 'a plain leftover under this host\'s own pid is replaceable')
     const shared = join(outside, 'shared.md')
