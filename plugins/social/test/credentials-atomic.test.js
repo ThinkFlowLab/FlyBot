@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createSocial, readCredentials, startSocial, writeCredentials } from '../src/social.js'
+import { win32 } from './platform.js'
 
 const homeOf = (t) => {
   const home = mkdtempSync(join(tmpdir(), 'flybot-social-atomic-'))
@@ -61,15 +62,22 @@ test('a failed credentials write leaves the previous file byte for byte', (t) =>
   const old = { token: 'tok-OLD-12', home: { id: 'h1', handle: '@me.home' }, server: 'https://social.test' }
   writeCredentials(path, old)
   const before = readFileSync(path, 'utf8')
-  // The temp file cannot be created while the directory is read-only; the file in it is still
-  // writable, so the truncate-then-write shape would replace the credentials without failing.
-  chmodSync(home, 0o500)
+  // The file in the folder is still writable, so the truncate-then-write shape would replace the
+  // credentials without failing: the write has to die on the way to it. POSIX takes the folder's
+  // write bit away and the temporary file cannot be created. Windows has no folder write bit (its
+  // owner still creates files in a folder carrying the read-only attribute), so the death is one
+  // step later: a read-only file cannot be replaced by a rename there, and the credentials file
+  // itself carries the attribute (#3298).
+  if (win32) chmodSync(path, 0o400)
+  else chmodSync(home, 0o500)
   try {
-    assert.throws(() => writeCredentials(path, { token: 'tok-NEW-9999' }), (error) => error?.code === 'EACCES' || error?.code === 'EPERM')
+    assert.throws(() => writeCredentials(path, { token: 'tok-NEW-9999' }), (error) => error?.code === 'EACCES' || error?.code === 'EPERM',
+      win32 ? 'a read-only credentials file refuses the replace' : 'a read-only folder refuses the temporary file')
     assert.equal(readFileSync(path, 'utf8'), before, 'the credentials are byte for byte what they were')
     assert.deepEqual(readdirSync(home).sort(), ['flybot-social.json'], 'a failed write leaves no intermediate file behind')
   } finally {
-    chmodSync(home, 0o700)
+    if (win32) chmodSync(path, 0o600)
+    else chmodSync(home, 0o700)
   }
 })
 
