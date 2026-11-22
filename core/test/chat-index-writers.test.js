@@ -9,7 +9,7 @@
 // index this file already exercises holds the whole text, and the palette reaches it through
 // `searchHomeChat` and the channel's `chats.search` — answered with only the caller's chats.
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -17,6 +17,7 @@ import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 import { hashToken } from '../src/host/member-auth.js'
+import { cleanHome } from './temp-home.js'
 
 const T0 = 1_760_000_000_000
 const INDEX = 'chat-index.sqlite'
@@ -89,9 +90,20 @@ const sharedSeed = () => ({
 const NEEDLE_LINE = 'x'.repeat(300) + ' NEEDLE'
 const turnStart = (seq, turn) => ({ type: 'turn/start', seq, time: T0 + seq * 1000, data: { turn } })
 
+// One teardown per test: every host opened over the home is stopped (its SQLite handle and
+// read-only window closed) before the directory is removed. The other order is what Windows
+// answers with EPERM — the index file is still open when `rm` reaches it — so the removal
+// itself is the last step, not a retry that hides the live writer.
+const closers = new Map()
 const scratch = (t, name = 'ds-bot-index-') => {
   const home = mkdtempSync(join(tmpdir(), name))
-  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }))
+  const stops = []
+  closers.set(home, stops)
+  t.after(async () => {
+    for (const stop of stops.splice(0)) await stop()
+    closers.delete(home)
+    cleanHome(home)
+  })
   return home
 }
 
@@ -171,12 +183,19 @@ async function start(t, home, { heldBy, gate, saved } = {}) {
   // parts, returns `{lines: []}` and never calls `sessionController.page()`, so the party
   // this test's gate waits for never arrives. Wait for the load the host relies on.
   await rt.load()
+  let stopped = false
   const host = {
     home, ctx, rt, route, warnings, pages: () => pages,
     tool: (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId } }),
-    stop: () => ctx.dispose(),
+    stop: async () => {
+      if (stopped) return
+      stopped = true
+      await ctx.dispose()
+    },
   }
-  t.after(() => host.stop())
+  const stops = closers.get(home)
+  if (stops === undefined) t.after(() => host.stop())
+  else stops.push(() => host.stop())
   return host
 }
 

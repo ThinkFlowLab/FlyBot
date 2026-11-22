@@ -7,12 +7,13 @@
 // The guard must fire on a missing pair only: a host where `authzEnforced()` answers false is a
 // supported single-user install and must answer exactly as it did before.
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
+import { cleanHome } from './temp-home.js'
 
 const T0 = 1_760_000_000_000
 
@@ -39,9 +40,19 @@ const seed = () => ({
   revision: 1,
 })
 
+// The host over a home is stopped before the directory is removed: the channel's index and log
+// writers close inside `ctx.dispose()`, and a removal that runs first meets the open handle as
+// EPERM on Windows (the same teardown as chat-index-writers.test.js).
+const closers = new Map()
 const scratch = (t, name = 'ds-bot-pairing-') => {
   const home = mkdtempSync(join(tmpdir(), name))
-  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }))
+  const stops = []
+  closers.set(home, stops)
+  t.after(async () => {
+    for (const stop of stops.splice(0)) await stop()
+    closers.delete(home)
+    cleanHome(home)
+  })
   return home
 }
 
@@ -80,8 +91,15 @@ async function start(t, home, { unpaired = false } = {}) {
     delete rt.authorizePaired
     rt.authorize = () => ({ ok: true })
   }
-  const host = { home, ctx, rt, route, warnings, stop: () => ctx.dispose() }
-  t.after(() => host.stop())
+  let stopped = false
+  const host = { home, ctx, rt, route, warnings, stop: async () => {
+    if (stopped) return
+    stopped = true
+    await ctx.dispose()
+  } }
+  const stops = closers.get(home)
+  if (stops === undefined) t.after(() => host.stop())
+  else stops.push(() => host.stop())
   return host
 }
 

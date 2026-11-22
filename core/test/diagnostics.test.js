@@ -11,6 +11,7 @@ import { install as installStore } from '../src/host/store.js'
 import { failureLine, install as installTurns, turnFailure } from '../src/host/turns.js'
 import { errorCode } from '../src/host/channel.js'
 import { SOURCE_KIND } from '../src/host/constants.js'
+import { deniedCode, escapeRe, homePath, sep, win32 } from './platform.js'
 
 test('cleanText hides keys, tokens and the home folder', () => {
   const home = '/home/user'
@@ -403,8 +404,8 @@ test('the report names the journal file, its size and when it was last written (
   const info = lstatSync(path)
 
   const report = await host(home, { journal, config: { diagnosticsFile: false } }).diagnostics.report({})
-  assert.equal(report.facts.journalFile, `~/journal/state.jsonl (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
-  assert.match(report.markdown, /^journal file: ~\/journal\/state\.jsonl \(\d+ bytes, last written \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\)$/m)
+  assert.equal(report.facts.journalFile, `${homePath('journal', 'state.jsonl')} (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, new RegExp(`^journal file: ${escapeRe(homePath('journal', 'state.jsonl'))} \\(\\d+ bytes, last written \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\)$`, 'm'))
   assert.ok(report.markdown.includes('state journal: recording\n\njournal file: '), 'the file line is its own paragraph right after the journal sentence')
   assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
 })
@@ -471,6 +472,10 @@ test('a journal file the report may not read still answers its size and time (#2
     t.skip('root reads a file without its read bit')
     return
   }
+  if (win32) {
+    t.skip('Windows has no POSIX read bit: chmod only sets the read-only attribute, so a file cannot be made unreadable')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
   const path = join(home, 'journal', 'state.jsonl')
@@ -478,11 +483,11 @@ test('a journal file the report may not read still answers its size and time (#2
   writeFileSync(path, '')
   chmodSync(path, 0o000)
   const info = lstatSync(path)
-  assert.throws(() => readFileSync(path), /EACCES/, 'this file cannot be read at all')
+  assert.throws(() => readFileSync(path), new RegExp(deniedCode()), 'this file cannot be read at all')
 
   const report = await host(home, { journal: { path, status: () => ({ recording: true }) }, config: { diagnosticsFile: false } }).diagnostics.report({})
-  assert.equal(report.facts.journalFile, `~/journal/state.jsonl (0 bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
-  assert.match(report.markdown, /^journal file: ~\/journal\/state\.jsonl \(0 bytes, last written .+\)$/m)
+  assert.equal(report.facts.journalFile, `${homePath('journal', 'state.jsonl')} (0 bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, new RegExp(`^journal file: ${escapeRe(homePath('journal', 'state.jsonl'))} \\(0 bytes, last written .+\\)$`, 'm'))
 })
 
 // #2383: the report is what a user hands over, and it never said that this host's own log file
@@ -511,8 +516,8 @@ test('the report says the diagnostics log could not be written (#2383)', async (
   const report = await rt.diagnostics.report({})
   quiet.mock.restore()
 
-  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES)', 'the report carries the reason, not only stderr')
-  assert.match(report.markdown, /^diagnostics log: not written \(EACCES\)$/m)
+  assert.equal(report.facts.diagnosticsLog, `not written (${deniedCode()})`, 'the report carries the reason, not only stderr')
+  assert.match(report.markdown, new RegExp(`^diagnostics log: not written \\(${deniedCode()}\\)$`, 'm'))
   assert.equal(stderr.filter(line => /not written/.test(line)).length, 1, 'stderr keeps its one line')
   assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
   assert.equal(readFileSync(logPath, 'utf8'), 'OLD LINE\n', 'the leaf keeps its bytes')
@@ -622,10 +627,10 @@ test('the report names the reason the last append met (#2383)', async (t) => {
 
   assert.equal(readFileSync(target, 'utf8'), before, 'the file behind the link keeps its bytes')
   assert.equal(readFileSync(logPath, 'utf8'), 'OLD LINE\n', 'the leaf keeps its bytes')
-  assert.equal(report.facts.diagnosticsLog, 'not written (EACCES)', 'the reason is the one the last attempt met')
-  assert.match(report.markdown, /^diagnostics log: not written \(EACCES\)$/m)
+  assert.equal(report.facts.diagnosticsLog, `not written (${deniedCode()})`, 'the reason is the one the last attempt met')
+  assert.match(report.markdown, new RegExp(`^diagnostics log: not written \\(${deniedCode()}\\)$`, 'm'))
   assert.equal(stderr.filter(line => /is not a plain file of its own/.test(line)).length, 1, 'the stderr latch keeps its one guard line')
-  assert.equal(stderr.filter(line => /not written: EACCES/.test(line)).length, 1, 'the failure keeps its one line')
+  assert.equal(stderr.filter(line => new RegExp(`not written: ${deniedCode()}`).test(line)).length, 1, 'the failure keeps its one line')
 })
 
 // The two ordinary states, in the shape #2134 gave the journal: off adds no line at all, on says
@@ -652,6 +657,10 @@ test('the report says nothing about the log while it is off, and recording while
 test('the report says the diagnostics log could not be read (#2604)', async (t) => {
   if (process.getuid?.() === 0) {
     t.skip('root reads a file without its read bit')
+    return
+  }
+  if (win32) {
+    t.skip('Windows has no POSIX read bit: chmod only sets the read-only attribute, so the log cannot be made unreadable')
     return
   }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
@@ -687,6 +696,10 @@ test('the report says the diagnostics log could not be read (#2604)', async (t) 
 test('a failed read of the log keeps the errors this host recorded since start-up (#2604)', async (t) => {
   if (process.getuid?.() === 0) {
     t.skip('root reads a file without its read bit')
+    return
+  }
+  if (win32) {
+    t.skip('Windows has no POSIX read bit: chmod only sets the read-only attribute, so the log cannot be made unreadable')
     return
   }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
@@ -736,7 +749,9 @@ async function realHost(t, { saved, locked = false, prepare, statePathLength } =
   if (saved === 'dir') mkdirSync(statePath)
   else if (saved !== undefined) writeFileSync(statePath, JSON.stringify(saved))
   // A lock file naming a live process is exactly what a second dsh leaves behind.
-  if (locked) writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: 1, host: hostname(), token: 'the-other-dsh' }))
+  // pid 1 is always alive on POSIX and never on Windows, and this process's own pid is not a
+  // competing holder; the parent process is alive on both platforms (#3293).
+  if (locked) writeFileSync(join(home, 'state.lock'), JSON.stringify({ pid: process.ppid, host: hostname(), token: 'the-other-dsh' }))
   const disposers = []
   const rt = {
     ctx: {
@@ -778,8 +793,8 @@ test('the report names the team file, its size and when it was last written (#23
   const info = lstatSync(statePath)
   const report = await rt.diagnostics.report({})
 
-  assert.equal(report.facts.stateFile, `~/state.json (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
-  assert.match(report.markdown, /^state file: ~\/state\.json \(\d+ bytes, last written \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\)$/m)
+  assert.equal(report.facts.stateFile, `${homePath('state.json')} (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, new RegExp(`^state file: ${escapeRe(homePath('state.json'))} \\(\\d+ bytes, last written \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z\\)$`, 'm'))
   assert.ok(report.markdown.indexOf('state file: ') > report.markdown.indexOf('| Team |'), 'the line follows the table that counts the team')
   assert.equal(report.markdown.includes(home), false, 'the line never carries the home folder')
   assert.match(readFileSync(statePath, 'utf8'), /"version": 2/, 'the file it names is the one the save wrote')
@@ -916,7 +931,8 @@ test('a team file linking to a folder keeps the leaf sentence, not the read-thro
 test('a team file linking to a file it cannot read keeps the leaf sentence, not the read-through-link one', {
   // Root reads a file without its read bits, so the case cannot be built there; the runner marks
   // it skipped instead of asserting something the kernel never enforces.
-  skip: process.getuid?.() === 0 ? 'root reads a file without its read bits' : undefined,
+  skip: process.getuid?.() === 0 ? 'root reads a file without its read bits'
+    : win32 ? 'Windows has no POSIX read bit: chmod only sets the read-only attribute, so the link target cannot be made unreadable' : undefined,
 }, async (t) => {
   const elsewhere = mkdtempSync(join(tmpdir(), 'ds-bot-diag-target-'))
   const target = join(elsewhere, 'unreadable.json')
@@ -973,6 +989,10 @@ test('one readable backup is named with its size and age, and no other line move
 })
 
 test('a backup whose lstat fails is named with its code and the report still prints', async (t) => {
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 000 on a home does not deny lstat, so this failure cannot be built')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   t.after(() => {
     try { chmodSync(home, 0o700) } catch { /* the home is already gone */ }
@@ -1096,8 +1116,8 @@ test('a read-only window names the team file too (#2394)', async (t) => {
   }).diagnostics.report({})
 
   assert.match(report.markdown, /^\| Read-only \| /m, 'this window says it may not write')
-  assert.equal(report.facts.stateFile, `~/state.json (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
-  assert.match(report.markdown, /^state file: ~\/state\.json \(\d+ bytes, last written .+\)$/m)
+  assert.equal(report.facts.stateFile, `${homePath('state.json')} (${info.size} bytes, last written ${new Date(info.mtimeMs).toISOString()})`)
+  assert.match(report.markdown, new RegExp(`^state file: ${escapeRe(homePath('state.json'))} \\(\\d+ bytes, last written .+\\)$`, 'm'))
 })
 
 // #2936: the report bounds the Read-only sentence after it has been abbreviated, so a cut lands
@@ -1130,7 +1150,7 @@ test('the Read-only row says a newer team file needs an update, not that another
   const shown = readOnlyRow(report)
   // #2944: the sentence is abbreviated before the bound, so a long home no longer cuts its end; the
   // fixture keeps its length to hold that, and the sentence reads `~/state.json` throughout.
-  assert.equal(shown, sentence.replace(statePath, '~/state.json'))
+  assert.equal(shown, sentence.replace(statePath, homePath('state.json')))
   assert.equal(shown.includes(home), false, 'the row never carries the home folder')
   assert.match(shown, /fix or move the file and reload\.$/, 'the advice survives the bound')
   assert.doesNotMatch(report.markdown, /another dsh holds the team/)
@@ -1140,7 +1160,7 @@ test('the Read-only row says an unreadable team file could not be read, not that
   const { home, statePath, report } = await realHost(t, { saved: 'dir', statePathLength: LONG_STATE_PATH })
   const sentence = `The Bot team file ${statePath} could not be read (EISDIR). FlyBot does not change it; fix or move the file and reload.`
   const shown = readOnlyRow(report)
-  assert.equal(shown, sentence.replace(statePath, '~/state.json'))
+  assert.equal(shown, sentence.replace(statePath, homePath('state.json')))
   assert.equal(shown.includes(home), false, 'the row never carries the home folder')
   assert.match(shown, /fix or move the file and reload\.$/, 'the advice survives the bound')
   assert.doesNotMatch(report.markdown, /another dsh holds the team/)
@@ -1172,7 +1192,7 @@ test('a Read-only sentence inside the bound is shown unchanged, with no ellipsis
 
 test('the Read-only row keeps the other-dsh wording when a live lock names it (#2167)', async (t) => {
   const { report } = await realHost(t, { locked: true })
-  assert.ok(report.markdown.includes('open in another dsh (Web or Desktop, pid 1 on '), report.markdown)
+  assert.ok(report.markdown.includes(`open in another dsh (Web or Desktop, pid ${process.ppid} on `), report.markdown)
   assert.match(report.markdown, /This window shows the team but cannot change it; close the other one and reload\./)
   assert.doesNotMatch(report.markdown, /could not be read/)
 })
@@ -1185,7 +1205,7 @@ test('a log line the report prints names the home as ~ (#2944)', async (t) => {
   rt.warn('ds-bot: the log leaf is at %s', join(home, 'logs', 'diagnostics.jsonl'))
   const report = await rt.diagnostics.report({})
   assert.equal(report.markdown.includes(home), false, `the line never carries the home folder: ${report.markdown}`)
-  assert.match(report.markdown, /the log leaf is at ~\/logs\/diagnostics\.jsonl/)
+  assert.match(report.markdown, new RegExp(`the log leaf is at ${escapeRe(homePath('logs', 'diagnostics.jsonl'))}`))
 })
 
 // #2944: the report abbreviates this host's own home, not only the process's. A DSH home outside the
@@ -1232,12 +1252,12 @@ test('a DSH home inside the OS home keeps what tells two paths apart (#2956)', a
   const report = await rt.diagnostics.report({ clientErrors: [{ time: Date.now(), text: `cannot open ${atRoot} and ${nested}` }] })
 
   assert.equal(report.markdown.includes(osHome), false, `no row carries the OS home folder: ${report.markdown}`)
-  assert.equal(readOnlyRow(report), sentence.replace(home, '~/.dsh/bot'), 'the Read-only row keeps the nested part')
-  assert.match(report.markdown, /^state file: ~\/\.dsh\/bot\/state\.json \(/m, 'the file row keeps the nested part')
-  assert.match(report.markdown, /cannot open ~\/state\.json and ~\/\.dsh\/bot\/state\.json/, 'one line tells the two files apart')
+  assert.equal(readOnlyRow(report), sentence.replace(home, homePath('.dsh', 'bot')), 'the Read-only row keeps the nested part')
+  assert.match(report.markdown, new RegExp(`^state file: ${escapeRe(homePath('.dsh', 'bot', 'state.json'))} \\(`, 'm'), 'the file row keeps the nested part')
+  assert.match(report.markdown, new RegExp(`cannot open ${escapeRe(homePath('state.json'))} and ${escapeRe(homePath('.dsh', 'bot', 'state.json'))}`), 'one line tells the two files apart')
   // The pair is the pin: both strings appear, and they are two different strings.
-  assert.ok(report.markdown.includes('~/state.json'), 'the file at the OS-home root still reads `~/state.json`')
-  assert.ok(report.markdown.includes('~/.dsh/bot/state.json'), 'the file inside the nested home keeps its own part')
+  assert.ok(report.markdown.includes(homePath('state.json')), 'the file at the OS-home root still reads `~/state.json`')
+  assert.ok(report.markdown.includes(homePath('.dsh', 'bot', 'state.json')), 'the file inside the nested home keeps its own part')
   assert.match(readOnlyRow(report), /close the other one and reload\.$/, 'the advice survives the bound')
 })
 
@@ -1272,12 +1292,12 @@ test('a deep DSH home gives up its middle so the Read-only advice keeps its end 
   const shown = readOnlyRow(report)
 
   assert.ok(shown.length <= 200, `the row keeps the 200 bound: ${shown.length} ${JSON.stringify(shown)}`)
-  assert.equal(shown, sentence.replace(home, '~/.local/…/flybot-dev'), 'the home keeps its scope and its last level')
+  assert.equal(shown, sentence.replace(home, `${homePath('.local')}${sep}…${sep}flybot-dev`), 'the home keeps its scope and its last level')
   assert.match(shown, /close the other one and reload\.$/, 'the advice keeps its own words, never a cut')
   assert.equal(shown.split('…').length - 1, 1, `one ellipsis, inside the home: ${JSON.stringify(shown)}`)
   assert.equal(shown.includes(osHome), false, 'the row never carries the home folder')
   // Text inside its own bound is untouched: the file row keeps the whole path it always printed.
-  assert.match(report.markdown, /^state file: ~\/\.local\/share\/deepseek-harness\/teams\/flybot-dev\/state\.json \(/m, 'a short row keeps its whole path')
+  assert.match(report.markdown, new RegExp(`^state file: ${escapeRe(homePath('.local', 'share', 'deepseek-harness', 'teams', 'flybot-dev', 'state.json'))} \\(`, 'm'), 'a short row keeps its whole path')
 })
 
 
@@ -1622,6 +1642,10 @@ test('#2358: clear truncates the leaf when the folder refuses the removal', asyn
     t.skip('root removes from a folder without its write bit')
     return
   }
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0555 does not refuse a removal, so this failure cannot be built')
+    return
+  }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
   const logs = join(home, 'logs')
   t.after(() => {
@@ -1695,6 +1719,10 @@ test('#2360: clear reports a rotated copy that could not be removed, and truncat
 test('#2360: clear reports a folder that refused the removal, and truncates anyway', async (t) => {
   if (process.getuid?.() === 0) {
     t.skip('root removes from a folder without its write bit')
+    return
+  }
+  if (win32) {
+    t.skip('Windows has no POSIX folder mode: chmod 0555 does not refuse a removal, so this failure cannot be built')
     return
   }
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
@@ -1939,6 +1967,6 @@ test('a clear that cannot truncate the leaf still says so on one line', async (t
   quiet.mock.restore()
 
   assert.deepEqual(result, { leaf: 'kept', rotated: 'none' }, 'the leaf says it was left alone')
-  assert.deepEqual(stderr, ['[ds-bot] diagnostics log not truncated: EACCES'], 'one line, the code and never the folder')
+  assert.deepEqual(stderr, [`[ds-bot] diagnostics log not truncated: ${deniedCode()}`], 'one line, the code and never the folder')
   assert.equal(readFileSync(logPath, 'utf8'), old, 'the lines the answer did not claim to clear are still there')
 })
