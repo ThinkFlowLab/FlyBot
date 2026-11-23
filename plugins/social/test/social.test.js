@@ -975,6 +975,160 @@ test('#2308: a turn that fails after delivery leaves failed, not a silent seen',
   assert.equal(after.cursors.m2, 1)
 })
 
+// #3341: the claim is the Bot Social server's, not this host's settings file. Two hosts over one
+// owner credential each kept their own `settings.inbox`, so both claimed locally and both delivered
+// the same event. Now the server hands the first host a lease and answers the second `held`; the
+// hand-off is acknowledged on the server, and only then does the event settle for everyone.
+test('#3341: two hosts claim on the server and deliver one event once', async (t) => {
+  // Two hosts, not two plugin instances in one core: a second host is a second core with its own
+  // settings file and its own send chain (a real process). Both are on the same Bot Social
+  // credential and see the same inbox, which is the shape the claim has to fix.
+  const hostA = await team()
+  t.after(hostA.stop)
+  const hostB = await team()
+  t.after(hostB.stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  // The protocol's claim table (Bot Social #819): one lease per event id, `held` for a second
+  // holder while it lives, `settled` once the holder acknowledged the outcome.
+  const claims = new Map()
+  server.tools.claim_inbox_event = (a) => {
+    const live = claims.get(a.event_id)
+    if (live?.outcome) return { status: 'settled', holder: live.holder }
+    if (live && live.lease_until > Date.now() && live.holder !== a.holder) return { status: 'held', holder: live.holder, lease_until: live.lease_until }
+    const lease_until = Date.now() + (a.ttl_seconds ?? 300) * 1000
+    claims.set(a.event_id, { holder: a.holder, lease_until })
+    return { status: 'claimed', holder: a.holder, lease_until }
+  }
+  const ackTool = (a) => {
+    const live = claims.get(a.event_id)
+    if (!live) return { status: 'unknown' }
+    if (live.holder !== a.holder) return { status: 'stale-holder' }
+    claims.set(a.event_id, { holder: a.holder, outcome: a.outcome })
+    return { status: 'acked' }
+  }
+  // The acknowledgement is held open, so the second host's claim is answered `held` however fast
+  // the first one's hand-off is: the lease is live until the ack lands.
+  let openAck
+  const ackGate = new Promise(resolve => { openAck = resolve })
+  server.tools.ack_inbox_event = async (a) => { await ackGate; return ackTool(a) }
+  t.after(() => openAck())
+  const settingsA = join(hostA.home, 'social-a.json')
+  const settingsB = join(hostB.home, 'social-b.json')
+  const saved = path => JSON.parse(readFileSync(path, 'utf8'))
+  const make = (host, path) => createSocial(host.ctx.flybot, { autoAccept: false, settingsPath: path }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  const a = make(hostA, settingsA)
+  const b = make(hostB, settingsB)
+  t.after(() => { a.dispose(); b.dispose() })
+  let deliveries = 0
+  const count = { name: 'count-inbound', handle: () => { deliveries += 1 } }
+  const offCountA = hostA.ctx.flybot.bot.send.use(count)
+  const offCountB = hostB.ctx.flybot.bot.send.use(count)
+  t.after(offCountA)
+  t.after(offCountB)
+  await grantTeam(hostA.ctx.flybot)
+  await grantTeam(hostB.ctx.flybot)
+  await a.registerAll()
+  await b.registerAll()
+  const msg = (cursor, text) => ({ cursor, event_id: `ev-claim-${cursor}`, event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: `<<<UNTRUSTED>>>\n{"text":"${text}"}\n<<<END>>>` })
+  log.push(msg(1, 'once'))
+
+  // Both hosts poll the same inbox at the same time, each with its own settings file.
+  const both = Promise.all([a.pollInbox(), b.pollInbox()])
+  // Both have asked the server (the second answer is `held`), or a host without a server claim has
+  // already delivered — that second case is the red one below.
+  await waitUntil(() => deliveries >= 2 || server.calls.filter(c => c.name === 'claim_inbox_event').length >= 2)
+  openAck()
+  const counts = await both
+  assert.equal(deliveries, 1, `expected 1 delivery, got ${deliveries}`)
+  assert.equal(counts[0] + counts[1], 1, `one host counted a delivery, got ${counts[0]} + ${counts[1]}`)
+  assert.equal((hostA.received.get('b') ?? []).length + (hostB.received.get('b') ?? []).length, 1, 'the message reached the Bot once')
+  const afterA = saved(settingsA)
+  const afterB = saved(settingsB)
+  const statusA = afterA.inbox?.['ev-claim-1']?.status
+  const statusB = afterB.inbox?.['ev-claim-1']?.status
+  assert.deepEqual([statusA, statusB].sort(), ['held', 'replied'], `one host delivered, the other was held (got ${statusA}/${statusB})`)
+  const winner = statusA === 'replied' ? a : b
+  const winnerSaved = statusA === 'replied' ? afterA : afterB
+  const loserSaved = statusA === 'replied' ? afterB : afterA
+  assert.equal(loserSaved.cursors?.m2, undefined, 'the held host did not move its cursor past the event')
+  assert.equal(winnerSaved.cursors?.m2, 1, 'the delivering host moved its cursor')
+  await waitUntil(() => claims.get('ev-claim-1')?.outcome !== undefined)
+  assert.equal(claims.get('ev-claim-1').outcome, 'replied', 'the hand-off was acknowledged as replied')
+
+  // Settled on the server: neither host delivers it again, and the host that was held moves past
+  // it — a settled event is decided, so leaving the cursor would park that host for good.
+  assert.equal(await a.pollInbox(), 0)
+  assert.equal(await b.pollInbox(), 0)
+  assert.equal(deliveries, 1, 'nothing was delivered a second time')
+  log.push(msg(2, 'after'))
+  const loser = winner === a ? b : a
+  assert.equal(await loser.pollInbox(), 1, 'the held host still receives the next event')
+  assert.equal(deliveries, 2)
+})
+
+test('#3341: a server without the claim tools falls back to the local claim and says so', async (t) => {
+  const { ctx, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const settingsPath = join(home, 'social-legacy.json')
+  const settingsNow = () => JSON.parse(readFileSync(settingsPath, 'utf8'))
+  const social = createSocial(ctx.flybot, { autoAccept: false, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  log.push({ cursor: 1, event_id: 'ev-legacy', event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: '<<<UNTRUSTED>>>\n{"text":"old server"}\n<<<END>>>' })
+
+  const warned = []
+  const originalWarn = console.warn
+  console.warn = (...args) => { warned.push(args.join(' ')) }
+  t.after(() => { console.warn = originalWarn })
+  assert.equal(await social.pollInbox(), 1, 'the event is still delivered')
+  console.warn = originalWarn
+  assert.equal((received.get('b') ?? []).length, 1, 'exactly once')
+  const saved = settingsNow()
+  assert.ok(saved.seen.includes('ev-legacy'), 'the event is marked seen')
+  assert.equal(saved.cursors.m2, 1, 'the cursor moved past the event')
+  assert.equal(saved.inbox['ev-legacy'].status, 'replied', 'the local claim still settled the delivery')
+  assert.match(warned.join('\n'), /inbox claim: server-side unavailable, local only/, 'the fallback is logged, not silent')
+  assert.equal(await social.pollInbox(), 0, 'nothing is replayed')
+})
+
+// #3341: a refusal by the owner policy is a terminal fact for the fleet too (`needs-human`), so the
+// event settles on the server instead of being offered to the other host for five minutes.
+test('#3341: an owner-policy deny acknowledges needs-human on the server', async (t) => {
+  const { ctx, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const claims = new Map()
+  server.tools.claim_inbox_event = (a) => {
+    claims.set(a.event_id, { holder: a.holder })
+    return { status: 'claimed', holder: a.holder, lease_until: Date.now() + 300_000 }
+  }
+  server.tools.ack_inbox_event = (a) => {
+    const live = claims.get(a.event_id)
+    if (!live || live.holder !== a.holder) return { status: 'stale-holder' }
+    claims.set(a.event_id, { holder: a.holder, outcome: a.outcome })
+    return { status: 'acked' }
+  }
+  const settingsPath = join(home, 'social-deny.json')
+  const social = createSocial(ctx.flybot, { autoAccept: false, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  const offDeny = ctx.flybot.bot.send.use({ name: 'deny-inbound', handle: () => ({ action: 'deny', reason: 'no grant' }) })
+  t.after(offDeny)
+  log.push({ cursor: 1, event_id: 'ev-deny', event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: '<<<UNTRUSTED>>>\n{"text":"nope"}\n<<<END>>>' })
+  assert.equal(await social.pollInbox(), 0, 'a refused message is not delivered')
+  assert.equal((received.get('b') ?? []).length, 0)
+  assert.equal(claims.get('ev-deny')?.outcome, 'needs-human', 'the refusal settled the event as needs-human')
+})
+
 // #3338: a core that predates #2308 has no `flybot.inbox`. Its inbound path must stay the old
 // one: deliver once, mark seen, move the cursor, and never throw for want of a claim. `scope()`
 // builds a fresh plugin API on every call, so the fallback is exercised on what the plugin gets.

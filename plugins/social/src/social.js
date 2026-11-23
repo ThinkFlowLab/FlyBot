@@ -31,7 +31,7 @@ import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFi
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
-import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf, personHomeOf } from './mcp-client.js'
+import { createSocialApi, untrustedText, mapPool, GRANT_CONCURRENCY, grantPersonView, memberHandleOf, personHomeOf, isUnknownTool } from './mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, shownLook } from './look.js'
 import { cutCodePoints } from './code-points.js'
 import { createPresence } from './presence.js'
@@ -757,12 +757,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     return created
   }
   // Bounded like `seen`: settled records are dropped oldest first. A claimed record is never
-  // dropped — its holder may still submit.
+  // dropped — its holder may still submit. The two answers the server owns (`held`, `settled`) are
+  // droppable too: neither is a lease of ours, so a dropped one only means asking the server again.
   const pruneInbox = () => {
     const ids = Object.keys(settings.inbox)
     if (ids.length <= INBOX_KEPT) return
     const settled = ids
-      .filter(id => inbox.isTerminal(settings.inbox[id]))
+      .filter((id) => {
+        const record = settings.inbox[id]
+        return inbox.isTerminal(record) || record?.status === 'held' || record?.status === 'settled'
+      })
       .sort((a, b) => (settings.inbox[a].updatedAt ?? 0) - (settings.inbox[b].updatedAt ?? 0))
     for (const id of settled.slice(0, ids.length - INBOX_KEPT)) delete settings.inbox[id]
   }
@@ -776,7 +780,111 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     saveSettings()
     return answer
   }
-  const answeredEvent = (held, result) => {
+  // ------------------------------------------------------------ the server's claim (#3341)
+  // One event, one holder across every host on these Bot Social credentials. The claim above lives in
+  // this host's settings file, so two hosts over one owner both claimed locally and both delivered
+  // the message again. Bot Social now owns the lease: this host asks the server for the event before
+  // it claims locally, reports the terminal outcome back, and a second host is answered `held`.
+  // The protocol is Bot Social #819's, on the owner channel, and it is not ours to rename:
+  //   claim_inbox_event {event_id, holder, ttl_seconds?} -> {status: claimed|held|settled, holder?, lease_until?}
+  //   ack_inbox_event {event_id, holder, outcome: replied|failed|needs-human} -> {status: acked|stale-holder|unknown}
+  const CLAIM_TTL_SECONDS = Math.round((inbox?.LEASE_TTL_MS ?? 300_000) / 1000)
+  // A server that predates the protocol answers a missing tool (-32602 "Tool … not found", or a
+  // `tool-not-found` code). That means "no server claim here", never "this claim failed".
+  const claimToolMissing = error => isUnknownTool(error) || /tool[-_]not[-_]?found/i.test(`${error?.code ?? ''} ${error?.message ?? ''}`)
+  // Announced once per change of state, so the fallback is never silent and a server upgraded under a
+  // running host takes the shared claim again on the next poll.
+  let claimServerState = 'unknown'
+  const noteClaimServer = (available) => {
+    const state = available ? 'available' : 'unavailable'
+    if (claimServerState === state) return
+    claimServerState = state
+    warn(available ? 'inbox claim: server-side available, claims are shared' : 'inbox claim: server-side unavailable, local only')
+  }
+  const claimOnServer = eventId => client.claimInboxEvent({ event_id: eventId, holder: inboxHolder, ttl_seconds: CLAIM_TTL_SECONDS })
+  // The server's answer for an event this host will not deliver: kept next to the local records, so
+  // the fact is readable (and survives a restart) without a lease of ours.
+  const noteServerAnswer = (eventId, status, heldBy) => {
+    if (inbox === undefined || typeof eventId !== 'string' || eventId === '' || INBOX_KEYLESS.has(eventId)) return
+    const record = inboxRecord(eventId)
+    // A terminal record is the stronger fact (this host answered the event), and a `settled` answer
+    // never walks back to `held`.
+    if (inbox.isTerminal(record) || (record.status === 'settled' && status === 'held')) return
+    record.status = status
+    record.lease = null
+    if (typeof heldBy === 'string' && heldBy !== '') record.holder = heldBy
+    record.updatedAt = now()
+    pruneInbox()
+    saveSettings()
+  }
+  // The lease was ours and the outcome is terminal: tell the server, so it never offers the event to
+  // another host when our lease expires. A `stale-holder` answer is only logged — the local record is
+  // the fact, and the server lease belongs to whoever took it after ours ran out.
+  const ackServer = async (held, outcome) => {
+    if (held?.server !== true || held?.record === undefined) return
+    try {
+      const answer = await client.ackInboxEvent({ event_id: held.record.eventId, holder: inboxHolder, outcome })
+      if (answer?.status !== 'acked') warn(`inbox ack: ${outcome} not taken (${answer?.status ?? 'no answer'})`)
+    } catch (error) {
+      if (claimToolMissing(error)) return
+      warn(`inbox ack: ${outcome} not sent`, error)
+    }
+  }
+  // The claim a host takes before it delivers: the server's, then this host's. `server` on a claimed
+  // answer marks a lease the server handed out, which is the only case an ack has something to tell.
+  const takeEvent = async (eventId) => {
+    if (inbox === undefined) return claimEvent(eventId)
+    let answer
+    try {
+      answer = await claimOnServer(eventId)
+    } catch (error) {
+      if (claimToolMissing(error)) {
+        noteClaimServer(false)
+        return claimEvent(eventId)
+      }
+      // The server's lease state is unknown, so delivering could double an event another host owns:
+      // leave this event and the cursor for the next poll, the way a local `held` does.
+      warn('inbox claim: server-side claim failed; not delivering this event', error)
+      return { outcome: 'held' }
+    }
+    noteClaimServer(true)
+    if (answer?.status === 'held') {
+      noteServerAnswer(eventId, 'held', answer.holder)
+      return { outcome: 'held' }
+    }
+    if (answer?.status === 'settled') {
+      // Decided elsewhere (another host delivered it). Unlike `held`, this event is not waiting for
+      // anything here: leaving the cursor would park this host's queue on it for good.
+      noteServerAnswer(eventId, 'settled', answer.holder)
+      return { outcome: 'settled' }
+    }
+    const local = claimEvent(eventId)
+    if (local.outcome === 'settled' || local.outcome === 'exhausted') {
+      // A record this host already settled answers the server too, so our lease is not left to
+      // expire and offer the event to another host that would deliver it again.
+      const record = local.record ?? settings.inbox[eventId]
+      const settledAs = record?.status === 'replied' ? 'replied' : record?.status === 'needs-human' ? 'needs-human' : record?.status === 'failed' ? 'failed' : undefined
+      if (settledAs !== undefined) await ackServer({ server: true, record }, settledAs)
+      return local
+    }
+    return { ...local, server: true }
+  }
+  // A delivery that runs long renews once, on the protocol's own clock (`ttl_seconds`), instead of a
+  // timer: the one place a single event makes two slow round trips is the grant sync before a second
+  // hand-off after an owner-policy `deny`.
+  const renewEvent = async (held) => {
+    if (held?.record === undefined) return
+    if (held.lease !== undefined) inbox.renew(held.record, { holder: inboxHolder, leaseId: held.lease.id, now: now() })
+    saveSettings()
+    if (held.server !== true) return
+    try {
+      const answer = await claimOnServer(held.record.eventId)
+      if (answer?.status !== undefined && answer.status !== 'claimed') warn(`inbox claim: renew answered ${answer.status}`)
+    } catch (error) {
+      if (!claimToolMissing(error)) warn('inbox claim: renew failed', error)
+    }
+  }
+  const answeredEvent = async (held, result) => {
     if (inbox === undefined || held?.record === undefined) return
     const answer = inbox.submit(held.record, { holder: inboxHolder, leaseId: held.lease.id, resultKey: held.record.eventId, result, now: now() })
     // The turn was handed off even if the hand-off outlived the lease: keep that as a terminal
@@ -784,21 +892,26 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
     if (!answer.ok && !inbox.isTerminal(held.record)) inbox.needsHuman(held.record, { reason: `the delivery was handed off after the claim was refused (${answer.reason})`, now: now() })
     pruneInbox()
     saveSettings()
+    await ackServer(held, 'replied')
   }
-  const failedEvent = (held, error) => {
+  const failedEvent = async (held, error) => {
     if (inbox === undefined || held?.record === undefined) return
     inbox.fail(held.record, { holder: inboxHolder, leaseId: held.lease?.id, error, now: now() })
     pruneInbox()
     saveSettings()
+    // A retryable failure is not a terminal fact for the fleet: our lease stays ours and the next poll
+    // tries again. Only the record at the attempt cap (`failed`) is acknowledged.
+    if (held.record.status === 'failed') await ackServer(held, 'failed')
   }
   // A refusal by the owner policy is deterministic for this sender, so it does not earn the
   // three retries a transient failure does: it is a `needs-human` fact (someone has to share
   // the Bot) and the queue moves on to the next event instead of stalling behind it.
-  const refusedEvent = (held, reason) => {
+  const refusedEvent = async (held, reason) => {
     if (inbox === undefined || held?.record === undefined) return
     inbox.needsHuman(held.record, { reason, now: now() })
     pruneInbox()
     saveSettings()
+    await ackServer(held, 'needs-human')
   }
   // Unset: off. config.autoAccept: true makes it opt-out instead. New friends start in hold (#140).
   // Config keys may be written with or without '@' and in any case.
@@ -2659,14 +2772,16 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // #2308: take the event before delivering it. A second loop that finds a live lease
         // stops here and leaves the cursor alone — moving it past a held event would skip that
         // event on this host for good, because the cursor is one value for the whole queue.
-        const held = claimEvent(event.event_id)
+        // #3341: the lease is the server's first, so a loop on another host is told `held` here
+        // and stops the same way, instead of claiming locally and delivering the event again.
+        const held = await takeEvent(event.event_id)
         if (held.outcome === 'held') break
         if (held.outcome === 'settled' || held.outcome === 'exhausted') { done(); continue }
         try {
         const files = (Array.isArray(event.attachments) ? event.attachments : []).filter(file => typeof file?.id === 'string').slice(0, MAX_FILES)
         const said = untrustedText(event.untrusted_content)
         // Nothing to deliver: the claim is answered (not left leased) and the cursor moves.
-        if (!said && files.length === 0) { answeredEvent(held, { empty: true }); done(); continue }
+        if (!said && files.length === 0) { await answeredEvent(held, { empty: true }); done(); continue }
         // File names come from the remote side too, so they stay inside the untrusted text.
         const text = files.length
           ? `${said}\n\nAttached files: ${files.map(file => `${safeName(file.name)} (${sizeLabel(Number(file.size) || 0)}, id ${file.id})`).join('; ')}`
@@ -2689,7 +2804,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         })
         if (share?.handled) {
           delivered += 1
-          answeredEvent(held, { botId: local.id })
+          await answeredEvent(held, { botId: local.id })
           done()
           continue
         }
@@ -2699,7 +2814,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           presence.arrived({ handle })
           await flybot.remote.chats.deliver({ handle, home: fromHome, name: cleanText(event.from?.display_name, handle), text, ...(typedBy ? { human: true, ownerName: typedBy } : {}) })
           delivered += 1
-          answeredEvent(held, { botId: local.id })
+          await answeredEvent(held, { botId: local.id })
           done()
           continue
         }
@@ -2716,6 +2831,9 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         // this Bot's grants once and judge the message again (#442). Still refused: the sender is told.
         if (outcome?.action === 'deny' && outcome.by === OWNER_POLICY) {
           await syncOutgoingGrants({ only: local.id }).catch(error => warn('grants not synced', error))
+          // The grant sync is the one slow step between two hand-offs inside one event: renew the
+          // lease once, so it cannot expire mid-delivery and let a second host take the event.
+          await renewEvent(held)
           outcome = await deliverInbound()
           if (outcome?.action === 'deny' && outcome.by === OWNER_POLICY) await reportNotDelivered(event)
         }
@@ -2723,17 +2841,17 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           warn(`message from ${handle} refused: ${outcome.reason ?? 'denied'}`)
           // A refusal is not an answered message (#2308): it leaves a terminal `needs-human`
           // fact and the cursor moves on, so one ungranted sender cannot park the queue.
-          refusedEvent(held, outcome.reason ?? 'the owner policy refused this sender')
+          await refusedEvent(held, outcome.reason ?? 'the owner policy refused this sender')
           done()
           continue
         }
         delivered += 1
-        answeredEvent(held, { botId: local.id })
+        await answeredEvent(held, { botId: local.id })
         done()
         } catch (error) {
           // Stop at the failed event: it and the ones after it come again next poll, and the
           // failure is on the record, not only in this warning (#2308).
-          failedEvent(held, error)
+          await failedEvent(held, error)
           warn('inbound delivery failed; retrying next poll', error)
           break
         }
