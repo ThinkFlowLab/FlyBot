@@ -66,7 +66,7 @@ runs:
           git fetch --unshallow 2>/dev/null || git fetch --no-tags origin main
         fi
         git merge-base origin/main HEAD >/dev/null
-        git rev-parse --verify origin/main^{commit}
+        git rev-parse --verify 'origin/main^{commit}'
     # Lint and the bundle check first: a slip fails in seconds instead of after the suite.
     - name: Lint
       shell: bash
