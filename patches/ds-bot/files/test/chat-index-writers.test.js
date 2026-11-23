@@ -303,6 +303,53 @@ test('a read-only window reads the index and leaves it alone (#2711)', async (t)
   }
 })
 
+// #3319. The palette's whole-text search in a read-only window answered only what the writer
+// had indexed, so a line in the log past the mark was not found, and `more: 0` read as "there
+// is nothing else" while the line sat there. The window now matches its own log after the mark
+// in memory, without writing the index.
+test('a read-only window searches the log past its index mark (#3319)', async (t) => {
+  const home = scratch(t)
+  const writer = await start(t, home)
+  assert.deepEqual(anchorsOf(await writer.rt.latestOwnChat('a', {})), ['0', '1', '2'])
+  await writer.stop()
+
+  // The writer stopped before indexing the fourth line: the index mark ends at seq 2.
+  HISTORY.solo.push(line(3, 'a fourth NEEDLE line'))
+  try {
+    const reader = await start(t, home, { heldBy: process.ppid })
+    await reader.rt.load()
+    assert.notEqual(reader.rt.readOnly(), undefined, 'this window must be read-only for the case to mean anything')
+
+    // The indexed part of the log is answered as before, from the index.
+    const older = await reader.rt.searchHomeChat(['solo'], 'third', {})
+    assert.equal(older.rows.length, 1, JSON.stringify(older))
+
+    // The line past the mark is in this window's log, so the query finds it.
+    const found = await reader.rt.searchHomeChat(['solo'], 'NEEDLE', {})
+    assert.equal(found.rows.length, 1, JSON.stringify(found))
+    assert.equal(found.rows[0].session, 'solo')
+    assert.equal(found.rows[0].seq, 3)
+    assert.match(found.rows[0].text, /NEEDLE/)
+    assert.equal(found.more, 0)
+
+    // The palette's own call: the channel action answers the same through /api/bot.
+    assert.notEqual(reader.route, undefined, 'the channel registered its /api/bot route')
+    const response = await reader.route.fetch(new Request('http://localhost/api/bot', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint: 'chats.search', payload: { query: 'NEEDLE' } }),
+    }))
+    const result = await response.json()
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.equal(result.value.rows.length, 1, JSON.stringify(result.value))
+    assert.match(result.value.rows[0].text, /NEEDLE/)
+
+    // A read is a read: the index the writer left is still the writer's.
+    assert.equal(rowsOf(home), 3)
+  } finally {
+    HISTORY.solo.pop()
+  }
+})
+
 test('a read-only window reads the index while the writer still holds the home (#2711)', async (t) => {
   const home = scratch(t)
   const writer = await start(t, home)
