@@ -168,7 +168,7 @@ diff --git a/client.js b/client.js
    Content: "内容",
    "Referenced {labels}": "引用了 {labels}",
    ", ": "、",
-@@ -78,21 +78,206 @@ var ZH = {
+@@ -78,21 +78,208 @@ var ZH = {
    " and ": "、",
    and: "和",
    "{count} members": "{count} 位成员",
@@ -274,6 +274,8 @@ diff --git a/client.js b/client.js
 +  "Scanned {code}.": "已扫描到 {code}。",
 +  "Scanned {code}. Pick a Bot to join.": "已扫描到 {code}。选一个 Bot 加入。",
 +  "Loading your Bots…": "正在加载你的 Bot…",
++  "Bot Social is not connected yet. Open Settings → Bot Social to connect it.": "Bot Social 还没连接。请到 设置 → Bot Social 连接。",
++  "Open Bot Social settings": "打开 Bot Social 设置",
 +  "Waiting for {who} to let you in. If the group does not appear, press Join group to ask again.": "正在等 {who} 放你进去。如果群没有出现，再按一次「加入群」重新申请。",
 +  "Asked to join {name}. It opens in your sidebar as soon as their FlyBot seats your Bots.": "已申请加入 {name}。对方的 FlyBot 放好你的 Bot 后，群会出现在你的侧边栏。",
 +  "the group": "那个群",

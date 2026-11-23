@@ -51,7 +51,12 @@ function draw({ status, props, onCall } = {}) {
       const frame = current
       frame.effects.push([frame.idx++, fn, deps])
     },
-    useRef: value => ({ current: value }),
+    useRef(value) {
+      const frame = current
+      const at = frame.idx++
+      if (!(at in frame.hooks)) frame.hooks[at] = { current: value }
+      return frame.hooks[at]
+    },
     useMemo: (fn) => fn(),
     useCallback: fn => fn,
   }
