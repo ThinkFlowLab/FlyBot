@@ -116,6 +116,59 @@ test('cleanText keeps ordinary hyphenated names and a bare Signature', () => {
   assert.equal(cleanText('X-Token: abc12', { home: '' }), 'X-Token: abc12')
 })
 
+// #3310: the header-name entry started a name with a repeated segment group, so on a hyphenated
+// body it retried the whole name from every position and one `cleanText` call grew with the square
+// of the text: 4/8/16/40/80 KB took 23/85/343/2132/8782 ms on `9a48f5aa`, and the call sites take
+// whatever an error body carries. The name is anchored at a word boundary and carries at most six
+// segments, so the scan is linear; this case pins the bound and prints the table it measured.
+test('cleanText stays fast on a long hyphenated body', (t) => {
+  for (const bytes of [4096, 8192, 16384, 40960, 81920]) {
+    const text = 'a-'.repeat(bytes / 2)
+    const started = performance.now()
+    cleanText(text, { home: '' })
+    const ms = performance.now() - started
+    t.diagnostic(`${bytes} bytes: ${ms.toFixed(1)} ms`)
+    assert.ok(ms < 1000, `${bytes} bytes took ${ms.toFixed(0)} ms`)
+  }
+})
+
+// #3310: an underscore joins a header name too, and an array key is still the same shape. The value
+// side does not change: a JSON key, a tab, a bearer value and a `?X-Token=` parameter keep masking.
+test('cleanText hides an underscore or array header name', () => {
+  assert.equal(cleanText('X_Token: abcdef123456', { home: '' }), 'X_Token: [hidden]')
+  assert.equal(cleanText('X-Token[]: abcdef123456', { home: '' }), 'X-Token[]: [hidden]')
+  assert.equal(cleanText('{"X_Token":"abcdef123456"}', { home: '' }), '{"X_Token":"[hidden]"}')
+  assert.equal(cleanText('X-Token[]:\tabcdef123456', { home: '' }), 'X-Token[]:\t[hidden]')
+  assert.equal(cleanText('X-Auth: Bearer abcdef123456', { home: '' }), 'X-Auth: [hidden]')
+  assert.equal(cleanText('?X-Token=abcdef123456', { home: '' }), '?X-Token=[hidden]')
+})
+
+// #3310: `oauth` names a credential too, and a name segment like `X-OAuth` is the header shape.
+test('cleanText hides an oauth header', () => {
+  assert.equal(cleanText('X-OAuth: abcdef123456', { home: '' }), 'X-OAuth: [hidden]')
+  assert.equal(cleanText('{"X-OAuth":"abcdef123456"}', { home: '' }), '{"X-OAuth":"[hidden]"}')
+})
+
+// #3310: the six-character floor was applied to the first whitespace-delimited token, so a value
+// whose first word was short escaped whole. The floor is on the value, which is masked as one piece.
+test('cleanText masks the whole header value when its first token is short', () => {
+  assert.equal(cleanText('X-Token: abc def', { home: '' }), 'X-Token: [hidden]')
+  assert.equal(cleanText('X-Token: abc def ghi', { home: '' }), 'X-Token: [hidden]')
+  // Five characters in total stay readable, and an ordinary hyphenated name stays readable.
+  assert.equal(cleanText('X-Token: abc12', { home: '' }), 'X-Token: abc12')
+  assert.equal(cleanText('X-Patch-Id: abc def', { home: '' }), 'X-Patch-Id: abc def')
+})
+
+// #3310 review: the value tail was capped at 199 characters after its first, so a long value kept
+// its head masked and left the rest readable — 704 characters came back as 200 masked and 504
+// visible. Base masked the whole value, so a cap here would widen what a log line prints. The value
+// is read to the end of the field with no length bound.
+test('cleanText masks a long header value whole', () => {
+  const value = 'A1'.repeat(352)
+  assert.equal(value.length, 704)
+  assert.equal(cleanText(`X-Token: ${value}`, { home: '' }), 'X-Token: [hidden]')
+})
+
 function host(home, extra = {}) {
   const warnings = []
   const disposers = []

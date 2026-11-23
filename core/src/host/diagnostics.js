@@ -58,15 +58,22 @@ const CREDENTIALS = [
   // `sig` and `pass` count as a whole segment the way `pat` does there, so `assign`, `compass` and
   // `bypass` are ordinary names; `hmac` is not part of any ordinary word.
   [/(["']?(?:hmac|passwd|(?<![a-z0-9])(?:sig|pass)(?![a-z0-9]))["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
-  // A header-shaped name is a hyphenated field name whose last segment is a credential word, so
-  // `X-Pat`, `X-Github-Pat`, `X-Token`, `X-Auth`, `X-Cookie`, `X-Session`, `X-Credential`,
-  // `X-Amz-Signature`, `X-Key` and `X-Signature` are masked the way `capabilities.js` masks a
-  // stored capability body. The whole last segment has to be the credential word, so `X-Patch-Id`,
-  // `X-Path-Id`, `X-Request-Id`, `session-count` and `key-name` keep their text. A bare
-  // `Signature:` stays readable on purpose: masking every name holding `signature`, `auth`,
-  // `session` or `token` would eat `auth: failed to connect` and `session: expired at noon`,
-  // which is the widening #3291 refused.
-  [/(["']?(?:[a-z0-9]+-)+(?:key|token|auth|cookie|session|credential|signature|pat|sig|pass)["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/gi, '$1[hidden]'],
+  // A header-shaped name is a hyphenated or underscored field name whose last segment is a
+  // credential word, so `X-Pat`, `X-Github-Pat`, `X_Token`, `X-Token[]`, `X-Auth`, `X-Cookie`,
+  // `X-Session`, `X-Credential`, `X-OAuth`, `X-Amz-Signature`, `X-Key` and `X-Signature` are masked
+  // the way `capabilities.js` masks a stored capability body. The whole last segment has to be the
+  // credential word, so `X-Patch-Id`, `X-Path-Id`, `X-Request-Id`, `session-count` and `key-name`
+  // keep their text. A bare `Signature:` stays readable on purpose: masking every name holding
+  // `signature`, `auth`, `session` or `token` would eat `auth: failed to connect` and
+  // `session: expired at noon`, which is the widening #3291 refused.
+  // #3310: the repeated segment group retried the whole name from every position, so on a
+  // hyphenated body the scan was quadratic (4/8/16/40/80 KB took 23/85/343/2132/8782 ms). The name
+  // now starts after a character that is not part of one and carries at most six segments of at
+  // most 64 characters, so a start costs a bounded amount and the scan is linear. The value is read
+  // as one piece up to the end of the field (a quote, comma, brace or newline ends it) and the
+  // six-character floor is on the whole value, so a first token under six characters is masked too.
+  // The value has no length cap: a cap left the tail of a long value readable in a report.
+  [/(?<![a-z0-9])(["']?(?:[a-z0-9]{1,64}[-_]){1,6}(?:key|token|auth|cookie|session|credential|signature|pat|sig|pass|oauth)(?:\[\])?["']?\s*[:=]\s*["']?)[^\s"',}][^"',}\n]{5,}/gi, '$1[hidden]'],
 ]
 
 // A path under a home can be deeper than the bound is long (#2964): `~/.local/share/deepseek-harness/
