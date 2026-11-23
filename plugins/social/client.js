@@ -1471,6 +1471,11 @@ window.__ModuleLoader__.load({
       const [scan, setScan] = useState(null)
       const [invite, setInvite] = useState({ link: '', status: null })
       const opened = useRef(false)
+      // `social/status` answers `connected: false` for a home with no Bot Social identity (#3318), and an
+      // empty `bots` then means "no Bot Social", not "still loading". It is kept beside the list rather
+      // than in a state of its own: the same answer sets `bots`, so that render already carries it, and
+      // the dialog's hook slots (seeded by role in the tests) stay where they were.
+      const connected = useRef(null)
       useEffect(() => {
         faceDialog.show(step === 'waiting' ? room?.roomId : null)
         return () => faceDialog.show(null)
@@ -1479,6 +1484,7 @@ window.__ModuleLoader__.load({
       useEffect(() => () => stopFaceScan(), [])
       useEffect(() => {
         call('social/status', {}).then(value => {
+          connected.current = typeof value?.connected === 'boolean' ? value.connected : null
           const list = value?.bots ?? []
           setBots(list)
           setSelected(current => {
@@ -1898,7 +1904,19 @@ window.__ModuleLoader__.load({
                 selected: selected.includes(bot.id),
                 onToggle: () => toggle(bot.id),
               }))),
-            bots.length === 0 ? h('div', { className: 'fs-hint' }, tr('Loading your Bots…')) : null,
+            // A home without Bot Social answers `connected: false` and an empty `bots` (#3318): that is
+            // not a read still on its way, so the dialog says what is missing and where to fix it
+            // instead of drawing a loading hint nobody can end.
+            connected.current === false ? h('div', {
+              className: 'fs-hint', 'data-flybot': 'face-join-offline', role: 'status',
+            }, tr('Bot Social is not connected yet. Open Settings → Bot Social to connect it.')) : null,
+            connected.current === false ? h('div', { className: 'fs-line' },
+              h('button', {
+                type: 'button', className: 'fs-btn', 'data-flybot': 'face-join-settings',
+                disabled: typeof actions?.openSettings !== 'function',
+                onClick: () => { onClose?.(); actions?.openSettings?.('social') },
+              }, tr('Open Bot Social settings'))) : null,
+            connected.current === false ? null : bots.length === 0 ? h('div', { className: 'fs-hint' }, tr('Loading your Bots…')) : null,
             h('div', { className: 'fs-hint', 'data-flybot': 'face-join-room' },
               tr('Room-only: friends do not see these Bots unless you invite them.')),
             h('div', { className: 'fs-line' },
