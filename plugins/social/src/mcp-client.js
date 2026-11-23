@@ -561,6 +561,12 @@ export function createSocialApi({ server, token, fetch: fetchImpl = socialFetch,
     addHomeMember: args => mcp.callTool('add_home_member', args),
     removeHomeMember: args => mcp.callTool('remove_home_member', args),
     listInbox: args => mcp.callTool('list_inbox', args),
+    // #3341: the per-event claim is the server's, on the same owner channel as `list_inbox`. The
+    // protocol is Bot Social #819's and is not ours to rename:
+    //   claim_inbox_event {event_id, holder, ttl_seconds?} -> claimed | held | settled
+    //   ack_inbox_event {event_id, holder, outcome} -> acked | stale-holder | unknown
+    claimInboxEvent: args => mcp.callTool('claim_inbox_event', args),
+    ackInboxEvent: args => mcp.callTool('ack_inbox_event', args),
     sendAsMember: args => mcp.callTool('send_as_member', args),
     listGrants,
     revokeGrant,
