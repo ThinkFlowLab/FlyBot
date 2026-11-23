@@ -2481,14 +2481,10 @@ window.__ModuleLoader__.load({
         if (!watching) { setItems([]); return undefined }
         let live = true
         const load = () => {
-          if (typeof document !== 'undefined' && document.hidden) return
           call('social/typing', {}).then(value => { if (live) setItems(value?.supported === false ? [] : (Array.isArray(value?.typing) ? value.typing : [])) }, () => { if (live) setItems([]) })
         }
-        load()
-        if (typeof setInterval !== 'function') return () => { live = false }
-        const timer = setInterval(load, 2000)
-        timer?.unref?.()
-        return () => { live = false; clearInterval(timer) }
+        const stop = pollWhileVisible(load, 2000)
+        return () => { live = false; stop?.() }
       }, [watching, bot?.remote?.handle, room?.id, room?.face?.roomId, room?.face?.status])
       const text = watching ? thinkingLine(thinkingNames(items, { room, bot })) : ''
       return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
