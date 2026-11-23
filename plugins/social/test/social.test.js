@@ -975,6 +975,74 @@ test('#2308: a turn that fails after delivery leaves failed, not a silent seen',
   assert.equal(after.cursors.m2, 1)
 })
 
+// #3338: a core that predates #2308 has no `flybot.inbox`. Its inbound path must stay the old
+// one: deliver once, mark seen, move the cursor, and never throw for want of a claim. `scope()`
+// builds a fresh plugin API on every call, so the fallback is exercised on what the plugin gets.
+test('#3338: without flybot.inbox an inbound event is still delivered once and marked seen', async (t) => {
+  const { ctx, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const msg = (cursor, text) => ({ cursor, event_id: `ev${cursor}`, event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: `<<<UNTRUSTED>>>\n{"text":"${text}"}\n<<<END>>>` })
+  const settingsPath = join(home, 'social-settings.json')
+  const settingsNow = () => JSON.parse(readFileSync(settingsPath, 'utf8'))
+  delete ctx.flybot.inbox
+  const scope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => { const scoped = scope(name); delete scoped.inbox; return scoped }
+  assert.equal(ctx.flybot.scope('social').inbox, undefined, 'the plugin sees no inbox')
+  const social = createSocial(ctx.flybot, { autoAccept: false, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  log.push(msg(1, 'one'))
+  assert.equal(await social.pollInbox(), 1, 'the event is delivered')
+  assert.equal((received.get('b') ?? []).length, 1)
+  const saved = settingsNow()
+  assert.ok(saved.seen.includes('ev1'), 'the event is marked seen')
+  assert.equal(saved.cursors.m2, 1, 'the cursor moved past the event')
+  assert.equal(saved.inbox?.ev1, undefined, 'no claim record is written without flybot.inbox')
+  assert.equal(await social.pollInbox(), 0)
+  assert.equal((received.get('b') ?? []).length, 1, 'nothing is replayed')
+})
+
+// #3338: the owner-policy refusal early-exits too. Without an inbox the sender is still told the
+// message was not delivered, the event is marked seen and the cursor moves, so one ungranted
+// sender cannot park the queue.
+test('#3338: an owner-policy deny without flybot.inbox still reports not-delivered, seen, and the cursor', async (t) => {
+  const { ctx, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const reported = []
+  server.tools.report_not_delivered = (a) => { reported.push(a); return {} }
+  // The grant sync a deny triggers reads the server: it still knows no grant for this Bot, so the
+  // second judgement stays a refusal instead of restoring the friendship from `list_friends`.
+  server.tools.list_bot_grants = () => ({ grants: [] })
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const msg = (cursor, text) => ({ cursor, event_id: `ev${cursor}`, message_id: `msg-${cursor}`, event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: `<<<UNTRUSTED>>>\n{"text":"${text}"}\n<<<END>>>` })
+  const settingsPath = join(home, 'social-settings.json')
+  const settingsNow = () => JSON.parse(readFileSync(settingsPath, 'utf8'))
+  delete ctx.flybot.inbox
+  const scope = ctx.flybot.scope.bind(ctx.flybot)
+  ctx.flybot.scope = (name) => { const scoped = scope(name); delete scoped.inbox; return scoped }
+  const social = createSocial(ctx.flybot, { autoAccept: false, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  // A registered identity whose grant is gone: reach() refuses this sender by owner policy.
+  await ctx.flybot.grants.set('b', [])
+  log.push(msg(1, 'nope'))
+  assert.equal(await social.pollInbox(), 0, 'a refusal is not a delivery')
+  assert.deepEqual(reported, [{ message_id: 'msg-1', reason: 'not_shared_yet' }], 'the sender is told it was not delivered')
+  const saved = settingsNow()
+  assert.ok(saved.seen.includes('ev1'), 'the refused event is marked seen')
+  assert.equal(saved.cursors.m2, 1, 'the cursor moved past the event')
+  assert.equal(saved.inbox?.ev1, undefined, 'no claim record is written without flybot.inbox')
+  assert.equal((received.get('b') ?? []).length, 0)
+  assert.equal(await social.pollInbox(), 0, 'a refusal is not retried')
+})
+
 test('legacy (#8): the conversation opened by a first text is kept for the next send', async (t) => {
   const { ctx, stop } = await team()
   t.after(stop)
