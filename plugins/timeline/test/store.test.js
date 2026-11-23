@@ -347,3 +347,86 @@ test('a rotation still prunes to the cap when the directory fsync is refused', (
   assert.deepEqual(trace.records().map(r => r.t), [3, 4, 5, 6])
   trace.close()
 })
+
+// The tolerance above is for a directory handle the platform refuses, and for nothing else. A file
+// sync that fails is a write that never reached the disk: reading it as the tolerated refusal (both
+// syncs inside one `try`) would report bytes as saved while the segment is not there. The case
+// replaces the same binding, refuses only file handles, and leaves the directory sync real.
+const refuseFileSync = (t, code) => {
+  const real = fs.fsyncSync
+  const seen = { files: 0 }
+  fs.fsyncSync = (fd) => {
+    if (fs.fstatSync(fd).isDirectory()) return real(fd)
+    seen.files += 1
+    throw Object.assign(new Error(`${code}: fsync failed`), { code })
+  }
+  syncBuiltinESMExports()
+  t.after(() => {
+    fs.fsyncSync = real
+    syncBuiltinESMExports()
+  })
+  return seen
+}
+
+test('a file fsync that fails with EIO still fails the write', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const seen = refuseFileSync(t, 'EIO')
+  const warnings = []
+  const trace = openTrace({ dir, now: () => 10_000, warn: (...args) => warnings.push(args.join(' ')) })
+  trace.append(rec(9_000))
+  assert.equal(trace.flush(), false, 'a failed file sync is not the platform refusing the directory')
+  assert.equal(seen.files, 1, 'the file sync is the one that failed')
+  assert.equal(trace.stats().failing, true)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /EIO/)
+  assert.ok(!existsSync(join(dir, 'trace-000001.json')), 'the segment was not published')
+  assert.deepEqual(trace.records().map(r => r.t), [9_000], 'the record stays in memory')
+  trace.close()
+})
+
+test('a directory fsync refused with EACCES is still a failed write', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  refuseDirectorySync(t, 'EACCES')
+  const warnings = []
+  const trace = openTrace({ dir, now: () => 10_000, warn: (...args) => warnings.push(args.join(' ')) })
+  trace.append(rec(9_000))
+  assert.equal(trace.flush(), false, 'only the refusals the platform gives are tolerated, never any error')
+  assert.equal(trace.stats().failing, true)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /EACCES/)
+  assert.deepEqual(trace.records().map(r => r.t), [9_000])
+  trace.close()
+})
+
+// A second recorder on a directory another writer holds collects in memory (`retryLock`) and asks
+// for the lock again when there is something to write. The directory sync is the last step of that
+// save: refusing it must not stop the lock from being adopted, the records from landing once, or the
+// next open from reading them back (#3298 measured the hand-over never settling).
+test('a deferred writer takes the lock and saves once when the directory fsync is refused', (t) => {
+  const dir = tmp()
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const seen = refuseDirectorySync(t, 'EPERM')
+  const first = openTrace({ dir, now: () => 10_000 })
+  const warnings = []
+  const second = openTrace({ dir, retryLock: true, now: () => 10_000, warn: (...args) => warnings.push(args.join(' ')) })
+  assert.equal(second.stats().deferred, true, 'the live writer keeps the lock')
+  second.append(rec(9_000))
+  assert.equal(second.flush(), false, 'the lock is still the other writer’s')
+  assert.equal(second.stats().deferred, true)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /not writable yet/)
+  first.close()
+  const synced = seen.files
+  assert.equal(second.flush(), true, 'the adopted lock plus a refused directory sync still saves')
+  assert.equal(seen.files - synced, 1, 'the deferred records are written once')
+  assert.equal(second.stats().persist, true)
+  assert.ok(!('deferred' in second.stats()))
+  assert.equal(second.flush(), true)
+  assert.equal(seen.files - synced, 1, 'a saved segment is not rewritten by the next flush')
+  second.close()
+  const reopened = openTrace({ dir, now: () => 10_000 })
+  assert.deepEqual(reopened.records().map(r => r.t), [9_000])
+  reopened.close()
+})
