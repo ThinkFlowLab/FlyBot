@@ -1511,11 +1511,7 @@ window.__ModuleLoader__.load({
           const next = list.find(item => (faceId && item.faceRoomId === faceId) || (localId && item.roomId === localId))
           if (next) setRoom(current => current ? { ...current, ...next } : next)
         }, () => {})
-        load()
-        if (typeof setInterval !== 'function') return undefined
-        const timer = setInterval(load, 2000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
+        return pollWhileVisible(load, 2000)
       }, [step, room?.faceRoomId, room?.roomId])
       useEffect(() => {
         if (step !== 'waiting' || room?.status !== 'candidate' || !room?.expiresAt) return undefined
@@ -3039,6 +3035,30 @@ window.__ModuleLoader__.load({
       return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
     }
 
+    // A poll exists to refresh what the person can see: it does not run while the tab is hidden, it
+    // reads once as the tab comes back, and the cadence restarts from that read rather than from the
+    // hidden phase (#3315).
+    function pollWhileVisible(fn, ms) {
+      if (typeof setInterval !== 'function') return undefined
+      const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+      const visible = () => !doc || !doc.hidden
+      let timer = null
+      const stop = () => { if (timer !== null) { clearInterval(timer); timer = null } }
+      // The first read and the interval start together, so a mount that is already visible refreshes
+      // at once and a hidden one refreshes when it is shown — one read, then a full period later.
+      const start = () => {
+        stop()
+        if (!visible()) return
+        fn()
+        timer = setInterval(fn, ms)
+        timer?.unref?.()
+      }
+      const onShow = () => start()
+      doc?.addEventListener('visibilitychange', onShow)
+      start()
+      return () => { stop(); doc?.removeEventListener('visibilitychange', onShow) }
+    }
+
     const isPastFace = (room) => {
       if (!room) return false
       if (room.status === 'closed' || room.status === 'left') return true
@@ -3121,11 +3141,7 @@ window.__ModuleLoader__.load({
           const next = list.find(item => (face?.roomId && item.faceRoomId === face.roomId) || item.roomId === room.id)
           if (next) setSnapshot(next)
         }, () => {})
-        load()
-        if (typeof setInterval !== 'function') return undefined
-        const timer = setInterval(load, 3000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
+        return pollWhileVisible(load, 3000)
       }, [live, face?.roomId, room?.id])
       useEffect(() => {
         const expiresAt = snapshot?.expiresAt || face?.expiresAt
