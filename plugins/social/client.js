@@ -3113,15 +3113,7 @@ window.__ModuleLoader__.load({
       }, () => {})
       useEffect(() => {
         if (!enabled) return undefined
-        load(true)
-        if (typeof setInterval !== 'function') return undefined
-        const tick = () => {
-          if (typeof document !== 'undefined' && document.hidden) return
-          load(true)
-        }
-        const timer = setInterval(tick, 5000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
+        return pollWhileVisible(() => load(true), 5000)
       }, [enabled])
       if (!past.length) return null
       const card = (room, folded) => h(FaceRoomCard, {
