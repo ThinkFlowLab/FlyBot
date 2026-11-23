@@ -37,6 +37,10 @@ const seed = () => ({
     m2: { id: 'm2', project: 'project-p1', status: 'open', question: 'Still open?', createdAt: 'not-a-time', updatedAt: 11 },
     // A readable timestamp still formats, so the guard does not blank every date.
     m3: { id: 'm3', project: 'project-p1', status: 'decided', question: 'Keep the date?', decidedAt: '2026-11-01T09:00:00.000Z', updatedAt: 12 },
+    // What the product itself writes: `meetings.js` stores `stamp() = Date.now()`, epoch milliseconds.
+    m4: { id: 'm4', project: 'project-p1', status: 'decided', question: 'Adopt the record?', decidedAt: 1_700_000_000_000, updatedAt: 20 },
+    // The pending list reads `createdAt`; the writer stamps that one the same way.
+    m5: { id: 'm5', project: 'project-p1', status: 'open', question: 'Still open?', createdAt: 1_700_000_000_000, updatedAt: 21 },
   },
 })
 
@@ -90,6 +94,53 @@ test('#2587: a meetings record with a non-date decidedAt does not break the boar
     assert.deepEqual(served.value.tasks.map(row => row.id), ['task-group'])
     assert.equal(served.value.meetings.decided.find(meeting => meeting.id === 'm1').date, '')
   } finally {
+    await stop()
+  }
+})
+
+// The meetings writer stores the stamps the board reads as `Date.now()` — epoch milliseconds
+// (`core/src/host/meetings.js`). `dayOf()` used to parse strings only, so every meeting the product
+// itself recorded listed with no date, unlike the archived `decisions/YYYY-MM-DD-*.md` beside it.
+test('a meeting the product recorded (epoch ms stamps) lists with its day', async () => {
+  const { rt, call, stop } = await start()
+  try {
+    const board = await rt.projectBoard('project-p1')
+    const decided = board.meetings.decided.find(meeting => meeting.id === 'm4')
+    assert.ok(decided, 'the decided meeting is listed')
+    assert.equal(decided.date, '2023-11-14', 'a numeric decidedAt reads as its UTC day, as the archived file name does')
+    const pending = board.meetings.pending.find(meeting => meeting.id === 'm5')
+    assert.ok(pending, 'the pending meeting is listed')
+    assert.equal(pending.date, '2023-11-14', 'a numeric createdAt reads as its UTC day too')
+    // The endpoint the page draws from answers the same rows.
+    const served = await call('project-board', { id: 'project-p1' })
+    assert.equal(served.ok, true, JSON.stringify(served))
+    assert.equal(served.value.meetings.decided.find(meeting => meeting.id === 'm4').date, '2023-11-14')
+  } finally {
+    await stop()
+  }
+})
+
+// The same gap, end to end: a meeting the product itself opens and decides, then the board read the
+// page draws. No seed touches the stamps here — `meetings.js` writes them.
+test('a meeting opened and decided by the product lists with the day it closed', async () => {
+  const { rt, stop } = await start()
+  const dir = mkdtempSync(join(tmpdir(), 'ds-bot-board-decide-'))
+  try {
+    const opened = await rt.meetingEndpoint('open', { question: 'Adopt the record?', participants: ['Chief', 'Writer'], project: 'project-p1' })
+    const id = /meeting-[0-9a-f]+/.exec(opened)?.[0]
+    assert.ok(id, 'the meeting is open')
+    await rt.meetingEndpoint('position', { meeting: id, as: 'Chief', stance: 'agree', text: 'yes' })
+    await rt.meetingEndpoint('position', { meeting: id, as: 'Writer', stance: 'agree', text: 'yes' })
+    await rt.meetingEndpoint('decide', { meeting: id, owner: 'Chief', decision: 'Adopt it.', dir })
+    const stored = rt.state.meetings[id]
+    assert.equal(typeof stored.decidedAt, 'number', 'the writer stores epoch milliseconds')
+    const board = await rt.projectBoard('project-p1')
+    const row = board.meetings.decided.find(meeting => meeting.id === id)
+    assert.ok(row, 'the decided meeting is on the board')
+    const day = new Date(stored.decidedAt).toISOString().slice(0, 10)
+    assert.equal(row.date, day, 'the board names the day the meeting closed, as the archived file name does')
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 })
     await stop()
   }
 })

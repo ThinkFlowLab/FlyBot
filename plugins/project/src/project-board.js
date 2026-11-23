@@ -110,8 +110,10 @@ const stampOf = value => (Number.isFinite(value) ? value : null)
 // #2587: `text()` proves only that a stored timestamp is a non-empty string, so a hand-edited
 // `decidedAt` / `createdAt` reached `toISOString()` and threw for the whole board read. A value
 // that does not parse reads as no date, like the other unreadable fields.
+// #3326: the writer stores `Date.now()` (`meetings.js`), so a recorded meeting's numeric stamp is
+// an instant too; only strings go through the parse, and both format by the writer's own UTC day.
 const dayOf = value => {
-  const parsed = Date.parse(text(value))
+  const parsed = Number.isFinite(value) ? value : Date.parse(text(value))
   return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : ''
 }
 
