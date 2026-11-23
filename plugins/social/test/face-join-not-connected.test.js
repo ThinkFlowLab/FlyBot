@@ -19,7 +19,7 @@ const BOT = { id: 'b1', name: 'Chief', handle: '@chief.home', isMain: true }
 globalThis.document ??= { createElement: () => ({ setAttribute() {} }), head: { appendChild() {} }, getElementById: () => null, addEventListener() {}, removeEventListener() {} }
 
 // One node of the drawn tree: a host element with its props, or a run of text.
-function draw({ status, props, onCall } = {}) {
+function draw({ props, onCall } = {}) {
   const modules = new Map()
   const window = { __ModuleLoader__: { load: ({ id, factory }) => modules.set(id, factory) } }
   new Function('window', readFileSync(new URL('../client.js', import.meta.url), 'utf8'))(window)
