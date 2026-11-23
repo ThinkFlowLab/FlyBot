@@ -13,6 +13,7 @@ import { approvalDraftText, approvalView, createSocial, draftText, holdAllowsFac
 import { createMcpClient, createSocialApi, untrustedText, mapPool, socialHttpAgent, fetchOptions, grantPersonView, memberHandleOf, personHomeOf, normalizeGrant, isUnknownTool, isGrantNotFound, isMissingEndpoint } from '../src/mcp-client.js'
 import { lookFromServer, lookToServer, lookFingerprint, hexOfColor, shownLook, defaultShapeOf, defaultColorOf, DEFAULT_SHAPES as LOOK_DEFAULT_SHAPES, DEFAULT_COLORS as LOOK_DEFAULT_COLORS } from '../src/look.js'
 import { encodeRoomShare } from '../../../core/src/shared/room-share.js'
+import { ATTEMPTS_MAX } from '../../../core/src/host/inbox.js'
 import { RoomInvitePreview, inviteCountdown, invitePreviewOf } from '../../../core/src/client/room-invite-preview.js'
 import { DICTIONARY } from '../../../core/src/client/i18n.js'
 import { canRetry } from '../../../core/src/shared/held-retry.js'
@@ -874,6 +875,104 @@ test('inbox (#8): a failed event is retried, nothing is replayed, polls never ov
   assert.equal(await again.pollInbox(), 0)
   offDeny()
   assert.ok(server.calls.filter(c => c.name === 'list_inbox').every(c => c.args.peek === true))
+})
+
+// #2308: one event, two poll loops (two hosts over the same Bot Social credentials). Before
+// the claim the second loop delivered the same event again, because `seen` lives in a settings
+// file only this host read. Now the first loop's claim is on disk before delivery, the second
+// finds a live lease, delivers nothing and leaves its cursor where it was.
+test('#2308: two poll loops over one event deliver once; the second gets held and keeps its cursor', async (t) => {
+  const { ctx, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const settingsPath = join(home, 'social-settings.json')
+  const settingsNow = () => JSON.parse(readFileSync(settingsPath, 'utf8'))
+  const make = () => createSocial(ctx.flybot, { autoAccept: false, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  const first = make()
+  t.after(() => first.dispose())
+  await grantTeam(ctx.flybot)
+  await first.registerAll()
+  log.push({ cursor: 1, event_id: 'ev1', event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: '<<<UNTRUSTED>>>\n{"text":"once"}\n<<<END>>>' })
+
+  // Hold the first loop inside delivery: its claim was already saved (claimEvent runs before send).
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  let paused = false
+  const offGate = ctx.flybot.bot.send.use({ name: 'hold-inbound', priority: 1, handle: async () => { paused = true; await gate } })
+  const firstPoll = first.pollInbox()
+  await waitUntil(() => paused)
+  const claimed = settingsNow()
+  assert.equal(claimed.inbox.ev1.status, 'claimed')
+  const leaseId = claimed.inbox.ev1.lease.id
+
+  // The second host starts after the claim was saved and reads the same file. The first
+  // instance's middleware is removed (a plugin registers `social` once) but its poll keeps
+  // running in the middle of the send, which is exactly the overlap this test is about.
+  first.dispose()
+  const second = make()
+  t.after(() => second.dispose())
+  assert.equal(await second.pollInbox(), 0, 'the second loop delivered nothing')
+  const during = settingsNow()
+  assert.equal(during.inbox.ev1.status, 'claimed', 'the second loop did not settle the first loop’s lease')
+  assert.equal(during.inbox.ev1.lease.id, leaseId, 'the lease was not replaced')
+  assert.equal(during.cursors?.m2, undefined, 'the held loop did not move the cursor past the event')
+  assert.equal((received.get('b') ?? []).length, 0, 'nothing has been delivered yet')
+
+  release()
+  assert.equal(await firstPoll, 1)
+  offGate()
+  assert.equal((received.get('b') ?? []).length, 1, 'the event was delivered exactly once')
+  const after = settingsNow()
+  assert.equal(after.inbox.ev1.status, 'replied')
+  assert.equal(after.inbox.ev1.resultKey, 'ev1')
+  assert.equal(after.inbox.ev1.settled.leaseId, leaseId)
+  assert.equal(after.cursors.m2, 1, 'the delivering loop moved the cursor')
+})
+
+// #2308: a delivery that fails after the claim is not a silent retry for ever. Each attempt is
+// on the record; at ATTEMPTS_MAX the event is terminal (`failed`), not merely seen.
+test('#2308: a turn that fails after delivery leaves failed, not a silent seen', async (t) => {
+  const { ctx, received, home, stop } = await team()
+  t.after(stop)
+  const server = mockServer()
+  const log = []
+  server.tools.list_inbox = (a) => { const since = a.since_cursor ?? 0; const events = a.bot_id === 'm2' ? log.filter(e => e.cursor > since) : []; return { events, next_cursor: events.at(-1)?.cursor ?? since } }
+  const settingsPath = join(home, 'social-settings.json')
+  const settingsNow = () => JSON.parse(readFileSync(settingsPath, 'utf8'))
+  const social = createSocial(ctx.flybot, { autoAccept: false, settingsPath }, { client: createMcpClient({ server: 'https://s', token: 'owner-token', fetch: server.fetch }), home: { id: 'h1', handle: '@danyang.home' } })
+  t.after(() => social.dispose())
+  await grantTeam(ctx.flybot)
+  await social.registerAll()
+  log.push({ cursor: 1, event_id: 'ev1', event_type: 'message.received', from: { handle: '@coder.bob.home', display_name: 'Coder' }, untrusted_content: '<<<UNTRUSTED>>>\n{"text":"boom"}\n<<<END>>>' })
+
+  const resolve = ctx.sessionController.resolveAgent
+  ctx.sessionController.resolveAgent = async (id) => {
+    const { agent } = await resolve(id)
+    return { agent: { ...agent, followup: m => { if (/boom/.test(m.content[0].text)) throw new Error('down'); agent.followup(m) }, steer: () => {} } }
+  }
+  t.after(() => { ctx.sessionController.resolveAgent = resolve })
+
+  for (let attempt = 1; attempt <= ATTEMPTS_MAX; attempt += 1) {
+    assert.equal(await social.pollInbox(), 0, `attempt ${attempt} delivered nothing`)
+    const saved = settingsNow()
+    assert.equal(saved.inbox.ev1.attempts, attempt)
+    assert.equal(saved.inbox.ev1.status, attempt < ATTEMPTS_MAX ? 'pending' : 'failed')
+  }
+  const failed = settingsNow()
+  assert.equal(failed.inbox.ev1.status, 'failed', 'the failure is a terminal fact, not only a warning')
+  assert.equal(failed.inbox.ev1.error, 'down')
+  assert.ok(!(failed.seen ?? []).includes('ev1'), 'a failed delivery is not marked seen')
+  assert.equal(failed.cursors?.m2, undefined, 'a failed delivery did not move the cursor')
+  assert.equal((received.get('b') ?? []).length, 0)
+
+  // The terminal record stops the retry: the next poll settles it and moves on.
+  assert.equal(await social.pollInbox(), 0)
+  const after = settingsNow()
+  assert.equal(after.inbox.ev1.status, 'failed')
+  assert.ok((after.seen ?? []).includes('ev1'))
+  assert.equal(after.cursors.m2, 1)
 })
 
 test('legacy (#8): the conversation opened by a first text is kept for the next send', async (t) => {

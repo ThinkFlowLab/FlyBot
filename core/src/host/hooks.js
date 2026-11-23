@@ -22,6 +22,7 @@ import { currentParticipants, isFaceRoom } from './room-membership.js'
 import { faceMentions, mentionedByHandle } from './face-mentions.js'
 import { FEED_EVENTS, installFeed } from './flybot-feed.js'
 import { createHandoff } from './handoff.js'
+import * as inbox from './inbox.js'
 import { createPluginModel } from './plugin-model.js'
 import { defineTool } from './tool-schema.js'
 import { retiredBot } from './store.js'
@@ -1274,6 +1275,11 @@ export function install(rt) {
     // A sanctioned, capped model call for THIS plugin (#450): allow-listed by config, text only,
     // no side effect. Resolves `{ ok: true, text }` or `{ ok: false, code }`.
     model: { ask: input => modelAsk(plugin, input) },
+    // The inbound claim (#2308): the pure lease/state machine an inbound plugin keeps in its
+    // own settings, so two poll loops over one event deliver it once and a failed turn leaves
+    // a terminal fact. Shared through the API rather than imported: a plugin package cannot
+    // import `core/src/*`. The caller owns the record and the `now`; this module does no I/O.
+    inbox,
     // True while a FlyBot window on screen reads the team (#497): a plugin that polls a remote inbox
     // reads it at its live cadence then, so what arrives shows in that window within seconds.
     watched: () => rt.watched?.() === true,
