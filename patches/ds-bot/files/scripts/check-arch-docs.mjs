@@ -98,38 +98,87 @@ function fileChangedIn(ref, file) {
   return out.length > 0;
 }
 
-export function hasDocsNotNeededTrailer(ref = baseRef()) {
-  assertBaseRef(ref);
-  const out = execFileSync('git', ['log', `${ref}..HEAD`, '--pretty=%B'], {
+const TRAILER = /Docs-not-needed:/i;
+
+function gitLog(ref) {
+  return execFileSync('git', ['log', `${ref}..HEAD`, '--pretty=%B'], {
     cwd: ROOT,
     encoding: 'utf8',
   });
-  return /Docs-not-needed:/i.test(out);
 }
 
-export function filesNeedDocs({ ref = baseRef(), map = null } = {}) {
+export function hasDocsNotNeededTrailer(ref = baseRef(), logText = null) {
+  assertBaseRef(ref);
+  return TRAILER.test(logText ?? gitLog(ref));
+}
+
+// The pull request this run belongs to (#3322): the merge queue squashes its title and body into the
+// commit it judges, so on a `pull_request` run the trailer has to be in that text as well as in the
+// branch commits. `GITHUB_EVENT_PATH` is the runner's own copy of the event; a `pull_request` run
+// whose event cannot be read counts as a body without the trailer, so the gate stays red rather
+// than passing on a text it could not see.
+export function pullRequestEvent() {
+  if (process.env.GITHUB_EVENT_NAME !== 'pull_request') return undefined;
+  const empty = { name: 'pull_request', title: '', body: '' };
+  const path = process.env.GITHUB_EVENT_PATH;
+  if (!path) return empty;
+  try {
+    const event = JSON.parse(readFileSync(path, 'utf8'));
+    return {
+      name: 'pull_request',
+      title: String(event?.pull_request?.title ?? ''),
+      body: String(event?.pull_request?.body ?? ''),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function filesNeedDocs({
+  ref = baseRef(),
+  map = null,
+  event = pullRequestEvent(),
+  logText = null,
+  files = null,
+  changed = null,
+} = {}) {
   assertBaseRef(ref);
   const subsystemMap = map || loadSubsystemMap();
-  const files = changedFiles(ref);
-  if (files.length === 0) return { ok: true, missing: [], files: [] };
-  if (hasDocsNotNeededTrailer(ref)) return { ok: true, missing: [], files };
+  const touched = files ?? changedFiles(ref);
+  const inLog = hasDocsNotNeededTrailer(ref, logText);
+  // Only a pull request has a second place; a merge-queue entry and a local run judge the log alone.
+  const inBody = event?.name === 'pull_request'
+    ? TRAILER.test(`${event.title ?? ''}\n${event.body ?? ''}`)
+    : true;
+  const trailer = { log: inLog, body: inBody, event: event?.name ?? 'local' };
+  if (touched.length === 0) return { ok: true, missing: [], files: [], trailer };
+  if (inLog && inBody) return { ok: true, missing: [], files: touched, trailer };
+  const isChanged = changed ?? (file => fileChangedIn(ref, file));
   const missing = [];
-  for (const file of files) {
+  for (const file of touched) {
     const match = longestMatch(file, subsystemMap);
     if (!match) continue;
-    if (fileChangedIn(ref, match.docPath)) continue;
+    if (isChanged(match.docPath)) continue;
     missing.push({ file, subsystem: match.subsystem, doc: match.docPath });
   }
-  return { ok: missing.length === 0, missing, files };
+  return { ok: missing.length === 0, missing, files: touched, trailer };
 }
 
 // #1076: the trailer this gate looks for is read from `git log <base>..HEAD`, and on a merge-queue
 // entry that range holds the squash of the pull request title and body — the branch commits are not in
 // it. So "add a trailer" sent people to the commit they had just pushed, and the entry went red again.
-// The refusal names both places, and says why the body counts.
-export function failureLines(missing, root = ROOT) {
+// The refusal names both places, and says why the body counts. Since #3322 a `pull_request` run reads
+// both, and names the one that is missing rather than leaving it to the queue.
+export function failureLines(missing, root = ROOT, trailer = null) {
   const lines = ['arch-docs: FAIL — owned file(s) changed without subsystem doc update:'];
   for (const m of missing) lines.push(`  ${m.file}  →  ${m.subsystem} (${relative(root, m.doc)})`);
+  if (trailer?.event === 'pull_request' && trailer.log !== trailer.body) {
+    lines.push(trailer.body
+      ? 'arch-docs: the pull request body has `Docs-not-needed:`, but the branch commits do not.'
+      : 'arch-docs: the branch commits have `Docs-not-needed:`, but the pull request title and body do not.');
+    lines.push('  The merge queue squashes the title and body into the commit it judges, so a trailer');
+    lines.push('  that lives only in a branch commit is gone exactly when main is judged. Add it to both.');
+  }
   lines.push('Fix it one of two ways:');
   lines.push('  - update the subsystem doc in docs/subsystems/ in this pull request, or');
   lines.push('  - add a line `Docs-not-needed: <why>` to the pull request body AND to the branch commit.');
@@ -152,7 +201,7 @@ function main() {
     console.log(`arch-docs: OK (${files.length} changed file(s))`);
     process.exit(0);
   }
-  for (const line of failureLines(missing)) console.error(line);
+  for (const line of failureLines(missing, ROOT, result.trailer)) console.error(line);
   process.exit(1);
 }
 
