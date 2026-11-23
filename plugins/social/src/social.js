@@ -2715,7 +2715,29 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
       const key = botId ?? 'default'
       const saved = settings.cursors[key]
       const result = await client.callTool('list_inbox', { peek: true, ...(saved !== undefined ? { since_cursor: saved } : {}), ...(botId ? { bot_id: botId } : {}) })
-      for (const event of result?.events ?? []) {
+      const page = result?.events ?? []
+      // #3342: Bot Social keeps every event (its table has no delete path), so a host with no cursor
+      // for this Bot must not read from the start of the queue: that replays the Bot's whole history,
+      // a page of 100 at a time, to the people on the other side. The first read is a seed only — its
+      // page is not delivered, not marked seen and not claimed (a claim belongs to a delivery), and
+      // its tail becomes the baseline every later read starts after. The cost is that messages from
+      // before the seeding moment are not delivered here; the other way (reading the page consumes
+      // it) would lose a message for good when this host dies between the read and the delivery.
+      // A server cursor is opaque: a finite number or a non-empty string. Anything else means there
+      // is no baseline to keep, and the page is delivered rather than dropped — replaying once is
+      // recoverable, a message dropped silently is not.
+      const seed = result?.next_cursor
+      const seedUsable = (typeof seed === 'number' && Number.isFinite(seed)) || (typeof seed === 'string' && seed !== '')
+      if (saved === undefined) {
+        if (seedUsable) {
+          settings.cursors[key] = seed
+          saveSettings()
+          warn(`seeded cursor, ${page.length} historical events skipped`)
+          continue
+        }
+        warn('no next_cursor, delivering first page')
+      }
+      for (const event of page) {
         const done = () => {
           markSeen(event.event_id)
           if (event.cursor !== undefined) settings.cursors[key] = event.cursor
@@ -2856,7 +2878,6 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           break
         }
       }
-      if ((result?.events ?? []).length === 0 && saved === undefined && result?.next_cursor !== undefined) { settings.cursors[key] = result.next_cursor; saveSettings() }
     }
     return delivered
   }
