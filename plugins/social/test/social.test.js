@@ -15459,3 +15459,15 @@ test('#3075: a local failed hold can be retried again after a retry that failed 
   assert.equal(retries().length, 2, 'a retry that failed again can be tried again')
   assert.equal(clock.every.length, 1, 'the test drove the dock\'s own poll, not a copy of it')
 })
+
+test('#3323: a first share-friends read that fails must not keep saying it is loading', async () => {
+  const host = sharingHost(async (endpoint) => {
+    if (endpoint === 'social/share-friends') throw new Error('social/share-friends: no answer from Bot Social')
+    return {}
+  })
+  const panel = host.mount('ShareWithFriend', { bot: { id: 'b', name: 'Writer' } })
+  await panel.settle()
+  assert.ok(panel.has('share-list-retry'), 'a failed first read offers a retry')
+  assert.match(panel.text(), /no answer from Bot Social/, 'the failure is said out loud')
+  assert.doesNotMatch(panel.text(), /Loading friends…/, 'a failed first read must not keep the loading line')
+})

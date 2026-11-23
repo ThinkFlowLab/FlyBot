@@ -3980,7 +3980,9 @@ window.__ModuleLoader__.load({
         } finally { setBusy('') }
       }
       const list = friends ?? []
-      const loading = friends === null
+      // A read that failed is not a read still on its way: the error row and its retry are the
+      // card's answer then, so the loading line must not stand there for ever (#3323).
+      const loading = friends === null && !listError
       return h('div', { className: 'fs fs-card', 'data-flybot': 'share-with-friend' },
         h('div', { className: 'fs-name' }, tr('Share with a friend')),
         h('div', { className: 'fs-hint' }, tr('One click shares {name} with someone you already know. No invite link. They can decline; you can Revoke in People with access.', { name: bot.name || 'this Bot' })),
