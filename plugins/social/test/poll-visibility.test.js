@@ -259,3 +259,30 @@ test('#3315: the connecting settings page stops while hidden and reads once when
     unmount(cleanups)
   } finally { s.restore() }
 })
+
+// The peer-thinking row (#443) is the same shape again: a bare 2 s `setInterval` with the visibility
+// check inside `load`, so a hidden tab keeps the timer ticking for nothing and a tab that comes back
+// waits out the rest of the period before its first read.
+const peerRoom = () => ({ id: 'r1', origin: 'face-to-face', face: { status: 'open', roomId: 'fr1' }, participants: [] })
+const peerThinking = app => mount(app, 'PeerThinking', { room: peerRoom(), bot: { id: 'b1', name: 'Chief', remote: { handle: '@chief.home' } } })
+
+test('the peer-thinking row stops while hidden and reads once when the tab returns', () => {
+  const s = scene({ hidden: true })
+  try {
+    const typingCalls = () => s.calls.filter(([endpoint]) => endpoint === 'social/typing').length
+    const { cleanups } = peerThinking(s.app)
+    assert.equal(typingCalls(), 0, 'a hidden row makes no read')
+    assert.deepEqual(s.timers.periods(), [], 'a hidden row holds no poll timer')
+    s.doc.hidden = false
+    s.doc.emit('visibilitychange')
+    assert.equal(typingCalls(), 1, `coming back made ${typingCalls()} read(s), not one`)
+    assert.deepEqual(s.timers.periods(), [2000], 'the 2 s cadence restarts from that read')
+    s.timers.tick()
+    assert.equal(typingCalls(), 2, 'and one period later reads again, once')
+    s.doc.hidden = true
+    s.doc.emit('visibilitychange')
+    s.timers.tick()
+    assert.equal(typingCalls(), 2, 'going hidden again stops it')
+    unmount(cleanups)
+  } finally { s.restore() }
+})
