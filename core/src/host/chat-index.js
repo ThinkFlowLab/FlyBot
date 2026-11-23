@@ -252,6 +252,34 @@ export function install(rt) {
     return { at: t === null ? undefined : rt.clock(t) }
   }
 
+  // The rows one pass over a part's events adds, as the writer indexes them: an answer is kept
+  // only while its turn keeps answers, and any other message with text is kept as said. It
+  // returns the mark values the pass ends with too. `start` is the mark it continues from.
+  function markedRows(sessionId, start, events) {
+    let keep = start?.keep === 1
+    let turn = start?.turn ?? -1
+    let turnNo = start?.turnNo ?? -1
+    let last = start?.through ?? -1
+    const rows = []
+    for (const event of events) {
+      if (event.seq <= last) continue
+      last = event.seq
+      if (event.type === 'turn/start') {
+        turn = event.seq
+        if (Number.isFinite(event.data?.turn)) turnNo = event.data.turn
+      }
+      const entry = rt.historyEntry(event, false)
+      if (entry === undefined) continue
+      if (entry.answer) {
+        if (keep) rows.push({ text: entry.text, session: sessionId, seq: event.seq, time: event.time ?? 0, who: 'you', turn: turnNo })
+        continue
+      }
+      keep = entry.keepAnswers
+      if (entry.text !== '') rows.push({ text: entry.text, session: sessionId, seq: event.seq, time: event.time ?? 0, who: entry.who, turn: turnNo })
+    }
+    return { rows, last, keep, turn, turnNo }
+  }
+
   // Adds what a part said since its mark. Reads of one part wait for each other within this
   // installation; two installations over one home meet again inside the transaction below.
   const catchingUp = new Map()
@@ -286,27 +314,9 @@ export function install(rt) {
           index.db.exec('COMMIT')
           return
         }
-        let keep = mark ? mark.keep === 1 : false
-        let turn = mark?.turn ?? -1
-        let turnNo = mark?.turnNo ?? -1
-        let last = mark?.through ?? -1
-        for (const event of events) {
-          if (event.seq <= last) continue
-          last = event.seq
-          if (event.type === 'turn/start') {
-            turn = event.seq
-            if (Number.isFinite(event.data?.turn)) turnNo = event.data.turn
-          }
-          const entry = rt.historyEntry(event, false)
-          if (entry === undefined) continue
-          if (entry.answer) {
-            if (keep) index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, 'you', turnNo)
-            continue
-          }
-          keep = entry.keepAnswers
-          if (entry.text !== '') index.insert.run(entry.text, part.sessionId, event.seq, event.time ?? 0, entry.who, turnNo)
-        }
-        index.setMark.run(part.sessionId, last, keep ? 1 : 0, seal ? 1 : 0, turn, turnNo)
+        const built = markedRows(part.sessionId, mark, events)
+        for (const row of built.rows) index.insert.run(row.text, row.session, row.seq, row.time, row.who, row.turn)
+        index.setMark.run(part.sessionId, built.last, built.keep ? 1 : 0, seal ? 1 : 0, built.turn, built.turnNo)
         index.db.exec('COMMIT')
         // The first commit is what makes `-wal`/`-shm`, so the modes are put right once it exists.
         if (!index.hardened) {
@@ -390,6 +400,75 @@ export function install(rt) {
     return { rows, every, more: total === undefined ? 0 : Math.max(0, total - rows.length) }
   }
 
+  // The rows a read-only window's log holds past the mark of each session: this window adds
+  // nothing to the index, so the palette asks what the log holds rather than how far the
+  // writer's index got. Nothing is written, and the row shape is the writer's own (#3319).
+  async function unindexedRows(index, sessions, terms) {
+    const every = []
+    const some = []
+    for (const sessionId of sessions) {
+      const mark = index.mark.get(sessionId)
+      const through = mark?.through ?? -1
+      const agent = await rt.resolveAgent(sessionId).catch(() => undefined)
+      if (agent === undefined || through >= Number(agent.session.seq) - 1) continue
+      const events = []
+      try {
+        for await (const event of eventsBackwards(sessionId, AbortSignal.timeout(HISTORY_TIMEOUT_MS), Infinity)) {
+          if (event.seq <= through) break
+          events.push(event)
+        }
+      } catch (error) {
+        rt.warn('ds-bot: reading %s past its index mark failed: %s', sessionId, error)
+        continue
+      }
+      events.reverse()
+      for (const row of markedRows(sessionId, mark, events).rows) {
+        const lower = row.text.toLowerCase()
+        const hits = terms.filter(term => lower.includes(term)).length
+        if (hits === 0) continue
+        some.push({ row, hits })
+        if (hits === terms.length) every.push(row)
+      }
+    }
+    const newest = (a, b) => (b.time - a.time) || (b.seq - a.seq)
+    return {
+      every: every.sort(newest),
+      some: some.sort((a, b) => (b.hits - a.hits) || (b.row.time - a.row.time)).map(hit => hit.row),
+    }
+  }
+
+  // The index's answer and the rows read past its mark, as one answer: the rows holding every
+  // term when any exist, else the ones holding some, and `more` from the two totals. The two
+  // sources have no rank in common, so the answer is newest first, as the palette reads it;
+  // without a tail the index's own order is untouched (#3319).
+  function withLogRows(found, tail, limit) {
+    const every = found.every || tail.every.length > 0
+    const rows = []
+    const seen = new Set()
+    const add = list => {
+      for (const row of list) {
+        // A row both sources hold comes from one event, not two messages.
+        const key = `${row.session}#${row.seq}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        rows.push(row)
+      }
+    }
+    const indexTotal = found.rows.length + found.more
+    let total
+    if (every) {
+      if (found.every) add(found.rows)
+      add(tail.every)
+      total = (found.every ? indexTotal : 0) + tail.every.length
+    } else {
+      add(found.rows)
+      add(tail.some)
+      total = indexTotal + tail.some.length
+    }
+    const shown = rows.sort((a, b) => (b.time - a.time) || (b.seq - a.seq)).slice(0, limit)
+    return { rows: shown, every, more: Math.max(0, total - shown.length) }
+  }
+
   // The whole-text search behind the palette's "Messages (full text)" group (P-820): the
   // outline previews stop at 50/120 characters, so a hit past that budget is invisible to
   // the outline read. The sessions are the caller's to name — the channel lists the caller's
@@ -403,7 +482,11 @@ export function install(rt) {
     if (index === null) return { rows: [], more: 0 }
     const sessions = [...new Set(sessionIds)]
     for (const sessionId of sessions) await catchUp(index, { sessionId }).catch(error => rt.warn('ds-bot: indexing %s failed: %s', sessionId, error))
-    return matchedRows(index, sessions, terms, limit, undefined)
+    const found = matchedRows(index, sessions, terms, limit, undefined)
+    if (!readOnly()) return found
+    // A message newer than the mark was answered as missing, and `more: 0` called that whole.
+    const tail = await unindexedRows(index, sessions, terms)
+    return tail.some.length === 0 ? found : withLogRows(found, tail, limit)
   }
 
   // The latest messages across all parts, oldest first; `more` is how many the cap left out (#1906).
