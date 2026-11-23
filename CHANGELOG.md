@@ -6,6 +6,24 @@ New entries are written as one fragment file per change in [changelog.d/](change
 
 ## [Unreleased]
 
+## [0.2.42] - 2026-11-24
+
+### Added
+
+- The diagnostics report now says which capability is not working, so the report a user is asked to paste into an issue can answer it: a `Capabilities` row lists every capability that is not ready as `<capability> on <Bot> — error: <masked reason>` (a token quoted in the URL an MCP server answered stays `[hidden]`), ` — needs approval`, or the state the host is still in, with the reasons sorted so two hosts with the same statuses print the same row. A host whose capabilities are all ready draws one short line, and a host with none configured keeps the report of today, byte for byte ([#3312](https://github.com/ThinkFlowLab/FlyBot/issues/3312)).
+
+### Fixed
+
+- The diagnostics report and the downloaded log bound their credential scan again: the header-shaped entry added for `X-Pat`-style names retried its whole name from every position, so a hyphenated body cost the square of its length (8.8 s at 80 KB) and one long error body in a warning or a note could block the host. The name now starts after a character that is not part of it and carries at most six segments, so an 80 KB body takes under 2 ms. Three shapes that stayed readable are masked too — an underscore join (`X_Token:`), an array key (`X-Token[]:`) and an `oauth` segment (`X-OAuth:`) — and the six-character floor now applies to the whole value, so `X-Token: abc def` is masked as one piece while `X-Token: abc12` and the ordinary names (`X-Patch-Id`, `session-count`, `key-name`) keep their text ([#3310](https://github.com/ThinkFlowLab/FlyBot/issues/3310)).
+- The social client's waiting-room (2 s) and face-room overview (3 s) polls no longer call `social/face-rooms` while the tab is hidden; coming back reads once at once and restarts the cadence from that read instead of waiting out the hidden period's remainder ([#3315](https://github.com/ThinkFlowLab/FlyBot/issues/3315)).
+- The join dialog no longer shows **Loading your Bots…** for ever on a home that has not connected Bot Social: `social/status` succeeds with `connected: false` and an empty Bot list, so the dialog now says Bot Social is not connected and offers **Open Bot Social settings** instead of an empty picker that looked like a read still on its way ([#3318](https://github.com/ThinkFlowLab/FlyBot/issues/3318)).
+- The command palette's **Messages (full text)** group now finds a message in a read-only window even when the other window that holds the folder has not indexed it yet: the host matches its own chat log past the index mark, without writing the index, so a message that already exists is no longer answered as missing with `more: 0` ([#3319](https://github.com/ThinkFlowLab/FlyBot/issues/3319)).
+- The **Share with a friend** card no longer says **Loading friends…** for ever after its first `social/share-friends` read fails: the failed read already draws the error and its **Try again**, so the loading line is now kept only while a read is still on its way, and a later successful read still replaces it as before ([#3323](https://github.com/ThinkFlowLab/FlyBot/issues/3323)).
+- A meeting the Project recorded now shows the day it was opened or decided in the Project board's Meetings and Decisions lists, instead of an empty date column: the board reads the epoch-millisecond stamp the meetings writer stores, not only a readable date string ([#3326](https://github.com/ThinkFlowLab/FlyBot/issues/3326)).
+- The **paused-chat card** and the **connecting** state of **Settings → Bot Social** no longer keep reading while the tab is hidden: both 5 s / 2 s polls now go through `pollWhileVisible`, so a hidden tab makes no call, coming back reads once at once and restarts the cadence from that read, and unmount removes the listener. Nothing on screen changes; only when the reads happen while hidden ([#3327](https://github.com/ThinkFlowLab/FlyBot/issues/3327)).
+- The **peer-thinking** row in a face-to-face room no longer keeps a 2 s `social/typing` timer while the tab is hidden: the read checked `document.hidden` inside the interval, so a hidden tab held a timer ticking for nothing and a tab that came back waited out the rest of the period. It now goes through `pollWhileVisible`, so a hidden tab makes no call, coming back reads once at once and restarts the 2 s cadence from that read, and unmount removes the listener. The visible cadence is unchanged, and nothing on screen changes ([#3332](https://github.com/ThinkFlowLab/FlyBot/issues/3332)).
+- The **face-rooms page** no longer keeps a 5 s `social/face-rooms` poll while the tab is hidden: the read checked `document.hidden` inside the interval and the mount read ran whatever the tab did, so a hidden tab held a timer ticking for nothing and a tab that came back waited out the rest of the period. It now goes through `pollWhileVisible`, so a hidden tab makes no call, coming back reads once at once and restarts the 5 s cadence from that read, and unmount removes the listener. The visible cadence is unchanged, and nothing on screen changes.
+
 ## [0.2.41] - 2026-11-23
 
 ### Added
@@ -1639,7 +1657,8 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.41...HEAD
+[Unreleased]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.42...HEAD
+[0.2.42]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.41...v0.2.42
 [0.2.41]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.40...v0.2.41
 [0.2.40]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.39...v0.2.40
 [0.2.39]: https://github.com/ThinkFlowLab/FlyBot/compare/v0.2.38...v0.2.39
