@@ -151,8 +151,9 @@ test('#3322: a pull request needs the trailer in the branch commits and in its o
   assert.deepEqual(bodyOnly.trailer, { log: false, body: true, event: 'pull_request' });
   // Neither: red as before.
   assert.equal(gate().ok, false);
-  // A merge-queue entry and a local run keep judging the log alone.
-  for (const event of [{ name: 'merge_group' }, undefined]) {
+  // A merge-queue entry and a local run keep judging the log alone. `null` is "no event supplied":
+  // `undefined` is the default parameter, which reads the runner's own event (#3329).
+  for (const event of [{ name: 'merge_group' }, null]) {
     const entry = filesNeedDocs({
       ref: 'HEAD',
       map,
@@ -162,11 +163,42 @@ test('#3322: a pull request needs the trailer in the branch commits and in its o
       event,
     });
     assert.equal(entry.ok, true);
+    assert.equal(entry.trailer.event, event?.name ?? 'local');
   }
   // The documented remedy still works: the subsystem doc in the same pull request.
   assert.equal(gate({ changed: () => true }).ok, true);
   // No owned file changed: nothing to document, whatever the event says.
   assert.equal(gate({ files: ['README.md'] }).ok, true);
+});
+
+// #3329: a `pull_request` run whose event cannot be read must fail closed, and only an explicit
+// `null` says "no event". The default parameter is the runner's own event, so the case above used to
+// read the ambient pull request and depended on that pull request's body having the trailer.
+test('#3329: an unreadable pull_request event fails closed', async (t) => {
+  const { filesNeedDocs } = await import('../scripts/check-arch-docs.mjs');
+  const savedName = process.env.GITHUB_EVENT_NAME;
+  const savedPath = process.env.GITHUB_EVENT_PATH;
+  t.after(() => {
+    if (savedName === undefined) delete process.env.GITHUB_EVENT_NAME;
+    else process.env.GITHUB_EVENT_NAME = savedName;
+    if (savedPath === undefined) delete process.env.GITHUB_EVENT_PATH;
+    else process.env.GITHUB_EVENT_PATH = savedPath;
+  });
+  process.env.GITHUB_EVENT_NAME = 'pull_request';
+  process.env.GITHUB_EVENT_PATH = join(tmpdir(), 'no-such-arch-docs-event.json');
+  const map = new Map([['demo', { path: 'docs/subsystems/demo.md', ownedPaths: ['core/x.js'] }]]);
+  const run = (logText) => filesNeedDocs({ ref: 'HEAD', map, files: ['core/x.js'], changed: () => false, logText });
+  const noTrailer = run('');
+  assert.equal(noTrailer.ok, false, 'an unreadable body counts as no trailer, never as a pass');
+  assert.deepEqual(noTrailer.trailer, { log: false, body: false, event: 'pull_request' });
+  const commitOnly = run('Docs-not-needed: comments only');
+  assert.equal(commitOnly.ok, false, 'a branch-commit trailer alone cannot prove the body it cannot read');
+  assert.deepEqual(commitOnly.trailer, { log: true, body: false, event: 'pull_request' });
+  // With no event at all this is a local run: no second place exists, so the log decides.
+  delete process.env.GITHUB_EVENT_NAME;
+  const local = run('Docs-not-needed: comments only');
+  assert.equal(local.ok, true);
+  assert.equal(local.trailer.event, 'local');
 });
 
 test('#3322: the refusal names the place where the trailer is missing', async () => {
