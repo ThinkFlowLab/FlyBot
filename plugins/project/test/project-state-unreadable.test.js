@@ -17,6 +17,7 @@ import { test } from 'node:test'
 import { createRuntime, provideFlyBot } from 'ds-bot'
 import { apply as applyProject } from '../index.js'
 import { fakeContext } from '../../../core/test/fake-ctx.js'
+import { win32 } from './platform.js'
 
 const TEAM = {
   version: 1, mainBotIds: ['a'],
@@ -88,9 +89,15 @@ test('#2461: a Project State file that cannot be read keeps its name and reason 
 })
 
 // A root process reads a chmod 000 file, so this case is declared skipped rather than run there —
-// the shape `core/test/diagnostics.test.js` already uses for its own root-only cases.
+// the shape `core/test/diagnostics.test.js` already uses for its own root-only cases. Windows has no
+// POSIX mode bits at all: `chmod 000` only toggles the read-only attribute, so the file still reads
+// and the row is listed instead of answered as unreadable. Both limits are named in the skip, and the
+// other three cases in this file run on every platform (`./platform.js`, as `#3300` did it for the
+// other plugin suites).
 test('#2461: a state file the process may not read answers its code, not an empty folder', {
-  skip: process.getuid?.() === 0 ? 'root reads a chmod 000 file' : undefined,
+  skip: win32
+    ? 'Windows has no POSIX mode bits: chmod 000 does not deny a read'
+    : process.getuid?.() === 0 ? 'root reads a chmod 000 file' : undefined,
 }, async (t) => {
   const dir = emptyRepository()
   writeFileSync(join(dir, 'PROJECT.md'), '# Project\n')
