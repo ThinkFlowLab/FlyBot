@@ -1180,7 +1180,7 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
  test('diagnostics append fallback redacts an error message', async (t) => {
    const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
    t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
-@@ -133,6 +133,1068 @@ test('diagnostics append fallback redacts an error message', async (t) => {
+@@ -133,6 +133,1144 @@ test('diagnostics append fallback redacts an error message', async (t) => {
    assert.match(stderr.join('\n'), /api_key=\[hidden\]/)
  })
  
@@ -2244,6 +2244,82 @@ diff --git a/test/diagnostics.test.js b/test/diagnostics.test.js
 +  const allOn = await rt.diagnostics.report({})
 +  assert.equal(allOn.facts.plugins, undefined)
 +  assert.equal(allOn.markdown, none.markdown, 'every switch on is the report of today, byte for byte')
++})
++
++// #3312: the report is the artefact a user is told to paste when a Bot cannot use a capability, and
++// it never said which capability failed to mount or what it answered: `facts()` carried no
++// capability field and the table had no row for it. The row reads the runtime's own status view —
++// the one Settings and the Bot's own sentence read — and cleans every reason the way the rest of
++// the report is cleaned, so a token quoted in a URL stays `[hidden]`. A host whose capabilities are
++// all ready gets one short line, and a host with none configured keeps the report of today, byte
++// for byte.
++const CAPABILITIES_ROW = /^\| Capabilities \| (.*) \|$/m
++
++const capabilityHost = (home, statuses, bots = { a: { id: 'a', name: 'Chief', model: 'deepseek/deepseek-chat' } }) => host(home, {
++  state: { bots, mainBotIds: ['a'], rooms: {} },
++  capabilityStatusesView: () => statuses,
++  config: { diagnosticsFile: false },
++})
++
++test('the diagnostics report names the capability that failed to mount, masked (#3312)', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  // Built from parts, so no string in this file looks like a real key.
++  const made = (...parts) => parts.join('')
++  const key = made('sk-', 'live-', 'abcdef123456')
++  const rt = capabilityHost(home, {
++    a: { github: { state: 'error', error: `MCP server github answered 401 Unauthorized: https://api.example/sse?token=${key}` } },
++  })
++  const report = await rt.diagnostics.report({})
++  const found = report.markdown.match(CAPABILITIES_ROW)
++  assert.ok(found, `the report carries a Capabilities row: ${report.markdown}`)
++  assert.equal(found[1], 'github on Chief — error: MCP server github answered 401 Unauthorized: https://api.example/sse?token=[hidden]')
++  assert.equal(report.facts.capabilities, found[1], 'the fact and the row are one string')
++  // Literal, so a weaker "named and masked" wording cannot pass: the key appears nowhere and the
++  // mask takes its place in the text the reader pastes.
++  assert.equal(report.markdown.includes('sk-live-'), false, 'no part of the key reaches the report')
++  assert.match(report.markdown, /\?token=\[hidden\]/, 'the query keeps its masked form in the report')
++  assert.match(report.markdown, /github on Chief/, 'the capability and the Bot that holds it are named')
++})
++
++// A capability waiting for approval says so in its own words, and one still connecting is listed
++// rather than dropped — the report is asked "which one is not working", so a state that is not
++// ready must not disappear from the answer. Ready entries stay out of the list, and two hosts that
++// see the same statuses print the same rows whatever order the view walks them in.
++test('the diagnostics report lists a capability awaiting approval and one still connecting (#3312)', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const rt = capabilityHost(home, {
++    b: { browser: { state: 'error', error: 'spawn npx ENOENT' } },
++    a: { search: { state: 'connecting' }, readme: { state: 'ready' }, files: { state: 'needs-approval' } },
++  }, { b: { id: 'b', name: 'Worker' }, a: { id: 'a', name: 'Chief' } })
++  const report = await rt.diagnostics.report({})
++  assert.equal(report.facts.capabilities,
++    'browser on Worker — error: spawn npx ENOENT; files on Chief — needs approval; search on Chief — connecting')
++  assert.match(report.markdown, /^\| Capabilities \| browser on Worker — error: spawn npx ENOENT; files on Chief — needs approval; search on Chief — connecting \|$/m)
++  assert.doesNotMatch(report.markdown, /readme/, 'a ready capability is not listed beside the broken ones')
++})
++
++test('the diagnostics report says all capabilities are ready in one line (#3312)', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const rt = capabilityHost(home, { a: { github: { state: 'ready' }, files: { state: 'ready' } } })
++  const report = await rt.diagnostics.report({})
++  assert.equal(report.facts.capabilities, 'all 2 ready')
++  assert.match(report.markdown, /^\| Capabilities \| all 2 ready \|$/m)
++})
++
++// The control, and the one thing this change may not do: a host with no capability configured — or
++// one whose runtime has no status view at all, the way `#3310`'s report was built — keeps the report
++// of today, byte for byte. This case is green before the change and must stay green.
++test('a host with no capabilities keeps the report of today (#3312)', async (t) => {
++  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
++  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
++  const empty = await capabilityHost(home, { a: {} }).diagnostics.report({})
++  const today = await host(home, { config: { diagnosticsFile: false } }).diagnostics.report({})
++  assert.equal(empty.facts.capabilities, undefined)
++  assert.doesNotMatch(empty.markdown, /Capabilities/)
++  assert.equal(empty.markdown, today.markdown, 'no capability anywhere is the report of today, byte for byte')
 +})
 +
  test('reportMarkdown says when nothing went wrong', () => {
