@@ -286,3 +286,30 @@ test('the peer-thinking row stops while hidden and reads once when the tab retur
     unmount(cleanups)
   } finally { s.restore() }
 })
+
+// The face-rooms page (#3327 follow-up ⑤) is the same shape once more: an immediate `load(true)` on
+// mount and a bare 5 s `setInterval` whose tick returns while `document.hidden`, so a hidden tab keeps
+// a timer ticking for nothing and a tab that comes back waits out the rest of the period.
+const faceRoomsPage = app => mount(app, 'FaceRooms', { actions: {}, roster, remoteChats: [] })
+
+test('the face-rooms page stops while hidden and reads once when the tab returns', () => {
+  const s = scene({ hidden: true })
+  try {
+    const { cleanups } = faceRoomsPage(s.app)
+    assert.deepEqual(s.timers.periods(), [], 'a hidden page holds no poll timer')
+    assert.equal(s.faceCalls(), 0, `a hidden page made ${s.faceCalls()} face-room call(s)`)
+    s.doc.hidden = false
+    s.doc.emit('visibilitychange')
+    assert.equal(s.faceCalls(), 1, `coming back made ${s.faceCalls()} face-room call(s), not one`)
+    assert.deepEqual(s.timers.periods(), [5000], 'the 5 s cadence restarts from that read')
+    s.timers.tick()
+    assert.equal(s.faceCalls(), 2, 'and one period later reads again, once')
+    s.doc.hidden = true
+    s.doc.emit('visibilitychange')
+    s.timers.tick()
+    assert.equal(s.faceCalls(), 2, 'going hidden again stops it')
+    unmount(cleanups)
+    assert.equal(s.doc.listening('visibilitychange'), 0, 'unmount removes the listener')
+    assert.deepEqual(s.timers.periods(), [], 'and its timer')
+  } finally { s.restore() }
+})
