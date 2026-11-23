@@ -4028,14 +4028,12 @@ window.__ModuleLoader__.load({
         if (!handle) return undefined
         let live = true
         const load = () => {
-          if (typeof document !== 'undefined' && document.hidden) return
           call('social/paused', { handle }).then(value => { if (live) setPaused(value?.paused ?? null) }, () => {})
         }
-        load()
-        if (typeof setInterval !== 'function') return () => { live = false }
-        const timer = setInterval(load, 5000)
-        timer?.unref?.()
-        return () => { live = false; clearInterval(timer) }
+        // #3315 ③: a hidden tab holds no timer and reads nothing; coming back reads once at once and
+        // restarts the 5 s cadence from that read instead of waiting out the hidden period.
+        const stop = pollWhileVisible(load, 5000)
+        return () => { live = false; stop?.() }
       }, [handle])
       if (!handle || !paused) return null
       const note = paused.reason
@@ -4147,9 +4145,10 @@ window.__ModuleLoader__.load({
       useEffect(() => { void refresh() }, [])
       // A server that is still connecting is read again until it settles.
       useEffect(() => {
-        if (view?.state !== 'connecting' || typeof setInterval !== 'function') return undefined
-        const timer = setInterval(() => { void refresh() }, 2000)
-        return () => clearInterval(timer)
+        if (view?.state !== 'connecting') return undefined
+        // #3315 ④: the connecting state polls the same way as every other panel: no timer while the
+        // tab is hidden, one read as it comes back, and the 2 s cadence restarts from that read.
+        return pollWhileVisible(() => { void refresh() }, 2000)
       }, [view?.state])
       // What the current server lists, read once the page shows it.
       useEffect(() => {

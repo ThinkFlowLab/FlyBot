@@ -203,3 +203,59 @@ test('#3315: the waiting room stops while hidden and reads once when the tab ret
     unmount(cleanups)
   } finally { s.restore() }
 })
+
+// ③ follow-up to #3315: the paused-chat card reloaded on a bare 5 s `setInterval`. Its read returned
+// early while `document.hidden`, so a hidden tab kept the timer ticking for nothing and a tab that
+// came back waited out the rest of the period instead of reading once at once.
+const pausedChat = app => mount(app, 'PausedChat', { bot: { id: 'b1', name: 'Chief', remote: { handle: '@chief.home' } } })
+
+test('#3315: the paused-chat card stops while hidden and reads once when the tab returns', () => {
+  const s = scene({ hidden: true })
+  try {
+    const pausedCalls = () => s.calls.filter(([endpoint]) => endpoint === 'social/paused').length
+    const { cleanups } = pausedChat(s.app)
+    assert.equal(pausedCalls(), 0, 'a hidden card makes no read')
+    assert.deepEqual(s.timers.periods(), [], 'a hidden card holds no poll timer')
+    s.doc.hidden = false
+    s.doc.emit('visibilitychange')
+    assert.equal(pausedCalls(), 1, `coming back made ${pausedCalls()} read(s), not one`)
+    assert.deepEqual(s.timers.periods(), [5000], 'the 5 s cadence restarts from that read')
+    s.doc.hidden = true
+    s.doc.emit('visibilitychange')
+    s.timers.tick()
+    assert.equal(pausedCalls(), 1, 'going hidden again stops it')
+    unmount(cleanups)
+  } finally { s.restore() }
+})
+
+// ④ follow-up to #3315: the connecting state of Settings → Bot Social read `social/server` again on a
+// bare 2 s `setInterval` with no visibility check at all, so a hidden tab polled at full rate and a
+// tab that came back did not read before the next tick.
+const SETTINGS_VIEW = {
+  state: 'connecting', server: 'https://social.example', source: 'settings', displayName: 'Home',
+  defaultServer: null, known: [], platform: null,
+}
+const settingsOpen = app => mount(app, 'SocialServerSettings', { t: undefined, Section: undefined, Row: undefined, actions: {}, roster }, [
+  SETTINGS_VIEW, null, null, false, '', '', null, false, null, null, '', null,
+])
+
+test('#3315: the connecting settings page stops while hidden and reads once when the tab returns', () => {
+  const s = scene({ hidden: true })
+  try {
+    const serverCalls = () => s.calls.filter(([endpoint]) => endpoint === 'social/server').length
+    const { cleanups } = settingsOpen(s.app)
+    const afterMount = serverCalls()
+    assert.deepEqual(s.timers.periods(), [], 'a hidden settings page holds no poll timer')
+    s.doc.hidden = false
+    s.doc.emit('visibilitychange')
+    assert.equal(serverCalls(), afterMount + 1, `coming back made ${serverCalls() - afterMount} read(s), not one`)
+    assert.deepEqual(s.timers.periods(), [2000], 'the 2 s cadence restarts from that read')
+    s.timers.tick()
+    assert.equal(serverCalls(), afterMount + 2, 'and one period later reads again, once')
+    s.doc.hidden = true
+    s.doc.emit('visibilitychange')
+    s.timers.tick()
+    assert.equal(serverCalls(), afterMount + 2, 'going hidden again stops it')
+    unmount(cleanups)
+  } finally { s.restore() }
+})
