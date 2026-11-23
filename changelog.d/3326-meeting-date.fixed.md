@@ -1,1 +1,0 @@
-A meeting the Project recorded now shows the day it was opened or decided in the Project board's Meetings and Decisions lists, instead of an empty date column: the board reads the epoch-millisecond stamp the meetings writer stores, not only a readable date string ([#3326](https://github.com/ThinkFlowLab/FlyBot/issues/3326)).
