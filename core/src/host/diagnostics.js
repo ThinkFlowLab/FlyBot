@@ -157,6 +157,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
     row('Models', facts.models),
     row('Read-only', facts.readOnly),
     row('Plugins', facts.plugins),
+    row('Capabilities', facts.capabilities),
   ].filter(Boolean)
   const recent = entries.slice(-REPORT_ENTRIES)
   // The team file, right after the table that counts the team (#2394): a report about a team has to
@@ -483,6 +484,36 @@ export function install(rt) {
     return `${names} off${off.some(plugin => pending[plugin.id]) ? ' (restart pending)' : ''}`
   }
 
+  // #3312: the report is what a user is told to paste when a Bot cannot use a capability, and it
+  // never said which one failed to mount or what it answered — the host's status view already holds
+  // both facts (Settings draws it, and so does the Bot's own sentence when it says it cannot do the
+  // work). The row reads that view and nothing else: one entry per capability that is not ready,
+  // sorted, so two hosts with the same statuses print the same row; a host whose capabilities are
+  // all ready says so in one line; a host with none configured adds no row at all, and that report
+  // stays byte for byte the one before this change. A reason is cleaned by `show`, the cleaning the
+  // rest of the report uses, because this row is pasted into a public issue — a token quoted in the
+  // URL the transport answered is masked here even if the view's own mask ever lets one through.
+  const capabilities = () => {
+    const view = rt.capabilityStatusesView?.()
+    if (view === null || typeof view !== 'object') return undefined
+    const rows = []
+    let ready = 0
+    for (const [botId, statuses] of Object.entries(view)) {
+      const bot = rt.state.bots?.[botId]
+      const on = bot?.name ?? botId
+      for (const [name, status] of Object.entries(statuses ?? {})) {
+        const state = typeof status?.state === 'string' ? status.state : 'unknown'
+        if (state === 'ready') { ready += 1; continue }
+        const reason = state === 'error'
+          ? ` — error: ${show(String(status.error ?? 'connection failed'), { max: 200 })}`
+          : state === 'needs-approval' ? ' — needs approval' : ` — ${show(state, { max: 40 })}`
+        rows.push(`${name} on ${on}${reason}`)
+      }
+    }
+    if (ready + rows.length === 0) return undefined
+    return rows.length === 0 ? `all ${ready} ready` : rows.sort().join('; ')
+  }
+
   const facts = async () => {
     const bots = Object.values(rt.state.bots)
     const models = [...new Set(bots.map(bot => bot.model ?? bot.appliedModel).filter(Boolean))]
@@ -510,6 +541,7 @@ export function install(rt) {
       // report must not compress both into "another dsh holds the team".
       readOnly: readOnly ? show(readOnly, { max: 200 }) : undefined,
       plugins: plugins(),
+      capabilities: capabilities(),
       // The writer opens on the first save that got past `writable()` (#2351), so a window that
       // has not saved yet never read or repaired the file: `recording` there promises a line
       // nobody asked for, and `opened: false` says so instead. A window another dsh keeps
