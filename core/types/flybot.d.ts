@@ -405,6 +405,50 @@ export interface ProjectHost {
   helpers: Record<string, unknown>
 }
 
+/** One inbound claim record (#2308), owned and persisted by the plugin that polls the inbox. */
+export interface InboxRecord {
+  eventId: string
+  status: 'pending' | 'claimed' | 'replied' | 'failed' | 'needs-human'
+  attempts: number
+  lease: InboxLease | null
+  resultKey?: string
+  result?: unknown
+  error?: string
+  reason?: string
+  settled?: { leaseId: string; holder: string; at: number }
+  createdAt: number
+  updatedAt: number
+}
+
+export interface InboxLease {
+  id: string
+  holder: string
+  takenAt: number
+  expiresAt: number
+}
+
+export type InboxClaim =
+  | { outcome: 'claimed'; lease: InboxLease; record: InboxRecord }
+  | { outcome: 'held'; heldBy: string; until: number; lease: InboxLease; record: InboxRecord }
+  | { outcome: 'settled' | 'exhausted'; status: InboxRecord['status']; record: InboxRecord }
+
+export type InboxAnswer = { ok: boolean; reason?: string; duplicate?: boolean; record: InboxRecord }
+
+/** The read-only shape `flybot.inbox.view()` answers. */
+export interface InboxView {
+  id: string
+  status: InboxRecord['status']
+  attempts: number
+  heldBy?: string
+  until?: number
+  resultKey?: string
+  result?: unknown
+  error?: string
+  reason?: string
+  settled?: { leaseId: string; holder: string; at: number }
+  updatedAt: number
+}
+
 export interface FlyBot {
   version: 1
   /** Plugin this handle is scoped to; 'shared' for the unscoped service. */
@@ -425,6 +469,24 @@ export interface FlyBot {
    * core's Project endpoints keep their fallbacks.
    */
   projectHost?(): ProjectHost
+  /**
+   * The inbound claim (#2308): the pure lease/state machine an inbound plugin keeps in its own
+   * settings, so two poll loops over one event deliver it once and a failed turn leaves a
+   * terminal fact. The caller owns the record and passes `now`; nothing here does I/O.
+   */
+  inbox: {
+    readonly ATTEMPTS_MAX: number
+    readonly LEASE_TTL_MS: number
+    createRecord(eventId: string, options?: { now?: number }): InboxRecord
+    claim(record: InboxRecord, options: { holder: string; now?: number; ttlMs?: number }): InboxClaim
+    renew(record: InboxRecord, options: { holder: string; leaseId: string; now?: number; ttlMs?: number }): InboxAnswer
+    submit(record: InboxRecord, options: { holder: string; leaseId: string; resultKey: string; result?: unknown; now?: number }): InboxAnswer
+    fail(record: InboxRecord, options: { holder: string; leaseId?: string; error?: unknown; now?: number }): InboxAnswer
+    needsHuman(record: InboxRecord, options: { reason?: unknown; now?: number }): InboxAnswer
+    expire(record: InboxRecord, options?: { now?: number }): { expired: boolean; status?: string; attempts?: number; record: InboxRecord }
+    view(record: InboxRecord, options?: { now?: number }): InboxView
+    isTerminal(record: InboxRecord | undefined): boolean
+  }
   /**
    * A Bot's own memory, for a plugin the host allows (#450 item 1). Off unless the host names the
    * plugin in config.flybot.memoryPlugins: `read` returns `[]` otherwise, and `append` resolves

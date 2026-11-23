@@ -26,7 +26,7 @@
 //   chips; get_friend_file saves one (hash verified) and hands it over as untrusted.
 // - Backward compat: without a home, config.botId + token use the per-bot identity
 //   (start_conversation / send_message) as before.
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -732,6 +732,73 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
   const saveSettings = () => {
     if (flybot.readOnly?.()) return
     if (settingsPath) { try { writeCredentials(settingsPath, settings) } catch (error) { warn('settings not saved', error) } }
+  }
+  // ------------------------------------------------------------ inbound claims (#2308)
+  // A message event gets a lease before its text is delivered, and a terminal fact when the
+  // turn was handed off or the delivery failed. The record lives in `settings.inbox`, in the
+  // same file and the same write as the cursors and `seen`: not a second store, and `state.json`
+  // keeps its shape. A core without `flybot.inbox` (an older ds-bot) keeps the pre-#2308 path.
+  const inbox = flybot.inbox
+  // A settings file written by hand (or damaged) keeps the host running: a value that is not a
+  // plain object is replaced rather than trusted. The record is keyed by the server's event id.
+  settings.inbox = settings.inbox !== null && typeof settings.inbox === 'object' && !Array.isArray(settings.inbox) ? settings.inbox : {}
+  const INBOX_KEPT = 200
+  // `__proto__` and friends would write into the object's prototype, not into `settings.inbox`;
+  // an event id shaped like one keeps the pre-#2308 path instead of polluting the settings.
+  const INBOX_KEYLESS = new Set(['__proto__', 'constructor', 'prototype'])
+  // One holder per running plugin instance: a restart takes a new one and any lease the old
+  // process left is reclaimed through its expiry, the way `expireLeases` reclaims a card.
+  const inboxHolder = `${process.pid}-${randomUUID()}`
+  const inboxRecord = (eventId) => {
+    const existing = settings.inbox[eventId]
+    if (existing !== undefined) return existing
+    const created = inbox.createRecord(eventId, { now: now() })
+    settings.inbox[eventId] = created
+    return created
+  }
+  // Bounded like `seen`: settled records are dropped oldest first. A claimed record is never
+  // dropped — its holder may still submit.
+  const pruneInbox = () => {
+    const ids = Object.keys(settings.inbox)
+    if (ids.length <= INBOX_KEPT) return
+    const settled = ids
+      .filter(id => inbox.isTerminal(settings.inbox[id]))
+      .sort((a, b) => (settings.inbox[a].updatedAt ?? 0) - (settings.inbox[b].updatedAt ?? 0))
+    for (const id of settled.slice(0, ids.length - INBOX_KEPT)) delete settings.inbox[id]
+  }
+  // Saved before delivery on purpose: a second poll loop (or a restart reading this file)
+  // sees the lease instead of the `pending` the record was created as. An event without an
+  // id (an older fixture, or a server that omits it) keeps the pre-#2308 path: no key, no claim.
+  const claimEvent = (eventId) => {
+    if (inbox === undefined || typeof eventId !== 'string' || eventId === '' || INBOX_KEYLESS.has(eventId)) return { outcome: 'claimed', lease: undefined, record: undefined }
+    const record = inboxRecord(eventId)
+    const answer = inbox.claim(record, { holder: inboxHolder, now: now() })
+    saveSettings()
+    return answer
+  }
+  const answeredEvent = (held, result) => {
+    if (inbox === undefined || held?.record === undefined) return
+    const answer = inbox.submit(held.record, { holder: inboxHolder, leaseId: held.lease.id, resultKey: held.record.eventId, result, now: now() })
+    // The turn was handed off even if the hand-off outlived the lease: keep that as a terminal
+    // fact instead of leaving a `claimed` record no other poll can settle.
+    if (!answer.ok && !inbox.isTerminal(held.record)) inbox.needsHuman(held.record, { reason: `the delivery was handed off after the claim was refused (${answer.reason})`, now: now() })
+    pruneInbox()
+    saveSettings()
+  }
+  const failedEvent = (held, error) => {
+    if (inbox === undefined || held?.record === undefined) return
+    inbox.fail(held.record, { holder: inboxHolder, leaseId: held.lease?.id, error, now: now() })
+    pruneInbox()
+    saveSettings()
+  }
+  // A refusal by the owner policy is deterministic for this sender, so it does not earn the
+  // three retries a transient failure does: it is a `needs-human` fact (someone has to share
+  // the Bot) and the queue moves on to the next event instead of stalling behind it.
+  const refusedEvent = (held, reason) => {
+    if (inbox === undefined || held?.record === undefined) return
+    inbox.needsHuman(held.record, { reason, now: now() })
+    pruneInbox()
+    saveSettings()
   }
   // Unset: off. config.autoAccept: true makes it opt-out instead. New friends start in hold (#140).
   // Config keys may be written with or without '@' and in any case.
@@ -2587,11 +2654,19 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           done()
           continue
         }
-        if (event.event_type !== 'message.received' || seen.has(event.event_id)) { done(); continue }
+        if (event.event_type !== 'message.received') { done(); continue }
+        if (seen.has(event.event_id)) { done(); continue }
+        // #2308: take the event before delivering it. A second loop that finds a live lease
+        // stops here and leaves the cursor alone — moving it past a held event would skip that
+        // event on this host for good, because the cursor is one value for the whole queue.
+        const held = claimEvent(event.event_id)
+        if (held.outcome === 'held') break
+        if (held.outcome === 'settled' || held.outcome === 'exhausted') { done(); continue }
         try {
         const files = (Array.isArray(event.attachments) ? event.attachments : []).filter(file => typeof file?.id === 'string').slice(0, MAX_FILES)
         const said = untrustedText(event.untrusted_content)
-        if (!said && files.length === 0) { done(); continue }
+        // Nothing to deliver: the claim is answered (not left leased) and the cursor moves.
+        if (!said && files.length === 0) { answeredEvent(held, { empty: true }); done(); continue }
         // File names come from the remote side too, so they stay inside the untrusted text.
         const text = files.length
           ? `${said}\n\nAttached files: ${files.map(file => `${safeName(file.name)} (${sizeLabel(Number(file.size) || 0)}, id ${file.id})`).join('; ')}`
@@ -2614,6 +2689,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
         })
         if (share?.handled) {
           delivered += 1
+          answeredEvent(held, { botId: local.id })
           done()
           continue
         }
@@ -2623,6 +2699,7 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           presence.arrived({ handle })
           await flybot.remote.chats.deliver({ handle, home: fromHome, name: cleanText(event.from?.display_name, handle), text, ...(typedBy ? { human: true, ownerName: typedBy } : {}) })
           delivered += 1
+          answeredEvent(held, { botId: local.id })
           done()
           continue
         }
@@ -2642,11 +2719,21 @@ export function createSocial(service, config = {}, { client: given, api: givenAp
           outcome = await deliverInbound()
           if (outcome?.action === 'deny' && outcome.by === OWNER_POLICY) await reportNotDelivered(event)
         }
-        if (outcome?.action === 'deny') warn(`message from ${handle} refused: ${outcome.reason ?? 'denied'}`)
-        else delivered += 1
+        if (outcome?.action === 'deny') {
+          warn(`message from ${handle} refused: ${outcome.reason ?? 'denied'}`)
+          // A refusal is not an answered message (#2308): it leaves a terminal `needs-human`
+          // fact and the cursor moves on, so one ungranted sender cannot park the queue.
+          refusedEvent(held, outcome.reason ?? 'the owner policy refused this sender')
+          done()
+          continue
+        }
+        delivered += 1
+        answeredEvent(held, { botId: local.id })
         done()
         } catch (error) {
-          // Stop at the failed event: it and the ones after it come again next poll.
+          // Stop at the failed event: it and the ones after it come again next poll, and the
+          // failure is on the record, not only in this warning (#2308).
+          failedEvent(held, error)
           warn('inbound delivery failed; retrying next poll', error)
           break
         }
