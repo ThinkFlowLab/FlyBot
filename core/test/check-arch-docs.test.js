@@ -119,3 +119,88 @@ test('the gate never runs git through a shell', { skip: process.platform === 'wi
   assert.equal(r.status, 0, `gate must pass: ${r.stdout}${r.stderr}`);
   assert.match(r.stdout, /arch-docs: OK/);
 });
+
+// #3322: on a pull_request run the trailer has to be in the branch commits AND in the pull request
+// title/body. The gate read `git log` alone, so a branch-commit trailer was green on the pull request
+// and the queue entry — whose range holds the squash of the title and body — went red and ejected it.
+test('#3322: a pull request needs the trailer in the branch commits and in its own title/body', async () => {
+  const { filesNeedDocs } = await import('../scripts/check-arch-docs.mjs');
+  const map = new Map([['demo', { path: 'docs/subsystems/demo.md', ownedPaths: ['core/x.js'] }]]);
+  const gate = ({ log = '', body = '', files = ['core/x.js'], changed = () => false } = {}) =>
+    filesNeedDocs({
+      ref: 'HEAD',
+      map,
+      files,
+      changed,
+      logText: log,
+      event: { name: 'pull_request', title: 'Change the thing', body },
+    });
+  // Branch commits only: this is the bug — green on the pull request, red in the queue it feeds.
+  const commitOnly = gate({ log: 'Docs-not-needed: comments only' });
+  assert.equal(commitOnly.ok, false, 'a branch-commit trailer alone must not pass the pull request');
+  assert.deepEqual(commitOnly.trailer, { log: true, body: false, event: 'pull_request' });
+  assert.deepEqual(commitOnly.missing.map((m) => m.file), ['core/x.js']);
+  // Both places: the one shape the queue can read too.
+  assert.equal(
+    gate({ log: 'Docs-not-needed: comments only', body: 'Docs-not-needed: comments only' }).ok,
+    true,
+  );
+  // Body only: the branch commits are not there either, so the pull request stays red.
+  const bodyOnly = gate({ body: 'Docs-not-needed: comments only' });
+  assert.equal(bodyOnly.ok, false);
+  assert.deepEqual(bodyOnly.trailer, { log: false, body: true, event: 'pull_request' });
+  // Neither: red as before.
+  assert.equal(gate().ok, false);
+  // A merge-queue entry and a local run keep judging the log alone.
+  for (const event of [{ name: 'merge_group' }, undefined]) {
+    const entry = filesNeedDocs({
+      ref: 'HEAD',
+      map,
+      files: ['core/x.js'],
+      changed: () => false,
+      logText: 'Docs-not-needed: comments only',
+      event,
+    });
+    assert.equal(entry.ok, true);
+  }
+  // The documented remedy still works: the subsystem doc in the same pull request.
+  assert.equal(gate({ changed: () => true }).ok, true);
+  // No owned file changed: nothing to document, whatever the event says.
+  assert.equal(gate({ files: ['README.md'] }).ok, true);
+});
+
+test('#3322: the refusal names the place where the trailer is missing', async () => {
+  const { failureLines } = await import('../scripts/check-arch-docs.mjs');
+  const missing = [{ file: 'core/x.js', subsystem: 'demo', doc: join(tmpdir(), 'docs/subsystems/demo.md') }];
+  const commitOnly = failureLines(missing, tmpdir(), { log: true, body: false, event: 'pull_request' }).join('\n');
+  assert.match(commitOnly, /branch commits have `Docs-not-needed:`, but the pull request title and body do not/);
+  const bodyOnly = failureLines(missing, tmpdir(), { log: false, body: true, event: 'pull_request' }).join('\n');
+  assert.match(bodyOnly, /pull request body has `Docs-not-needed:`, but the branch commits do not/);
+  // A merge-queue entry has no second place, so it keeps the plain refusal.
+  const entry = failureLines(missing, tmpdir(), { log: false, body: true, event: 'merge_group' }).join('\n');
+  assert.doesNotMatch(entry, /branch commits have/);
+});
+
+test('#3322: a pull_request run reads the event the runner wrote', async (t) => {
+  const { pullRequestEvent } = await import('../scripts/check-arch-docs.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'arch-event-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'event.json');
+  writeFileSync(path, JSON.stringify({ pull_request: { title: 'A title', body: 'Docs-not-needed: x' } }));
+  const savedName = process.env.GITHUB_EVENT_NAME;
+  const savedPath = process.env.GITHUB_EVENT_PATH;
+  t.after(() => {
+    if (savedName === undefined) delete process.env.GITHUB_EVENT_NAME;
+    else process.env.GITHUB_EVENT_NAME = savedName;
+    if (savedPath === undefined) delete process.env.GITHUB_EVENT_PATH;
+    else process.env.GITHUB_EVENT_PATH = savedPath;
+  });
+  process.env.GITHUB_EVENT_NAME = 'push';
+  assert.equal(pullRequestEvent(), undefined, 'only a pull_request run has a second place');
+  process.env.GITHUB_EVENT_NAME = 'pull_request';
+  process.env.GITHUB_EVENT_PATH = path;
+  assert.deepEqual(pullRequestEvent(), { name: 'pull_request', title: 'A title', body: 'Docs-not-needed: x' });
+  // An event the run cannot read counts as a body without the trailer, never as a pass.
+  process.env.GITHUB_EVENT_PATH = join(dir, 'missing.json');
+  assert.deepEqual(pullRequestEvent(), { name: 'pull_request', title: '', body: '' });
+});
