@@ -101,6 +101,17 @@ function requestOf(record) {
   return null
 }
 
+// The repeat rule of a stored record, in the words the tool's row can carry (#3357): the
+// next instant alone reaches the reader as UTC and loses "daily 09:00 Asia/Shanghai". A
+// one-shot `at`/`after` has no repeat rule, so its row keeps `next <instant>` unchanged.
+function ruleText(record) {
+  if (record.kind === 'every' && record.everySeconds !== undefined) return `every ${record.everySeconds}s`
+  if (record.kind === 'daily' && record.time !== undefined && record.timeZone !== undefined) return `daily ${record.time} ${record.timeZone}`
+  if (record.kind === 'weekly' && record.time !== undefined && record.timeZone !== undefined) return `weekly ${(record.weekdays ?? []).join(',')} ${record.time} ${record.timeZone}`
+  if (record.kind === 'cron' && record.expression !== undefined && record.timeZone !== undefined) return `cron ${record.expression} ${record.timeZone}`
+  return undefined
+}
+
 // A create request's timing as the record fields a paused task keeps (the inverse of
 // requestOf), so a paused task reads like any other in the list.
 function timingOf(selector) {
@@ -700,10 +711,12 @@ export function install(rt) {
       const add = (entry, status, when) => {
         const at = placeOf(entry.sessionId, botId)
         if (at?.botId !== botId) return
+        const next = status === 'active' && when !== undefined ? `next ${when}` : 'no next run'
+        const rule = ruleText(entry)
         rows.push({
           at: when ?? '',
           live: status === 'active' && when !== undefined,
-          line: `- "${entry.title == null ? 'untitled' : fold(entry.title)}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
+          line: `- "${entry.title == null ? 'untitled' : fold(entry.title)}" (${entry.id}) — ${next}${rule === undefined ? '' : ` (${rule})`}, ${status}, ${at.place}, session ${entry.sessionId}`,
         })
       }
       for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)

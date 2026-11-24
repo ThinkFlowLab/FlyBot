@@ -742,6 +742,30 @@ test('#628: bot_schedules answers for the Bot, never for the Session the call ru
   assert.match(answer, /schedule_list answers for one Session only/)
 })
 
+// #3357: a row said only `next <instant>`, so "daily 09:00 Asia/Shanghai" reached the reader
+// as a UTC timestamp and a paused task lost the rule with its next run. The row now carries the
+// repeat rule and its time zone from the same record the catalog already returns.
+test('#3357: bot_schedules names the repeat rule and its time zone, paused or not', async (t) => {
+  const schedule = scheduleService()
+  const team = JSON.parse(JSON.stringify(TEAM))
+  const { ctx, home } = setup({ schedule }, team)
+  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
+  const record = {
+    id: 's-daily', title: 'Standup', prompt: 'Where are we?',
+    kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai', scheduledAt: '2030-01-01T01:00:00.000Z',
+  }
+  schedule.tasks.set('s-daily', { sessionId: 'w1', status: 'active', record })
+  const answer = await listed('w1')
+  assert.match(answer, /daily 09:00 Asia\/Shanghai/, 'an active row names the rule and its zone')
+
+  schedule.tasks.set('s-daily', { sessionId: 'w1', status: 'paused', record })
+  const paused = await listed('w1')
+  const line = paused.split('\n').find(candidate => candidate.includes('s-daily'))
+  assert.match(line, /no next run/, 'a paused row has no next run')
+  assert.match(line, /daily 09:00 Asia\/Shanghai/, 'the rule survives the paused row')
+})
+
 // A group chat keeps its own Session, and a task the owner sets for the group lives on it
 // (#628): its id is the room id, so it belongs to every member of that group and to nobody
 // else — including a Bot that only sees the group's members' Sessions.
@@ -1222,7 +1246,7 @@ test('#3197: a bare carriage return in a title still paints one row', async (t) 
   const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'm1' } })
   const rows = answer.split('\n').filter(line => line.startsWith('- '))
   assert.equal(rows.length, 1, `one task, one row:\n${answer}`)
-  assert.ok(rows[0].includes('- "Brief Injected" (schedule-1) — next 2030-01-01T01:00:00.000Z, active, own chat, session m1'), rows[0])
+  assert.ok(rows[0].includes('- "Brief Injected" (schedule-1) — next 2030-01-01T01:00:00.000Z (daily 09:00:00 Asia/Shanghai), active, own chat, session m1'), rows[0])
 })
 
 test('#3197: a clean title keeps its row byte for byte', async (t) => {
@@ -1233,7 +1257,7 @@ test('#3197: a clean title keeps its row byte for byte', async (t) => {
   assert.equal(made.ok, true, JSON.stringify(made))
   const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'm1' } })
   const rows = answer.split('\n').filter(line => line.startsWith('- '))
-  assert.deepEqual(rows, ['- "Briefing" (schedule-1) — next 2030-01-01T01:00:00.000Z, active, own chat, session m1'])
+  assert.deepEqual(rows, ['- "Briefing" (schedule-1) — next 2030-01-01T01:00:00.000Z (daily 09:00:00 Asia/Shanghai), active, own chat, session m1'])
 })
 
 // #3197: the 120-code-point bound has to count the name the row shows, so the fold comes first —
