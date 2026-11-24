@@ -9,7 +9,7 @@
 //
 // Exit 0 when the bench can start, 1 with the remedy on stderr when it cannot, 2 on bad usage.
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { accessSync, constants, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -33,12 +33,41 @@ export function commandExists(command) {
   return !result.error && result.status === 0
 }
 
+// The tools bench.sh runs after this preflight. A stripped PATH can carry pnpm and node and
+// still lack `mkdir`; the preflight used to pass and the script died with a raw shell error
+// (`bench.sh: 91: mkdir: not found`) that reads as a bench bug. Naming the missing tool is the
+// refusal this preflight exists for (#preflight-tools). `commandExists` is no good here: BSD
+// tools have no `--version`, and the shell tools are plain executables on PATH.
+const REQUIRED_TOOLS = ['mkdir', 'cat', 'grep', 'rm', 'sleep', 'setsid', 'tail']
+
+export function findCommand(command, { env = process.env, platform = process.platform } = {}) {
+  const dirs = (env.PATH ?? '').split(platform === 'win32' ? ';' : ':')
+  const suffixes = platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : ['']
+  for (const dir of dirs) {
+    if (!dir) continue
+    for (const suffix of suffixes) {
+      const file = join(dir, command + suffix)
+      try {
+        accessSync(file, constants.X_OK)
+        return file
+      } catch {}
+    }
+  }
+  return undefined
+}
+
+export function missingTools({ env = process.env, platform = process.platform } = {}) {
+  if (platform === 'win32') return [] // bench.sh is a POSIX shell script; the shell tests skip there.
+  return REQUIRED_TOOLS.filter((tool) => !findCommand(tool, { env, platform }))
+}
+
 export function checkBench({
   harnessDir,
   platform = process.platform,
   arch = process.arch,
   libc = libcName(platform),
   hasPnpm = commandExists('pnpm'),
+  hasTools,
   exists = existsSync,
 } = {}) {
   const addon = harnessDir ? nativeAddonPath(harnessDir, { platform, arch, libc }) : undefined
@@ -52,6 +81,8 @@ export function checkBench({
     subpath: addonSubpath({ platform, libc }),
   }
   if (!hasPnpm) return { ...result, ok: false, state: 'missing-pnpm' }
+  const missing = hasTools ?? missingTools({ platform })
+  if (missing.length > 0) return { ...result, ok: false, state: 'missing-tool', tool: missing[0], missing }
   // An installed harness resolves the addon from its own node_modules; only a source checkout
   // has native/system/packages, and only that tree needs the prebuilt bin/ copied into it.
   const sourceTree = harnessDir && exists(join(harnessDir, 'native', 'system', 'packages'))
@@ -62,6 +93,9 @@ export function checkBench({
 export function problemLine(result) {
   if (result.state === 'missing-pnpm') {
     return 'bench preflight: pnpm is not on PATH — the profile install needs it; `corepack pnpm` supplies pnpm (put a `pnpm` shim that execs it on PATH, e.g. tools/bin/pnpm).'
+  }
+  if (result.state === 'missing-tool') {
+    return `bench preflight: ${result.tool} is not on PATH — bench.sh needs it after the profile install; put ${result.tool} on PATH (it usually lives in /usr/bin or /bin).`
   }
   if (result.state === 'missing-native-addon') {
     return `bench preflight: no native addon at ${result.addon} — copy ${result.package}/${result.subpath} (installed under core/dev/harness by \`npm run harness\`) into ${dirname(result.addon)}.`

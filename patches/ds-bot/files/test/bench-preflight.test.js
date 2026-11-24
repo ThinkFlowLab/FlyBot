@@ -51,6 +51,14 @@ test('refuses with missing-pnpm before it looks at the addon', () => {
   assert.match(problemLine(result), /corepack pnpm/)
 })
 
+test('refuses with missing-tool and names the command it cannot find', () => {
+  const { harness } = tree()
+  const result = checkBench({ harnessDir: harness, platform: 'linux', arch: 'arm64', libc: 'glibc', hasPnpm: true, hasTools: ['mkdir'] })
+  assert.equal(result.state, 'missing-tool')
+  assert.equal(result.tool, 'mkdir')
+  assert.match(problemLine(result), /mkdir is not on PATH/)
+})
+
 test('refuses with missing-native-addon and names the exact path', () => {
   const { harness } = tree()
   mkdirSync(join(harness, 'native', 'system', 'packages'), { recursive: true })
@@ -85,6 +93,19 @@ test('bench.sh refuses before writing the profile when pnpm is missing', { skip:
   assert.equal(existsSync(join(home, 'profiles')), false)
 })
 
+// #3352-sibling: the preflight named only pnpm and the addon. A PATH with pnpm but without
+// `mkdir` passed it and then died in the shell (`bench.sh: mkdir: not found`), which reads as a
+// bench bug instead of a missing tool. The preflight now names the tool it cannot find.
+test('bench.sh names a missing tool instead of dying in the shell', { skip: process.platform === 'win32' }, () => {
+  const script = '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n'
+  const { root, harness, path, home } = benchTree({ pnpm: script, stripped: true })
+  const result = runBench({ root, path, harness }, 'start')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /mkdir is not on PATH/, result.stderr)
+  assert.doesNotMatch(result.stderr, /mkdir: not found/)
+  assert.equal(existsSync(home), false, 'the preflight refuses before the bench home is written')
+})
+
 test('bench.sh shows a failed pnpm install and leaves no half-built profile', { skip: process.platform === 'win32' }, () => {
   const script = '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\necho "install failed: boom" >&2\nexit 1\n'
   const { root, harness, path, home } = benchTree({ pnpm: script })
@@ -96,7 +117,7 @@ test('bench.sh shows a failed pnpm install and leaves no half-built profile', { 
 
 // A checkout-shaped tree: core/dev/{bench.sh,bench-preflight.mjs}, a harness with the host's
 // addon, and a bin directory that holds only what bench.sh needs before the preflight.
-function benchTree({ pnpm } = {}) {
+function benchTree({ pnpm, stripped = false } = {}) {
   const { root, harness } = execTree()
   const dev = join(root, 'core', 'dev')
   mkdirSync(dev, { recursive: true })
@@ -114,10 +135,25 @@ function benchTree({ pnpm } = {}) {
     writeFileSync(join(bin, 'pnpm'), pnpm)
     chmodSync(join(bin, 'pnpm'), 0o755)
   }
+  // The tools bench.sh runs after the preflight. They are linked here because the rest of the
+  // box is filtered below, and on a box where pnpm sits in /usr/bin that filter takes mkdir too.
+  for (const name of stripped ? [] : ['mkdir', 'cat', 'grep', 'rm', 'sleep', 'setsid', 'tail']) {
+    const file = onPath(name)
+    if (file) symlinkSync(file, join(bin, name))
+  }
   // The rest of the box, minus any directory that holds a real pnpm: these tests decide that
-  // answer themselves, and a runner with pnpm installed must not leak one in.
-  const rest = (process.env.PATH ?? '').split(':').filter((dir) => dir && !existsSync(join(dir, 'pnpm')))
+  // answer themselves, and a runner with pnpm installed must not leak one in. `stripped` leaves
+  // them the bin fixture alone, which is the PATH that exposed the raw shell error.
+  const rest = stripped ? [] : (process.env.PATH ?? '').split(':').filter((dir) => dir && !existsSync(join(dir, 'pnpm')))
   return { root, harness, bin, home: join(root, '.dsh-test-smoke'), path: [bin, ...rest].join(':') }
+}
+
+// The fixture links real tools out of the host PATH before it filters the box by pnpm.
+function onPath(name) {
+  for (const dir of (process.env.PATH ?? '').split(':')) {
+    if (dir && existsSync(join(dir, name))) return join(dir, name)
+  }
+  return undefined
 }
 
 function runBench({ root, path, harness }, action) {
