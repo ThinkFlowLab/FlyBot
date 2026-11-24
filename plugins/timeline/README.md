@@ -63,6 +63,8 @@ The response (`version: 1`) has `lanes` (You, Bots, groups), `turns` (with `tool
 
 With `exporter: otlp`, the trace is sent as OpenTelemetry spans: each Bot turn becomes an `invoke_agent` span and its tool calls `execute_tool` spans beneath it. Only finished turns and tool calls are exported. It exports only the metadata the panel shows, never message text, tool arguments or output, and sends Bot and room ids only unless `exportNames: true`.
 
+With `exporter: json`, each export appends one JSON line to `dir/export.jsonl`, up to 8 MiB; past that cap new spans are not written and the plugin warns once rather than on every interval, and only a write that makes room again starts a new warning (#3373).
+
 ## Install
 
 ```sh

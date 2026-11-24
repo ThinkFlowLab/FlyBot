@@ -46,7 +46,7 @@ export function parseOtlpUrl(raw) {
 const JSON_EXPORT_MAX = 8 * 1024 * 1024
 
 // Builds the exporter the timeline pushes to, or undefined when none is configured.
-function makeExporter(config, dir, warn) {
+export function makeExporter(config, dir, warn) {
   const headers = (config.otlpHeaders && typeof config.otlpHeaders === 'object') ? config.otlpHeaders : {}
   const exportNames = config.exportNames === true
   if (config.exporter === 'otlp') {
@@ -74,6 +74,10 @@ function makeExporter(config, dir, warn) {
   }
   if (config.exporter === 'json') {
     const file = join(dir, 'export.jsonl')
+    // The cap is terminal for that file until someone makes room, so it reads as one event: a
+    // warning on every export would repeat once per interval (5 s by default) for as long as the
+    // file stays full, the noise P-699 removed from the OTLP path. Room again re-arms it.
+    let capped = false
     return {
       intervalMs: config.exportMs,
       serviceName: config.serviceName,
@@ -82,10 +86,14 @@ function makeExporter(config, dir, warn) {
         const line = `${JSON.stringify(payload)}\n`
         const size = await stat(file).then(info => info.size, () => 0)
         if (size + line.length > JSON_EXPORT_MAX) {
-          warn('flybot-timeline: json export is capped at %d bytes in %s; new spans are not written', JSON_EXPORT_MAX, file)
+          if (!capped) {
+            warn('flybot-timeline: json export is capped at %d bytes in %s; new spans are not written', JSON_EXPORT_MAX, file)
+            capped = true
+          }
           return
         }
         await appendFile(file, line, 'utf8')
+        capped = false
       },
     }
   }
