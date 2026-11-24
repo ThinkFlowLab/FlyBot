@@ -289,6 +289,27 @@ window.__ModuleLoader__.load({
     }
 
     const REFRESH_MS = 10000
+    // A poll of the host follows the page: a hidden window keeps no interval at all (not one whose
+    // tick would be wasted), and coming back clears and re-arms it before reading once at once, so
+    // the read is neither in the background nor up to one period stale. Cleanup drops both.
+    function pollWhileVisible(fn, ms) {
+      const doc = globalThis.document
+      const hidden = () => doc?.hidden === true || doc?.visibilityState === 'hidden'
+      let timer
+      const stop = () => { if (timer !== undefined) { clearInterval(timer); timer = undefined } }
+      const arm = () => { stop(); if (hidden()) return; timer = setInterval(fn, ms) }
+      const onVisibility = () => {
+        if (hidden()) { stop(); return }
+        arm()
+        fn()
+      }
+      doc?.addEventListener?.('visibilitychange', onVisibility)
+      arm()
+      return () => {
+        stop()
+        doc?.removeEventListener?.('visibilitychange', onVisibility)
+      }
+    }
     // Same as organize.js ARCHIVE_NAME_RE (#452): mis-renamed archived Bots stay out of the list.
     const ARCHIVE_NAME_RE = /^(?:归档|Archive)[-—–＿_\s]+/u
     // 'flybot.sidebar.section' is a FlyBot registry slot (ds-bot renders it), not a DSH
@@ -467,8 +488,8 @@ window.__ModuleLoader__.load({
           load()
           let off
           try { off = flybot.fields?.on?.('change', c => { if (c && c.key === 'reorg') load() }) } catch { /* no change feed */ }
-          const timer = setInterval(load, REFRESH_MS * 3)
-          return () => { clearInterval(timer); try { off?.() } catch { /* already gone */ } }
+          const stop = pollWhileVisible(load, REFRESH_MS * 3)
+          return () => { stop(); try { off?.() } catch { /* already gone */ } }
         }, [load])
         const run = noticeRun(overview)
         if (!run) return null

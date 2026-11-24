@@ -121,6 +121,7 @@ Both sidebar entries — the `flybot.sidebar.structure` entry ds-bot draws its B
 
 - `client.js` keeps one `rosterFeed(flybot, { interval })`: the first subscriber starts the poll, a later subscriber joins it and is handed the current list without a read of its own, a read already in flight sets `again` instead of stacking up behind the timer, and the last subscriber to leave clears it. `apply()` builds one feed and passes it to `registerStructure` and `makeArchivedSection`; called with no feed, each makes its own (tests and other callers keep working).
 - A field change that matters to either consumer (`archived`, `parent`, `treeRole`, `retired`, `idle`) and `bot.removed` call `refresh()`, so a removal is still immediate instead of waiting for the next tick.
+- The reorganization notice's `tree/reorg` read follows the page: `pollWhileVisible(fn, ms)` arms no interval at all while the document is hidden, clears and re-arms it on `visibilitychange` back to visible and then reads once at once, and its cleanup drops both the timer and the listener — a window nobody is looking at does not ask the host every 30 s, and coming back is not up to one period stale (#3371).
 - Tests: `plugins/tree/test/tree.test.js`, `#816: one roster read per tick…` (one read per tick for two subscribers, the timer stops with the last one, and mounting the archived section inside `apply()` adds no read) and `#816: the archived list is ordered above the reorganization notice`.
 
 ### Discarded promise `.catch` (#213)
