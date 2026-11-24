@@ -6798,7 +6798,7 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
      console.error(`[ds-bot] ${line}${frames.length > 0 ? `\n${clean(frames.join('\n'))}` : ''}`)
      note({
        level: 'warn',
-@@ -180,31 +180,258 @@ export function install(rt) {
+@@ -180,31 +180,261 @@ export function install(rt) {
  
    const entries = async () => {
      const old = (await earlier).filter(entry => entry.time > cleared)
@@ -7009,8 +7009,11 @@ diff --git a/src/host/diagnostics.js b/src/host/diagnostics.js
 -      readOnly: rt.readOnly?.() ? 'yes, another dsh holds the team' : undefined,
 +      // #3350: the verdict the connection test kept for each Bot's route, read from the live roster
 +      // so a record left by a Bot deleted since is not printed. A Bot nobody tested is listed
-+      // without `ok`, and the report says so instead of showing nothing about it.
-+      modelChecks: bots.map((bot) => {
++      // without `ok`, and the report says so instead of showing nothing about it. A friend's Bot is
++      // not this host's to test (#3352): `testModel` refuses it — it runs on its owner's model — so
++      // naming it would point the reader at a button that cannot answer for it, and this list holds
++      // only the Bots this host can test.
++      modelChecks: bots.filter((bot) => !bot.remote).map((bot) => {
 +        const table = rt.state.modelChecks ?? {}
 +        const check = Object.hasOwn(table, bot.id) ? table[bot.id] : undefined
 +        const record = check !== null && typeof check === 'object' && !Array.isArray(check)

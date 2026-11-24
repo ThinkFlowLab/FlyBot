@@ -1585,6 +1585,48 @@ test('the report says what the connection test answered, and never tests again (
   assert.doesNotMatch(reportMarkdown({ facts }), /Model check/)
 })
 
+// #3352: the row listed every Bot in the roster, a friend's Bot included, and the connection test
+// refuses one outright (`bot/invalid`: a friend's Bot runs on its owner's model). The row then
+// pointed at a button that cannot answer, so it now names only the Bots this host can test.
+const friendBot = { id: 'far', name: 'RemotePal', remote: { handle: 'pal@friend', home: 'friend' } }
+
+test("the report names no model check for a friend's Bot (#3352)", async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const rt = host(home, {
+    config: { diagnosticsFile: false },
+    state: { bots: { far: friendBot }, mainBotIds: [], rooms: {} },
+  })
+  const report = await rt.diagnostics.report({})
+  assert.deepEqual(report.facts.modelChecks, [], "a friend's Bot is not a check this host can run")
+  assert.doesNotMatch(report.markdown, /^\| Model check \|/m, 'no row asks the reader to test it')
+  assert.equal(report.markdown.includes('RemotePal'), false)
+})
+
+test("the report keeps a local Bot's model check beside a friend's Bot (#3352)", async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const at = Date.UTC(2026, 10, 23, 12, 31)
+  const rt = host(home, {
+    config: { diagnosticsFile: false },
+    state: {
+      bots: {
+        one: { id: 'one', name: 'One', model: 'ollama/kimi-k3' },
+        far: friendBot,
+      },
+      mainBotIds: ['one'],
+      rooms: {},
+      modelChecks: { one: { ok: false, code: 'AUTH', ref: 'ollama/kimi-k3', at } },
+    },
+  })
+  const report = await rt.diagnostics.report({})
+  const found = report.markdown.match(/^\| Model check \| (.*) \|$/m)
+  assert.ok(found, `the report carries a Model check row: ${report.markdown}`)
+  assert.equal(found[1], 'One — ollama/kimi-k3: AUTH (11-23 12:31Z)', "the row is the local Bot's verdict")
+  assert.equal(report.facts.modelChecks.length, 1, 'one check, for the one Bot this host can test')
+  assert.equal(report.markdown.includes('RemotePal'), false, "the friend's Bot is not named")
+})
+
 test('reportMarkdown says when nothing went wrong', () => {
   const text = reportMarkdown({ facts: { botVersion: '0.1.0', os: 'linux' } })
   assert.match(text, /No host errors recorded\./)
