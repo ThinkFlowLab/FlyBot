@@ -239,6 +239,33 @@ window.__ModuleLoader__.load({
           .catch((failure) => finish({ ok: false, error: callError(failure, fallback) }))
       })
     }
+    // A 2 s poll of the whole store is a host read per tick, so it follows the page: a hidden
+    // window keeps no interval at all instead of firing one whose read would be wasted, and
+    // coming back clears and re-arms it before reading once at once — an interval left armed
+    // through the hidden stretch carries the time it already burned, so the next read lands
+    // early instead of a full `ms` after the page is back.
+    function pollWhileVisible(fn, ms) {
+      const doc = globalThis.document
+      const hidden = () => doc?.hidden === true || doc?.visibilityState === 'hidden'
+      let timer
+      const stop = () => {
+        if (timer === undefined) return
+        globalThis.clearInterval(timer)
+        timer = undefined
+      }
+      const arm = () => { stop(); if (hidden()) return; timer = globalThis.setInterval(fn, ms) }
+      const onVisibility = () => {
+        if (hidden()) { stop(); return }
+        arm()
+        fn()
+      }
+      doc?.addEventListener?.('visibilitychange', onVisibility)
+      arm()
+      return () => {
+        stop()
+        doc?.removeEventListener?.('visibilitychange', onVisibility)
+      }
+    }
     function fill(text, params) {
       return params ? text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match)) : text
     }
@@ -2166,12 +2193,12 @@ window.__ModuleLoader__.load({
       // One poll: while a run is live, for the Bot replies that advance nodes, and while a
       // read error is showing, so a refused read is retried. Two effects used to test the
       // same condition and both fired, so every tick read the whole store twice (#1564).
+      // It follows the page's visibility too: a window nobody is looking at reads nothing,
+      // and coming back reads at once rather than up to 2 s later.
       const live = (pack?.workflows ?? []).some(item => (item.activeCount ?? 0) > 0)
       useEffect(() => {
         if (!live && !readError) return undefined
-        let gone = false
-        const timer = setInterval(() => { if (!gone) void refresh() }, 2000)
-        return () => { gone = true; clearInterval(timer) }
+        return pollWhileVisible(() => { void refresh() }, 2000)
       }, [live, readError])
       
       useEffect(() => {

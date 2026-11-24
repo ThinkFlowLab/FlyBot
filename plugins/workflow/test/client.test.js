@@ -5058,3 +5058,55 @@ test('#2581: the canvas node label is one code point', () => {
     view.unmount()
   }
 })
+
+// The stage's 2 s poll is a read of the whole store: a window nobody is looking at must
+// not keep asking the host, and coming back must show the current state at once instead
+// of up to 2 s of stale rows (#3315's shape, on this panel).
+test('a hidden page stops the poll and a visible one reads again at once', async (t) => {
+  const graph = delivery()
+  graph.activeCount = 1
+  const reads = []
+  const call = async (name) => {
+    if (name === 'workflow/state') { reads.push(1); return { workflows: [graph] } }
+    return { ok: true, workflows: [graph] }
+  }
+  const timers = []
+  const realSet = globalThis.setInterval
+  const realClear = globalThis.clearInterval
+  globalThis.setInterval = (fn, ms) => { const id = timers.length + 1; timers.push({ id, fn, ms }); return id }
+  globalThis.clearInterval = (id) => {
+    const at = timers.findIndex(timer => timer.id === id)
+    if (at >= 0) timers.splice(at, 1)
+  }
+  const realDoc = globalThis.document
+  const listeners = []
+  const doc = {
+    ...documentStub,
+    hidden: true,
+    visibilityState: 'hidden',
+    addEventListener(name, fn) { if (name === 'visibilitychange') listeners.push(fn) },
+    removeEventListener(name, fn) {
+      const at = listeners.indexOf(fn)
+      if (name === 'visibilitychange' && at >= 0) listeners.splice(at, 1)
+    },
+  }
+  globalThis.document = doc
+  try {
+    const view = mount(client.Section, { roster: { bots: [] }, call, actions: {} })
+    t.after(() => view.unmount())
+    await settle()
+    assert.equal(reads.length, 1, 'the first paint reads the store once')
+    for (const timer of timers.slice()) timer.fn()
+    await settle()
+    assert.equal(reads.length, 1, 'a hidden page does not read the store again')
+    doc.hidden = false
+    doc.visibilityState = 'visible'
+    for (const fn of listeners.slice()) fn()
+    await settle()
+    assert.equal(reads.length, 2, 'coming back reads the store at once')
+  } finally {
+    globalThis.document = realDoc
+    globalThis.setInterval = realSet
+    globalThis.clearInterval = realClear
+  }
+})
