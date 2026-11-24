@@ -9108,10 +9108,21 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
  // The create request that gives a stored record its timing again, for a move.
  function requestOf(record) {
    const base = { title: record.title, prompt: record.prompt }
-@@ -39,6 +39,28 @@ function requestOf(record) {
+@@ -39,6 +39,39 @@ function requestOf(record) {
    return null
  }
  
++// The repeat rule of a stored record, in the words the tool's row can carry (#3357): the
++// next instant alone reaches the reader as UTC and loses "daily 09:00 Asia/Shanghai". A
++// one-shot `at`/`after` has no repeat rule, so its row keeps `next <instant>` unchanged.
++function ruleText(record) {
++  if (record.kind === 'every' && record.everySeconds !== undefined) return `every ${record.everySeconds}s`
++  if (record.kind === 'daily' && record.time !== undefined && record.timeZone !== undefined) return `daily ${record.time} ${record.timeZone}`
++  if (record.kind === 'weekly' && record.time !== undefined && record.timeZone !== undefined) return `weekly ${(record.weekdays ?? []).join(',')} ${record.time} ${record.timeZone}`
++  if (record.kind === 'cron' && record.expression !== undefined && record.timeZone !== undefined) return `cron ${record.expression} ${record.timeZone}`
++  return undefined
++}
++
 +// A create request's timing as the record fields a paused task keeps (the inverse of
 +// requestOf), so a paused task reads like any other in the list.
 +function timingOf(selector) {
@@ -9166,7 +9177,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
    }
    if (typeof ctx.inject === 'function') ctx.inject(['schedule'], attach)
    else if (ctx.get?.('schedule') !== undefined) attach({ schedule: ctx.get('schedule'), effect: (execute, label) => ctx.effect(execute, label) })
-@@ -89,63 +89,636 @@ export function install(rt) {
+@@ -89,63 +89,638 @@ export function install(rt) {
      return rt.groupOwners.get(sessionId) ?? rt.pastOwners.get(sessionId)
    }
    const known = owner => owner !== undefined && (owner.botId === undefined ? state.rooms[owner.roomId] !== undefined : state.bots[owner.botId] !== undefined)
@@ -9380,9 +9391,7 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    if (prompt === '') throw invalid('Say what the Bot should do')
 +    return { sessionId: bot ? rt.chatOf(bot.id) : room.id, title, prompt }
 +  }
- 
--  async function schedulesView() {
--    if (service === null) return { available: false, tasks: [] }
++
 +  // One stored task as DSH has it, active or finished, or undefined.
 +  const findRecord = async (sessionId, id) => (await service.catalog()).find(entry => entry.sessionId === sessionId && entry.id === id)
 +
@@ -9435,7 +9444,9 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      return id
 +    })
 +  }
-+
+ 
+-  async function schedulesView() {
+-    if (service === null) return { available: false, tasks: [] }
 +  // DSH mints `schedule-<uuid>` in `create`; a copy keeps that shape here and treats a
 +  // collision as a retry, never as an overwrite of the row that already has the id.
 +  const copyId = (tasks) => {
@@ -9474,14 +9485,13 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      if (sourceOf(entry.sessionId, actor) === undefined) { someHidden = true; continue }
 +      const lastRun = lastRunOf({ id: entry.id })
 +      tasks.push({ ...entry.record, id: entry.id, sessionId: entry.sessionId, status: 'paused', pausedAt: entry.pausedAt, ...owner, ...rowReach(owner, entry.id), ...(lastRun ? { lastRun } : {}) })
-     }
--    return { available: true, tasks }
++    }
 +    // #1166: a repeat rule can still fire inside the window — the page says so instead of
 +    // claiming a silence FlyBot cannot keep.
 +    const unchecked = quietHours.on === true && tasks.some(task => task.kind === 'every' || task.kind === 'cron')
 +    return { available: true, tasks, quietHours, ...(someHidden ? { someHidden: true } : {}), ...(unchecked ? { quietUnchecked: true } : {}) }
-   }
- 
++  }
++
 +  // Edit: a paused task stays paused with its new content; an active one is updated in
 +  // place on the same Session, otherwise created anew before the old one is deleted.
 +  // `when: { kind: 'keep' }` keeps the timing (a cron rule the form cannot show).
@@ -9590,7 +9600,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +        delete paused()[row.id]
 +        armed += 1
 +      }
-+    }
+     }
+-    return { available: true, tasks }
 +    // A row DSH refused to drop is not paused either, so the saved state says so.
 +    if (armed > 0) await rt.save()
 +    return { paused: pausedCount, armed, available: true }
@@ -9619,8 +9630,8 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +    if (kept !== undefined && typeof created?.id === 'string') reachAtSet()[created.id] = kept
 +    await rt.save()
 +    return schedulesView(actor)
-+  }
-+
+   }
+ 
 +  // Retry: the task's prompt once now, to the Bot's current part or the group, as a run of
 +  // that task. DSH's own times are untouched: no missed time is delivered again.
 +  async function retrySchedule(body, actor) {
@@ -9692,10 +9703,12 @@ diff --git a/src/host/schedules.js b/src/host/schedules.js
 +      const add = (entry, status, when) => {
 +        const at = placeOf(entry.sessionId, botId)
 +        if (at?.botId !== botId) return
++        const next = status === 'active' && when !== undefined ? `next ${when}` : 'no next run'
++        const rule = ruleText(entry)
 +        rows.push({
 +          at: when ?? '',
 +          live: status === 'active' && when !== undefined,
-+          line: `- "${entry.title == null ? 'untitled' : fold(entry.title)}" (${entry.id}) — ${status === 'active' && when !== undefined ? `next ${when}` : 'no next run'}, ${status}, ${at.place}, session ${entry.sessionId}`,
++          line: `- "${entry.title == null ? 'untitled' : fold(entry.title)}" (${entry.id}) — ${next}${rule === undefined ? '' : ` (${rule})`}, ${status}, ${at.place}, session ${entry.sessionId}`,
 +        })
 +      }
 +      for (const entry of await service.catalog()) add(entry, entry.status ?? 'active', entry.scheduledAt)
@@ -17001,7 +17014,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
  test('a group chat task lives on the group Session and lists under the group', async (t) => {
    const schedule = scheduleService()
    const { ctx, home, call } = setup({ schedule })
-@@ -121,3 +121,1043 @@ test('a due reminder reaches a group as its prompts', () => {
+@@ -121,3 +121,1067 @@ test('a due reminder reaches a group as its prompts', () => {
    assert.equal(reminderText(batch), '[Scheduled task] One\n[Scheduled task] Two')
    assert.equal(reminderText('plain text'), 'plain text')
  })
@@ -17535,6 +17548,30 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  assert.match(answer, /schedule_list answers for one Session only/)
 +})
 +
++// #3357: a row said only `next <instant>`, so "daily 09:00 Asia/Shanghai" reached the reader
++// as a UTC timestamp and a paused task lost the rule with its next run. The row now carries the
++// repeat rule and its time zone from the same record the catalog already returns.
++test('#3357: bot_schedules names the repeat rule and its time zone, paused or not', async (t) => {
++  const schedule = scheduleService()
++  const team = JSON.parse(JSON.stringify(TEAM))
++  const { ctx, home } = setup({ schedule }, team)
++  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
++  const listed = (sessionId) => ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: sessionId } })
++  const record = {
++    id: 's-daily', title: 'Standup', prompt: 'Where are we?',
++    kind: 'daily', time: '09:00', timeZone: 'Asia/Shanghai', scheduledAt: '2030-01-01T01:00:00.000Z',
++  }
++  schedule.tasks.set('s-daily', { sessionId: 'w1', status: 'active', record })
++  const answer = await listed('w1')
++  assert.match(answer, /daily 09:00 Asia\/Shanghai/, 'an active row names the rule and its zone')
++
++  schedule.tasks.set('s-daily', { sessionId: 'w1', status: 'paused', record })
++  const paused = await listed('w1')
++  const line = paused.split('\n').find(candidate => candidate.includes('s-daily'))
++  assert.match(line, /no next run/, 'a paused row has no next run')
++  assert.match(line, /daily 09:00 Asia\/Shanghai/, 'the rule survives the paused row')
++})
++
 +// A group chat keeps its own Session, and a task the owner sets for the group lives on it
 +// (#628): its id is the room id, so it belongs to every member of that group and to nobody
 +// else — including a Bot that only sees the group's members' Sessions.
@@ -18015,7 +18052,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'm1' } })
 +  const rows = answer.split('\n').filter(line => line.startsWith('- '))
 +  assert.equal(rows.length, 1, `one task, one row:\n${answer}`)
-+  assert.ok(rows[0].includes('- "Brief Injected" (schedule-1) — next 2030-01-01T01:00:00.000Z, active, own chat, session m1'), rows[0])
++  assert.ok(rows[0].includes('- "Brief Injected" (schedule-1) — next 2030-01-01T01:00:00.000Z (daily 09:00:00 Asia/Shanghai), active, own chat, session m1'), rows[0])
 +})
 +
 +test('#3197: a clean title keeps its row byte for byte', async (t) => {
@@ -18026,7 +18063,7 @@ diff --git a/test/schedules.test.js b/test/schedules.test.js
 +  assert.equal(made.ok, true, JSON.stringify(made))
 +  const answer = await ctx.registeredTools.get('bot_schedules').execute({}, { agent: { id: 'm1' } })
 +  const rows = answer.split('\n').filter(line => line.startsWith('- '))
-+  assert.deepEqual(rows, ['- "Briefing" (schedule-1) — next 2030-01-01T01:00:00.000Z, active, own chat, session m1'])
++  assert.deepEqual(rows, ['- "Briefing" (schedule-1) — next 2030-01-01T01:00:00.000Z (daily 09:00:00 Asia/Shanghai), active, own chat, session m1'])
 +})
 +
 +// #3197: the 120-code-point bound has to count the name the row shows, so the fold comes first —
