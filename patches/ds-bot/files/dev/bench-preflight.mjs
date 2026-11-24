@@ -9,9 +9,9 @@
 //
 // Exit 0 when the bench can start, 1 with the remedy on stderr when it cannot, 2 on bad usage.
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 // The addon loader picks the directory from Node's report, not from the ELF interpreter, so the
 // preflight must read the same signal to name the file the loader would try.
@@ -81,6 +81,20 @@ export function main(argv = process.argv.slice(2)) {
   return 1
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// `import.meta.url` holds the resolved module path, while argv[1] is whatever the shell typed.
+// A checkout reached through a symlink (a worktree linked into place, or a path crossing one)
+// therefore never matched, and the CLI exited 0 without running the check at all — the gate was
+// silently skipped (#3363). Compare real paths, and treat an unreadable argv[1] as "not the
+// entry point" rather than throwing.
+export function isEntryPoint(argv1, moduleUrl = import.meta.url) {
+  if (!argv1) return false
+  try {
+    return realpathSync(argv1) === fileURLToPath(moduleUrl)
+  } catch {
+    return false
+  }
+}
+
+if (isEntryPoint(process.argv[1])) {
   process.exit(main())
 }
