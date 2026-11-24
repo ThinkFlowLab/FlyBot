@@ -313,3 +313,57 @@ test('the face-rooms page stops while hidden and reads once when the tab returns
     assert.deepEqual(s.timers.periods(), [], 'and its timer')
   } finally { s.restore() }
 })
+
+// The chat approval dock (#1607) is the same shape once more: a bare 5 s `setInterval` whose `load`
+// returns while `document.hidden`, so the timer ticks for a tab nobody is reading and the dock's own
+// `visibilitychange` listener does the catch-up.
+const dock = app => mount(app, 'ChatApprovalDock', {
+  sessionId: 's1', roster, room: openRoom(), bot: { id: 'b1', name: 'Chief' }, actions: {},
+})
+
+test('the chat approval dock stops while hidden and reads once when the tab returns', () => {
+  const s = scene({ hidden: true })
+  try {
+    const statusCalls = () => s.calls.filter(([endpoint]) => endpoint === 'social/status').length
+    const { cleanups } = dock(s.app)
+    assert.equal(statusCalls(), 0, `a hidden dock made ${statusCalls()} read(s)`)
+    assert.deepEqual(s.timers.periods(), [], 'a hidden dock holds no poll timer')
+    s.doc.hidden = false
+    s.doc.emit('visibilitychange')
+    assert.equal(statusCalls(), 1, `coming back made ${statusCalls()} read(s), not one`)
+    assert.deepEqual(s.timers.periods(), [5000], 'the 5 s cadence restarts from that read')
+    s.timers.tick()
+    assert.equal(statusCalls(), 2, 'and one period later reads again, once')
+    s.doc.hidden = true
+    s.doc.emit('visibilitychange')
+    s.timers.tick()
+    assert.equal(statusCalls(), 2, 'going hidden again stops it')
+    unmount(cleanups)
+  } finally { s.restore() }
+})
+
+// The friends-and-Bots settings panel (#1054) polls `social/status` on a bare 15 s `setInterval` whose
+// tick returns while `document.hidden`, and it has no visibility listener, so a tab that comes back
+// waits out the rest of the period before its first read.
+const friendsBots = app => mount(app, 'FriendsBots', { remoteChats: [], actions: {}, roster })
+
+test('the friends settings panel stops while hidden and reads once when the tab returns', () => {
+  const s = scene({ hidden: true })
+  try {
+    const statusCalls = () => s.calls.filter(([endpoint]) => endpoint === 'social/status').length
+    const { cleanups } = friendsBots(s.app)
+    assert.equal(statusCalls(), 0, `a hidden panel made ${statusCalls()} read(s)`)
+    assert.deepEqual(s.timers.periods(), [], 'a hidden panel holds no poll timer')
+    s.doc.hidden = false
+    s.doc.emit('visibilitychange')
+    assert.equal(statusCalls(), 1, `coming back made ${statusCalls()} read(s), not one`)
+    assert.deepEqual(s.timers.periods(), [15000], 'the 15 s cadence restarts from that read')
+    s.timers.tick()
+    assert.equal(statusCalls(), 2, 'and one period later reads again, once')
+    s.doc.hidden = true
+    s.doc.emit('visibilitychange')
+    s.timers.tick()
+    assert.equal(statusCalls(), 2, 'going hidden again stops it')
+    unmount(cleanups)
+  } finally { s.restore() }
+})
