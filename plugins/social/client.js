@@ -3759,14 +3759,25 @@ window.__ModuleLoader__.load({
       const remote = bot?.remote
       const home = remote?.home
       const handle = remote?.handle
-      const [auto, setAuto] = useState(false)
+      // #3366: `null` is "nobody read it yet". A read that failed used to leave `false` here, which is
+      // drawn exactly like a setting that is off — and the switch stayed live, so the person could read
+      // "my Bots ask first" as a state they chose. The failure is the card's answer while it lasts, and
+      // the value stays unknown until a read answers (#3323/#3325/#3359 for the same shape elsewhere).
+      const [auto, setAuto] = useState(null)
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
       const [asking, setAsking] = useState(false)
       const [error, setError] = useState('')
+      const [readError, setReadError] = useState('')
       useEffect(() => {
         if (!home) return undefined
-        call('social/settings', {}).then(value => setAuto(value?.autoAccept?.[home] === true), () => {})
+        let live = true
+        call('social/settings', {}).then(value => {
+          if (!live) return
+          setAuto(value?.autoAccept?.[home] === true)
+          setReadError('')
+        }, e => { if (live) setReadError(errorText(e)) })
+        return () => { live = false }
       }, [home])
       if (!handle) return null
       const toggleAuto = async (on) => {
@@ -3813,9 +3824,10 @@ window.__ModuleLoader__.load({
         // The box holds the setting only; the destructive link sits apart, below it (#274).
         h('div', { className: 'fs-card fs-friend-auto', 'data-flybot': 'friend-auto-box' },
           h('label', { className: 'fs-auto', title: tr(AUTO_SEND_NOTE), 'data-flybot': 'friend-auto-send' },
-            h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
+            h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home || auto === null, onChange: e => toggleAuto(e.target.checked) }),
             tr("Auto-send my Bots' replies to {who}", { who })),
-          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, tr("Your Bots' replies to {who} go out without asking you first. What you type is not affected.", { who }))),
+          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, tr("Your Bots' replies to {who} go out without asking you first. What you type is not affected.", { who })),
+          readError ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status', 'data-flybot': 'friend-auto-read-error' }, readError) : null),
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
             h('span', { className: 'fs-hint' }, tr('Remove {bot} from your list? {note}', { bot: botWithOwner(bot.name, named), note: keepLine })),
