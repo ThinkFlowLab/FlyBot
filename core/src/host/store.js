@@ -36,10 +36,12 @@ export const retiredBot = bot => bot?.fields?.['flybot-tree']?.retired === true
 export function install(rt) {
   const { ctx, home, statePath, config = {} } = rt
 
-  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>, projects:Record<string,any>, projectRuns:Record<string,string>}} */
+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>, projects:Record<string,any>, projectRuns:Record<string,string>, modelChecks:Record<string,{ok:boolean, code?:string, ref?:string, at:number}>}} */
   // `projects` is the durable Project record (#1691); `projectRuns` is the binding a workflow run
   // reports, because a run lives in the workflow plugin's own state and cannot carry the field.
-  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, revision: 0 }
+  // `modelChecks` keeps the last connection test's coded verdict per Bot (#3350) — its presence in
+  // the empty state is what lets a `modelChecks.<botId>` journal line name a path that exists.
+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, modelChecks: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -485,6 +487,14 @@ export function install(rt) {
     // #1453: who owned the Sessions a deleted Bot left behind; a corrupt value resets.
     if (!isRecord(state.retiredSessions)) {
       state.retiredSessions = {}
+      migrated = true
+    }
+    // #3350: the last coded verdict of each Bot's connection test. A file saved before this key
+    // existed gets the empty table without a migration (a missing key is not a corrupt one, and
+    // marking it would rewrite every team file once); `null` or a scalar is repaired, because the
+    // first test's write would otherwise throw on a team the host calls writable (#2715).
+    if (!isRecord(state.modelChecks)) {
+      state.modelChecks = {}
       migrated = true
     }
     if (ensureOwner()) migrated = true

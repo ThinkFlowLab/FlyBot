@@ -655,7 +655,7 @@ test('a valid exchanges list keeps its newest MAX_EXCHANGES entries (#2715)', as
 // scalar. `save()` itself survived those, but the first write that indexed the table threw — the
 // turn record in turns.js, the group question in tools.js, a Bot or a room lookup — so the team
 // was loaded, writable and unusable, with the same stack instead of the file being named.
-for (const [field, shape, value] of [['exchangeTurns', 'null', null], ['questions', 'null', null], ['questions', 'a string', 'lost'], ['rooms', 'null', null], ['rooms', 'a list', []]]) {
+for (const [field, shape, value] of [['exchangeTurns', 'null', null], ['questions', 'null', null], ['questions', 'a string', 'lost'], ['rooms', 'null', null], ['rooms', 'a list', []], ['modelChecks', 'null', null], ['modelChecks', 'a string', 'lost']]) {
   test(`a team file whose ${field} is ${shape} is repaired instead of failing every write (#2715)`, async (t) => {
     const { rt, statePath } = runtime(t, teamWith({ [field]: value }))
     await rt.load()

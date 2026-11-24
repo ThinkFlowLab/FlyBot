@@ -1548,6 +1548,43 @@ test('a host with no capabilities keeps the report of today (#3312)', async (t) 
   assert.equal(empty.markdown, today.markdown, 'no capability anywhere is the report of today, byte for byte')
 })
 
+// #3350: the report answers the question it is copied for — whether this host could reach each
+// Bot's model route and which code came back. It reads the verdict the connection test kept; it
+// never makes a model request of its own, because that request is billed and may wait 30 s.
+test('the report says what the connection test answered, and never tests again (#3350)', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-diag-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const at = Date.UTC(2026, 10, 23, 12, 31)
+  const rt = host(home, {
+    config: { diagnosticsFile: false },
+    state: {
+      bots: {
+        one: { id: 'one', name: 'One', model: 'ollama/kimi-k3' },
+        two: { id: 'two', name: 'Two', model: 'deepseek/v4-flash' },
+      },
+      mainBotIds: ['one'],
+      rooms: {},
+      modelChecks: {
+        one: { ok: false, code: 'AUTH', ref: 'ollama/kimi-k3', at },
+        gone: { ok: true, ref: 'acme/retired', at },
+      },
+    },
+  })
+  const report = await rt.diagnostics.report({})
+  assert.match(report.markdown, /Model check/)
+  assert.match(report.markdown, /One — ollama\/kimi-k3: AUTH \(11-23 12:31Z\)/)
+  assert.match(report.markdown, /Two — deepseek\/v4-flash: not tested \(Settings → Models → Test connection\)/,
+    'a Bot nobody tested says so instead of reading like a pass')
+  assert.equal(report.markdown.includes('acme/retired'), false, 'a Bot deleted since is not printed')
+  assert.equal(report.markdown.includes('gone'), false)
+
+  // The same facts without the key are the report of today, byte for byte: a report that carries no
+  // check writes no line and nothing else moves.
+  const facts = { botVersion: '0.1.0', os: 'linux' }
+  assert.equal(reportMarkdown({ facts }), reportMarkdown({ facts: { ...facts, modelChecks: [] } }))
+  assert.doesNotMatch(reportMarkdown({ facts }), /Model check/)
+})
+
 test('reportMarkdown says when nothing went wrong', () => {
   const text = reportMarkdown({ facts: { botVersion: '0.1.0', os: 'linux' } })
   assert.match(text, /No host errors recorded\./)
