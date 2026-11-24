@@ -1584,6 +1584,7 @@ test('the report says what the connection test answered, and never tests again (
   assert.equal(reportMarkdown({ facts }), reportMarkdown({ facts: { ...facts, modelChecks: [] } }))
   assert.doesNotMatch(reportMarkdown({ facts }), /Model check/)
 })
+
 // #3352: the row listed every Bot in the roster, a friend's Bot included, and the connection test
 // refuses one outright (`bot/invalid`: a friend's Bot runs on its owner's model). The row then
 // pointed at a button that cannot answer, so it now names only the Bots this host can test.

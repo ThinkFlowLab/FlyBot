@@ -555,8 +555,11 @@ export function install(rt) {
       models: models.length > 0 ? models.join(', ') : undefined,
       // #3350: the verdict the connection test kept for each Bot's route, read from the live roster
       // so a record left by a Bot deleted since is not printed. A Bot nobody tested is listed
-      // without `ok`, and the report says so instead of showing nothing about it.
-      modelChecks: bots.map((bot) => {
+      // without `ok`, and the report says so instead of showing nothing about it. A friend's Bot is
+      // not this host's to test (#3352): `testModel` refuses it — it runs on its owner's model — so
+      // naming it would point the reader at a button that cannot answer for it, and this list holds
+      // only the Bots this host can test.
+      modelChecks: bots.filter((bot) => !bot.remote).map((bot) => {
         const table = rt.state.modelChecks ?? {}
         const check = Object.hasOwn(table, bot.id) ? table[bot.id] : undefined
         const record = check !== null && typeof check === 'object' && !Array.isArray(check)
