@@ -2592,18 +2592,10 @@ window.__ModuleLoader__.load({
           setListLoaded(true)
         }, () => {})
       }
-      useEffect(() => {
-        load()
-        if (typeof setInterval !== 'function') return undefined
-        const timer = setInterval(load, 5000)
-        timer?.unref?.()
-        // #3080: a tab that sat in the background catches up the moment it is shown, not one beat later
-        // (the same shape `everySecond` uses above).
-        const onShow = () => { if (typeof document === 'undefined' || !document.hidden) load() }
-        const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
-        doc?.addEventListener('visibilitychange', onShow)
-        return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
-      }, [])
+      // #3080: a tab that sat in the background catches up the moment it is shown, and a tab nobody is
+      // reading keeps no timer: the poll goes through `pollWhileVisible` (the same shape `#3315` gave
+      // the other lists here).
+      useEffect(() => pollWhileVisible(load, 5000), [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
       // The person who gets it (#418, #498), not the friend's Bot: a local hold already names the person.
       const named = list => list.map((item) => {
@@ -3308,17 +3300,9 @@ window.__ModuleLoader__.load({
       const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
       const dismissAccept = item => call('social/accept-notice-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
       const askShareBack = item => call('social/ask-share-back', { botId: item.botId, to: item.from, noticeId: item.id }).then(applyStatus, e => setError(errorText(e)))
-      useEffect(() => {
-        loadApprovals()
-        if (typeof setInterval !== 'function') return undefined
-        const tick = () => {
-          if (typeof document !== 'undefined' && document.hidden) return
-          loadApprovals()
-        }
-        const timer = setInterval(tick, 15_000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
-      }, [])
+      // A hidden tab is not looking at these requests either, so the 15 s poll runs only while the page
+      // is on screen and a tab that comes back reads once at once (`pollWhileVisible`).
+      useEffect(() => pollWhileVisible(loadApprovals, 15_000), [])
       useEffect(() => facePanel.bind(mode => { setFaceMode(mode === 'start' ? 'start' : 'join'); setFaceOpen(true) }), [])
       useEffect(() => addFriendPanel.bind(() => setAdding(true)), [])
       const unavailable = String(error).startsWith('Social is not running:')
