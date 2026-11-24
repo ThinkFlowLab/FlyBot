@@ -19,7 +19,7 @@ The window can be 1 min to 24 h, and **Earlier** looks back (**Live** is always 
 
 *Screenshots are rendered from a scripted team run (synthetic data) with real React, not from a live team.*
 
-Config for the browser entry: `sidebarSection: true` shows the sidebar row, the panel's only entry (default off; there is no **+** menu entry, #269; without the row open it with `ctx.flybot.timeline.panel.show()`); `windowMs` sets the initial window.
+Config for the browser entry: `sidebarSection: true` shows the sidebar row, the panel's only entry (default off; there is no **+** menu entry, #269; without the row open it with `ctx.flybot.timeline.panel.show()`); `windowMs` sets the initial window, clamped to 1 min–24 h — the range the panel's Window control offers, so a configured number outside it opens on the nearest end instead of a span no option can show (the endpoint itself accepts 30 s, but the panel never asks below its smallest option).
 
 ## What it records
 

@@ -22,6 +22,14 @@ window.__ModuleLoader__.load({
     const POLL_MS = 2000
     const MAX_BACKOFF_MS = 30_000
     const WINDOWS = [['1 min', 60_000], ['5 min', 300_000], ['15 min', 900_000], ['1 h', 3_600_000], ['6 h', 21_600_000], ['24 h', 86_400_000]]
+    // The window the control can show: its smallest WINDOWS step to 24 h. The host accepts a
+    // 30 s window, but the panel never asks below the smallest option it can draw, so both the
+    // config and the control clamp to that end and every clamped value still has an option.
+    const WINDOW_MIN_MS = 60_000
+    const WINDOW_MAX_MS = 86_400_000
+    const clampWindowMs = (value, fallback) => (Number.isFinite(value)
+      ? Math.min(WINDOW_MAX_MS, Math.max(WINDOW_MIN_MS, Math.round(value)))
+      : fallback)
 
     // The host's answer is checked for shape before anything draws from it: a host with another
     // version of the endpoint gives a clear "update" state, not a crash.
@@ -47,7 +55,7 @@ window.__ModuleLoader__.load({
       }
     }
     function createStore(flybot, { timers = globalThis, visible = () => globalThis.document?.visibilityState !== 'hidden', onVisible = watchVisible, windowMs = 900_000 } = {}) {
-      let state = { status: 'idle', window: undefined, error: undefined, updatedAt: undefined, windowMs, to: undefined, failures: 0 }
+      let state = { status: 'idle', window: undefined, error: undefined, updatedAt: undefined, windowMs: clampWindowMs(windowMs, 900_000), to: undefined, failures: 0 }
       let holders = 0
       let timer
       let inFlight = false
@@ -119,7 +127,7 @@ window.__ModuleLoader__.load({
         },
         // Looks back: `to` is an epoch ms, or undefined for live.
         setWindow({ windowMs: nextWindow, to } = {}) {
-          const clean = Number.isFinite(nextWindow) ? Math.max(30_000, Math.min(86_400_000, Math.round(nextWindow))) : state.windowMs
+          const clean = clampWindowMs(nextWindow, state.windowMs)
           state = { ...state, windowMs: clean, to: Number.isFinite(to) ? to : undefined }
           emit()
           restart()

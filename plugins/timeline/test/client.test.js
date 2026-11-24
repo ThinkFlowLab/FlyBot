@@ -182,7 +182,7 @@ test('setWindow clamps, asks again with the new window and looks back with `to`'
   pending[0].resolve(good())
   await tick()
   store.setWindow({ windowMs: 5, to: 123456 })
-  assert.deepEqual(calls.at(-1), ['timeline/window', { windowMs: 30_000, to: 123456 }])
+  assert.deepEqual(calls.at(-1), ['timeline/window', { windowMs: 60_000, to: 123456 }])
   store.setWindow({ windowMs: 1e12 })
   assert.deepEqual(calls.at(-1), ['timeline/window', { windowMs: 86_400_000 }])
   store.setWindow({ windowMs: 'x', to: 'x' })
@@ -236,4 +236,27 @@ test('#271: the window gaining focus refreshes an open panel at once, and closin
     if (saved.add === undefined) delete globalThis.addEventListener
     if (saved.remove === undefined) delete globalThis.removeEventListener
   }
+})
+
+// The initial window is a config value, and the panel can only show 1 min – 24 h: a number
+// outside that range used to reach the store as given, so the Window control had no option to
+// select and the panel asked the host for a span it would clamp. The floor is the control's own
+// smallest option (1 min), not the 30 s the host also accepts, because 30 s–1 min has no option
+// either.
+test('a configured windowMs below the window minimum opens at 1 min', () => {
+  const flybot = { call: async () => good() }
+  const timers = { setTimeout: () => 1, clearTimeout() {} }
+  // Every number the host accepts below the control's smallest option, including the 30 s–1 min
+  // band the 30 s floor used to leave with no option to select (#3366).
+  for (const windowMs of [1000, 30_000, 45_000, 59_999]) {
+    const store = client().createStore(flybot, { timers, visible: () => true, onVisible: () => () => {}, windowMs })
+    assert.equal(store.state.windowMs, 60_000)
+  }
+})
+
+test('a configured windowMs past the 24 h maximum opens at 24 h', () => {
+  const flybot = { call: async () => good() }
+  const timers = { setTimeout: () => 1, clearTimeout() {} }
+  const store = client().createStore(flybot, { timers, visible: () => true, onVisible: () => () => {}, windowMs: 7 * 86_400_000 })
+  assert.equal(store.state.windowMs, 86_400_000)
 })
