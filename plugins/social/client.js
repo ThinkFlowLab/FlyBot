@@ -4011,19 +4011,31 @@ window.__ModuleLoader__.load({
       useStyles()
       const handle = typeof bot?.remote?.handle === 'string' ? bot.remote.handle : ''
       const [paused, setPaused] = useState(null)
+      // #3359: a read that failed is not a chat that is not paused. The failure is the card's answer
+      // while it lasts (the friends list draws it the same way, #3323), so it gets its own state and
+      // is drawn before the card; a later success replaces it.
+      const [error, setError] = useState('')
       useEffect(() => {
         setPaused(null)
+        setError('')
         if (!handle) return undefined
         let live = true
         const load = () => {
-          call('social/paused', { handle }).then(value => { if (live) setPaused(value?.paused ?? null) }, () => {})
+          call('social/paused', { handle }).then(value => {
+            if (!live) return
+            setPaused(value?.paused ?? null)
+            setError('')
+          }, e => { if (live) setError(errorText(e)) })
         }
         // #3315 ③: a hidden tab holds no timer and reads nothing; coming back reads once at once and
         // restarts the 5 s cadence from that read instead of waiting out the hidden period.
         const stop = pollWhileVisible(load, 5000)
         return () => { live = false; stop?.() }
       }, [handle])
-      if (!handle || !paused) return null
+      if (!handle) return null
+      // The 5 s read is the retry: no button, no Extend, no turn count (owner 2026-10-19).
+      if (error) return h('div', { className: 'fs-hold', 'data-flybot': 'social-paused-error', role: 'status' }, error)
+      if (!paused) return null
       const note = paused.reason
         ? tr('Bot Social paused the last chat with this Bot ({reason}).', { reason: paused.reason })
         : tr('Bot Social paused the last chat with this Bot.')
