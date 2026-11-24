@@ -300,6 +300,9 @@ function testRuntime({ stream, bots, efforts } = {}) {
     state: { bots: bots ?? { b1: { id: 'b1', name: 'Writer', model: 'ollama/kimi-k3', effort: 'high' } } },
     chatOf: id => `chat-${id}`,
     tagUsage: (messages, tag) => { tagged.push(tag); return messages },
+    // The host's write path: the change lands in `state`, and nothing else is needed here.
+    mutate: async (change) => change(),
+    warn: () => {},
   }
   install(rt)
   return { rt, calls, tagged }
@@ -361,6 +364,25 @@ test('an aborted or throwing test is a timeout or a coded failure, not an except
   assert.deepEqual(await thrown.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'AUTH' })
   const silent = testRuntime({ stream: async function* () { yield { type: 'text-delta', text: 'O' } } })
   assert.deepEqual(await silent.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'UNKNOWN' })
+})
+
+// #3350: the verdict stays on the host, where the copied diagnostics report can find it. The code
+// is all that is kept — the provider's own words may carry a key, and the state is a file the person
+// sends to a public issue.
+test('a connection test keeps its verdict on the Bot, code only (#3350)', async () => {
+  const secret = 'sk-abc123'
+  const failed = testRuntime({ stream: () => { throw Object.assign(new Error(`Incorrect API key ${secret}`), { code: 'AUTH' }) } })
+  assert.deepEqual(await failed.rt.testModel('b1'), { ok: false, ref: 'ollama/kimi-k3', code: 'AUTH' })
+  const bad = failed.rt.state.modelChecks.b1
+  assert.equal(typeof bad.at, 'number')
+  assert.deepEqual({ ok: bad.ok, code: bad.code, ref: bad.ref }, { ok: false, code: 'AUTH', ref: 'ollama/kimi-k3' })
+  assert.ok(!JSON.stringify(failed.rt.state).includes(secret), 'the provider text never reaches the team file')
+
+  const passed = testRuntime({ stream: finishWith({ kind: 'completed' }) })
+  assert.equal((await passed.rt.testModel('b1')).ok, true)
+  const good = passed.rt.state.modelChecks.b1
+  assert.equal(typeof good.at, 'number')
+  assert.deepEqual({ ok: good.ok, code: good.code, ref: good.ref }, { ok: true, code: undefined, ref: 'ollama/kimi-k3' })
 })
 
 test('a Bot runs one test at a time, and a Bot with no model sends nothing', async () => {

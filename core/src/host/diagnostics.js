@@ -139,6 +139,22 @@ export function entryLine(entry) {
   return `${when}${level} ${source}${where ? ` (${where})` : ''}${code} ${entry.text}`
 }
 
+// The connection test's coded verdict per Bot (#3350): the Bot, the route that test took, and either
+// the code the provider answered (or `passed`) with the time it ran, or that nobody tested it yet.
+// A Bot nobody tested is still listed, because "no conclusion" must not read like "fine".
+const checkTime = at => (typeof at === 'number' && Number.isFinite(at) ? `${new Date(at).toISOString().slice(5, 16).replace('T', ' ')}Z` : undefined)
+const modelCheckLine = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return undefined
+  return list.map((check) => {
+    const name = typeof check?.name === 'string' && check.name !== '' ? check.name : 'a Bot'
+    const route = typeof check?.ref === 'string' && check.ref !== '' ? ` — ${check.ref}` : ''
+    if (check?.ok === undefined) return `${name}${route}: not tested (Settings → Models → Test connection)`
+    const code = check.ok === true ? 'passed' : (typeof check.code === 'string' && check.code !== '' ? check.code : 'UNKNOWN')
+    const at = checkTime(check.at)
+    return `${name}${route}: ${code}${at === undefined ? '' : ` (${at})`}`
+  }).join('; ')
+}
+
 // The Markdown block for an issue. `facts` come from this host, `client` from the
 // browser that asked; `entries` are already cleaned.
 export function reportMarkdown({ facts, client = {}, entries = [], clientEntries = [] }) {
@@ -155,6 +171,7 @@ export function reportMarkdown({ facts, client = {}, entries = [], clientEntries
     row('Language', client.language),
     row('Team', facts.team),
     row('Models', facts.models),
+    row('Model check', modelCheckLine(facts.modelChecks)),
     row('Read-only', facts.readOnly),
     row('Plugins', facts.plugins),
     row('Capabilities', facts.capabilities),
@@ -536,6 +553,23 @@ export function install(rt) {
       // whether an earlier copy is still there, and never opens one.
       stateBackups: await stateBackups(),
       models: models.length > 0 ? models.join(', ') : undefined,
+      // #3350: the verdict the connection test kept for each Bot's route, read from the live roster
+      // so a record left by a Bot deleted since is not printed. A Bot nobody tested is listed
+      // without `ok`, and the report says so instead of showing nothing about it.
+      modelChecks: bots.map((bot) => {
+        const table = rt.state.modelChecks ?? {}
+        const check = Object.hasOwn(table, bot.id) ? table[bot.id] : undefined
+        const record = check !== null && typeof check === 'object' && !Array.isArray(check)
+          && typeof check.ok === 'boolean' && Number.isFinite(check.at) ? check : undefined
+        const ref = typeof record?.ref === 'string' ? record.ref
+          : typeof bot.model === 'string' ? bot.model : typeof bot.appliedModel === 'string' ? bot.appliedModel : undefined
+        return {
+          botId: bot.id,
+          name: typeof bot.name === 'string' && bot.name !== '' ? bot.name : String(bot.id),
+          ...(ref === undefined ? {} : { ref }),
+          ...(record === undefined ? {} : { ok: record.ok, ...(typeof record.code === 'string' ? { code: record.code } : {}), at: record.at }),
+        }
+      }),
       // The store's own sentence (#2153): `stuck` (a team file that could not be read) and a
       // live state.lock are different faults, and the sidebar shows this same sentence, so the
       // report must not compress both into "another dsh holds the team".

@@ -323,6 +323,25 @@ export function install(rt) {
   // so a pass means that run can reach its model. It may be billed, so a Bot runs
   // at most one test at a time and nothing retries it.
   const testing = new Set()
+  // #3350: the verdict stays on the host so the diagnostics report can say where the model route
+  // failed. The coded outcome only — the provider's message can carry a key, and the team file is
+  // a file a person attaches to a public issue. A host that cannot write the team file still
+  // answers the test: the verdict is the product, and the missing record is a warning.
+  const keepVerdict = async (botId, verdict) => {
+    try {
+      await rt.mutate(() => {
+        const checks = (rt.state.modelChecks ??= {})
+        checks[botId] = {
+          ok: verdict.ok === true,
+          ...(verdict.code === undefined ? {} : { code: verdict.code }),
+          ...(verdict.ref === undefined ? {} : { ref: verdict.ref }),
+          at: Date.now(),
+        }
+      })
+    } catch (error) {
+      rt.warn?.('ds-bot: the model check for %s was not recorded: %s', botId, error)
+    }
+  }
   async function testModel(botId) {
     const bot = state.bots?.[botId]
     if (bot === undefined) throw Object.assign(new Error('Bot not found'), { code: 'bot/not-found' })
@@ -330,9 +349,13 @@ export function install(rt) {
     if (testing.has(botId)) throw Object.assign(new Error('A test is already running for this Bot.'), { code: 'bot/refused' })
     testing.add(botId)
     const started = Date.now()
+    const answer = async (verdict) => {
+      await keepVerdict(botId, verdict)
+      return verdict
+    }
     try {
       const ref = await desiredModel(bot)
-      if (ref === undefined) return { ok: false, code: 'NO_MODEL' }
+      if (ref === undefined) return await answer({ ok: false, code: 'NO_MODEL' })
       const route = splitRef(ref)
       const reasoning = await reasoningOf(ref)
       const efforts = reasoning?.efforts ?? []
@@ -354,12 +377,12 @@ export function install(rt) {
           signal,
         })) if (chunk?.type === 'finish') finish = chunk.reason
       } catch (error) {
-        return { ok: false, ref, code: testFailure(error, signal.aborted) }
+        return await answer({ ok: false, ref, code: testFailure(error, signal.aborted) })
       }
       // A stream that ends without its finish chunk proved nothing.
-      if (finish === undefined) return { ok: false, ref, code: 'UNKNOWN' }
-      if (finish.kind === 'error' || finish.kind === 'aborted') return { ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') }
-      return { ok: true, ref, ms: Date.now() - started }
+      if (finish === undefined) return await answer({ ok: false, ref, code: 'UNKNOWN' })
+      if (finish.kind === 'error' || finish.kind === 'aborted') return await answer({ ok: false, ref, code: testFailure(finish.failure, finish.kind === 'aborted') })
+      return await answer({ ok: true, ref, ms: Date.now() - started })
     } finally {
       testing.delete(botId)
     }

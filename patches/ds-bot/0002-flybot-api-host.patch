@@ -850,7 +850,7 @@ diff --git a/src/host/roster.js b/src/host/roster.js
 diff --git a/src/host/store.js b/src/host/store.js
 --- a/src/host/store.js
 +++ b/src/host/store.js
-@@ -1,21 +1,78 @@
+@@ -1,21 +1,80 @@
  // Store: the saved team (state.json), its migrations, the lock that keeps a second dsh
  // host on the same data from writing it, and the indexes that map a Session to the Bot
  // or group chat it belongs to.
@@ -896,10 +896,12 @@ diff --git a/src/host/store.js b/src/host/store.js
  
 -  /** @type {{version:1, workspaceId?:string, mainBotIds:string[], bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
 -  const state = { version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, revision: 0 }
-+  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>, projects:Record<string,any>, projectRuns:Record<string,string>}} */
++  /** @type {{version:2, workspaceId?:string, mainBotIds:string[], members:Record<string,any>, bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number, invitations:Record<string,any>, authSessions:Record<string,any>, tasks:Record<string,any>, retiredSessions:Record<string,string>, projects:Record<string,any>, projectRuns:Record<string,string>, modelChecks:Record<string,{ok:boolean, code?:string, ref?:string, at:number}>}} */
 +  // `projects` is the durable Project record (#1691); `projectRuns` is the binding a workflow run
 +  // reports, because a run lives in the workflow plugin's own state and cannot carry the field.
-+  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, revision: 0 }
++  // `modelChecks` keeps the last connection test's coded verdict per Bot (#3350) — its presence in
++  // the empty state is what lets a `modelChecks.<botId>` journal line name a path that exists.
++  const state = { version: STATE_VERSION, mainBotIds: [], members: {}, bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, questions: {}, prefs: {}, invitations: {}, authSessions: {}, tasks: {}, retiredSessions: {}, projects: {}, projectRuns: {}, projectMemory: {}, modelChecks: {}, revision: 0 }
    let loaded = null
    let writing = Promise.resolve()
 +  // Every save this host has accepted since it started — a monotonic watermark, never decremented
@@ -1240,7 +1242,7 @@ diff --git a/src/host/store.js b/src/host/store.js
      // Groups from before group settings existed reply in turn, led by a Main Bot member.
      for (const room of Object.values(state.rooms)) {
        if (room.admin !== undefined && ROOM_MODES.includes(room.mode)) continue
-@@ -160,13 +160,499 @@ export function install(rt) {
+@@ -160,13 +160,507 @@ export function install(rt) {
        room.notice ??= ''
        migrated = true
      }
@@ -1291,6 +1293,14 @@ diff --git a/src/host/store.js b/src/host/store.js
 +    // #1453: who owned the Sessions a deleted Bot left behind; a corrupt value resets.
 +    if (!isRecord(state.retiredSessions)) {
 +      state.retiredSessions = {}
++      migrated = true
++    }
++    // #3350: the last coded verdict of each Bot's connection test. A file saved before this key
++    // existed gets the empty table without a migration (a missing key is not a corrupt one, and
++    // marking it would rewrite every team file once); `null` or a scalar is repaired, because the
++    // first test's write would otherwise throw on a team the host calls writable (#2715).
++    if (!isRecord(state.modelChecks)) {
++      state.modelChecks = {}
 +      migrated = true
 +    }
 +    if (ensureOwner()) migrated = true
