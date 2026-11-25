@@ -14,7 +14,7 @@ const KEY = 'ck_test_' + 'z'.repeat(20)
 const identity = { instanceId: 'a'.repeat(32) }
 const USER = 'flybot-workspace-' + 'a'.repeat(32)
 
-function fakeComposio() {
+function fakeComposio({ githubTools = ['GITHUB_LIST_REPOS'] } = {}) {
   const calls = []
   const accounts = new Map()
   const transport = async (method, url, headers, body) => {
@@ -31,9 +31,10 @@ function fakeComposio() {
     if (p.startsWith('/connected_accounts/') && method === 'DELETE') { accounts.delete(decodeURIComponent(p.split('/').pop())); return reply({}) }
     if (p === '/tools') {
       const toolkit = u.searchParams.get('toolkit_slug')
-      const tool = toolkit === 'slack' ? 'SLACK_LIST_CHANNELS' : 'GITHUB_LIST_REPOS'
+      const tools = toolkit === 'slack' ? ['SLACK_LIST_CHANNELS'] : githubTools
       return reply({ items: [
-        { slug: tool, version: '1.0', toolkit: { slug: toolkit }, description: 'List resources', input_parameters: { type: 'object', properties: {} } },
+        ...tools.map(slug => ({ slug, version: '1.0', toolkit: { slug: toolkit }, description: 'Read-only action',
+          annotations: { readOnlyHint: true }, input_parameters: { type: 'object', properties: {} } })),
         { slug: 'COMPOSIO_SEARCH', version: '1', toolkit: { slug: toolkit }, input_parameters: {} },
       ] })
     }
@@ -202,7 +203,7 @@ test('custom MCP servers: public HTTPS only, bearer sealed, endpoint change need
   assert.equal((await v1('DELETE', `/v1/mcp/servers/${id}`)).status, 404)
 })
 
-test('every tool call waits for the owner: pending → approve → runs once, scrubbed', async () => {
+test('manual tool calls wait for the owner, run once, and scrub credentials', async () => {
   const { api, v1, composio, mcp } = make()
   await v1('POST', '/v1/composio/key', { api_key: KEY })
   await v1('POST', '/v1/composio/connections', { toolkit: 'github' })
@@ -320,6 +321,66 @@ test('the pending approval view returns only a boolean without writing expired s
   assert.deepEqual(await pending(),{pending:false})
   assert.equal(readFileSync(api.store.file,'utf8'), saved)
   assert.equal((await v1('GET',path)).body.items[0].status,'expired')
+})
+
+test('verified GitHub reads run automatically only for a trusted private call', async () => {
+  const read = 'GITHUB_CHECK_IF_PULL_REQUEST_MERGED'
+  const alias = 'GITHUB_CHECK_IF_PULL_REQUEST_HAS_BEEN_MERGED'
+  const history = 'GITHUB_LIST_REPOS'
+  const write = 'GITHUB_CREATE_AN_ISSUE'
+  const unknown = 'GITHUB_GET_UNVERIFIED_ACTION'
+  const upstream = fakeComposio({githubTools:[read,alias,history,write,unknown]})
+  const { api } = make({transport:upstream.transport})
+  api.saveKey({api_key: KEY})
+  await api.connect({toolkit:'github'})
+  await api.syncConnections()
+  const args = {owner:'fixture',repo:'example',pull_number:5}
+
+  const shared = await api.callTool(read,args,{waitMs:0})
+  assert.equal(shared.error,'tool_pending')
+  const privateReceipt = api.propose(read,args,{automaticReads:true})
+  assert.notEqual(privateReceipt.id,shared.approval_id)
+  assert.equal(await api.run(privateReceipt.id),null)
+  assert.equal(upstream.calls.filter(call => call.path.includes('/tools/execute/')).length,0)
+
+  for (const name of [read,alias,history]) {
+    const result = await api.callTool(name,args,{automaticReads:true,waitMs:0})
+    assert.equal(result.successful,true)
+    assert.notEqual(result.data.echo,KEY)
+  }
+  for (const name of [write,unknown]) {
+    assert.equal((await api.callTool(name,args,{automaticReads:true,waitMs:0})).error,'tool_pending')
+  }
+  api.saveServer({name:'Remote',url:'https://mcp.example/mcp'})
+  const mcpTool = (await api.discover()).find(tool=>tool.description.startsWith('Remote:'))
+  assert.equal((await api.callTool(mcpTool.name,{}, {automaticReads:true,waitMs:0})).error,'tool_pending')
+  assert.deepEqual(upstream.calls.filter(call => call.path.includes('/tools/execute/'))
+    .map(call=>[call.path.split('/').at(-1),call.body.connected_account_id,call.body.user_id]),
+    [read,alias,history].map(name=>[name,'ca_1',USER]))
+  const items = api.approvals().items
+  assert.equal(items.find(row=>row.id===shared.approval_id).status,'pending')
+  assert.ok(items.slice(0,4).every(row=>row.status==='pending'))
+  assert.deepEqual(items.filter(row=>row.approval_mode==='automatic_read').map(row=>row.status),
+    ['succeeded','succeeded','succeeded'])
+})
+
+test('a burst of automatic read history preserves a write still waiting for approval', async () => {
+  const read = 'GITHUB_LIST_REPOS'
+  const write = 'GITHUB_CREATE_AN_ISSUE'
+  const upstream = fakeComposio({githubTools:[read,write]})
+  const { api, tick } = make({transport:upstream.transport})
+  api.saveKey({api_key:KEY})
+  await api.connect({toolkit:'github'})
+  await api.syncConnections()
+  const pending = await api.callTool(write,{title:'Fixture'},{automaticReads:true,waitMs:0})
+  assert.equal(pending.error,'tool_pending')
+  for (let i = 0; i < 105; i += 1) {
+    tick(1)
+    assert.equal((await api.callTool(read,{page:i+1},{automaticReads:true,waitMs:0})).successful,true)
+  }
+  assert.equal(api.approvals().items[0].id,pending.approval_id)
+  assert.equal(api.approvals().items[0].status,'pending')
+  assert.equal(api.store.read().calls.length,100)
 })
 
 test('MCP endpoint and IP policy', () => {

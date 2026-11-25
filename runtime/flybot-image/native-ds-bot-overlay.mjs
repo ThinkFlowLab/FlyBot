@@ -55,7 +55,7 @@ const files = {
   ],
   'src/host/capabilities.js': [
     '656fcc0b0fb7fd597dfd0f62bd49522d92becd4ed1c77dd53ba016f045614c89',
-    '321be0845446f49d8e0a8a2c6fc6acc95e178042b33a5c37e93aa7f2e6c079ca',
+    'bff22001141ec0ea02714a2e440575adf7d863a036eb91f487f3f7725046349c',
   ],
   'src/host/channel.js': [
     '34b2a23af48a7c90984cca4050d3187816a9873fd513005cfb4663a6b8a33cb8',
