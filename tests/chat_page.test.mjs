@@ -5907,6 +5907,29 @@ test('direct chat uses the personal catalogue and sends or removes only the sele
   } finally {restore();}
 });
 
+test('group chat hides the Bot’s trigger preview and displays a member’s manual quote', async () => {
+  const fixture = linkedChatFixture(`#workspace=${linkTeam}&social=${linkSocial}`);
+  const {doc, el, routes, restore} = fixture;
+  const first = {id:linkSocialOlder, user_id:bob, body:'Check the existing PRs.', created:1, seq:1};
+  const bot = {id:linkSocialLatest, role:'agent', agent_id:linkAgent, agent_name:'FlyBot Lead', agent_owner_id:alice,
+    body:'I will check them.', created:2, seq:2, reply_to:first.id,
+    reply_preview:{available:true,message_id:first.id,author:'Bob',excerpt:first.body}};
+  const manual = {id:'otm_' + 'B'.repeat(26), user_id:alice, body:'Please start with older PRs.', created:3, seq:3,
+    reply_to:bot.id, reply_preview:{available:true,message_id:bot.id,author:'FlyBot Lead',excerpt:bot.body}};
+  routes.set(linkBase(linkTeam) + linkSocialPath, () => json(200, {conversation:{
+    id:linkSocial,workspace_id:linkTeam,title:'Development',kind:'group',members:[linkMember],
+  }, items:[first,bot,manual]}));
+  try {
+    await mount(doc, {fetcher:fixture.fetcher});
+    const row = id => el('message-list').children.find(message => message.dataset.messageId === id);
+    const quote = id => row(id).children.find(node => node.className === 'message-quote');
+    assert.equal(quote(bot.id), undefined);
+    assert.equal(row(bot.id).children[1].textContent, bot.body);
+    assert.equal(quote(manual.id).tagName, 'BUTTON');
+    assert.equal(quote(manual.id).children[1].textContent, bot.body);
+  } finally {restore();}
+});
+
 test('group chat keeps roster tools near the header and shows the authority for ordinary, quoted and selected replies', async t => {
   t.mock.timers.enable({apis:['setTimeout']});
   const fixture = linkedChatFixture(`#workspace=${linkTeam}&social=${linkSocial}`, {narrow:true});

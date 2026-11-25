@@ -5274,7 +5274,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       time.className = 'time';
       time.textContent = formatTime(item.created);
       li.append(role);
-      if (!item.retracted && item.reply_preview) {
+      if (item.role !== 'agent' && !item.retracted && item.reply_preview) {
         const original = editedSources.get(item.reply_preview.message_id);
         const reply = original?.retracted ? {message_id:original.id, available:false}
           : original && item.reply_preview.available ? {...item.reply_preview, excerpt:original.body.replace(/\s+/g, ' ').trim().slice(0,120)}
