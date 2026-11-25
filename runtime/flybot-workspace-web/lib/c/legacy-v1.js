@@ -159,6 +159,7 @@ function messageItem(row, me, env, workspaceId) {
   return {
     id: row.id,
     seq: row.seq,
+    ...(!agent && typeof row.mine === 'boolean' ? {mine: row.mine} : {}),
     ...(row.mine && row.client_key ? {client_key: row.client_key} : {}),
     conversation_id: row.conversation_id,
     workspace_id: workspaceId,

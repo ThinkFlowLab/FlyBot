@@ -193,8 +193,14 @@ export function unclearSocialDelivery(status) {
   return !status || status === 408 || status >= 500 || [200, 201].includes(status);
 }
 
+export function ownSocialMessage(message, viewer) {
+  if (!viewer || !message || message.role === 'agent') return false;
+  // Bot Social checks the authenticated room identity, which can differ from the platform ID.
+  return typeof message.mine === 'boolean' ? message.mine : message.user_id === viewer;
+}
+
 export function ownSocialReceipt(message, destination, key) {
-  return Boolean(message?.id && message.client_key === key && message.user_id === destination.owner &&
+  return Boolean(message?.id && message.client_key === key && ownSocialMessage(message, destination.owner) &&
     message.workspace_id === destination.wid && message.conversation_id === destination.conversationId);
 }
 
