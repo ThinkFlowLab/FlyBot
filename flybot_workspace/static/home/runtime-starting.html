@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>正在启动 · FlyBot</title>
+  <link rel="icon" href="/shell/flybot-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/register/app.css">
+  <script type="module" src="/home/runtime-starting.mjs"></script>
+</head>
+<body class="runtime-starting">
+  <main>
+    <p class="brand">FlyBot</p>
+    <h1 id="runtime-title">正在检查智能体状态</h1>
+    <p id="runtime-status" role="status" aria-live="polite">就绪后会自动继续。</p>
+    <progress id="runtime-progress" aria-label="正在启动专属智能体"></progress>
+    <div id="runtime-draft" hidden>
+      <label for="runtime-first-message">先写一条消息</label>
+      <textarea id="runtime-first-message" rows="3" maxlength="4000" aria-describedby="runtime-draft-hint"></textarea>
+      <p id="runtime-draft-hint" class="hint">草稿会带入个人智能体对话，就绪后可发送。</p>
+    </div>
+    <button type="button" id="runtime-continue" hidden>进入聊天</button>
+    <button type="button" id="runtime-retry" hidden>重试</button>
+    <p id="runtime-home"><a href="/">返回首页</a></p>
+  </main>
+</body>
+</html>

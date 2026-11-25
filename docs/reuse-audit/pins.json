@@ -1,0 +1,180 @@
+{
+  "audit_date_asia_shanghai": "2026-11-16",
+  "method": "Public GitHub and npm registry only; hashes recorded below. Local working trees used only to compare hashes, not as the license source of truth.",
+  "pins": {
+    "openTeamily/openTeamily": {
+      "url": "https://github.com/openTeamily/openTeamily",
+      "ref": "main",
+      "commit": "6144301a3ece15c708301ec233cd0a747bb5b294",
+      "public": true
+    },
+    "ThinkFlowLab/FlyBot": {
+      "url": "https://github.com/ThinkFlowLab/FlyBot",
+      "ref": "main",
+      "commit": "e26895e737b1218875aafa1f74ab1d3464f287d2",
+      "commit_date_utc": "2026-11-16T00:07:14Z",
+      "public": true,
+      "github_license_api": "Apache-2.0",
+      "files": {
+        "LICENSE": {
+          "git_blob_sha": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "bytes": 11357,
+          "url": "https://github.com/ThinkFlowLab/FlyBot/blob/e26895e737b1218875aafa1f74ab1d3464f287d2/LICENSE"
+        },
+        "NOTICE": {
+          "git_blob_sha": "74c107472126b3d7fa69b61778399d6086eaf904",
+          "sha256": "94f05bc42e635dee7082583c010dc13fb084b1ed9cdcfed6b9e5246c763027ca",
+          "bytes": 3835,
+          "url": "https://github.com/ThinkFlowLab/FlyBot/blob/e26895e737b1218875aafa1f74ab1d3464f287d2/NOTICE"
+        }
+      },
+      "note_other_public_commit": {
+        "sha": "1969402ce66384281f927b207a298f64541da4c4",
+        "url": "https://github.com/ThinkFlowLab/FlyBot/commit/1969402ce66384281f927b207a298f64541da4c4",
+        "license_notice_dockerfile_package_json_identical_to_main": true
+      }
+    },
+    "Fei2411/DS-Bot": {
+      "url": "https://github.com/Fei2411/DS-Bot",
+      "also_referenced_as": "Fei2411/DeepSeek-Bot (GitHub resolves to Fei2411/DS-Bot)",
+      "pin_in_flybot": "ds-bot.pin.json commit 2b10c70b614e969117b68ddc6fd14e68968272f2",
+      "commit": "2b10c70b614e969117b68ddc6fd14e68968272f2",
+      "commit_date_utc": "2026-10-14T05:36:14Z",
+      "public": true,
+      "identical_git_blobs_with_flybot_main": [
+        "LICENSE",
+        "NOTICE",
+        "ds-bot/LICENSE",
+        "ds-bot/package.json"
+      ],
+      "historical_flybot_core_pin": {
+        "commit": "2b10c70b614e969117b68ddc6fd14e68968272f2",
+        "commit_date_utc": "2026-10-14T05:36:14Z",
+        "pin_in_flybot": "ds-bot.pin.json commit 2b10c70b614e969117b68ddc6fd14e68968272f2",
+        "note": "Referenced by the #18 audit. The v0.1.5 FlyBot core fork that carried ds-bot.pin.json was not imported (#20)."
+      },
+      "current_runtime_baseline": {
+        "tag": "v0.3.6",
+        "commit": "a66cc737cfb6c3d8a2597e748cded6cab1206dd3",
+        "tree": "runtime/ds-bot-upstream/",
+        "via": "PR #21",
+        "unmodified_pinned_copy": true
+      }
+    },
+    "Birfy/bot-social": {
+      "url": "https://github.com/Birfy/bot-social",
+      "ref": "master",
+      "commit": "8706824f53f6cce8212470bc6b442f7271cccd3e",
+      "commit_date_utc": "2026-11-16T07:41:41Z",
+      "public": true,
+      "github_license_api": "MIT",
+      "files": {
+        "LICENSE": {
+          "sha256": "6f5b168b7397507ec7854d3787079ae4185826ea0a9ade831a269fabe3e737c3",
+          "bytes": 1062,
+          "url": "https://github.com/Birfy/bot-social/blob/8706824f53f6cce8212470bc6b442f7271cccd3e/LICENSE"
+        }
+      }
+    },
+    "deepseek-ai/deepseek-harness": {
+      "url": "https://github.com/deepseek-ai/deepseek-harness",
+      "tag": "dsh-v0.2.1-rc.2",
+      "commit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+      "public": true,
+      "github_license_api_on_default_branch": "MIT",
+      "npm_package": {
+        "name": "@deepseek-ai/dsh",
+        "version": "0.2.1-rc.2",
+        "declared_license": "MIT",
+        "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.2.1-rc.2.tgz",
+        "integrity": "sha512-tvY+yhfKRifthbqPe/OK0AYxM5ZkvqfYq/jMYgJcEUxiRRL1Vwra3Ti5TB6AXgSWQdiPHYh/Vp6SJa9yHwMNuw==",
+        "gitHead_in_registry_metadata": null,
+        "git_tag_correspondence": "unverified"
+      },
+      "files": {
+        "LICENSE": {
+          "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+          "bytes": 1065,
+          "url": "https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/LICENSE"
+        },
+        "THIRD_PARTY_NOTICES.md": {
+          "sha256": "aeea7aa256ede5349cc7903f56a859d54f10b82a45fba7dcce667eb69916dab0",
+          "bytes": 25003,
+          "url": "https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/THIRD_PARTY_NOTICES.md"
+        },
+        "Montserrat-OFL.txt": {
+          "git_blob_sha": "3344bfd4619241f1a83f6431cb8e5c16ce57d2f2",
+          "bytes": 4400,
+          "url": "https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/client/ui-theme/src/styles/Montserrat-OFL.txt"
+        }
+      }
+    },
+    "Birfy/flybot-control-plane": {
+      "url": "https://github.com/Birfy/flybot-control-plane",
+      "public": true,
+      "github_license_api": null,
+      "license_file_in_default_tree": false,
+      "import_allowed": false
+    }
+  },
+  "original_audit": "PR #18 recorded the pins below on 2026-11-16, before the #20 / #21 imports.",
+  "post_import_update": {
+    "date_asia_shanghai": "2026-11-16",
+    "after_pull_requests": [
+      "#20",
+      "#21"
+    ],
+    "note": "This object records where imported trees now live and the current upstream DS-Bot / DSH pins. It is not a new full redistribution audit. #18 hashes and the 0.2.1-rc.2 DSH evidence below are unchanged. Transitive DSH obligations remain open on #3.",
+    "imported_trees": {
+      "runtime/flybot": {
+        "source": "ThinkFlowLab/FlyBot",
+        "commit": "e26895e737b1218875aafa1f74ab1d3464f287d2",
+        "via": "PR #20",
+        "license": "Apache-2.0 + NOTICE",
+        "scope": "needed set only (social plugin, docker helpers, selected docs, LICENSE/NOTICE); core/ and ds-bot.pin.json not imported"
+      },
+      "services/bot-social": {
+        "source": "Birfy/bot-social",
+        "commit": "8706824f53f6cce8212470bc6b442f7271cccd3e",
+        "via": "PR #20",
+        "license": "MIT, Copyright (c) 2026 Birfy",
+        "scope": "needed set only"
+      },
+      "runtime/ds-bot-upstream": {
+        "source": "Fei2411/DS-Bot",
+        "tag": "v0.3.10",
+        "commit": "d104d9ca18d69a35460f14e15dff4d553181433a",
+        "via": "PR #21, updated to v0.3.10 by PR #566",
+        "license": "Apache-2.0",
+        "unmodified_pinned_copy": true,
+        "LICENSE": {
+          "git_blob_sha": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "note": "Same LICENSE blob as the #18 FlyBot / historical DS-Bot pin"
+        },
+        "NOTICE": {
+          "git_blob_sha": "d9618dc66b0ac5e0e15b2e29cc4bd9a86259b0b0",
+          "sha256": "7183b18ec5bd153cb7b207c0c0d8c9c8d83dc5f0add15c116f13027b5dd95050",
+          "bytes": 15883,
+          "note": "Different from the FlyBot / DS-Bot@2b10c70 NOTICE (94f05bc4..., 3835 bytes). v0.3.6 added further DSH-derived file attributions plus Simple Icons (CC0), Context7 (MIT) and Playwright (Apache-2.0) notices. v0.3.8 only extends the Agent logos trademark paragraph (Antigravity, GitHub Copilot, Kimi, MiniMax, Mistral AI; Antigravity marks attributed to the vendor application icon). v0.3.9 adds DSH FishLogo attribution and narrows the description of the remote link key helpers. Recorded by sha256 with a review of those changes."
+        },
+        "dsh_pin_in_runtime": {
+          "version": "0.2.2-rc.1",
+          "source": "runtime/ds-bot-upstream.pin.json",
+          "redistribution_audit": "not done; #18 covered dsh-v0.2.1-rc.2 only"
+        }
+      }
+    }
+  },
+  "shipped_inventory": {
+    "date_asia_shanghai": "2026-11-16",
+    "documents": [
+      "docs/reuse-audit/SHIPPED.md",
+      "docs/reuse-audit/shipped-pins.json",
+      "NOTICE"
+    ],
+    "inventoried_against": "e67e712f9f8389f842c33d204e6c6e6a0014df73",
+    "note": "Coverage for exactly what this revision ships. Historical #18 hashes above are unchanged, including dsh-v0.2.1-rc.2 THIRD_PARTY_NOTICES. DSH 0.2.2-rc.1 evidence and remaining legal blockers live in the shipped inventory. issue 3 remains open. This is not a public redistributable image."
+  }
+}

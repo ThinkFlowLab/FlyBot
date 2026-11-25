@@ -1,0 +1,23 @@
+{
+  "name": "@flybot-workspace/flybot-web-slots",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot dsh web host for the @flybot/social client: globalThis.__flybot__ slot registry, browser call() to /api/flybot, and a bridge onto dsh-web-app slots. Not a fork of upstream ds-bot.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "keywords": ["dsh-plugin", "flybot", "flybot-workspace"],
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

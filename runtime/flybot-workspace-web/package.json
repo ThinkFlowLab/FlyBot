@@ -1,0 +1,26 @@
+{
+  "name": "@flybot-workspace/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot as a DSH plugin inside each user's own DS-Bot: serves the FlyBot pages and the /api/flybot-workspace endpoint from that user's runtime. Phase A shell; see docs/DSBOT_PLUGIN_ARCHITECTURE.md.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "flybot-workspace"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

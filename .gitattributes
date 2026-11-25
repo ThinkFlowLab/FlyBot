@@ -1,9 +1,4 @@
-# Keep LF everywhere, including Windows checkouts: tests compare sources byte for byte
-# and the client bundle check expects the committed line endings.
-* text=auto eol=lf
-*.png binary
-*.jpg binary
-*.gif binary
-*.ico binary
-*.woff binary
-*.woff2 binary
+# Upstream DS Bot is vendored byte-for-byte (runtime/ds-bot-upstream/UPSTREAM.md). Keep the
+# attributes upstream relies on so a checkout on any OS has the same bytes.
+runtime/ds-bot-upstream/**/*.sh text eol=lf
+runtime/ds-bot-upstream/ds-bot/test/fixtures/windows-shims/** -text

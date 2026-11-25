@@ -1,0 +1,35 @@
+{
+  "name": "bot-social",
+  "version": "0.1.0",
+  "description": "Bot Social MVP: owner-governed bot-to-bot social platform",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "mcp": "tsx src/mcp.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc",
+    "botctl": "tsx scripts/botctl.ts",
+    "coverage": "node --import tsx --test --experimental-test-coverage test/*.test.ts"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "better-sqlite3": "^11.10.0",
+    "canonicalize": "^5.1.0",
+    "esbuild": "^0.28.2",
+    "fastify": "^5.12.7",
+    "marked": "^18.1.1",
+    "zod": "^4.6.7"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,91 @@
+name: Management API tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  management:
+    runs-on: ubuntu-24.04
+    # 500+ full Python cases plus all Node commands exceeded the old five-minute
+    # job budget (check135628640078 annotation). Preserve every assertion/test.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: node --version
+      - run: node --test tests/agents_categories.test.mjs
+      - run: node --test tests/agents_category_filter.test.mjs
+      - run: node --test tests/agents_search.test.mjs
+      - run: node --test tests/agents_team_templates.test.mjs
+      - run: node --test tests/artifacts_page.test.mjs
+      - run: node --test tests/automations_page.test.mjs
+      - run: node --test tests/chat_language.test.mjs
+      - run: node --test tests/chat_page.test.mjs
+      - run: node --test tests/chat_dsbot.test.mjs
+      - run: node --test tests/chat_reminder.test.mjs
+      - run: node --test tests/agent_private_sharing.test.mjs
+      - run: node --test tests/chat_call_recording.test.mjs
+      - run: node --test tests/chat_calls_handoff.test.mjs
+      - run: node --test tests/chat_flowchart.test.mjs
+      - run: node --test tests/chat_group_management.test.mjs
+      - run: node --test tests/chat_stickers.test.mjs
+      - run: node --test tests/markdown_table.test.mjs
+      - run: node --test tests/meeting_editor_recovery.test.mjs
+      - run: node --test tests/public_agent_share.test.mjs
+      - run: node --test tests/studio_merge.test.mjs
+      - run: node --test tests/system_locale.test.mjs
+      - run: node --test tests/system_locale_chat.test.mjs
+      - run: node --test tests/team_runs_page.test.mjs
+      - run: node --test tests/ci_test_list.test.mjs
+      - run: node --test tests/guide_page.test.mjs
+      - run: node --test tests/members_page.test.mjs
+      - run: node --test tests/messenger_page.test.mjs
+      - run: node --test tests/team_page.test.mjs
+      - run: node --test manager/compose-planner/compose-command-planner.test.js
+      - run: node --test tests/settings_page.test.mjs
+      - run: node --test tests/settings_support_links.test.mjs
+      - run: node --test tests/shell_page.test.mjs
+      - run: node --test tests/agent_bootstrap.test.mjs
+      - run: node --test tests/ds_bot_bridge.test.mjs
+      - run: node --test tests/model_http_policy.test.mjs
+      - run: node --test tests/memory_page.test.mjs
+      - run: node --test tests/memory_search.test.mjs
+      - run: node --test tests/memory_graph_empty.test.mjs
+      - run: node --test tests/discover_page.test.mjs
+      - run: node --test tests/profile_page.test.mjs
+      - run: node --test tests/profile_avatar.test.mjs
+      - run: node --test tests/meetings_page.test.mjs
+      - run: node --test tests/meetings_action_toggle.test.mjs
+      - run: node --test tests/meetings_attendee_complete.test.mjs
+      - run: node --test tests/dsbot_api_shim.test.mjs
+      - run: node --test tests/onboarding_page.test.mjs
+      - run: node --test tests/agents_creator_filter.test.mjs
+      - run: node --test tests/registration_page.test.mjs
+      - run: node --test tests/skill_imports.test.mjs
+      - run: node --test tests/skills_page.test.mjs
+      - run: node --test tests/home_page.test.mjs
+      - run: node --test tests/look_avatar.test.mjs
+      - run: node --test tests/docs_pages.test.mjs
+      - run: node --test tests/onboarding_step2.test.mjs
+      - run: node --test tests/follow_work_notify.test.mjs
+      - name: Python tests with explicit trusted runner Node
+        run: |
+          install -d -m 0700 "$RUNNER_TEMP/flybot-workspace-planner-bin"
+          install -m 0500 "$(command -v node)" "$RUNNER_TEMP/flybot-workspace-planner-bin/node"
+          export FLYBOT_WORKSPACE_PLANNER_NODE="$RUNNER_TEMP/flybot-workspace-planner-bin/node"
+          python -m unittest discover -s tests -v
+      - run: python -m compileall -q flybot_workspace tests
+      - run: python -m flybot_workspace.server --help
+      - name: Whitespace check excluding imported upstream snapshots
+        run: git diff --check -- . ':(exclude)runtime/flybot' ':(exclude)services/bot-social'

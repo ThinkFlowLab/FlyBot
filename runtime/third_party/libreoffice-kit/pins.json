@@ -1,0 +1,435 @@
+{
+  "inventory_date_asia_shanghai": "2026-11-16",
+  "not_a_legal_opinion": true,
+  "public_redistributable_image": false,
+  "office_functionality": "retained; this tree is a corresponding-source and notices offer, not an exclusion of dsh-skill-office or libreoffice-kit",
+  "npm_packages": {
+    "@deepseek-ai/libreoffice-kit": {
+      "version": "0.1.5",
+      "declared_license_field": "MPL-2.0",
+      "license_field_is": "npm metadata declaration",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/libreoffice-kit/-/libreoffice-kit-0.1.5.tgz",
+      "integrity": "sha512-H12xtUsAyl70zFeQ5pk5GGRc3N1+6zn+DVAcqwlguI6EvqopBGP3xkUmePU7g5f6ydYlDZLWedHT9lTSL7zLxA==",
+      "tarball_sha256": "f3ed9e424e7a25fc0eaee0b23ac754029343dafe7ff9daf710a86825f58ba576",
+      "gitHead_in_registry_metadata": null,
+      "public_git_tag_for_this_version": null,
+      "closest_public_default_branch": {
+        "repo": "https://github.com/deepseek-ai/dsh-libreoffice-kit",
+        "commit": "b19bb73c74ed893b8a5d1716d32df32a113ed31b",
+        "declared_package_version_on_that_commit": "0.1.3",
+        "note": "The public default branch was 0.1.3 when this offer was written. No public git tag or commit containing packages/entry version 0.1.5 was found. Preferred-form TypeScript for the exact 0.1.5 revision is therefore not pinned to a public git object. The in-tree entry/ tree is the exact npm tarball contents (compiled lib/*.js, types, LICENSE, NOTICE).",
+        "commit_date_utc": "2026-09-29T17:42:53Z"
+      }
+    },
+    "@deepseek-ai/libreoffice-kit-wasm": {
+      "version": "0.1.5",
+      "declared_license_field": "MPL-2.0",
+      "license_field_is": "npm metadata declaration",
+      "os": [
+        "linux"
+      ],
+      "description": "Linux Node WebAssembly OOXML-to-PDF engine assets",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/libreoffice-kit-wasm/-/libreoffice-kit-wasm-0.1.5.tgz",
+      "integrity": "sha512-V+pu5xJsKhVD4AU1xbFlMWY91svK9ZIC2JsNOph9kWp/arF/KQcuytt76bcbozJqPbE8o0n04lyh0m3QW5RYSA==",
+      "tarball_sha256": "4d5dda19a257d75fd09776d37a4f37708d7c2e163defede64b3377cb411ed406",
+      "unpacked_size_bytes": 152357942,
+      "file_count": 49,
+      "in_tree": "licenses/ + sources/ + package.json + prebuilds.json only; assets/ (soffice.wasm, soffice.data) are not vendored",
+      "how_reached_in_default_linux_image": "optionalDependency of @deepseek-ai/libreoffice-kit@0.1.5; that package lists no linux-x64 native engine, so a linux npm install may pull this wasm engine. Presence in a built image is not file-listed from a local Docker daemon (none here)."
+    }
+  },
+  "verified_license_text": {
+    "entry/LICENSE": {
+      "what": "Mozilla Public License Version 2.0, copied from the 0.1.5 entry tarball",
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "bytes": 16725,
+      "identical_to_public_repo_LICENSE_on_master": true
+    },
+    "entry/NOTICE": {
+      "what": "NOTICE copied from the 0.1.5 entry tarball; not byte-identical to current public master NOTICE",
+      "sha256": "b8841df06ad9243a1fe973f35943c68a076675829680847bc2f506e9080e8737",
+      "bytes": 1791
+    },
+    "wasm/licenses/LICENSE": {
+      "what": "LibreOffice third-party license bundle shipped in the 0.1.5 wasm package (includes MPL-2 and other third-party terms). Verified as the file in that tarball, not independently re-read as a legal opinion.",
+      "sha256": "31c915ae5b7eafe51f06fc2537d2e7fefdee08e40d6b0d761d03d9f0fd58d660",
+      "bytes": 300898
+    },
+    "wasm/licenses/NOTICE": {
+      "what": "Apache / third-party NOTICE shipped in the 0.1.5 wasm package",
+      "sha256": "8d34210ebbfaee4ba258ef7b30c3044170f356ab82c8259c81b53860bcdeef7b",
+      "bytes": 1859
+    },
+    "wasm/licenses/DeepSeek-Harness-MIT.txt": {
+      "what": "MIT notice for DeepSeek Harness-derived portions, shipped in the 0.1.5 wasm package; sha256 matches the current public kit repo root NOTICE",
+      "sha256": "69393380a3ec85c465dd4b22497a5de04c3408435126d8f50930d46de3886034",
+      "bytes": 1797
+    }
+  },
+  "engine_source_pins_declared_in_wasm_0_1_5": {
+    "core_source_json": {
+      "path": "wasm/sources/core-source.json",
+      "repository": "https://github.com/LibreOffice/core.git",
+      "revision": "bce0998afefdbc355585ca324285661a2170ba77",
+      "origin": "file inside the 0.1.5 wasm tarball",
+      "vendored_here": false,
+      "note": "This commit is also the current submodule sha of engine/core on the public kit default branch, and the font-defs commit cited in the entry NOTICE. The LibreOffice/core tree is not copied into this repository."
+    },
+    "wasm_source_json": {
+      "path": "wasm/sources/engine/wasm-source/source.json",
+      "libreoffice_tag": "libreoffice-26.8.0.3",
+      "source_archive": "https://download.documentfoundation.org/libreoffice/src/26.8.0/libreoffice-26.8.0.3.tar.xz",
+      "emsdk_repository": "https://github.com/emscripten-core/emsdk.git",
+      "emsdk_commit": "5eb0bde7585670252e8ba05e9d361627bffd08b5",
+      "origin": "file inside the 0.1.5 wasm tarball",
+      "archive_hash_verified_this_turn": false
+    }
+  },
+  "unresolved_legal_interpretation": [
+    "Whether compiled lib/*.js in the 0.1.5 entry tarball plus this offer satisfies MPL source-form obligations given that public git currently publishes 0.1.3, not 0.1.5.",
+    "Whether a default FlyBot image that may install the wasm optional dependency 'distributes' that engine, and whether pointing at the in-tree sources/ plus the public LibreOffice/core revision and TDF source archive satisfies MPL 3.3 for that Executable Form.",
+    "The wasm licenses/LICENSE bundle has not been independently legally re-read term-by-term."
+  ],
+  "files": {
+    "entry/LICENSE": {
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "bytes": 16725
+    },
+    "entry/NOTICE": {
+      "sha256": "b8841df06ad9243a1fe973f35943c68a076675829680847bc2f506e9080e8737",
+      "bytes": 1791
+    },
+    "entry/README.md": {
+      "sha256": "41ee9a9f3401cbdb1df47fa9addcf6b65974376d5cdc12166de577028b63ab0b",
+      "bytes": 15198
+    },
+    "entry/README.zh.md": {
+      "sha256": "944cc1ba698c97bc5c4ef6390a030d00fb8bd759fa87ad479bfe64c624cc1aac",
+      "bytes": 14168
+    },
+    "entry/lib/cli.js": {
+      "sha256": "15acbf344b5f23265d6cb50f613d1f8262bf088a6c8f4999bcef8d0448fe6045",
+      "bytes": 89535
+    },
+    "entry/lib/font-snapshot-worker.js": {
+      "sha256": "d9b1830baab80a06101c13e50c3b9ee4e67f75d402566ce0a6fc04a8836e673a",
+      "bytes": 16895
+    },
+    "entry/lib/index.js": {
+      "sha256": "5583ce1754084cb63be913e67821282f484a14b43744f777fd10731af67e3c60",
+      "bytes": 84628
+    },
+    "entry/lib/types/cli.d.ts": {
+      "sha256": "6f77e82bfb5dd3b1015dd92c63e427d505f9bbbdaa041cad6c704f41c553a536",
+      "bytes": 64
+    },
+    "entry/lib/types/document.d.ts": {
+      "sha256": "6159a43a731b6d9313994672cca729f652d914dba7a36715c1b8a95c7608c00f",
+      "bytes": 979
+    },
+    "entry/lib/types/engine-rendering.d.ts": {
+      "sha256": "dcd667581a67a25758175cd2a2b36404beac9db8a4306bb54c02ca1021c73c7a",
+      "bytes": 1173
+    },
+    "entry/lib/types/engine.d.ts": {
+      "sha256": "99a35b23dde79c2b47fd3a8888188e4cccd4dd931b4ce42d5585638faca66fbd",
+      "bytes": 3115
+    },
+    "entry/lib/types/errors.d.ts": {
+      "sha256": "52b257ce931dfb47fa22af76cfc604f11046e9eddb5f935ee909fe4e39b8117f",
+      "bytes": 1354
+    },
+    "entry/lib/types/font-file-identity.d.ts": {
+      "sha256": "d25e5ab247594f1483a9d057e3b3ee26ceca60dad3e6da445e20040d384b1613",
+      "bytes": 612
+    },
+    "entry/lib/types/font-full.d.ts": {
+      "sha256": "559d238feea9407403b62e79c727856e398bedaa5c72f4bd8b6ea056149eab0f",
+      "bytes": 754
+    },
+    "entry/lib/types/font-loader.d.ts": {
+      "sha256": "906dc942ddb87e446c77c70486f0e7be3382bee5d9828841ca7c580da9bf57c3",
+      "bytes": 2062
+    },
+    "entry/lib/types/font-metadata-cache.d.ts": {
+      "sha256": "f23141ac08f387b1bf1341130050d0ff01bf5a0e264992a5aac2bdc221dc620e",
+      "bytes": 906
+    },
+    "entry/lib/types/font-snapshot-state.d.ts": {
+      "sha256": "230b0dca36de3af7745a2e20ff38f3e3d82d05fe9520d66acffc3bdb10465093",
+      "bytes": 934
+    },
+    "entry/lib/types/font-snapshot-validation.d.ts": {
+      "sha256": "65f6b8f4ea72a29610a0de09049932d478756de5f5c5cb8100bfa4ace1f0cead",
+      "bytes": 282
+    },
+    "entry/lib/types/font-snapshot-worker.d.ts": {
+      "sha256": "92e2f2e35736436d3f5d225394df28409b45d304c5cebbda875d96741d9ca27e",
+      "bytes": 380
+    },
+    "entry/lib/types/font-snapshot.d.ts": {
+      "sha256": "c7d5893b6a9509a4e283c354220811ebf253da9b16bdf10f4d515809dcb3fb83",
+      "bytes": 610
+    },
+    "entry/lib/types/fonts.d.ts": {
+      "sha256": "e83ca2d3f19e5ec1c435efeb866fbee511e83469a1e1e710eb81e39dbc2051c7",
+      "bytes": 7127
+    },
+    "entry/lib/types/image-operations.d.ts": {
+      "sha256": "4cc5ba82fbbfadd300a6fa292e1609216bdaff19d32d2e0a6d79a23145b3dec4",
+      "bytes": 2596
+    },
+    "entry/lib/types/image-renderer.d.ts": {
+      "sha256": "4573d0a2340cc6db93d8a431ba709d5871e1e9099f32ab0d7fd564509cb6f5ce",
+      "bytes": 351
+    },
+    "entry/lib/types/index.d.ts": {
+      "sha256": "1b2e3b13334a31ee46326c83bb357491c9d13888c333b208ec48626fb0ad9194",
+      "bytes": 5782
+    },
+    "entry/lib/types/native-font-names.d.ts": {
+      "sha256": "5c7b88642936b75acdb9057eecd33e12ba7680561787d10f77485f6d4e2f8eed",
+      "bytes": 200
+    },
+    "entry/lib/types/native-image-renderer.d.ts": {
+      "sha256": "956f4e02cad5dfd2c23a5f6714d352d59ebf275f454026e7fe26db79908af798",
+      "bytes": 891
+    },
+    "entry/lib/types/native-process.d.ts": {
+      "sha256": "a5154e2bc11f011bb1ff2a04d8b119f98f1744cf8099b3f1aa31a92d215b7ddc",
+      "bytes": 918
+    },
+    "entry/lib/types/native.d.ts": {
+      "sha256": "daf83e1322ac0b9527bbe1f27760943945f1a697a23c5a69fd5feaf71b1ac4ac",
+      "bytes": 3173
+    },
+    "entry/lib/types/office-fonts.d.ts": {
+      "sha256": "499313f154976f69db1920d80357bae904a36809e886dfa986cc7b8d83071ea4",
+      "bytes": 506
+    },
+    "entry/lib/types/ooxml.d.ts": {
+      "sha256": "8f1e4e62a5c7690329470a988fa6ade24b491609b32a888e8dcd1555b3828169",
+      "bytes": 1025
+    },
+    "entry/lib/types/operations.d.ts": {
+      "sha256": "8ab9e3ebcd6c9b829e17f8d918b4212f7faee329d8d4babeff8941d34680f913",
+      "bytes": 1771
+    },
+    "entry/lib/types/options.d.ts": {
+      "sha256": "54ba0213a7b7e16f4fdc78e00c8a8bf2a767ee2311229e359c60a59337d14f4e",
+      "bytes": 1570
+    },
+    "entry/lib/types/png.d.ts": {
+      "sha256": "eb887f2e26c20a7a642aaeba5a07e4414e83a14baf43829ed910d428a65ff875",
+      "bytes": 149
+    },
+    "entry/lib/types/profile.d.ts": {
+      "sha256": "4e373c7805d8edf1ad37652bcb2b4a443e35d2b7ca474d6f3227dc0430b3d73d",
+      "bytes": 465
+    },
+    "entry/lib/types/rendering.d.ts": {
+      "sha256": "eccde0f904ac6de9d34a2cb578f7991d41558baea15aeccd947084a63d0ab925",
+      "bytes": 1811
+    },
+    "entry/lib/types/runtime.d.ts": {
+      "sha256": "55830bc7befbc27ca75bcb4500e1f2b1b9ab8e2cecc547f452e0cae843f631e4",
+      "bytes": 609
+    },
+    "entry/lib/types/sheet-geometry.d.ts": {
+      "sha256": "3717b85d2155b16fdb79febe4a4585d7f142bb50b54f4fb2c3cd1cf165a0cc63",
+      "bytes": 1420
+    },
+    "entry/lib/types/wasm.d.ts": {
+      "sha256": "bf61171ec708b30d9d8c91c7522f6c53aa341e3c8e1693fa3fadd282b0e8cf77",
+      "bytes": 4026
+    },
+    "entry/lib/types/worker.d.ts": {
+      "sha256": "011eb8f80486e0671ccd41b7c20807dd83fe8ffdf53e7d41b808bf49a36c1323",
+      "bytes": 900
+    },
+    "entry/lib/worker.js": {
+      "sha256": "03920e4616cc44adcf30d5f81ed07261889ed6f9956f7c5bde92747184c33137",
+      "bytes": 60303
+    },
+    "entry/package.json": {
+      "sha256": "ee3f6e20251427b6ea1d8757397453cf4a218193da6ee2ae08f95d63a6c05a95",
+      "bytes": 1392
+    },
+    "wasm/licenses/DeepSeek-Harness-MIT.txt": {
+      "sha256": "69393380a3ec85c465dd4b22497a5de04c3408435126d8f50930d46de3886034",
+      "bytes": 1797
+    },
+    "wasm/licenses/LICENSE": {
+      "sha256": "31c915ae5b7eafe51f06fc2537d2e7fefdee08e40d6b0d761d03d9f0fd58d660",
+      "bytes": 300898
+    },
+    "wasm/licenses/NOTICE": {
+      "sha256": "8d34210ebbfaee4ba258ef7b30c3044170f356ab82c8259c81b53860bcdeef7b",
+      "bytes": 1859
+    },
+    "wasm/package.json": {
+      "sha256": "24cb97d4c240634be77dc39813de37771d783b38c34e9a4a537f5c88a6ad058f",
+      "bytes": 783
+    },
+    "wasm/prebuilds.json": {
+      "sha256": "302237d6b29faf2dc2edcf81cf97b6f8bedc45639216d2887911977c9a1b784e",
+      "bytes": 8956
+    },
+    "wasm/sources/build-autogen.input": {
+      "sha256": "d3b017df5f5daade84df90ae94f628b29a902aae3f6bbab58d12b54a2ade46f8",
+      "bytes": 755
+    },
+    "wasm/sources/core-source.json": {
+      "sha256": "39340edab26fd8f702380a0b9fedcfcc6a181793b46dd6d7dee01fa80a2458f0",
+      "bytes": 120
+    },
+    "wasm/sources/docs/ui-resources.md": {
+      "sha256": "0bd35571ca3cc57c6e9b927402b0bb789cedf8755dce7e3e9de00ff3226d9c07",
+      "bytes": 8540
+    },
+    "wasm/sources/engine/build-identity.mjs": {
+      "sha256": "d8e3032f1a589b0877a3822fe9e4a4363427352e0a024a6824791887cf8644cc",
+      "bytes": 2749
+    },
+    "wasm/sources/engine/core-source.mjs": {
+      "sha256": "7978aec9b96adb6c98d1804fbccdfdffac16a6387d781e4b5950998b47726bd0",
+      "bytes": 1599
+    },
+    "wasm/sources/engine/document-operations.hxx": {
+      "sha256": "d1762ee80b195f984e9c57372090d14c33d98698dd23fcbf2e94210ac65e7b8b",
+      "bytes": 2250
+    },
+    "wasm/sources/engine/ui-resource-policy.mjs": {
+      "sha256": "be3dfc3dcf102e9da060ea0c6564a781e81ff8413de1696e0c099e05fd29431b",
+      "bytes": 1275
+    },
+    "wasm/sources/engine/wasm-source/autogen.input": {
+      "sha256": "d2bc5b3f084653e6cce13b79c88eed5f7bba0ba1f5088027fc94c95edafbb0e8",
+      "bytes": 681
+    },
+    "wasm/sources/engine/wasm-source/build.mjs": {
+      "sha256": "d7350ff446ffc5f0b6672d437b00ed3890cc588c2e21a499454a830d272b2b4b",
+      "bytes": 13872
+    },
+    "wasm/sources/engine/wasm-source/lok.cxx": {
+      "sha256": "160878b31c5bd4304e257fba0c1e1ce3205896cb692a135369cf6f0510c5789f",
+      "bytes": 17277
+    },
+    "wasm/sources/engine/wasm-source/patches/0001-macos-build-tools.patch": {
+      "sha256": "eeb6258c0dbc386160d904be7001a0bf7d279c9e5d2f91964c4578e26f649374",
+      "bytes": 4850
+    },
+    "wasm/sources/engine/wasm-source/patches/0002-system-font-demand.patch": {
+      "sha256": "641952185d8801d5de61cb995337a6833f19f1248a89b07835a7b9f55aaa44cf",
+      "bytes": 14394
+    },
+    "wasm/sources/engine/wasm-source/patches/0003-node-runtime.patch": {
+      "sha256": "eab28d72335db04e1f0056c24103ba3975ef8c9984008db30e38774393ee8f54",
+      "bytes": 3868
+    },
+    "wasm/sources/engine/wasm-source/patches/0004-system-fonts-only.patch": {
+      "sha256": "3d6e23df5a61c26a18dee7909109c25115b52c0ac0ea04719245adffe3083cde",
+      "bytes": 577
+    },
+    "wasm/sources/engine/wasm-source/patches/0005-cross-build-rules.patch": {
+      "sha256": "a9ad0814ec48b15cde6db008e45fded10cef87a518abf566ff6748c7a3c6757e",
+      "bytes": 1814
+    },
+    "wasm/sources/engine/wasm-source/patches/0006-wasm-external-platforms.patch": {
+      "sha256": "8cbef6be577728a68d8b62dcdc973b51d9fcc5342089cf02d5e0aab8586d38af",
+      "bytes": 2100
+    },
+    "wasm/sources/engine/wasm-source/patches/0008-disable-link-updates.patch": {
+      "sha256": "cf91a360d4b8ec068a5ab928d823b2adf24ec23e63e68f5ce6a9f5957d49fba9",
+      "bytes": 1524
+    },
+    "wasm/sources/engine/wasm-source/patches/0009-disable-optional-curl.patch": {
+      "sha256": "3f69f41557cc997ac8a98fad528e05c81163358879f4e01ea5ccdab6660dcc17",
+      "bytes": 401
+    },
+    "wasm/sources/engine/wasm-source/patches/0010-refresh-component-registry.patch": {
+      "sha256": "c3eeb466deca20c85f60ee9985532e53340e6fea1cc72a26c21de0def0279804",
+      "bytes": 622
+    },
+    "wasm/sources/engine/wasm-source/patches/0011-preserve-optimization-with-prefix-maps.patch": {
+      "sha256": "6649d571003b237488692724b147dbc97087c5514c0964847755c492349fc2db",
+      "bytes": 1614
+    },
+    "wasm/sources/engine/wasm-source/patches/0012-anonymize-explicit-source-paths.patch": {
+      "sha256": "2cefd27573199e8387f97272239819d6a845607b55b7159e2793d03075cab2a0",
+      "bytes": 1698
+    },
+    "wasm/sources/engine/wasm-source/patches/0023-pdfium-for-embedded-graphics.patch": {
+      "sha256": "edc871a761e64b3e68afd6ee30dcc5cad0953e5278ade72da24ef7d21e9b98f8",
+      "bytes": 758
+    },
+    "wasm/sources/engine/wasm-source/patches/0024-pdfium-emscripten-platform.patch": {
+      "sha256": "ff2596df7507fa19c41c1c524722c7a45e535194cafbef208a7818bd7a953fb5",
+      "bytes": 355
+    },
+    "wasm/sources/engine/wasm-source/patches/0025-browser-editing.patch": {
+      "sha256": "82affcd48ca021dfa2abf7c5645091c559204697c8c500cfd5363463e5aa889c",
+      "bytes": 517
+    },
+    "wasm/sources/engine/wasm-source/patches/0028-synchronous-workbook-calculation.patch": {
+      "sha256": "811a5d68a31f5ae451b0753953bac24d5831efbf1f106d8832d4854be32ebc72",
+      "bytes": 2650
+    },
+    "wasm/sources/engine/wasm-source/patches/0029-unloaded-external-blip.patch": {
+      "sha256": "fe1f0f46cafefef9688dfa086cb3aab89b5deff5d0a0876c2329aad90189ef2e",
+      "bytes": 757
+    },
+    "wasm/sources/engine/wasm-source/patches/0030-no-password-strength-ui.patch": {
+      "sha256": "41ef274bf30ba69fa77df364c30171cd593d958a54f5e394edcfc65ec9cb1fe7",
+      "bytes": 3850
+    },
+    "wasm/sources/engine/wasm-source/patches/0031-size-optimization-lto.patch": {
+      "sha256": "6a358c30d2047ee34bf04e54421dc9e1f1f29d553f17b63f60c22e8eb142c782",
+      "bytes": 905
+    },
+    "wasm/sources/engine/wasm-source/slim.mjs": {
+      "sha256": "9b8d8482a78f578f625117e62fd6f162c418b86a492ab8bc553d406f5cb4a821",
+      "bytes": 3625
+    },
+    "wasm/sources/engine/wasm-source/source.json": {
+      "sha256": "5cbd80154f0d6a83442335ffec195021709d0ba26319758f9ad9e24c083e1709",
+      "bytes": 501
+    },
+    "wasm/sources/engine/wasm-source/source.mjs": {
+      "sha256": "826d22ddff565452db235dd5a574eda666d712fb6f4f9aea12f5352a9f4e9a70",
+      "bytes": 619
+    },
+    "wasm/sources/engine/wasm-source/stage.mjs": {
+      "sha256": "06743684076898c2587baea4d9b6b0c1831dc2c6997e7c2f031748880bf30386",
+      "bytes": 5924
+    },
+    "wasm/sources/scripts/checkout-wasm.mjs": {
+      "sha256": "c11e32ab1720f510c9265d23e9addf2f0679ca581b8c45299094b26cca256278",
+      "bytes": 1360
+    },
+    "wasm/sources/scripts/core-checkout.mjs": {
+      "sha256": "45c87140618e24747b625d0db0bdc37bbb43e79c0ca4c4334f3c9168c5b17e7d",
+      "bytes": 1918
+    },
+    "wasm/sources/scripts/minimize-ui-resources.py": {
+      "sha256": "91f5f21b8ea240c2dfddd0811e52135526d4542d2375be05f5d2ab2046ebf502",
+      "bytes": 10535
+    },
+    "wasm/sources/scripts/pack-utils.mjs": {
+      "sha256": "aa5368e0dd38d90459f0ef14e1d4b27740aef2f4e46617aca6d6fafed0577a44",
+      "bytes": 3327
+    },
+    "wasm/sources/scripts/platform-matrix.mjs": {
+      "sha256": "2491f2edf601a67be308d2641f049c323e66e1a1d352baa20e6801eec931f3c6",
+      "bytes": 5117
+    },
+    "wasm/sources/scripts/verify-artifacts.mjs": {
+      "sha256": "c3d58bda9410d92032dcd38100c270d0d010d4a99ee9c9d91b5559350080cdd4",
+      "bytes": 16003
+    },
+    "wasm/sources/source-changes.patch": {
+      "sha256": "d91124546ab0502728693e537c9570b0290c8bbc2bf06d063551a0960da459cc",
+      "bytes": 47132
+    }
+  }
+}

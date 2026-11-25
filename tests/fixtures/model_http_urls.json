@@ -1,0 +1,234 @@
+[
+  {
+    "url": "http://8.8.4.4:8080/v1",
+    "allowed": true
+  },
+  {
+    "url": "http://9.9.9.9:80/api/model-v1",
+    "allowed": true
+  },
+  {
+    "url": "http://1.1.1.1:65535/a.b_c-~/v1",
+    "allowed": true
+  },
+  {
+    "url": "http://0.0.0.0:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://0.1.2.3:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://10.1.1.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://100.64.0.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://100.127.255.254:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://127.0.0.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://169.254.169.254:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://172.16.0.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://172.31.255.254:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://192.0.0.9:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://192.0.2.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://192.88.99.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://192.168.1.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://198.18.0.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://198.19.255.254:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://198.51.100.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://203.0.113.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://224.0.0.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://239.255.255.255:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://240.0.0.1:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://255.255.255.255:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:0/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:65536/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:08080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:+8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1/",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1?",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1#",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1?q=x",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1#x",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/a/../v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/./v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080//v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/%76%31",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1\\x",
+    "allowed": false
+  },
+  {
+    "url": "http://u@8.8.4.4:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://u:p@8.8.4.4:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://[::1]:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://[::ffff:8.8.4.4]:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://[2001:4860:4860::8888]:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4.:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://008.008.004.004:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://010.010.04.04:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://0x08080404:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://134743044:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://localhost:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://example.test:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://*.example.test:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "HTTP://8.8.4.4:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "https://8.8.4.4:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": " http://8.8.4.4:8080/v1",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1\n",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/v1\r\n",
+    "allowed": false
+  },
+  {
+    "url": "http://8.8.4.4:8080/\uff561",
+    "allowed": false
+  }
+]

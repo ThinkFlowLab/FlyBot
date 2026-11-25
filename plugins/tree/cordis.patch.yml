@@ -1,4 +1,0 @@
-# Mounts flybot-tree (needs ds-bot, which provides the flybot service).
-- insert:
-    - id: flybot-tree
-      name: '@flybot/tree'

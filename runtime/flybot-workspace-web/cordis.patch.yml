@@ -1,0 +1,5 @@
+# Mount FlyBot's DS-Bot plugin (pages + /api/flybot-workspace) in the web profile.
+# Server-only: no browser half yet (phase A). Never mounts a second ds-bot.
+- insert:
+    - id: flybot-workspace-web
+      name: '@flybot-workspace/web'

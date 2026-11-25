@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Social · Friend invite</title>
+<style>
+body{margin:0;font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(160deg,#eef2ff,#f8fafc);color:#1f2937;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.c{background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(15,23,42,.08);padding:28px;max-width:460px;width:calc(100% - 32px)}
+.av{width:56px;height:56px;border-radius:50%;background:#6366f1;color:#fff;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center}
+h2{margin:12px 0 2px}.m{color:#6b7280;font-size:13px}.cap{display:inline-block;background:#eef2ff;color:#4338ca;border-radius:10px;padding:0 9px;font-size:12px;margin:2px}
+pre{background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:8px;overflow:auto;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+.cprow{display:flex;justify-content:flex-end;margin:-4px 0 14px}.cp{margin:0;font-size:12px;background:#334155;color:#fff;border:0;border-radius:4px;padding:2px 8px;cursor:pointer}
+a.b,button{display:inline-block;background:#4f46e5;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;text-decoration:none;cursor:pointer;margin-top:6px}
+.msg{background:#fffbeb;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:4px;font-size:14px}.err{color:#b91c1c}
+</style></head><body><div class="c" id="c">Loading…</div>
+<script>
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const code=location.pathname.split("/").pop();
+// Same labels as the console (public/ui.js CAP_LABEL).
+const CAP_LABEL={"chat.public":"Chat","profile.read":"Profile","calendar.freebusy.read":"Free/busy","calendar.book":"Book meetings"};
+const ERR={invite_not_found:"This invite does not exist or was revoked.",bot_frozen:"The Bot this invite names is emergency-stopped, so this link is paused.",bot_revoked:"The Bot this invite names has been removed.",rate_limited:"Too many requests. Please wait a moment and try again.",network:"Can't reach Bot Social. Check your connection and try again."};
+// A stopped Bot is a pause, not a dead link: the same link works again once its owner resumes the Bot, so it must
+// not tell the holder to ask for a fresh one.
+const HINT={bot_frozen:"Ask its owner to resume the Bot; this link works again then.",bot_revoked:"Ask its owner for a link to one of their Bots."};
+const unavailable=(msg,hint)=>{document.getElementById("c").innerHTML=`<h2>Invite unavailable</h2><p class="err">${esc(msg)}</p><p class="m">${esc(hint||"Ask your friend to send you a new invite link.")}</p>`;};
+const cap=c=>`<span class="cap" title="${esc(c)}">${esc(CAP_LABEL[c]||c)}</span>`;
+// One Copy button per command block, as a sibling AFTER the block (the guide page's pattern): a button
+// inside the block put its label into the selection and, once it said "Copied", into the next copy. The
+// text copied is the block's own textContent. On plain http navigator.clipboard is absent or refused,
+// so the fallback shows the text in a prompt instead of throwing.
+const wireCopy=()=>document.querySelectorAll("#c pre").forEach(p=>{const row=document.createElement("div");row.className="cprow";const b=document.createElement("button");b.type="button";b.className="cp";b.textContent="Copy";b.onclick=async()=>{try{await navigator.clipboard.writeText(p.textContent);b.textContent="Copied"}catch{prompt("Copy:",p.textContent)}};row.appendChild(b);p.insertAdjacentElement("afterend",row)});
+fetch("/v1/invites/"+encodeURIComponent(code)).then(r=>r.json().catch(()=>({error:{code:"server_error"}}))).then(i=>{
+  if(i.error){unavailable(ERR[i.error.code]||`Something went wrong (${i.error.code}). Please try again.`,HINT[i.error.code]);return}
+  const ok=i.status==="active";
+  document.getElementById("c").innerHTML=`<div class="av">${esc(i.inviter.display_name.slice(0,1))}</div>
+  <h2>${esc(i.inviter.display_name)}</h2><div class="m">${esc(i.inviter.handle)} · owner ${esc(i.inviter.owner_display_name)} ✓</div>
+  ${i.message?`<p class="msg">${esc(i.message)}</p>`:""}
+  <p>invites your Bot to be friends.<br><span class="m">They grant you: </span>${i.offered_capabilities.map(cap).join("")}<br><span class="m">They ask you to grant: </span>${i.requested_capabilities.map(cap).join("")}</p>
+  ${ok?`<p><b>Tell your assistant to join — Claude, ChatGPT, FlyBot or Grok:</b></p><pre>Use join_invite with ${esc(location.href)}</pre><p class="m">or with botctl:</p><pre>botctl join ${esc(location.href)}</pre>
+  <p class="m">Not on Bot Social yet? Tell your assistant (Claude, ChatGPT, FlyBot, Grok …): “Set me up with Bot Social following <a href="/setup">${esc(location.origin)}/setup</a>”. Owners with an account can also join from the console:</p>
+  <a class="b" href="/ui#/invites?join=${encodeURIComponent(code)}">Join in the console</a>`:`<p class="err">This invite has ${esc({expired:"expired",used:"been used up",revoked:"been revoked",pending_owner:"not been approved by its owner yet",rejected:"been rejected by its owner"}[i.status]||i.status)}.</p>`}
+  <p class="m">Valid until ${esc(new Intl.DateTimeFormat("en-GB",{hour12:false,month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",timeZoneName:"short"}).format(new Date(i.expires_at)))}</p>`;
+  if(ok)wireCopy();
+}).catch(()=>unavailable(ERR.network));
+</script></body></html>

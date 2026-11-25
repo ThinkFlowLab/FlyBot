@@ -1,0 +1,310 @@
+import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+export const effectsTier = () => {
+  const tier = typeof document === 'undefined' ? undefined : (document.body?.dataset?.btEffects || document.documentElement?.dataset?.btEffects)
+  return tier === 'reduced' || tier === 'off' ? tier : 'full'
+}
+export const reducedMotion = () => effectsTier() === 'off' || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true)
+export const reducedEffects = () => effectsTier() !== 'full' || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true)
+// Touch devices never hover: controls revealed on hover need a tap path instead.
+export const noHover = () => window.matchMedia?.('(hover: none)').matches === true
+
+// The bottom edge of what the user can see: window.innerHeight, or the visible
+// region the visual viewport reports while the on-screen keyboard is open —
+// innerHeight does not shrink for it.
+export const viewBottom = () => (window.visualViewport ? window.visualViewport.height + window.visualViewport.offsetTop : window.innerHeight)
+
+// Re-renders whenever the visual viewport moves or resizes (keyboard opens, the
+// URL bar collapses), so anchored layers can re-read their anchor's rect.
+// `enabled` false listens to nothing, for a layer that is not open.
+export function useViewport(enabled = true) {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!enabled || !viewport) return undefined
+    const bump = () => setTick(value => value + 1)
+    viewport.addEventListener('resize', bump)
+    viewport.addEventListener('scroll', bump)
+    return () => { viewport.removeEventListener('resize', bump); viewport.removeEventListener('scroll', bump) }
+  }, [enabled])
+  return tick
+}
+
+// A damped spring (mass 1) sampled into a CSS linear() easing, for WAAPI glides
+// and CSS transitions alike.
+export function springEasing(stiffness, damping) {
+  const w0 = Math.sqrt(stiffness)
+  const zeta = damping / (2 * w0)
+  const at = (t) => {
+    if (zeta >= 1) return 1 - (1 + w0 * t) * Math.exp(-w0 * t)
+    const wd = w0 * Math.sqrt(1 - zeta * zeta)
+    return 1 - Math.exp(-zeta * w0 * t) * (Math.cos(wd * t) + (zeta * w0 / wd) * Math.sin(wd * t))
+  }
+  let end = 0.05
+  while (end < 2 && Math.abs(1 - at(end)) > 0.001) end += 0.01
+  const points = Array.from({ length: 25 }, (_, index) => (index === 24 ? 1 : at(end * index / 24)).toFixed(4))
+  // `progress(ms)` is the same curve for a glide a script drives frame by frame, one
+  // that follows a target moving as it goes; it reads 1 once `duration` has passed.
+  const duration = Math.round(end * 1000)
+  const progress = ms => (ms >= duration ? 1 : ms <= 0 ? 0 : at(ms / 1000))
+  return { duration, easing: `linear(${points.join(',')})`, stiffness, damping, progress }
+}
+
+// The capsule's two springs: a gentle one (ω=20, ζ=0.78) reshapes surfaces, a
+// tighter one (ω=30, ζ=0.8) answers the press.
+export const SPRING_SHAPE = springEasing(400, 31.2)
+export const SPRING_TAP = springEasing(900, 48)
+// Rows of a list move to new places on ω=22, ζ=0.8.
+export const SPRING_LIST = springEasing(484, 35.2)
+// A looser spring (ω≈18, ζ≈0.56) that overshoots a little, for a surface that stretches
+// open, and a quicker one for a mark that pops in.
+export const SPRING_STRETCH = springEasing(320, 20)
+export const SPRING_POP = springEasing(500, 22)
+// A thumb's two edges: the one in front runs the fast spring (ω=28), the one behind
+// the slower one (ω=17), so the thumb stretches into the move and settles behind it
+// within about a quarter second.
+export const SPRING_LEAD = springEasing(784, 48.2)
+export const SPRING_TRAIL = springEasing(289, 29.2)
+// Critically damped layout glide (ω≈31.6, ζ=1) for sidebar row reordering.
+export const SPRING_GLIDE = springEasing(1000, 63)
+// A highlight that follows the keyboard and pointer down a list keeps up on stiffer
+// edges (ω=30 and ω=20).
+export const QUICK_EDGES = { lead: springEasing(900, 51), trail: springEasing(400, 34) }
+
+export const spring = (curve, ...properties) => properties.map(property => `${property} ${curve.duration}ms ${curve.easing}`).join(',')
+
+// Springs stepped once per frame. A new target keeps the current velocity, so a thumb
+// that is sent somewhere else mid-move turns smoothly instead of starting over. Each
+// frame covers the whole time since the last one, like a CSS transition, so a busy
+// page delays the thumb instead of slowing it down.
+function liveSprings(apply) {
+  const values = new Map()
+  const current = {}
+  let frame = 0
+  let last = 0
+  const step = (now) => {
+    const dt = Math.min(0.5, Math.max(0.001, (now - last) / 1000))
+    last = now
+    const steps = Math.ceil(dt * 240)
+    const h = dt / steps
+    let moving = false
+    for (const [key, value] of values) {
+      for (let index = 0; index < steps; index += 1) {
+        value.v += (-value.k * (value.x - value.to) - value.c * value.v) * h
+        value.x += value.v * h
+      }
+      if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) { value.x = value.to; value.v = 0 } else moving = true
+      current[key] = value.x
+    }
+    apply(current)
+    frame = moving ? requestAnimationFrame(step) : 0
+  }
+  return {
+    target: () => {
+      if (!values.size) return null
+      const out = {}
+      for (const [key, value] of values) out[key] = value.to
+      return out
+    },
+    set(targets, curves, jump) {
+      for (const [key, to] of Object.entries(targets)) {
+        const value = values.get(key)
+        const { stiffness: k, damping: c } = curves[key]
+        if (!value || jump) { values.set(key, { x: to, v: 0, to, k, c }); current[key] = to }
+        else Object.assign(value, { to, k, c })
+      }
+      if (jump) { cancelAnimationFrame(frame); frame = 0; apply(current); return }
+      if (!frame) { last = performance.now(); frame = requestAnimationFrame(step) }
+    },
+    stop: () => cancelAnimationFrame(frame),
+  }
+}
+
+const CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]'
+
+// One thumb for a row (or column) of choices that glides to the chosen one. Attach
+// `box` to the positioned container and `thumb` to an absolutely placed child; the
+// thumb appears in place with a new box, then springs on every change of `key`. The
+// box gets data-glide once the thumb is placed, so its CSS can drop the chosen item's
+// own fill. `selector` finds the chosen item; with none the thumb gets data-hidden.
+// `box` takes a ref the caller already holds for the container.
+export function useGlide(key, { axis = 'x', selector = CHOSEN, lead = SPRING_LEAD, trail = SPRING_TRAIL, box: given } = {}) {
+  const ownBox = useRef(null)
+  const box = given ?? ownBox
+  const thumb = useRef(null)
+  const own = useRef(null)
+  if (own.current === null) {
+    own.current = {
+      key: undefined, axis, node: null, observer: null,
+      springs: liveSprings(({ start, end }) => {
+        const knob = thumb.current
+        if (!knob) return
+        const currentAxis = own.current.axis
+        knob.style.transform = currentAxis === 'x' ? `translateX(${start}px)` : `translateY(${start}px)`
+        knob.style[currentAxis === 'x' ? 'width' : 'height'] = `${Math.max(0, end - start)}px`
+      }),
+    }
+  }
+  // `jump` places without motion, and only when the chosen item moved: a box that
+  // resizes while the thumb is under way does not cut the glide short.
+  const place = (jump) => {
+    const container = box.current
+    const knob = thumb.current
+    if (!container || !knob) return
+    const currentAxis = own.current.axis
+    const chosen = container.querySelector(selector)
+    if (!chosen) { knob.dataset.hidden = ''; return }
+    const start = currentAxis === 'x' ? chosen.offsetLeft : chosen.offsetTop
+    const end = start + (currentAxis === 'x' ? chosen.offsetWidth : chosen.offsetHeight)
+    const { springs } = own.current
+    const before = springs.target()
+    const hidden = knob.dataset.hidden !== undefined
+    if (jump && !hidden && before?.start === start && before?.end === end && container.dataset.glide !== undefined) return
+    delete knob.dataset.hidden
+    const forward = before === null || start >= before.start
+    springs.set({ start, end }, forward ? { start: trail, end: lead } : { start: lead, end: trail }, jump || hidden || before === null || reducedMotion())
+    container.dataset.glide = ''
+  }
+  useLayoutEffect(() => {
+    const state = own.current
+    const node = box.current
+    const axisChanged = axis !== state.axis
+    if (node === state.node && key === state.key && !axisChanged) return
+    const fresh = node !== state.node || axisChanged
+    state.key = key
+    if (axisChanged) {
+      state.axis = axis
+      if (thumb.current) {
+        thumb.current.style.width = ''
+        thumb.current.style.height = ''
+      }
+    }
+    if (node !== state.node) {
+      state.observer?.disconnect()
+      state.node = node
+      state.observer = node && typeof ResizeObserver === 'function' ? new ResizeObserver(() => place(true)) : null
+      state.observer?.observe(node)
+    }
+    place(fresh)
+  })
+  useEffect(() => () => { own.current.observer?.disconnect(); own.current.springs.stop() }, [])
+  return { box, thumb }
+}
+
+// Buttons side by side over one thumb that glides to the pressed one (aria-pressed).
+export function Segmented({ label, value, className, children }) {
+  const glide = useGlide(value)
+  return h('div', { ref: glide.box, className: className ? `bt-seg ${className}` : 'bt-seg', role: 'group', 'aria-label': label },
+    h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }), children)
+}
+
+// Children of `list` matching `selector` slide from where they were to where a change of
+// `key` put them, on SPRING_LIST, and children that were not there before clear from a
+// blur; `id` names a child across renders. offsetTop ignores transforms, so a slide in
+// flight does not skew the next one.
+export function useFlip(list, key, selector, id = node => node.dataset.flip) {
+  const tops = useRef(null)
+  useLayoutEffect(() => {
+    const container = list.current
+    if (!container) return
+    const next = new Map()
+    const moving = tops.current !== null && !reducedMotion()
+    for (const node of container.querySelectorAll(selector)) {
+      const name = id(node)
+      const top = node.offsetTop
+      next.set(name, top)
+      if (!moving) continue
+      const before = tops.current.get(name)
+      if (before === undefined) {
+        const noBlur = reducedEffects()
+        node.animate([noBlur ? { opacity: 0 } : { opacity: 0, filter: 'blur(4px)' }, noBlur ? { opacity: 1 } : { opacity: 1, filter: 'blur(0)' }], { duration: 180, easing: 'ease-out' })
+      } else if (Math.abs(before - top) > 0.5) {
+        node.animate([{ transform: `translateY(${before - top}px)` }, { transform: 'none' }], { duration: SPRING_LIST.duration, easing: SPRING_LIST.easing })
+      }
+    }
+    tops.current = next
+  }, [key])
+}
+
+// `box` changes height on SPRING_SHAPE when a change of `key` changes its content, so
+// a surface reshapes around what it holds instead of jumping. A change that comes
+// mid-morph starts from the height on screen. The box clips its content meanwhile.
+// The resting height comes from a ResizeObserver: reading it on every render would lay
+// out the page once per render, the panel's whole first frame when it opens.
+export function useMorph(box, key, { width: morphWidth = false, curve = SPRING_SHAPE } = {}) {
+  const last = useRef({ key, height: null, width: null, node: null, observer: null })
+  useLayoutEffect(() => {
+    const node = box.current
+    const state = last.current
+    if (node !== state.node) {
+      state.observer?.disconnect()
+      Object.assign(state, {
+        key,
+        height: node ? node.offsetHeight : null,
+        width: node ? node.offsetWidth : null,
+        node,
+        observer: null,
+      })
+      if (!node || typeof ResizeObserver !== 'function') return
+      state.observer = new ResizeObserver(([entry]) => {
+        if (node.dataset.morph === undefined) {
+          state.height = entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight
+          state.width = entry.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth
+        }
+      })
+      state.observer.observe(node)
+      return
+    }
+    if (!node || key === state.key) return
+    const running = node.getAnimations().filter(animation => animation.id === 'bt-morph')
+    const fromH = running.length ? node.offsetHeight : state.height
+    const fromW = running.length ? node.offsetWidth : state.width
+    for (const animation of running) animation.cancel()
+    delete node.dataset.morph
+    const toH = node.offsetHeight
+    const toW = node.offsetWidth
+    Object.assign(state, { key, height: toH, width: toW })
+    const dh = fromH !== null && Math.abs(fromH - toH) >= 1
+    const dw = morphWidth && fromW !== null && Math.abs(fromW - toW) >= 1
+    if ((!dh && !dw) || reducedEffects()) return
+    const start = {}
+    const end = {}
+    if (dh) { start.height = `${fromH}px`; end.height = `${toH}px` }
+    if (dw) { start.width = `${fromW}px`; end.width = `${toW}px` }
+    node.dataset.morph = ''
+    const animation = node.animate([start, end], { duration: curve.duration, easing: curve.easing, id: 'bt-morph' })
+    animation.onfinish = () => { delete node.dataset.morph }
+    animation.oncancel = () => { if (!node.getAnimations().some(other => other.id === 'bt-morph' && other !== animation)) delete node.dataset.morph }
+  })
+  useEffect(() => () => last.current.observer?.disconnect(), [])
+}
+
+// The last truthy `value` for `ms` after it turns falsy, so a closing layer can play its
+// exit; `leaving` is true meanwhile.
+export function useLinger(value, ms) {
+  const [kept, setKept] = useState(value)
+  useEffect(() => {
+    if (value) { setKept(value); return undefined }
+    const timer = setTimeout(() => setKept(value), reducedMotion() ? 0 : ms)
+    return () => clearTimeout(timer)
+  }, [value])
+  return [value || kept, !value && Boolean(kept)]
+}
+
+// Moves keyboard focus through enabled menu items on ArrowDown, ArrowUp, Home and End.
+export function stepMenuFocus(menu, event, trigger) {
+  if (!menu || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return false
+  const items = Array.from(menu.querySelectorAll('button[role^="menuitem"]:not(:disabled)'))
+  if (items.length === 0) return false
+  const target = document.activeElement
+  const current = items.indexOf(target)
+  if (current === -1 && target !== menu && target !== trigger) return false
+  event.preventDefault()
+  event.stopPropagation()
+  const next = event.key === 'Home' ? 0
+    : event.key === 'End' ? items.length - 1
+      : event.key === 'ArrowDown' ? (current + 1) % items.length
+        : (current <= 0 ? items.length - 1 : current - 1)
+  items[next]?.focus()
+  return true
+}

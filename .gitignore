@@ -1,12 +1,27 @@
 node_modules/
+
+# Tiny license-inventory fixtures (not installed trees).
+!runtime/flybot-image/inventory/testdata/**/node_modules/
+!runtime/flybot-image/inventory/testdata/**/node_modules/**
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+dist/
+coverage/
+
+__pycache__/
+*.py[cod]
+.state/
+*.sqlite3
+*.sqlite3-*
+.credentials
 *.tgz
+.pnpm-store/
+.npm/
 
-# A DeepSeek Harness checkout for the tests and the test bench.
-/deepseek-harness/
-
-# Test bench, local DSH data and the screenshots of dev/check.sh.
-.dsh-test*/
-.dsh-home/
-/shots/
-.playwright-mcp/
-.ds-bot-check/
+# Screenshot harness output (local evidence, not committed)
+.shots/
+.shots-servers/
+.shots-state/

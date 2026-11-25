@@ -1,0 +1,143 @@
+name: Track upstream DS Bot
+# Daily and on demand: if Fei2411/DS-Bot has a newer vX.Y.Z release than the pin, sync it into
+# runtime/ds-bot-upstream on a branch, run the same checks as ds-bot-upstream.yml, and open a
+# pull request that reports the results. It never merges. A failing run still opens the pull
+# request, as a draft, so the breakage is visible.
+#
+# Pull requests opened with the default GITHUB_TOKEN do not start other workflows, and the
+# repository must allow Actions to create pull requests. Set the secret DS_BOT_TRACK_TOKEN (a
+# fine-grained token with contents and pull-requests write on this repository) to have the
+# pull request's own CI run as well; without it the job falls back to GITHUB_TOKEN.
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Upstream tag or 40-character commit to sync (default: newest vX.Y.Z release)'
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: ds-bot-upstream-track
+  cancel-in-progress: false
+jobs:
+  track:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.DS_BOT_TRACK_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.DS_BOT_TRACK_TOKEN || github.token }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Find the target release
+        id: target
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          latest=$(node scripts/ds-bot-upstream.mjs latest --json)
+          echo "$latest"
+          if [ -n "${INPUT_REF:-}" ]; then ref="$INPUT_REF"; else ref=$(node -p "JSON.parse(process.argv[1]).tag" "$latest"); fi
+          case "$ref" in *[!A-Za-z0-9._-]*) echo "bad ref: $ref"; exit 1 ;; esac
+          pinned=$(node -p "require('./runtime/ds-bot-upstream.pin.json').tag || require('./runtime/ds-bot-upstream.pin.json').commit")
+          branch="upstream/ds-bot-$ref"
+          skip=false
+          if [ "$ref" = "$pinned" ]; then echo "Already pinned to $ref"; skip=true; fi
+          if [ "$skip" = false ] && git ls-remote --exit-code --heads origin "$branch" >/dev/null; then echo "Branch $branch already exists"; skip=true; fi
+          { echo "ref=$ref"; echo "branch=$branch"; echo "skip=$skip"; echo "pinned=$pinned"; } >> "$GITHUB_OUTPUT"
+      - name: Sync
+        if: steps.target.outputs.skip == 'false'
+        env:
+          TRACK_BRANCH: ${{ steps.target.outputs.branch }}
+          TRACK_REF: ${{ steps.target.outputs.ref }}
+        run: |
+          set -euo pipefail
+          case "$TRACK_REF" in *[!A-Za-z0-9._-]*) echo "bad ref: $TRACK_REF"; exit 1 ;; esac
+          case "$TRACK_BRANCH" in *[!A-Za-z0-9._/-]*) echo "bad branch: $TRACK_BRANCH"; exit 1 ;; esac
+          git config user.name 'flybot-workspace-upstream-bot'
+          git config user.email 'flybot-workspace-upstream-bot@users.noreply.github.com'
+          git switch -c "$TRACK_BRANCH"
+          node scripts/ds-bot-upstream.mjs sync "$TRACK_REF"
+          node scripts/ds-bot-upstream.mjs check
+          sed -i -E "s/\*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*, commit \`[0-9a-f]{40}\`, ds-bot package \`[^\`]+\`/**$(node -p "require('./runtime/ds-bot-upstream.pin.json').tag")**, commit \`$(node -p "require('./runtime/ds-bot-upstream.pin.json').commit")\`, ds-bot package \`$(node -p "require('./runtime/ds-bot-upstream.pin.json').version")\`/; s/expect DeepSeek Harness \(DSH\) \`[^\`]+\`/expect DeepSeek Harness (DSH) \`$(node -p "require('./runtime/ds-bot-upstream.pin.json').dsh")\`/" runtime/ds-bot-upstream/UPSTREAM.md
+          git add runtime/ds-bot-upstream/UPSTREAM.md
+          git commit -q -m "runtime: track upstream DS Bot $TRACK_REF"
+      - name: Upstream suite on the new version
+        id: suite
+        if: steps.target.outputs.skip == 'false'
+        continue-on-error: true
+        working-directory: runtime/ds-bot-upstream/ds-bot
+        run: |
+          set -euo pipefail
+          dsh=$(node -p "require('../../ds-bot-upstream.pin.json').dsh")
+          if [[ ! "$dsh" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid DSH version in pin: $dsh"
+            exit 1
+          fi
+          npm ci --no-fund --no-audit
+          npm ci --no-fund --no-audit --prefix ../link
+          npm run harness -- --no-save "@deepseek-ai/dsh@$dsh" "@deepseek-ai/dsh-agent-loop-testkit@$dsh"
+          npm test 2>&1 | tee "$RUNNER_TEMP/suite.log"
+          node scripts/build-client.mjs --check
+          npm run lint
+      - name: Container startup smoke on the new version
+        id: smoke
+        if: steps.target.outputs.skip == 'false'
+        continue-on-error: true
+        working-directory: runtime/ds-bot-upstream
+        run: |
+          set -euo pipefail
+          dsh=$(node -p "require('../ds-bot-upstream.pin.json').dsh")
+          if [[ ! "$dsh" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid DSH version in pin: $dsh"
+            exit 1
+          fi
+          docker build -f docker/Dockerfile --build-arg "DSH_VERSION=$dsh" -t flybot-workspace-ds-bot:track .
+          node docker/test.mjs flybot-workspace-ds-bot:track 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+      - name: Push and open the pull request
+        if: steps.target.outputs.skip == 'false'
+        env:
+          SUITE: ${{ steps.suite.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRACK_REF: ${{ steps.target.outputs.ref }}
+          TRACK_BRANCH: ${{ steps.target.outputs.branch }}
+          TRACK_PINNED: ${{ steps.target.outputs.pinned }}
+        run: |
+          set -euo pipefail
+          case "$TRACK_REF" in *[!A-Za-z0-9._-]*) echo "bad ref: $TRACK_REF"; exit 1 ;; esac
+          case "$TRACK_BRANCH" in *[!A-Za-z0-9._/-]*) echo "bad branch: $TRACK_BRANCH"; exit 1 ;; esac
+          case "$TRACK_PINNED" in *[!A-Za-z0-9._-]*) echo "bad pinned: $TRACK_PINNED"; exit 1 ;; esac
+          git push origin "$TRACK_BRANCH"
+          pin=runtime/ds-bot-upstream.pin.json
+          summary=$(grep -E '^ℹ (tests|pass|fail|skipped)' "$RUNNER_TEMP/suite.log" 2>/dev/null | tr '\n' ' ' || true)
+          body=$(cat <<BODY
+          Automated upstream tracking: **Fei2411/DS-Bot $TRACK_REF** (was $TRACK_PINNED).
+
+          - Commit: \`$(node -p "require('./$pin').commit")\`, ds-bot \`$(node -p "require('./$pin').version")\`, DSH \`$(node -p "require('./$pin').dsh")\`
+          - Upstream changes: https://github.com/Fei2411/DS-Bot/compare/$TRACK_PINNED...$TRACK_REF
+          - Vendor tree check: passed (\`node scripts/ds-bot-upstream.mjs check\`)
+          - Upstream suite (Node 24, DSH from pin): **$SUITE** $summary
+          - Container startup smoke (\`docker/test.mjs\`): **$SMOKE**
+          - Run: $RUN_URL
+
+          Review the upstream release notes and any FlyBot overlay or plugin that touches changed seams before merging. This workflow never merges.
+          BODY
+          )
+          draft=()
+          if [ "$SUITE" != success ] || [ "$SMOKE" != success ]; then draft=(--draft); fi
+          if ! gh pr create --base main --head "$TRACK_BRANCH" --title "runtime: track upstream DS Bot $TRACK_REF" --body "$body" "${draft[@]}"; then
+            echo "::error::Could not open the pull request. Allow GitHub Actions to create pull requests in the repository settings, or set the DS_BOT_TRACK_TOKEN secret. The branch $TRACK_BRANCH is pushed."
+            exit 1
+          fi

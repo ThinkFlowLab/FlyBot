@@ -1,0 +1,4 @@
+# The wrapper already starts the server social plugin; load only its browser companion.
+- insert:
+    - id: flybot-social
+      name: '@flybot-workspace/flybot-social-web'

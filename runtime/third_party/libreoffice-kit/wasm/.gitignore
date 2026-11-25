@@ -1,0 +1,5 @@
+# Do not add npm engine binaries (soffice.wasm, soffice.data) to this tree.
+assets/
+*.wasm
+soffice.data
+*.tgz

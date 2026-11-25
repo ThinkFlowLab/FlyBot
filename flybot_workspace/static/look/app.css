@@ -1,0 +1,86 @@
+.look-avatar {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--look-size, 2.5rem);
+  height: var(--look-size, 2.5rem);
+  overflow: hidden;
+  border-radius: .75rem;
+  background: #d6e7e8;
+  vertical-align: middle;
+  container: agent-look / inline-size;
+}
+
+.look-portrait {
+  position: absolute;
+  inset: 0;
+  background: url('./assistant-portraits.webp') var(--portrait-column, 0%) var(--portrait-row, 0%) / 400% 400% no-repeat;
+  filter: var(--portrait-color, none);
+}
+
+.look-avatar[data-color="珊瑚橙"] { --portrait-color: hue-rotate(164deg) saturate(1.2); }
+.look-avatar[data-color="薄荷绿"] { --portrait-color: hue-rotate(-62deg) saturate(.95); }
+.look-avatar[data-color="葡萄紫"] { --portrait-color: hue-rotate(70deg) saturate(1.12); }
+.look-avatar[data-color="柠檬黄"] { --portrait-color: hue-rotate(-150deg) saturate(1.14); }
+.look-avatar[data-color="石墨灰"] { --portrait-color: grayscale(1); }
+
+.look-avatar[data-headwear="棒球帽"] { --portrait-column: calc(100% / 3); }
+.look-avatar[data-headwear="耳机"] { --portrait-column: calc(200% / 3); }
+.look-avatar[data-headwear="贝雷帽"] { --portrait-column: 100%; }
+
+.look-avatar[data-expression="专注"] {
+  --portrait-row: calc(100% / 3);
+  --notebook-column: 100%;
+}
+.look-avatar[data-expression="好奇"] {
+  --portrait-row: calc(200% / 3);
+  --notebook-row: 100%;
+}
+.look-avatar[data-expression="酷"] {
+  --portrait-row: 100%;
+  --notebook-column: 100%;
+  --notebook-row: 100%;
+}
+
+.look-glasses, .look-hand {
+  position: absolute;
+  display: none;
+  aspect-ratio: 1;
+  background: url('./assistant-accessories.webp') 0 0 / 300% 200% no-repeat;
+}
+
+.look-glasses {
+  inset: 17.5% auto auto 17.5%;
+  width: 65%;
+}
+
+.look-avatar[data-glasses="圆框眼镜"] .look-glasses { display: block; }
+.look-avatar[data-glasses="墨镜"] .look-glasses {
+  display: block;
+  background-position: 50% 0;
+}
+
+.look-hand {
+  right: 5%;
+  bottom: 4%;
+  width: 27%;
+  background-position-y: 100%;
+}
+.look-avatar[data-hand="咖啡杯"] .look-hand { display: block; }
+.look-avatar[data-hand="笔记本"] .look-hand { display: block; background-position-x: 50%; }
+.look-avatar[data-hand="魔法棒"] .look-hand { display: block; background-position-x: 100%; }
+
+.look-avatar[data-headwear="耳机"][data-glasses="圆框眼镜"][data-hand="笔记本"] .look-portrait {
+  background: url('./assistant-notebook.webp') var(--notebook-column, 0%) var(--notebook-row, 0%) / 200% 200% no-repeat;
+}
+.look-avatar[data-headwear="耳机"][data-glasses="圆框眼镜"][data-hand="笔记本"] :is(.look-glasses, .look-hand) {
+  display: none;
+}
+
+@container agent-look (max-width: 44px) {
+  .look-avatar[data-hand] .look-hand { display: none; }
+}
+
+#agent-list .look-avatar { width: 2.5rem; height: 2.5rem; }
+#conversation-list .look-avatar,
+.chat-identity .look-avatar { width: 2rem; height: 2rem; border-radius: .6rem; }

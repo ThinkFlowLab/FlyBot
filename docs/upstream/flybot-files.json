@@ -1,0 +1,278 @@
+{
+  ".dockerignore": {
+    "sha256": "b70e8376221a44538fbd253d1572dc645601e8895ab82b0f4fb4b2066f0a27b3",
+    "git_blob_sha": "ad386623e6f5a2edb5955eb0a7db598241d06f65",
+    "mode": "100644",
+    "bytes": 218
+  },
+  "LICENSE": {
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "git_blob_sha": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+    "mode": "100644",
+    "bytes": 11357
+  },
+  "NOTICE": {
+    "sha256": "94f05bc42e635dee7082583c010dc13fb084b1ed9cdcfed6b9e5246c763027ca",
+    "git_blob_sha": "74c107472126b3d7fa69b61778399d6086eaf904",
+    "mode": "100644",
+    "bytes": 3835
+  },
+  ".gitignore": {
+    "sha256": "135a477b04241b2c2b427d87411c6c8785cce4425fff0ebf52d561986efb6aa8",
+    "git_blob_sha": "8c8f35f4881c22803459769dc778083979cde075",
+    "mode": "100644",
+    "bytes": 234
+  },
+  "docker/entrypoint.mjs": {
+    "sha256": "84101a22011a7331ade1fe3200d1da537a64666c905cde57e8efa23c28ce04e3",
+    "git_blob_sha": "5bdd69e838b8547adb101489dc5b2d09df75cf06",
+    "mode": "100644",
+    "bytes": 1545
+  },
+  "docker/healthcheck.mjs": {
+    "sha256": "1c4fc69a1a806360e7d773ae3fa8ff5bec97faec417db1ba5485ecb310253894",
+    "git_blob_sha": "915326407dbe2f9ee4546de950f1b565ac9017fb",
+    "mode": "100644",
+    "bytes": 412
+  },
+  "docker/profile.mjs": {
+    "sha256": "47eb73db3f19e187e864ed5ebb555a2ce3bd0546893f1ae2e1145fa353c2442e",
+    "git_blob_sha": "bdeff3cb6cafb620e01fe605d89289afb8e0f307",
+    "mode": "100644",
+    "bytes": 2707
+  },
+  "docker/web.patch.yml": {
+    "sha256": "03b3fc8842efc5038b3a07e60ee6361d75ee277a5280d020544b771b864b257b",
+    "git_blob_sha": "d6d9de098076f26c2218d063cc042eba8418533b",
+    "mode": "100644",
+    "bytes": 612
+  },
+  "plugins/social/index.js": {
+    "sha256": "a2ffd3fc598faffef58e19862a79c1624d62f8d3e1b0bcadf85f2a7e14dd69b4",
+    "git_blob_sha": "d9f6217ecf2a2577bebfa27775e542cd5c6abcf7",
+    "mode": "100644",
+    "bytes": 5760
+  },
+  "plugins/social/cordis.patch.yml": {
+    "sha256": "c604cdb76cf1beeaed7c75c716e0bb4b9532e5f22ffe436f6c53c95ab0f23bf6",
+    "git_blob_sha": "2ab38b8248b9881a39d4a3f6792205e3d3390707",
+    "mode": "100644",
+    "bytes": 467
+  },
+  "plugins/social/package.json": {
+    "sha256": "dd544b32c983784119583476b6ffe0841430c216dd58c34166e39fcf287db01b",
+    "git_blob_sha": "1ddc78798127614622cf8d1fc3e15cb7e66953a9",
+    "mode": "100644",
+    "bytes": 821
+  },
+  "plugins/social/client.js": {
+    "sha256": "351206abc51ba011f0425c060292515b931dd8462109fe9d8e4d343d86ff88af",
+    "git_blob_sha": "df78f71716e0713e9151942f3ec0f97b8f0c1e3a",
+    "mode": "100644",
+    "bytes": 270636
+  },
+  "plugins/social/test/rest-timeout.test.js": {
+    "sha256": "0c59a063d2c308c1eb2d1cbce5bee57d09579bf6cbb92de6c73eab4f1278b18f",
+    "git_blob_sha": "49f23d0c8f4a5a4dcf8b78e08d0894b9ef3af68d",
+    "mode": "100644",
+    "bytes": 2481
+  },
+  "plugins/social/test/approval-dock-memory.test.js": {
+    "sha256": "c6754b0073d889ae1020fcfd187e98f8dd1321325460834c22c067073995de7c",
+    "git_blob_sha": "9f8905e24e6e54892e7a4b66c58aaf3559088824",
+    "mode": "100644",
+    "bytes": 13469
+  },
+  "plugins/social/test/credentials-leaf.test.js": {
+    "sha256": "41d3964bf94ef59172ee7f35cc6a46847c3cba4ff6bb6ec361844eafbb106582",
+    "git_blob_sha": "faaf7b7eee6fe7ab96361617bdf8879bbbce46da",
+    "mode": "100644",
+    "bytes": 16642
+  },
+  "plugins/social/test/size-label.test.js": {
+    "sha256": "38d1aa8933bfd0609fc77f01ccc539373879084ba766b4d6467748e5406c878f",
+    "git_blob_sha": "2249eeedd0468b9816777958f838d117c506dfbc",
+    "mode": "100644",
+    "bytes": 724
+  },
+  "plugins/social/test/server-config-temp.test.js": {
+    "sha256": "6813560551b648b0f014ed80f27fdfae70df36ef81269a62641f04ec577141d9",
+    "git_blob_sha": "f1a20a2bf7988bf96218d57bfd97559c6da81c9e",
+    "mode": "100644",
+    "bytes": 3475
+  },
+  "plugins/social/test/group-phone.test.js": {
+    "sha256": "300d19ae30db9694d0674195abe88dbd54dd42717ec2208c25b3fb21df94a11f",
+    "git_blob_sha": "5ab7db28d4f3c2d9dfaea43b3a4f5a8f9984b061",
+    "mode": "100644",
+    "bytes": 8714
+  },
+  "plugins/social/test/approval-dock.test.js": {
+    "sha256": "6d8d36fef84d67b3251703b5cdb781b81946487ddbbf5f84325897cca844157f",
+    "git_blob_sha": "bc1108750e5049feaa17ec3135016af0a996239c",
+    "mode": "100644",
+    "bytes": 18720
+  },
+  "plugins/social/test/face-chip-i18n.test.js": {
+    "sha256": "36864769a687885fe4713983296bf186192431ab5d5131797e672891aad02a00",
+    "git_blob_sha": "e345f8cee1ec57dae7b2b66be8fafdc76ddf8b45",
+    "mode": "100644",
+    "bytes": 5894
+  },
+  "plugins/social/test/credentials-atomic.test.js": {
+    "sha256": "b79adf31c26ae27cd5262100c10a02551b4fdd7d0d258a3660bdeb7ddfd6f13b",
+    "git_blob_sha": "9a324351995eb24f9a514a55883e943b29601f6e",
+    "mode": "100644",
+    "bytes": 6039
+  },
+  "plugins/social/test/invite-joined.test.js": {
+    "sha256": "5ece37572b500c8f193b9f0e5b2e5cf5bdaaa9d8d11a8d503d225fe26bae6b5d",
+    "git_blob_sha": "de7bd436b06749a596fcd35b8790cf9b5b4e6d51",
+    "mode": "100644",
+    "bytes": 2991
+  },
+  "plugins/social/test/dsh-home.test.js": {
+    "sha256": "5bbaf9b8faf45f6801eb86aaa5bc3b31d26207e2953fb78454698e16b6e5004d",
+    "git_blob_sha": "1fc6c9bf7623dec6a442485e3899982be2b3dddb",
+    "mode": "100644",
+    "bytes": 3584
+  },
+  "plugins/social/test/face-tile-names.test.js": {
+    "sha256": "9be596b6f221056f77d7d5d0c0d47f117c34f45306bfb7293668ebae567dcb95",
+    "git_blob_sha": "9b225d7604814844696ce55ab8163e402922adca",
+    "mode": "100644",
+    "bytes": 1173
+  },
+  "plugins/social/test/packaging.test.js": {
+    "sha256": "ac4a2f80c99a02fd36d5b5c76f161580729b936140dfccb4334483826d6fe019",
+    "git_blob_sha": "9caffa5e90498c8f0a74bfcd557a6016892030c3",
+    "mode": "100644",
+    "bytes": 1094
+  },
+  "plugins/social/test/fake-ctx.js": {
+    "sha256": "6e529d79bf3020f05b80dfa9b5c7f1c853e772329105c09721406ed5f1744b6b",
+    "git_blob_sha": "4ffe79a712207df83469bed92fb0df7bd2e20fe9",
+    "mode": "100644",
+    "bytes": 2533
+  },
+  "plugins/social/test/server-config-damaged-json.test.js": {
+    "sha256": "1407c894b03b3edd226a772b95e3eed4fd8be29457789472865bf1e56f35a091",
+    "git_blob_sha": "e48bf2148184ac9fe426c24a8c7b30a47a39d051",
+    "mode": "100644",
+    "bytes": 5936
+  },
+  "plugins/social/test/server-config.test.js": {
+    "sha256": "5f0cb13f172da6df985ff88b9f4d3a90c97fe0dce91252174ec498bc7591465a",
+    "git_blob_sha": "a8809689b29e516c3556892b574139d7a44f0c92",
+    "mode": "100644",
+    "bytes": 7286
+  },
+  "plugins/social/test/name-code-points.test.js": {
+    "sha256": "009f5527572ccc0b3f837d71ccfb9adfe4175c83da08c5f1a14e1cb9ae3def30",
+    "git_blob_sha": "ee344dc461ce73cd104ce76a266e83bed1d86a7b",
+    "mode": "100644",
+    "bytes": 3053
+  },
+  "plugins/social/test/face-rooms.test.js": {
+    "sha256": "8a363bcd82503f8cec2d64ea752a02d3528896958d7dbd1a52d9dc8e9d36f65f",
+    "git_blob_sha": "21900ce7d3cd3e3ca27942bdaa752b6e3d21ebfe",
+    "mode": "100644",
+    "bytes": 55534
+  },
+  "plugins/social/test/approve-all-failure.test.js": {
+    "sha256": "3afbee56ff3530ba857a73431fa41340df797173e5fb811410937a4a14fa6441",
+    "git_blob_sha": "78221b9ec55537bebb787ac36345d5af5679af93",
+    "mode": "100644",
+    "bytes": 11133
+  },
+  "plugins/social/test/server-rename-name.test.js": {
+    "sha256": "a17efed656cb7547ed174d0a0f113f30d73cdc827fb00e5012891358e36dc325",
+    "git_blob_sha": "e056f18c1d6f66271b3c8702d90c4fe45f3ea1d7",
+    "mode": "100644",
+    "bytes": 4488
+  },
+  "plugins/social/test/connector-scope.test.js": {
+    "sha256": "6e946409072e3714164f48d862236bd51dc4c7ac33ed095faf410ba13ab68e3e",
+    "git_blob_sha": "8ad548a07c2233aa62baf81682028240d6ae757a",
+    "mode": "100644",
+    "bytes": 3296
+  },
+  "plugins/social/test/social-apply-damaged-override.test.js": {
+    "sha256": "2a1cb236dd52189113322182aa5e79143da33895b200c48a5d39dcf7dd33b7ce",
+    "git_blob_sha": "065f07340769345ee185aae231c600a585b24b5c",
+    "mode": "100644",
+    "bytes": 13096
+  },
+  "plugins/social/test/face-text-bounds.test.js": {
+    "sha256": "89ce6619d7b4ded28bcfec943ff3122696aa2a07c58cbd4ec544e9b05f237b9a",
+    "git_blob_sha": "eb4e25bb4e5342538f4dddedcb90b7e133f69b07",
+    "mode": "100644",
+    "bytes": 4427
+  },
+  "plugins/social/test/server-refusal-address.test.js": {
+    "sha256": "3a3ecf873c232172510334a2c4c06eec84faff65dcdabfab997b972fdb21db0f",
+    "git_blob_sha": "93f00b77a51dc98c61f8f81bb201331cede7f317",
+    "mode": "100644",
+    "bytes": 3654
+  },
+  "plugins/social/test/presence.test.js": {
+    "sha256": "8a8b2f416c70b5b74844c102adea29f5752f7c70050778cf395b91bafaabe413",
+    "git_blob_sha": "c2d538b27266fd65b83e8e77964da1debff94357",
+    "mode": "100644",
+    "bytes": 14520
+  },
+  "plugins/social/src/face-rooms.js": {
+    "sha256": "3056aa724a13e005f993ac4b5e662ff32774f23c98348ec8477c261f8bc25872",
+    "git_blob_sha": "dda0829d284da3a139d8cb4bdcc13edc1f7b45bb",
+    "mode": "100644",
+    "bytes": 50409
+  },
+  "plugins/social/src/mcp-client.js": {
+    "sha256": "c548f7a7666efe9b4f6dbf361f620e1a344c2db43ed8ce3396082f088bbb2517",
+    "git_blob_sha": "9656aac0e67d934c987fdcb8884f99a1b50bad80",
+    "mode": "100644",
+    "bytes": 25798
+  },
+  "plugins/social/src/look.js": {
+    "sha256": "5c4ffb1d1f5cdfc4047156f8997402335bd147cb04b7829a1d3e61c632f980cc",
+    "git_blob_sha": "628915798befe13c78326bac4d2da2c14f8ce69b",
+    "mode": "100644",
+    "bytes": 6496
+  },
+  "plugins/social/src/server-config.js": {
+    "sha256": "67cc96f5b7c1884e02f1d4a08a6a068b461527e477989bdf1a4faf48082b8526",
+    "git_blob_sha": "c51cf62b993c8af483e9394f7d5b0cf21c28ca76",
+    "mode": "100644",
+    "bytes": 23433
+  },
+  "plugins/social/src/presence.js": {
+    "sha256": "57e9bcf4e446147fb7fb92463cdc36c58f17904bb7897a50b27a1b6722a2ff08",
+    "git_blob_sha": "d1813d0f2fcd0962ac1292c72fb6af0f6a4fefeb",
+    "mode": "100644",
+    "bytes": 9670
+  },
+  "plugins/social/src/code-points.js": {
+    "sha256": "d455394f48c4c927662b29ef7d46e00a4bf8e46ac2c36a5a8057f051be226b52",
+    "git_blob_sha": "089878c5ad702eea538efc053c15a45ae55403ec",
+    "mode": "100644",
+    "bytes": 561
+  },
+  "plugins/social/src/face-title.js": {
+    "sha256": "d0aa29f2e5ca80d6255eda19a947f066a631e673493f0d37ccfcdb3105f22c38",
+    "git_blob_sha": "547a8d0554ea5ec3414635447da9310a9e0d02ce",
+    "mode": "100644",
+    "bytes": 3235
+  },
+  "plugins/social/src/dsh-home.js": {
+    "sha256": "bc02a86b0e5a70be8d6f18269f4cae74b7924028421af5128d2bddf8a4b1f467",
+    "git_blob_sha": "057c3cfe0d56c8218b685e72400feae1f3d8f91d",
+    "mode": "100644",
+    "bytes": 596
+  },
+  "plugins/social/src/hidden-remotes.js": {
+    "sha256": "43c9100005d68f8d1fa096b5c03b75f77133cb9fff63ea25c24928901af1cabd",
+    "git_blob_sha": "d542bb481ac3533f20598a950248f4fe889ef35f",
+    "mode": "100644",
+    "bytes": 6309
+  }
+}

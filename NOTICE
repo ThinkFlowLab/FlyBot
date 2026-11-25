@@ -1,71 +1,68 @@
-DS Bot
-Copyright 2026 Fei2411 and the DS Bot contributors
+OpenTeamily
+Copyright (c) 2026 OpenTeamily contributors
 
-This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+This product includes material under more than one license. The root LICENSE
+(MIT) covers newly written OpenTeamily material only. It does not relicense
+imported or vendored trees, and it does not relicense third-party packages
+installed by the FlyBot runtime image recipe.
 
-==============================================================================
-Third-party code in this repository
-==============================================================================
+Imported and vendored trees keep their own LICENSE and NOTICE files:
 
-DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness)
-MIT License, Copyright (c) 2026 DeepSeek
+  runtime/flybot/              Apache License 2.0 and NOTICE
+  runtime/ds-bot-upstream/     Apache License 2.0 and NOTICE
+                               (unmodified Fei2411/DS-Bot v0.3.10)
+  services/bot-social/         MIT, Copyright (c) 2026 Birfy
 
-  - ds-bot/dev/desktop-linux/launch.mts follows the steps of
-    apps/desktop/scripts/dev.ts in DeepSeek Harness and reuses a few of its
-    lines (the release record and the Electron launch arguments). It is a
-    developer script for screenshots on Linux and is not in the npm package.
+Redistributors must retain those texts, copyright notices, and attribution
+conditions, and must not describe the combined work as entirely MIT or as
+entirely original to OpenTeamily.
 
-  Full license text:
+The FlyBot runtime image recipe (runtime/flybot-image/Dockerfile) additionally
+installs packages that are not all vendored in this repository, including
+@deepseek-ai/dsh@0.2.2-rc.1 and its production direct dependencies. One of
+those dependencies, @deepseek-ai/dsh-skill-office, depends on
+@deepseek-ai/libreoffice-kit (MPL-2.0). Corresponding source and notices
+for kit 0.1.5, and for the Linux wasm engine package that a default image
+may install, are offered in runtime/third_party/libreoffice-kit/ (office
+functionality is retained). Whether that offer satisfies MPL for a
+published image is not decided here; this repository still does not offer
+a public redistributable runtime image.
 
-  Permission is hereby granted, free of charge, to any person obtaining a copy
-  of this software and associated documentation files (the "Software"), to deal
-  in the Software without restriction, including without limitation the rights
-  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-  copies of the Software, and to permit persons to whom the Software is
-  furnished to do so, subject to the following conditions:
+A packaged inventory of what this revision ships, with versions, declared
+licenses, integrity hashes, and remaining unknowns, is in
+docs/reuse-audit/SHIPPED.md and docs/reuse-audit/shipped-pins.json. That
+inventory is not a legal opinion.
 
-  The above copyright notice and this permission notice shall be included in all
-  copies or substantial portions of the Software.
+The default FlyBot runtime image also installs packages that are not all
+vendored here. Notices collected for some of those, from the #56 built-image
+inventory, are offered in:
 
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-  SOFTWARE.
+  runtime/third_party/font-notices/katex/   MIT LICENSE shipped with the
+                                           KaTeX package whose woff2
+                                           payloads match the image fonts
+  runtime/third_party/font-notices/codicon/ MIT LICENSE from Playwright
+                                           v1.64.1 next to the Codicon
+                                           font whose ttf payloads match
+                                           the image
+  runtime/third_party/sharp-libvips/        notices and source pointers for
+                                           @img/sharp-libvips-linux-x64
+                                           (LGPL, plus other listed terms),
+                                           including exact build-script
+                                           URLs for bundled LGPL/cairo
+                                           libraries
+  runtime/third_party/anthropic-sdk/        MIT LICENSE of
+                                           @anthropic-ai/sdk@0.129.0 as
+                                           found in the image; this is not
+                                           the official Claude Code terms
 
-No other third-party code is copied into this repository. At run time the
-plugin uses the @deepseek-ai/* packages of the DeepSeek Harness install it
-runs in; they are not bundled. esbuild is a build tool only.
+The image recipe copies those texts to /opt/licenses and, for KaTeX and
+Codicon fonts and the sharp-libvips package, next to the payloads themselves. A Debian
+source-offer listing of the exact installed package versions is produced
+as a CI artifact by scripts/debian-source-offer.py. Those collections are
+not a legal opinion and this repository still does not offer a public
+redistributable runtime image.
 
-==============================================================================
-Projects that gave us ideas (no code copied)
-==============================================================================
-
-We thank these projects for the designs they published. DS Bot learned from
-their ideas; it does not contain their code.
-
-  - AgentMemoryRepo (https://github.com/AgentMemoryRepo/agentmemoryrepo), MIT:
-    the Markdown format of Bot memory (one entry per line with [key: value]
-    metadata, a MEMORY.md index that links topic files).
-  - OpenAI Codex (https://github.com/openai/codex), Apache-2.0:
-    keeping the user's messages next to the summary in a checkpoint, and
-    message anchors for searching earlier chat.
-  - OpenMausBot (https://github.com/milind-soni/OpenMausBot), Apache-2.0:
-    group chat rounds and @mention relays between Bots.
-  - Hermes Agent (https://github.com/NousResearch/hermes-agent) and
-    Hermes Bot Mode (https://github.com/NousResearch/Hermes-Bot-Mode), MIT:
-    one Session per member per group chat, and the list of earlier user
-    messages that the plugin, not the model, writes into the handoff.
-  - OpenCode (https://github.com/sst/opencode), MIT;
-    goose (https://github.com/block/goose), Apache-2.0;
-    pi (https://github.com/badlogic/pi-mono), MIT;
-    Gemini CLI (https://github.com/google-gemini/gemini-cli), Apache-2.0:
-    when to condense a long conversation, and what a handoff note holds.
-  - obelisk (https://github.com/tommy0103/obelisk), AGPL-3.0:
-    searching a Bot's own chat with a SQLite FTS5 index ranked by BM25.
-  - DeepSeek Harness Voice Input plugin
-    (packages/experimental/client-ui-voice-input), MIT: the voice chat
-    records with the same steps (record, resample to 16 kHz mono, PCM16 WAV)
-    before it calls the plugin's speech service.
+The vendored DS-Bot NOTICE was reviewed in
+docs/reuse-audit/DS-BOT-NOTICE-REVIEW.md. @deepseek-ai/dsh@0.2.2-rc.1 npm
+tarball correspondence with the git tag's compiled JavaScript remains
+explicitly unverified.

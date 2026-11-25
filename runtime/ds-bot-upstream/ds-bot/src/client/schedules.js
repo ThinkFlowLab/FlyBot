@@ -1,0 +1,345 @@
+// Scheduled tasks: Settings → Scheduled tasks, a Bot's card in its settings, and the
+// line in its details panel. DSH runs the tasks (see src/host/schedules.js); a task
+// sends its prompt to the Bot's chat when it is due.
+import { createElement as h, Fragment, useEffect, useState } from 'react'
+import { BotAvatar, RoomAvatar } from './mark.js'
+import { ClockIcon, PauseIcon, PlusIcon, ResumeIcon, TrashIcon } from './icons.js'
+import { Segmented } from './motion.js'
+import { dateLocale, hostText, t } from './i18n.js'
+
+const POLL_MS = 30_000
+
+// One view for every surface that shows tasks; each asks again when it mounts.
+let shared = null
+const listeners = new Set()
+function publish(view) {
+  shared = view
+  for (const listener of listeners) listener(view)
+}
+export function useSchedules(actions) {
+  const [view, setView] = useState(shared)
+  useEffect(() => {
+    listeners.add(setView)
+    let stopped = false
+    let timer
+    const load = () => actions.schedules?.()
+      .then((next) => { if (!stopped) publish(next) })
+      .catch(() => {})
+      .finally(() => { if (!stopped) timer = setTimeout(load, POLL_MS) })
+    load()
+    return () => { stopped = true; clearTimeout(timer); listeners.delete(setView) }
+  }, [])
+  return view
+}
+
+const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+// The time of day as the service keeps it, HH:mm:ss.SSS: whole minutes show as HH:mm, and a
+// task set to a second past the minute keeps its seconds, so the row says when it fires.
+const clock = (time) => {
+  const text = String(time ?? '')
+  const [, minutes, seconds] = /^(\d\d:\d\d)(?::(\d\d))?/.exec(text) ?? []
+  if (minutes === undefined) return text.slice(0, 5)
+  return seconds === undefined || seconds === '00' ? minutes : `${minutes}:${seconds}`
+}
+const when = (ms, options) => new Intl.DateTimeFormat(dateLocale(), options).format(ms)
+function dayAndTime(ms) {
+  const sameYear = new Date(ms).getFullYear() === new Date().getFullYear()
+  return when(ms, { ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function weekdayNames(days) {
+  const names = days.map(day => when(Date.UTC(2024, 0, day), { weekday: 'short', timeZone: 'UTC' }))
+  return names.join(dateLocale().startsWith('zh') || dateLocale().startsWith('ja') ? '、' : ', ')
+}
+function everyText(seconds) {
+  if (seconds % 86400 === 0) return seconds === 86400 ? t('Every day') : t('Every {count} days', { count: seconds / 86400 })
+  if (seconds % 3600 === 0) return seconds === 3600 ? t('Every hour') : t('Every {count} hours', { count: seconds / 3600 })
+  return t('Every {count} minutes', { count: Math.round(seconds / 60) })
+}
+
+// How often a task runs, in the user's words.
+export function timingText(task) {
+  const zone = task.timeZone && task.timeZone !== localZone() ? ` (${task.timeZone})` : ''
+  switch (task.kind) {
+    case 'after':
+    case 'at': return t('Once, {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) })
+    case 'every': return everyText(task.everySeconds)
+    case 'daily': return `${t('Every day at {time}', { time: clock(task.time) })}${zone}`
+    case 'weekly': {
+      const days = (task.weekdays ?? []).join()
+      const text = days === '1,2,3,4,5' ? t('Every weekday at {time}', { time: clock(task.time) })
+        : days === '6,7' ? t('Every weekend at {time}', { time: clock(task.time) })
+          : days === '1,2,3,4,5,6,7' ? t('Every day at {time}', { time: clock(task.time) })
+            : t('Every {days} at {time}', { days: weekdayNames(task.weekdays ?? []), time: clock(task.time) })
+      return `${text}${zone}`
+    }
+    case 'cron': return `${t('On the schedule {expression}', { expression: task.expression })}${zone}`
+    case 'rrule': return t('Custom schedule')
+    default: return ''
+  }
+}
+export const nextText = (task) => {
+  if (task.state === 'overdue' || (task.state === undefined && task.status === 'active' && Date.parse(task.scheduledAt) <= Date.now())) return t('Overdue: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) })
+  if (task.status === 'paused') return t('Paused')
+  return task.status === 'active' ? t('Next: {time}', { time: dayAndTime(Date.parse(task.scheduledAt)) }) : t('Finished')
+}
+
+// A one-time task whose time has passed has nothing to resume to, so it is not paused
+// either: it could only be deleted afterwards.
+const lateOnce = task => (task.kind === 'at' || task.kind === 'after') && Date.parse(task.scheduledAt) <= Date.now()
+const canPauseTask = task => (task.status === 'active' || task.status === 'paused') && !lateOnce(task)
+
+function TaskRow({ task, actions, onView, showBot, roster, canPause }) {
+  const [confirming, setConfirming] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!confirming) return undefined
+    const timer = setTimeout(() => setConfirming(false), 3000)
+    return () => clearTimeout(timer)
+  }, [confirming])
+  const remove = () => {
+    if (!confirming) { setConfirming(true); return }
+    setBusy(true)
+    void actions.scheduleDelete(task.sessionId, task.id).then(onView, () => setBusy(false))
+  }
+  const [failed, setFailed] = useState('')
+  const toggle = () => {
+    setBusy(true)
+    setFailed('')
+    void actions.schedulePause(task.sessionId, task.id, task.status !== 'active').then((next) => { setBusy(false); onView(next) }, (failure) => {
+      setBusy(false)
+      setFailed(hostText(failure?.message ?? String(failure)))
+      // The task may have ended or changed meanwhile: show it as it is now.
+      void actions.schedules?.().then(onView, () => {})
+    })
+  }
+  const pausable = canPause && canPauseTask(task)
+  const room = task.roomId ? roster.roomsById[task.roomId] : undefined
+  // The reason a pause or resume failed goes on a line of its own: not inside the row's
+  // expand button, and not dimmed with a paused row.
+  return h(Fragment, null, h('div', { className: 'bt-set-row bt-task', 'data-done': task.status === 'active' ? undefined : '', 'data-busy': busy || undefined },
+    showBot ? h(BotAvatar, { bot: roster.byId[task.botId], size: 28, badge: false, live: false }) : null,
+    h('button', { type: 'button', className: 'bt-set-copy bt-task-copy', 'aria-expanded': expanded || undefined, onClick: () => setExpanded(open => !open) },
+      h('span', { className: 'bt-task-title' }, task.title),
+      h('span', { className: 'bt-set-hint' }, [timingText(task), room ? t('in {name}', { name: room.name }) : ''].filter(Boolean).join(' · ')),
+      task.prompt && task.prompt !== task.title ? h('span', { className: 'bt-task-prompt', 'data-open': expanded || undefined }, task.prompt) : null),
+    h('span', { className: 'bt-task-next', 'data-state': task.state === 'overdue' ? 'overdue' : undefined }, nextText(task)),
+    pausable ? h('button', {
+      type: 'button', className: 'bt-mini bt-task-remove bt-task-pause', disabled: busy,
+      'aria-label': task.status === 'active' ? t('Pause task') : t('Resume task'), title: task.status === 'active' ? t('Pause task') : t('Resume task'), onClick: toggle,
+    }, task.status === 'active' ? h(PauseIcon) : h(ResumeIcon)) : null,
+    h('button', {
+      type: 'button', className: 'bt-mini bt-task-remove', 'data-confirm': confirming || undefined, disabled: busy,
+      'aria-label': confirming ? t('Click again to delete') : t('Delete task'), title: confirming ? undefined : t('Delete task'), onClick: remove,
+    }, confirming ? t('Delete') : h(TrashIcon))),
+  failed ? h('div', { className: 'bt-set-row bt-task-failed', role: 'alert' }, h('span', { className: 'bt-danger bt-set-hint' }, failed)) : null)
+}
+
+const pad = number => String(number).padStart(2, '0')
+function inAnHour() {
+  const date = new Date(Date.now() + 3600_000)
+  date.setMinutes(0, 0, 0)
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`
+}
+const KINDS = [['at', 'Once'], ['daily', 'Every day'], ['weekly', 'Every week'], ['every', 'Repeat']]
+const UNITS = [['minutes', 1, 'minutes'], ['hours', 60, 'hours'], ['days', 1440, 'days']]
+
+function TaskForm({ roster, actions, start, onDone, onCancel }) {
+  // A task goes to a Bot's chat or to a group chat, where it reads as your message.
+  const [target, setTarget] = useState(start ?? roster.bots[0]?.id ?? '')
+  const [title, setTitle] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [kind, setKind] = useState('daily')
+  const [at, setAt] = useState(inAnHour)
+  const [time, setTime] = useState('09:00')
+  const [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5])
+  const [count, setCount] = useState(1)
+  const [unit, setUnit] = useState('hours')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const validAt = kind !== 'at' || (at !== '' && Number.isFinite(Date.parse(at)))
+  const validDays = kind !== 'weekly' || weekdays.length > 0
+  const validEvery = kind !== 'every' || (Number.isFinite(Number(count)) && Number(count) >= 1)
+  const timing = () => {
+    if (kind === 'at') {
+      const parsed = new Date(at)
+      if (!Number.isFinite(parsed.getTime())) throw new Error('invalid date')
+      return { kind, at: parsed.toISOString() }
+    }
+    if (kind === 'every') {
+      const minutes = Math.round(Number(count) * UNITS.find(([id]) => id === unit)[1])
+      if (!Number.isFinite(minutes) || minutes < 1) throw new Error('invalid interval')
+      return { kind, minutes }
+    }
+    if (kind === 'weekly' && weekdays.length === 0) throw new Error('pick a day')
+    return { kind, time, timeZone: localZone(), ...(kind === 'weekly' ? { weekdays } : {}) }
+  }
+  const submit = (event) => {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setError('')
+    let when
+    try { when = timing() } catch { setError(kind === 'weekly' ? t('Pick at least one day') : t('Pick a date and time')); setBusy(false); return }
+    void actions.scheduleCreate({ target, title, prompt, when })
+      .then(onDone, (failure) => { setError(hostText(failure?.message ?? String(failure))); setBusy(false) })
+  }
+  const toggleDay = day => setWeekdays(days => (days.includes(day) ? days.filter(item => item !== day) : [...days, day].sort()))
+  return h('form', { className: 'bt-set-card bt-task-form', onSubmit: submit },
+    h('label', { className: 'bt-set-row bt-bs-row' },
+      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Send to'))),
+      h('select', { className: 'bt-select bt-task-bot', value: target, onChange: event => setTarget(event.target.value) },
+        h('optgroup', { label: t('Bots') }, roster.bots.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name))),
+        roster.rooms.length > 0 ? h('optgroup', { label: t('Group chats') }, roster.rooms.map(room => h('option', { key: room.id, value: room.id }, room.name))) : null)),
+    h('label', { className: 'bt-set-row bt-bs-row' },
+      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('Name'))),
+      h('input', { className: 'bt-bs-input', value: title, maxLength: 120, placeholder: t('Morning briefing'), autoFocus: true, onChange: event => setTitle(event.target.value) })),
+    h('label', { className: 'bt-set-row bt-bs-row bt-bs-stack' },
+      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('What to do'))),
+      h('textarea', { className: 'bt-bs-input bt-bs-area', value: prompt, rows: 3, placeholder: t('Sum up what changed since yesterday and what needs me today.'), onChange: event => setPrompt(event.target.value) })),
+    h('div', { className: 'bt-set-row bt-bs-row bt-bs-stack' },
+      h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-bs-label' }, t('When'))),
+      h(Segmented, { label: t('When'), value: kind }, KINDS.map(([id, label]) => h('button', { key: id, type: 'button', 'aria-pressed': kind === id, onClick: () => setKind(id) }, t(label)))),
+      h('div', { key: kind, className: 'bt-task-when bt-veil' },
+        kind === 'at' ? h('input', { className: 'bt-input', type: 'datetime-local', value: at, 'aria-label': t('Date and time'), onChange: event => setAt(event.target.value) }) : null,
+        kind === 'weekly' ? h('div', { className: 'bt-task-days', role: 'group', 'aria-label': t('Days') }, [1, 2, 3, 4, 5, 6, 7].map(day => h('button', {
+          key: day, type: 'button', className: 'bt-task-day', 'aria-pressed': weekdays.includes(day), onClick: () => toggleDay(day),
+        }, when(Date.UTC(2024, 0, day), { weekday: 'narrow', timeZone: 'UTC' })))) : null,
+        kind === 'daily' || kind === 'weekly' ? h('input', { className: 'bt-input bt-task-time', type: 'time', value: time, 'aria-label': t('Time'), onChange: event => setTime(event.target.value) }) : null,
+        kind === 'every' ? h(Fragment, null,
+          h('span', { className: 'bt-task-every' }, t('Every')),
+          h('input', { className: 'bt-input bt-task-count', type: 'number', min: 1, value: count, 'aria-label': t('How many'), onChange: event => setCount(event.target.value) }),
+          h('select', { className: 'bt-select bt-task-unit', value: unit, 'aria-label': t('Unit'), onChange: event => setUnit(event.target.value) },
+            UNITS.map(([id, , label]) => h('option', { key: id, value: id }, t(label))))) : null)),
+    error ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-danger bt-set-hint' }, error)) : null,
+    h('div', { className: 'bt-set-row bt-task-foot' },
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: onCancel }, t('Cancel')),
+      h('button', { type: 'submit', className: 'bt-send bt-soft-sm', disabled: busy || !target || title.trim() === '' || prompt.trim() === '' || !validAt || !validDays || !validEvery }, busy ? t('Creating…') : t('Create task'))))
+}
+
+// Settings has no schedule service to show: Automation tasks are off in DSH.
+function AutomationOff({ actions }) {
+  return h('div', { className: 'bt-set-card bt-task-off' },
+    h('span', { className: 'bt-task-off-mark' }, h(ClockIcon)),
+    h('span', { className: 'bt-task-off-title' }, t('Turn on Automation tasks in DSH')),
+    h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Settings.')),
+    h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-tour': 'open-plugins', onClick: () => actions.openSettings('dsh', 'plugins') }, t('Open Plugins')))
+}
+
+// A plain `start` opens the create form for that Bot or group chat; the
+// `bot:<id>`/`room:<id>` form asks for just that owner's tasks, which is how a
+// Bot's own view gets here.
+export function SchedulesPage({ roster, actions, start }) {
+  const view = useSchedules(actions)
+  // "Show all" lifts the owner filter here: Settings keeps one Scheduled tasks page per
+  // visit, so a route back to the same page would not reach it.
+  const [owner, setOwner] = useState(() => (start?.startsWith('bot:') ? start.slice(4) : start?.startsWith('room:') ? start.slice(5) : null))
+  // `start` is either a Bot or group chat id (open the form for it) or a `bot:` / `room:`
+  // filter; the form only ever gets a plain id, so a lifted filter leaves it unset.
+  const filter = start?.startsWith('bot:') || start?.startsWith('room:')
+  const [adding, setAdding] = useState(Boolean(start) && !filter)
+  if (view === null) return h('div', { className: 'bt-set-hint' }, t('Loading…'))
+  if (!view.available) return h(AutomationOff, { actions })
+  const shown = next => { publish(next); setAdding(false) }
+  const byChat = [
+    ...roster.bots.map(bot => [bot.id, h(BotAvatar, { bot, size: 18, badge: false, live: false }), bot.name, view.tasks.filter(task => task.botId === bot.id)]),
+    ...roster.rooms.map(room => [room.id, h(RoomAvatar, { room, roster, size: 18 }), room.name, view.tasks.filter(task => task.botId === undefined && task.roomId === room.id)]),
+  ].filter(([id, , , tasks]) => tasks.length > 0 && (owner === null || id === owner))
+  const addBar = adding ? null : h('div', { className: 'bt-actions' },
+    h('button', { type: 'button', className: 'bt-soft bt-soft-sm bt-with-icon', 'data-tour': 'new-task', onClick: () => setAdding(true) }, h(PlusIcon), t('New task')),
+    owner !== null ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setOwner(null) }, t('Show all')) : null)
+  return [
+    adding ? h(TaskForm, { key: 'form', roster, actions, start: owner ?? (filter ? undefined : start), onDone: shown, onCancel: () => setAdding(false) }) : null,
+    byChat.length === 0
+      ? (!adding ? h('section', { key: 'none', className: 'bt-set-section' },
+          h('div', { className: 'bt-la-sec-head' }, h('h3', null, t('Scheduled tasks')), addBar),
+          h('div', { className: 'bt-set-card' }, h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No scheduled tasks yet.'))))) : null)
+      : byChat.map(([id, avatar, name, tasks], index) => h('section', { key: id, className: 'bt-set-section' },
+          index === 0
+            ? h('div', { className: 'bt-la-sec-head' }, h('h3', { className: 'bt-task-head' }, avatar, name), addBar)
+            : h('h3', { className: 'bt-task-head' }, avatar, name),
+          h('div', { className: 'bt-set-card' }, tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, canPause: view.canPause === true, onView: publish }))))),
+  ]
+}
+
+// A Bot's tasks in its settings form, with the way to add one.
+export function BotSchedules({ bot, roster, actions }) {
+  const view = useSchedules(actions)
+  if (view === null) return null
+  const tasks = view.available ? view.tasks.filter(task => task.botId === bot.id) : []
+  return h('section', { className: 'bt-set-section' },
+    h('h3', null, t('Scheduled tasks')),
+    h('div', { className: 'bt-set-card' },
+      !view.available
+        ? h('div', { className: 'bt-set-row bt-bs-row' },
+            h('span', { className: 'bt-set-copy' }, h('span', { className: 'bt-set-hint' }, t('Switch on Automation tasks on the Plugins page in Settings.'))),
+            h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => actions.openSettings('dsh', 'plugins') }, t('Open Plugins')))
+        : [
+            ...tasks.map(task => h(TaskRow, { key: task.id, task, actions, roster, canPause: view.canPause === true, onView: publish })),
+            h('button', { key: 'new', type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => actions.openSettings('schedules', bot.id) }, h(PlusIcon), t('New task')),
+          ]))
+}
+
+// The details panel's line: the Bot's next tasks, or how to add one.
+export function ScheduleSummary({ bot, actions }) {
+  const view = useSchedules(actions)
+  const tasks = view?.available ? view.tasks.filter(task => task.botId === bot.id && task.status === 'active') : []
+  return h('div', null,
+    h('div', { className: 'bt-section-title' }, tasks.length === 0 ? t('Scheduled tasks') : t('Scheduled tasks · {count}', { count: tasks.length })),
+    tasks.length === 0
+      ? h('button', { type: 'button', className: 'bt-more', onClick: () => actions.openSettings('schedules', bot.id) }, view?.available === false ? t('Switch on Automation tasks on the Plugins page in Settings.') : t('No scheduled tasks yet. Add one'))
+      : h('div', { className: 'bt-task-list' }, tasks.slice(0, 3).map(task => h('button', { key: task.id, type: 'button', className: 'bt-task-line', onClick: () => actions.openSettings('schedules', `bot:${bot.id}`) },
+
+          h(ClockIcon), h('span', { className: 'bt-task-line-title' }, task.title), h('span', { className: 'bt-task-line-when' }, timingText(task))))))
+}
+
+export const SCHEDULE_CSS = `
+.bt-task{gap:10px}
+.bt-task[data-done]{opacity:.6}
+.bt-task[data-busy]{opacity:.4}
+.bt-task-title{font-size:13px;line-height:18px;font-weight:500;overflow-wrap:anywhere}
+.bt-task-prompt{font-size:12px;line-height:16px;color:var(--bt-ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bt-task-prompt[data-open]{display:block;-webkit-line-clamp:unset;overflow:visible;overflow-wrap:anywhere;white-space:pre-wrap}
+.bt-task-copy{padding:0;border:0;background:none;font:inherit;text-align:left;cursor:pointer}
+.bt-task-next{flex:none;font-size:12px;line-height:16px;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bt-task-next[data-state=overdue]{color:var(--bt-danger)}
+.bt-task-remove{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;color:var(--bt-ink-3)}
+.bt-task-remove svg{width:14px;height:14px}
+.bt-task-remove[data-confirm]{background:color-mix(in srgb,var(--bt-danger) 10%,transparent);color:var(--bt-danger)}
+.bt-task-head{display:flex;align-items:center;gap:6px}
+.bt-task-form{animation:bt-q-in .4s cubic-bezier(.22,1,.36,1),bt-veil-in .2s ease-out}
+.bt-task-form .bt-bs-input:not(.bt-bs-area){flex:0 1 320px}
+.bt-task-bot{width:auto;min-width:160px;max-width:58%}
+.bt-task-when{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding-top:4px}
+.bt-task-when .bt-input{width:auto;height:34px}
+.bt-task-time{min-width:116px}
+.bt-task-count{width:76px!important}
+.bt-task-unit{width:auto;height:34px}
+.bt-task-every{font-size:13px;color:var(--bt-ink-2)}
+.bt-task-days{display:flex;gap:6px}
+.bt-task-day{width:32px;height:32px;border-radius:50%;border:.5px solid var(--bt-line-2);background:var(--bt-hover);color:var(--bt-ink-2);font:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:background-color .14s ease,color .14s ease,border-color .14s ease}
+.bt-task-day:hover{background:var(--bt-active);color:var(--bt-ink)}
+.bt-task-day[aria-pressed=true]{background:var(--bt-user);border-color:var(--bt-user);color:var(--bt-user-ink)}
+.bt-task-foot{justify-content:flex-end;gap:8px}
+.bt-task-foot .bt-send{height:28px;font-size:12px}
+.bt-task-off{align-items:center;gap:8px;padding:28px 20px;text-align:center}
+.bt-task-off>*+*{border-top:0}
+.bt-task-off-mark{width:44px;height:44px;border-radius:50%;background:var(--bt-hover);display:flex;align-items:center;justify-content:center;color:var(--bt-ink-2)}
+.bt-task-off-mark svg{width:20px;height:20px}
+.bt-task-off-title{font-size:14px;line-height:20px;font-weight:600}
+.bt-task-off .bt-set-hint{max-width:380px}
+.bt-task-list{display:flex;flex-direction:column;gap:2px}
+.bt-task-line{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--bt-ink);font:inherit;font-size:13px;text-align:left;cursor:pointer;transition:background-color .12s ease}
+.bt-task-line:hover{background:var(--bt-hover)}
+.bt-task-line svg{flex:none;color:var(--bt-ink-3)}
+.bt-task-line-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt-task-line-when{flex:none;font-size:12px;color:var(--bt-ink-3)}
+@media (prefers-reduced-motion:reduce){.bt-task-form{animation:none}}
+/* Phone-width viewports: the form's fixed minimums would overflow; let the
+   fields wrap and share the row. */
+@media (max-width:640px){
+  .bt-task-bot{min-width:0;width:100%}
+  .bt-task-time{min-width:0;flex:1 1 110px}
+  .bt-task-count{width:auto!important;flex:1 1 72px}
+}
+`

@@ -1,0 +1,27 @@
+{
+  "name": "@flybot-workspace/flybot-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot DSH plugin: boot unmodified upstream ds-bot v0.3.6 and attach @flybot/social through flybot-social-host. Not a fork of the vendor tree.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./client": "../../flybot-web-slots/client.js"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "flybot",
+    "flybot-workspace"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

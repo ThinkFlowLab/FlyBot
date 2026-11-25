@@ -1,0 +1,17 @@
+{
+  "name": "@flybot-workspace/flybot-social-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot adapter: load @flybot/social onto the unmodified upstream DS-Bot v0.3.6 host, including the 0.3.5+ write-ahead group ledger.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --test test/facade.test.js test/ledger-rooms.test.js test/onboard-unit.test.js test/group-dm.test.js test/room-link.test.js",
+    "test:host": "node --import ../ds-bot-upstream/ds-bot/test/harness-resolve.mjs --test test/host-social.test.js test/onboard-fake-server.test.js"
+  }
+}

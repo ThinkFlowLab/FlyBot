@@ -1,0 +1,2624 @@
+{
+  ".dockerignore": {
+    "sha256": "b44bb858b61da3aa8873b373b4d9cd6df3fc814f12548392e08460c0a5757729",
+    "git_blob_sha": "8db6f5cb273215a01b23db0c6718dba31d1654e5",
+    "mode": "100644",
+    "bytes": 57
+  },
+  "package-lock.json": {
+    "sha256": "3e0f6fdef21f8946b53e5b4fd677d368663606727a95db822e682ec2238f71bb",
+    "git_blob_sha": "97785ff204556dc57bdbe6172c4b0cb6e84b8911",
+    "mode": "100644",
+    "bytes": 102057
+  },
+  "botsocial.env.example": {
+    "sha256": "94e667213d21e25fa190ec0c68c93f4e340d1569d18b5dd385649e26689085cc",
+    "git_blob_sha": "6853c3344016739d02ec5dd9ae129f3d98b0e2e9",
+    "mode": "100644",
+    "bytes": 2581
+  },
+  "Dockerfile": {
+    "sha256": "a3dde43d92f5d23f3085d1e7f04b0e6ae8d51b14fce0640026ed42cc94e0cf86",
+    "git_blob_sha": "8223a4765b766b510c898a4fe8069b14c5ec7814",
+    "mode": "100644",
+    "bytes": 385
+  },
+  "README.md": {
+    "sha256": "cc6e27e35b86d54b48786dfe6f0dba014193fa0ec5fbbc9315c84b682360456a",
+    "git_blob_sha": "fdaa67445c8b3f754b82090ea6a5f92a17ba449f",
+    "mode": "100644",
+    "bytes": 72533
+  },
+  "docker-compose.yml": {
+    "sha256": "6471fdf353b06b7b5123f5e56580bfbe79eef3c5b1eb5f8ec25b9f2803d7bf87",
+    "git_blob_sha": "d3830db6cd89f718c61aeecfde86ca7a474b383e",
+    "mode": "100644",
+    "bytes": 234
+  },
+  "tsconfig.json": {
+    "sha256": "3c3dec1c7cdd76f9cdebb54ddd7917070e70270f764679136bd00f0a83667324",
+    "git_blob_sha": "dc9e98a52fe2e8c390fa379e8a3dfa2b51ca5920",
+    "mode": "100644",
+    "bytes": 283
+  },
+  "start.sh": {
+    "sha256": "d38c6496fa427808bd780044d90642525dd2183c43cd9667671b1278b298c0b4",
+    "git_blob_sha": "57bf58f049c52a8984600801d79bc26bbaaa51b7",
+    "mode": "100755",
+    "bytes": 2916
+  },
+  "LICENSE": {
+    "sha256": "6f5b168b7397507ec7854d3787079ae4185826ea0a9ade831a269fabe3e737c3",
+    "git_blob_sha": "ad62975d503d58ae3158ed9ce7cd5b9c38d76196",
+    "mode": "100644",
+    "bytes": 1062
+  },
+  ".gitignore": {
+    "sha256": "38aae1052489abe47de14bc214480c7c527d5fe2ec97cd468cfb3015ddfd29df",
+    "git_blob_sha": "1d96649eae5322b275817df339f09a0ea3bcf306",
+    "mode": "100644",
+    "bytes": 94
+  },
+  "test/revoking_a_superseded_grant_does_not_end_the_live_share.test.ts": {
+    "sha256": "4868b77426b1fc8d8705a8edb66aaaed98836be96d0e39a5d48535c2401532c5",
+    "git_blob_sha": "c971d18d38335c4989bed068eb3772e94b665a49",
+    "mode": "100644",
+    "bytes": 9811
+  },
+  "test/a_landed_decision_still_sweeps_and_a_refused_edit_writes_nothing.test.ts": {
+    "sha256": "45919c79a566b51380f2639c3c23a6675d4121fc64e8db7996ffffc73df62192",
+    "git_blob_sha": "5a56e66673b1d0486c33d009acd9489fbc6d892b",
+    "mode": "100644",
+    "bytes": 12524
+  },
+  "test/conversation_expiry_settles_pending.test.ts": {
+    "sha256": "fa8a0c701e858fa7936a959270fd7a4a6a092fc8f79aea4b1b0c634a936ab7b9",
+    "git_blob_sha": "34d74f8187cd4e34f1be689cfac52df7546b3b38",
+    "mode": "100644",
+    "bytes": 7193
+  },
+  "test/face_room_join_audit_seats.test.ts": {
+    "sha256": "f4ffb74908d268a484c066d201d054c02b960c5055e4ae59d89d9d01c396a881",
+    "git_blob_sha": "291f27bd11cd349150f7a6cf66583604ad0df66c",
+    "mode": "100644",
+    "bytes": 6088
+  },
+  "test/close_conversation_declares_its_destructive_effect.test.ts": {
+    "sha256": "042f523d7eb5bc2e3a16d6b1317a08e347105e85d4a72a0ffd4acf2fa95dff18",
+    "git_blob_sha": "e24e5ddd297c0fd9f725c540f2c78b549e2ec2aa",
+    "mode": "100644",
+    "bytes": 5005
+  },
+  "test/invite_status_checks.test.ts": {
+    "sha256": "316a8c211c0a317d748176cf8a83d57c4b197da53a3d2d4b4ade62fa6df47413",
+    "git_blob_sha": "727bccf89fa4c043bda2884286aa06f79a652f9a",
+    "mode": "100644",
+    "bytes": 16978
+  },
+  "test/cancelled_join_releases_invite_use.test.ts": {
+    "sha256": "8f945cc1c2ef30e2fd1d95a4f76466cc4323c3a9815b0f7231cb2ec135d84983",
+    "git_blob_sha": "ae1eadbfc989825f24c9da4ea3a044348740d885",
+    "mode": "100644",
+    "bytes": 6343
+  },
+  "test/hold_reason_backfill.test.ts": {
+    "sha256": "65ab761f901a80fa4d3700d3bc95bd75bc8db4113818699e693ec13af9a578a0",
+    "git_blob_sha": "be614a5f82ec5ca4c3f1c42e2a53b4e1356cf396",
+    "mode": "100644",
+    "bytes": 2563
+  },
+  "test/frozen_or_removed_bot_cannot_revive_paused_chat.test.ts": {
+    "sha256": "784e944c26aa3e6bcc4ef12aa576cef47a87b9d777c6b45e5e60847efbe8e3ae",
+    "git_blob_sha": "a0f4cc3b72993198aa6d4f259fbb9c91aa05f455",
+    "mode": "100644",
+    "bytes": 12062
+  },
+  "test/a_frozen_grant_writes_nothing.test.ts": {
+    "sha256": "31f51fb96a79276954ef06e9ff6d77d7751a275e77b7a9f1fe79b39afc4e4b76",
+    "git_blob_sha": "ba672815ca9be161e72f01e02f15914a8681d31d",
+    "mode": "100644",
+    "bytes": 16018
+  },
+  "test/a_pending_card_keeps_its_file.test.ts": {
+    "sha256": "f3a11d498102327d8fee4483f53305a4f5bf758e20949c3280e5112b849b4454",
+    "git_blob_sha": "8dc6344ba2b8160b8b4176e08a99cc6bfd816231",
+    "mode": "100644",
+    "bytes": 8719
+  },
+  "test/a_lapsed_share_is_written_down_and_announced.test.ts": {
+    "sha256": "1936deff35293d2e5e178d7d2e62a3243c4f691c7f76cbdb84a677d37ddef823",
+    "git_blob_sha": "67f940ae71aaae69a3466e7e7324c6fc03beab9d",
+    "mode": "100644",
+    "bytes": 12800
+  },
+  "test/ui_audit_label_relationship.test.ts": {
+    "sha256": "7dab5fd0cf3233da4ed1cce75009ebcdc3f607fc13816f869d45c1b0d8bd38f4",
+    "git_blob_sha": "8155f591f6ee24c571ce8400c0523fc24c6a214b",
+    "mode": "100644",
+    "bytes": 3927
+  },
+  "test/send_conversation_target.test.ts": {
+    "sha256": "d442b0afc011378a4d9e4f34573f517a19add3cf12595002e6c6dd9e708d3955",
+    "git_blob_sha": "16652a18de5cafc399b0893252d46ed93764dd6c",
+    "mode": "100644",
+    "bytes": 13374
+  },
+  "test/body_ids_are_strings_before_sql.test.ts": {
+    "sha256": "931dea50da1bc7e36a1dabdadc950b0a06fb1412fb0fa5d6ec6ce23618f48a8d",
+    "git_blob_sha": "e2212e7ee31d73c7582628e1aa481bf6b89b0909",
+    "mode": "100644",
+    "bytes": 4943
+  },
+  "test/a_stopped_bot_is_not_shared_with_a_friend.test.ts": {
+    "sha256": "9e6c0a8368919b57961cbc27da78f9c52d2b97348606a67ae0278d571ae088b2",
+    "git_blob_sha": "df740ea2490941f73f35609b623e7339c5694dc3",
+    "mode": "100644",
+    "bytes": 7400
+  },
+  "test/no_turn_limit.test.ts": {
+    "sha256": "d65fdef5cd90b5a48dd507287394b816aae8d27c2137d9598a39ecf6ce365968",
+    "git_blob_sha": "eccda6749283b45e44fa3139275bee5d360c9fae",
+    "mode": "100644",
+    "bytes": 4122
+  },
+  "test/face_room_cursor_shape.test.ts": {
+    "sha256": "29c76ae5c61149f05d9f39932068a9052565dbb08645464b3d342f4450a72273",
+    "git_blob_sha": "fb63d03f7f90dce35b03d5d731ec5a50da3a5404",
+    "mode": "100644",
+    "bytes": 5158
+  },
+  "test/face_room_leave_settles_only_the_room_it_names.test.ts": {
+    "sha256": "b7843c9e5120a6723afa082c58147c46ed5d87baf2b47eecc902324c0b0d276f",
+    "git_blob_sha": "0cce88c8ade61fcf5e017f8d29d8dfd213db49fd",
+    "mode": "100644",
+    "bytes": 13219
+  },
+  "test/ui_friends_request_caps.test.ts": {
+    "sha256": "2280fd3692b25a89db6f6fd87092e2f75fee50729785143111b102d83e4af922",
+    "git_blob_sha": "f625b787760fcbb667abb2d0a3a705273b153941",
+    "mode": "100644",
+    "bytes": 4271
+  },
+  "test/room_invite_reach.test.ts": {
+    "sha256": "8f833fc1e7679db1972fc64b28b08bec865364e9f4099f2c8998503819bd6308",
+    "git_blob_sha": "0a9a31c83ee3641feb1b02b356a6a34c098eab4a",
+    "mode": "100644",
+    "bytes": 15216
+  },
+  "test/rejected_draft_frees_its_attachment.test.ts": {
+    "sha256": "54d78e166776e875e4acaab52b38bbe0035cc6d2e70bb56d70e770b8b7899801",
+    "git_blob_sha": "20fa15f315d7994d2c785d1ef309f21d826c0ead",
+    "mode": "100644",
+    "bytes": 6350
+  },
+  "test/invite_preview_frozen_inviter.test.ts": {
+    "sha256": "b4c20f9d146fd8e1b032445c8589f21c2e13e7169720b71f4a9d376520b27285",
+    "git_blob_sha": "3ad8d10ccd26c6841de4d6d9bed86ad98ef139f4",
+    "mode": "100644",
+    "bytes": 8933
+  },
+  "test/a_bot_integration_type_must_be_a_string.test.ts": {
+    "sha256": "1bcaa214b0069abadb68d63408a18b8b86943cc986a2a02a34f98a4d45d2fe44",
+    "git_blob_sha": "7a9c6d974f3df325e0c02544d9524981a0fe2576",
+    "mode": "100644",
+    "bytes": 5945
+  },
+  "test/typed_by_owner.test.ts": {
+    "sha256": "d5d586ceb9e9be13ab601a479137e2050d8c1e2a5c39277b1017c46f5f94b5bb",
+    "git_blob_sha": "b9191169475f05c03ec73efe8e89327edaa55bc5",
+    "mode": "100644",
+    "bytes": 11583
+  },
+  "test/connector_cannot_decide_its_own_hold.test.ts": {
+    "sha256": "7a0e40a540e009e92e8eadd6fd81efc3d8172520d0f864558804e976989c1d3a",
+    "git_blob_sha": "3862c9f1ebe78de23824ee15cb4c0397f4d552db",
+    "mode": "100644",
+    "bytes": 12813
+  },
+  "test/add_home_member_custody_writes_an_audit_row.test.ts": {
+    "sha256": "4b2d4f7e8a6bb1cc90ff08f3ddcd9137557ad967594b96db5284f0d06fc8b6e7",
+    "git_blob_sha": "3338275633ba7c151e93847c447b8c04b8b03fe0",
+    "mode": "100644",
+    "bytes": 5182
+  },
+  "test/approval_card_reports_a_lapsed_chat_as_closed.test.ts": {
+    "sha256": "99d024559927a83dd280cf0caf71a2090a321aee065139d69d6a0f3cfea80caa",
+    "git_blob_sha": "2dd01d72b6c8ec9ea9d0d8e6cbc2198b1bb8b921",
+    "mode": "100644",
+    "bytes": 5489
+  },
+  "test/client_non_json_response.test.ts": {
+    "sha256": "f01adab98708c51c983b6d0444d729dfbabd878128cfca9a3919179e6a7a2f10",
+    "git_blob_sha": "705bbfb2b272de651674daf46729a75b63d74f98",
+    "mode": "100644",
+    "bytes": 5105
+  },
+  "test/presence_requires_live_grant.test.ts": {
+    "sha256": "2a7927f17e7212153044ffd1aa8d4cdd96580a3525675e05b7b5fb8bbfe569fc",
+    "git_blob_sha": "c8ca44ae0ee0ffa619d46d4b40387b4cef2921f4",
+    "mode": "100644",
+    "bytes": 3695
+  },
+  "test/room_context_hold.test.ts": {
+    "sha256": "294b96e4612300f61b70007a757abb7a6dadadc2dcfeeb42ab0c2ef6c38e528a",
+    "git_blob_sha": "943f5246f5ac8fee5b2e2a4edf164d626fd09460",
+    "mode": "100644",
+    "bytes": 6943
+  },
+  "test/one_hourly_budget_for_a_bot.test.ts": {
+    "sha256": "58f36b1378173a0de69343850632d917a17418161a8a9ef382565d1a48950307",
+    "git_blob_sha": "c2c82c9372caee6904267e92802a7f16bfa0d782",
+    "mode": "100644",
+    "bytes": 7627
+  },
+  "test/local_room_invites.test.ts": {
+    "sha256": "0174d135aafd38701addaf6a1bb702a7f0553998f090d3f1b604da2ad6aa4176",
+    "git_blob_sha": "9bd741dcac560ff50619130ef2d9b60041d4ec03",
+    "mode": "100644",
+    "bytes": 22784
+  },
+  "test/expired_chat_reads_as_closed_and_cannot_extend.test.ts": {
+    "sha256": "3a50bf4e793853f8658a05e1f65f925b2225de88d3c13264c11e6db49639a59e",
+    "git_blob_sha": "78d65048fbcc2f4bda8f6becfbe6351ab2bbf3b6",
+    "mode": "100644",
+    "bytes": 6798
+  },
+  "test/ui_rooms_leave_nav.test.ts": {
+    "sha256": "e6584b7a108a9d6f776613b061f9a4fdbef5c6f115346591829736d1d0b0ca4f",
+    "git_blob_sha": "6a03ab57b6efc599018ad2c9bb22d026cf9237a2",
+    "mode": "100644",
+    "bytes": 4749
+  },
+  "test/reply_only_grants.test.ts": {
+    "sha256": "d590fde74b68bc42bb16006ac9b1435e640a836eddefc65f9e021427d583a3c2",
+    "git_blob_sha": "2e6439a21a84a523ffb0ab92cb111eb028a15207",
+    "mode": "100644",
+    "bytes": 15354
+  },
+  "test/audit_queue_follows_each_transaction_level.test.ts": {
+    "sha256": "3b0fd0dab58e35426629f347b202c557feb94a6bfd6510ec2fa7bc343d1b7519",
+    "git_blob_sha": "d448486cdea5f68f992e0ca369235a16feac4a94",
+    "mode": "100644",
+    "bytes": 3528
+  },
+  "test/face_room_left_audit_membership.test.ts": {
+    "sha256": "a9e9a8091a0fbd55ef941d3deaaa3e696f771ec6b3b5c5ef4303ea302c22aa05",
+    "git_blob_sha": "99977978e6012dba269d76ad1b14c362b68bb49a",
+    "mode": "100644",
+    "bytes": 3168
+  },
+  "test/refused_relationship_decision_leaves_the_row_pending.test.ts": {
+    "sha256": "1479276412a0a7cf990df0efb5f0bc9d0538f964627ab54790e18e5d764b029c",
+    "git_blob_sha": "1f86862d95c24473346696f73df20ae577f1476f",
+    "mode": "100644",
+    "bytes": 9600
+  },
+  "test/kill_switch_failed_stop_announces_nothing.test.ts": {
+    "sha256": "2e065ebf8fd24e29d600f2a0e92c376428e333e8bbe5e88d0f4879971d0771b6",
+    "git_blob_sha": "b732bfbfd74a85130d0f0d78e1b1295ed255cb3d",
+    "mode": "100644",
+    "bytes": 3816
+  },
+  "test/presence_write_settles_only_after_the_seat_is_checked.test.ts": {
+    "sha256": "9094dc898f4ba4a2bd0fc00b9ae38a44e1aa26e0171f588e2a3cbb7161765355",
+    "git_blob_sha": "a105016056d8676b5555a895956816a23630b8f4",
+    "mode": "100644",
+    "bytes": 8449
+  },
+  "test/start_face_room_mcp.test.ts": {
+    "sha256": "ecf417514fa0dcdb77a1bb442b6a4f3c3bb3e65eb1052714cd680a04afcc12ee",
+    "git_blob_sha": "8ad52bc098655f7648a84b130e1bfca1c2e2ff0f",
+    "mode": "100644",
+    "bytes": 5181
+  },
+  "test/conversation_peer_bot_id_must_be_a_string.test.ts": {
+    "sha256": "545b14ed5c8bf1f91fe3967df9ce1923e1ac137369d96611a5962dc915152af9",
+    "git_blob_sha": "bec84c785a53111fa3bdb458ce0254a7734cb033",
+    "mode": "100644",
+    "bytes": 5376
+  },
+  "test/a_home_member_name_must_be_a_string.test.ts": {
+    "sha256": "1d9fddd620bf4d0f9b964abf7fc10f505cc5f4e54eccb98e639e1a9aa0b25f7d",
+    "git_blob_sha": "fd82cc69e1ac7e62c29a9273f1101a539d76f0b1",
+    "mode": "100644",
+    "bytes": 4135
+  },
+  "test/a_refused_consent_or_grant_card_settles_nothing_else.test.ts": {
+    "sha256": "a93339b8717152dd39d9933b1c93c0a7ef93fd0614f04546ca45657238c45171",
+    "git_blob_sha": "af827bd83ab763a18e7417db1b31678c7a228f04",
+    "mode": "100644",
+    "bytes": 17241
+  },
+  "test/closed_room_tells_the_line_it_dropped.test.ts": {
+    "sha256": "cf3ab5601b1c3774df08244c701a0beec92514a4e032f9b37dcdb8134b3950ed",
+    "git_blob_sha": "4daaa235fec43925c9b91ad7cdba902d4d5b33a6",
+    "mode": "100644",
+    "bytes": 7121
+  },
+  "test/approval_notify.test.ts": {
+    "sha256": "c8494574a2897e153b5f31e533e606b48512ee920a9d8122db3199ddddb44907",
+    "git_blob_sha": "9015401bb9b3b92de980fdc3ab88f7dab499b658",
+    "mode": "100644",
+    "bytes": 7664
+  },
+  "test/consent_revoked.test.ts": {
+    "sha256": "6a15c552450e38a458f09872a677472c2dea5373fea9446ae029de30c3054756",
+    "git_blob_sha": "2903e0a59bbc535c6202a3a1cdfbe7bced66cf8a",
+    "mode": "100644",
+    "bytes": 8051
+  },
+  "test/room_card_edited_follows_the_payload.test.ts": {
+    "sha256": "c511958a21211e3f91147ba0c75d5396371163925d2e0eb79a27b2823903b3d9",
+    "git_blob_sha": "d2f85a650914760c4a10eb4f46f1259f533538ca",
+    "mode": "100644",
+    "bytes": 5331
+  },
+  "test/weekly_room_digest.test.ts": {
+    "sha256": "809dda00256b86f455b0c004293c8014e9b79205171a83808a29a7638cf62f96",
+    "git_blob_sha": "40138d98dadde7e859197e7ffd6d10b78138da16",
+    "mode": "100644",
+    "bytes": 17862
+  },
+  "test/ui_open_room_has_no_until.test.ts": {
+    "sha256": "06c5147fc5b3f1b4d66d086beddbd061e786ac6b9ad42d06841a19ec639c7e6e",
+    "git_blob_sha": "e89b353c7b53c74076f2f676f552b85ef02e60e1",
+    "mode": "100644",
+    "bytes": 5761
+  },
+  "test/stopped_bot_relationship_request_settles.test.ts": {
+    "sha256": "921ad0ff25a1fdbfb5b7365f597f5fbd9f6babc93be2daf7785a2c134c83aa6c",
+    "git_blob_sha": "789797c6d82e213b09ab757c7a2755563c7cb4be",
+    "mode": "100644",
+    "bytes": 7518
+  },
+  "test/revoking_a_renewed_share_takes_back_the_first_seat.test.ts": {
+    "sha256": "086149d4f5a4f62f539236a82bbcfa34aa43bb3233793326c5197654f3672912",
+    "git_blob_sha": "89f9f60632bcd1698d19e44e6276059a7b0fa24d",
+    "mode": "100644",
+    "bytes": 9113
+  },
+  "test/block_semantics.test.ts": {
+    "sha256": "0a7078f122cc0eca506e0839ac40e6cc3cd21df3435e8873181b2facf136b26e",
+    "git_blob_sha": "95d6a70a6870e0996dbd44848b5dfcc6d975f3d1",
+    "mode": "100644",
+    "bytes": 2492
+  },
+  "test/freebusy_hours_bounds_shared_busy.test.ts": {
+    "sha256": "88515e0d90bd363b29a52cd08d673076d47a6557aaaf453f3886e122e655a260",
+    "git_blob_sha": "28fb0ba8ae4899ed82451f6d3093fc2657dd5596",
+    "mode": "100644",
+    "bytes": 9324
+  },
+  "test/ui_polish.test.ts": {
+    "sha256": "f2e843ccfdf5791311d94f0ed7a4d433ae27c2718b78a3d2bc9c440c4d809d85",
+    "git_blob_sha": "e505d46d9c8d5cc2a62c8f1cd34a3c3d26e7525c",
+    "mode": "100644",
+    "bytes": 7741
+  },
+  "test/a_join_checks_the_number_before_it_settles.test.ts": {
+    "sha256": "67ed677773d60a879ead8290b024c7d4011b1853490a39ddeb374bbffb39fa8a",
+    "git_blob_sha": "2ea2286dcc9e8f8f99b2c6f4686e4c7f8ca974df",
+    "mode": "100644",
+    "bytes": 13246
+  },
+  "test/room_member_card.test.ts": {
+    "sha256": "6f229d0c1728fe3655bc76d7a5dddac6a48540bd7bae82534f403cd566e9b489",
+    "git_blob_sha": "5cd52a2856508edfc03dc4d029471d113f48b43f",
+    "mode": "100644",
+    "bytes": 10469
+  },
+  "test/connector_cannot_edit_a_held_line.test.ts": {
+    "sha256": "4506ca07625b820bcc45f90c7fce52e973e46f8b54c7d3919ad95541be0e0b05",
+    "git_blob_sha": "bc2d6877a885d8ee59328d3d9d472702121e4fbb",
+    "mode": "100644",
+    "bytes": 11938
+  },
+  "test/face_room_role_label_reaches_the_other_member.test.ts": {
+    "sha256": "8fcc829b45e6b1e6c170ea3f37a2222ed176681cfe31886397b43e6b9ce9da4e",
+    "git_blob_sha": "bc6e17f9759acfa3540cd5de4fc5ed578713546b",
+    "mode": "100644",
+    "bytes": 11405
+  },
+  "test/a_lapsed_share_settles_the_card_it_held.test.ts": {
+    "sha256": "92c5d58ecf2c7c195f1651473daf62f6482765d3d199073ea0ad7a4abc76cc21",
+    "git_blob_sha": "8942072ee313717a71aaf74c8ba0eebd435efad5",
+    "mode": "100644",
+    "bytes": 12409
+  },
+  "test/revoked_identity_final.test.ts": {
+    "sha256": "af150e7127485e8d27b711951caa52ca73674db045b53afed3b76c33fa53eb5c",
+    "git_blob_sha": "7d389296b377a56abc7b7b45c0de839d4298ee99",
+    "mode": "100644",
+    "bytes": 9656
+  },
+  "test/room_invite_copy.test.ts": {
+    "sha256": "0617bfb695a688a6e1505f4ab5428dc42de6465467b3f31e9e7479d607160dea",
+    "git_blob_sha": "36745d5ac1dfd2fa2122e11cd911205186370ccf",
+    "mode": "100644",
+    "bytes": 4191
+  },
+  "test/home_send_room_id_must_be_a_string.test.ts": {
+    "sha256": "2696bf2f6ae5bf53183644ef8e0ccbc4c23b4207574f4c081ea1e389dfbfa657",
+    "git_blob_sha": "b72004c243a8b971fdb04aaba9abad2755c582b0",
+    "mode": "100644",
+    "bytes": 9757
+  },
+  "test/ended_room_owner_reply.test.ts": {
+    "sha256": "5b0585bff07e727b32148946be9313115dd9c7f6b62319cd87be0379dfbde516",
+    "git_blob_sha": "b7a1c0b97af1b7119ab590effea0d11f305e8f2e",
+    "mode": "100644",
+    "bytes": 10508
+  },
+  "test/role_change_event_names_the_bot_it_relabelled.test.ts": {
+    "sha256": "a3ff096fa27aad41afe33d0cc86b72cd8200dd18e6749b0ddf1f61589e3f2733",
+    "git_blob_sha": "21de81710dd69301d8bb5eaecd5705541abfefb0",
+    "mode": "100644",
+    "bytes": 3264
+  },
+  "test/oauth_helpers.ts": {
+    "sha256": "8beafba6fd69a3905d35122cdba1d122d23718f83b2011a042273fd25d0823b6",
+    "git_blob_sha": "69e5ba80d6fdd9d2e6e5ae1fd8674b566a84dbf6",
+    "mode": "100644",
+    "bytes": 7846
+  },
+  "test/the_hourly_draft_budget_is_visible.test.ts": {
+    "sha256": "3028ff451c561249629e0ebd94234061061bfbf5a83d29a5067138002eb88de5",
+    "git_blob_sha": "eb7002b3553853d03f60d228d9b873d414c5571e",
+    "mode": "100644",
+    "bytes": 7535
+  },
+  "test/week_digest_mcp.test.ts": {
+    "sha256": "713f400a658a6f88fcd60756197e84f6e708365260f358035445fd32eafa2e5c",
+    "git_blob_sha": "6f443273ef6cc49d52a1b8699c6f922ad8733e87",
+    "mode": "100644",
+    "bytes": 8275
+  },
+  "test/dlp_covers_the_conversation_intent.test.ts": {
+    "sha256": "15bd7b3f75bc3bdb929aa92b83aeb3ffa8001a273def2d7df3960fc4e8d274d8",
+    "git_blob_sha": "4c0366bb4839a42fdcb0bffb1607f14eeb4d7ebc",
+    "mode": "100644",
+    "bytes": 4710
+  },
+  "test/ui_bots_removed_member.test.ts": {
+    "sha256": "1a0593f09ad1d0d60bf09403508707aebd90ff4cd9fd7ef95154e4a2037b565f",
+    "git_blob_sha": "998af7aa77fdfcfb7836b10eecc562c2f611ae8c",
+    "mode": "100644",
+    "bytes": 7043
+  },
+  "test/frozen_bot_cannot_rewrite_its_profile.test.ts": {
+    "sha256": "12ec2ca5b0e470cf8e419d2f03faae5c05cd7f82b16ae1211222420dbe2eb294",
+    "git_blob_sha": "8863b2d6107210c82afadd085be1a71cf7adaf5f",
+    "mode": "100644",
+    "bytes": 10317
+  },
+  "test/ui_grant_request_scope.test.ts": {
+    "sha256": "14f0398fe9348b7579a6df98a0bd3494af1b55e5855dd565029a38bd13a60132",
+    "git_blob_sha": "dea39ab505538f91de5eae716f903e9352aafdb4",
+    "mode": "100644",
+    "bytes": 5161
+  },
+  "test/assistant_copy.test.ts": {
+    "sha256": "d6d8058767884351b55c70ee84714f6d159eceb553166131b652b488113efb12",
+    "git_blob_sha": "f64dffd260000b6bac2604777116ec93b8be2503",
+    "mode": "100644",
+    "bytes": 1145
+  },
+  "test/ui_audit_labels_cover_actions.test.ts": {
+    "sha256": "455a369f110fbc06037d935bf255610a507a346c55052207a6cb97b4a765a8f0",
+    "git_blob_sha": "67d1cc2a2f8d40c1ea209c10753ee8ad4bef1f15",
+    "mode": "100644",
+    "bytes": 6653
+  },
+  "test/revoked_share_after_bringer_left_keeps_guest_seat.test.ts": {
+    "sha256": "0601ab3725fc0978e5a0563c53ea2b15cd64448086357ced208ad08b067fad26",
+    "git_blob_sha": "62477494f6f07a4a38cbfca51082f229ade3cc65",
+    "mode": "100644",
+    "bytes": 10400
+  },
+  "test/ui_boot_watchdog.test.ts": {
+    "sha256": "dbee0eab636bbb659a4045a07b736c6929be5a77533d142713ce1a2eb7a5bbbc",
+    "git_blob_sha": "83ac1e51c155a82e862ebe4455877d45674f9a85",
+    "mode": "100644",
+    "bytes": 5357
+  },
+  "test/set_auto_approve_mcp.test.ts": {
+    "sha256": "4580a5fb62668b9358d270206947f1b83e0208522b443eb1ad299e2112e0d4d4",
+    "git_blob_sha": "b840f6b4d9ef5f70bae481a741d5f419779af560",
+    "mode": "100644",
+    "bytes": 10805
+  },
+  "test/block-releases-the-seats-it-shared.test.ts": {
+    "sha256": "c977ebdc75adf79d095328590db88d0250e935c80fdba174218dff10f747bd76",
+    "git_blob_sha": "c008d86bfab1bd0d2e15e4533b93b197586760e6",
+    "mode": "100644",
+    "bytes": 13566
+  },
+  "test/an_onboard_integration_type_must_be_a_string.test.ts": {
+    "sha256": "e75d27fe192b10da7cd0284cdc79bc51d02b02ef8ce1ae00b4e4d41a2aa8d3b0",
+    "git_blob_sha": "817104e03f609273ffd1972cb8df48b607194a2d",
+    "mode": "100644",
+    "bytes": 6386
+  },
+  "test/claimed_room_send.test.ts": {
+    "sha256": "7cbfc1fb1cb4370aa85cf6b990c41c494cd492511b80850251e8f2009b9250d4",
+    "git_blob_sha": "210a6d740204da98f7fe7f9badb973c966ee6371",
+    "mode": "100644",
+    "bytes": 6727
+  },
+  "test/local_claim_end_audit_owners.test.ts": {
+    "sha256": "4e917887428cca93159fb1ef2814775742b497c740ed3ce389ac53ca99f89cb3",
+    "git_blob_sha": "73c04d2c4b49d01047c04725b91d8d2de42b8e5d",
+    "mode": "100644",
+    "bytes": 2409
+  },
+  "test/frozen_bot_relationship_request.test.ts": {
+    "sha256": "1d72e3f1c13b7dc2aa56ec4560614d69e32d90491413c50c85f4ca2800602fd0",
+    "git_blob_sha": "e207b05223be51944bb9525231c72edd2c81ba21",
+    "mode": "100644",
+    "bytes": 4292
+  },
+  "test/oauth_signin.test.ts": {
+    "sha256": "36ed48c9aba6fbea3b7ce982e45c879fc00151641b30fe400f9e66ac246dee58",
+    "git_blob_sha": "002ecfcd864c8d233ba746e895ff63918f412ffc",
+    "mode": "100644",
+    "bytes": 6790
+  },
+  "test/audit_append_write_lock.test.ts": {
+    "sha256": "c84441ee387d2edc9ecae7f3ca8662d6e978d77e9c9670971931d71f1177142e",
+    "git_blob_sha": "e984480c0b6d69d4a5b653da4e49c91df957f61f",
+    "mode": "100644",
+    "bytes": 3549
+  },
+  "test/console_oauth_landing_notice.test.ts": {
+    "sha256": "452220a66e4edb43dedf73ca8ebf9bdf516df58270196c0699a94365bbb1cb22",
+    "git_blob_sha": "e85b381d0e7e7429dff45eb3a77f24ca1ac03816",
+    "mode": "100644",
+    "bytes": 5368
+  },
+  "test/onboard_flybot_headers_before_signup.test.ts": {
+    "sha256": "05a88aa4e6361d3aa81a8a465beac45c80c212d0a2f387a14abdb4200596c06d",
+    "git_blob_sha": "175945abbc7cf78afa4e29f810d38d4ae0c32c4f",
+    "mode": "100644",
+    "bytes": 4475
+  },
+  "test/recipient_revoked_settles_sender_card.test.ts": {
+    "sha256": "f2576d736509a6856f2823c33e099430dc05a8d1a37577c9161231240a24cc3e",
+    "git_blob_sha": "8036dbaa99afd73d4bd1aa5e370f5e7fea996970",
+    "mode": "100644",
+    "bytes": 8180
+  },
+  "test/accept_invite_peer_binding.test.ts": {
+    "sha256": "743740785896e60e480ca7f9879e1d09200d6f664f83e2036c35a78d24c46ef3",
+    "git_blob_sha": "8981274af41aea571e9ac90358d844335f265826",
+    "mode": "100644",
+    "bytes": 8975
+  },
+  "test/retryable_failure_keeps_approval.test.ts": {
+    "sha256": "c72f0533383394f11a4a76c5afe0c113df117884ea6dac7fa9b002aa478d2e2e",
+    "git_blob_sha": "1d3038bea6ca4319c0faa1785f9ce4337e58bace",
+    "mode": "100644",
+    "bytes": 9404
+  },
+  "test/grant_lapse_takes_back_the_guest_seat.test.ts": {
+    "sha256": "13f68715027dc729b2606b8634788d47f88e2bcaefbbcd4a6df266ed54a07464",
+    "git_blob_sha": "308e4445fa13e0f38473e94284b164a933991e7e",
+    "mode": "100644",
+    "bytes": 4451
+  },
+  "test/peer_invite_survives_close.test.ts": {
+    "sha256": "f2671e7fc1e99b6501b541590dddbdb6b4e67693c193b7c927da1bae08d67c19",
+    "git_blob_sha": "cc98650fccf199952804829cb911eeca9e279d69",
+    "mode": "100644",
+    "bytes": 9142
+  },
+  "test/a_file_whose_end_cannot_be_written_is_not_destroyed.test.ts": {
+    "sha256": "df06c64cfdabcb1006d67e9ebc8a134148edf26bcb70bcacd03534be824977ff",
+    "git_blob_sha": "2dce8344a352f2b6754b436d2d88b93f0bc47bb3",
+    "mode": "100644",
+    "bytes": 6527
+  },
+  "test/lapsed_chat_cannot_be_closed_as_agreed.test.ts": {
+    "sha256": "da22f668a3752ce413b65c28c11662a6945a44e1afbc657e3ce2923ee71a5c2e",
+    "git_blob_sha": "67c93682d3cee2dbb701f99619939bcdf5407901",
+    "mode": "100644",
+    "bytes": 9803
+  },
+  "test/a_join_message_must_be_a_string.test.ts": {
+    "sha256": "d50dcce6f7f90ff6c70913dde1a5e8f7f7a192c384107b37354440efe1863325",
+    "git_blob_sha": "782620219401ed35869edc40da0590be84440beb",
+    "mode": "100644",
+    "bytes": 9456
+  },
+  "test/peer_name_fence.test.ts": {
+    "sha256": "dcc9a3ab660ca39f6e86b6d63de7bcccccacea71fcdfc0797bd8213e471824d3",
+    "git_blob_sha": "5b8b927adede47ad13bbc509060dd5e713ad056d",
+    "mode": "100644",
+    "bytes": 13879
+  },
+  "test/block_room_door.test.ts": {
+    "sha256": "12502a7cdf962d2d7fe2ef0abd1c37a49649e2029670e83f42aedba324e6d4ce",
+    "git_blob_sha": "0111e73b178d336e9dde1302ca16fc9e1342adb4",
+    "mode": "100644",
+    "bytes": 17961
+  },
+  "test/face_room_lead_bot_must_be_a_string.test.ts": {
+    "sha256": "2d892feeeef83896ea107bb19a56f8f614857c9785c4585b385f349bf393eb12",
+    "git_blob_sha": "42fdac2aa39134933d1e6c714ed840d3f428706d",
+    "mode": "100644",
+    "bytes": 6173
+  },
+  "test/console_rate_limit_notice.test.ts": {
+    "sha256": "a777773772b1adabb3166f7de71af787775aef5ba7a6a35e3bd250f50b552254",
+    "git_blob_sha": "2de42441cb7147c9035e664cec6dd48a4e748803",
+    "mode": "100644",
+    "bytes": 3662
+  },
+  "test/quiet_summary_names_only_pending_cards.test.ts": {
+    "sha256": "ef06aba830b613503c2bb373e85b0c67d2e77f9754295b0cf5e6fd6f9e7e70e0",
+    "git_blob_sha": "be18d51ce1f89cf829b759fc86f4ebea7aba4d35",
+    "mode": "100644",
+    "bytes": 10772
+  },
+  "test/a_stopped_seat_cannot_start_the_room.test.ts": {
+    "sha256": "51d833fba5a6a48b1eaac9f5c228d4065d833105ff82cd0f3bf90f05177a33ee",
+    "git_blob_sha": "05dfcb759c38f599f8a15227098fabe2f9e2b7e6",
+    "mode": "100644",
+    "bytes": 8412
+  },
+  "test/cancelled_room_card_reason_at_decision_gate.test.ts": {
+    "sha256": "468d9f6e961f88a20d6f6356faee1f57d65fa1ed6f291e04c34561d0b818832a",
+    "git_blob_sha": "a4591a011fbbb9b080251249836159c0f420a4a3",
+    "mode": "100644",
+    "bytes": 9033
+  },
+  "test/face_room_write_doors_settle_only_the_room_they_name.test.ts": {
+    "sha256": "804b5cf88284311efdecb12b176aff4603ff887e536a4d8b4b511602dfe3f961",
+    "git_blob_sha": "874851c8a58de4dc2fbb955080bd5dfc963044eb",
+    "mode": "100644",
+    "bytes": 12867
+  },
+  "test/ui_request_deadline.test.ts": {
+    "sha256": "b705e140aa7975b0d8dec5b79293f5bd11fb3de6caa13a7686b58eafe264c42e",
+    "git_blob_sha": "0ab8246df6256334a6a20b76a65c7eebb5d6af63",
+    "mode": "100644",
+    "bytes": 5746
+  },
+  "test/local_invite_withdrawn_keeps_budget.test.ts": {
+    "sha256": "84df4dc67eacd0576c08f47cad2adfc8dee461a28f279426a6f9a504258bb881",
+    "git_blob_sha": "ee26d148801bec2586178115b0d6ba41bef64eb9",
+    "mode": "100644",
+    "bytes": 8310
+  },
+  "test/ui_face_room_approval_card.test.ts": {
+    "sha256": "6a03ae1aeb5dc45fa44d8925c626f7ad7b643b62adc9195ddba6edd6b13987e6",
+    "git_blob_sha": "148431394de32a529e6639885c5eecfd90739e37",
+    "mode": "100644",
+    "bytes": 2883
+  },
+  "test/a_refused_relationship_request_settles_nothing_else.test.ts": {
+    "sha256": "dc0caa70c52f22461bf65e819f4955e31427a156e26b88aa5086a1900d20fd1a",
+    "git_blob_sha": "a034acb308c90db8095870a8133f2314c3abf188",
+    "mode": "100644",
+    "bytes": 17414
+  },
+  "test/face_room_audit_ip.test.ts": {
+    "sha256": "1aa4f4d79445e27340f55a81787eec50fb0f2b2d4aebbd516b7119f5b3df635b",
+    "git_blob_sha": "436add028ac8f1d263d884483afaa03d84ed4019",
+    "mode": "100644",
+    "bytes": 5145
+  },
+  "test/ui_room_transcript_own_line.test.ts": {
+    "sha256": "b10ef4f6360a990056345ccdfb7b972c1095f8a019132163d7263b30896cc085",
+    "git_blob_sha": "e1b9633732e301af7833f39f3e32d9588bc8e9c4",
+    "mode": "100644",
+    "bytes": 8398
+  },
+  "test/api_key_rule_reads_case_and_leading_boundary.test.ts": {
+    "sha256": "da68d852192be21e7ea5f1f32f2b92703da896f19fca99850b2719bf1e2d29da",
+    "git_blob_sha": "6891a997adad490c4ee5f82b48fb5ba3b7a7da96",
+    "mode": "100644",
+    "bytes": 2975
+  },
+  "test/face_room_leave_empty_writes_no_audit.test.ts": {
+    "sha256": "ca47a866f602fb8dd97fdd3c30082411298a891ab71fe0f83128b8eb2c224d2f",
+    "git_blob_sha": "f32689b9e6fb9e37c503fdeaa6e1974029fb5ff4",
+    "mode": "100644",
+    "bytes": 3576
+  },
+  "test/revoke_member_shares.test.ts": {
+    "sha256": "2ea7ea642227e1831749872addd9b7c173dc12d2ce6b72b84e2918d4387075e2",
+    "git_blob_sha": "6257a8691ab00e8b4d003ac35fa8605503a09e80",
+    "mode": "100644",
+    "bytes": 1093
+  },
+  "test/relationship_side.test.ts": {
+    "sha256": "1680a6827751e56ad86821dc2445347cf7af0d833ae2ce3ec4b5e1125469ba72",
+    "git_blob_sha": "8e24344474194da36aa251af86b63f179a31c351",
+    "mode": "100644",
+    "bytes": 5806
+  },
+  "test/onboard_flybot.test.ts": {
+    "sha256": "fcd9cf1f03fe78157df6725237cd1ada85d73067cbd00a80a34f89077b3b02c7",
+    "git_blob_sha": "4fc6c6e4b13d115d0dbd0246b8ee28bc89400a32",
+    "mode": "100644",
+    "bytes": 10871
+  },
+  "test/grant_scope_enforced.test.ts": {
+    "sha256": "2229abbd86a7af887651d0d197159650a930bf997d860cdba9b8ca4d9af1cdb8",
+    "git_blob_sha": "e3780919e3b418dd493cb890968b75790690ebc5",
+    "mode": "100644",
+    "bytes": 7913
+  },
+  "test/face_room_lead.test.ts": {
+    "sha256": "5a327e22f9a80a518947e13ce835acbb09d24dd43e2c41e48c644d3255b4ecb0",
+    "git_blob_sha": "cd82a8d65038331f98aa1373077d4f5f1dfb7a26",
+    "mode": "100644",
+    "bytes": 13371
+  },
+  "test/room_writes_are_audited_as_mcp.test.ts": {
+    "sha256": "e1fb67d08c331cf1f3689cc1daa369c330841f15552938fb58692be8396a1f29",
+    "git_blob_sha": "4ef2bd5f6bb272605b9b3fdaeeef685b0137a035",
+    "mode": "100644",
+    "bytes": 18826
+  },
+  "test/kill_switch_pauses_its_chats.test.ts": {
+    "sha256": "bab6c413e883654218a42e44dec34b3dd0226c6284b30dd35c3cbc0ccd8449a6",
+    "git_blob_sha": "5b70db0e3373c9cbb7a6762371130330c7eb33b7",
+    "mode": "100644",
+    "bytes": 7425
+  },
+  "test/connector_writes_are_audited_as_mcp.test.ts": {
+    "sha256": "71050a0cf9aea048a63ec3c2e15c22efd8ea8e6ca7b1459c4098f112f032525d",
+    "git_blob_sha": "5e6c6ae6582b778455b31d1243c8ddc2ba468d25",
+    "mode": "100644",
+    "bytes": 12001
+  },
+  "test/custody_note_names_the_owner_mcp_tool.test.ts": {
+    "sha256": "5213e31641e88f76e9e2dcee7a2e1fa224b3a36ef919a6bb89196c77e6d230db",
+    "git_blob_sha": "db2cbb8572b9701dd25836d9e573d0da3f308cd6",
+    "mode": "100644",
+    "bytes": 5809
+  },
+  "test/event_render_covers_emitted_types.test.ts": {
+    "sha256": "7435634e4b04284c8b539e7ee8c7804453767f7c635a529510e5b28c7e2c367e",
+    "git_blob_sha": "b6d3bef6094d1265dd1fb240bbb8b80eb37d2f0f",
+    "mode": "100644",
+    "bytes": 8233
+  },
+  "test/ui_console.test.ts": {
+    "sha256": "3aaa0b16748c7b6867ddd8503ed5f79e2a37c69e6e776a8bf5c37fb6a1affceb",
+    "git_blob_sha": "cafea4b22d1b2b05c7a3ab4754f837a9bba40a49",
+    "mode": "100644",
+    "bytes": 6904
+  },
+  "test/audit_limit.test.ts": {
+    "sha256": "75739921c98b30be488e756fee5bfb10a750e3c4cb479f26d9d6cafd41200194",
+    "git_blob_sha": "e859524a0337adf0578b6b84e1385d7d228a4f9c",
+    "mode": "100644",
+    "bytes": 6815
+  },
+  "test/ui_rooms_join_start.test.ts": {
+    "sha256": "4fc15881dfeb8f00456df16b835c56b8045d36b123d0a1ec5ddea99cb16be58d",
+    "git_blob_sha": "af964b788fbd7f5d0b9f91d24fa32443e780839c",
+    "mode": "100644",
+    "bytes": 8120
+  },
+  "test/grant_revoked_settles_held_card.test.ts": {
+    "sha256": "96ba6058428a2580f0e57a01d498833b0b881b16dbd1fdced0296db6746891b2",
+    "git_blob_sha": "d0bed622ddda34ed8fe799a9282a90335c982735",
+    "mode": "100644",
+    "bytes": 10721
+  },
+  "test/frozen_webhook.test.ts": {
+    "sha256": "73254d33feebdcddd6fa60106b4e5e3abfb6a3c484d0cee5591f0f48c6b36d87",
+    "git_blob_sha": "6a5c626d2e2e5bdb1c330c367a77bc23e1039b8b",
+    "mode": "100644",
+    "bytes": 7528
+  },
+  "test/a_face_room_read_checks_membership_before_it_settles.test.ts": {
+    "sha256": "9c56bdb161652b6ddef9c4bfa8bef94ed116c306d46f8d8d4d46132ff84b0817",
+    "git_blob_sha": "8bdef93fa40a695439f141a1b77334ffef2775a5",
+    "mode": "100644",
+    "bytes": 13752
+  },
+  "test/console_bot_card_audience.test.ts": {
+    "sha256": "15702953df2a81ae4906d52ba2bdd027bf4765e0304165c1e10bbfe4b7e94039",
+    "git_blob_sha": "74bde0f2192c0304ecbbde67a2dce0c22e1d9276",
+    "mode": "100644",
+    "bytes": 4845
+  },
+  "test/handle_case.test.ts": {
+    "sha256": "2906f8051015417e13f9409895ae20440b89d8a96cb131367580ff3f398ab7e6",
+    "git_blob_sha": "56d20ace3ba1bd8105512c636524174456290ad7",
+    "mode": "100644",
+    "bytes": 8328
+  },
+  "test/quiet_flush_settles_a_lapsed_card.test.ts": {
+    "sha256": "3f9519d1052d06b076a0a4f3e24b3a3f9b1229229c1859e8c821419cda207bcd",
+    "git_blob_sha": "1450b2875955082be4262550ed4aebec0b23d7c2",
+    "mode": "100644",
+    "bytes": 7191
+  },
+  "test/connect_copy.test.ts": {
+    "sha256": "1549d7a342a6a0e14ce2c996ab4c19252f509bcb1f122ba23bb4530cc24b183e",
+    "git_blob_sha": "14e5be3541ba40493d4de9ee840ee4209e364658",
+    "mode": "100644",
+    "bytes": 4896
+  },
+  "test/api.test.ts": {
+    "sha256": "b3140e9b65d1cc61916bf4d339e22e5350890241324bcec38cc438be0b3b434b",
+    "git_blob_sha": "27fc60fe1e3f554cc851c985e65b85e542e74e94",
+    "mode": "100644",
+    "bytes": 24549
+  },
+  "test/bot_mcp_mentions_null.test.ts": {
+    "sha256": "2271af64ff292a3cf9f5bdfa1e4b187b996b3678841d3afd566cccc977960cf0",
+    "git_blob_sha": "5bcf0100238c54055ea5cb312ef69dd84780d26b",
+    "mode": "100644",
+    "bytes": 2662
+  },
+  "test/revoke_member_pending.test.ts": {
+    "sha256": "d1c181330edf237b12d629d57f903f6ffcfd4a53953311a0bca7dc16835c9bfa",
+    "git_blob_sha": "df83b2ca8dfcfb3668d4bbce1b9ef077dc7bbeb4",
+    "mode": "100644",
+    "bytes": 13238
+  },
+  "test/invites.test.ts": {
+    "sha256": "d3d87d1726d0bdbe868e5f680b26c333fedf866088f1de8ffbced9b8698a25d3",
+    "git_blob_sha": "2dcd658f4c53c004ae31f3bad06463a85dddc835",
+    "mode": "100644",
+    "bytes": 6173
+  },
+  "test/frozen_or_removed_bot_cannot_write_close_summary.test.ts": {
+    "sha256": "a73946154ebed3beff5a05a9fac8e0198b38dc530925f19625c5ff46a4aa713c",
+    "git_blob_sha": "69aab17ef13ff648981452244cd4fd23e56f0b03",
+    "mode": "100644",
+    "bytes": 8028
+  },
+  "test/bringer_cannot_start_the_room.test.ts": {
+    "sha256": "a6c746ca2780699c96c78156c76e8a0190903420b1fbb2f7a73ccc0ee1d27de9",
+    "git_blob_sha": "14a62d1b0ed2a8a00e0753db1824eae977d9b189",
+    "mode": "100644",
+    "bytes": 4572
+  },
+  "test/guide_copy.test.ts": {
+    "sha256": "ff1d566427e9da2308ef6a2e8980616383fd3b52fd0e6fb220c674045354fad0",
+    "git_blob_sha": "6564f5629ff8a4cd8a0e5c2ce4a29a5bcb63b5de",
+    "mode": "100644",
+    "bytes": 2632
+  },
+  "test/ui_chat_owner_reply.test.ts": {
+    "sha256": "b3819dff5f422eb537a396e997ec009e904b3e235a02c34525609cbb71dad413",
+    "git_blob_sha": "6a98de13f641d3fa8a371e081964dae79f12476f",
+    "mode": "100644",
+    "bytes": 20500
+  },
+  "test/owner_typed_direct.test.ts": {
+    "sha256": "5e48dd8ce73bebfbb143a1470384a4625142fc2959b165cbda03b0247cd7d5fa",
+    "git_blob_sha": "4d04e54ca98d26c220b2a9add110155a0e5cee8f",
+    "mode": "100644",
+    "bytes": 6181
+  },
+  "test/non_chat_share_keeps_the_guest_seat.test.ts": {
+    "sha256": "a851bc3368fae3f6024c386a820f387c4285d61b7b1b387b4315181d521d236f",
+    "git_blob_sha": "fe31468465ee6b43f69f648e97c3d17b9dbf9e30",
+    "mode": "100644",
+    "bytes": 14242
+  },
+  "test/attachments.test.ts": {
+    "sha256": "ea97b58ef11f6776a66ffe5dfca06c2e93140b0d1319516e52d6b6a3cff9aecd",
+    "git_blob_sha": "41a580c17d5dec112e37290b1a780ab7e0baf651",
+    "mode": "100644",
+    "bytes": 12364
+  },
+  "test/quiet_hours_console.test.ts": {
+    "sha256": "975ee0605923d3687bbc75d37192841d48cd87f37d4d17f8f0e7df3f28376acf",
+    "git_blob_sha": "7c4fbf140f0ec2fedd8642b5194d8ed01755b7a1",
+    "mode": "100644",
+    "bytes": 12868
+  },
+  "test/an_onboard_bot_handle_must_be_a_string.test.ts": {
+    "sha256": "457df7d0bb381bb139d72bf72b5a55a3aeea065768d069587f474a432b51d3f2",
+    "git_blob_sha": "d1d6a22ab0f97c27e88f544fddfb2663cae7e58f",
+    "mode": "100644",
+    "bytes": 7043
+  },
+  "test/quiet_expired_card_reaches_outlet.test.ts": {
+    "sha256": "e6ca549c16b88341f12eda2a9772e6d93cddc1c278b192dfad9ed0e26c66b523",
+    "git_blob_sha": "a67a34cd7e723a298b98db4f7dc7d9e1aefc16a3",
+    "mode": "100644",
+    "bytes": 9144
+  },
+  "test/the_bot_an_unnamed_invite_acts_for_is_the_oldest_member.test.ts": {
+    "sha256": "1ddd45d5c59879b0d6814a536fc831ab3fac835e0ca7a59d85c14ee47875b062",
+    "git_blob_sha": "f921b8395aed0398417510efff57f9942c8b8ea6",
+    "mode": "100644",
+    "bytes": 3221
+  },
+  "test/custody_adoption_clears_the_old_key_expiry.test.ts": {
+    "sha256": "40b8f2c1cd0499af1a745212c763f3817914c9d10ca68e8721de95898ff1ef8b",
+    "git_blob_sha": "43560fe73144edee2e8ec868b9037df66f4a4ff0",
+    "mode": "100644",
+    "bytes": 7488
+  },
+  "test/a_grant_created_audit_waits_for_the_commit.test.ts": {
+    "sha256": "adb0678452f21285977635a501c5cacc9461a9e2ef797eb11c2ef988df0db034",
+    "git_blob_sha": "279f91f5ef90fad080ce677437edececf9ee0609",
+    "mode": "100644",
+    "bytes": 3340
+  },
+  "test/oauth_error_pages_and_limits.test.ts": {
+    "sha256": "1c3c8c76a4a69c7ca83fff32e14a3f58d5572441da22e3b3a591ab71228f22dc",
+    "git_blob_sha": "f70004f193ff76197dce7b8d01ff1e552e79372f",
+    "mode": "100644",
+    "bytes": 8515
+  },
+  "test/dlp_normalizes_digit_separators.test.ts": {
+    "sha256": "6109f68ad359635b139de9032fc59b47601bfa8cfc2459caaef7bb156ad27ead",
+    "git_blob_sha": "1cb5b2296cf6209bf01c24da9c8419148104fcdb",
+    "mode": "100644",
+    "bytes": 7641
+  },
+  "test/invite_decline_release.test.ts": {
+    "sha256": "44e18c3ecfd0f748df344320872563785e8421a520bf17e4d3fca4f4150b07d0",
+    "git_blob_sha": "7eeea210574d8bdf24b90ebbad6eda773a045fd3",
+    "mode": "100644",
+    "bytes": 4173
+  },
+  "test/a_friend_id_must_be_a_string.test.ts": {
+    "sha256": "a8ff8feb063d7bf52404f8ba66edfe137cae129051f936c4477650b7af7f5889",
+    "git_blob_sha": "5cde42cd2e74d9fbd9c12f7b4167f56180e41ad2",
+    "mode": "100644",
+    "bytes": 9569
+  },
+  "test/face_room_invite_entries_settle.test.ts": {
+    "sha256": "e5d5eaedfd696db44764feb7b2a7ed802b01bf095cecc5b031049157be44cc8f",
+    "git_blob_sha": "fd4e1c8f0f6a0d46db826dfe710328bac72780ea",
+    "mode": "100644",
+    "bytes": 12426
+  },
+  "test/webhooks.test.ts": {
+    "sha256": "99840c4f12c5e5a7f68d031768045a49c00c70df606976a9baef70a9611a98bf",
+    "git_blob_sha": "2734ce9073c84100670dfbdb985639e777748908",
+    "mode": "100644",
+    "bytes": 14008
+  },
+  "test/owner_settings_audit_values.test.ts": {
+    "sha256": "c0bda29bcf65dab5ce4231d6456b78cb10ed94577adee1d74cb443af41191917",
+    "git_blob_sha": "eae1a951be95cde04ff4679263fb71a6e249d26b",
+    "mode": "100644",
+    "bytes": 4456
+  },
+  "test/local_room_invite_room_id_must_be_a_string.test.ts": {
+    "sha256": "74a190d09f4f26ca02dfd63793493cc1e6e0768c293a369f571d0bd8453763aa",
+    "git_blob_sha": "d199db99342fa1736307cf04ef9bd2c075001585",
+    "mode": "100644",
+    "bytes": 5387
+  },
+  "test/ui_chat_extend_button.test.ts": {
+    "sha256": "5baed64018d2513595b8c0ecc42a30e62ce7e2da09c8babaf1dfa1d1441bb61e",
+    "git_blob_sha": "4d43f14bd81eabe7801778ea0cee620d84de6e28",
+    "mode": "100644",
+    "bytes": 8004
+  },
+  "test/remote_bots_name_read.test.ts": {
+    "sha256": "3b02a30f55ec05160bab457fad24603eda94a866d42ccdd73fe9a9729e0ab69e",
+    "git_blob_sha": "78d1ad478714ba7a6247e412a4e694b998bc4aed",
+    "mode": "100644",
+    "bytes": 4420
+  },
+  "test/oauth_deployment_gate.test.ts": {
+    "sha256": "db45fe5cd4e087b79532c2806a9b4f8f6b641dcf45789c9e60983ec7c378bcfe",
+    "git_blob_sha": "d20e79bcefece97bea5a57f7ec66563ac6ccf92c",
+    "mode": "100644",
+    "bytes": 5879
+  },
+  "test/member_reactivation_audit.test.ts": {
+    "sha256": "3251c14ad14853598f8483941c02a070d9ad75f16589d1b87237001964ab50f7",
+    "git_blob_sha": "5a71ec70ea45c5fee93e8bdad6d81414996b92a8",
+    "mode": "100644",
+    "bytes": 5461
+  },
+  "test/start_face_room_marks_itself_destructive.test.ts": {
+    "sha256": "a71dd5537efb12d4ee8cf4ec84836d9beffbfe700b38d3229bbc1b0af588c916",
+    "git_blob_sha": "ff4c3ea63aec5efcd9b7820d3b1c8456c9d3f65a",
+    "mode": "100644",
+    "bytes": 4779
+  },
+  "test/revoked_share_settles_held_room_card.test.ts": {
+    "sha256": "f911854355cdcfca2a4770d034d79575754423b74de68df185acd305a168d5e9",
+    "git_blob_sha": "5e0825dd0b52ad7ef65ffb256c2bc7db2bf8b1b6",
+    "mode": "100644",
+    "bytes": 7472
+  },
+  "test/face_room_note_lead_status.test.ts": {
+    "sha256": "f735b594bdcfa801918704739a91dddb90ee202c190d460c24a7246e2ce059e4",
+    "git_blob_sha": "a638819746973c5214b1ac1aaefd123895dc293b",
+    "mode": "100644",
+    "bytes": 6788
+  },
+  "test/face_room_metadata_writes_are_audited.test.ts": {
+    "sha256": "0124e237bc9454745b9145d4657a10cb155daeaff9e73bc80f48d91974970047",
+    "git_blob_sha": "f364e0170776cd1ddf5f742ff18218e843271838",
+    "mode": "100644",
+    "bytes": 4497
+  },
+  "test/flybot_helpers.ts": {
+    "sha256": "04029d6bcac5b304ca24907c1c4ea52f0f0b77afae5cbd11ecea2cd7451b39cd",
+    "git_blob_sha": "465bc1b646d6af81c781087b4b9068d4754fa4cb",
+    "mode": "100644",
+    "bytes": 2975
+  },
+  "test/room_bring_needs_chat.test.ts": {
+    "sha256": "21d804a9aea3685d95f3985e02f71410555264dad597e00444a94ac0856be182",
+    "git_blob_sha": "816c71e243f50aa38311529942fe654e9255a9d8",
+    "mode": "100644",
+    "bytes": 3219
+  },
+  "test/idempotency_key_covers_the_card_it_decides.test.ts": {
+    "sha256": "1d1221f099c8502da2a310db8fc9f60b7bfdbf11d1e2128c498da7227eec2f2d",
+    "git_blob_sha": "c106983d06ebac9fa063cb47cf107af097e3c073",
+    "mode": "100644",
+    "bytes": 3169
+  },
+  "test/read_doors_settle_only_shares.test.ts": {
+    "sha256": "9d84a64d354cbd82a584dcc7bad59a17f89885145cc8674f18e6726dcc296e60",
+    "git_blob_sha": "2c4d45b0277b223fb689f25324176519e0fb4c62",
+    "mode": "100644",
+    "bytes": 10976
+  },
+  "test/quiet_outlet_switch_keeps_the_digest.test.ts": {
+    "sha256": "416fc00b403c1f74cd6f45263a0d13d3308d4b9c122b0ef94da1d9c91d94c30d",
+    "git_blob_sha": "f055245bf12fbf8519e8e84581a30f5c23058efe",
+    "mode": "100644",
+    "bytes": 8475
+  },
+  "test/an_expired_attachment_leaves_a_line.test.ts": {
+    "sha256": "ac609017c37bf9ea654ba4f2cc5631b6d6421a282cef2a699e711e20a55fe5fa",
+    "git_blob_sha": "61fa0acc133e8e620f24bc19698ff851fa202315",
+    "mode": "100644",
+    "bytes": 6913
+  },
+  "test/face_room_reads_declare_the_start_they_perform.test.ts": {
+    "sha256": "98f672ac5209d95aaa3545298154c9cc47453316939f3913cbbc94dd25eb223c",
+    "git_blob_sha": "10daff35cce4ae6367c34db8b12be6ea543b766c",
+    "mode": "100644",
+    "bytes": 4470
+  },
+  "test/face_room_role_phantom_change.test.ts": {
+    "sha256": "81a7639be9753b53df2e99d1af8d65793d9ced8af114a16098a8d8c1bb6176bb",
+    "git_blob_sha": "562fd32dcbd251f8529dec88381fe2cf8fd20167",
+    "mode": "100644",
+    "bytes": 9337
+  },
+  "test/invite_auto_accept_must_be_a_boolean.test.ts": {
+    "sha256": "9f316d3cf5a7c099786d7a7525ac93ccc08502c2a03aa66a0e16752e956c05f7",
+    "git_blob_sha": "90383bf95fd4c173bb8cc45d2081e187b939495c",
+    "mode": "100644",
+    "bytes": 7958
+  },
+  "test/local_room_invite_name_must_be_a_string.test.ts": {
+    "sha256": "12ef03f8baa86438102b2bef31643130d18248c22b8b3042c9b4d12aa5aa896c",
+    "git_blob_sha": "20908c6da6e38b742ac84aaab762b75663b0f1a8",
+    "mode": "100644",
+    "bytes": 6841
+  },
+  "test/share_lapse_releases_guest_seat.test.ts": {
+    "sha256": "ab27315b203fd6bd5032cb6f70f7748c1c092fa3b1c30646ec194899050ed524",
+    "git_blob_sha": "78c4c9791bcc378d8cf368c8d5ed11bb59d71818",
+    "mode": "100644",
+    "bytes": 9088
+  },
+  "test/action_draft_card_integrity.test.ts": {
+    "sha256": "2ab2f35bfd1f66ecdf3655bdc554cc5c692d44c94d2f24e75f6ab6b66d49ebb1",
+    "git_blob_sha": "8d507d0abfdacae7637faf28baeb90d0b0c3bb3f",
+    "mode": "100644",
+    "bytes": 11232
+  },
+  "test/invite_join_message_dlp.test.ts": {
+    "sha256": "2b0b9e3d3d2beecdf6adda4139bd64f1f50d7f4aa0c930ec5a6b728dc75b83a2",
+    "git_blob_sha": "8d12718c622fa2b377fa17d319bdcd0ab72a71eb",
+    "mode": "100644",
+    "bytes": 6550
+  },
+  "test/timezone.test.ts": {
+    "sha256": "4af11b0250fcc89ab2565767c28f43f9a7e3196fe411240607c03e5adbd70db9",
+    "git_blob_sha": "454134551299dab01f92e339ca65a86664b76ab9",
+    "mode": "100644",
+    "bytes": 7159
+  },
+  "test/oauth_provider_failure_and_logs.test.ts": {
+    "sha256": "eac0680b6b7fb926e00a409c23f07ffa5f076f26730c2b3636c6e89b58c8143d",
+    "git_blob_sha": "744ddd0dc75fcb783cb95f3905ae62f2b915b265",
+    "mode": "100644",
+    "bytes": 3644
+  },
+  "test/a_non_boolean_expects_reply_is_refused.test.ts": {
+    "sha256": "1451a40b4d9bde01d8c79f5a73991f7b1dfbd55cea6af496ff9a9a9004c235e7",
+    "git_blob_sha": "87725d24a0dc27436db5d630f45457e3f7c4f66a",
+    "mode": "100644",
+    "bytes": 5020
+  },
+  "test/ui_approval_attachment.test.ts": {
+    "sha256": "7b4797e0a100efcfe95c01b26f67509d0141afc6cb4f71cb2127438fac48f1e1",
+    "git_blob_sha": "5221e46fad27b71536fe8e4f19b7e205ea461c22",
+    "mode": "100644",
+    "bytes": 1688
+  },
+  "test/env_file.test.ts": {
+    "sha256": "4701e6b62f246c7e4734b9e1d39bc8789cdfad50e6b60fb247ca652e9e5651bd",
+    "git_blob_sha": "f9296ecbf63ba7b31e794317ee7f97d246b432bf",
+    "mode": "100644",
+    "bytes": 1160
+  },
+  "test/ui_approval_deadline.test.ts": {
+    "sha256": "8558d0b8384a8d525f8ecd98772465ba641756122c2bdaf4d7367a8da5ea81d6",
+    "git_blob_sha": "3b906b528e7badf3cccce04d3c7741f7c70cbcef",
+    "mode": "100644",
+    "bytes": 1459
+  },
+  "test/an_invite_bot_id_must_be_a_string.test.ts": {
+    "sha256": "2ee2b319cc3ab4b00c0c4e1f78a2b81e1968be1d6715b7d11eee178cd3de88cd",
+    "git_blob_sha": "5acf8f3f9c846aa4274f38cfaa8246e0e8c31763",
+    "mode": "100644",
+    "bytes": 6831
+  },
+  "test/ui_secrets.test.ts": {
+    "sha256": "5e0458fa359ecff9acd2afda7b84e4e180c60bf148dc19215cc42bbc74659abd",
+    "git_blob_sha": "27c4e46630abdcb8fcec413378225f2e2c0fcd76",
+    "mode": "100644",
+    "bytes": 4277
+  },
+  "test/ui_action_failure_reason.test.ts": {
+    "sha256": "3900d24fd3568ab3f183473db35437bcecc221fe62edadf980c0a04be3cf50d0",
+    "git_blob_sha": "92e885b773d051deabf7ad10a0d616bea2e14193",
+    "mode": "100644",
+    "bytes": 14974
+  },
+  "test/a_cancelled_request_gives_its_invite_use_back.test.ts": {
+    "sha256": "b0877fd8813187d033e2d238ceacbe07f621a29d585236749ad1b3b6c4f6a0e8",
+    "git_blob_sha": "ded4ce852005005b960bcae719a843d5ff73875d",
+    "mode": "100644",
+    "bytes": 10734
+  },
+  "test/edited_params_guards.test.ts": {
+    "sha256": "8642c389a5f9f55b50232ae76ff8d612dde27c5eb03140dbddb3b5274e200215",
+    "git_blob_sha": "cd6ef606dde0c90335dc6cd89edad060fd19f46f",
+    "mode": "100644",
+    "bytes": 11721
+  },
+  "test/ui_room_no_seat_controls.test.ts": {
+    "sha256": "a97ce58a8ae08391892e2fe62069c0860358ed6d2f18fb0d27856e3a53d7bb46",
+    "git_blob_sha": "d50e122b2c6487e87ffa4f9f239258f002026abe",
+    "mode": "100644",
+    "bytes": 7632
+  },
+  "test/revoke_member_rooms.test.ts": {
+    "sha256": "2b11ed5cbbda0af48255e921a0d1bf05384d83d512870303728f303f62570016",
+    "git_blob_sha": "95dbfe8db927c8e8dc62310a0e1a87beed3c7691",
+    "mode": "100644",
+    "bytes": 1376
+  },
+  "test/quiet_digest_leaves_when_the_window_ends.test.ts": {
+    "sha256": "d17d24d6487e0f4d60e15dcb4a197407e6a39b2777ecbb148abbdc71de50b723",
+    "git_blob_sha": "03769d3e9117fd311a2130b0d05be33eceb397eb",
+    "mode": "100644",
+    "bytes": 7260
+  },
+  "test/ui_audit_actor.test.ts": {
+    "sha256": "8d3b32be9d3556519c33512c840d856c0b909dd9a19b88a8742a8626ee744855",
+    "git_blob_sha": "957e30c2b505fa1dd9080dc0908f30d846880e8a",
+    "mode": "100644",
+    "bytes": 4778
+  },
+  "test/botctl_defaults.test.ts": {
+    "sha256": "c4c1601fb4d9fcdcddd80db94861005fa15262f2b1d5f270f528396512dc06f9",
+    "git_blob_sha": "613567d79d4bd0679f012266ea5a1ee40a2cb507",
+    "mode": "100644",
+    "bytes": 3400
+  },
+  "test/face_room_edit_guard.test.ts": {
+    "sha256": "ed8cca16ca542f97f632e0c9d22ef2f287be1c06ee4cc080a9154f6cbedccb82",
+    "git_blob_sha": "278efb919e72ca7ca01f5df0bd956b8829e9908e",
+    "mode": "100644",
+    "bytes": 4726
+  },
+  "test/meeting_window.test.ts": {
+    "sha256": "11b6db71dfccbedc357e9972d19ee85aab175ef30e5fadf432d3c82a53cc935b",
+    "git_blob_sha": "68b654df4c7b6990f3035079067802be2b6c747a",
+    "mode": "100644",
+    "bytes": 10273
+  },
+  "test/p16-auto-approve-attachment.test.ts": {
+    "sha256": "a9fada4cb6804f78c9a2c9ec68096d810c54543d772b02be858c92d8c4f23b09",
+    "git_blob_sha": "07304eb4935f80890e11aa09be2b92f44b0fa84c",
+    "mode": "100644",
+    "bytes": 7845
+  },
+  "test/a_refused_consent_settles_nothing_else.test.ts": {
+    "sha256": "b7ef6c4c6a8cab901f3cf24bb715c85e773e977e3a6b6fd00d35e7bf6e007ab4",
+    "git_blob_sha": "0c3a3704dd12e47139869d6576886ed1bab39ee5",
+    "mode": "100644",
+    "bytes": 13828
+  },
+  "test/face_room_role_lead_status.test.ts": {
+    "sha256": "dafffa9fc6e320b94f32fb426e140b15bb64213a808bf586acc7f72a37222b83",
+    "git_blob_sha": "9a67e8bfb1429ef66b4a6212fb24e5564bfb58be",
+    "mode": "100644",
+    "bytes": 7612
+  },
+  "test/sensitive_terms_strings_only.test.ts": {
+    "sha256": "ca9062c9bf5f0e71cbb787c2ebdeb624b56e3e10ff2f4e847c681892763b1237",
+    "git_blob_sha": "ded16a51327dffcccc8724197012dc2bb9f89b0a",
+    "mode": "100644",
+    "bytes": 3383
+  },
+  "test/revoked_bot_unreachable.test.ts": {
+    "sha256": "90f4c9d4b6090203524c0612ede415434fb8ec1544bbf52e8e7e6ce4a1104a3d",
+    "git_blob_sha": "e291a7ae9309ac5e0f4245705c7b654bc6a4ab6f",
+    "mode": "100644",
+    "bytes": 1203
+  },
+  "test/limits.test.ts": {
+    "sha256": "eed8cc3eae9b9654e4bf1ede1f7b34195560902580e22adaea94e36050701460",
+    "git_blob_sha": "8267865d47992d80ea6386461fe24e8fbc33d54e",
+    "mode": "100644",
+    "bytes": 627
+  },
+  "test/webhook_held_push_settles_its_row.test.ts": {
+    "sha256": "4f6b721547157cb02b099c447bb34844e9651d0fbd3e8aec70659df468355cda",
+    "git_blob_sha": "ec08d23042203cd704d0e782f5762fa6fdd3a601",
+    "mode": "100644",
+    "bytes": 5812
+  },
+  "test/expired_grants_visible.test.ts": {
+    "sha256": "454962518ff688a0ef825805b4d1b389dceb2d884fdea5a885bc9aeb5ea5fe4f",
+    "git_blob_sha": "50310ccb42d856a96909c19e8a88ee54e3bb7abc",
+    "mode": "100644",
+    "bytes": 12511
+  },
+  "test/a_non_array_grant_capabilities_is_refused.test.ts": {
+    "sha256": "d04a1cab565d0913f383c745b05bcc6087024f4604074fecb5e91bb7b6621c08",
+    "git_blob_sha": "a3c5ae72bcb9c54ac578dfe1cf087eca34ff9e73",
+    "mode": "100644",
+    "bytes": 7865
+  },
+  "test/ui_rooms.test.ts": {
+    "sha256": "497d0c759f08cbb6c6900e80410aaad07e61228ee8332878a819087806301e83",
+    "git_blob_sha": "bd676395f2a08ab08b0fb6d61877505c8d0e1957",
+    "mode": "100644",
+    "bytes": 6758
+  },
+  "test/oauth_route_guards.test.ts": {
+    "sha256": "e06fc71d0687b030cf9a1ad71d945d39bbae4fc93c0f374b80648d879a3a08d5",
+    "git_blob_sha": "2f09f76547f83439d28d00c24e6e582a801af567",
+    "mode": "100644",
+    "bytes": 2700
+  },
+  "test/relationship_expiry.test.ts": {
+    "sha256": "2b2d3a2fa6d141661f646f7618c77919f151331ad07c1c1d7121a208f10185af",
+    "git_blob_sha": "164b268ad922d17e4422ebd1928f5d3b54aebe35",
+    "mode": "100644",
+    "bytes": 2173
+  },
+  "test/local_invite_frozen_inviter.test.ts": {
+    "sha256": "fb7811abdf919b9deb62fb437767e84a99e74f846c9119f597a2e1b97267d6b6",
+    "git_blob_sha": "ddc8aafa7844a64609f5aba88c72464c489a5b9b",
+    "mode": "100644",
+    "bytes": 6085
+  },
+  "test/owner_mcp_start_conversation_refused_leaves_nothing.test.ts": {
+    "sha256": "e8a6d2049c65e300b04ac1ab4192d417451f70e53294a0a955247ff8a86c1919",
+    "git_blob_sha": "17f6de1e2c9097f7601dd32af6183e18700239c4",
+    "mode": "100644",
+    "bytes": 7015
+  },
+  "test/register_username_case_fold.test.ts": {
+    "sha256": "de7840cf049896430f495d2a94d5b2ee2f87f8b627facf0f548bc68450a8f490",
+    "git_blob_sha": "0cc8f94bb1d90530905f1d6a6c5e92635d15ac18",
+    "mode": "100644",
+    "bytes": 3463
+  },
+  "test/botctl_timezone.test.ts": {
+    "sha256": "c5ea79887631dcb8da37527f0578321c9ec13c1139e729a0722d498f473b9c63",
+    "git_blob_sha": "2d4007284cb50be266c6d3931243ffbe5f3ddd06",
+    "mode": "100644",
+    "bytes": 4923
+  },
+  "test/an_upload_whose_line_is_refused_keeps_nothing.test.ts": {
+    "sha256": "c4514a32365646f78bf401b8e21c0cdc52aed1669786f24d58fe7b77ec58f1dc",
+    "git_blob_sha": "54ed60df0da7656326d356263d5d1a87399a0c17",
+    "mode": "100644",
+    "bytes": 8540
+  },
+  "test/activation_status_recheck.test.ts": {
+    "sha256": "927e74d7f2844a32365fe4085bc5ddd10796d95718261cdf87c61c05a4638da0",
+    "git_blob_sha": "3730fe7ed4e8bb5f2d336f200eb541c19fe3d55e",
+    "mode": "100644",
+    "bytes": 3648
+  },
+  "test/dlp_cut_keeps_block.test.ts": {
+    "sha256": "a4c42e317f3ed8a14f18b9ae689d746e20e04cdff566ebf0ab89ea10b107cdb8",
+    "git_blob_sha": "06e2da8686aad9e5c03de8bf4401783b7950e369",
+    "mode": "100644",
+    "bytes": 5334
+  },
+  "test/oauth_github_link.test.ts": {
+    "sha256": "31553c40552fa11618545ce195e4781a49837a3caa9532068bd473717fe77e7e",
+    "git_blob_sha": "16e2f141da58f942b6a554c66eb1802c4eec6014",
+    "mode": "100644",
+    "bytes": 6757
+  },
+  "test/a_non_string_intent_summary_is_refused.test.ts": {
+    "sha256": "8df685be726bbfb37312c7d3390560fe26cea89ee68a813855e2c11591a7ddde",
+    "git_blob_sha": "1001cd1629f3d3951204845e62a1ed39d1ab9e78",
+    "mode": "100644",
+    "bytes": 3572
+  },
+  "test/local_room_claim_bots_must_be_an_array_of_strings.test.ts": {
+    "sha256": "86a0bca2291ba3e06aa078adc6f61d4917977cc9132dd2a6890ada4c1727cc68",
+    "git_blob_sha": "81d3369bded7e80b184b91dc099807666f3ef6b0",
+    "mode": "100644",
+    "bytes": 5619
+  },
+  "test/extend_conversation_mcp.test.ts": {
+    "sha256": "837a98a0bbd98610c6dca80a8afbb4e0ca1e7107d60748bc43df6f43a4b7887d",
+    "git_blob_sha": "db8e66a2c17bfcff90b4e4eba2dddc680c93c737",
+    "mode": "100644",
+    "bytes": 6728
+  },
+  "test/cancelled_card_reaches_outlet.test.ts": {
+    "sha256": "9f47f19a8cd847108968ae3c828463cf6e6f5114cc149a04d600004e694bb924",
+    "git_blob_sha": "0d39065e6b1f65fcdea084c96b8211e78b18db4f",
+    "mode": "100644",
+    "bytes": 15026
+  },
+  "test/owner_mcp_join_invite_spends_the_link_it_joins.test.ts": {
+    "sha256": "3577fcd26000872331e281bc0af8bf1b4b485b4d85afedf230a57e30125aa4e6",
+    "git_blob_sha": "1a763505da3b0a4c664cc782af2577e27e12d7de",
+    "mode": "100644",
+    "bytes": 4881
+  },
+  "test/lapsed_grant_is_not_a_capability.test.ts": {
+    "sha256": "9f6abb35b204f7e52a0daf5532bcb00a4c8869ca476e56e0be19a9e85762603e",
+    "git_blob_sha": "7451a9dd145894b116bcffff705a5709c2672fb7",
+    "mode": "100644",
+    "bytes": 2740
+  },
+  "test/ui_friend_history_date.test.ts": {
+    "sha256": "bea4abb87b16d76e00280907e8d4fac64f5037ed2f544d212d791fe4f95e7618",
+    "git_blob_sha": "b6a766c68937af10112ecf5a9e3be9306d2e50a4",
+    "mode": "100644",
+    "bytes": 5824
+  },
+  "test/attachment_budget.test.ts": {
+    "sha256": "43f9c4e43a86ad1413245b7ed7af888da002fbea5f2c5abe5978897707936a4d",
+    "git_blob_sha": "156bdf7c134685e9ef731858e52ad1dec2cea8ac",
+    "mode": "100644",
+    "bytes": 4720
+  },
+  "test/ui_bots_key_recovery.test.ts": {
+    "sha256": "be56b266f37d2050d084107eb8edec0eb54170cc5e069bed851a52319ed10abc",
+    "git_blob_sha": "1906f0969b02304002d678be60a26fa3c1562769",
+    "mode": "100644",
+    "bytes": 12852
+  },
+  "test/a_refused_decision_settles_nothing_else.test.ts": {
+    "sha256": "4d594b335f37f2e27fc059a83e25987aa98dc7f399e6f50533846cf32c8d1fb4",
+    "git_blob_sha": "31cd80b9fa63dc1e1f7f16e101c826581ebe4c45",
+    "mode": "100644",
+    "bytes": 13109
+  },
+  "test/bot_mcp_structured_null.test.ts": {
+    "sha256": "fb217d24ed5b46e3241257e27c47b35e760c6205dfea77c3a0180e08db91d2fa",
+    "git_blob_sha": "99b1c3f7efff268a20967dc581728ed7043dbbe7",
+    "mode": "100644",
+    "bytes": 5648
+  },
+  "test/webhook_share_requested_summary.test.ts": {
+    "sha256": "bd22d8c92d88a0b069e69e58d6d35930de885541a9a170b7a17967bd3d518814",
+    "git_blob_sha": "7b9b7a01e5d0b6fc813fdaa46b34eced4a3dc2ea",
+    "mode": "100644",
+    "bytes": 6834
+  },
+  "test/end_claims_ends_own_links.test.ts": {
+    "sha256": "26e9b0da17fb56e71b0eae0bbafe1deb6aaa3484e1924d2aa9fd9aac53bd5ae7",
+    "git_blob_sha": "26df1d6729cda4b6ab18adfb6c01567212857132",
+    "mode": "100644",
+    "bytes": 4864
+  },
+  "test/idempotency.test.ts": {
+    "sha256": "04ac6e21eed979f496de98933af4f86f46147aa181891b8780e3374db28a8a41",
+    "git_blob_sha": "cba3c20920cb1b8f004651cd0f0ad1f9c474643a",
+    "mode": "100644",
+    "bytes": 10257
+  },
+  "test/an_attachment_name_must_be_a_string.test.ts": {
+    "sha256": "249421680714565fbe7761c60914662707ec3c6c3949a8126748dc0be78dbce5",
+    "git_blob_sha": "76da141e8958f9df77224e3b2153fcddc798160e",
+    "mode": "100644",
+    "bytes": 6402
+  },
+  "test/webhook_private_ipv6_mapped_target.test.ts": {
+    "sha256": "ca20aeee2328c1abe43ff6ea4e6fbd608004ad147175712bf95d30b558588c0c",
+    "git_blob_sha": "435c7f7d27b9b774d2bff2802a91a8ba763c4d78",
+    "mode": "100644",
+    "bytes": 6150
+  },
+  "test/grant_summary_expiry.test.ts": {
+    "sha256": "8a3a91e11d76e6b27331244de38105e6e6744da7a6d414328f71ec99d3218f3a",
+    "git_blob_sha": "ab0d302208dc276261988839947fc85f427b2dd4",
+    "mode": "100644",
+    "bytes": 3169
+  },
+  "test/helpers.ts": {
+    "sha256": "c638a5e00b6dba9cad4b389739f0c31c7668469eac922cf422a4e544991ec6e8",
+    "git_blob_sha": "c974f947c036b99441f55bf10d96559cfac050e0",
+    "mode": "100644",
+    "bytes": 3201
+  },
+  "test/end_claims_sweeps_withdrawn_ticket_claim.test.ts": {
+    "sha256": "6c59378dfedf682b3cf9f00ef3bf13c7a49991b04fa9f25a4cfdfd7182bf7710",
+    "git_blob_sha": "e9a2d04892b614dcdd3f270861eb10fc36b43ac6",
+    "mode": "100644",
+    "bytes": 6545
+  },
+  "test/an_ended_share_does_not_take_a_later_seat.test.ts": {
+    "sha256": "56304491d5ead13aa1baa6b4c84d34ed7f8b33e3d85a835234c86888b386059a",
+    "git_blob_sha": "0b6dd8a4946286b688c0b3d8b503e976a5b08ea3",
+    "mode": "100644",
+    "bytes": 5746
+  },
+  "test/face_rooms.test.ts": {
+    "sha256": "6665d41b882be71f22edb6e8dc2595f6920789ccd019b71e14f501490a175996",
+    "git_blob_sha": "c54d70845635b711db2b793859691dd945428a62",
+    "mode": "100644",
+    "bytes": 20245
+  },
+  "test/a_refused_decision_for_every_other_kind_settles_nothing_else.test.ts": {
+    "sha256": "02a1eb18820bdc02f1c0dd71583ac91c5f2cb4f126cca877e0a64c3876a662b3",
+    "git_blob_sha": "9e078d1a47255e730ebc3ad3ff4b1e3764f5c6c0",
+    "mode": "100644",
+    "bytes": 14160
+  },
+  "test/p17-structured-injection.test.ts": {
+    "sha256": "4be82463e766a3c5e2a49f95130c298b8f1324d08f4359e1f0feed4a118bda23",
+    "git_blob_sha": "97475e190421cd7a8183b7fd757d8744200076a4",
+    "mode": "100644",
+    "bytes": 6637
+  },
+  "test/unsupported_content_type_answers_415.test.ts": {
+    "sha256": "d2f9c8c7857c4c628193c8a2933f01a0102327d8a83efe73643d9f84e6c3b899",
+    "git_blob_sha": "0929409795621539c5ef35893db12ce8d0bf87a2",
+    "mode": "100644",
+    "bytes": 2857
+  },
+  "test/repeated_query_key_is_refused.test.ts": {
+    "sha256": "57121ac26588fbfbd970f386141587f069135e3f03a7825bfe13b6bc91ec8f44",
+    "git_blob_sha": "85eda360f5c7b9df10be669d1ade1cea8363c25f",
+    "mode": "100644",
+    "bytes": 6219
+  },
+  "test/relationship_target_handle_must_be_a_string.test.ts": {
+    "sha256": "f157bb41c4d2235e2ff42b739b8b2a9e84ead1f6fc0dd3efefa5dc7e8457a993",
+    "git_blob_sha": "7b141dc272a093c2925789e668ab9586b485b8bd",
+    "mode": "100644",
+    "bytes": 7554
+  },
+  "test/a_home_send_attachments_must_be_an_array.test.ts": {
+    "sha256": "ceb6f842a2697421e2443d7c2bb0a4cc9f58b9e8fd586718ae962332f8ca56a1",
+    "git_blob_sha": "49f154ea2a98dda35e0a0d1f3a8417548d776ff1",
+    "mode": "100644",
+    "bytes": 8694
+  },
+  "test/an_idempotent_grant_settles_nothing_else.test.ts": {
+    "sha256": "9d38171d61ba5dc74fd25cee3cc2aba2f5c581c9eadd60ae3c27cbf90cb1a8a8",
+    "git_blob_sha": "381a2735c7901d35c56c608cca40e9228960826c",
+    "mode": "100644",
+    "bytes": 8370
+  },
+  "test/local_claim_removal_sticks.test.ts": {
+    "sha256": "51cc38b8b0697afaec1e0a54a586615dfc28fb7c78a228169bc0f6c266382e62",
+    "git_blob_sha": "93fa70276ecaa03c789327a2774a84507893100d",
+    "mode": "100644",
+    "bytes": 8678
+  },
+  "test/attachments_stored_files_are_listed.test.ts": {
+    "sha256": "f678fc3568463fa9eb651b903df369a68443998b65e904c07d238d26dca5bc25",
+    "git_blob_sha": "a4fe4b3384f361b526cfb9aa2afa689c747a60bd",
+    "mode": "100644",
+    "bytes": 8393
+  },
+  "test/ui_chat_attachment.test.ts": {
+    "sha256": "ca94efd4438ae6d05680c5ba82123ecac0d31c393857f5fe66ada4b506268344",
+    "git_blob_sha": "0107e06b5d1603540668d0a41ed3bf83a62bfc13",
+    "mode": "100644",
+    "bytes": 4626
+  },
+  "test/ui_chat_typing_note_named_bot.test.ts": {
+    "sha256": "358ed2ff541a236eceb07065c19d5038f0b41de4d5a24ad9f3417966ed0b0d5f",
+    "git_blob_sha": "56ed324065eb0fca26fcd1e20ac548f9f9fc9b75",
+    "mode": "100644",
+    "bytes": 7492
+  },
+  "test/three_text_fields_refuse_non_strings.test.ts": {
+    "sha256": "1fe7171a9763f5df5a7a7e38149e6fba9f106e9156da63525be5c8e2c5ef013a",
+    "git_blob_sha": "a44b35acfcd02e4c65cedc8378c95e7d7aecc799",
+    "mode": "100644",
+    "bytes": 8881
+  },
+  "test/revoke_member_invites.test.ts": {
+    "sha256": "c1eae07ce698e4b555f05e20aa168ea9ea3dbaed2bf39cdc8620d3777deaf82c",
+    "git_blob_sha": "fe7c9c8c8f9aab0de58f17843d2ec7e3b80d29a8",
+    "mode": "100644",
+    "bytes": 8362
+  },
+  "test/left_owner_cannot_read_the_room.test.ts": {
+    "sha256": "22246cfa3dc52a668b56633e7cd0827c86862949776b2de353e8816503094ae4",
+    "git_blob_sha": "8afae1750f4e1b94d160593fbf1f0062f7831625",
+    "mode": "100644",
+    "bytes": 7121
+  },
+  "test/home_send_frozen.test.ts": {
+    "sha256": "ebaff2165c9b7c8d7384035827c49ff4b736098c44fbf22feac79041a7429173",
+    "git_blob_sha": "edad2c480707600f46c666823ae515a5415c5e03",
+    "mode": "100644",
+    "bytes": 3395
+  },
+  "test/expires_in_days_must_be_a_number.test.ts": {
+    "sha256": "f4754f2210f7c8d5e4b715a7f6ccaf5472b92b560a49da8e995490d78e6cb839",
+    "git_blob_sha": "8dabdf0518b300212a768cc82f5eee31ec2a8532",
+    "mode": "100644",
+    "bytes": 7594
+  },
+  "test/ui_console_timezone.test.ts": {
+    "sha256": "afc311c39c5cff8525231d9550da785f28e9b67915a2d7db2e5c976c891873b0",
+    "git_blob_sha": "54e1f1dc810eaf2c047f5432739da75f710c4332",
+    "mode": "100644",
+    "bytes": 6885
+  },
+  "test/ui_grant_expiry_renew.test.ts": {
+    "sha256": "a2c834ffbe49d214e88aaebdf5c5a73d8e632e7133b73d2d8edaf59891ef78ab",
+    "git_blob_sha": "0128a8efb77924c20b2bda3409075f7bafc078e6",
+    "mode": "100644",
+    "bytes": 10883
+  },
+  "test/ui_audit_summary_shows_direction.test.ts": {
+    "sha256": "6cbd636385b60a59b41cfde69d478971984f3ec28f87b07747346280fa7fbe68",
+    "git_blob_sha": "c83ae9fb5642c1e56f0a638072e11c535d87a037",
+    "mode": "100644",
+    "bytes": 5776
+  },
+  "test/presence_mcp.test.ts": {
+    "sha256": "3cf408c28560de245a801f57b5578cffc25528b150b8f3f395688709e337ce69",
+    "git_blob_sha": "0b62a2c96a87068f6539044febc41a4d30bb8a14",
+    "mode": "100644",
+    "bytes": 6810
+  },
+  "test/unblock_friendship.test.ts": {
+    "sha256": "1df62659b1a86fb55fe9d8a5ae9151d012bef40dc03ae373ed59ee918b0606a7",
+    "git_blob_sha": "f2ee0b5c60482483dc61d86cd731175b66fbe5a9",
+    "mode": "100644",
+    "bytes": 13385
+  },
+  "test/edited_payload_whitelist.test.ts": {
+    "sha256": "0297d850ce25c4e089d8cd8764bba0a9233199f5345df195ac0203d5543155ea",
+    "git_blob_sha": "fade3917caf5a05ff00f81a25edb808aeac9ccb3",
+    "mode": "100644",
+    "bytes": 15413
+  },
+  "test/dlp_scan_is_linear.test.ts": {
+    "sha256": "cbda44d6cad47438d526b5da6845071c6a30d4f24842da7bf7d19914fb242157",
+    "git_blob_sha": "64091e6ea0b81209bbe2272fb05efe00700ca8e8",
+    "mode": "100644",
+    "bytes": 4425
+  },
+  "test/settings_update_audits_only_changes.test.ts": {
+    "sha256": "27e73065debb391ebb9d9fb5e5adddb9769c8912c1961056a2952e3f527e0c88",
+    "git_blob_sha": "1b42829d2e2b8b53500db0f26becb445793505ab",
+    "mode": "100644",
+    "bytes": 2705
+  },
+  "test/send_refused_leaves_nothing.test.ts": {
+    "sha256": "356222d5e909bb1937875e7978df31f4f09cf2b3619d441194209a875e76fb9a",
+    "git_blob_sha": "ea1fbc5e1b303b2e33f7842528392adeb7ff5536",
+    "mode": "100644",
+    "bytes": 6743
+  },
+  "test/webhook_held_row_settles_on_restart.test.ts": {
+    "sha256": "9fc25b62ebf38b87aa1287d6d9d87efba58bfa80215e2cf87f072626f0f9a41f",
+    "git_blob_sha": "783e7e56ebb6a5ed172348037fb81a9c268e09bc",
+    "mode": "100644",
+    "bytes": 8255
+  },
+  "test/console_search.test.ts": {
+    "sha256": "f2c8df4fdd250aa7e4efe6ecc76d4b33f2d3dc52e8ad67a5317c7dbc498573ac",
+    "git_blob_sha": "7955973be6b824b45334f67a009f63adc38a63cc",
+    "mode": "100644",
+    "bytes": 12355
+  },
+  "test/face_room_leave_settles_waiting_card.test.ts": {
+    "sha256": "b67d74622329be91f5ab86bc29f61e07cce4a1896f36a5bb5033b90a2f34417f",
+    "git_blob_sha": "2f10f79027bf019e528c4a3e36731605b5e6e4f9",
+    "mode": "100644",
+    "bytes": 9944
+  },
+  "test/structured_cap.test.ts": {
+    "sha256": "d67553bea2014cddeb21e47e59602a27fb1c1427c820332113a16d16c99c8302",
+    "git_blob_sha": "ea2db3508951923765eebda2fdfe221307a2c70c",
+    "mode": "100644",
+    "bytes": 7877
+  },
+  "test/onboard_custody_writes_an_audit_row.test.ts": {
+    "sha256": "a3d9c637721dfcf28b667f113d903947d7e884d8f029f7a2a1974aa423af0488",
+    "git_blob_sha": "0b683d39b7cc0653f0097984f69effbbf7ca71d6",
+    "mode": "100644",
+    "bytes": 3545
+  },
+  "test/notify_outlet_revoked.test.ts": {
+    "sha256": "97ae89838d36cbf0727680ac415dfb79837cc6e1bbfdff7df151690f23546e00",
+    "git_blob_sha": "6ceec1531a6cece84d81f865fbd1410e88962267",
+    "mode": "100644",
+    "bytes": 6292
+  },
+  "test/oauth_unbind_and_security.test.ts": {
+    "sha256": "1d0c951b7b1c840f89ffb5e10978e3704e0dabf86d766b3e792334ef6e2cf774",
+    "git_blob_sha": "e4c2760bb5b28a62846b7a23c10f6b1306e2b5d9",
+    "mode": "100644",
+    "bytes": 6999
+  },
+  "test/face_room_join_bots_must_be_an_array_of_strings.test.ts": {
+    "sha256": "860b34ee83ec2902942b65698b48208ad904bf1f1e388d6d4418f6946cc5f2d4",
+    "git_blob_sha": "ab53a4090d97e671e66906b6552fd675e7d3d0ba",
+    "mode": "100644",
+    "bytes": 5711
+  },
+  "test/join_invite_mcp.test.ts": {
+    "sha256": "c70532ab0a6bccbc3a103d84cb4cd21646c3ce68c51c89fb7187eb20d7168b03",
+    "git_blob_sha": "b0f80b265a19e2ee6c3f745af9baf8c17f4d363f",
+    "mode": "100644",
+    "bytes": 3031
+  },
+  "test/a_grant_card_for_a_stopped_bot_writes_nothing.test.ts": {
+    "sha256": "9dc1f89e9cab400b87a9d42709488174cc8a84474cd83c5b9dde303186584e25",
+    "git_blob_sha": "b141a1cd4334084516b63b7e1d666d0685879f68",
+    "mode": "100644",
+    "bytes": 15200
+  },
+  "test/face_room_own_bot.test.ts": {
+    "sha256": "ba3fecdd83f8e58e90b416bc6c27baf2428f440215c1252f405304edc8fe79ec",
+    "git_blob_sha": "7e74d2ac3307b03f8c92ecd9e76d656fc01a0c74",
+    "mode": "100644",
+    "bytes": 3093
+  },
+  "test/access_grants.test.ts": {
+    "sha256": "768dab2925b38caf97094d79faf377b7909160565b7f4512ef3893babee26905",
+    "git_blob_sha": "474fccde8d3385f24a738dc6c9b71ce4358f0b7d",
+    "mode": "100644",
+    "bytes": 9980
+  },
+  "test/owner_mcp_list_inbox_cursor_is_a_write.test.ts": {
+    "sha256": "1ef974592f8cb05d1a654a29a15e3756a17da7af1e9c53b7e6e45eba437a06f5",
+    "git_blob_sha": "32b7fa8a27965eddd1396e1f7a05d5c7220d2911",
+    "mode": "100644",
+    "bytes": 3475
+  },
+  "test/local_room_invite_frozen.test.ts": {
+    "sha256": "c429ab87ac73eaf72d12e90d59d7196cf2826218cf2ef1d560771f2ef278806d",
+    "git_blob_sha": "5ad0e5613970ee3e41f8b705eaafc1c015927248",
+    "mode": "100644",
+    "bytes": 3368
+  },
+  "test/a_bot_handle_must_be_a_string.test.ts": {
+    "sha256": "8dfebd539ca2b099ea41d30ed8023c21301f69ffde4ea4a7fb1f59ea92bbb131",
+    "git_blob_sha": "61d5c11931b5259d1f040ae785d25e2a95d644e2",
+    "mode": "100644",
+    "bytes": 5826
+  },
+  "test/relationship_end_releases_guest_seat.test.ts": {
+    "sha256": "e1c97cd8021c636c3b020426a9245e2eb81a4b2cde35a10a0aec8b83681ef87c",
+    "git_blob_sha": "9037df07719773e83040ed7722dab23b5eae44dd",
+    "mode": "100644",
+    "bytes": 7002
+  },
+  "test/a_local_room_invite_bot_name_must_be_a_string.test.ts": {
+    "sha256": "e2ce6ed21f01f50fba9da38a9a73747c8722e38b22a4ff4a726cfac053afb61a",
+    "git_blob_sha": "0b8f60e5ca27e4083f9f68018827a48bc98dd380",
+    "mode": "100644",
+    "bytes": 7402
+  },
+  "test/revoking_a_room_grant_keeps_the_grantors_seat.test.ts": {
+    "sha256": "8bf9787954a11fefe6a3057230aa80cbdf16d817eb19d1a478d14eb35ee73489",
+    "git_blob_sha": "25a346f117aaa991f4f94658f29ee2231217c684",
+    "mode": "100644",
+    "bytes": 11807
+  },
+  "test/a_lapsed_share_announces_nothing_when_the_join_refuses.test.ts": {
+    "sha256": "5e5b799a2cd91a0c7fce433fac3bd2caab3cb6cf68395df51bca033ebb733f84",
+    "git_blob_sha": "f0d1a5eaee1e6a60ffa618ec4d07c03b6c95c4c8",
+    "mode": "100644",
+    "bytes": 4277
+  },
+  "test/request_values_as_bindings.test.ts": {
+    "sha256": "6964f2c8f3ecf2fb5cd7f4ea985552b40b9d6d813a7c03dfbfa3c6729f5943e1",
+    "git_blob_sha": "50e7ee844911a548c14ee46569d17c63d0ea3166",
+    "mode": "100644",
+    "bytes": 7112
+  },
+  "test/an_action_card_names_the_hold_its_findings_make.test.ts": {
+    "sha256": "46601dc104f5bf56545759cbb4d7ef0e8b55c4dcef17558962ba01494dd0ed64",
+    "git_blob_sha": "7729d30cab8170794ff72ba61070833318091027",
+    "mode": "100644",
+    "bytes": 17050
+  },
+  "test/ui_helpers.ts": {
+    "sha256": "01fc65589f06592a44d744376af1cde28f155610c4a017b63a5ddf7b226b1769",
+    "git_blob_sha": "7743cb4eeccf2a251117127b5e239c99dbfdc34b",
+    "mode": "100644",
+    "bytes": 1353
+  },
+  "test/oauth_unconfigured.test.ts": {
+    "sha256": "b6ed30a2b665b988f11032454b9042a094c9b4468c676b3c25938339cb9ffa3d",
+    "git_blob_sha": "ba94b22e643acdd1d14122df5940606460a3e2a2",
+    "mode": "100644",
+    "bytes": 3284
+  },
+  "test/search_read_settles_only_the_callers_rooms.test.ts": {
+    "sha256": "e27175da60bf7bdaf7c7d776a7621790a713fbe14720b492239d7078769cb4b0",
+    "git_blob_sha": "d4892faa19d954f150632da8dc9c87fe1bffe17b",
+    "mode": "100644",
+    "bytes": 9232
+  },
+  "test/face_room_draft_text_must_be_a_string.test.ts": {
+    "sha256": "86f2f953806f322e1abbcd857224206429e2b4a7af8dd804afa2848201168fea",
+    "git_blob_sha": "a3f8c6bae74b700a489d5b78dbdbfd10aa87556d",
+    "mode": "100644",
+    "bytes": 6019
+  },
+  "test/connector_label_must_be_a_string.test.ts": {
+    "sha256": "7047eb664217c636f5afd1189efbdc5e0bf12ca16f7b06760a81c504b87c37e3",
+    "git_blob_sha": "c246c0ba9fbd482bfcbe21945e93f54515966be8",
+    "mode": "100644",
+    "bytes": 4196
+  },
+  "test/auth_attempt_budget_ignores_success.test.ts": {
+    "sha256": "8f11e68fce32b1bc25e905698d94ef435157461e5971e8c1afc4794f5bead8f2",
+    "git_blob_sha": "63e659365dc2cd9756c209dac2f39947f1182420",
+    "mode": "100644",
+    "bytes": 3899
+  },
+  "test/owner_mcp_read_entries_state_their_writes.test.ts": {
+    "sha256": "b206c35e6b9eaf6bbe93a5de993857196954abb665206f2300271705e1a0541e",
+    "git_blob_sha": "2a71f7d929e1af6426b33f1c3e5b66ac7a5b7d46",
+    "mode": "100644",
+    "bytes": 8106
+  },
+  "test/face_room_frozen_draft.test.ts": {
+    "sha256": "6f98c0113f8a3e263d3a57248ee2852605c3a56b68d3fac42a023d85c5441c2a",
+    "git_blob_sha": "41f120e6b547e0c863bf3ac400d54d0bc8ad5aee",
+    "mode": "100644",
+    "bytes": 5395
+  },
+  "test/invite_revoked_before_approval.test.ts": {
+    "sha256": "5d74ac69ed0a731191b67870883cea7dcf17a7be9073e086a128cb91d6527254",
+    "git_blob_sha": "2468220412d303d67a4dd28e2255414d03ca98b8",
+    "mode": "100644",
+    "bytes": 4003
+  },
+  "test/p18-peer-text-trust.test.ts": {
+    "sha256": "fe6a340bcff8f702488665149e08546729134b94332d53fe6d2efa14b9656c4f",
+    "git_blob_sha": "fb2ebeacc1bc2e1ea4e10de61f6d9ac0d2d540b4",
+    "mode": "100644",
+    "bytes": 6591
+  },
+  "test/stop_expires_unapproved_invite.test.ts": {
+    "sha256": "3b63be4806442d4949a93504f09a1761be4fc63a2b3ec8d1078c25b38d7848f9",
+    "git_blob_sha": "96e37f853269f91985d4b331e0c048e33a857619",
+    "mode": "100644",
+    "bytes": 12525
+  },
+  "test/approval_card_missing_subject.test.ts": {
+    "sha256": "f46768c07de258b35613895e58bcd01d529a9c5cf87da1f5f63c0dece77e1bac",
+    "git_blob_sha": "9f1de4c4a7041ba78164e669b4052a347e900c4e",
+    "mode": "100644",
+    "bytes": 8942
+  },
+  "test/an_unfriended_share_names_every_grant_and_chat.test.ts": {
+    "sha256": "8f959c492b0783cfa5c5ab29e19d35cbadf9e677baa5341e9e6ee123862bce30",
+    "git_blob_sha": "eeccd456571b4cf83c47a4a10f95d5658e34b3bc",
+    "mode": "100644",
+    "bytes": 8771
+  },
+  "test/owner_mcp_list_approvals_hints_match_its_write.test.ts": {
+    "sha256": "d4ffface9ee5710dd1b42c76bb3ffeeeb4f628bdaeb2da0253ddb5ac3237a44f",
+    "git_blob_sha": "68393d721ca66755482ef2dc9fbb235e49ffb713",
+    "mode": "100644",
+    "bytes": 7539
+  },
+  "test/mcp_face_rooms.test.ts": {
+    "sha256": "2c66e142df2bbceccacc4f37762a33a776fb82c6dcbc34746f5b2316d04b01d6",
+    "git_blob_sha": "afecdbba848bc2c9014d34802b591ab5bf12d552",
+    "mode": "100644",
+    "bytes": 5255
+  },
+  "test/not_found_shape.test.ts": {
+    "sha256": "4981bd23a1f75bb996f89f85466d14bb5df251b884c78a9486ceaca03a1dfcf4",
+    "git_blob_sha": "a2486ad21bb08177def4058623aad015ef85e2ee",
+    "mode": "100644",
+    "bytes": 1997
+  },
+  "test/a_refused_write_settles_nothing_else.test.ts": {
+    "sha256": "085b45494dbdb66e3678405d08c86303d0ef806a7d03ce11e0ac5b5393e459a1",
+    "git_blob_sha": "b08265d44bea1ef46a0273d21cd9969926c0c7bb",
+    "mode": "100644",
+    "bytes": 10661
+  },
+  "test/action_card_behind_revoked_share.test.ts": {
+    "sha256": "ede93368cd217971cc4a667f6a32cc5d612ca39fbd4558a075fb722883894ebc",
+    "git_blob_sha": "2b2e6df4a33352de88223faff683bf982ed0554a",
+    "mode": "100644",
+    "bytes": 8318
+  },
+  "test/card_on_a_conversation_that_is_gone.test.ts": {
+    "sha256": "26f8658a1bf248906aae021469cb9dcdc0cae59eb9ef397407f22eb4ca05b407",
+    "git_blob_sha": "ac8e5410ce85adbb0a22bf743f8f00cb6cc98d5b",
+    "mode": "100644",
+    "bytes": 8790
+  },
+  "test/mcp_demo.test.ts": {
+    "sha256": "bf5aeb9e2cada5c7e8fd7690b46f2bb348aeb177e87081a9aeb83033cae2fac6",
+    "git_blob_sha": "ea9fbaf96fd4fc6c98358f370f4639dee7e17050",
+    "mode": "100644",
+    "bytes": 2769
+  },
+  "test/approval_created_only_after_commit.test.ts": {
+    "sha256": "34a11c21cfce38405862e8963c6e1bafcfeb62580e4e71287f915bde9bbdb68a",
+    "git_blob_sha": "e1e7036961481d091a97ff4ee9ba943007e82e3a",
+    "mode": "100644",
+    "bytes": 5852
+  },
+  "test/webhook_limits.test.ts": {
+    "sha256": "eaa61ea2c32740c34ac9e81aaa630e8d9bf102ce43cf9d04a03a2301dfc0ec93",
+    "git_blob_sha": "81bf1faa2c30000b6c2a17c1f813e709a8bc7c7d",
+    "mode": "100644",
+    "bytes": 6385
+  },
+  "test/grant_bot_to_friend.test.ts": {
+    "sha256": "0ff511c988e1a8a3f891d31c1be62f978320957948d4a13de3b1633f5be033fb",
+    "git_blob_sha": "02517dad461f6b2b96b336f0003d7685e03d7411",
+    "mode": "100644",
+    "bytes": 9787
+  },
+  "test/presence_read_settles_only_the_callers_rooms.test.ts": {
+    "sha256": "efce092c1ee6f6ef942eccca01529e6adea70d89a4e74495006354bdc369c07c",
+    "git_blob_sha": "0c4dc77b55e6d9127e6c829a7ff1b845cd57aca8",
+    "mode": "100644",
+    "bytes": 6903
+  },
+  "test/a_sig_kid_must_be_a_string.test.ts": {
+    "sha256": "b4c9f81322f36c1e045b95693c15f746a588d9a28008bde3684b6a6f227ffd91",
+    "git_blob_sha": "d2e217ad163ee367682d07721f449a2c99eac213",
+    "mode": "100644",
+    "bytes": 8386
+  },
+  "test/an_expired_request_gives_its_invite_use_back.test.ts": {
+    "sha256": "a341d94f1f1d63b68b80c742744eeaea69f3dcc189557df2d1aa0cc845f6d06f",
+    "git_blob_sha": "e43dbf62f2be81dac7851248a69e628d31eefc70",
+    "mode": "100644",
+    "bytes": 13037
+  },
+  "test/bot_avatar.test.ts": {
+    "sha256": "277cb35127cc642bdfb56a3c7268c82566dcb3d984c3665ece463cd6b876859d",
+    "git_blob_sha": "7f997b18b8941e49db316196a7306ed8fc953334",
+    "mode": "100644",
+    "bytes": 15075
+  },
+  "test/face_room_start_voids_candidate_deadline.test.ts": {
+    "sha256": "704008b4cd579b934a316e9a795ae132dd2e4cb12aec60e40f4b745118434ad9",
+    "git_blob_sha": "35b710bbcd88e3cff71883c3e268ea3f9657365d",
+    "mode": "100644",
+    "bytes": 9150
+  },
+  "test/owner_mcp.test.ts": {
+    "sha256": "dc9d6d41681c5791405cf5d425288fb0415cf8e7db6baf089691fed8bff22cd3",
+    "git_blob_sha": "6558faa6647faecd5be1e7ad89099063d5dfbf00",
+    "mode": "100644",
+    "bytes": 17719
+  },
+  "test/logout.test.ts": {
+    "sha256": "f4440e1740cecc0df29baa28a440a593ca07b7eed302f23ec0b1aaf6e73c542e",
+    "git_blob_sha": "47f9bb852949f2b17d72494ab306866f6b35ba5f",
+    "mode": "100644",
+    "bytes": 2081
+  },
+  "test/orphan_action_card_never_written.test.ts": {
+    "sha256": "09b27cc81a3991906d5b0356b785a28ba0c2b7ca0c0367949ae0181341189297",
+    "git_blob_sha": "e6b429942c87550747d5535b91ee45eda0dd4870",
+    "mode": "100644",
+    "bytes": 7227
+  },
+  "test/ui_room_transcript.test.ts": {
+    "sha256": "b577a52cd2fa7d9fc74f9fcc4c0efbd006450fcfa625f6bae0743ba24b2a7d69",
+    "git_blob_sha": "0b9214eef9d2464b32ec542f89af3025bf211d2f",
+    "mode": "100644",
+    "bytes": 6744
+  },
+  "test/face_write_doors_settle_only_the_callers_rooms.test.ts": {
+    "sha256": "508c3ef6b6d28b0c84aaa8a9729d6bc87d011c801f6f3eedf7fe0797a4439e73",
+    "git_blob_sha": "c1f5c4eb227adc916c64b9c80d7d165b080eeea0",
+    "mode": "100644",
+    "bytes": 12849
+  },
+  "test/cancel_pending_for_leaves_the_card_whole.test.ts": {
+    "sha256": "f676289e8a243a32eb0eae4fac182667918ae7db51b4007cd427056441d3806a",
+    "git_blob_sha": "7cc349ea4e5c45af97c3fe2700d917c8802b1834",
+    "mode": "100644",
+    "bytes": 12485
+  },
+  "test/renewed_share_keeps_the_seat_it_makes.test.ts": {
+    "sha256": "9b9c5cf3c6fd4627befa91c67b174d420157d73d3204e72ba6e088888ffe9f14",
+    "git_blob_sha": "1dc3593bf2ae2d4f4fe4ee88885ee5518d5db541",
+    "mode": "100644",
+    "bytes": 4471
+  },
+  "test/invite_numeric_coercion.test.ts": {
+    "sha256": "dd42aa1079884aa0963ef1d2ddd475928e29547baf83ae5631a6feb2165952fe",
+    "git_blob_sha": "78718a96cdc151b27b919682a29317951e305fc3",
+    "mode": "100644",
+    "bytes": 6881
+  },
+  "test/trust_proxy.test.ts": {
+    "sha256": "b578fa4f1f1e3bc7d7d295b0e638b64d79e0bc22912571a150d22803293539c4",
+    "git_blob_sha": "eb45874953fd4ffd3eddbdab7bd5ebcfdc5e265c",
+    "mode": "100644",
+    "bytes": 6229
+  },
+  "test/relationship_request_expiry.test.ts": {
+    "sha256": "9ba880c302665d30d2fb0b3e3c5f22cd4a51e62fdefd81b3e82e587ba09747d0",
+    "git_blob_sha": "42626a067df17c4bba43e12c01bccfc8bd194956",
+    "mode": "100644",
+    "bytes": 8618
+  },
+  "test/a_lapsed_share_claims_and_tells_the_peer_once.test.ts": {
+    "sha256": "3aa2ec826219d4d7fdf8d43737df282d7d0f95427c80cc1c2bf24bcc2848c518",
+    "git_blob_sha": "96b63cf68d4d9dea9440315735a8907cc4ea92df",
+    "mode": "100644",
+    "bytes": 7429
+  },
+  "test/a_superseded_grant_id_cannot_revoke_the_live_bundle.test.ts": {
+    "sha256": "b774b97eb0519739bbaf71219611852db066f416f30101c138ece6c12485fcaf",
+    "git_blob_sha": "cc38865b6988bc5b0db635c4bd2bf794089abfca",
+    "mode": "100644",
+    "bytes": 4590
+  },
+  "test/idempotent_grant_names_checked_far_end.test.ts": {
+    "sha256": "2af5b921bd7be1942035e46bd3b83448819947096d6ee43d89a398ed8a4046ab",
+    "git_blob_sha": "39cd2176759c6fdd2605bb3f2a73f8034e574135",
+    "mode": "100644",
+    "bytes": 6932
+  },
+  "test/ui_room_invites.test.ts": {
+    "sha256": "c351ad5f1db9e087890f0629a38006568b0f267bec7127eb232a0535d4b440aa",
+    "git_blob_sha": "005856bf7c84dd2c295f4564776a75ad339eb36a",
+    "mode": "100644",
+    "bytes": 7426
+  },
+  "test/expiry_keeps_the_peer_silent.test.ts": {
+    "sha256": "697401c7e267e7561e9229e6536183e9a079706e3fdc2d66eb5e1d0558d8cf6a",
+    "git_blob_sha": "4927c93b97befebebd011de3fb7b3eaa21cbf889",
+    "mode": "100644",
+    "bytes": 6883
+  },
+  "test/signature_status_code.test.ts": {
+    "sha256": "2e48ee081540991478e00e2f616316a4b3d4957ea54b39ffa4333edaf91f5e22",
+    "git_blob_sha": "48f0b211e5ce01e1d753fc83197b71b0ce4e4246",
+    "mode": "100644",
+    "bytes": 4704
+  },
+  "test/expired_approval_frees_its_file.test.ts": {
+    "sha256": "7f29377d537ab4574904e25558616c2daaf70091e882d4a17cd4d17446a146f5",
+    "git_blob_sha": "16e8b0ddee036c180773f2c93c7d8eabb193f6dc",
+    "mode": "100644",
+    "bytes": 5483
+  },
+  "test/auth_rate_limit.test.ts": {
+    "sha256": "1ba85c89e62a127ad219f4e58bc05b4e2b15206c8e589d53b050b0d81d2ba076",
+    "git_blob_sha": "e357f665b5be46a03c17d9b8f47e9e217a9b0e52",
+    "mode": "100644",
+    "bytes": 7780
+  },
+  "test/renewed_share_lapse_takes_back_the_seat_its_first_share_made.test.ts": {
+    "sha256": "c50a738dbc340e0cb2f77e5b928d6db2296d0681bc77c9593abb9053e2140ccf",
+    "git_blob_sha": "4395ff3c1fb71b07c5b0631678007ed014a94529",
+    "mode": "100644",
+    "bytes": 19696
+  },
+  "test/name_read_cleanup.test.ts": {
+    "sha256": "098047c6ea7dd78442fcace0853ecf886976372af2bc942f597fba95a6ebab67",
+    "git_blob_sha": "271770503dd2234ff53dd184a3f717f11e825979",
+    "mode": "100644",
+    "bytes": 9033
+  },
+  "test/grant_request_expiry.test.ts": {
+    "sha256": "069d9145060b22beeb4828d2b1f3e063550054d241e6cdd683954f2d032fcf78",
+    "git_blob_sha": "b54198727021586585bac46df3ff676cf4b3c513",
+    "mode": "100644",
+    "bytes": 6050
+  },
+  "test/relationship_request_message_dlp.test.ts": {
+    "sha256": "edfe3f0c6bb390538b2f9ec10524bcfb68e16611114a1485f889a96c243cea93",
+    "git_blob_sha": "d32a21c7b17ff850f4173f4fc5e8e50b28a4d2d5",
+    "mode": "100644",
+    "bytes": 6010
+  },
+  "test/hold_reason.test.ts": {
+    "sha256": "51d135fde93cd10fa3db6d81ca8138e0066f063efa43c62142c746dfd6d9be09",
+    "git_blob_sha": "67969dedfb515344d5e3a897d8fa006bfda35a54",
+    "mode": "100644",
+    "bytes": 9214
+  },
+  "test/a_lapsed_card_does_not_hold_the_chat.test.ts": {
+    "sha256": "21210c4db866127ebf875fab34dee627c747ac637dd798982194b6869fc2197b",
+    "git_blob_sha": "48b68cd7f84a4ee07efc07cd305f3254e3580c7f",
+    "mode": "100644",
+    "bytes": 9661
+  },
+  "test/webhook_interrupted_delivery.test.ts": {
+    "sha256": "f794aea87ac83d1aa41ec5d55110338063d36c3d80659832689a334f05494c11",
+    "git_blob_sha": "0a8c1e572f501f4109be4b449d810a4a2ededdb4",
+    "mode": "100644",
+    "bytes": 6246
+  },
+  "test/face_room_join_frozen.test.ts": {
+    "sha256": "ad81748bdc89c31625f3558ad6dc7886196506b6cf7b91296e58f33b62dc41e0",
+    "git_blob_sha": "191fc8aca298b9bf04ce01f61924c1a4d9b34b6c",
+    "mode": "100644",
+    "bytes": 4001
+  },
+  "test/revoked_webhook.test.ts": {
+    "sha256": "00bd00def59a80160e3d62d26c6e533b011e5ddb03736c2725cf8abc8420ec07",
+    "git_blob_sha": "47db26ddfc68c269b2af365f24de3d09aa58bee8",
+    "mode": "100644",
+    "bytes": 6246
+  },
+  "test/get_attachment_declares_the_audit_line_it_writes.test.ts": {
+    "sha256": "ca0c79ea28ce28b785a5546f31b109a1cf9064c9fdd4a8f5c233432c61b3ccc7",
+    "git_blob_sha": "8d2f9e3f3cb9522933cba5d48224061f67882daf",
+    "mode": "100644",
+    "bytes": 7513
+  },
+  "test/audit_has_reads_the_whole_chain.test.ts": {
+    "sha256": "9ed8df581d84ef3af74810c15d80236ca58242f5873aaf95f948363cb37f4f5c",
+    "git_blob_sha": "c6381e05457662f8ef92d36d4ac9332795505c9f",
+    "mode": "100644",
+    "bytes": 2220
+  },
+  "test/cancelled_room_card_names_its_room.test.ts": {
+    "sha256": "31015acd12072ce8c02e4297925885efba4abf445b789c21ecb17ee81aa4e378",
+    "git_blob_sha": "14b7f5dbc48b79f1f78dd481e6f9983c332fadc9",
+    "mode": "100644",
+    "bytes": 6286
+  },
+  "test/room_envelope_settle.test.ts": {
+    "sha256": "f79831a39386d953db8b026ac8cd50199f327ad6ffd99992b1eb87dc10d83333",
+    "git_blob_sha": "f5ef57adfb652752ebbc81a19f7309e92e52dc3e",
+    "mode": "100644",
+    "bytes": 9030
+  },
+  "test/local_room_invite_page.test.ts": {
+    "sha256": "0de828fcf87091bcf6e6531417292586f58a7e19f6a8a9c1996b65d3f8419086",
+    "git_blob_sha": "b6b29947ca65e7a148d22cf43b6fb43ae29758ba",
+    "mode": "100644",
+    "bytes": 9261
+  },
+  "test/friendship_scope.test.ts": {
+    "sha256": "2a1b9abf2d190f8849862ffe87f83d5ecaadb9fab7fe893adb6ec9667131669d",
+    "git_blob_sha": "79c67e628964151506b19d815a60d0e075082a3c",
+    "mode": "100644",
+    "bytes": 10647
+  },
+  "test/face_room_invites.test.ts": {
+    "sha256": "4ef16d96498fd476a11fe79ca6ac6f129409d2bc07a15389980f29cb7eaeece4",
+    "git_blob_sha": "701758cb00be240c683156fce3418166b040d18c",
+    "mode": "100644",
+    "bytes": 14777
+  },
+  "test/room_recap_on_close.test.ts": {
+    "sha256": "2e7f4938f21fedf6df26a7dd8d3781d07997792498e05c35a54ebf4343cd68af",
+    "git_blob_sha": "0aa62e7b8aeda8457a5529750f47eb46b8ae4f77",
+    "mode": "100644",
+    "bytes": 16994
+  },
+  "test/bot_description.test.ts": {
+    "sha256": "9fad1098bbf64a2e0a3294e80286d6356e8bb0595219929fe5f239339aa13219",
+    "git_blob_sha": "2351672a483128148801b2b0c017f0eaba4042af",
+    "mode": "100644",
+    "bytes": 5279
+  },
+  "test/invite_approval_expiry.test.ts": {
+    "sha256": "a6bb90e63af995d255f8d03ffd9675eeba5c09cfacee315fd77835b364dd4966",
+    "git_blob_sha": "d0f0d50906b50767d83f083759a7c364e0217f9a",
+    "mode": "100644",
+    "bytes": 6818
+  },
+  "test/own_invite_refusal_is_recorded.test.ts": {
+    "sha256": "ae44c846ff09146b274a44ca6050c64b0dfb6a6a56a7ea1f1c577f74161ae6e8",
+    "git_blob_sha": "a4a746a7b97fe67e34253897543e0aa07bee62ef",
+    "mode": "100644",
+    "bytes": 3026
+  },
+  "test/a_cancelled_card_leaves_its_own_line.test.ts": {
+    "sha256": "6ef8ead49311ba35c8091ac69c93b9260295e80ee5b107a5b7cbd4024d867d9d",
+    "git_blob_sha": "c609e4dd75b39b6d2a75bfcdaff033f57f4b12dc",
+    "mode": "100644",
+    "bytes": 8296
+  },
+  "test/grant_expiry.test.ts": {
+    "sha256": "42bbe96fcb9811d2fbc5682036d1b09df9335ba10e0e4f917bce0a00262b4cdd",
+    "git_blob_sha": "00128a9a523b444cf7d8e0da4c446f792929226f",
+    "mode": "100644",
+    "bytes": 6681
+  },
+  "test/face_invite_withdrawn_keeps_budget.test.ts": {
+    "sha256": "f7fcae646809446dad06de81bcf1977c71956ca75f25558a79827a9910e40579",
+    "git_blob_sha": "42c7e88df32e722203c3ff5ab086118d4a4b548c",
+    "mode": "100644",
+    "bytes": 9426
+  },
+  "test/approval_delivery_moment_settles_the_queue.test.ts": {
+    "sha256": "5dd566b16c1e4f3d240ac426aa3e13f7ea80544895d65e47ffa1bd572abcbb4c",
+    "git_blob_sha": "168ce90b2d2a0047e334ea332e56f45ce483fa1b",
+    "mode": "100644",
+    "bytes": 8893
+  },
+  "test/home_send_recipient_must_be_a_string.test.ts": {
+    "sha256": "bcaa3dc62b0d3ec1c605f77dddb3bb258e485629cb220ed092a1d850e2f58d65",
+    "git_blob_sha": "9d7e6a934b129069d327132e1ba7b6d2ef760266",
+    "mode": "100644",
+    "bytes": 6889
+  },
+  "test/ui_audit_filter_export.test.ts": {
+    "sha256": "910a08350ead37a0552858cf3e9cdff3a08791466367d0eb38687521dd8bcf06",
+    "git_blob_sha": "9244273c17b8aa479d5fe806cd2832500a429ca0",
+    "mode": "100644",
+    "bytes": 7177
+  },
+  "test/lead_change_event_names_the_bot_it_changed.test.ts": {
+    "sha256": "7fe26d4c17009af99b64f95e1cb2dbdfd64af4f83f2cac428f3692c73fa89d11",
+    "git_blob_sha": "18f0ffb3fba5f7129e8a9f731454b841ad51e074",
+    "mode": "100644",
+    "bytes": 5553
+  },
+  "test/custody_key_rotation_keeps_the_connector_signing.test.ts": {
+    "sha256": "01b13ed05442eece9ace86bfa346201657b491aae08f76da999adb674ab0fac0",
+    "git_blob_sha": "074913f675e01ddeb9be4a51100201ff7d1750b3",
+    "mode": "100644",
+    "bytes": 11516
+  },
+  "test/webhook_headers_must_be_strings.test.ts": {
+    "sha256": "0fd188c893da30e2a9ce2e57153ba613cf2c757206f696e6fa0642ce430d6c02",
+    "git_blob_sha": "63a672eb7245da87d818bd20d4fdc891c92903f0",
+    "mode": "100644",
+    "bytes": 5579
+  },
+  "test/ui_expired_approvals.test.ts": {
+    "sha256": "ef1cb96d6d6a1bcd639aaf5dcc00cec88e5a183bf89165f5d8a48362870108ef",
+    "git_blob_sha": "a47ac5665e2028db503d7501081b881a0f92a7d1",
+    "mode": "100644",
+    "bytes": 3999
+  },
+  "test/invite_copy.test.ts": {
+    "sha256": "91d463c76b773c63de0bd71393662760e7f52c00d0fdd31d84783f301693d455",
+    "git_blob_sha": "5808ac1ab9448fc909e7f959110597360c48650e",
+    "mode": "100644",
+    "bytes": 5575
+  },
+  "test/ui_calendar_row_end_date.test.ts": {
+    "sha256": "0fb9503d13005ad3fe5316ab45b6837cf6adcecf1ed2430c2d5a846d3545fa70",
+    "git_blob_sha": "3dc3060b9bfd4a66fcee37c9dd50d2c691ebda40",
+    "mode": "100644",
+    "bytes": 5992
+  },
+  "test/bot_key_retire_days.test.ts": {
+    "sha256": "7ca34c94425538dc30d006b831bba858316075fb3505d0157e361adf160f81a7",
+    "git_blob_sha": "4ab77161f746546cd72724517302f828b9d8a4c5",
+    "mode": "100644",
+    "bytes": 5890
+  },
+  "test/repeat_join_keeps_budget.test.ts": {
+    "sha256": "1fbcbe73a3c72aa40504ff90622017ab1c6f9985585f23e4adf3a1cdb201f99d",
+    "git_blob_sha": "e989d5264edc4d050c181d46272a31f5000b214c",
+    "mode": "100644",
+    "bytes": 4330
+  },
+  "test/cleared_webhook_stops_a_retry.test.ts": {
+    "sha256": "1f5b5ad3fe0ddea0dcb50d5e9b1e131128739421f378e75bd3f6e276fadefa12",
+    "git_blob_sha": "2c7650e0d93fdaa7c37f864fdf32f24aec9f0cb9",
+    "mode": "100644",
+    "bytes": 5936
+  },
+  "test/presence.test.ts": {
+    "sha256": "198b152d602ca4c8c71b46fc7f6b9494f23968b280ce30c96c8c881e0ffa4926",
+    "git_blob_sha": "b76b4b436105995f636c9ea4d06e7379fc42ce70",
+    "mode": "100644",
+    "bytes": 13481
+  },
+  "test/face_room_orphan_card_never_written.test.ts": {
+    "sha256": "982fd607e65ca791ade5e95b285a8ca9aa41e987059a59a539fa637f5a458ece",
+    "git_blob_sha": "944f69348847f5bdb2566edae2c5903a71d9bfdb",
+    "mode": "100644",
+    "bytes": 9153
+  },
+  "test/face_limit_selfpollution.test.ts": {
+    "sha256": "d93345e79051ca57b95d0af0a1c9038e37a37c66226ca0c0d99516348286c4bc",
+    "git_blob_sha": "30753fef995400fbc895562fdbaa1b04ffff047e",
+    "mode": "100644",
+    "bytes": 7354
+  },
+  "test/room_door_decisions.test.ts": {
+    "sha256": "858e16c51b1a5345969d665d621cc5f0fcc628832210d2d2f4e6dcfea586cc2a",
+    "git_blob_sha": "bc4dbe39b0bf6cd5e7a70c375cd626db397699f3",
+    "mode": "100644",
+    "bytes": 6187
+  },
+  "test/face_room_note.test.ts": {
+    "sha256": "0cd4db00579a69d97ced41b58832f8b211b539f6e3a73f4208d2ff789d1dd56b",
+    "git_blob_sha": "f2a64d4e954e7077076f5d122e4d10f2ad32733c",
+    "mode": "100644",
+    "bytes": 5963
+  },
+  "test/public_key_kid_must_be_a_string.test.ts": {
+    "sha256": "e1784b8c13579d5e95e4275262506de458c95f0325259719e0bb727b7567fba3",
+    "git_blob_sha": "df5de720a69e7e2f0639ed54dd31fded7b72a52e",
+    "mode": "100644",
+    "bytes": 3594
+  },
+  "test/frozen_bot_reach.test.ts": {
+    "sha256": "f5b7ebb12069a0c30d78227ff1889bad313efad0ade17721e6c16d84b7409e92",
+    "git_blob_sha": "dcc024f05d485344e0f89d0ed35f4c01beeeb066",
+    "mode": "100644",
+    "bytes": 5150
+  },
+  "test/cancel_pending_notify.test.ts": {
+    "sha256": "bbb766e4ad95ec788826986828d42dd3857caa82ac7f6d7e69ef1c0cdc7e16cb",
+    "git_blob_sha": "f2a9a1d02c906f1fbc4c674c1addefd11086f3ac",
+    "mode": "100644",
+    "bytes": 6559
+  },
+  "test/auth_username_must_be_a_string.test.ts": {
+    "sha256": "76fd94e022ab00bd5e917f34c115b7595f9b2e925a9f6a35d69c4d52177547f0",
+    "git_blob_sha": "90b9dfd96b524bb7a39758d42084263fca8c43d0",
+    "mode": "100644",
+    "bytes": 7670
+  },
+  "test/face_room_role_audit_records_the_settled_label.test.ts": {
+    "sha256": "250716b7ec29ee8603672a1560f6cee57fed28f7ba219fdb6beeb29e130a7f37",
+    "git_blob_sha": "add11372dcbad9e26d77cef20882e6aa7cacb484",
+    "mode": "100644",
+    "bytes": 4716
+  },
+  "test/quiet_hours_hold_approval_notices.test.ts": {
+    "sha256": "3136b729455d2064b1c23d3d2da853dca03ed3c093d3286d6c4f8c316fcf2984",
+    "git_blob_sha": "253f6d8c6775d83e646cda6ef0e98a620db7f77f",
+    "mode": "100644",
+    "bytes": 12695
+  },
+  "test/mentions.test.ts": {
+    "sha256": "c01cbf332a90ca4792d7702a31b9c9fa61433c1c77148fef0e472427379bb4e6",
+    "git_blob_sha": "dbf8f5ba7230ff17866dbdca6a2b7a27374d7b8c",
+    "mode": "100644",
+    "bytes": 15091
+  },
+  "test/room_list_settles_only_the_callers_rooms.test.ts": {
+    "sha256": "79adb7ee4ce6dab620142c320359d4d4dd4bc3ded858061b2b5bb166dafe03ff",
+    "git_blob_sha": "61bc244d8022c5c85b73b13eaeab0bdec7a56fba",
+    "mode": "100644",
+    "bytes": 8509
+  },
+  "test/decline_grant.test.ts": {
+    "sha256": "ce378dba5b3eed79ffbdd1aeea0926db6a7b5dcba51840527a1c5590242024cb",
+    "git_blob_sha": "52a5999dee9370d5fbdc018f418986754e539eaf",
+    "mode": "100644",
+    "bytes": 16009
+  },
+  "test/botctl_watch_interval.test.ts": {
+    "sha256": "e3fc27729eee9de5bf6c36b24a100064aedc637c7cb24c6edf0f8cc81ad353f9",
+    "git_blob_sha": "affd262bf5cd05f883a02a97e5be9dd1a736f4c5",
+    "mode": "100644",
+    "bytes": 3298
+  },
+  "test/presence_to_and_room_id_must_be_strings.test.ts": {
+    "sha256": "069ca36bb4293440564f2cb85a08e5a84d4b2b120069838456a10294d586ee15",
+    "git_blob_sha": "3904d4226ca548f75e50d0ab4210c7458c83697b",
+    "mode": "100644",
+    "bytes": 12273
+  },
+  "test/face_room_leave_bots_must_name_a_bot.test.ts": {
+    "sha256": "ca1a9f460c1b4009ec4ced6c4bdc81b7a241acc13725ee58323a2163f3e5acaf",
+    "git_blob_sha": "70fbd59cfecc0f94d14623a925cdb4d6622ce11f",
+    "mode": "100644",
+    "bytes": 8927
+  },
+  "test/approval_expiry_leaves_the_card_whole.test.ts": {
+    "sha256": "7650cea96ce6b80cbc7e0353d2e4228329b590435af75f80682357a4446be7d1",
+    "git_blob_sha": "9f79432e2a7a6eb16f7c82615fea86153fee169e",
+    "mode": "100644",
+    "bytes": 7757
+  },
+  "test/a_refused_grant_settles_nothing_else.test.ts": {
+    "sha256": "68da8d7b30042f5f27a5d072f5284928081e93f6e5c086c329de9a277e4d36a0",
+    "git_blob_sha": "755594524dafa1b92087b27f7a78d7e0f283da3f",
+    "mode": "100644",
+    "bytes": 8856
+  },
+  "test/stale_card_is_not_silent.test.ts": {
+    "sha256": "3d165d49fd3478b3c77523af0b983421a95f703bd97616a5f3dcd359c6226a59",
+    "git_blob_sha": "7c6f5dc1967d55c0c9786d3a0f77c6aeb418d31f",
+    "mode": "100644",
+    "bytes": 6698
+  },
+  "test/presence_bot_id_must_be_a_string.test.ts": {
+    "sha256": "64d9e70398fb6e7002ebca42a6c599ef7e1d108ea639fbe0cd4bb7e0b60870ad",
+    "git_blob_sha": "19070bdb2b8969b949915e161ed9f449818aa3ed",
+    "mode": "100644",
+    "bytes": 9564
+  },
+  "test/face_ticket_frozen_minter.test.ts": {
+    "sha256": "73c9e07611ec8fc7535a568cd3a54faa2b0a7d715a103ea3eb943072435cafb1",
+    "git_blob_sha": "67ebe7fb983b4647081c4b434f9430d6d186bdce",
+    "mode": "100644",
+    "bytes": 7489
+  },
+  "test/repeated_query_keys_on_single_value_gates.test.ts": {
+    "sha256": "b55468061430acd988829645a38da5ebe29050cce6faae15c3b97585d22ece0e",
+    "git_blob_sha": "c33637524077eaca363a2ef67043d97384712d11",
+    "mode": "100644",
+    "bytes": 13524
+  },
+  "test/face_room_invite_doors_settle_only_the_callers_rooms.test.ts": {
+    "sha256": "6d55a5608caab33975770171498df5b12f7e73e0c32ff14d57088063eef15cb7",
+    "git_blob_sha": "086542b2422aedb6f72b5f2a3255437a673a54a3",
+    "mode": "100644",
+    "bytes": 14991
+  },
+  "test/settled_card_reopens_the_chat.test.ts": {
+    "sha256": "5743b48d00135cf2537d71f6b2ef24b860e1c9de6799ec4559e467f87651d39e",
+    "git_blob_sha": "0c86497242bc7b1583d6cc28a61fc763b07f2b5a",
+    "mode": "100644",
+    "bytes": 6554
+  },
+  "test/room_guest_line_is_peer_content.test.ts": {
+    "sha256": "60ca013ab50854eb8f3ffb4ed1155a0797081ebe85c5ec32ee50614a7b4f4265",
+    "git_blob_sha": "4e09dd2b9dad35f68fe77a2fd0719907ed7c81b7",
+    "mode": "100644",
+    "bytes": 12254
+  },
+  "test/unit.test.ts": {
+    "sha256": "8ad3ae3231da38f18915df7fdf03bc87459fdaab4d4d7dd9a8b16b94f632bd06",
+    "git_blob_sha": "c1d91357a70a9a1687c0b8b9510196a5737f256b",
+    "mode": "100644",
+    "bytes": 8000
+  },
+  "test/revoked_identity_releases_guest_seats.test.ts": {
+    "sha256": "fb2a545046b7126f9f0b4bc326eb48f9a9b0b95ffc91d88c60c9ec6346290415",
+    "git_blob_sha": "9aab2ec908f4dbfba08e796889cdfddd60ddadfe",
+    "mode": "100644",
+    "bytes": 9197
+  },
+  "test/grant_before_join.test.ts": {
+    "sha256": "74a815c2c976604aeb9f211efa83e11abb5486fb3f6fed48e1d27bee328d336b",
+    "git_blob_sha": "19eaec58abc5f3f3e2b6172cae7d32c081dee868",
+    "mode": "100644",
+    "bytes": 9475
+  },
+  "src/presence.ts": {
+    "sha256": "d34e62d288ef85aed28bce31dc35f0dd7e24e55d096668e720fa6d5a9f186fea",
+    "git_blob_sha": "a277c048a36874187d2dd633317ee078b952f84d",
+    "mode": "100644",
+    "bytes": 2158
+  },
+  "src/demo.ts": {
+    "sha256": "470f21ee80ab6c445f5c4e0bd669d114c391fb414804c785805824b9a4f4c5e7",
+    "git_blob_sha": "b7552220aa02fa31f8809c23e25cf64f87ea6049",
+    "mode": "100644",
+    "bytes": 12545
+  },
+  "src/audit.ts": {
+    "sha256": "62a49752aea96b9fb43e2a113be41ec805faf6147781619ca4ea06fb0375f589",
+    "git_blob_sha": "c1b7475a7f0060aae6d0c24a5bae1bcdccbc885d",
+    "mode": "100644",
+    "bytes": 6275
+  },
+  "src/time.ts": {
+    "sha256": "101b93620e42c0a8b2fb70463a3039305c00c0ec526acf87bc8c1cc14d0db37f",
+    "git_blob_sha": "3abf174cd33b238fafd455a0413062ec87c2e45a",
+    "mode": "100644",
+    "bytes": 5522
+  },
+  "src/db.ts": {
+    "sha256": "3a9be56d600e2440be1da75bace8d5437538eaabc3368aded1f83b01b0a81363",
+    "git_blob_sha": "8307b50724b4556e941d39b892e55847f6f91348",
+    "mode": "100644",
+    "bytes": 20171
+  },
+  "src/botctl-build.ts": {
+    "sha256": "d7592bd326936a94324f8c957e95d2156d582793060a83ddceae3a72169dd9b4",
+    "git_blob_sha": "121576a9db6138aa0700841f9107783539cc3c42",
+    "mode": "100644",
+    "bytes": 1295
+  },
+  "src/crypto.ts": {
+    "sha256": "f5c8612fdf2ce475b2df3ec259ce27f4eccb15333c9ca7d2b3279b991b8d04fa",
+    "git_blob_sha": "fcb98961263390588b1e18b58bff2837c1607299",
+    "mode": "100644",
+    "bytes": 4127
+  },
+  "src/trust-proxy.ts": {
+    "sha256": "4262fa5e9d38b78005b65eda44b301dd21d6ddc0bd659abcb191c390c201d30c",
+    "git_blob_sha": "c9d0e9c73f9ad62d6da5de1451528171eab99501",
+    "mode": "100644",
+    "bytes": 4207
+  },
+  "src/local-room-invites.ts": {
+    "sha256": "3ced09b550d32c9d9938555eb1fd67ea88cb57e3e0b2b4614285d63f7231e101",
+    "git_blob_sha": "0261b8a2fed860aecc246135777dd129747739b5",
+    "mode": "100644",
+    "bytes": 2916
+  },
+  "src/policy.ts": {
+    "sha256": "e4f754b6fb4b2b93931918c8db84aaf4a28f268bc406dbf2d3e5a1d85879fc55",
+    "git_blob_sha": "1e2480f876441cd4b8319bdc4561eecd8880ab6e",
+    "mode": "100644",
+    "bytes": 13406
+  },
+  "src/errors.ts": {
+    "sha256": "20ea9805dd3c61850dc01f6616697ea57c7c288daea79698ef35ae48515b33ce",
+    "git_blob_sha": "5602d65b98bfe516052d389e760098a2dc13aa85",
+    "mode": "100644",
+    "bytes": 394
+  },
+  "src/attachments.ts": {
+    "sha256": "41990356a52b7458efda9b46787d913c2c1f3111d000310adfe6b48464b96c85",
+    "git_blob_sha": "2c2b189611d59d427bed85547ebd24a6ea2fc955",
+    "mode": "100644",
+    "bytes": 5631
+  },
+  "src/client.ts": {
+    "sha256": "43f13fb3cf12cbcff32a86445adab31f09877487961853c0b5a665285b7b4962",
+    "git_blob_sha": "5bc2f32ce9303023daa5d3b8c61206cef7d0ba45",
+    "mode": "100644",
+    "bytes": 7097
+  },
+  "src/auth-limit.ts": {
+    "sha256": "f74eb3ffecb054113854ba64b03b466cab02ed171272d9f795393cd4d5d93f5e",
+    "git_blob_sha": "c39c8b39e692cb9506aa6249cebbd64d95834f38",
+    "mode": "100644",
+    "bytes": 5843
+  },
+  "src/face-rooms.ts": {
+    "sha256": "6a7207c196e84d80aa6cc178b81febd6ace555667fdafad2f21e30f54d72ce86",
+    "git_blob_sha": "4160826a75c63fc8c0f9b3550555b537f0e47175",
+    "mode": "100644",
+    "bytes": 10469
+  },
+  "src/mcp.ts": {
+    "sha256": "722576d9f59d49ca543f3436eab78a01ff38466316e536f7ba24fee77897f700",
+    "git_blob_sha": "ef80f85b8419f4f5fe292cae28e40a76c4f47ed0",
+    "mode": "100644",
+    "bytes": 10945
+  },
+  "src/owner-mcp.ts": {
+    "sha256": "02eef87ea0fb8e08c211aac6cf80b299bd0f196a2b9226b27595212676b073bb",
+    "git_blob_sha": "b7a105181b1a59995c0785eb84a4c02cb164888d",
+    "mode": "100644",
+    "bytes": 44184
+  },
+  "src/untrusted.ts": {
+    "sha256": "2ed6f4b0aec38d63e44194d8c672637b340844d043593e1c4533848b59621173",
+    "git_blob_sha": "55e49c5209fd9927eaa4c05b8ac544b5089652c5",
+    "mode": "100644",
+    "bytes": 769
+  },
+  "src/load-env.ts": {
+    "sha256": "a8f9c3d78bfd606ed8b932fde9f1110d5f87706702fa5bc0d7cbbb9f836434ec",
+    "git_blob_sha": "05066e5b1f07a2346775b0657116426a408b3e0f",
+    "mode": "100644",
+    "bytes": 405
+  },
+  "src/oauth.ts": {
+    "sha256": "3d10232220a28384b9522530dac8b605476684a1b47c377ebeb162928ccd2e78",
+    "git_blob_sha": "eb9323e035938ccc1633428d5fbd86a11a52e2f3",
+    "mode": "100644",
+    "bytes": 12572
+  },
+  "src/webhooks.ts": {
+    "sha256": "4283bec989492f915e62c1bfa4118692c8316907639cd5e02bf36a669502b81d",
+    "git_blob_sha": "2f0aa43e9293cf9ce839438023e0cf3d54b8a531",
+    "mode": "100644",
+    "bytes": 27238
+  },
+  "src/custody.ts": {
+    "sha256": "282b551da9bfe6cc63433064e6b0e4ea92f01820a478dd35ecb5156bfe980d49",
+    "git_blob_sha": "555e58cf84dd0655e9643d2acae416f789325bbe",
+    "mode": "100644",
+    "bytes": 2319
+  },
+  "src/ids.ts": {
+    "sha256": "5be057ccf8127df1cd12ad0b6e3a3ee56621c451b2c6461d6f6eb5bc1277864a",
+    "git_blob_sha": "c2642a21e1a2ca93ba8a18fb6d73593ff58c74c9",
+    "mode": "100644",
+    "bytes": 631
+  },
+  "src/bot-look.ts": {
+    "sha256": "190dd18ad54488852db78daf2ae01411ecf5bf1e7a4508b2c593ade267a0961a",
+    "git_blob_sha": "16fa2e3dbe567f82c3431d28fbe290b373343f26",
+    "mode": "100644",
+    "bytes": 4146
+  },
+  "src/main.ts": {
+    "sha256": "396927de5ed555f96acd42131b4ad9b1581e64a3636dd0924e32b8aeca39e8af",
+    "git_blob_sha": "aee0a7fe424610027b25ebc74b73919b53529ba8",
+    "mode": "100644",
+    "bytes": 2868
+  },
+  "docs/AGENT_GUIDE.md": {
+    "sha256": "8d368aa91c85e05c46b0966fbc089a6eee5c57791fd4e212270e7f5099e54350",
+    "git_blob_sha": "97053670d44444f08012b3f3931b6c70d0a6865a",
+    "mode": "100644",
+    "bytes": 7035
+  },
+  "docs/FACE_ROOMS.md": {
+    "sha256": "cd195a5ac351eb57575b82b1044f7aa99633b89fe0ddf518656e885c17ecfd96",
+    "git_blob_sha": "bcc1ba9a1eaa2e9cf61362d245ea23c77af8d045",
+    "mode": "100644",
+    "bytes": 44961
+  },
+  "docs/SETUP.md": {
+    "sha256": "7463bebf9d97f944685b6308668a7810b3e9f67a6e5a471398792af887a658c9",
+    "git_blob_sha": "624dce4bfedf52e41a27a1f0380f4916309da221",
+    "mode": "100644",
+    "bytes": 11823
+  },
+  "scripts/botctl.ts": {
+    "sha256": "7675056ae81399a1024ef2cd89ec3f50152f2b4889ff1bd2a1d4e39e9a8afff9",
+    "git_blob_sha": "53e549b3fec6d5420a6253293ed41f3d9cd9f6c9",
+    "mode": "100644",
+    "bytes": 37647
+  },
+  "public/room-invite.html": {
+    "sha256": "f52a4c08ceb64b06997c7a8220c7b6154a83f07120d9b0fc591ed3d080195478",
+    "git_blob_sha": "f6a042966c5d4c33e1aac828705ae69dddce152f",
+    "mode": "100644",
+    "bytes": 7441
+  },
+  "public/guide.html": {
+    "sha256": "04c63b5eb999f10d7c47da7d6b387e88f9a7d734e238b39f8ca3b282a1b0569a",
+    "git_blob_sha": "cc6829a9a992cfe76cea73861d33d4e0d1e574ff",
+    "mode": "100644",
+    "bytes": 2400
+  },
+  "public/index.html": {
+    "sha256": "58876d8262847ab02e1a83ded71165ab9582915d978e0a0a81e51551911213ab",
+    "git_blob_sha": "98b44da1bac9988aa3295bee0876c7b95bca6679",
+    "mode": "100644",
+    "bytes": 12296
+  },
+  "public/ui.js": {
+    "sha256": "28e50c3f2cc5352955db209f2f525c08641c10aaa5ad557b0acfa72e1f2203f1",
+    "git_blob_sha": "970b3d77b6099bb7918804894c89fc174a42f9ae",
+    "mode": "100644",
+    "bytes": 123602
+  },
+  "public/connect.html": {
+    "sha256": "dd81fbba28a12b570a5393f15017936a179333b211f327c712406f351e4fc36b",
+    "git_blob_sha": "bfffe41b07aca9382b177ee25254b957da2210f0",
+    "mode": "100644",
+    "bytes": 12389
+  },
+  "public/invite.html": {
+    "sha256": "42b2b624fa8ae256339fde22cc51cc41b2e1d7f82808579f3b2573a938b54449",
+    "git_blob_sha": "7edc80482e2bd939d2c38a9655eaa4393ccd4b9d",
+    "mode": "100644",
+    "bytes": 5562
+  }
+}

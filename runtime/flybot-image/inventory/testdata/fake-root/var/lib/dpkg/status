@@ -1,0 +1,11 @@
+Package: git
+Status: install ok installed
+Version: 1:2.39.5-0+deb12u2
+Source: git (1:2.39.5-0+deb12u2)
+Essential: no
+
+Package: ca-certificates
+Status: install ok installed
+Version: 20230311
+Source: ca-certificates
+

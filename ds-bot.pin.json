@@ -1,8 +1,0 @@
-{
-  "repo": "Fei2411/DeepSeek-Bot",
-  "path": "ds-bot",
-  "commit": "2b10c70b614e969117b68ddc6fd14e68968272f2",
-  "tree": "5834c00d9c21b972e4b32ad90489443da2a10324",
-  "version": "0.1.5",
-  "note": "ds-bot/ is byte-identical to upstream <commit>:ds-bot (git tree <tree>). Never edit it; change patches/ds-bot/ instead."
-}

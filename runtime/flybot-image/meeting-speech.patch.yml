@@ -1,0 +1,13 @@
+# The pinned DSH CLI ships both packages as dependencies of Voice Input.
+# Install the local recognizer services without mounting the native chat UI.
+- insert:
+    - id: speech-to-text
+      name: '@deepseek-ai/dsh-experimental-speech-to-text'
+      config:
+        defaultProvider: sensevoice-local
+    - id: speech-to-text-sensevoice
+      name: '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice'
+      config:
+        dataRoot: !!js dshHomePath('speech-to-text', 'sensevoice')
+        threads: 1
+        idleTimeoutMs: 60000

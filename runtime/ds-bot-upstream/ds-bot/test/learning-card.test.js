@@ -1,0 +1,102 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { agentEditRows, answerKeepsCard, editLines, lineDiff, proposalPlacement, withoutEntry } from '../src/client/learning-card-model.js'
+
+test('agent edits share row mapping for adds, removals and replacements', () => {
+  assert.deepEqual(agentEditRows({ op: 'add', text: 'one\r\ntwo\n' }), [
+    { kind: 'added', line: 'one' }, { kind: 'added', line: 'two' }, { kind: 'added', line: '' },
+  ])
+  assert.deepEqual(agentEditRows({ op: 'remove', old: 'one' }), [{ kind: 'removed', line: 'one' }])
+  assert.deepEqual(agentEditRows({ op: 'replace', old: 'one', text: 'two' }), [
+    { kind: 'removed', line: 'one' }, { kind: 'added', line: 'two' },
+  ])
+  assert.deepEqual(agentEditRows({ op: 'add' }), [])
+  assert.deepEqual(agentEditRows({ op: 'replace', old: null, text: 42 }), [])
+})
+
+const turns = new Map([
+  [1, { turn: 1, end: { time: 100 }, status: 'closed' }],
+  [2, { turn: 2, end: { time: 200 }, status: 'closed' }],
+  [3, { turn: 3, status: 'open' }],
+])
+
+test('a proposal belongs to the latest closed turn ending before its timestamp', () => {
+  assert.deepEqual(proposalPlacement({ at: 150 }, turns), { kind: 'turn', turn: 1 })
+  assert.deepEqual(proposalPlacement({ at: 200 }, turns), { kind: 'turn', turn: 2 })
+})
+
+test('a proposal without an earlier closed turn falls back to the latest closed turn', () => {
+  assert.deepEqual(proposalPlacement({ at: 50 }, turns), { kind: 'turn', turn: 2 })
+})
+
+test('a proposal uses the dock when there are no closed turns', () => {
+  assert.deepEqual(proposalPlacement({ at: 150 }, new Map()), { kind: 'dock' })
+  assert.deepEqual(proposalPlacement({ at: 150 }, new Map([[3, { turn: 3, status: 'open' }]])), { kind: 'dock' })
+})
+
+test('an answered proposal stays where it was answered and never goes to the dock', () => {
+  assert.deepEqual(proposalPlacement({ at: 150, outcome: 'approved', settledAt: 900 }, turns), { kind: 'turn', turn: 1 })
+  // Shown after the latest turn while waiting; answered then, it stays there as later turns end.
+  const later = new Map([...turns, [4, { turn: 4, end: { time: 1000 }, status: 'closed' }]])
+  assert.deepEqual(proposalPlacement({ at: 50, outcome: 'declined', settledAt: 300 }, later), { kind: 'turn', turn: 2 })
+  assert.deepEqual(proposalPlacement({ at: 50 }, later), { kind: 'turn', turn: 4 })
+  assert.deepEqual(proposalPlacement({ at: 150, outcome: 'approved', settledAt: 160 }, new Map()), { kind: 'none' })
+})
+
+test('a new skill diff marks every line as added', () => {
+  assert.deepEqual(lineDiff('', 'a\nb\n'), [
+    { kind: 'added', line: 'a', number: 1 },
+    { kind: 'added', line: 'b', number: 2 },
+  ])
+})
+
+test('a skill update diff keeps unchanged lines and shows removals', () => {
+  assert.deepEqual(lineDiff('Check tests\nRequire approval', 'Check tests\nRun lint'), [
+    { kind: 'same', line: 'Check tests', number: 1 },
+    { kind: 'removed', line: 'Require approval' },
+    { kind: 'added', line: 'Run lint', number: 2 },
+  ])
+})
+
+test('a large skill rewrite falls back to a block diff quickly', () => {
+  const before = Array.from({ length: 4000 }, (_, i) => `old ${i}`).join('\n')
+  const after = Array.from({ length: 4000 }, (_, i) => `new ${i}`).join('\n')
+  const started = Date.now()
+  const rows = lineDiff(before, after)
+  assert.ok(Date.now() - started < 1000)
+  assert.equal(rows.length, 8000)
+  assert.ok(rows.slice(0, 4000).every(row => row.kind === 'removed'))
+  assert.deepEqual(rows[4000], { kind: 'added', line: 'new 0', number: 1 })
+})
+
+test('a skill update keeps a long shared head and tail unchanged', () => {
+  const head = Array.from({ length: 3000 }, (_, i) => `head ${i}`)
+  const tail = Array.from({ length: 3000 }, (_, i) => `tail ${i}`)
+  const rows = lineDiff([...head, 'before', ...tail].join('\n'), [...head, 'after', ...tail].join('\n'))
+  assert.equal(rows.filter(row => row.kind === 'same').length, 6000)
+  assert.deepEqual(rows.slice(3000, 3002), [{ kind: 'removed', line: 'before' }, { kind: 'added', line: 'after', number: 3001 }])
+  assert.deepEqual(rows.at(-1), { kind: 'same', line: 'tail 2999', number: 6001 })
+})
+
+test('AGENTS.md edit previews keep the blank lines the edit writes', () => {
+  assert.deepEqual(editLines('\n'), ['', ''])
+  assert.deepEqual(editLines('Rule\n\n'), ['Rule', '', ''])
+  assert.deepEqual(editLines(undefined), [])
+})
+
+test('a failure keeps the card only while another try could work', () => {
+  // The host no longer has the proposal: nothing is left to answer.
+  assert.equal(answerKeepsCard(Object.assign(new Error('gone'), { code: 'bot/stale' })), false)
+  // Everything else can pass on a retry, or still wants a different answer.
+  for (const code of ['NETWORK', 'bot/internal', 'bot/refused', 'HTTP_502', 'bot/error']) {
+    assert.equal(answerKeepsCard(Object.assign(new Error(code), { code })), true, code)
+  }
+  assert.equal(answerKeepsCard(new Error('no code')), true)
+  assert.equal(answerKeepsCard(undefined), true)
+})
+
+test('a record without one entry keeps every other entry, and the same object when nothing changed', () => {
+  const state = { a: 1, b: 2 }
+  assert.deepEqual(withoutEntry(state, 'a'), { b: 2 })
+  assert.equal(withoutEntry(state, 'z'), state)
+})
