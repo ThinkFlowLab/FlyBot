@@ -75,7 +75,7 @@ function teamResponse(body) {
   const results = messages.slice(request + 1).filter(message => message.role === 'tool')
   if (results.length >= steps.length) return { text: 'CI-TEAM-CREATED' }
   const [name, args] = steps[results.length]
-  const available = new Set((body.tools ?? []).map(tool => tool.function?.name))
+  const available = new Set((body.tools ?? []).map(tool => tool.function?.name).filter(Boolean))
   if (available.has(name)) return { call: { name, arguments: JSON.stringify(args) }, step: results.length }
   if (available.has('run_code')) {
     return { call: { name: 'run_code', arguments: JSON.stringify({
@@ -83,7 +83,9 @@ function teamResponse(body) {
       code: `return await tools.${name}(${JSON.stringify(args)})`,
     }) }, step: results.length }
   }
-  return { text: 'CI-TEAM-TOOL-MISSING: ' + name }
+  const guidance = messages.some(message => message.role === 'system' &&
+    JSON.stringify(message.content).includes('## FlyBot personal workspace'))
+  return { text: `CI-TEAM-TOOL-MISSING: ${name} (guide=${guidance}, tools=${[...available].sort().join(',')})` }
 }
 
 require('node:http').createServer((req, res) => {
@@ -177,8 +179,10 @@ def start_bot_social(tmp, network, subnet, run, started):
     host, app = f'ot-gw-{run}-social', f'ot-gw-{run}-social-app'
     origin = f'https://{host}'
     ca, key, cert = make_tls(tmp, host)
-    image = 'flybot-workspace-bot-social:ci-gateway'
-    docker('build', '-q', '-t', image, str(ROOT / 'services' / 'bot-social'), timeout=900)
+    image = os.environ.get('FLYBOT_WORKSPACE_GATEWAY_BOT_SOCIAL_IMAGE')
+    if not image:
+        image = 'flybot-workspace-bot-social:ci-gateway'
+        docker('build', '-q', '-t', image, str(ROOT / 'services' / 'bot-social'), timeout=900)
     docker('run', '--detach', '--name', app, '--network', network, '--tmpfs', '/data',
            '-e', f'PUBLIC_BASE_URL={origin}', '-e', f'TRUST_PROXY={subnet}', image)
     started.append(app)

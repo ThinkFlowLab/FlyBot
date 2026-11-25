@@ -11,7 +11,7 @@ const patch = fileURLToPath(new URL('./native-ds-bot.patch', import.meta.url))
 const files = {
   'src/host/tools.js': [
     'a5c743b7c75c96498775808f029a5f15c7e08dbe6eaf33089d29b3c2a9ffb382',
-    '1826917126e67e426becdcb15a4fe4be08129f29a7b29ef34ff637b9b9cb46df',
+    '852dafff886dd8625d98152afe85432b8a22648d3627df5b61eddba4cea8c510',
   ],
   'src/host/roster.js': [
     '20461d2d4aeae6ca373e3431a5802317d1130468e1940d22032189134429f984',

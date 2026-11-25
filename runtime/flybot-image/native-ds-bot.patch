@@ -2095,6 +2095,24 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const admin = args.admin ? rt.findBot(args.admin) : rt.botOf(self)
        if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
        const members = [...new Set([self, ...bots.map(bot => bot.id), admin.id])]
+@@ -1189,12 +1204,16 @@
+   const filterBotAssembly = (agent, held) => {
+     if (held.filtered === true || typeof agent.ctx?.on !== 'function') return
+     const filterTools = agent.ctx.on('llm/stream', function filterBuiltinTools(options, next) {
++      // The LLM service waterfall is shared. A specialist's restrictions must
++      // never drop tools from the Chief's concurrent or following model call.
++      if (options.sessionId !== agent.session?.id) return next()
+       const hidden = rt.hiddenBuiltinTools(agent.session?.id)
+       if (!options.tools?.some(tool => hidden.has(tool.name))) return next()
+       return agent.ctx.llm.stream({ ...options, tools: options.tools.filter(tool => !hidden.has(tool.name)) })
+     })
+     if (typeof filterTools === 'function') held.disposers.push(filterTools)
+-    const dispose = agent.ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
++    const dispose = agent.ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
++      if (context?.agent?.session?.id !== agent.session?.id) return next()
+       const assembled = await next()
+       const hidden = new Set([...HIDDEN_TOOLS, ...rt.hiddenBuiltinTools(agent.session?.id)])
+       // DSH 0.2.2 adds the tool list after this waterfall (#814), so only an
 diff --git a/src/host/roster.js b/src/host/roster.js
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
