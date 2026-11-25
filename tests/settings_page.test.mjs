@@ -1114,7 +1114,8 @@ test('verified read activity has no approval buttons and native writes require o
   assert.deepEqual(list.children, []);
   await view.refresh();
   const [native, legacy, automatic] = list.children;
-  assert.match(section.children[1].textContent, /只读查询。.*调用需要确认。/);
+  assert.match(section.children[1].textContent, /在私聊里.*只读查询.*会自动执行。/);
+  assert.match(section.children[1].textContent, /其他工具调用需要确认。/);
   assert.equal(native.children[0].textContent, 'GITHUB_CREATE_ISSUE · 待确认');
   assert.match(native.children[2].textContent, /"title": "fixture issue"/);
   assert.match(legacy.children[0].textContent, / · 任务 legacy-1$/);
