@@ -63,6 +63,30 @@ export function activeMentionQuery(text, caret) {
   return match ? {start: caret - match[1].length - 1, query: match[1]} : null;
 }
 
+function adjacentMentionOption(nodes, active, key) {
+  const direction = key === 'ArrowUp' || key === 'ArrowLeft' ? -1 : 1;
+  const rows = new Map();
+  const positions = Array.from(nodes, (node, index) => {
+    const {top, left, width} = node.getBoundingClientRect();
+    const position = {index, top, center: left + width / 2};
+    if (!rows.has(top)) rows.set(top, []);
+    rows.get(top).push(position);
+    return position;
+  });
+  const current = positions[active];
+  const step = (index, length) => (index + direction + length) % length;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    const row = rows.get(current.top).sort((a, b) => a.center - b.center);
+    return row[step(row.indexOf(current), row.length)].index;
+  }
+  // Keep the familiar Up/Down sequence when suggestions fit on one line.
+  if (rows.size === 1) return step(active, positions.length);
+  const tops = [...rows.keys()].sort((a, b) => a - b);
+  const row = rows.get(tops[step(tops.indexOf(current.top), tops.length)]);
+  const distance = option => Math.abs(option.center - current.center);
+  return row.reduce((nearest, candidate) => distance(candidate) < distance(nearest) ? candidate : nearest).index;
+}
+
 export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
   const input = doc.getElementById('chat-body');
   const list = doc.getElementById('chat-agent-mention-options');
@@ -280,6 +304,7 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
     list.replaceChildren(...options.map((agent, index) => {
       const option = doc.createElement('button');
       option.type = 'button';
+      option.tabIndex = -1;
       option.id = `chat-agent-mention-option-${index}`;
       option.setAttribute('role', 'option');
       const identity = colorMention(option, group, agent);
@@ -507,17 +532,18 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
     },
     keydown(event) {
       if (event.isComposing || event.keyCode === 229 || list.hidden || !options.length) return false;
-      if (['Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      const arrow = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+      const modified = event.shiftKey || event.metaKey || event.ctrlKey || event.altKey;
+      if (['Tab', 'Home', 'End'].includes(event.key) || (arrow && modified)) {
         close();
         return false;
       }
-      const keys = ['Escape', 'ArrowDown', 'ArrowUp', 'Enter'];
-      if (!keys.includes(event.key) || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+      if (modified || (!arrow && event.key !== 'Escape' && event.key !== 'Enter')) return false;
       event.preventDefault();
       if (event.key === 'Escape') close();
       else if (event.key === 'Enter') choose(options[active]);
       else {
-        active = (active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+        active = adjacentMentionOption(list.children, active, event.key);
         highlight();
       }
       return true;
