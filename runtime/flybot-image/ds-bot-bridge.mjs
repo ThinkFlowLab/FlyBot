@@ -255,15 +255,16 @@ export async function prepareNativeChat(rt, botId, savedSessionId) {
 
 // Join progress to the native request echo and durable turn. The settled display
 // items remain the source of truth for the returned reply.
-export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, files = [], { onProgress, onPhase, sessionId, signal, managedGroup = false } = {}) {
+export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, files = [], { onProgress, onPhase, sessionId, signal, managedGroup = false, interactive = false } = {}) {
   if (signal?.aborted) return Promise.reject(signal.reason)
   if (typeof requestId !== 'string' || !requestId) return Promise.reject(new Error('DS-Bot request identifier is required'))
   if (sessionId !== undefined && !ownsLiveChat(rt, botId, sessionId)) return Promise.reject(new Error('Mapped native chat is no longer active'))
   sessionId ??= rt.chatOf(botId)
+  const admissionOnly = interactive && !managedGroup
   return new Promise((resolve, reject) => {
     const progress = turnProgress(onProgress)
     let observedTurn, observedSession, boundTurn, boundSession, attempt, lastAgent
-    let stopping
+    let stopping, stopDeadline, stopTimer
     let revision = 0
     let phase = 'preparing'
     function emitPhase(next) {
@@ -286,23 +287,36 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
           else listener?.dispose?.()
         } catch {}
       }
-      const complete = () => error ? reject(error) : resolve(value)
-      if (stopping) void stopping.then(complete, complete)
+      const complete = () => {
+        clearTimeout(stopTimer)
+        if (error) reject(error)
+        else resolve(value)
+      }
+      if (stopping) void (stopDeadline ? Promise.race([stopping, stopDeadline]) : stopping).then(complete, complete)
       else complete()
     }
-    const timer = setTimeout(() => finish(new Error('DS-Bot turn timed out')), timeoutMs)
+    const timer = setTimeout(() => finish(admissionOnly && signal?.aborted ? signal.reason : new Error('DS-Bot turn timed out')), timeoutMs)
     const emptyReply = () => Object.assign(new Error('DS-Bot turn ended without a reply'), {code:'agents/empty-reply'})
     function cancelNative() {
       if (settled || stopping || !boundSession || boundTurn === undefined) return
       const session = boundSession, turn = boundTurn
+      if (admissionOnly) {
+        // Native cancellation should emit its terminal event. Bound cleanup if the
+        // runtime can no longer resolve or settle a turn that the user has stopped.
+        stopDeadline = new Promise(done => { stopTimer = setTimeout(done, 30_000) })
+        void stopDeadline.then(() => finish(signal.reason))
+      }
       stopping = Promise.resolve().then(() => rt.resolveAgent(sessionId)).then(agent => {
         // Do not stop another turn even if it now owns the same Bot or Session.
         if (settled || boundSession !== session || agent?.session !== session || boundTurn !== turn ||
-            rt.live?.get(sessionId)?.turn !== turn || !ownsLiveChat(rt, botId, sessionId)) return
+            rt.live?.get(sessionId)?.turn !== turn || !ownsLiveChat(rt, botId, sessionId)) {
+          if (admissionOnly) finish(signal.reason)
+          return
+        }
         const children = rt.stopSubagents?.(sessionId)
         agent.cancel({kind:'user'})
         return children
-      }).catch(() => {})
+      }).catch(() => { if (admissionOnly) finish(signal.reason) })
     }
     signal?.addEventListener('abort', cancelNative, {once:true})
     function discardAttempt() {
@@ -324,7 +338,10 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
         const turn = event.data?.turn
         if (event.type === 'turn/start' && Number.isSafeInteger(turn)) {
           if (session === observedSession && turn <= observedTurn) return
-          if (boundTurn !== undefined && turn !== boundTurn) resetTurn()
+          if (boundTurn !== undefined && turn !== boundTurn) {
+            if (admissionOnly) { finish(signal?.aborted ? signal.reason : emptyReply()); return }
+            resetTurn()
+          }
           observedTurn = turn
           observedSession = session
           return
@@ -332,6 +349,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
         if (event.type === 'user/message' && event.data?.source?.rpcId === requestId) {
           boundSession = session
           boundTurn = session === observedSession ? observedTurn : undefined
+          if (admissionOnly && boundTurn !== undefined) clearTimeout(timer)
           if (signal?.aborted) cancelNative()
           return
         }
@@ -358,7 +376,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
           if (signal?.aborted) { finish(signal.reason); return }
           const reason = event.data?.reason
           const disposed = reason?.kind === 'aborted' && reason.reason?.kind === 'disposed'
-          if (managedGroup && disposed) { finish(emptyReply()); return }
+          if ((managedGroup || admissionOnly) && disposed) { finish(emptyReply()); return }
           const reply = parts.join('\n\n').trim()
           if (reply) finish(null, { text: reply, sessionId, turnId: event.data?.turnId ?? event.turnId ?? null })
           else if (event.data?.error || (managedGroup && reason && reason.kind !== 'completed')) finish(new Error('DS-Bot turn failed'))
@@ -390,8 +408,10 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
             emitPhase('thinking')
           }
         }, { global: true }))
+      }
+      if (admissionOnly || progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/disposed', ({ agent }) => {
-          if (managedGroup && boundSession && agent?.id === sessionId && agent.session === boundSession && !settled) {
+          if ((managedGroup || admissionOnly) && boundSession && agent?.id === sessionId && agent.session === boundSession && !settled) {
             finish(signal?.aborted ? signal.reason : emptyReply())
           } else if (agent === lastAgent && !settled) {
             resetTurn()

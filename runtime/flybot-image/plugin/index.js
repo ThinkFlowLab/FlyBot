@@ -92,7 +92,7 @@ export function apply(ctx, config = {}) {
       bridge.requireModel(botId)
       const turn = () => runTurn(rt, ctx, botId, text, requestId, undefined, parts, {
         sessionId, onProgress: options.onProgress, onPhase: options.onPhase, signal: options.signal,
-        managedGroup: options.managedGroup,
+        managedGroup: options.managedGroup, interactive: options.interactive,
       })
       return options.personalTeamScope && rt.flybotWorkspaceTeam
         ? rt.flybotWorkspaceTeam.run({botId,sessionId,requestId,scope:options.personalTeamScope}, turn)

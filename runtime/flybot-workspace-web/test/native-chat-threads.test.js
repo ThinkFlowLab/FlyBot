@@ -141,7 +141,8 @@ test('native bootstrap installs the authenticated provider before selecting Chie
   assert.equal(bot.model, 'flybot-workspace/flybot-workspace-model')
 })
 
-test('cancellation stays bound to the selected live Session and a later turn can resume there', async () => {
+test('cancellation stays bound to the selected live Session and a later turn can resume there', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
   const {rt, bot} = fixture()
   addPrivateChat(rt, bot, {sessionId: 'private-head', segments: [{sessionId: 'private-root'}]})
   const events = new EventEmitter()
@@ -170,11 +171,117 @@ test('cancellation stays bound to the selected live Session and a later turn can
   const sessionId = livePrivateChat(rt, bot.id, 'private-root')
   const controller = new AbortController()
   const reason = new Error('stopped by user')
-  const cancelled = runTurn(rt, ctx, bot.id, 'first', 'stop', undefined, [], {sessionId, signal: controller.signal})
+  const cancelled = runTurn(rt, ctx, bot.id, 'first', 'stop', 100, [], {sessionId, signal:controller.signal, interactive:true})
+  t.mock.timers.tick(150)
   controller.abort(reason)
   await assert.rejects(cancelled, error => error === reason)
   const resumed = await runTurn(rt, ctx, bot.id, 'second', 'resume', undefined, [], {sessionId})
   assert.deepEqual(resumed, {text: 'reply', sessionId, turnId: null})
   assert.deepEqual(selected, [['send', sessionId, 'stop'], ['cancel', sessionId], ['send', sessionId, 'resume']])
   assert.equal(bot.sessionId, 'foreground')
+})
+
+function bridgedTurn(options = {}) {
+  const {rt, bot} = fixture()
+  const events = new EventEmitter()
+  const ctx = {on(name, fn) { events.on(name, fn); return () => events.off(name, fn) }}
+  const session = {id:bot.sessionId}
+  const sessionEvent = (type, data, target = session) => events.emit('session/event', target, {type,data})
+  const echo = (rpcId = 'my-request', target = session) => sessionEvent('user/message', {source:{rpcId}}, target)
+  rt.displayItems = (_, [event]) => event.type === 'assistant/message' ? [{kind:'bot',text:event.data.text}] : []
+  rt.sendUser = async () => {
+    rt.live.set(session.id, {turn:1})
+    sessionEvent('turn/start', {turn:1})
+  }
+  const reply = runTurn(rt, ctx, bot.id, 'first', 'my-request', 100, [], {sessionId:session.id, ...options})
+  return {rt, events, session, sessionEvent, echo, reply}
+}
+
+test('an interactive reply can stream and finish after the admission deadline', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const phases = []
+  const {echo, events, session, sessionEvent, reply} = bridgedTurn({interactive:true, onPhase:phase => phases.push(phase)})
+  echo()
+  t.mock.timers.tick(101)
+  const agent = {id:session.id, session}
+  events.emit('agent/assistant-stream', {agent, frame:{type:'start', turn:1, attemptId:'draft', step:1, revision:1}})
+  events.emit('agent/assistant-stream', {agent, frame:{type:'chunk', attemptId:'draft', revision:2, chunk:{type:'text-delta', text:'working'}}})
+  t.mock.timers.tick(200)
+  sessionEvent('assistant/message', {turn:1, text:'completed reply'})
+  sessionEvent('turn/end', {turn:1, turnId:'finished'})
+  assert.deepEqual(phases, ['writing'])
+  assert.deepEqual(await reply, {text:'completed reply', sessionId:session.id, turnId:'finished'})
+  assert.equal(events.eventNames().length, 0)
+})
+
+test('only an exact native echo can clear the interactive admission deadline', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const {echo, session, reply} = bridgedTurn({interactive:true})
+  const timedOut = assert.rejects(reply, /turn timed out/)
+  echo('other-request')
+  echo('my-request', {id:'other-session'})
+  echo('my-request', {id:session.id})
+  t.mock.timers.tick(100)
+  await timedOut
+})
+
+test('fixed turn deadlines still apply to background and managed group calls after native echo', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  for (const options of [{}, {interactive:true, managedGroup:true}]) {
+    const {echo, events, reply} = bridgedTurn(options)
+    const timedOut = assert.rejects(reply, /turn timed out/)
+    echo()
+    t.mock.timers.tick(100)
+    await timedOut
+    assert.equal(events.eventNames().length, 0)
+  }
+})
+
+test('disposal settles only the exact admitted Session without requiring a stream frame', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const {echo, events, session, reply} = bridgedTurn({interactive:true})
+  echo()
+  t.mock.timers.tick(150)
+  let rejected = false
+  const expectDisposal = assert.rejects(reply, {code:'agents/empty-reply'}).then(() => { rejected = true })
+  events.emit('agent/disposed', {agent:{id:session.id, session:{id:session.id}}})
+  await Promise.resolve()
+  assert.equal(rejected, false)
+  assert.equal(events.listenerCount('agent/disposed'), 1)
+  events.emit('agent/disposed', {agent:{id:session.id, session}})
+  await expectDisposal
+  assert.equal(events.eventNames().length, 0)
+})
+
+test('stopping an admitted reply does not cancel a later native turn', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const controller = new AbortController()
+  const {rt, echo, events, session, reply} = bridgedTurn({interactive:true, signal:controller.signal})
+  let cancelled = false
+  rt.resolveAgent = async () => ({session, cancel:() => { cancelled = true }})
+  echo()
+  t.mock.timers.tick(150)
+  rt.live.set(session.id, {turn:2})
+  const reason = new Error('stopped by user')
+  controller.abort(reason)
+  await assert.rejects(reply, error => error === reason)
+  assert.equal(cancelled, false)
+  assert.equal(events.eventNames().length, 0)
+})
+
+test('a stopped interactive reply settles if native cancellation produces no terminal event', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const controller = new AbortController()
+  const {rt, echo, events, session, reply} = bridgedTurn({interactive:true, signal:controller.signal})
+  const attempted = Promise.withResolvers()
+  rt.resolveAgent = async () => ({session, cancel:attempted.resolve})
+  echo()
+  t.mock.timers.tick(150)
+  const reason = new Error('stopped by user')
+  const stopped = assert.rejects(reply, error => error === reason)
+  controller.abort(reason)
+  await attempted.promise
+  t.mock.timers.tick(30_000)
+  await stopped
+  assert.equal(events.eventNames().length, 0)
 })

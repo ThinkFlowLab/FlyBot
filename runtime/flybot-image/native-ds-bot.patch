@@ -2064,9 +2064,10 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      if (running !== undefined) {
        if (extra.failed !== undefined) {
 diff --git a/src/host/tools.js b/src/host/tools.js
+index 0b9ee2b..b9e79a2 100644
 --- a/src/host/tools.js
 +++ b/src/host/tools.js
-@@ -477,7 +477,13 @@
+@@ -477,7 +477,13 @@ export function install(rt) {
          const served = new Set((await rt.catalog()).filter(entry => entry.needsKey !== true && rt.isLocalAgentRef?.(entry.ref) !== true).map(entry => entry.ref))
          const fallback = [state.prefs.defaultBotModel, creator?.model].find(ref => ref && served.has(ref))
          const model = args.model || fallback
@@ -2081,7 +2082,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
          return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It is greeting the user now.`
        } catch (error) {
          return `Could not create the Bot: ${error.message}`
-@@ -631,9 +637,9 @@
+@@ -631,9 +637,9 @@ export function install(rt) {
 
    rt.teamTools.push(defineTool({
      name: 'create_group',
@@ -2093,7 +2094,7 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        name: { type: 'string', description: 'Group name; defaults to the member names' },
        notice: { type: 'string', description: 'Shared instructions every member reads before speaking in this group; at most 2000 characters' },
        admin: { type: 'string', description: 'Member who leads the group; defaults to you' },
-@@ -647,6 +653,15 @@
+@@ -647,6 +653,15 @@ export function install(rt) {
        if (!rt.isMain(self)) return 'Only a Main Bot can create group chats. Ask a Main Bot instead.'
        const { bots, unknown } = resolveBots(args.members)
        if (unknown.length > 0) return `No Bot named ${unknown.join(', ')}. Team: ${teamNames()}`
@@ -2109,16 +2110,22 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const admin = args.admin ? rt.findBot(args.admin) : rt.botOf(self)
        if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
        const members = [...new Set([self, ...bots.map(bot => bot.id), admin.id])]
-@@ -1189,12 +1204,16 @@
+@@ -1189,12 +1204,20 @@ export function install(rt) {
    const filterBotAssembly = (agent, held) => {
      if (held.filtered === true || typeof agent.ctx?.on !== 'function') return
      const filterTools = agent.ctx.on('llm/stream', function filterBuiltinTools(options, next) {
 +      // The LLM service waterfall is shared. A specialist's restrictions must
 +      // never drop tools from the Chief's concurrent or following model call.
 +      if (options.sessionId !== agent.session?.id) return next()
++      const offered = options.tools
++      if (!Array.isArray(offered)) return next()
        const hidden = rt.hiddenBuiltinTools(agent.session?.id)
-       if (!options.tools?.some(tool => hidden.has(tool.name))) return next()
-       return agent.ctx.llm.stream({ ...options, tools: options.tools.filter(tool => !hidden.has(tool.name)) })
+-      if (!options.tools?.some(tool => hidden.has(tool.name))) return next()
+-      return agent.ctx.llm.stream({ ...options, tools: options.tools.filter(tool => !hidden.has(tool.name)) })
++      const setup = rt.flybotWorkspaceTeam?.setupTools(agent.session?.id)
++      const canUseSetup = setup && [...setup].every(name => offered.some(tool => tool.name === name && !hidden.has(name)))
++      const tools = offered.filter(tool => !hidden.has(tool.name) && (!canUseSetup || setup.has(tool.name)))
++      return tools.length === offered.length ? next() : agent.ctx.llm.stream({ ...options, tools })
      })
      if (typeof filterTools === 'function') held.disposers.push(filterTools)
 -    const dispose = agent.ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
@@ -2127,6 +2134,17 @@ diff --git a/src/host/tools.js b/src/host/tools.js
        const assembled = await next()
        const hidden = new Set([...HIDDEN_TOOLS, ...rt.hiddenBuiltinTools(agent.session?.id)])
        // DSH 0.2.2 adds the tool list after this waterfall (#814), so only an
+@@ -1362,6 +1385,10 @@ export function install(rt) {
+   // goal made there is blocked.
+   ctx.tools.guard((exec) => {
+     if (!rt.isBotSession(exec.agent?.id)) return undefined
++    const setup = rt.flybotWorkspaceTeam?.setupTools(exec.agent?.session?.id ?? exec.agent?.id)
++    if (setup && exec.name !== 'run_code' && !setup.has(exec.name)) {
++      return 'Finish the requested team setup first using list_bots, create_bot, and create_group. Use the native tools instead of inspecting files or settings.'
++    }
+     if (exec.name === BLOCKING_QUESTION_TOOL) return `Bots cannot use ${BLOCKING_QUESTION_TOOL}. Ask with ask_user in your own chat, or ask in your reply.`
+     if (rt.taskOwners?.has(exec.agent?.id)) {
+       if (exec.name === 'browser_handoff') return 'Background tasks cannot hand the browser to the user. Report back to your own chat so it can ask the user to take over.'
 diff --git a/src/host/roster.js b/src/host/roster.js
 --- a/src/host/roster.js
 +++ b/src/host/roster.js
@@ -2148,9 +2166,10 @@ diff --git a/src/host/roster.js b/src/host/roster.js
        if (main) state.mainBotIds.push(id)
        const creator = rt.botOf(createdBy)
 diff --git a/src/host/prompt.js b/src/host/prompt.js
+index 0c42154..cde287f 100644
 --- a/src/host/prompt.js
 +++ b/src/host/prompt.js
-@@ -51,12 +51,19 @@
+@@ -51,12 +51,20 @@ export function install(rt) {
      const bot = rt.botOf(self)
      if (bot !== undefined) {
        const main = rt.isMainForTurn?.(id) ?? rt.isMain(self)
@@ -2164,7 +2183,8 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
 +        ...(workspace ? [
 +          '',
 +          '## FlyBot personal workspace',
-+          'When the user asks you to create or assemble a team, use list_bots to reuse existing specialists, call create_bot for missing roles, and call create_group with their exact names. Use DS Bot tool discovery if these tools are not listed directly. You can do this from the current conversation.',
++          'When the user asks to assemble a team, start by calling list_bots. Reuse suitable members, call create_bot for missing roles, then call create_group with their exact names. The tool list for this request is authoritative even if a previous reply said a tool was missing. Use DS Bot tool discovery only if the current request presents tools through run_code.',
++          ...(workspace.setupPending ? ['The current user explicitly requested team setup. Create the team before starting repository or project work. Use the native tools directly and report actual results from their calls.'] : []),
 +          'FlyBot shared groups include only the Bots you list. Include yourself only if the user asks. Supply the name and members, plus a notice if requested. Leave admin, reply mode, and section to group settings. After the tools confirm creation, name the actual Bots and link to the group using the returned link.',
 +        ] : []),
        ].join('\n')

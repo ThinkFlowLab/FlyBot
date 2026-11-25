@@ -2,6 +2,15 @@ import { createHash } from 'node:crypto'
 import { livePrivateChat } from '../../lib/native-chat.js'
 import { sharedBotSocial } from '../../lib/c/bot-social.js'
 
+const SETUP_TOOLS = new Set(['list_bots', 'create_bot', 'create_group'])
+
+export function asksToSetUpTeam(text) {
+  if (typeof text !== 'string') return false
+  const prompt = text.normalize('NFKC').trim()
+  return /^(?:(?:请|你|帮我|替我|给我|麻烦)\s*)*(?:新建|组建|创建|搭建|建立|建)[^，。！？\n]{0,24}(?:团队|小队|小组)(?!页面|网页|主页|网站|图标|文档|介绍|卡片)/u.test(prompt) ||
+    /^(?:(?:please|can you|could you|help me)\s+)*(?:create|build|assemble|form|set up)\s+(?:[a-z-]+\s+){0,6}(?:team|squad)\b(?:\s*(?:[.!?,;:\n]|$)|\s+(?:to|for|of|with|named|called)\b)/i.test(prompt)
+}
+
 export function attachPersonalTeamCreation(rt, { host, binding, publishBot }) {
   if (rt.flybotWorkspaceTeam) return
   const active = new Map()
@@ -10,6 +19,10 @@ export function attachPersonalTeamCreation(rt, { host, binding, publishBot }) {
     const link = rt.botOf(botId)?.flybotWorkspace
     return rt.isMain(botId) && personal?.workspace_id === workspaceId &&
       personal.agent_id === agentId && link?.workspace_id === workspaceId && link.agent_id === agentId
+  }
+  const current = sessionId => {
+    const turn = active.get(rt.chatOwners.get(sessionId))
+    return turn && allowed(turn) && livePrivateChat(rt,turn.botId,turn.sessionId) === sessionId ? turn : null
   }
   const key = (requestId, ...parts) =>
     createHash('sha256').update(JSON.stringify([requestId, ...parts])).digest('hex')
@@ -42,13 +55,17 @@ export function attachPersonalTeamCreation(rt, { host, binding, publishBot }) {
       if (!allowed(turn) || livePrivateChat(rt,botId,sessionId) !== sessionId) return runTurn()
       active.set(botId,turn)
       try { return await runTurn() }
-      finally { active.delete(botId) }
+      finally { if (active.get(botId) === turn) active.delete(botId) }
+    },
+    setupTools(sessionId) {
+      return current(sessionId)?.setupPending ? SETUP_TOOLS : null
     },
     scope(sessionId) {
-      const turn = active.get(rt.chatOwners.get(sessionId))
-      if (!turn || !allowed(turn) || livePrivateChat(rt,turn.botId,turn.sessionId) !== sessionId) return null
+      const turn = current(sessionId)
+      if (!turn) return null
       const {workspaceId,requestId} = turn
       return {
+        setupPending:turn.setupPending === true,
         async createBot({name,role,instructions}, createNativeBot) {
           const agent = await publishBot({workspace_id:workspaceId, name, summary:role, instructions,
             idempotency_key:key(requestId,'bot',name.toLowerCase())}, createNativeBot)
@@ -67,6 +84,7 @@ export function attachPersonalTeamCreation(rt, { host, binding, publishBot }) {
           const social = sharedBotSocial(host)
           const group = await social.createNativeGroup({workspace_id:workspaceId,title,bot_ids:botIds,
             request_key:key(requestId,'group',title,...botIds.slice().sort())})
+          turn.setupPending = false
           let noticeSaved = true
           if (announcement) {
             const path = '/v1/ot/conversations/' + group.conversation_id + '/announcement'

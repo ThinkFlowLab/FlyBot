@@ -15,7 +15,7 @@ const files = {
   ],
   'src/host/tools.js': [
     'a5c743b7c75c96498775808f029a5f15c7e08dbe6eaf33089d29b3c2a9ffb382',
-    '852dafff886dd8625d98152afe85432b8a22648d3627df5b61eddba4cea8c510',
+    '73846995fff9590d7d059166c8c9de14b27dea5477cfd5b37099800a0e3b96b7',
   ],
   'src/host/roster.js': [
     '20461d2d4aeae6ca373e3431a5802317d1130468e1940d22032189134429f984',
@@ -23,7 +23,7 @@ const files = {
   ],
   'src/host/prompt.js': [
     'b15fd1dd8b046589533540b45388e6573e84fdf51bb09aa48a97e694c1e83c21',
-    'ebf5a93da2ef5941e0417f4018635350cb251212c9eb9384671f2ef9a7bbc2b8',
+    '21d63cfed3a498fbb47661ee2d7b09dd947b7bd27a2e8ffc1e6b77587f08a2c5',
   ],
   'client.js': [
     '98713d86c6cbf85adab1d0a2d303140778d9ed85fb2220abdadfab377a5f539f',

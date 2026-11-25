@@ -3527,7 +3527,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
 
   async function settleReplyProgress(watch, {terminal = true} = {}) {
     watch.terminal ||= terminal;
-    if (replyWatch === watch) approvalNotice.stop();
+    if (terminal && replyWatch === watch) approvalNotice.stop();
     globalThis.clearTimeout(watch.receiptTimer);
     if (watch.posting) {
       if (!await acceptPostingReply(watch)) scheduleReplyProgress(watch, 1200);
@@ -3548,11 +3548,15 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const snapshot = result?.status === 200 ? result.body : null;
     if (snapshot?.state === 'pending' || snapshot?.state === 'running') {
       watch.failures = 0;
+      const hasRevision = Number.isSafeInteger(snapshot.revision);
+      if (snapshot.state === 'running' && !hasRevision && snapshot.text === '' && watch.snapshot) {
+        // The saved reply can still be running while live progress is unavailable.
+        snapshot.text = watch.snapshot.text;
+      }
       observeReplyProgress(watch, snapshot);
-      const changed = Number.isSafeInteger(snapshot.revision) && snapshot.revision !== watch.revision;
+      const changed = hasRevision && snapshot.revision !== watch.revision;
       if (changed) watch.revision = snapshot.revision;
-      const unchangedDelay = Number.isSafeInteger(snapshot.revision) ? 100 : 400;
-      scheduleReplyProgress(watch, changed ? 50 : unchangedDelay);
+      scheduleReplyProgress(watch, changed ? 50 : 750);
       return;
     }
     if (['succeeded','failed','cancelled'].includes(snapshot?.state)) return settleReplyProgress(watch);
