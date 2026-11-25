@@ -1,11 +1,9 @@
 name: FlyBot social host adapter
-# Proves @flybot/social can sit on the unmodified upstream DS-Bot v0.3.6 runtime
+# Proves @flybot/social can sit on the pinned upstream DS-Bot runtime
 # through runtime/flybot-social-host, including the 0.3.5+ write-ahead group ledger.
 # Does not edit runtime/ds-bot-upstream/.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +24,7 @@ jobs:
         run: npm test
 
   host-integration:
-    name: Social plugin on v0.3.6 host
+    name: Social plugin on the pinned DS-Bot host
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -61,7 +59,7 @@ jobs:
             exit 1
           fi
           npm run harness -- --no-save "@deepseek-ai/dsh@${DSH_VERSION}" "@deepseek-ai/dsh-agent-loop-testkit@${DSH_VERSION}"
-      - name: Run social plugin against the v0.3.6 host
+      - name: Run social plugin against the pinned DS-Bot host
         working-directory: runtime/flybot-social-host
         run: npm run test:host
         env:

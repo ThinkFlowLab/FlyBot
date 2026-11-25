@@ -6,9 +6,7 @@ name: FlyBot runtime image
 # open: issue 1, issue 3, issue 5. This job does not authorize a public
 # redistributable release.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -52,7 +50,7 @@ jobs:
           fi
           echo "dsh=$dsh" >> "$GITHUB_OUTPUT"
           echo "DSH $dsh"
-      - name: Build the FlyBot FlyBot runtime image
+      - name: Build the FlyBot runtime image
         env:
           DSH_VERSION: ${{ steps.pin.outputs.dsh }}
         run: |
