@@ -1255,10 +1255,24 @@ index 9116437..1ee020e 100644
      if (rt.isSwitchingPart?.(sessionId)) return false
      const session = ctx.get('agents')?.get(sessionId)?.session
 diff --git a/src/host/capabilities.js b/src/host/capabilities.js
-index efe6323..85c65df 100644
+index efe6323..e0e439e 100644
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
-@@ -397,7 +397,9 @@ export function install(rt) {
+@@ -336,6 +336,13 @@ export function install(rt) {
+     let config
+     try {
+       config = configFor(item, bot.id)
++      // Never pass the private read endpoint to a group or detached task.
++      if (name === 'ot-apps' && config.transport === 'streamable-http'
++        && rt.chatOwners?.get(sessionId) === bot.id
++        && rt.groupOwners?.has(sessionId) === false && rt.taskOwners?.has(sessionId) === false) {
++        const url = await rt.flybotWorkspaceApps?.ownerPrivateToolUrl?.(config.url)
++        if (url) config.url = url
++      }
+     } catch (error) {
+       await drop()
+       statusSet(bot.id, name, sessionId, { state: 'error', error: rt.redactSecrets(error.message).slice(0, 300) })
+@@ -397,7 +404,9 @@ export function install(rt) {
    }
    const desiredFor = (agent, bot) => {
      const sessionId = agent.session.id

@@ -1,5 +1,9 @@
-// One-shot owner approvals. No execution is authorized by provider/model text.
-// Kept separate from the settings layout so unrelated UI polish stays isolated.
+// Activity and one-time decisions for the current account's connected tools.
+const APPROVAL_STATUS = {
+  pending: '待确认', approved: '已允许', executing: '执行中', succeeded: '已完成',
+  denied: '已拒绝', failed: '执行失败', expired: '已过期', unknown: '结果未确认',
+}
+
 export async function mountToolApprovals(document, fetcher = globalThis.fetch, schedule = globalThis.setInterval) {
   const keyCard = document.getElementById('composio-key-card')
   if (!keyCard || (globalThis.location && globalThis.location.pathname !== '/settings/connectors')) return
@@ -8,9 +12,9 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
   section.className = 'composio-key-card'
   const title = document.createElement('h2')
   title.className = 'composio-key-title'
-  title.textContent = '智能体工具调用 · 逐次确认'
+  title.textContent = '应用工具调用'
   const note = document.createElement('p')
-  note.textContent = '下方每次确认只允许这一项工具和这些参数执行一次（读取也需要确认）。外部工具可能发送消息、修改或删除数据；仅在核实完整参数后允许。拒绝或超时不会自动重试。'
+  note.textContent = '在私聊里，已授权的 GitHub 只读查询（如检查 PR 是否合并）会自动执行。修改数据、发送消息和其他工具调用需要确认。每次确认只允许所示工具和参数执行一次。'
   const list = document.createElement('div')
   list.setAttribute('aria-live', 'polite')
   section.append(title, note, list)
@@ -25,23 +29,26 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
       const response = await fetcher('/v1/composio/approvals', {credentials: 'same-origin'})
       if (!response.ok) return
       const payload = await response.json()
-      const pending = (payload.items || []).slice(0, 10)
-      const raw = JSON.stringify(pending)
+      const calls = (payload.items || []).slice(0, 10)
+      const raw = JSON.stringify(calls)
       if (raw === previous) return
-      const rows = pending.map(item => {
+      const rows = calls.map(item => {
         const row = document.createElement('div')
         const label = document.createElement('strong')
         const task = typeof item.task_id === 'string' && item.task_id ? ' · 任务 ' + item.task_id.slice(0, 8) : ''
-        label.textContent = item.name + ' · ' + item.status + task
+        const automatic = item.approval_mode === 'automatic_read'
+        const mode = automatic ? ' · 自动只读' : ''
+        label.textContent = item.name + mode + ' · ' + (APPROVAL_STATUS[item.status] ?? '状态未知') + task
         const context = document.createElement('p')
-        context.textContent = '请求：' + item.prompt + '\n连接：' + (item.account ? item.account.toolkit + ' / ' + item.account.account_id : '连接已移除')
+        const prompt = item.prompt ? '请求：' + item.prompt + '\n' : ''
+        context.textContent = prompt + '连接：' + (item.account ? item.account.toolkit + ' / ' + item.account.account_id : '连接已移除')
         const args = document.createElement('pre')
         args.style.whiteSpace = 'pre-wrap'
         args.style.overflowWrap = 'anywhere'
         args.textContent = JSON.stringify(item.arguments, null, 2)
         const status = document.createElement('p')
-        if (item.status === 'unknown' || item.status === 'executing') status.textContent = '执行结果不明；不要重试，请先到提供方核实。'
-        const actions = item.status === 'pending' ? [['deny', '拒绝'], ['approve', '允许此调用一次']] : []
+        if (item.status === 'unknown') status.textContent = '请先到应用核实执行结果。'
+        const actions = !automatic && item.status === 'pending' ? [['deny', '拒绝'], ['approve', '允许此调用一次']] : []
         for (const [decision, text] of actions) {
           const button = document.createElement('button')
           button.type = 'button'
@@ -64,7 +71,7 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
         return row
       })
       list.replaceChildren(...rows)
-      if (!rows.length) list.textContent = '暂无待确认调用。请在私人聊天中请求智能体使用你授权的应用；群聊、定时任务和对外 API 尚未接通个人工具。'
+      if (!rows.length) list.textContent = '暂无工具调用记录。'
       previous = raw
     } catch { /* A polling failure grants nothing. */ }
     finally { busy = false }
