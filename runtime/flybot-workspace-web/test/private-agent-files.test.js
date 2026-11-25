@@ -613,7 +613,14 @@ test('a new native chat accepts the first message and replays its receipt with o
   await started.promise
   const active = await send()
   assert.equal(active.status,202)
-  assert.deepEqual(await active.json(),received)
+  const activeReceipt = await active.json()
+  // The initial snapshot precedes the message write; a replay reflects the
+  // conversation's current activity timestamp even across a second boundary.
+  const {updated:activeUpdated,...activeConversation} = activeReceipt.conversation
+  const {updated:receivedUpdated,...receivedConversation} = received.conversation
+  assert.ok(activeUpdated >= receivedUpdated)
+  assert.deepEqual({...activeReceipt,conversation:activeConversation},
+    {...received,conversation:receivedConversation})
   assert.equal((await send({...opening,first_message:{body:'A different question'}})).status,409)
   assert.equal(received.conversation.memory_scope,'off')
   assert.equal(received.message.body,'First question')
