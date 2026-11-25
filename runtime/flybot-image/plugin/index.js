@@ -14,10 +14,10 @@ import { boundName } from '../../flybot-workspace-web/features/skills/index.js'
 import { nativeSkillFilter, reconcileStartupSkills } from '../../flybot-workspace-web/features/skills/library.js'
 import { assertNativeConsentOverlay } from '../native-ds-bot-overlay.mjs'
 
-// Same inject list as runtime/ds-bot-upstream/ds-bot/index.js — this plugin
-// stands in for ds-bot in the web profile so createRuntime runs once.
+// This wrapper stands in for DS-Bot and also reads the native turn
+// boundary projection when importing FlyBot's previous chat history.
 export const name = 'flybot-workspace-flybot'
-export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'sessions', 'sessionTitle', 'workspaceRegistry', 'connection']
+export const inject = ['agents', 'llm', 'tools', 'systemPrompt', 'sessionController', 'sessions', 'sessionTitle', 'workspaceRegistry', 'connection']
 
 export function apply(ctx, config = {}) {
   assertNativeConsentOverlay()
