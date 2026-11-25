@@ -45,6 +45,19 @@ export async function importHistory({ db, rt, ctx, bot, conversationId, sessionI
     if (thread) scan.add(thread.sessionId)
     scan.add(sid)
   }
+  const put = db.prepare('INSERT OR IGNORE INTO native_agent_events VALUES(?,?,?,?)')
+  const missing = rows.filter(row => {
+    const meta = JSON.parse(row.meta || '{}')
+    // A successful Web reply can combine multiple native assistant messages.
+    // Its owned Session receipt is authoritative even without one matching event.
+    if (row.role !== 'assistant' || row.status !== 'succeeded' ||
+        meta.engine !== 'ds-bot' || !scan.has(meta.session_id)) return true
+    put.run(row.id, meta.session_id, null, 'native')
+    return false
+  })
+  let matched = rows.length - missing.length
+  if (!missing.length) return { imported:0, matched }
+
   const events = []
   for (const id of scan) {
     const agent = await rt.resolveAgent(id); await ctx.sessions.flush(agent.session)
@@ -59,56 +72,78 @@ export async function importHistory({ db, rt, ctx, bot, conversationId, sessionI
     }
   }
   events.sort((a,b)=>a.time-b.time || a.seq-b.seq)
-  const used = new Set(events.flatMap((e,i)=>db.prepare('SELECT 1 FROM native_agent_events WHERE session_id=? AND event_seq=?').get(e.id,e.seq) ? [i] : [])), put = db.prepare('INSERT OR IGNORE INTO native_agent_events VALUES(?,?,?,?)')
+  const recorded = db.prepare('SELECT 1 FROM native_agent_events WHERE session_id=? AND event_seq=?')
+  const used = new Set(events.flatMap((event, index) => recorded.get(event.id, event.seq) ? [index] : []))
+  const imports = []
+  for (const row of missing) {
+    const index = events.findIndex((event, i) => !used.has(i) && (event.tag === row.id ||
+      event.rpc === 'ot-agent:' + row.id || event.rpc === 'otp:' + row.id ||
+      (event.role === row.role && event.text === row.text && row.text)))
+    if (index < 0) {
+      imports.push(row)
+      continue
+    }
+    const known = events[index]
+    used.add(index)
+    put.run(row.id, known.id, known.seq, 'adopted')
+    matched++
+  }
+  if (!imports.length) return { imported:0, matched }
+
   const writeSessionId = privateChatThread(bot, sessionId)?.sessionId ?? sessionId
   const agent = await rt.resolveAgent(writeSessionId)
-  let imported=0,matched=0
-  // A native system head must precede the first surface message. This is an
-  // EMPTY current initialization, not a historical prompt or model response.
-  // Native execution replaces it with the actual scoped prompt before inference.
-  const initializeHead = async () => {
-    if (agent.session.surface.nodes.length) return
-    const native = await import(pathToFileURL(createRequire('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json').resolve('@deepseek-ai/dsh-llm')).href)
-    const source={kind:'flybot-workspace-initialization',reason:'protect-native-history-head',noModelCall:true}
-    let turn=1
-    for(let seq=0;seq<agent.session.seq;seq++){const e=agent.session.eventAt(seq);if(e.type==='turn/start')turn=Math.max(turn,e.data.turn+1)}
-    agent.session.append('turn/start',{turn,source})
-    agent.session.append('step/start',{turn,step:1,source})
-    agent.session.append('system/message',{turn,step:1,message:native.createSystemMessage('')},{surfaceOp:'append'})
-    agent.session.append('step/end',{turn,step:1,source})
-    agent.session.append('turn/end',{turn,source})
-    await ctx.sessions.flush(agent.session)
-  }
-  for(const row of rows){
-    const known=events.find((e,i)=>!used.has(i) && (e.tag===row.id || e.rpc==='ot-agent:'+row.id || e.rpc==='otp:'+row.id || (e.role===row.role && e.text===row.text && row.text)))
-    if(known){ used.add(events.indexOf(known));put.run(row.id,known.id,known.seq,'adopted');matched++;continue }
-    await initializeHead()
-    // Failed/empty messages remain visible diagnostic events, not fabricated replies.
-    const source={kind:'user',flybotWorkspaceMessageId:row.id,originalTime:row.created*1000,imported:true,status:row.status}
-    let event
-    if(!row.text || row.status==='failed') {
-      // Resolve the engine's public module, not a second private-class copy.
-      const native = await import(pathToFileURL(createRequire('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json').resolve('@deepseek-ai/dsh-session')).href)
-      const seq = native.appendPluginRecord(agent.session,'plugin:flybot-workspace/message-status',{source,role:row.role,text:row.text,status:row.status})
-      event=agent.session.eventAt(seq)
-    } else if(row.role==='user') event=agent.session.append('user/message',{id:row.id,role:'user',source,content:[{type:'text',text:row.text}]},{surfaceOp:'append'})
-    else {
-      // Imported transcript boundary, NOT a new model invocation. Provider/model
-      // were not retained by the legacy platform, so explicitly label them unknown.
-      let turn=1
-      for(let seq=0;seq<agent.session.seq;seq++){const e=agent.session.eventAt(seq);if(e.type==='turn/start')turn=Math.max(turn,e.data.turn+1)}
-      const history={...source,kind:'flybot-workspace-history'}
-      agent.session.append('turn/start',{turn,source:history,imported:true})
-      agent.session.append('step/start',{turn,step:1,source:history,imported:true})
-      event=agent.session.append('assistant/message',{turn,step:1,source,stream:[],message:{id:row.id,role:'assistant',source:{...history,kind:'model',provider:'flybot-workspace-history',model:'historical-unknown'},content:[{type:'text',text:row.text}]}},{surfaceOp:'append'})
-      agent.session.append('step/end',{turn,step:1,source:history,imported:true})
-      agent.session.append('turn/end',{turn,source:history,imported:true})
+  // Queue native input behind the import while the transcript is being flushed.
+  await agent.whenIdle()
+  return agent.runMaintenance(async signal => {
+    let imported = 0
+    // A native system head must precede the first surface message. This is an
+    // EMPTY current initialization, not a historical prompt or model response.
+    // Native execution replaces it with the actual scoped prompt before inference.
+    const nextTurn = () => ctx.agents.turnBoundaryOf(agent.session).lastTurn + 1
+    const initializeHead = async () => {
+      if (agent.session.surface.nodes.length) return
+      const native = await import(pathToFileURL(createRequire('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json').resolve('@deepseek-ai/dsh-llm')).href)
+      const source={kind:'flybot-workspace-initialization',reason:'protect-native-history-head',noModelCall:true}
+      signal.throwIfAborted()
+      const turn = nextTurn()
+      agent.session.append('turn/start',{turn,source})
+      agent.session.append('step/start',{turn,step:1,source})
+      agent.session.append('system/message',{turn,step:1,message:native.createSystemMessage('')},{surfaceOp:'append'})
+      agent.session.append('step/end',{turn,step:1,source})
+      agent.session.append('turn/end',{turn,source})
+      await ctx.sessions.flush(agent.session)
     }
-    // Flush BEFORE mapping: a crash between these is recovered by event source id.
-    await ctx.sessions.flush(agent.session)
-    put.run(row.id,writeSessionId,event.seq,'imported'); imported++
-  }
-  return { imported,matched }
+    for (const row of imports) {
+      signal.throwIfAborted()
+      await initializeHead()
+      signal.throwIfAborted()
+      // Failed/empty messages remain visible diagnostic events, not fabricated replies.
+      const source={kind:'user',flybotWorkspaceMessageId:row.id,originalTime:row.created*1000,imported:true,status:row.status}
+      let event
+      if(!row.text || row.status==='failed') {
+        // Resolve the engine's public module, not a second private-class copy.
+        const native = await import(pathToFileURL(createRequire('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json').resolve('@deepseek-ai/dsh-session')).href)
+        signal.throwIfAborted()
+        const seq = native.appendPluginRecord(agent.session,'plugin:flybot-workspace/message-status',{source,role:row.role,text:row.text,status:row.status})
+        event=agent.session.eventAt(seq)
+      } else if(row.role==='user') event=agent.session.append('user/message',{id:row.id,role:'user',source,content:[{type:'text',text:row.text}]},{surfaceOp:'append'})
+      else {
+        // Imported transcript boundary, NOT a new model invocation. Provider/model
+        // were not retained by the legacy platform, so explicitly label them unknown.
+        const turn = nextTurn()
+        const history={...source,kind:'flybot-workspace-history'}
+        agent.session.append('turn/start',{turn,source:history,imported:true})
+        agent.session.append('step/start',{turn,step:1,source:history,imported:true})
+        event=agent.session.append('assistant/message',{turn,step:1,source,stream:[],message:{id:row.id,role:'assistant',source:{...history,kind:'model',provider:'flybot-workspace-history',model:'historical-unknown'},content:[{type:'text',text:row.text}]}},{surfaceOp:'append'})
+        agent.session.append('step/end',{turn,step:1,source:history,imported:true})
+        agent.session.append('turn/end',{turn,source:history,imported:true})
+      }
+      // Flush BEFORE mapping: a crash between these is recovered by event source id.
+      await ctx.sessions.flush(agent.session)
+      put.run(row.id,writeSessionId,event.seq,'imported'); imported++
+    }
+    return { imported,matched }
+  })
 }
 
 // Compatibility for the first history-import release: those append-only events

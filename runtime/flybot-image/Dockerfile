@@ -67,7 +67,8 @@ COPY third_party/anthropic-sdk /opt/licenses/anthropic-sdk
 COPY flybot-social-host /opt/flybot-workspace/runtime/flybot-social-host
 COPY flybot-web-slots /opt/flybot-workspace/runtime/flybot-web-slots
 COPY flybot-image /opt/flybot-workspace/runtime/flybot-image
-RUN node /opt/flybot-workspace/runtime/flybot-image/native-ds-bot-overlay.mjs /opt/flybot-workspace/runtime/ds-bot-upstream/ds-bot
+RUN node /opt/flybot-workspace/runtime/flybot-image/native-ds-bot-overlay.mjs /opt/flybot-workspace/runtime/ds-bot-upstream/ds-bot \
+    && node /opt/flybot-workspace/runtime/flybot-image/native-dsh-turn-overlay.mjs
 COPY flybot-workspace-web /opt/flybot-workspace/runtime/flybot-workspace-web
 COPY --from=flybot-workspace-static / /opt/flybot-workspace/runtime/flybot-workspace-web/pages/
 RUN node --input-type=module -e 'import {writeChatAssetManifest} from "/opt/flybot-workspace/runtime/flybot-workspace-web/src/pages.js"; await writeChatAssetManifest("/opt/flybot-workspace/runtime/flybot-workspace-web/pages")'

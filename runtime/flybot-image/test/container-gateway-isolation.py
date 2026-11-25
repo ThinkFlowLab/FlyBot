@@ -413,6 +413,39 @@ def main():
         assert api(token_b, 'GET', agents)['items'] == [], "B never sees A's agents"
         api(token_b, 'GET', chat, expected=404)
 
+        # A migrated reply can be appended while the native Agent is already live.
+        # The next two real turns must resume from the journal's native boundary.
+        docker('exec', a['name'], 'node', '-e', """
+          const {DatabaseSync} = require('node:sqlite')
+          const db = new DatabaseSync('/data/flybot-workspace/features/agents/agents.sqlite3', {timeout:2000})
+          db.prepare('INSERT INTO agent_messages VALUES(?,?,?,?,?,?,?)')
+            .run('d'.repeat(32),process.argv[1],'assistant','Imported fixture reply','succeeded',
+              Math.floor(Date.now()/1000),'{}')
+          db.close()
+        """, convo['id'])
+        for prompt in ('first turn after history import', 'next turn in the same chat'):
+            after_import = api(token_a, 'POST', f'{chat}/messages', {'body': prompt}, expected=201, timeout=150)
+            assert after_import['reply']['status'] == 'succeeded', 'native reply after history import completed'
+        docker('exec', a['name'], 'node', '--input-type=module', '-e', r"""
+          import assert from 'node:assert/strict'
+          import {globSync,readFileSync} from 'node:fs'
+          import {createRequire} from 'node:module'
+          import {pathToFileURL} from 'node:url'
+          import {zstdDecompressSync} from 'node:zlib'
+          const requireFromDSH = createRequire('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json')
+          const {sessionFormatCatalog} = await import(pathToFileURL(requireFromDSH.resolve('@deepseek-ai/dsh-session-format-catalog')).href)
+          const session = process.argv[1]
+          const files = globSync('/data/sessions/**/' + session + '/session.v4.jsonl.zstd')
+          assert.equal(files.length,1)
+          const [header,...events] = zstdDecompressSync(readFileSync(files[0])).toString().trim().split('\n').map(JSON.parse)
+          const restore = sessionFormatCatalog.createRestore(header,{recovery:'strict',validation:'current'})
+          for (const event of events) restore.decodeRow(event)
+          restore.finish()
+          const turns = events.filter(event => event.type==='turn/start')
+          assert.deepEqual(turns.map(event => event.data.turn),[1,2,3,4])
+          assert.equal(turns.filter(event => event.data.source?.kind==='flybot-workspace-history').length,1)
+        """, history['conversation']['native_session_id'])
+
         def plugin(token, endpoint, payload=None, kind='flybot-workspace'):
             status, _h, response = browse(token, 'POST', f'/b/api/{kind}',
                                           json.dumps({'endpoint': endpoint, 'payload': payload}))

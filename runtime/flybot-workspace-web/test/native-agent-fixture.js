@@ -32,7 +32,8 @@ export function nativeAgentFixture({ reply = () => 'DS-Bot reply', available = t
           return event
         },
       }
-      sessions.set(id, { session, events })
+      sessions.set(id, { session, events, async whenIdle() {},
+        runMaintenance: job => job(new AbortController().signal) })
       return id
     },
     async resolveAgent(id) { return sessions.get(id) },
@@ -40,7 +41,13 @@ export function nativeAgentFixture({ reply = () => 'DS-Bot reply', available = t
   }
   const services = {
     rt,
-    ctx: { sessions: { flush: async () => {} } },
+    ctx: {
+      sessions: { flush: async () => {} },
+      agents: {turnBoundaryOf(session) {
+        const event = sessions.get(session.id).events.findLast(event => event.type === 'turn/end')
+        return {lastTurn: event?.data.turn ?? 0}
+      }},
+    },
     mainBot: async () => 'main',
     ...(available ? {
       chatTurn: async () => assert.fail('Expected execution through the native Bot and Session'),
