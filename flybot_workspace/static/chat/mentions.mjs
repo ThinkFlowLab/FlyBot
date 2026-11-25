@@ -1,4 +1,5 @@
 import {readChatDraftMentions, writeChatDraftMentions} from '../home/runtime-readiness.mjs';
+import {createGroupBotAvatar, groupBotIdentity} from './group-identity.mjs';
 
 const MAX_MENTIONS = 20;
 const EVERYONE = Symbol('everyone');
@@ -62,6 +63,30 @@ export function activeMentionQuery(text, caret) {
   return match ? {start: caret - match[1].length - 1, query: match[1]} : null;
 }
 
+function adjacentMentionOption(nodes, active, key) {
+  const direction = key === 'ArrowUp' || key === 'ArrowLeft' ? -1 : 1;
+  const rows = new Map();
+  const positions = Array.from(nodes, (node, index) => {
+    const {top, left, width} = node.getBoundingClientRect();
+    const position = {index, top, center: left + width / 2};
+    if (!rows.has(top)) rows.set(top, []);
+    rows.get(top).push(position);
+    return position;
+  });
+  const current = positions[active];
+  const step = (index, length) => (index + direction + length) % length;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    const row = rows.get(current.top).sort((a, b) => a.center - b.center);
+    return row[step(row.indexOf(current), row.length)].index;
+  }
+  // Keep the familiar Up/Down sequence when suggestions fit on one line.
+  if (rows.size === 1) return step(active, positions.length);
+  const tops = [...rows.keys()].sort((a, b) => a - b);
+  const row = rows.get(tops[step(tops.indexOf(current.top), tops.length)]);
+  const distance = option => Math.abs(option.center - current.center);
+  return row.reduce((nearest, candidate) => distance(candidate) < distance(nearest) ? candidate : nearest).index;
+}
+
 export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
   const input = doc.getElementById('chat-body');
   const list = doc.getElementById('chat-agent-mention-options');
@@ -100,6 +125,16 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
     options = [];
   }
 
+  function colorMention(node, group, agent) {
+    if (agent === EVERYONE) {
+      node.dataset.mentionEveryone = '';
+      return null;
+    }
+    const identity = group?.direct ? null : groupBotIdentity(group?.botIdentities, agent);
+    if (identity) node.dataset.groupBotTone = identity.tone;
+    return identity;
+  }
+
   function renderSelected({preserveFocus = false} = {}) {
     const group = context();
     groupAllMention = Boolean(group && !group.direct && hasGroupAllMention(input.value));
@@ -113,6 +148,7 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
       button.dataset.agentMentionKey = key;
       if (key === focusedKey) nextFocus = button;
       if (agent) {
+        colorMention(button, group, agent);
         const label = agent.owner_name ? `${agent.name} · ${agent.owner_name}` : agent.name;
         button.textContent = `@${label} ×`;
         button.setAttribute('aria-label', text(`移除对 ${agent.name}${agent.owner_name ? `（${agent.owner_name}）` : ''} 的提及`,
@@ -268,12 +304,19 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
     list.replaceChildren(...options.map((agent, index) => {
       const option = doc.createElement('button');
       option.type = 'button';
+      option.tabIndex = -1;
       option.id = `chat-agent-mention-option-${index}`;
       option.setAttribute('role', 'option');
-      if (agent === EVERYONE) option.dataset.mentionEveryone = '';
+      const identity = colorMention(option, group, agent);
       option.textContent = agent === EVERYONE ? text('所有人', 'Everyone')
         : agent.memberHandle ? `${agent.name} · @${agent.memberHandle}`
           : agent.owner_name ? `${agent.name} · ${agent.owner_name}` : agent.name;
+      const avatar = createGroupBotAvatar(identity, doc);
+      if (avatar) {
+        const label = doc.createElement('span');
+        label.textContent = option.textContent;
+        option.replaceChildren(avatar, label);
+      }
       option.addEventListener('pointerdown', event => event.preventDefault());
       option.addEventListener('click', () => choose(agent));
       return option;
@@ -302,6 +345,7 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
 
   function renderPicker() {
     const view = picking;
+    const group = context();
     const filter = queryField.value.trim().toLocaleLowerCase();
     const people = [...view.roster].filter(([, recipient]) => recipientMatch(recipient, filter));
     if (!view.direct && EVERYONE_SEARCH.includes(filter)) people.unshift([EVERYONE]);
@@ -311,8 +355,8 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
       label.className = 'chat-agent-picker-choice';
       const box = doc.createElement('input');
       box.type = 'checkbox';
+      const identity = colorMention(label, group, everyone ? EVERYONE : agent);
       if (everyone) {
-        label.dataset.mentionEveryone = '';
         box.dataset.mentionEveryone = '';
       } else box.dataset.mentionKey = key;
       box.checked = everyone ? view.everyone : view.choices.has(key);
@@ -326,6 +370,8 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
         name.append(owner);
       }
       label.append(box, name);
+      const avatar = createGroupBotAvatar(identity, doc);
+      if (avatar) label.insertBefore(avatar, name);
       box.addEventListener('change', () => {
         if (view !== picking || !picker.open) return;
         if (everyone) {
@@ -486,17 +532,18 @@ export function mountAgentMentions(doc, context, onSelectionChange = () => {}) {
     },
     keydown(event) {
       if (event.isComposing || event.keyCode === 229 || list.hidden || !options.length) return false;
-      if (['Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      const arrow = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+      const modified = event.shiftKey || event.metaKey || event.ctrlKey || event.altKey;
+      if (['Tab', 'Home', 'End'].includes(event.key) || (arrow && modified)) {
         close();
         return false;
       }
-      const keys = ['Escape', 'ArrowDown', 'ArrowUp', 'Enter'];
-      if (!keys.includes(event.key) || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+      if (modified || (!arrow && event.key !== 'Escape' && event.key !== 'Enter')) return false;
       event.preventDefault();
       if (event.key === 'Escape') close();
       else if (event.key === 'Enter') choose(options[active]);
       else {
-        active = (active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+        active = adjacentMentionOption(list.children, active, event.key);
         highlight();
       }
       return true;

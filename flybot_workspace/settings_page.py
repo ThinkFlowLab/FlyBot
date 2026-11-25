@@ -130,6 +130,8 @@ class SettingsPage:
         '/chat/video-create.mjs': ('chat', 'video-create.mjs', 'text/javascript; charset=utf-8'),
         '/chat/voice.mjs': ('chat', 'voice.mjs', 'text/javascript; charset=utf-8'),
         '/chat/mentions.mjs': ('chat', 'mentions.mjs', 'text/javascript; charset=utf-8'),
+        '/chat/group-identity.mjs': ('chat', 'group-identity.mjs', 'text/javascript; charset=utf-8'),
+        '/chat/group-mentions-display.mjs': ('chat', 'group-mentions-display.mjs', 'text/javascript; charset=utf-8'),
         '/chat/dsbot.mjs': ('chat', 'dsbot.mjs', 'text/javascript; charset=utf-8'),
         '/chat/app.css': ('chat', 'app.css', 'text/css; charset=utf-8'),
         '/discover': ('discover', 'index.html', 'text/html; charset=utf-8'),
