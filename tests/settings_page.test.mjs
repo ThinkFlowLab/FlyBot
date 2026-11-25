@@ -1084,7 +1084,7 @@ test('connected-tool approvals do not imply a connected account before key setup
   assert.doesNotMatch(source, /innerHTML/);
 });
 
-test('verified read activity has no approval buttons and native writes require one explicit decision', async () => {
+test('automatic GitHub activity has no approval buttons and another app requires an explicit decision', async () => {
   const {doc} = settingsDocument();
   let section;
   doc.getElementById('composio-key-card').after = node => { section = node; };
@@ -1098,29 +1098,34 @@ test('verified read activity has no approval buttons and native writes require o
     return createElement(tag);
   };
   const id = 'a'.repeat(32);
-  const item = {id, name: 'GITHUB_CREATE_ISSUE', status: 'pending', task_id: null,
-                arguments: {title: 'fixture issue'}, account: {toolkit: 'github', account_id: 'fixture'}, prompt: ''};
+  const item = {id, name: 'SLACK_SEND_MESSAGE', status: 'pending', task_id: null,
+                arguments: {text: 'fixture message'}, account: {toolkit: 'slack', account_id: 'fixture'}, prompt: ''};
   const read = {...item, id: 'c'.repeat(32), name: 'GITHUB_GET_A_PULL_REQUEST', status: 'succeeded',
-                approval_mode: 'automatic_read', arguments: {pull_number: 17}};
+                approval_mode: 'automatic_read', arguments: {pull_number: 17}, account: {...item.account, toolkit: 'github'}};
+  const write = {...read, id: 'd'.repeat(32), name: 'GITHUB_CREATE_ISSUE', status: 'approved',
+                 approval_mode: 'automatic', arguments: {title: 'fixture issue'}};
   const decisions = [];
   const view = await mountToolApprovals(doc, async (path, options) => {
     if (options?.method === 'POST') {
       decisions.push({path, csrf: options.headers['X-CSRF-Token'], body: JSON.parse(options.body)});
       return {ok: true};
     }
-    return {ok: true, json: async () => ({items: [item, {...item, id: 'b'.repeat(32), task_id: 'legacy-1234'}, read]})};
+    return {ok: true, json: async () => ({items: [item, {...item, id: 'b'.repeat(32), task_id: 'legacy-1234'}, read, write]})};
   }, null);
   const list = section.children[2];
   assert.deepEqual(list.children, []);
   await view.refresh();
-  const [native, legacy, automatic] = list.children;
-  assert.match(section.children[1].textContent, /在私聊里.*只读查询.*会自动执行。/);
-  assert.match(section.children[1].textContent, /其他工具调用需要确认。/);
-  assert.equal(native.children[0].textContent, 'GITHUB_CREATE_ISSUE · 待确认');
-  assert.match(native.children[2].textContent, /"title": "fixture issue"/);
+  const [native, legacy, automaticRead, automaticWrite] = list.children;
+  assert.match(section.children[1].textContent, /支持 GitHub 工具的对话.*已授权.*读取和写入.*会自动执行。/);
+  assert.match(section.children[1].textContent, /其他应用的工具调用需逐次确认/);
+  assert.equal(native.children[0].textContent, 'SLACK_SEND_MESSAGE · 待确认');
+  assert.match(native.children[2].textContent, /"text": "fixture message"/);
   assert.match(legacy.children[0].textContent, / · 任务 legacy-1$/);
-  assert.equal(automatic.children[0].textContent, 'GITHUB_GET_A_PULL_REQUEST · 自动只读 · 已完成');
-  assert.equal(automatic.children.some(node => node.tagName === 'button'), false);
+  assert.equal(automaticRead.children[0].textContent, 'GITHUB_GET_A_PULL_REQUEST · 自动只读 · 已完成');
+  assert.equal(automaticWrite.children[0].textContent, 'GITHUB_CREATE_ISSUE · 自动执行 · 待执行');
+  for (const automatic of [automaticRead, automaticWrite]) {
+    assert.equal(automatic.children.some(node => node.tagName === 'button'), false);
+  }
   assert.deepEqual(decisions, []);
   const approve = native.children.find(node => node.textContent === '允许此调用一次');
   await approve.handlers.click[0]();

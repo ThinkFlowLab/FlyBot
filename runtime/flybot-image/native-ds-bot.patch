@@ -1258,21 +1258,7 @@ diff --git a/src/host/capabilities.js b/src/host/capabilities.js
 index efe6323..e0e439e 100644
 --- a/src/host/capabilities.js
 +++ b/src/host/capabilities.js
-@@ -336,6 +336,13 @@ export function install(rt) {
-     let config
-     try {
-       config = configFor(item, bot.id)
-+      // Never pass the private read endpoint to a group or detached task.
-+      if (name === 'ot-apps' && config.transport === 'streamable-http'
-+        && rt.chatOwners?.get(sessionId) === bot.id
-+        && rt.groupOwners?.has(sessionId) === false && rt.taskOwners?.has(sessionId) === false) {
-+        const url = await rt.flybotWorkspaceApps?.ownerPrivateToolUrl?.(config.url)
-+        if (url) config.url = url
-+      }
-     } catch (error) {
-       await drop()
-       statusSet(bot.id, name, sessionId, { state: 'error', error: rt.redactSecrets(error.message).slice(0, 300) })
-@@ -397,7 +404,9 @@ export function install(rt) {
+@@ -397,7 +397,9 @@ export function install(rt) {
    }
    const desiredFor = (agent, bot) => {
      const sessionId = agent.session.id
@@ -2221,8 +2207,8 @@ diff --git a/src/host/connectors/index.js b/src/host/connectors/index.js
 +    const visible = new Set(attached ? (agent?.ctx?.tools?.schemas?.(agent) ?? []).map(tool => tool.name) : [])
 +    return new Map(rows.map(({ slug, tools }) => [slug, tools.map(publicAppTool).filter(name => visible.has(name))]))
 +  }
-+  const describeComposio = tools => tools.length
-+    ? `connected through FlyBot (Composio); ${tools.length} app tools available in this chat, including ${tools.slice(0, 5).join(', ')}. Calls require owner approval in /settings/connectors.`
++  const describeComposio = (slug, tools) => tools.length
++    ? `connected through FlyBot (Composio); ${tools.length} app tools available in this chat, including ${tools.slice(0, 5).join(', ')}. ${slug === 'github' ? 'Calls run automatically within the authorized GitHub permissions.' : 'Calls require owner approval in /settings/connectors.'}`
 +    : 'connected through FlyBot (Composio); no app tools are currently mounted in this chat. Check /settings/connectors.'
 +
    const requestsOf = (botId) => {
@@ -2248,13 +2234,13 @@ diff --git a/src/host/connectors/index.js b/src/host/connectors/index.js
          const connected = entry.id === 'mail' ? mailHasAccounts() : (statuses.get(entry.id)?.state === undefined && mounts.has(entry.id)) || hasCredential(entry.id)
          const usable = !offFor(entry.id).includes(bot.id)
 +        const tools = apps.get(entry.id)
-+        if (tools && (tools.length || !connected || !usable)) return `- ${entry.name} (${entry.id}) — ${describeComposio(tools)}`
++        if (tools && (tools.length || !connected || !usable)) return `- ${entry.name} (${entry.id}) — ${describeComposio(entry.id, tools)}`
          return `- ${entry.name} (${entry.id}) — ${entry.about} — ${connected ? 'connected' : 'not connected'}${usable ? '' : '; turned off for you'}`
        })
 -      return ['Connectors:', ...lines].join('\n')
 +      const native = new Set(rows.map(entry => entry.id))
 +      for (const [slug, tools] of apps) {
-+        if (!native.has(slug)) lines.push(`- ${slug} — ${describeComposio(tools)}`)
++        if (!native.has(slug)) lines.push(`- ${slug} — ${describeComposio(slug, tools)}`)
 +      }
 +      return lines.length ? ['Connectors:', ...lines].join('\n') : 'No connectors are set up.'
      },
@@ -2273,9 +2259,9 @@ diff --git a/src/host/connectors/index.js b/src/host/connectors/index.js
        const connected = id === 'mail' ? mailHasAccounts() : hasCredential(id)
        const signIn = statuses.get(id)?.state === 'needs-sign-in'
 -      if (connected && !signIn && !offFor(id).includes(bot.id)) return `${entry.name} is already connected; use its tools (mcp__${id}__*).`
-+      if (appTools?.length) return `${entry?.name ?? id} is ${describeComposio(appTools)}`
++      if (appTools?.length) return `${entry?.name ?? id} is ${describeComposio(id, appTools)}`
 +      if (entry && connected && !signIn && !offFor(id).includes(bot.id)) return `${entry.name} is already connected; use its tools (mcp__${id}__*).`
-+      if (appTools) return `${entry?.name ?? id} is ${describeComposio(appTools)}`
++      if (appTools) return `${entry?.name ?? id} is ${describeComposio(id, appTools)}`
 +      if (entry === undefined) return `No connector named ${id}.`
        if (offFor(id).includes(bot.id)) return `${entry.name} is turned off for you. The user can turn it on in your details.`
        if (rt.taskOwners?.has(agentId)) return 'Background tasks cannot show connector cards. Finish or report back to your own chat so it can ask the user.'

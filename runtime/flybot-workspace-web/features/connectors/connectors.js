@@ -16,28 +16,7 @@ const MAX_ARGS = 12000
 const MAX_RESULT = 10000
 const MAX_CALLS_KEPT = 100
 const APPROVAL_TTL = 300
-const AUTOMATIC_READ = 'automatic_read'
-// Each entry is a known read in Composio's GitHub toolkit. Tool descriptions,
-// name prefixes, and hints from custom MCP servers do not grant execution.
-// https://docs.composio.dev/toolkits/github
-// https://docs.github.com/en/rest/pulls/pulls#check-if-a-pull-request-has-been-merged
-const GITHUB_READS = new Set([
-  'GITHUB_CHECK_IF_PULL_REQUEST_HAS_BEEN_MERGED',
-  'GITHUB_CHECK_IF_PULL_REQUEST_MERGED',
-  'GITHUB_GET_A_PULL_REQUEST',
-  'GITHUB_LIST_PULL_REQUESTS',
-  'GITHUB_GET_A_REPOSITORY',
-  'GITHUB_GET_REPOS',
-  'GITHUB_LIST_REPOS',
-  'GITHUB_LIST_REPOSITORIES',
-  'GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER',
-  'GITHUB_LIST_REPOSITORIES_FOR_A_USER',
-  'GITHUB_GET_AN_ISSUE',
-  'GITHUB_LIST_REPOSITORY_ISSUES',
-  'GITHUB_GET_A_RELEASE',
-  'GITHUB_GET_A_RELEASE_BY_TAG_NAME',
-  'GITHUB_LIST_RELEASES',
-])
+const AUTOMATIC = 'automatic'
 const newId = () => randomUUID().replaceAll('-', '')
 const KEY_PURPOSE = 'flybot-workspace.composio.key'
 const mcpPurpose = id => `flybot-workspace.mcp.${id}`
@@ -62,7 +41,7 @@ const keyView = row => (row ? { configured: true, key_hint: row.key_hint, revisi
 const serverView = row => ({ id: row.id, name: row.name, origin: row.origin, revision: row.revision, created: row.created, updated: row.updated })
 const callView = (row, withArgs = false) => {
   const view = { id: row.id, task_id: null, name: row.name, status: row.status, created: row.created, expires: row.expires }
-  if (row.approval_mode === AUTOMATIC_READ) view.approval_mode = AUTOMATIC_READ
+  if (row.approval_mode === AUTOMATIC || row.approval_mode === 'automatic_read') view.approval_mode = row.approval_mode
   if (withArgs) view.arguments = JSON.parse(row.arguments)
   if (row.result != null) view.result = row.result
   return view
@@ -367,25 +346,31 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       return false
     })
   }
-  function propose(name, args, { automaticReads = false } = {}) {
+  function propose(name, args) {
     const entry = catalog.get(name)
     if (!entry) fail(403, 'tool_not_discovered', 'Tool is not connected for this account')
     if (!isObject(args)) fail(400, 'invalid', 'arguments must be an object')
     const argumentsText = JSON.stringify(sortKeys(args))
     if (Buffer.byteLength(argumentsText) > MAX_ARGS) fail(413, 'invalid', 'Tool arguments exceed bound')
-    const automatic = automaticReads === true && entry.kind === 'composio' && entry.toolkit === 'github' && GITHUB_READS.has(name)
+    const automatic = entry.kind === 'composio' && entry.toolkit === 'github'
     const now = clock()
     return store.update((draft) => {
       expireCalls(draft, now, MAX_CALLS_KEPT - 1)
-      // Allow the same account, tool and arguments to resume an approval.
-      // A private automatic receipt cannot be claimed by another context.
+      // Reuse the exact receipt, including an in-flight GitHub operation, to avoid a duplicate write.
       const open = draft.calls.find(row => row.name === name && row.arguments === argumentsText &&
         row.kind === entry.kind && row.ref === entry.ref && row.version === entry.version && row.revision === entry.revision &&
-        (row.approval_mode === AUTOMATIC_READ) === automatic && live(row, now))
-      if (open) return open
+        (live(row, now) || (automatic && row.status === 'executing' && row.expires > now)))
+      if (open) {
+        // An old pending receipt may proceed only when the Bot calls it again.
+        if (automatic && open.status === 'pending') {
+          open.status = 'approved'
+          open.approval_mode = AUTOMATIC
+        }
+        return open
+      }
       if (draft.calls.length >= MAX_CALLS_KEPT) fail(429, 'quota', 'Too many active connected-tool calls')
       const row = { id: newId(), name, kind: entry.kind, ref: entry.ref, version: entry.version, revision: entry.revision, arguments: argumentsText,
-        status: automatic ? 'approved' : 'pending', ...(automatic ? {approval_mode: AUTOMATIC_READ} : {}),
+        status: automatic ? 'approved' : 'pending', ...(automatic ? {approval_mode: AUTOMATIC} : {}),
         result: null, created: now, expires: now + APPROVAL_TTL }
       draft.calls.push(row)
       return row
@@ -427,12 +412,11 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
     })
     return { items }
   }
-  async function run(id, { automaticReads = false } = {}) {
+  async function run(id) {
     // Consume the approval before any network I/O; 'executing' is terminal.
     let claimed = false
     const row = store.update((draft) => {
       const item = draft.calls.find(c => c.id === id)
-      if (item?.approval_mode === AUTOMATIC_READ && automaticReads !== true) return null
       if (!item || item.status !== 'approved' || item.expires <= clock()) return item ? { ...item } : null
       item.status = 'executing'
       claimed = true
@@ -443,11 +427,17 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
     try {
       const st = state()
       if (row.kind === 'composio') {
-        const account = st.connections.find(c => c.id === row.ref && c.status === 'ACTIVE')
+        const activeAccount = snapshot => snapshot.connections.find(c => c.id === row.ref && c.status === 'ACTIVE')
+        const account = activeAccount(st)
         const key = secretKey()
         if (!account || !key || st.composio?.revision !== row.revision) throw new Fault(409, 'connection_changed', 'Connection or key changed; call blocked')
         const c = new composio.Client(key, transport)
         const remote = await c.getAccount(account.account_id)
+        const latest = state()
+        if (latest.composio?.revision !== row.revision || latest.composio?.key_sealed !== st.composio.key_sealed ||
+            activeAccount(latest)?.account_id !== account.account_id) {
+          throw new Fault(409, 'connection_changed', 'Connection or key changed; call blocked')
+        }
         if (remote.status !== 'ACTIVE' || ![undefined, null, '', userRef()].includes(remote.user_id)) {
           status = 'failed'; result = { error: 'connection_not_active' }
         } else {
@@ -476,19 +466,20 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       return item ? { ...item } : null
     })
   }
-  // One agent tool call. Verified private reads are ready to run immediately.
+  // One agent tool call. Connected GitHub tools are ready to run immediately.
   // Other tools wait for a bounded period on a one-shot owner decision.
-  async function callTool(name, args, { automaticReads = false, waitMs = 40_000, pollMs = 500 } = {}) {
+  async function callTool(name, args, { waitMs = 40_000, pollMs = 500 } = {}) {
     if (!catalog.has(name)) await discover({ force: true })
-    let row = propose(name, args, {automaticReads})
+    let row = propose(name, args)
     const deadline = Date.now() + waitMs
     while (row && row.status === 'pending' && Date.now() < deadline) {
       await sleep(pollMs)
       row = state().calls.find(c => c.id === row.id)
     }
-    if (row?.status === 'approved') row = await run(row.id, {automaticReads})
+    if (row?.status === 'approved') row = await run(row.id)
     if (!row) return { error: 'tool_unavailable' }
     if (row.status === 'pending') return { error: 'tool_pending', approval_id: row.id, note: 'Waiting for the owner to approve in Settings > App connectors; call again with the same arguments after approval. No implicit retry.' }
+    if (row.status === 'executing') return { error: 'tool_executing', note: 'The matching call is already running. Do not repeat it.' }
     return row.result ?? { error: 'tool_' + row.status, note: 'Await owner approval in Settings > App connectors; no implicit retry.' }
   }
 

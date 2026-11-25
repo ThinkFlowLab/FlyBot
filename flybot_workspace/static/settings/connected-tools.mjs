@@ -3,6 +3,7 @@ const APPROVAL_STATUS = {
   pending: '待确认', approved: '已允许', executing: '执行中', succeeded: '已完成',
   denied: '已拒绝', failed: '执行失败', expired: '已过期', unknown: '结果未确认',
 }
+const AUTOMATIC_MODES = new Map([['automatic', '自动执行'], ['automatic_read', '自动只读']])
 
 export async function mountToolApprovals(document, fetcher = globalThis.fetch, schedule = globalThis.setInterval) {
   const keyCard = document.getElementById('composio-key-card')
@@ -14,7 +15,7 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
   title.className = 'composio-key-title'
   title.textContent = '应用工具调用'
   const note = document.createElement('p')
-  note.textContent = '在私聊里，已授权的 GitHub 只读查询（如检查 PR 是否合并）会自动执行。修改数据、发送消息和其他工具调用需要确认。每次确认只允许所示工具和参数执行一次。'
+  note.textContent = '在支持 GitHub 工具的对话中，账号已授权的 GitHub 读取和写入操作会自动执行。其他应用的工具调用需逐次确认，每次只允许所示工具和参数执行一次。'
   const list = document.createElement('div')
   list.setAttribute('aria-live', 'polite')
   section.append(title, note, list)
@@ -36,9 +37,10 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
         const row = document.createElement('div')
         const label = document.createElement('strong')
         const task = typeof item.task_id === 'string' && item.task_id ? ' · 任务 ' + item.task_id.slice(0, 8) : ''
-        const automatic = item.approval_mode === 'automatic_read'
-        const mode = automatic ? ' · 自动只读' : ''
-        label.textContent = item.name + mode + ' · ' + (APPROVAL_STATUS[item.status] ?? '状态未知') + task
+        const automatic = AUTOMATIC_MODES.get(item.approval_mode)
+        const mode = automatic ? ' · ' + automatic : ''
+        const state = automatic && ['pending', 'approved'].includes(item.status) ? '待执行' : APPROVAL_STATUS[item.status]
+        label.textContent = item.name + mode + ' · ' + (state ?? '状态未知') + task
         const context = document.createElement('p')
         const prompt = item.prompt ? '请求：' + item.prompt + '\n' : ''
         context.textContent = prompt + '连接：' + (item.account ? item.account.toolkit + ' / ' + item.account.account_id : '连接已移除')

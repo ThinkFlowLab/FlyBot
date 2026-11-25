@@ -4,7 +4,7 @@ Related #10, #6, #11. Status: implemented, with **synthetic/mock** tests only.
 No real Composio key, real model or live provider mutation has been used to
 verify this. CI passing is not Teamily parity or real-vendor verification.
 
-Connected app tools run in the user's own DS-Bot. The FlyBot connectors feature exposes the native `ot-apps` capability and handles the owner's one-time approvals. See [the native tool server](../runtime/flybot-workspace-web/features/connectors/tool-server.js).
+Connected app tools run in the user's own DS-Bot through the native `ot-apps` capability. Where that capability is mounted, GitHub tools discovered through the user's active Composio connection run automatically within the account's granted permissions. This applies to both reads and writes in private and group chats. Other connected app tools continue to use one-time owner approval. Settings shows the execution history. See [the native tool server](../runtime/flybot-workspace-web/features/connectors/tool-server.js).
 
 ## Historical management task protocol
 
