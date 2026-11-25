@@ -91,6 +91,30 @@ window.__ModuleLoader__.load({
       return message
     }
 
+    // A poll exists to refresh what the person can see: it does not run while the tab is hidden, it
+    // reads once as the tab comes back, and the cadence restarts from that read rather than from the
+    // hidden phase (#3315).
+    function pollWhileVisible(fn, ms) {
+      if (typeof setInterval !== 'function') return undefined
+      const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+      const visible = () => !doc || !doc.hidden
+      let timer = null
+      const stop = () => { if (timer !== null) { clearInterval(timer); timer = null } }
+      // The first read and the interval start together, so a mount that is already visible refreshes
+      // at once and a hidden one refreshes when it is shown — one read, then a full period later.
+      const start = () => {
+        stop()
+        if (!visible()) return
+        fn()
+        timer = setInterval(fn, ms)
+        timer?.unref?.()
+      }
+      const onShow = () => start()
+      doc?.addEventListener('visibilitychange', onShow)
+      start()
+      return () => { stop(); doc?.removeEventListener('visibilitychange', onShow) }
+    }
+
     // Styles reuse ds-bot's sidebar tokens (--bt-ink, --bt-ink-2, --bt-ink-3, --bt-hover, --bt-line,
     // --bt-line-2, --bt-card, --bt-accent, --bt-tag-bg/-ink), like @flybot/tree, so both themes follow the app.
     const CSS = `
@@ -2556,8 +2580,6 @@ window.__ModuleLoader__.load({
       useEffect(() => onDockRecords(() => bumpRecord(value => value + 1)), [sessionId])
       const failures = dockFailuresOf(sessionId)
       const load = () => {
-        // #3080: a tab that is not on screen has nobody reading these cards; showing it catches up below.
-        if (typeof document !== 'undefined' && document.hidden) return
         call('social/status', {}).then(value => {
           setItems(Array.isArray(value?.approvals) ? value.approvals : [])
           setStatusLoaded(true)
@@ -2567,18 +2589,9 @@ window.__ModuleLoader__.load({
           setListLoaded(true)
         }, () => {})
       }
-      useEffect(() => {
-        load()
-        if (typeof setInterval !== 'function') return undefined
-        const timer = setInterval(load, 5000)
-        timer?.unref?.()
-        // #3080: a tab that sat in the background catches up the moment it is shown, not one beat later
-        // (the same shape `everySecond` uses above).
-        const onShow = () => { if (typeof document === 'undefined' || !document.hidden) load() }
-        const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
-        doc?.addEventListener('visibilitychange', onShow)
-        return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
-      }, [])
+      // #3080: a tab nobody is reading keeps no timer; coming back reads once at once and restarts the
+      // cadence from that read (`pollWhileVisible`).
+      useEffect(() => pollWhileVisible(load, 5000), [])
       const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
       // The person who gets it (#418, #498), not the friend's Bot: a local hold already names the person.
       const named = list => list.map((item) => {
@@ -3254,17 +3267,9 @@ window.__ModuleLoader__.load({
       const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
       const dismissAccept = item => call('social/accept-notice-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
       const askShareBack = item => call('social/ask-share-back', { botId: item.botId, to: item.from, noticeId: item.id }).then(applyStatus, e => setError(errorText(e)))
-      useEffect(() => {
-        loadApprovals()
-        if (typeof setInterval !== 'function') return undefined
-        const tick = () => {
-          if (typeof document !== 'undefined' && document.hidden) return
-          loadApprovals()
-        }
-        const timer = setInterval(tick, 15_000)
-        timer?.unref?.()
-        return () => clearInterval(timer)
-      }, [])
+      // A hidden tab is not looking at these requests either, so the 15 s poll runs only while the page
+      // is on screen and a tab that comes back reads once at once (`pollWhileVisible`).
+      useEffect(() => pollWhileVisible(loadApprovals, 15_000), [])
       useEffect(() => facePanel.bind(mode => { setFaceMode(mode === 'start' ? 'start' : 'join'); setFaceOpen(true) }), [])
       useEffect(() => addFriendPanel.bind(() => setAdding(true)), [])
       const unavailable = String(error).startsWith('Social is not running:')
@@ -3705,14 +3710,25 @@ window.__ModuleLoader__.load({
       const remote = bot?.remote
       const home = remote?.home
       const handle = remote?.handle
-      const [auto, setAuto] = useState(false)
+      // #3366: `null` is "nobody read it yet". A read that failed used to leave `false` here, which is
+      // drawn exactly like a setting that is off — and the switch stayed live, so the person could read
+      // the setting as one they chose. The failure is the card's answer while it lasts, and the value
+      // stays unknown until a read answers (#3323/#3325/#3359 for the same shape elsewhere).
+      const [auto, setAuto] = useState(null)
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
       const [asking, setAsking] = useState(false)
       const [error, setError] = useState('')
+      const [readError, setReadError] = useState('')
       useEffect(() => {
         if (!home) return undefined
-        call('social/settings', {}).then(value => setAuto(value?.autoAccept?.[home] === true), () => {})
+        let live = true
+        call('social/settings', {}).then(value => {
+          if (!live) return
+          setAuto(value?.autoAccept?.[home] === true)
+          setReadError('')
+        }, e => { if (live) setReadError(errorText(e)) })
+        return () => { live = false }
       }, [home])
       if (!handle) return null
       const toggleAuto = async (on) => {
@@ -3759,9 +3775,10 @@ window.__ModuleLoader__.load({
         // The box holds the setting only; the destructive link sits apart, below it (#274).
         h('div', { className: 'fs-card fs-friend-auto', 'data-flybot': 'friend-auto-box' },
           h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
-            h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
+            h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home || auto === null, onChange: e => toggleAuto(e.target.checked) }),
             `Auto-send my Bots' replies to ${who}`),
-          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`)),
+          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`),
+          readError ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status', 'data-flybot': 'friend-auto-read-error' }, readError) : null),
         h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
           ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
             h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? ${keepLine}`),
@@ -3953,21 +3970,29 @@ window.__ModuleLoader__.load({
       useStyles()
       const handle = typeof bot?.remote?.handle === 'string' ? bot.remote.handle : ''
       const [paused, setPaused] = useState(null)
+      // #3359: a read that failed is not a chat that is not paused. The failure is the card's answer
+      // while it lasts (the friends list draws it the same way, #3323), so it gets its own state and is
+      // drawn before the card; a later success replaces it.
+      const [error, setError] = useState('')
       useEffect(() => {
         setPaused(null)
+        setError('')
         if (!handle) return undefined
         let live = true
         const load = () => {
-          if (typeof document !== 'undefined' && document.hidden) return
-          call('social/paused', { handle }).then(value => { if (live) setPaused(value?.paused ?? null) }, () => {})
+          call('social/paused', { handle }).then(value => {
+            if (!live) return
+            setPaused(value?.paused ?? null)
+            setError('')
+          }, e => { if (live) setError(errorText(e)) })
         }
-        load()
-        if (typeof setInterval !== 'function') return () => { live = false }
-        const timer = setInterval(load, 5000)
-        timer?.unref?.()
-        return () => { live = false; clearInterval(timer) }
+        const stop = pollWhileVisible(load, 5000)
+        return () => { live = false; stop?.() }
       }, [handle])
-      if (!handle || !paused) return null
+      if (!handle) return null
+      // The 5 s read is the retry: no button, no Extend, no turn count (owner 2026-10-19).
+      if (error) return h('div', { className: 'fs-hold', 'data-flybot': 'social-paused-error', role: 'status' }, error)
+      if (!paused) return null
       return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-paused', role: 'status' },
         h('div', { className: 'fs-label' }, 'Chat paused'),
         h('div', { className: 'fs-draft' }, `${paused.reason ? `Bot Social paused the last chat with this Bot (${paused.reason}).` : 'Bot Social paused the last chat with this Bot.'} Send your message again: it starts a new chat.`))

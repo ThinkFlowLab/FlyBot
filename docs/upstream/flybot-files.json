@@ -65,12 +65,6 @@
     "mode": "100644",
     "bytes": 821
   },
-  "plugins/social/client.js": {
-    "sha256": "351206abc51ba011f0425c060292515b931dd8462109fe9d8e4d343d86ff88af",
-    "git_blob_sha": "df78f71716e0713e9151942f3ec0f97b8f0c1e3a",
-    "mode": "100644",
-    "bytes": 270636
-  },
   "plugins/social/test/rest-timeout.test.js": {
     "sha256": "0c59a063d2c308c1eb2d1cbce5bee57d09579bf6cbb92de6c73eab4f1278b18f",
     "git_blob_sha": "49f23d0c8f4a5a4dcf8b78e08d0894b9ef3af68d",
