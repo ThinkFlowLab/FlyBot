@@ -3,7 +3,7 @@ import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mou
 import { AGENT_FILE_ACCEPT, chatFileDownload, chatUploadProgress, deferModule, localChatFile, mountChatFiles,
   ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
 import { mountGroupTranslation } from './translation.mjs';
-import { mountChatActivity } from './activity.mjs';
+import { mountChatActivity, mountChatApprovalNotice } from './activity.mjs';
 import { meetingCodeFromHash, meetingDraftFromCallHref, stageMeetingFromChat } from '../shell/meeting-link.mjs';
 import { workNotificationSummary, workNotificationTarget } from '../shell/work-notification.mjs';
 import { mountPublicDraft } from './public-draft.mjs';
@@ -1204,6 +1204,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let privateThreadReceipt = 0;
   const agentReplyViews = new Map();
   let replyWatch = null;
+  const approvalNotice = mountChatApprovalNotice(document, {request});
   const sendScope = (conversation = currentConversation?.id) =>
     JSON.stringify([currentUser?.id, workspaceId(), currentSource, currentAgent?.id, conversation]);
   const readingPositions = new Map();
@@ -3449,6 +3450,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const watch = replyWatch;
     if (!watch) return;
     replyWatch = null;
+    approvalNotice.stop();
     globalThis.clearTimeout(watch.timer);
     globalThis.clearTimeout(watch.timeout);
     globalThis.clearTimeout(watch.receiptTimer);
@@ -3525,6 +3527,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
 
   async function settleReplyProgress(watch, {terminal = true} = {}) {
     watch.terminal ||= terminal;
+    if (replyWatch === watch) approvalNotice.stop();
     globalThis.clearTimeout(watch.receiptTimer);
     if (watch.posting) {
       if (!await acceptPostingReply(watch)) scheduleReplyProgress(watch, 1200);
@@ -3630,7 +3633,9 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     stopReplyProgress();
     const path = `${agentBase()}/conversations/${currentConversation.id}/reply-progress?${new URLSearchParams({key})}`;
     replyWatch = {scope, key, view, path, posting, failures: 0, revision:0};
-    if (!startReplyStream(replyWatch)) scheduleReplyProgress(replyWatch);
+    const watch = replyWatch;
+    if (!startReplyStream(watch)) scheduleReplyProgress(watch);
+    void approvalNotice.start(() => isCurrentReply(watch) && !watch.terminal);
     return true;
   }
 

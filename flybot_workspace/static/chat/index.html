@@ -822,6 +822,10 @@
     </details>
     <form id="chat-form" method="post" action="/v1/workspaces" novalidate>
       <p id="group-bot-activity" role="status" aria-atomic="true"></p>
+      <p id="chat-app-approvals" class="chat-approval-notice" role="status" aria-atomic="true" hidden>
+        <span data-ui-text="chat.approvals.pending">有应用调用待确认</span>
+        <a href="/settings/connectors#connected-tool-approvals" target="_blank" rel="noopener" data-ui-text="chat.approvals.review">在新标签页查看</a>
+      </p>
       <div class="composer">
         <div id="composer-file-drop" class="composer-file-drop" hidden aria-hidden="true" data-ui-text="chat.files.drop">松开鼠标，将文件添加到当前消息</div>
         <div id="chat-reply-preview" class="composer-reply" hidden>

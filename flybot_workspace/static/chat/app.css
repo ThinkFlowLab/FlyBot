@@ -3507,6 +3507,19 @@ body.app-workspace .mobile-inbox-heading h1 {
   border-radius: 50%;
   background: var(--ot-accent);
 }
+.chat-approval-notice:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .65rem;
+  max-width: var(--chat-reading-width);
+  margin: 0 auto .4rem;
+  padding: .35rem .65rem;
+  border-radius: .5rem;
+  background: var(--ot-accent-soft);
+  color: var(--ot-ink);
+  font-size: .8125rem;
+  line-height: 1.4;
+}
 .composer-row textarea { font-size: .94rem; }
 .composer-plus > summary, .composer-tools button { border-radius: .55rem; }
 #chat-form .composer-tools button { border-color: transparent; }

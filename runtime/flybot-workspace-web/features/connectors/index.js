@@ -9,33 +9,39 @@ import { compatHandler } from '../../lib/b4/compat.js'
 import { loadSealKey, loadImportSealKey } from '../../lib/b4/seal.js'
 import { importJsonBundles } from '../../lib/b4/importer.js'
 import { createConnectors, importApplier, IMPORT_TABLES } from './connectors.js'
-import { startToolServer, syncCapability } from './tool-server.js'
+import { createCapabilityPublisher, startToolServer } from './tool-server.js'
 
 export default function connectors(host) {
   const dir = host.featureDir()
   const sealKey = loadSealKey({ fallbackFile: join(dir, 'seal.key'), preferFallback: true })
   const api = createConnectors({ dir, sealKey, identity: host.identity })
   const imported = importJsonBundles({ host, feature: { name: 'connectors', importTables: IMPORT_TABLES }, store: api.store, sealKey: loadImportSealKey(), apply: importApplier(sealKey), log: host.log })
-  let version = 0
-  let sync = async () => {}
+  let sync = async () => false
   if (process.env.FLYBOT_WORKSPACE_APPS_MCP !== '0') {
     const tools = startToolServer(api, { port: Number(process.env.FLYBOT_WORKSPACE_APPS_MCP_PORT) || 0 })
     tools.server.unref?.()
+    const publisher = createCapabilityPublisher({ runtime: () => host.currentRuntime(), ready: tools.ready, wanted: api.hasTools })
     let pending = null
-    sync = async () => {
-      const runtime = host.currentRuntime()
-      if (!runtime?.rt || typeof runtime.mainBot !== 'function') return false
-      const url = await tools.ready
-      return syncCapability(runtime, url, version, api.hasTools())
+    sync = () => {
+      clearTimeout(pending)
+      pending = null
+      return publisher.sync()
     }
     const schedule = (delay = 0) => {
       if (pending) return
       pending = setTimeout(() => { pending = null; sync().then((done) => { if (done === false && !host.currentRuntime()?.mainBot) schedule(5000) }).catch(error => { host.log(`apps capability sync failed: ${String(error?.code ?? error?.message ?? 'error').slice(0, 80)}`); schedule(15000) }) }, delay)
       pending.unref?.()
     }
-    api.onChange(() => { version += 1; schedule(250) })
-    host.runtime({ timeoutMs: 600_000 }).then(() => schedule(0), () => {})
-    schedule(5000)
+    const apps = Object.freeze({ connectedToolkits: api.connectedToolkits, sync })
+    const attach = runtime => {
+      if (!runtime?.rt) return
+      runtime.rt.flybotWorkspaceApps = apps
+      schedule()
+    }
+    api.onChange(() => { publisher.invalidate(); schedule(250) })
+    const current = host.currentRuntime()
+    if (current?.rt) attach(current)
+    else host.runtime({ timeoutMs: 600_000 }).then(attach, () => {})
   }
   return {
     imported,

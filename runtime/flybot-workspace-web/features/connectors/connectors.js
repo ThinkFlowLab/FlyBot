@@ -45,6 +45,9 @@ const callView = (row, withArgs = false) => {
   return view
 }
 
+const activeConnections = state => state.connections.filter(row => row.status === 'ACTIVE')
+const connectionSignature = state => JSON.stringify(activeConnections(state).map(row => [row.id, row.toolkit, row.account_id]))
+
 export function createConnectors({ dir, sealKey, identity, env = process.env, clock = nowSeconds, transport = composio.fetchTransport, mcpTransport = pinnedTransport(), sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
   const store = openJsonStore(dir, 'connectors', () => ({ composio: null, connections: [], mcp_servers: [], calls: [] }))
   const state = () => store.read()
@@ -86,7 +89,7 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       draft.composio = { key_sealed: seal(sealKey, KEY_PURPOSE, apiKey), key_hint: composio.hint(apiKey), revision: (draft.composio?.revision ?? 0) + 1, updated: clock() }
       return keyView(draft.composio)
     })
-    changed()
+    invalidateCatalog()
     return { composio: view }
   }
   async function toolkits(query) {
@@ -103,6 +106,7 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
     } catch (error) { return composioFault(error) }
   }
   async function syncConnections() {
+    const keySealed = state().composio?.key_sealed
     const c = client()
     let sync = 'ok', items = []
     try {
@@ -113,7 +117,10 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       sync = 'failed'
     }
     const now = clock()
+    let updated = false
     const result = store.update((draft) => {
+      const before = connectionSignature(draft)
+      if (draft.composio?.key_sealed !== keySealed) sync = 'failed'
       if (sync === 'ok') {
         const seen = new Set()
         for (const item of items.slice(0, composio.MAX_CONNECTIONS)) {
@@ -131,25 +138,31 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
           if (!seen.has(row.account_id) && !composio.PENDING.includes(row.status)) Object.assign(row, { status: 'DELETED', status_reason: 'Not found in Composio', updated: now })
         }
       }
+      updated = before !== connectionSignature(draft)
       return { items: [...draft.connections].sort((a, b) => a.created - b.created || a.id.localeCompare(b.id)).map(connectionView), sync }
     })
-    changed()
+    if (updated) invalidateCatalog()
     return result
   }
   async function connect(raw) {
     const { toolkit } = bodyOf(raw, ['toolkit'])
     if (typeof toolkit !== 'string' || !composio.TOOLKIT.test(toolkit)) fail(400, 'invalid', 'Use a Composio toolkit slug')
     if (state().connections.length >= composio.MAX_CONNECTIONS) fail(429, 'quota', 'Connection record limit reached; disconnect one first')
+    const keySealed = state().composio?.key_sealed
     const callback = callbackUrl()
     let link
     try { link = await client().createLink(userRef(), toolkit, callback) } catch (error) { return composioFault(error) }
     const now = clock()
+    let updated = false
     const row = store.update((draft) => {
+      if (draft.composio?.key_sealed !== keySealed) fail(409, 'connection_changed', 'Composio key changed while connecting; try again')
+      updated = activeConnections(draft).some(item => item.account_id === link.account_id)
       draft.connections = draft.connections.filter(item => item.account_id !== link.account_id)
       const fresh = { id: newId(), toolkit, account_id: link.account_id, status: 'INITIATED', status_reason: null, created: now, updated: now }
       draft.connections.push(fresh)
       return fresh
     })
+    if (updated) invalidateCatalog()
     return [201, { connection: connectionView(row), redirect_url: link.redirect_url }]
   }
   const ownConnection = (id) => {
@@ -161,12 +174,17 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
     bodyOf(raw, [])
     const row = ownConnection(id)
     try { await client().deleteAccount(row.account_id) } catch (error) { if (error?.code !== 'composio_not_found') composioFault(error) }
-    store.update((draft) => { draft.connections = draft.connections.filter(item => item.id !== row.id) })
-    changed()
+    const removedActive = store.update((draft) => {
+      const removed = activeConnections(draft).some(item => item.id === row.id)
+      draft.connections = draft.connections.filter(item => item.id !== row.id)
+      return removed
+    })
+    if (removedActive) invalidateCatalog()
     return { disconnected: true, id: row.id }
   }
   async function refreshConnection(id) {
     const row = ownConnection(id)
+    const keySealed = state().composio?.key_sealed
     let status, reason
     try {
       const account = await client().getAccount(row.account_id)
@@ -176,12 +194,15 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       if (error?.code !== 'composio_not_found') composioFault(error)
       status = 'DELETED'; reason = 'Not found in Composio'
     }
+    let activeChanged = false
     const updated = store.update((draft) => {
       const item = draft.connections.find(c => c.id === row.id)
-      if (item) Object.assign(item, { status, status_reason: reason, updated: clock() })
-      return item ?? row
+      if (!item || draft.composio?.key_sealed !== keySealed) fail(404, 'not_found', 'Connection no longer exists')
+      activeChanged = (item.status === 'ACTIVE') !== (status === 'ACTIVE')
+      Object.assign(item, { status, status_reason: reason, updated: clock() })
+      return item
     })
-    changed()
+    if (activeChanged) invalidateCatalog()
     return { connection: connectionView(updated) }
   }
 
@@ -209,7 +230,7 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       draft.mcp_servers = [...draft.mcp_servers.filter(item => item.id !== sid), next]
       return next
     })
-    changed()
+    invalidateCatalog()
     return { server: serverView(row) }
   }
   function removeServer(id, raw) {
@@ -217,7 +238,7 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
     const found = state().mcp_servers.some(row => row.id === id)
     if (!found) fail(404, 'not_found', 'MCP server not found')
     store.update((draft) => { draft.mcp_servers = draft.mcp_servers.filter(row => row.id !== id) })
-    changed()
+    invalidateCatalog()
     return { removed: true }
   }
 
@@ -225,15 +246,48 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
   // catalog: name -> { kind, ref, remote, version, revision }. A call is bound
   // to the exact key/server revision it was discovered with.
   let catalog = new Map()
-  let catalogAt = 0
+  let catalogAt = null
+  let catalogEpoch = 0
+  let pendingCatalog
+  function invalidateCatalog() {
+    catalog = new Map()
+    catalogAt = null
+    catalogEpoch += 1
+    changed()
+  }
+  const catalogTools = entries => [...entries.values()].map(entry => entry.schema)
   async function discover({ search, force = false } = {}) {
-    if (!force && !search && clock() - catalogAt < 60 && catalog.size) return [...catalog.values()].map(entry => entry.schema)
+    const epoch = catalogEpoch
+    if (!search && pendingCatalog?.epoch === epoch) return pendingCatalog.promise
+    if (!force && !search && catalogAt !== null && clock() - catalogAt < (catalog.size ? 60 : 10)) return catalogTools(catalog)
+    const promise = fetchCatalog(search).then(next => {
+      if (epoch !== catalogEpoch) return discover({search, force})
+      if (!search) {
+        const refreshed = catalogAt !== null && (catalog.size !== next.size || [...next].some(([name, entry]) => {
+          const prior = catalog.get(name)
+          return !prior || prior.ref !== entry.ref || prior.version !== entry.version ||
+            JSON.stringify(prior.schema) !== JSON.stringify(entry.schema)
+        }))
+        catalog = next
+        catalogAt = clock()
+        // A transient discovery failure can leave a healthy native MCP mount
+        // with no tools. Re-publish when discovery subsequently changes.
+        if (refreshed) changed()
+      }
+      return catalogTools(next)
+    })
+    if (search) return promise
+    pendingCatalog = { epoch, promise }
+    try { return await promise }
+    finally { if (pendingCatalog?.promise === promise) pendingCatalog = undefined }
+  }
+  async function fetchCatalog(search) {
     const next = new Map()
     const st = state()
     const key = secretKey()
     if (key && st.composio) {
       const c = new composio.Client(key, transport)
-      const active = st.connections.filter(row => row.status === 'ACTIVE').sort((a, b) => a.created - b.created).slice(0, 4)
+      const active = activeConnections(st).sort((a, b) => a.created - b.created).slice(0, 4)
       for (const row of active) {
         try {
           const account = await c.getAccount(row.account_id)
@@ -245,7 +299,7 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
             if (!isObject(item.toolkit) || String(item.toolkit.slug ?? '').toLowerCase() !== row.toolkit || !isObject(params) || typeof version !== 'string' || !version || version.length > 100 || item.is_deprecated) continue
             const schema = scrub({ name, description: String(item.description ?? '').slice(0, 1000), inputSchema: params }, [key])
             if (JSON.stringify(schema).length > 16000 || next.has(name)) continue
-            next.set(name, { kind: 'composio', ref: row.id, version, revision: st.composio.revision, schema })
+            next.set(name, { kind: 'composio', ref: row.id, toolkit: row.toolkit, version, revision: st.composio.revision, schema })
           }
         } catch { /* one failing account must not hide the others */ }
       }
@@ -265,9 +319,18 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
         }
       } catch { /* unreachable server: its tools are simply absent */ }
     }
-    catalog = next
-    catalogAt = clock()
-    return [...catalog.values()].map(entry => entry.schema)
+    return next
+  }
+  async function connectedToolkits() {
+    if (!secretKey() || !activeConnections(state()).length) return []
+    await discover()
+    const current = secretKey() ? activeConnections(state()) : []
+    const toolkits = new Map(current.map(row => [row.toolkit, []]))
+    for (const [name, tool] of catalog) {
+      if (tool.kind !== 'composio') continue
+      toolkits.get(tool.toolkit)?.push(name)
+    }
+    return [...toolkits].map(([slug, tools]) => ({ slug, tools }))
   }
 
   const live = (row, now) => (row.status === 'pending' || row.status === 'approved') && row.expires > now
@@ -306,8 +369,12 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
       return callView(row)
     }) }
   }
-  function approvals() {
+  function approvals(query = '') {
     const now = clock()
+    if (query === 'view=pending') {
+      return { pending: state().calls.some(row => row.status === 'pending' && row.expires > now) }
+    }
+    noQuery(query)
     const st = store.update((draft) => { expireCalls(draft, now); return draft })
     const key = secretKey()
     const items = [...st.calls].sort((a, b) => b.created - a.created || a.id.localeCompare(b.id)).slice(0, 30).map((row) => {
@@ -326,13 +393,15 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
   }
   async function run(id) {
     // Consume the approval before any network I/O; 'executing' is terminal.
+    let claimed = false
     const row = store.update((draft) => {
       const item = draft.calls.find(c => c.id === id)
       if (!item || item.status !== 'approved' || item.expires <= clock()) return item ? { ...item } : null
       item.status = 'executing'
+      claimed = true
       return { ...item }
     })
-    if (!row || row.status !== 'executing') return row
+    if (!claimed) return row
     let status = 'unknown', result = { error: 'tool_execution_failed_no_retry', note: 'Not retried; check provider state before another call.' }
     try {
       const st = state()
@@ -395,7 +464,7 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
     { method: 'POST', path: /\/v1\/composio\/connections/, handle: async ({ body }) => connect(body) },
     { method: 'GET', path: /\/v1\/composio\/connections\/([0-9a-f]{32})/, handle: async ({ match, query }) => { noQuery(query); return [200, await refreshConnection(match[1])] } },
     { method: 'POST', path: /\/v1\/composio\/connections\/([0-9a-f]{32})\/disconnect/, handle: async ({ match, body }) => [200, await disconnect(match[1], body)] },
-    { method: 'GET', path: /\/v1\/composio\/approvals/, handle: async ({ query }) => { noQuery(query); return [200, approvals()] } },
+    { method: 'GET', path: /\/v1\/composio\/approvals/, handle: async ({ query }) => [200, approvals(query)] },
     { method: 'POST', path: /\/v1\/composio\/approvals\/([0-9a-f]{32})/, handle: async ({ match, body }) => [200, decide(match[1], body)] },
     { method: 'GET', path: /\/v1\/mcp\/servers/, handle: async ({ query }) => { noQuery(query); return [200, listServers()] } },
     { method: 'POST', path: /\/v1\/mcp\/servers/, handle: async ({ body }) => [200, saveServer(body)] },
@@ -403,9 +472,12 @@ export function createConnectors({ dir, sealKey, identity, env = process.env, cl
   ]
 
   return {
-    store, legacy, onChange, discover, callTool, propose, decide, approvals, run,
+    store, legacy, onChange, discover, connectedToolkits, callTool, propose, decide, approvals, run,
     overview, saveKey, toolkits, syncConnections, connect, disconnect, refreshConnection, listServers, saveServer, removeServer,
-    hasTools: () => Boolean(state().composio) || state().mcp_servers.length > 0,
+    hasTools: () => {
+      const current = state()
+      return current.mcp_servers.length > 0 || (activeConnections(current).length > 0 && Boolean(secretKey()))
+    },
   }
 }
 

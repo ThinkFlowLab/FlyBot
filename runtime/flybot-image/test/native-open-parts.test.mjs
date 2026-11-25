@@ -76,7 +76,7 @@ const legacyState = () => ({
   },
 })
 
-test('the image preserves managed threads, delivery and rollovers across a v0.3.9 volume upgrade', async t => {
+async function nativeHost(t) {
   const scratch = mkdtempSync(join(tmpdir(),'ot-host-open-parts-'))
   t.after(()=>rmSync(scratch,{recursive:true,force:true,maxRetries:5}))
   const staged = join(scratch,'ds-bot')
@@ -87,11 +87,44 @@ test('the image preserves managed threads, delivery and rollovers across a v0.3.
   process.env.DSH_HARNESS = harness
   t.after(()=>{ if (prior === undefined) delete process.env.DSH_HARNESS; else process.env.DSH_HARNESS = prior })
   await load(staged,'test/harness-resolve.mjs')
-  const [{createRuntime},{fakeContext},threads] = await Promise.all([
-    load(staged,'index.js'),load(staged,'test/fake-ctx.js'),load(staged,'src/host/threads.js'),
-  ])
+  const [{createRuntime},{fakeContext},threads] = await Promise.all(
+    ['index.js','test/fake-ctx.js','src/host/threads.js'].map(file => load(staged,file)))
   const home = join(scratch,'volume')
   mkdirSync(home)
+  return {createRuntime,fakeContext,threads,home,scratch}
+}
+
+test('native connector tools use the mounted Composio connection without asking for another sign-in', async t => {
+  const {createRuntime,fakeContext,home} = await nativeHost(t)
+  const roster = legacyState()
+  roster.bots.writer.tasks = []
+  writeFileSync(join(home,'state.json'), JSON.stringify(roster))
+  const context = fakeContext()
+  context.sessionController = {resolveAgent:async id => ({agent:context.scopeAgent(id)})}
+  const rt = createRuntime(context,{home})
+  try {
+    await rt.load()
+    rt.botOf('writer').capabilities = ['ot-apps']
+    rt.flybotWorkspaceApps = {connectedToolkits:async () => [{slug:'github',tools:['GITHUB_LIST_REPOS','GITHUB_CREATE_ISSUE']}]}
+    const agent = context.scopeAgent(FOREGROUND)
+    agent.ctx.tools.schemas = () => [{name:'mcp__ot-apps__GITHUB_LIST_REPOS'}]
+    const exec = {agent,concludeTurn:() => assert.fail('Composio is already connected')}
+    const list = rt.teamTools.find(tool => tool.name === 'list_connectors')
+    const request = rt.teamTools.find(tool => tool.name === 'request_connector')
+    const args = {id:'github',purpose:'Inspect a repository'}
+    const result = String(await list.execute({},exec))
+    assert.match(result,/GitHub \(github\).*connected through FlyBot \(Composio\).*mcp__ot-apps__GITHUB_LIST_REPOS/)
+    assert.doesNotMatch(result,/GITHUB_CREATE_ISSUE/)
+    assert.match(String(await request.execute(args,exec)),/connected through FlyBot \(Composio\)/)
+    assert.equal(rt.state.connectorRequests?.writer?.length ?? 0,0)
+    agent.ctx.tools.schemas = () => []
+    assert.match(String(await request.execute(args,exec)),/no app tools are currently mounted/)
+    assert.equal(rt.state.connectorRequests?.writer?.length ?? 0,0)
+  } finally { await context.dispose() }
+})
+
+test('the image preserves managed threads, delivery and rollovers across a v0.3.9 volume upgrade', async t => {
+  const {createRuntime,fakeContext,threads,home,scratch} = await nativeHost(t)
   const file = join(home,'state.json')
   const originalRoutingId = process.env.FLYBOT_WORKSPACE_ROUTING_INSTANCE_ID
   const originalInstanceId = process.env.FLYBOT_WORKSPACE_INSTANCE_ID

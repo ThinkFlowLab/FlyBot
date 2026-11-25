@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { applyComposioRows, applyConnectorSearch, applySettingsView, composioMessage, composioRowState, pickConnection, CONNECTOR_CATALOG, csrfCookie, describeAppearance, diff, filterConnectorCatalog, mount, newlineBinding, privacyChanges, readForm, renderModelApi, settingsViewFromLocation, syncAppearanceExtras, syncOverviewCurrentValues, syncMcpDialog, syncPrivacySaveButton, syncShortcutRows } from '../flybot_workspace/static/settings/app.mjs';
+import { mountToolApprovals } from '../flybot_workspace/static/settings/connected-tools.mjs';
 
 test('csrfCookie reads host-bound and development cookie names only', () => {
   assert.equal(csrfCookie('__Host-ot_csrf=token-a'), 'token-a');
@@ -487,6 +488,7 @@ class SettingsNode {
     this.tagName = tag;
     this._doc = doc;
     this.dataset = {};
+    this.style = {};
     this.attributes = {};
     this.handlers = {};
     this.children = [];
@@ -518,6 +520,11 @@ class SettingsNode {
     child.parentElement = this;
     this.children.push(child);
     return child;
+  }
+  append(...children) { for (const child of children) this.appendChild(child); }
+  prepend(...children) {
+    for (const child of children) child.parentElement = this;
+    this.children.unshift(...children);
   }
   remove() {
     if (!this.parentElement) return;
@@ -1075,4 +1082,41 @@ test('connected-tool approvals do not imply a connected account before key setup
   assert.match(source, /允许此调用一次/);
   assert.match(source, /decision/);
   assert.doesNotMatch(source, /innerHTML/);
+});
+
+test('native approvals render without a legacy task id and still require one explicit decision', async () => {
+  const {doc} = settingsDocument();
+  let section;
+  doc.getElementById('composio-key-card').after = node => { section = node; };
+  const createElement = doc.createElement;
+  let failOnce = true;
+  doc.createElement = tag => {
+    if (tag === 'strong' && failOnce) {
+      failOnce = false;
+      throw new Error('Fixture render interrupted');
+    }
+    return createElement(tag);
+  };
+  const id = 'a'.repeat(32);
+  const item = {id, name: 'GITHUB_LIST_REPOSITORIES', status: 'pending', task_id: null,
+                arguments: {visibility: 'public'}, account: {toolkit: 'github', account_id: 'fixture'}, prompt: ''};
+  const decisions = [];
+  const view = await mountToolApprovals(doc, async (path, options) => {
+    if (options?.method === 'POST') {
+      decisions.push({path, csrf: options.headers['X-CSRF-Token'], body: JSON.parse(options.body)});
+      return {ok: true};
+    }
+    return {ok: true, json: async () => ({items: [item, {...item, id: 'b'.repeat(32), task_id: 'legacy-1234'}]})};
+  }, null);
+  const list = section.children[2];
+  assert.deepEqual(list.children, []);
+  await view.refresh();
+  const [native, legacy] = list.children;
+  assert.equal(native.children[0].textContent, 'GITHUB_LIST_REPOSITORIES · pending');
+  assert.match(native.children[2].textContent, /"visibility": "public"/);
+  assert.match(legacy.children[0].textContent, / · 任务 legacy-1$/);
+  assert.deepEqual(decisions, []);
+  const approve = native.children.find(node => node.textContent === '允许此调用一次');
+  await approve.handlers.click[0]();
+  assert.deepEqual(decisions, [{path: '/v1/composio/approvals/' + id, csrf: 'token-a', body: {decision: 'approve'}}]);
 });

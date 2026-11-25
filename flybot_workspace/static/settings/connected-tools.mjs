@@ -4,6 +4,7 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
   const keyCard = document.getElementById('composio-key-card')
   if (!keyCard || (globalThis.location && globalThis.location.pathname !== '/settings/connectors')) return
   const section = document.createElement('section')
+  section.id = 'connected-tool-approvals'
   section.className = 'composio-key-card'
   const title = document.createElement('h2')
   title.className = 'composio-key-title'
@@ -14,6 +15,7 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
   list.setAttribute('aria-live', 'polite')
   section.append(title, note, list)
   keyCard.after(section)
+  if (globalThis.location?.hash === '#connected-tool-approvals') section.scrollIntoView?.({block: 'start'})
   let busy = false
   let previous = ''
   async function refresh() {
@@ -26,13 +28,11 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
       const pending = (payload.items || []).slice(0, 10)
       const raw = JSON.stringify(pending)
       if (raw === previous) return
-      previous = raw
-      list.replaceChildren()
-      if (!pending.length) list.textContent = '暂无待确认调用。请在私人聊天中请求智能体使用你授权的应用；群聊、定时任务和对外 API 尚未接通个人工具。'
-      for (const item of pending) {
+      const rows = pending.map(item => {
         const row = document.createElement('div')
         const label = document.createElement('strong')
-        label.textContent = item.name + ' · ' + item.status + ' · 任务 ' + item.task_id.slice(0, 8)
+        const task = typeof item.task_id === 'string' && item.task_id ? ' · 任务 ' + item.task_id.slice(0, 8) : ''
+        label.textContent = item.name + ' · ' + item.status + task
         const context = document.createElement('p')
         context.textContent = '请求：' + item.prompt + '\n连接：' + (item.account ? item.account.toolkit + ' / ' + item.account.account_id : '连接已移除')
         const args = document.createElement('pre')
@@ -61,8 +61,11 @@ export async function mountToolApprovals(document, fetcher = globalThis.fetch, s
         }
         row.prepend(label, context, args)
         row.append(status)
-        list.append(row)
-      }
+        return row
+      })
+      list.replaceChildren(...rows)
+      if (!rows.length) list.textContent = '暂无待确认调用。请在私人聊天中请求智能体使用你授权的应用；群聊、定时任务和对外 API 尚未接通个人工具。'
+      previous = raw
     } catch { /* A polling failure grants nothing. */ }
     finally { busy = false }
   }

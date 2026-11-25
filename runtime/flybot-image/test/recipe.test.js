@@ -133,7 +133,7 @@ test('the image overlay checks pinned inputs before adding native group and skil
   const files = [
     'client.js', 'src/client/at-menu.js', 'src/client/group-settings.js', 'src/client/i18n.js',
     'src/client/new-chat.js', 'src/client/team-actions.js', 'src/client/text.js', 'src/host/bot-tasks.js',
-    'src/host/capabilities.js', 'src/host/channel.js', 'src/host/groups.js', 'src/host/parts.js',
+    'src/host/capabilities.js', 'src/host/channel.js', 'src/host/connectors/index.js', 'src/host/groups.js', 'src/host/parts.js',
     'src/host/prompt.js', 'src/host/roster.js', 'src/host/store.js', 'src/host/threads.js',
     'src/host/tools.js', 'src/shared/mentions.js',
   ]

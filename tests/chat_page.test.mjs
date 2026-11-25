@@ -8,6 +8,7 @@ import {consumePublicAgentOpening, publicAgentIntentFromHash, publicAgentContinu
 import {mountPublicAgentComposer} from '../flybot_workspace/static/shell/public-agent-composer.mjs';
 import {mountPublicDraft} from '../flybot_workspace/static/chat/public-draft.mjs';
 import {mountChatFiles} from '../flybot_workspace/static/chat/files.mjs';
+import {mountChatApprovalNotice} from '../flybot_workspace/static/chat/activity.mjs';
 import {mountWorkspaceInvite} from '../flybot_workspace/static/chat/workspace-invite.mjs';
 import {mountMessageUtilities} from '../flybot_workspace/static/chat/utilities.mjs';
 import {readMarkdownTable, renderMarkdownTable} from '../flybot_workspace/static/shell/markdown-table.mjs';
@@ -15,6 +16,34 @@ import {countMentionedGroupMembers} from '../flybot_workspace/static/chat/mentio
 import {pendingSignupSession, readChatDraftMentions, readChatDrafts, readPendingChatText, rememberSignupSession,
   savePendingChatText, writeChatDraftMentions, writeChatDrafts} from '../flybot_workspace/static/home/runtime-readiness.mjs';
 import {agentDirectoryHref, directAgentAccessHref, directAgentAccessFromHash} from '../flybot_workspace/static/shell/chat-utils.mjs';
+
+test('the account approval notice only reads for a current private reply and ignores an old view', async () => {
+  const notice = {hidden: true};
+  const calls = [];
+  const approvalNotice = mountChatApprovalNotice({getElementById: () => notice}, {
+    request(method, path, body, extra, signal) {
+      return new Promise(resolve => calls.push({method, path, signal, resolve}));
+    },
+  });
+  assert.equal(calls.length, 0);
+  let active = true;
+  const first = approvalNotice.start(() => active);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].path, '/v1/composio/approvals?view=pending');
+  active = false;
+  const next = approvalNotice.start(() => true);
+  assert.equal(calls[0].signal.aborted, true);
+  calls[0].resolve({status: 200, body: {pending: true}});
+  await first;
+  assert.equal(notice.hidden, true);
+  calls[1].resolve({status: 200, body: {pending: true}});
+  await next;
+  assert.equal(notice.hidden, false);
+  approvalNotice.stop();
+  assert.equal(calls[1].signal.aborted, true);
+  assert.equal(notice.hidden, true);
+});
 
 test('Agent directory links preserve the native workspace and optional exact agent', () => {
   const workspace = 'a'.repeat(32);
