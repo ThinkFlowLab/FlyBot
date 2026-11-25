@@ -1,0 +1,406 @@
+// Which Bot Social server this FlyBot talks to, changeable from Settings (#337).
+//
+// The profile patch (`flybot-social` config.server) stays the default and the fallback. A server the
+// owner picks in Settings is kept in `flybot-social-server.json` next to the credentials file and wins
+// while it exists. A server is an identity: every server has its own credentials file (the default
+// server's stays where it always was; another server's gets the `.<tag>` suffix startSocial already
+// used for backups), its own settings file, and its own member identities, grants and Auto-send marks
+// on the local Bots (parked in `flybot-social-bots.<tag>.json` while another server is active).
+// Nothing here deletes a credentials file, and nothing here reads, returns or logs a token.
+import { createHash } from 'node:crypto'
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import { socialFetch } from './mcp-client.js'
+
+export const serverKey = url => String(url ?? '').trim().replace(/\/+$/, '').toLowerCase()
+export const serverTag = key => createHash('sha256').update(serverKey(key)).digest('hex').slice(0, 8)
+
+const refused = (message, code = 'bad_server') => Object.assign(new Error(message), { code: 'bot/refused', reason: code })
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
+const MAX_URL = 200
+const PROBE_MS = 8_000
+const START_MS = 45_000
+
+// "https://social.example", or "http://localhost:8787" for development. Returns the normalized address
+// (no trailing slash) or throws a refusal that says what to change.
+export function parseServerUrl(input) {
+  const text = String(input ?? '').trim()
+  if (text === '') throw refused('Enter the Bot Social server address, for example https://social.example.')
+  if (text.length > MAX_URL) throw refused('That address is too long.')
+  const loopbackHost = /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(text)
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `${loopbackHost ? 'http' : 'https'}://${text}`
+  let url
+  try { url = new URL(withScheme) } catch { throw refused('That is not a valid web address.') }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw refused('The address must start with https://.')
+  if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) {
+    throw refused('The address must start with https://. Plain http:// is only accepted for localhost, for development.')
+  }
+  if (url.username !== '' || url.password !== '') throw refused('Leave the user name and password out of the address.')
+  if (url.search !== '' || url.hash !== '') throw refused('Use the plain server address, without ? or # parts.')
+  if (url.hostname === '') throw refused('That is not a valid web address.')
+  return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
+}
+
+const flatten = value => String(value ?? '').replace(/[\u0000-\u001f\u007f<>]+/g, ' ').replace(/\s+/g, ' ').trim()
+const cleanLine = (value, max) => flatten(value).slice(0, max)
+
+// A stored address for display (#2968). An address that fits comes back byte for byte. Past the bound
+// the middle goes, not just the tail: a plain cut with no mark made two saved servers one string
+// (#2958), and a `199 + …` cut still would, so the last path segment — the part that tells `/one`
+// from `/two` — is kept. Honest limit: two addresses whose only difference sits in the dropped middle
+// cannot be told apart at this length, and no rendering can fix that in one line.
+const showAddress = (value, max) => {
+  const text = flatten(value)
+  if (text.length <= max) return text
+  const slash = text.lastIndexOf('/')
+  const tail = slash > 0 && text.length - slash <= max - 2 ? text.slice(slash) : ''
+  return `${text.slice(0, max - 1 - tail.length)}…${tail}`
+}
+
+// The name of a server inside a refusal (#2975). A host alone names two servers the same, which is the
+// case the page fixed in #2967: https is the default and stays out of the name, any other scheme is
+// kept, the trailing slash goes, the path stays, so `social.example/team-b` and `social.example/team-c`
+// read apart. Deliberately not `showAddress`: that one bounds a stored address for display, while a
+// refusal is a sentence and is never cut.
+const serverLabel = (address) => {
+  try {
+    const url = new URL(address)
+    const path = url.pathname.replace(/\/+$/, '')
+    return `${url.protocol !== 'https:' ? `${url.protocol}//` : ''}${url.host}${path}`
+  } catch { return 'that server' }
+}
+
+// GET <server>/v1/platform: what the server is and which optional features it lists. A redirect is a
+// refusal (the address saved is the address checked), and so is anything that does not look like Bot Social.
+export async function probeServer(server, { fetch: fetchImpl = socialFetch, timeoutMs = PROBE_MS } = {}) {
+  const label = serverLabel(server)
+  let response
+  try {
+    response = await fetchImpl(`${server}/v1/platform`, { method: 'GET', headers: { accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
+  } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+    const why = timedOut ? 'it did not answer in time' : cleanLine(error?.cause?.code ?? error?.code ?? 'the connection failed', 60)
+    throw refused(`Could not reach ${label}: ${why}.`, 'unreachable')
+  }
+  if (response.status >= 300 && response.status < 400) throw refused(`${label} redirects somewhere else. Enter the address it redirects to.`, 'redirect')
+  if (!response.ok) throw refused(`${label} answered HTTP ${response.status}. Is this a Bot Social server?`, 'not_social')
+  let info
+  try { info = JSON.parse((await response.text()).slice(0, 262_144)) } catch { info = undefined }
+  const isObject = info !== null && typeof info === 'object' && !Array.isArray(info)
+  if (!isObject || (typeof info.name !== 'string' && info.platform_key === undefined && !Array.isArray(info.features))) {
+    throw refused(`${label} did not answer like a Bot Social server.`, 'not_social')
+  }
+  const features = (Array.isArray(info.features) ? info.features : []).map(item => cleanLine(item, 40)).filter(Boolean).slice(0, 40)
+  return { name: cleanLine(info.name, 60) || 'Bot Social', version: cleanLine(info.version, 30) || undefined, features }
+}
+
+// The temp name a private file lands through is a leaf like the file itself (temp-name sweep): a
+// link left at `<file>.<pid>.tmp` would take the contents outside the team folder and the rename
+// would put the link where the file belongs. Absent is ours to create, a plain leftover is
+// replaceable, and anything else refuses the write before the first byte. A hard link is a plain
+// file to `lstat` but shares its bytes with another name (`nlink > 1`), so it refuses too.
+const tempWritable = (path) => {
+  try {
+    const info = lstatSync(path)
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1
+  } catch (error) { return error?.code === 'ENOENT' }
+}
+
+const writePrivate = (path, value) => {
+  mkdirSync(dirname(path), { recursive: true })
+  const temp = `${path}.${process.pid}.tmp`
+  if (!tempWritable(temp)) throw new Error(`Not saved: ${temp} is not a plain file of its own, so nothing was written there.`)
+  writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 })
+  renameSync(temp, path)
+  try { chmodSync(path, 0o600) } catch { /* file systems that ignore the write mode */ }
+}
+// Absent is the one answer that means "nothing saved yet" (`ENOENT`): a first run and a server
+// never visited keep working. A file that exists but cannot be read or parsed is not that answer —
+// reading it as absent lost a parked Bot identity and let the next `park()` replace the only copy,
+// and a torn server choice fell back to the config server (#2717). It refuses, names the path, and
+// leaves the file where a person can move it aside on purpose.
+const readJson = (path, what = 'A saved Bot Social file') => {
+  let text
+  try { text = readFileSync(path, 'utf8') } catch (failure) {
+    if (failure?.code === 'ENOENT') return undefined
+    throw refused(`${what} at ${path} cannot be read: ${cleanLine(failure?.message ?? failure, 120)}. Nothing there was changed.`, 'unreadable')
+  }
+  try { return JSON.parse(text) } catch {
+    throw refused(`${what} at ${path} exists but does not parse as JSON. Move it aside on purpose to discard it; nothing here changed it.`, 'damaged')
+  }
+}
+
+/**
+ * @param base    the plugin config (yaml) with the plugin defaults; `server` is the default server
+ * @param flybot  the plugin-scoped FlyBot service
+ * @param start   (config) => Promise<social>: startSocial
+ */
+export function createServerController({ base: configured, flybot, start, registerUnavailable, onFailure, probe = probeServer, warn = () => {}, startTimeoutMs = START_MS }) {
+  // A read-only window may still start the layer to show friends and messages, but it must not
+  // onboard a home or write the shared credentials file (#2675). The plugin lifecycle reaches
+  // `startSocial` through `apply`, which the core's read-only endpoint guard cannot see, so every
+  // start config carries the host switch. A getter, not a snapshot: `configFor` reads it each time
+  // a start is composed, the way the other `flybot.readOnly?.()` sites read it at use.
+  const base = Object.defineProperty({ ...configured }, 'readOnly', { get: () => flybot.readOnly?.() === true, enumerable: true, configurable: true })
+  const credentialsPath = base.credentialsPath
+  const dir = dirname(credentialsPath)
+  const overridePath = join(dir, 'flybot-social-server.json')
+  const defaultSettings = base.settingsPath ?? join(dir, 'flybot-social-settings.json')
+  const defaultKey = serverKey(base.server)
+  const botsPath = tag => join(dir, `flybot-social-bots.${tag}.json`)
+
+  const readOverride = () => {
+    const saved = readJson(overridePath, 'The Bot Social server chosen in Settings')
+    if (typeof saved?.server !== 'string') return undefined
+    try { return { server: parseServerUrl(saved.server), displayName: cleanLine(saved.displayName, 40) || undefined } } catch (failure) {
+      // Present but unusable is not absent (#2946): the address stays named so the page can say which
+      // saved choice was refused and why, instead of showing "Profile default" and saying nothing. A
+      // refusal is a sentence, and the page puts it before a '.', so the trailing one is dropped here.
+      const reason = cleanLine(failure?.message ?? failure, 200).replace(/\.$/, '')
+      return { unusable: { address: showAddress(saved.server, MAX_URL), problem: reason || 'not a usable server address' } }
+    }
+  }
+  const effective = () => {
+    const override = readOverride()
+    if (override?.server) return { ...override, source: 'settings' }
+    return {
+      server: base.server ? String(base.server) : undefined,
+      displayName: undefined,
+      source: base.server ? 'config' : 'none',
+      ...(override?.unusable ? { saved: override.unusable } : {}),
+    }
+  }
+  // The default server keeps its files; any other server gets its own beside them.
+  const configFor = ({ server, displayName }) => {
+    if (!server) return { ...base }
+    const key = serverKey(server)
+    const name = displayName ?? base.displayName
+    if (key === defaultKey) return { ...base, server, ...(name ? { displayName: name } : {}) }
+    const tag = serverTag(key)
+    return {
+      ...base,
+      server,
+      displayName: name ?? 'FlyBot',
+      credentialsPath: `${credentialsPath}.${tag}`,
+      settingsPath: defaultSettings.replace(/(\.json)?$/, `.${tag}$1`),
+    }
+  }
+
+  let current = effective()
+  // The saved choice the file names but this build cannot use (#2946). It is a fact about the file,
+  // so it is dropped wherever the file is written or removed, not carried with the running server.
+  let savedUnusable = current.saved
+  let social
+  let unavailableOff
+  let state = current.server ? 'connecting' : 'not-configured'
+  let error
+  let generation = 0
+  let busy = false
+  let lastProbe
+
+  const stop = () => {
+    generation += 1
+    unavailableOff?.()
+    unavailableOff = undefined
+    try { social?.dispose() } catch (failure) { warn('flybot-social: stop failed:', failure) }
+    social = undefined
+  }
+
+  // A switched-away server's face-to-face rooms cannot be reached from the new one: keep them as
+  // read-only transcripts (a past room) instead of an open room whose lines go nowhere. Switching
+  // back does not reopen them: `faceSnapshotPast` keeps a room left here left, and a line to it is
+  // refused (`bot/room-ended`). Never throws.
+  async function endFaceRooms(faceRoomIds) {
+    for (const faceRoomId of faceRoomIds ?? []) {
+      try {
+        const room = flybot.rooms?.ofFace?.(faceRoomId)
+        if (!room) continue
+        if (room.face?.status === 'left' || room.face?.status === 'closed') continue
+        await flybot.rooms.upsertFace({ roomId: faceRoomId, localId: room.id, status: 'left' })
+      } catch (failure) {
+        warn('flybot-social: old face-to-face room not ended:', failure)
+      }
+    }
+  }
+
+  // Starts the social layer for a server and settles with it; a start that finishes after it was
+  // replaced (or timed out) is disposed instead of kept.
+  function launch(target) {
+    const mine = ++generation
+    state = target.server ? 'connecting' : 'not-configured'
+    error = undefined
+    const config = configFor(target)
+    const run = start(config)
+    let timeout
+    const timer = new Promise((_, reject) => { timeout = setTimeout(() => reject(refused('the server did not finish connecting in time.', 'timeout')), startTimeoutMs); timeout.unref?.() })
+    return Promise.race([run, timer]).finally(() => clearTimeout(timeout)).then((value) => {
+      if (mine !== generation) { value.dispose(); throw refused('the connection was replaced.', 'replaced') }
+      social = value
+      state = target.server ? 'connected' : 'not-configured'
+      return value
+    }, (failure) => {
+      void run.then(late => { if (mine !== generation || social !== late) late.dispose() }, () => { /* the start failed: nothing is running */ })
+      if (mine === generation) {
+        // Without a server the start fails as it always did ("server URL is required"); the page says "not set", not an error.
+        const reason = cleanLine(failure?.message ?? failure, 240) || 'the plugin did not start'
+        state = target.server ? 'error' : 'not-configured'
+        error = target.server ? reason : undefined
+        unavailableOff = registerUnavailable?.(flybot, reason)
+        onFailure?.(failure)
+      }
+      throw failure
+    })
+  }
+
+  // ---- the identities of the local Bots belong to the server that issued them
+  function park(key) {
+    const bots = {}
+    for (const bot of flybot.bot.list()) {
+      const entry = {}
+      const member = flybot.fields.get(bot.id, 'member')
+      const auto = flybot.fields.get(bot.id, 'autoApprove')
+      const grants = flybot.grants?.of?.(bot.id) ?? []
+      if (member) entry.member = member
+      if (auto) entry.autoApprove = auto
+      if (grants.length > 0) entry.grants = grants
+      if (Object.keys(entry).length > 0) bots[bot.id] = entry
+    }
+    if (Object.keys(bots).length === 0) return Promise.resolve()
+    // Saved before anything is cleared: a failed write stops the switch with the Bots untouched.
+    writePrivate(botsPath(serverTag(key)), { server: serverKey(key), savedAt: new Date().toISOString(), bots })
+    return Promise.all(Object.keys(bots).map(async (id) => {
+      flybot.fields.set(id, 'member', undefined)
+      flybot.fields.set(id, 'autoApprove', undefined)
+      try { await flybot.grants?.set?.(id, []) } catch (failure) { warn('flybot-social: grants not cleared:', failure) }
+    }))
+  }
+  // Read before a switch touches any file: a torn file for the server being switched to then
+  // refuses with every identity and every saved file where they were, instead of parking the
+  // previous server first and finding out here. The default argument keeps callers that read at
+  // restore time (a same-server rename) working.
+  const readParked = key => readJson(botsPath(serverTag(key)), 'The Bot identities saved for this server')
+  async function restore(key, saved = readParked(key)) {
+    if (!saved || serverKey(saved.server) !== serverKey(key)) return
+    for (const [id, entry] of Object.entries(saved.bots ?? {})) {
+      if (!flybot.bot.get(id)) continue
+      try {
+        if (entry.member && !flybot.fields.get(id, 'member')) flybot.fields.set(id, 'member', entry.member)
+        if (entry.autoApprove && !flybot.fields.get(id, 'autoApprove')) flybot.fields.set(id, 'autoApprove', entry.autoApprove)
+        if (Array.isArray(entry.grants) && entry.grants.length > 0) await flybot.grants?.set?.(id, entry.grants)
+      } catch (failure) { warn('flybot-social: saved Bot identity not restored:', failure) }
+    }
+  }
+  const writeOverride = (target) => {
+    savedUnusable = undefined
+    if (target.server && serverKey(target.server) !== defaultKey) writePrivate(overridePath, { server: target.server, ...(target.displayName ? { displayName: target.displayName } : {}), savedAt: new Date().toISOString() })
+    else rmSync(overridePath, { force: true })
+  }
+
+  // Servers this profile has saved credentials for (the address only, never the credentials).
+  const warnedKnown = new Set()
+  function knownServers() {
+    const found = new Set()
+    // Listing the saved servers is a convenience, not an identity restore: one damaged credentials
+    // file is warned about and left out instead of taking the whole Settings page down with it.
+    // Warned once per path — `status` is polled, and one broken file is one fact for the operator.
+    const add = path => {
+      let saved
+      try { saved = readJson(path, 'Saved Bot Social credentials') } catch (failure) {
+        if (!warnedKnown.has(path)) {
+          warnedKnown.add(path)
+          warn('flybot-social: saved credentials not listed:', failure)
+        }
+        return
+      }
+      if (typeof saved?.server === 'string' && saved.token) found.add(saved.server)
+    }
+    add(credentialsPath)
+    try {
+      const stem = `${basename(credentialsPath)}.`
+      for (const name of readdirSync(dir)) if (name.startsWith(stem) && /^[0-9a-f]{8}$/.test(name.slice(stem.length))) add(join(dir, name))
+    } catch { /* no data folder yet */ }
+    if (current.server) found.delete(serverKey(current.server))
+    return [...found].filter(item => serverKey(item) !== serverKey(current.server)).slice(0, 6)
+  }
+
+  const view = () => ({
+    server: current.server ?? null,
+    source: current.source,
+    defaultServer: base.server ? String(base.server) : null,
+    displayName: current.displayName ?? (base.displayName ? String(base.displayName) : null),
+    state,
+    handle: social?.home?.handle ?? null,
+    error: error ?? null,
+    canChange: flybot.readOnly?.() !== true,
+    known: knownServers(),
+    ...(savedUnusable ? { saved: savedUnusable } : {}),
+    ...(lastProbe && serverKey(lastProbe.server) === serverKey(current.server) ? { platform: lastProbe.info } : {}),
+  })
+
+  return {
+    status: view,
+    ready: () => launch(current).catch(() => undefined),
+    async check({ server } = {}) {
+      const address = server === undefined || server === '' ? current.server : parseServerUrl(server)
+      if (!address) throw refused('No server is set yet.', 'no_server')
+      const info = await probe(address, { fetch: base.fetch })
+      if (serverKey(address) === serverKey(current.server)) lastProbe = { server: address, info }
+      return { server: address, ...info, same: serverKey(address) === serverKey(current.server), known: knownServers().some(item => serverKey(item) === serverKey(address)) || serverKey(address) === defaultKey && Boolean(readJson(credentialsPath, 'The Bot Social credentials')?.token) }
+    },
+    async set({ server, displayName, confirm } = {}) {
+      if (flybot.readOnly?.() === true) throw refused('Another FlyBot window holds this team. Change the server there.', 'read_only')
+      const address = parseServerUrl(server)
+      const name = cleanLine(displayName, 40) || undefined
+      if (serverKey(address) === serverKey(current.server) && !name) return view()
+      if (confirm !== true) throw refused('Confirm that you want to switch servers.', 'confirm_required')
+      if (busy) throw refused('A server change is already running.', 'busy')
+      busy = true
+      try {
+        const info = await probe(address, { fetch: base.fetch })
+        const previous = current
+        const target = { server: address, displayName: name, source: serverKey(address) === defaultKey ? 'config' : 'settings' }
+        // Captured before the switch; only a successful switch ends them (a failed one reverts).
+        const previousFaceRooms = (flybot.rooms?.list?.() ?? [])
+          .filter(room => room.origin === 'face-to-face' && room.face?.roomId && (room.face.status === 'open' || room.face.status === 'candidate'))
+          .map(room => room.face.roomId)
+        // A same-server rename is no switch (#729): park() rewrites this server's file and restore()
+        // reads it back, so it is read at restore time. Any other target is read before anything
+        // moves — a torn identity file refuses the switch with the live server still connected.
+        const savedIdentities = serverKey(address) === serverKey(previous.server) ? undefined : readParked(address)
+        stop()
+        if (previous.server) await park(previous.server)
+        writeOverride(target)
+        await restore(address, savedIdentities)
+        current = target
+        lastProbe = { server: address, info }
+        try {
+          await launch(target)
+        } catch (failure) {
+          // Back to the server that worked: its identities, its files, its override.
+          stop()
+          // A failed start leaves nothing of the new server worth parking: a failed park changes nothing here.
+          if (target.server) await park(target.server).catch(() => undefined)
+          writeOverride(previous)
+          if (previous.server) {
+            // The rollback must not mask the switch failure; park() just wrote this file, so a
+            // failure here is reported and the file left where it is.
+            try { await restore(previous.server) } catch (failure) { warn('flybot-social: previous server identities not restored:', failure) }
+          }
+          current = previous
+          lastProbe = undefined
+          // launch() has already recorded the failure (state, error, the unavailable answers); the message below reports it.
+          await launch(previous).catch(() => undefined)
+          const why = cleanLine(failure?.message ?? failure, 200) || 'the server did not accept this FlyBot'
+          throw refused(`Could not connect to the new server: ${why} The previous server is back${state === 'connected' ? '' : ', but it did not reconnect either'}.`, 'switch_failed')
+        }
+        // A rename on the same server is not a switch (#729): that server still reaches these rooms, so
+        // only a change of address ends them.
+        if (serverKey(previous.server) !== serverKey(address)) await endFaceRooms(previousFaceRooms)
+        return view()
+      } finally {
+        busy = false
+      }
+    },
+    dispose: stop,
+  }
+}

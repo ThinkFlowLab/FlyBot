@@ -7,3 +7,6 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+
+runtime/ds-bot-upstream/**/*.sh text eol=lf
+runtime/ds-bot-upstream/ds-bot/test/fixtures/windows-shims/** -text

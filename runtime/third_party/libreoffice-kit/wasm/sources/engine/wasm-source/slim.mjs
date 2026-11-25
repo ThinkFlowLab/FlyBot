@@ -1,0 +1,74 @@
+/** Deterministic removal of desktop resources from the Node WASM filesystem image. */
+
+import { assertRequiredUiResources } from '../ui-resource-policy.mjs';
+
+const ui = '/instdir/share/config/soffice.cfg/';
+// These dialogs belong to the desktop shell, not the embedded document editor.
+const desktopLayouts = new Set([
+  'sfx/ui/startcenter.ui', 'sfx/ui/safemodequerydialog.ui',
+  'cui/ui/aboutdialog.ui', 'cui/ui/tipofthedaydialog.ui',
+]);
+
+function desktopResource(filename) {
+  if (filename.startsWith(ui)) {
+    const relative = filename.slice(ui.length);
+    // The shared WASM engine runs persistent editors: VCL idle work and editing
+    // commands instantiate layouts beyond the native conversion allowlist.
+    return desktopLayouts.has(relative) || relative.split('/').at(-1).startsWith('notebookbar') || /(?:^|\/)(?:toolbar|menubar)\//.test(relative);
+  }
+  return /^\/instdir\/share\/(?:autocorr|autotext|wordbook|gallery|template|wizards|tipoftheday|shell)\//.test(filename)
+    || filename === '/instdir/share/palette/standard.sob'
+    || /^\/instdir\/share\/config\/images(?:_[a-z0-9_]+)?\.zip$/.test(filename)
+    || /^\/(?:core\/)?android\/default-document\//.test(filename)
+    || /^\/instdir\/program\/intro(?:-highres)?\.png$/.test(filename)
+    || filename.startsWith('/instdir/program/shell/');
+}
+
+/**
+ * Repack a complete Emscripten filesystem image without changing retained bytes.
+ * Reject malformed inventories before returning any output. The loader reads its
+ * preload size from the returned metadata's remote_package_size field.
+ * @param data - Original filesystem image bytes.
+ * @param metadata - Parsed Emscripten filesystem inventory.
+ * @returns Repacked bytes, contiguous inventory, and removed resource sizes.
+ */
+export function slimWasmData(data, metadata) {
+  if (!Buffer.isBuffer(data) || !metadata || !Array.isArray(metadata.files)
+    || metadata.remote_package_size !== data.length) throw new Error('WASM data size differs from its metadata');
+  const names = new Set();
+  let cursor = 0;
+  for (const file of metadata.files) {
+    if (!file || typeof file.filename !== 'string' || !file.filename.startsWith('/')
+      || file.filename.slice(1).split('/').some(part => !part || part === '.' || part === '..' || /[\\\0]/.test(part))
+      || names.has(file.filename)) throw new Error('Invalid or duplicate WASM resource path');
+    names.add(file.filename);
+    if (!Number.isSafeInteger(file.start) || !Number.isSafeInteger(file.end)
+      || file.start !== cursor || file.end < file.start || file.end > data.length) {
+      throw new Error(`WASM resource ranges do not continuously cover the data: ${file.filename}`);
+    }
+    cursor = file.end;
+  }
+  if (cursor !== data.length) throw new Error('WASM resource inventory does not cover the complete data');
+  assertRequiredUiResources([...names].filter(name => name.startsWith(ui)).map(name => name.slice(ui.length)));
+  const chunks = [];
+  const files = [];
+  const removed = [];
+  let offset = 0;
+  for (const file of metadata.files) {
+    const bytes = file.end - file.start;
+    if (desktopResource(file.filename)) {
+      removed.push({ filename: file.filename, bytes });
+    } else {
+      chunks.push(data.subarray(file.start, file.end));
+      files.push({ ...file, start: offset, end: offset + bytes });
+      offset += bytes;
+    }
+  }
+  if (offset === 0) throw new Error('WASM slimming would remove the complete filesystem image');
+  return {
+    data: Buffer.concat(chunks, offset),
+    metadata: { ...metadata, files, remote_package_size: offset },
+    removed,
+    removedBytes: data.length - offset,
+  };
+}

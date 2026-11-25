@@ -1,0 +1,877 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { install } from '../src/host/models.js'
+
+const PROVIDERS = {
+  deepseek: [{ id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' }, { id: 'deepseek-v4-pro' }],
+  ollama: [{ id: 'kimi-k3' }, { id: 'deepseek-v4-pro' }],
+}
+
+function runtime(defaultSelection) {
+  const ctx = {
+    llm: {
+      listProviders: () => Object.keys(PROVIDERS).map(id => ({ id })),
+      listModels: async id => PROVIDERS[id],
+    },
+    get: name => (name === 'agentDefaultModel' && defaultSelection ? { currentSelection: () => defaultSelection } : undefined),
+  }
+  const rt = { ctx, state: { bots: {} } }
+  install(rt)
+  return rt
+}
+
+test('the default model is the DSH default when served, else the first served model', async () => {
+  assert.equal(await runtime({ provider: 'ollama', model: 'kimi-k3' }).defaultModel(), 'ollama/kimi-k3')
+  assert.equal(await runtime({ provider: 'gone', model: 'x' }).defaultModel(), 'deepseek/deepseek-v4.1-flash')
+  assert.equal(await runtime(undefined).defaultModel(), 'deepseek/deepseek-v4.1-flash')
+})
+
+// DSH serves the models of a provider whose key is not set; every turn on them fails.
+function withoutKeys(defaultSelection, providers) {
+  const rt = runtime(defaultSelection)
+  rt.missingKeys = async () => new Set(providers)
+  return rt
+}
+
+test('a model that needs a key is never a default or a fallback, though a Bot keeps its own', async () => {
+  const rt = withoutKeys({ provider: 'deepseek', model: 'deepseek-v4-pro' }, ['deepseek'])
+  assert.equal(await rt.defaultModel(), 'ollama/kimi-k3')
+  assert.equal(rt.cachedDefault(), 'ollama/kimi-k3')
+  assert.equal(rt.isUsable('ollama/kimi-k3'), true)
+  assert.equal(rt.isUsable('deepseek/deepseek-v4-pro'), false)
+  assert.equal(rt.isUsable(undefined), false)
+  assert.equal(await rt.desiredModel({ model: 'deepseek/deepseek-v4-pro' }), 'deepseek/deepseek-v4-pro')
+  assert.equal(await rt.desiredModel({ model: 'gone/model', appliedModel: 'deepseek/deepseek-v4-pro' }), 'ollama/kimi-k3')
+  assert.equal(await rt.desiredModel({ model: 'gone/model', appliedModel: 'ollama/deepseek-v4-pro' }), 'ollama/deepseek-v4-pro')
+})
+
+test('with every model needing a key, nothing is picked', async () => {
+  const rt = withoutKeys({ provider: 'ollama', model: 'kimi-k3' }, ['deepseek', 'ollama'])
+  assert.equal(await rt.defaultModel(), undefined)
+  assert.equal(rt.cachedDefault(), undefined)
+  assert.equal(await rt.desiredModel({ model: 'gone/model', appliedModel: 'ollama/kimi-k3' }), undefined)
+})
+
+test('a model is named by its ref, or by an id or name only one provider serves', async () => {
+  const rt = runtime(undefined)
+  assert.equal(await rt.resolveModel('ollama/kimi-k3'), 'ollama/kimi-k3')
+  assert.equal(await rt.resolveModel(' Kimi-K3 '), 'ollama/kimi-k3')
+  assert.equal(await rt.resolveModel('DeepSeek V4.1 Flash'), 'deepseek/deepseek-v4.1-flash')
+  await assert.rejects(rt.resolveModel('deepseek-v4-pro'), /more than one provider.*deepseek\/deepseek-v4-pro, ollama\/deepseek-v4-pro/)
+  await assert.rejects(rt.resolveModel('kimi'), /not available\. Available models: deepseek\/deepseek-v4\.1-flash/)
+})
+
+test('a Bot runs on its own model, else the one it last ran on, else the default', async () => {
+  const rt = runtime({ provider: 'ollama', model: 'kimi-k3' })
+  assert.equal(await rt.desiredModel({ model: 'deepseek/deepseek-v4-pro', appliedModel: 'ollama/kimi-k3' }), 'deepseek/deepseek-v4-pro')
+  assert.equal(await rt.desiredModel({ model: 'gone/model', appliedModel: 'deepseek/deepseek-v4-pro' }), 'deepseek/deepseek-v4-pro')
+  assert.equal(await rt.desiredModel({ model: 'gone/model' }), 'ollama/kimi-k3')
+})
+
+test('choosing a Bot model leaves the user\'s DSH default model as it was', async () => {
+  const writes = []
+  let current = { provider: 'ollama', model: 'kimi-k3' }
+  const defaults = {
+    currentSelection: () => ({ ...current }),
+    saveSelection: async (next) => { writes.push(`${next.provider}/${next.model}`); current = { ...next } },
+  }
+  const ctx = {
+    llm: { listProviders: () => [], listModels: async () => [] },
+    get: name => (name === 'agentDefaultModel' ? defaults : undefined),
+    // Like DSH: the selection is also saved as the default, in the background.
+    sessionController: { selectModel: async ({ provider, model }) => { void defaults.saveSelection({ provider, model }) } },
+  }
+  const rt = { ctx, state: { bots: {} }, save: async () => {}, warn() {} }
+  install(rt)
+  await Promise.all([
+    rt.selectSessionModel('s1', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
+    rt.selectSessionModel('s2', { provider: 'deepseek', model: 'deepseek-v4.1-flash' }),
+    rt.selectSessionModel('s3', { provider: 'ollama', model: 'kimi-k3' }),
+  ])
+  assert.deepEqual(current, { provider: 'ollama', model: 'kimi-k3' })
+  assert.deepEqual(writes, ['deepseek/deepseek-v4-pro', 'ollama/kimi-k3', 'deepseek/deepseek-v4.1-flash', 'ollama/kimi-k3', 'ollama/kimi-k3'])
+})
+
+test('a Bot with no model yet changes nothing until the user picks one', async () => {
+  const rt = runtime({ provider: 'ollama', model: 'kimi-k3' })
+  assert.equal(await rt.desiredModel({ appliedModel: 'deepseek/deepseek-v4-pro' }), undefined)
+  assert.equal(await rt.desiredModel({}), undefined)
+  await rt.catalog()
+  assert.equal(rt.cachedDefault(), 'ollama/kimi-k3')
+})
+
+// A runtime with two providers, a DSH default, and a session controller that, like
+// DSH, saves every Session selection as the default.
+function bench({ providers = { deepseek: ['v4-flash'], stepfun: ['step-5'] }, fallback = { provider: 'stepfun', model: 'step-5' }, reasoning = {}, services = {} } = {}) {
+  let current = { ...fallback }
+  const selected = []
+  const saved = []
+  const listeners = new Map()
+  const ctx = {
+    on(name, listener) { listeners.set(name, listener); return () => listeners.delete(name) },
+    get: name => (name === 'agentDefaultModel'
+      ? { currentSelection: () => ({ ...current }), saveSelection: async (next) => { saved.push(next); current = { ...next } } }
+      : services[name]),
+    llm: {
+      listProviders: () => Object.keys(providers).map(id => ({ id, name: id.toUpperCase() })),
+      listModels: async id => providers[id].map(model => ({ id: model, name: model, inputModalities: ['text'] })),
+      resolveModelInfo: async (provider, model) => reasoning[`${provider}/${model}`] ?? {},
+    },
+    sessions: { get: () => undefined },
+    agents: { get: () => undefined },
+    sessionController: {
+      selectModel: async ({ sessionId, provider, model, reasoningEffort }) => {
+        selected.push(`${sessionId}:${provider}/${model}${reasoningEffort === undefined ? '' : `:${reasoningEffort}`}`)
+        current = { provider, model }
+      },
+    },
+  }
+  const rt = { ctx, state: { bots: {} }, chatOf: id => id, groupSessionsOf: () => [], save: async () => {}, warn: () => {} }
+  install(rt)
+  return { rt, selected, saved, providers, listeners, current: () => current }
+}
+
+test('the catalog is every model DSH serves, with no lab', async () => {
+  const { rt } = bench()
+  assert.deepEqual((await rt.catalog()).map(entry => [entry.ref, entry.providerName, 'lab' in entry]), [
+    ['deepseek/v4-flash', 'DEEPSEEK', false],
+    ['stepfun/step-5', 'STEPFUN', false],
+  ])
+})
+
+test('a fresh catalog sees a model list changed in DSH settings at once', async () => {
+  const { rt, providers } = bench()
+  await rt.catalog()
+  providers.deepseek = ['deepseek-flash', 'deepseek-v4-pro']
+  assert.ok((await rt.catalog()).some(entry => entry.ref === 'deepseek/v4-flash'))
+  assert.deepEqual((await rt.catalog({ fresh: true })).filter(entry => entry.provider === 'deepseek').map(entry => entry.id), ['deepseek-flash', 'deepseek-v4-pro'])
+})
+
+test('applying a Bot model leaves the DSH default as the user set it', async () => {
+  const { rt, selected, current } = bench()
+  const bot = { id: 'b1', model: 'deepseek/v4-flash' }
+  assert.equal(await rt.applyModel(bot), 'deepseek/v4-flash')
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash'])
+  assert.deepEqual(current(), { provider: 'stepfun', model: 'step-5' })
+  assert.equal(bot.appliedModel, 'deepseek/v4-flash')
+})
+
+test('a Bot model applies its thinking level, and only re-selects on a change', async () => {
+  const { rt, selected } = bench({ reasoning: { 'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } } } })
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', effort: 'low' }
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash:low'])
+  assert.equal(bot.appliedEffort, 'low')
+  await rt.applyModel(bot)
+  assert.equal(selected.length, 1)
+
+  // A level the model does not serve is never sent: the model's default applies.
+  bot.effort = 'max'
+  await rt.applyModel(bot)
+  assert.deepEqual(selected.at(-1), 'b1:deepseek/v4-flash')
+  assert.equal(bot.appliedEffort, undefined)
+})
+
+// A Bot's active background tasks run on the Bot's own model too, so a model or effort
+// change must reach active tasks as well as the foreground chat.
+test('a model change reaches active background tasks too', async () => {
+  const { rt, selected } = bench()
+  const bot = { id: 'b1', sessionId: 'b1', model: 'deepseek/v4-flash', tasks: [{ id: 't1', sessionId: 'b1-task', status: 'running', segments: [] }] }
+  assert.equal(await rt.applyModel(bot), 'deepseek/v4-flash')
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash', 'b1-task:deepseek/v4-flash'])
+  // The same values again write nothing.
+  await rt.applyModel(bot)
+  assert.equal(selected.length, 2)
+})
+
+test('a thinking-level change reaches active background tasks too', async () => {
+  const { rt, selected } = bench({ reasoning: { 'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } } } })
+  const bot = { id: 'b1', sessionId: 'b1', model: 'deepseek/v4-flash', effort: 'high', tasks: [{ id: 't1', sessionId: 'b1-task', status: 'running', segments: [] }] }
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash:high', 'b1-task:deepseek/v4-flash:high'])
+  bot.effort = 'low'
+  await rt.applyModel(bot)
+  assert.deepEqual(selected.slice(2), ['b1:deepseek/v4-flash:low', 'b1-task:deepseek/v4-flash:low'])
+  assert.equal(bot.appliedEffort, 'low')
+  // The same level again writes nothing more.
+  await rt.applyModel(bot)
+  assert.equal(selected.length, 4)
+})
+
+test('group selections sync per Session even when the Bot-level fields already match', async () => {
+  const { rt, selected } = bench({ reasoning: { 'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'high' } } } })
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', effort: 'low', appliedModel: 'deepseek/v4-flash', appliedEffort: 'low' }
+  const groups = ['g1', 'g2']
+  rt.groupSessionsOf = () => groups
+  const select = rt.ctx.sessionController.selectModel
+  rt.ctx.sessionController.selectModel = async (request) => {
+    await select(request)
+    return { selected: { provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort ?? 'high' } }
+  }
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash:low', 'g2:deepseek/v4-flash:low'])
+  await rt.applyModel(bot)
+  assert.equal(selected.length, 2)
+  groups.push('g3')
+  await rt.applyModel(bot)
+  assert.deepEqual(selected.slice(2), ['g3:deepseek/v4-flash:low'])
+
+  delete bot.effort
+  await rt.applyModel(bot)
+  assert.deepEqual(selected.slice(3), ['b1:deepseek/v4-flash', 'g1:deepseek/v4-flash', 'g2:deepseek/v4-flash', 'g3:deepseek/v4-flash'])
+  // The provider's resolved default is not an explicit Bot choice to reapply.
+  await rt.applyModel(bot)
+  assert.equal(selected.length, 7)
+  await rt.applyModel(bot, { force: true })
+  assert.equal(selected.length, 11)
+})
+
+test('a failed group selection is retried without reselecting the own chat or successful groups', async () => {
+  const { rt, selected } = bench()
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' }
+  rt.groupSessionsOf = () => ['g1', 'g2']
+  const select = rt.ctx.sessionController.selectModel
+  let failed = false
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (request.sessionId === 'g2' && !failed) {
+      failed = true
+      throw new Error('Session unavailable')
+    }
+    return select(request)
+  }
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash'])
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash', 'g2:deepseek/v4-flash'])
+})
+
+// The two services a start uses to read a stored Session's own model selection: the
+// listing of stored Sessions and their cached selection projections.
+function storedSessions(records) {
+  return {
+    sessionQuery: {
+      listSessions: async () => Object.entries(records).map(([id, { live = false }]) => ({ header: { id }, live, persisted: !live })),
+    },
+    sessionProjectionCache: {
+      cachedSnapshot: (header) => {
+        const selection = records[header.id]?.selection
+        return selection === undefined ? undefined : { values: { modelSelection: { lastUsed: selection, next: selection } } }
+      },
+    },
+  }
+}
+
+// Resuming a stored Session replays its whole log, so a start reads the selection the
+// Session records instead, and resumes only a Session that needs another one.
+test('a stored group Session on the Bot model is not resumed to select it', async () => {
+  const services = storedSessions({
+    g1: { selection: { provider: 'deepseek', model: 'v4-flash' } },
+    g2: { selection: { provider: 'deepseek', model: 'v4-pro' } },
+    g3: { selection: undefined },
+    // A live Session is read for what it is now: the composer's model picker can move
+    // it without telling this plugin.
+    g4: { live: true, selection: { provider: 'deepseek', model: 'v4-flash' } },
+  })
+  const { rt, selected } = bench({ services })
+  rt.state.sessionModelSelections = { g1: { provider: 'deepseek', model: 'v4-flash' } }
+  rt.groupSessionsOf = () => ['g1', 'g2', 'g3', 'g4']
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' }
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['g2:deepseek/v4-flash', 'g3:deepseek/v4-flash', 'g4:deepseek/v4-flash'])
+  // Another model reaches every group Session, a matching record notwithstanding.
+  bot.model = 'stepfun/step-5'
+  await rt.applyModel(bot)
+  assert.deepEqual(selected.slice(3), ['b1:stepfun/step-5', 'g1:stepfun/step-5', 'g2:stepfun/step-5', 'g3:stepfun/step-5', 'g4:stepfun/step-5'])
+  // A forced selection runs even where the record and the Session both agree.
+  bot.model = 'deepseek/v4-flash'
+  await rt.applyModel(bot, { force: true })
+  assert.deepEqual(selected.slice(8), ['b1:deepseek/v4-flash', 'g1:deepseek/v4-flash', 'g2:deepseek/v4-flash', 'g3:deepseek/v4-flash', 'g4:deepseek/v4-flash'])
+})
+
+test('a stored Session recording another thinking level is resumed and reselected', async () => {
+  const services = storedSessions({
+    g1: { selection: { provider: 'deepseek', model: 'v4-flash', reasoningEffort: 'low' } },
+    g2: { selection: { provider: 'deepseek', model: 'v4-flash' } },
+  })
+  const { rt, selected } = bench({ services, reasoning: { 'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } } } })
+  rt.groupSessionsOf = () => ['g1', 'g2']
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', effort: 'high', appliedModel: 'deepseek/v4-flash', appliedEffort: 'high' }
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash:high', 'g2:deepseek/v4-flash:high'])
+})
+
+test('without a listing or a projection cache every Session is selected, as before', async () => {
+  const { rt, selected } = bench({ services: { sessionQuery: { listSessions: async () => [{ header: { id: 'g1' }, live: false }] } } })
+  rt.groupSessionsOf = () => ['g1']
+  await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' })
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash'])
+})
+
+test('a read that fails selects the model rather than skipping it', async () => {
+  const services = storedSessions({ g1: { selection: { provider: 'deepseek', model: 'v4-flash' } } })
+  services.sessionProjectionCache.cachedSnapshot = () => {
+    throw new Error('the cache is closed')
+  }
+  const { rt, selected } = bench({ services })
+  rt.state.sessionModelSelections = { g1: { provider: 'deepseek', model: 'v4-flash' } }
+  rt.groupSessionsOf = () => ['g1']
+  await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' })
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash'])
+})
+
+test('a matching checkpoint needs a matching durable selection witness', async () => {
+  const route = { provider: 'deepseek', model: 'v4-flash' }
+  for (const witness of [undefined, { provider: 'stepfun', model: 'step-5' }, route]) {
+    const { rt, selected } = bench({ services: storedSessions({ g1: { selection: route } }) })
+    if (witness !== undefined) rt.state.sessionModelSelections = { g1: witness }
+    await rt.selectSessionModel('g1', route)
+    assert.deepEqual(selected, witness === route ? [] : ['g1:deepseek/v4-flash'])
+  }
+})
+
+test('an attached Session or Agent cannot use a cold listing and matching witness', async () => {
+  const route = { provider: 'deepseek', model: 'v4-flash' }
+  for (const registry of ['sessions', 'agents']) {
+    const { rt, selected } = bench({ services: storedSessions({ g1: { selection: route } }) })
+    rt.state.sessionModelSelections = { g1: route }
+    rt.ctx[registry].get = () => ({})
+    await rt.selectSessionModel('g1', route)
+    assert.deepEqual(selected, ['g1:deepseek/v4-flash'])
+  }
+})
+
+test('a provider registering after fallback selection cannot reuse its stale checkpoint', async () => {
+  const route = { provider: 'late', model: 'a' }
+  const { rt, selected, providers } = bench({
+    providers: { fallback: ['b'] }, fallback: { provider: 'fallback', model: 'b' },
+    services: storedSessions({ g1: { selection: route } }),
+  })
+  rt.state.sessionModelSelections = { g1: route }
+  const bot = { id: 'g1', model: 'late/a' }
+  await rt.applyModel(bot)
+  providers.late = ['a']
+  rt.dropCatalog()
+  await rt.applyModel(bot)
+  assert.deepEqual(selected, ['g1:fallback/b', 'g1:late/a'])
+  await rt.selectSessionModel('g1', route)
+  assert.deepEqual(selected, ['g1:fallback/b', 'g1:late/a', 'g1:late/a'])
+})
+
+test('a successful real selection persists a witness that a cold restart can use', async () => {
+  const route = { provider: 'deepseek', model: 'v4-flash' }
+  const services = storedSessions({ g1: { selection: route } })
+  const first = bench({ services })
+  let persisted
+  first.rt.save = async () => { persisted = JSON.parse(JSON.stringify(first.rt.state)) }
+  await first.rt.selectSessionModel('g1', route)
+  assert.deepEqual(first.selected, ['g1:deepseek/v4-flash'])
+  assert.deepEqual(persisted.sessionModelSelections.g1, { requested: route, resolved: route })
+  const second = bench({ services })
+  Object.assign(second.rt.state, persisted)
+  await second.rt.selectSessionModel('g1', route)
+  assert.deepEqual(second.selected, [])
+})
+
+test('a resolved default thinking level does not change the requested route witness', async () => {
+  const route = { provider: 'deepseek', model: 'v4-flash' }
+  const services = storedSessions({ g1: { selection: route } })
+  const first = bench({ services })
+  const select = first.rt.ctx.sessionController.selectModel
+  first.rt.ctx.sessionController.selectModel = async (request) => {
+    await select(request)
+    return { selected: { ...route, reasoningEffort: 'high' } }
+  }
+  let persisted
+  first.rt.save = async () => { persisted = JSON.parse(JSON.stringify(first.rt.state)) }
+  await first.rt.selectSessionModel('g1', route)
+  assert.deepEqual(first.selected, ['g1:deepseek/v4-flash'])
+  assert.deepEqual(persisted.sessionModelSelections.g1, { requested: route, resolved: { ...route, reasoningEffort: 'high' } })
+  const second = bench({ services })
+  Object.assign(second.rt.state, persisted)
+  await second.rt.selectSessionModel('g1', route)
+  assert.deepEqual(second.selected, [])
+})
+
+test('a resolved checkpoint must match the last resolved selection or requested route', async () => {
+  const route = { provider: 'deepseek', model: 'v4-flash' }
+  for (const effort of ['high', 'low']) {
+    const services = storedSessions({ g1: { selection: { ...route, reasoningEffort: effort } } })
+    const first = bench({ services })
+    first.rt.ctx.sessionController.selectModel = async () => ({ selected: { ...route, reasoningEffort: 'high' } })
+    let persisted
+    first.rt.save = async () => { persisted = JSON.parse(JSON.stringify(first.rt.state)) }
+    await first.rt.selectSessionModel('g1', route)
+    const second = bench({ services })
+    Object.assign(second.rt.state, persisted)
+    await second.rt.selectSessionModel('g1', route)
+    assert.deepEqual(second.selected, effort === 'high' ? [] : ['g1:deepseek/v4-flash'])
+  }
+})
+
+test('a witness save failure leaves a successful selection and the restored user default', async () => {
+  const { rt, selected, current, saved } = bench()
+  const before = current()
+  let saves = 0
+  rt.save = async () => {
+    saves += 1
+    assert.deepEqual(current(), before)
+    throw new Error('read-only host')
+  }
+  await assert.doesNotReject(rt.selectSessionModel('g1', { provider: 'deepseek', model: 'v4-flash' }))
+  assert.equal(saves, 1)
+  assert.deepEqual(selected, ['g1:deepseek/v4-flash'])
+  assert.deepEqual(saved, [before])
+  assert.deepEqual(current(), before)
+})
+
+test('a failed real selection does not create a durable witness', async () => {
+  const { rt } = bench()
+  rt.ctx.sessionController.selectModel = async () => { throw new Error('unavailable') }
+  await assert.rejects(rt.selectSessionModel('g1', { provider: 'deepseek', model: 'v4-flash' }), /unavailable/)
+  assert.equal(rt.state.sessionModelSelections, undefined)
+})
+
+test('a fresh listing prunes witnesses for Sessions that no longer exist', async () => {
+  const route = { provider: 'deepseek', model: 'v4-flash' }
+  const { rt } = bench({ services: storedSessions({}) })
+  rt.state.sessionModelSelections = { gone: route }
+  await rt.selectSessionModel('g1', route)
+  assert.deepEqual(rt.state.sessionModelSelections, { g1: { requested: route, resolved: route } })
+})
+
+test('resolveEffort takes an id or a name, and refuses what the model has not', async () => {
+  const { rt } = bench({ reasoning: {
+    'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }] } },
+    'stepfun/step-5': {},
+  } })
+  assert.equal(await rt.resolveEffort('deepseek/v4-flash', 'high'), 'high')
+  assert.equal(await rt.resolveEffort('deepseek/v4-flash', ' Off '), 'off')
+  assert.equal(await rt.resolveEffort('deepseek/v4-flash', ''), undefined)
+  await assert.rejects(rt.resolveEffort('stepfun/step-5', 'high'), /no thinking levels/)
+  await assert.rejects(rt.resolveEffort('deepseek/v4-flash', 'max'), /not available for deepseek\/v4-flash\. Available: Off, High/)
+})
+
+test('the catalog attaches thinking levels to models a Bot uses', async () => {
+  const { rt } = bench({ reasoning: { 'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'high', name: 'High' }], defaultEffort: 'high' } } } })
+  rt.state.bots.b1 = { id: 'b1', model: 'deepseek/v4-flash' }
+  const entries = await rt.catalog()
+  assert.deepEqual(entries.find(entry => entry.ref === 'deepseek/v4-flash')?.reasoning, { efforts: [{ id: 'high', name: 'High' }], defaultEffort: 'high' })
+  assert.equal(entries.find(entry => entry.ref === 'stepfun/step-5')?.reasoning, undefined)
+})
+
+// #637: a hosted loop engine publishes a route that resolves models but refuses every
+// generation with HOSTED_ENGINE_ROUTE; once it refuses, nothing chooses it again.
+test('a route refused for not being a model endpoint is chosen nowhere again', async () => {
+  const { rt, selected } = bench({ providers: { external: ['default'], deepseek: ['v4-flash'] }, fallback: { provider: 'external', model: 'default' } })
+  const pinned = { id: 'b1', model: 'external/default', appliedModel: 'external/default' }
+  const clean = { id: 'b2', model: 'deepseek/v4-flash' }
+  rt.state.bots = { b1: pinned, b2: clean }
+  await rt.routeRefused('external/default', pinned)
+  // The pinned Bot moves to what it would be given today and re-selects its Session.
+  assert.equal(pinned.model, 'deepseek/v4-flash')
+  assert.equal(pinned.appliedModel, 'deepseek/v4-flash')
+  assert.equal(clean.model, 'deepseek/v4-flash')
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash'])
+  // Pickers, the deployment default and explicit naming keep it out too.
+  assert.deepEqual((await rt.catalog({ fresh: true })).map(entry => entry.ref), ['deepseek/v4-flash'])
+  assert.deepEqual(rt.cachedCatalog().map(entry => entry.ref), ['deepseek/v4-flash'])
+  assert.equal(await rt.defaultModel(), 'deepseek/v4-flash')
+  await assert.rejects(rt.resolveModel('external/default'), /Model external\/default is not available/)
+})
+
+test('a Bot on a clean record but a poisoned Session re-selects its own model', async () => {
+  const { rt, selected } = bench({ providers: { external: ['default'], deepseek: ['v4-flash'] }, fallback: { provider: 'external', model: 'default' } })
+  // Its group Session ran on another Bot's route; its own record never named it.
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' }
+  rt.state.bots = { b1: bot }
+  await rt.routeRefused('external/default', bot)
+  assert.equal(bot.model, 'deepseek/v4-flash')
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash'])
+})
+
+// Every Bot the route was pinned to may have its Session still on it, even one whose
+// record already names the replacement; re-pinning the record alone leaves that
+// Session failing on every turn.
+test('every Bot re-pinned off a refused route re-selects its Session', async () => {
+  const { rt, selected } = bench({ providers: { external: ['default'], deepseek: ['v4-flash'] }, fallback: { provider: 'external', model: 'default' } })
+  const failed = { id: 'b1', model: 'external/default', appliedModel: 'external/default' }
+  const alsoPinned = { id: 'b2', model: 'external/default', appliedModel: 'deepseek/v4-flash' }
+  rt.state.bots = { b1: failed, b2: alsoPinned }
+  await rt.routeRefused('external/default', failed)
+  assert.equal(alsoPinned.model, 'deepseek/v4-flash')
+  assert.equal(alsoPinned.appliedModel, 'deepseek/v4-flash')
+  assert.deepEqual([...selected].sort(), ['b1:deepseek/v4-flash', 'b2:deepseek/v4-flash'])
+})
+
+// The sync key must see the filtered catalog: the catalog itself does not change
+// on a refusal, so an unfiltered key would never run the sync again.
+test('a refusal changes the sync key, so the next sync applies what the records say', async () => {
+  const { rt, selected } = bench({ providers: { external: ['default'], deepseek: ['v4-flash'] } })
+  const bot = { id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' }
+  rt.state.bots = { b1: bot }
+  await rt.catalog()
+  await rt.syncModels()
+  await rt.routeRefused('external/default')
+  // The Session drifted meanwhile — its own picker can move it without telling us.
+  delete bot.appliedModel
+  await rt.syncModels()
+  assert.deepEqual(selected, ['b1:deepseek/v4-flash'])
+})
+
+// A refused route is chosen again only once its provider serves other models: the same
+// placeholder registered again, even after it was unregistered, is still not an endpoint.
+test('an adapter update ends a refusal only when its provider serves other models', async () => {
+  const { rt, providers, listeners } = bench({ providers: { external: ['default'], deepseek: ['v4-flash'] }, fallback: { provider: 'external', model: 'default' } })
+  const adaptersUpdated = () => listeners.get('llm/adapters-updated')()
+  await rt.routeRefused('external/default')
+  await adaptersUpdated()
+  assert.equal(rt.defaultRef(), undefined)
+  delete providers.external
+  await adaptersUpdated()
+  providers.external = ['default']
+  await adaptersUpdated()
+  assert.equal(rt.defaultRef(), undefined)
+  providers.external = ['default', 'real']
+  await adaptersUpdated()
+  assert.equal(rt.defaultRef(), 'external/default')
+  assert.ok((await rt.catalog()).some(entry => entry.ref === 'external/default'))
+})
+
+test('a greeting waits for the provider of its Bot model to register', async () => {
+  const { rt, providers, listeners } = bench({ providers: {} })
+  const waiting = rt.waitForModel({ model: 'stepfun/step-5' }, 5000)
+  setTimeout(() => {
+    providers.stepfun = ['step-5']
+    listeners.get('llm/adapters-updated')?.()
+  }, 20)
+  assert.equal(await waiting, 'stepfun/step-5')
+  assert.equal(await rt.waitForModel({}, 5000), undefined)
+})
+
+test('a key set or a sign-in lifts what blocked a Bot; a key removed, a sign-out, a provider or a settings change only re-reads', async () => {
+  const keys = new Set(['DEEPSEEK_API_KEY'])
+  const records = new Set(['deepseek-account-platform/default'])
+  const credentials = {
+    describe: async ref => ({ configured: keys.has(ref), writable: true }),
+    describeRecord: async key => ({ configured: records.has(key), writable: true }),
+  }
+  const { rt, listeners, providers } = bench({ services: { credentials } })
+  const lifted = []
+  // Each listing also passes the providers listed with their key (the next test).
+  rt.unblockBots = fix => { if (fix.keyed === undefined) lifted.push(fix) }
+  await rt.catalog()
+  providers.deepseek = ['v4-pro']
+  await listeners.get('credentials/reference-updated')('DEEPSEEK_API_KEY')
+  assert.ok((await rt.catalog()).some(entry => entry.ref === 'deepseek/v4-pro'))
+  await listeners.get('credentials/reference-updated')('STEPFUN_API_KEY')
+  // Another plugin's record, such as an OAuth token refresh, is no sign-in.
+  await listeners.get('credentials/record-updated')('llm-pi-ai/github-copilot')
+  providers.deepseek = ['v4-flash']
+  await listeners.get('credentials/record-updated')('deepseek-account-platform/default')
+  assert.ok((await rt.catalog()).some(entry => entry.ref === 'deepseek/v4-flash'))
+  // The provider refused the token and its record went.
+  records.clear()
+  await listeners.get('credentials/record-updated')('deepseek-account-platform/default')
+  listeners.get('llm/adapters-updated')()
+  listeners.get('settings/document-updated')()
+  assert.deepEqual(lifted, [{ ref: 'DEEPSEEK_API_KEY' }, { signedIn: true }])
+})
+
+test('every listing passes the providers listed with their key, so a key that came without an event still lifts', async () => {
+  const { rt, providers } = bench()
+  providers.stepfun = ['step-5']
+  rt.missingKeys = async () => new Set(['stepfun'])
+  const passed = []
+  rt.unblockBots = fix => passed.push([...fix.keyed].sort())
+  await rt.catalog({ fresh: true })
+  rt.missingKeys = async () => new Set()
+  await rt.catalog({ fresh: true })
+  assert.equal(passed.length, 2)
+  assert.equal(passed[0].includes('stepfun'), false)
+  assert.equal(passed[1].includes('stepfun'), true)
+})
+
+test('a credential DSH cannot describe counts as there, so its fix still lifts', async () => {
+  const { rt, listeners } = bench({ services: { credentials: { describe: async () => { throw new Error('locked') } } } })
+  const lifted = []
+  rt.unblockBots = fix => { if (fix.keyed === undefined) lifted.push(fix) }
+  await listeners.get('credentials/reference-updated')('DEEPSEEK_API_KEY')
+  await listeners.get('credentials/record-updated')('deepseek-account-platform/default')
+  assert.deepEqual(lifted, [{ ref: 'DEEPSEEK_API_KEY' }, { signedIn: true }])
+})
+
+test('a Bot on the default model with its own thinking level leaves the default level as it was', async () => {
+  const fallback = { provider: 'deepseek', model: 'v4-flash', reasoningEffort: 'high' }
+  const { rt, current } = bench({ fallback, reasoning: { 'deepseek/v4-flash': { reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } } } })
+  rt.ctx.sessionController.selectModel = async ({ provider, model, reasoningEffort }) => {
+    const selected = { provider, model, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
+    await rt.ctx.get('agentDefaultModel').saveSelection(selected)
+    return { selected }
+  }
+  await rt.applyModel({ id: 'b1', model: 'deepseek/v4-flash', effort: 'low' })
+  assert.deepEqual(current(), fallback)
+})
+
+// A group's own Session never asks the model, but DSH resolves its selection before every
+// step. One left on a model DSH no longer serves fails with UNKNOWN_MODEL however the
+// members are set (#1310).
+test('a group\'s own Session is moved onto a served model, once, while its members keep theirs', async () => {
+  const { rt, selected } = bench({ fallback: { provider: 'gone', model: 'old' } })
+  rt.state.bots = { b1: { id: 'b1', model: 'deepseek/v4-flash', appliedModel: 'deepseek/v4-flash' } }
+  rt.state.prefs = { defaultBotModel: 'deepseek/v4-flash' }
+  rt.state.rooms = { r1: { id: 'r1', members: ['b1'] }, r2: { id: 'r2', sessionId: 'r2-part', members: ['b1'] } }
+  rt.sessionOfRoom = room => room.sessionId ?? room.id
+  await rt.catalog()
+  await rt.syncModels()
+  assert.deepEqual(selected.sort(), ['r1:deepseek/v4-flash', 'r2-part:deepseek/v4-flash'])
+  // Nothing changed, so a later sync leaves them alone.
+  rt.dropCatalog()
+  await rt.syncModels()
+  assert.equal(selected.length, 2)
+})
+
+test('a group\'s own Session follows the team default when it changes, and a failure is retried', async () => {
+  const { rt, selected } = bench({ providers: { deepseek: ['v4-flash'], stepfun: ['step-5'] } })
+  rt.state.prefs = { defaultBotModel: 'deepseek/v4-flash' }
+  rt.state.rooms = { r1: { id: 'r1', members: [] } }
+  rt.sessionOfRoom = room => room.id
+  const select = rt.ctx.sessionController.selectModel
+  let failed = false
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (!failed) { failed = true; throw new Error('Session unavailable') }
+    return select(request)
+  }
+  await rt.catalog()
+  await rt.syncRoomSessions()
+  assert.deepEqual(selected, [])
+  await rt.syncRoomSessions()
+  assert.deepEqual(selected, ['r1:deepseek/v4-flash'])
+  rt.state.prefs.defaultBotModel = 'stepfun/step-5'
+  await rt.syncRoomSessions()
+  assert.deepEqual(selected.slice(1), ['r1:stepfun/step-5'])
+})
+
+test('a group Session whose selection failed is retried at the next sync, though the models are the same', async () => {
+  const { rt, selected } = bench({ providers: { deepseek: ['v4-flash'] } })
+  rt.state.prefs = { defaultBotModel: 'deepseek/v4-flash' }
+  rt.state.rooms = { r1: { id: 'r1', members: [] } }
+  rt.sessionOfRoom = room => room.id
+  const select = rt.ctx.sessionController.selectModel
+  let failed = false
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (!failed) { failed = true; throw new Error('Session unavailable') }
+    return select(request)
+  }
+  await rt.catalog()
+  await rt.syncModels()
+  assert.deepEqual(selected, [])
+  // The same models, as every state refresh finds them.
+  await rt.syncModels()
+  assert.deepEqual(selected, ['r1:deepseek/v4-flash'])
+  // Selected now, so a later refresh asks for nothing.
+  await rt.syncModels()
+  assert.equal(selected.length, 1)
+})
+
+test('a new group chat whose selection failed is retried at the next sync', async () => {
+  const { rt, selected } = bench({ providers: { deepseek: ['v4-flash'] } })
+  rt.state.prefs = { defaultBotModel: 'deepseek/v4-flash' }
+  rt.state.rooms = {}
+  rt.sessionOfRoom = room => room.id
+  const select = rt.ctx.sessionController.selectModel
+  let failed = false
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (!failed) { failed = true; throw new Error('Session unavailable') }
+    return select(request)
+  }
+  await rt.catalog()
+  // The catalog was synced before the group existed, as at a start with no group yet.
+  await rt.syncModels()
+  rt.state.rooms.r1 = { id: 'r1', members: [] }
+  await rt.selectRoomSession('r1')
+  assert.deepEqual(selected, [])
+  await rt.syncModels()
+  assert.deepEqual(selected, ['r1:deepseek/v4-flash'])
+})
+
+test('a deleted group does not keep the sync retrying its Session', async () => {
+  const { rt, selected } = bench({ providers: { deepseek: ['v4-flash'] } })
+  rt.state.prefs = { defaultBotModel: 'deepseek/v4-flash' }
+  rt.state.rooms = { r1: { id: 'r1', members: [] } }
+  rt.sessionOfRoom = room => room.id
+  rt.ctx.sessionController.selectModel = async () => { throw new Error('Session unavailable') }
+  await rt.catalog()
+  await rt.syncModels()
+  delete rt.state.rooms.r1
+  await rt.syncModels()
+  const calls = []
+  rt.ctx.sessionController.selectModel = async request => { calls.push(request.sessionId) }
+  await rt.syncModels()
+  assert.deepEqual(calls, [])
+  assert.deepEqual(selected, [])
+})
+
+test('a group retry that cannot read the catalog logs and keeps the retry, it does not reject', async (t) => {
+  const warnings = []
+  const { rt, selected } = bench({ providers: { deepseek: ['v4-flash'] } })
+  rt.warn = (...args) => warnings.push(args.join(' '))
+  rt.state.prefs = { defaultBotModel: 'deepseek/v4-flash' }
+  rt.state.rooms = { r1: { id: 'r1', members: [] } }
+  rt.sessionOfRoom = room => room.id
+  const select = rt.ctx.sessionController.selectModel
+  let failed = false
+  rt.ctx.sessionController.selectModel = async (request) => {
+    if (!failed) { failed = true; throw new Error('Session unavailable') }
+    return select(request)
+  }
+  await rt.catalog()
+  await rt.syncModels()
+  assert.deepEqual(selected, [])
+  // The cached catalog has run out and the provider list cannot be read now. Nothing
+  // awaits the promise bootstrap starts, so a rejection would end the host.
+  const listProviders = rt.ctx.llm.listProviders
+  rt.ctx.llm.listProviders = () => { throw new Error('providers unavailable') }
+  const now = Date.now()
+  t.mock.method(Date, 'now', () => now + 60_000)
+  await assert.doesNotReject(rt.syncModels())
+  assert.ok(warnings.some(line => /providers unavailable/.test(line)), warnings.join('\n'))
+  // The retry is kept: once the list can be read again, the next refresh selects.
+  rt.ctx.llm.listProviders = listProviders
+  await rt.syncModels()
+  assert.deepEqual(selected, ['r1:deepseek/v4-flash'])
+})
+
+test('a group Session picks an image-capable route when the team default is text-only', async () => {
+  const selected = []
+  const providers = {
+    deepseek: [
+      { id: 'text-only', inputModalities: ['text'] },
+      { id: 'vision-any', inputModalities: ['text', 'image'] },
+    ],
+    openai: [
+      { id: 'vision-member', inputModalities: ['text', 'image'] },
+    ],
+    'local-claude-code': [
+      { id: 'sonnet', inputModalities: ['text', 'image'] },
+    ],
+  }
+  const ctx = {
+    llm: {
+      listProviders: () => Object.keys(providers).map(id => ({ id })),
+      listModels: async id => providers[id],
+    },
+    get: () => undefined,
+    sessionController: {
+      selectModel: async ({ sessionId, provider, model }) => {
+        selected.push(`${sessionId}:${provider}/${model}`)
+        return { selected: { provider, model } }
+      },
+    },
+  }
+  const rt = {
+    ctx,
+    state: {
+      prefs: { defaultBotModel: 'deepseek/text-only' },
+      bots: {
+        b1: { id: 'b1', name: 'Member', model: 'openai/vision-member' },
+        b2: { id: 'b2', name: 'TextBot', model: 'deepseek/text-only' },
+      },
+      rooms: {
+        r1: { id: 'r1', members: ['b1'] },
+        r2: { id: 'r2', members: ['b2'] },
+      },
+    },
+    save: async () => {},
+    warn() {},
+    groupSessionsOf: () => [],
+    sessionOfRoom: room => room.sessionId ?? room.id,
+    roomOf: id => Object.values(rt.state.rooms).find(room => room.id === id || room.sessionId === id),
+    isLocalAgentRef: ref => typeof ref === 'string' && ref.startsWith('local-'),
+  }
+  install(rt)
+  await rt.syncRoomSessions()
+  // r1 prefers its own member's image-capable model; r2 falls back to any usable image-capable model.
+  assert.deepEqual(selected, ['r1:openai/vision-member', 'r2:deepseek/vision-any'])
+
+  // When only local-agent models accept images, the group Session uses that rather than blocking uploads.
+  selected.length = 0
+  providers.deepseek = [{ id: 'text-only', inputModalities: ['text'] }]
+  providers.openai = [{ id: 'text-member', inputModalities: ['text'] }]
+  rt.state.bots.b1.model = 'local-claude-code/sonnet'
+  rt.dropCatalog()
+  await rt.syncRoomSessions()
+  assert.deepEqual(selected, ['r1:local-claude-code/sonnet', 'r2:local-claude-code/sonnet'])
+
+  // Updating a member's model to an image-capable route also upgrades its group Session.
+  selected.length = 0
+  providers.openai = [{ id: 'vision-new', inputModalities: ['text', 'image'] }]
+  rt.state.bots.b2.model = 'openai/vision-new'
+  rt.dropCatalog()
+  await rt.applyModel(rt.state.bots.b2)
+  assert.deepEqual(selected, ['b2:openai/vision-new', 'r2:openai/vision-new'])
+})
+
+test('selectRoomSession checks resolveModelInfo when listModels omits inputModalities, handles fresh parts, and catches catalog errors', async () => {
+  const selected = []
+  const warnings = []
+  const providers = {
+    deepseek: [{ id: 'text-only', inputModalities: ['text'] }],
+    // Omitting inputModalities in listModels forces confirmation via resolveModelInfo,
+    // matching DSH's attachment admission check.
+    'local-acp-noimg': [{ id: 'default' }],
+    'local-claude-code': [{ id: 'default' }],
+  }
+  const ctx = {
+    llm: {
+      listProviders: () => Object.keys(providers).map(id => ({ id })),
+      listModels: async id => providers[id],
+      resolveModelInfo: async (provider) => ({
+        inputModalities: provider === 'local-acp-noimg' || provider === 'deepseek' ? ['text'] : ['text', 'image'],
+      }),
+    },
+    get: () => undefined,
+    sessionController: {
+      selectModel: async ({ sessionId, provider, model }) => {
+        selected.push(`${sessionId}:${provider}/${model}`)
+        return { selected: { provider, model } }
+      },
+    },
+  }
+  const rt = {
+    ctx,
+    state: {
+      prefs: { defaultBotModel: 'deepseek/text-only' },
+      bots: {
+        b1: { id: 'b1', name: 'NoImgACP', model: 'local-acp-noimg/default' },
+        b2: { id: 'b2', name: 'Claude', appliedModel: 'local-claude-code/default' },
+      },
+      rooms: {
+        r1: { id: 'r1', members: ['b1', 'b2'] },
+      },
+    },
+    save: async () => {},
+    warn: (...args) => warnings.push(args.join(' ')),
+    groupSessionsOf: () => [],
+    sessionOfRoom: room => room.sessionId ?? room.id,
+    roomOf: id => Object.values(rt.state.rooms).find(room => room.id === id || room.sessionId === id),
+    isLocalAgentRef: ref => typeof ref === 'string' && ref.startsWith('local-'),
+  }
+  install(rt)
+
+  // Fresh part before room.sessionId is reassigned: roomOf('r1-part-2') is undefined,
+  // so passing `room` lets selectRoomSession inspect members and skip the text-only ACP route.
+  assert.equal(rt.roomOf('r1-part-2'), undefined)
+  await rt.selectRoomSession('r1-part-2', rt.state.rooms.r1)
+  assert.deepEqual(selected, ['r1-part-2:local-claude-code/default'])
+
+  // Catalog failure inside selectRoomSession is caught and queued for retry rather than rejecting callers.
+  selected.length = 0
+  const listProviders = ctx.llm.listProviders
+  ctx.llm.listProviders = () => { throw new Error('catalog offline') }
+  rt.dropCatalog()
+  await assert.doesNotReject(rt.selectRoomSession('r1', rt.state.rooms.r1))
+  assert.ok(warnings.some(line => /catalog offline/.test(line)))
+  ctx.llm.listProviders = listProviders
+  await rt.syncModels()
+  assert.ok(selected.includes('r1:local-claude-code/default'), selected.join(', '))
+})

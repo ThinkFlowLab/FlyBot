@@ -1,0 +1,132 @@
+{
+  "not_a_legal_opinion": true,
+  "public_redistributable_image": false,
+  "reproducible_rebuild_verified": false,
+  "package": "@img/sharp-libvips-linux-x64",
+  "version": "1.3.4",
+  "build_scripts": {
+    "git_head": "ebb95f8add54eee8bed840e3fb587e4cbec857d7",
+    "posix_sh": "https://github.com/lovell/sharp-libvips/blob/ebb95f8add54eee8bed840e3fb587e4cbec857d7/build/posix.sh",
+    "versions_properties": "https://github.com/lovell/sharp-libvips/blob/ebb95f8add54eee8bed840e3fb587e4cbec857d7/versions.properties",
+    "without_patch": "echo \"${1%.[[:digit:]]*}\"  # 2.90.0 -> 2.90",
+    "without_prerelease": "echo \"${1%-[[:alnum:]]*}\"",
+    "note": "URLs below are the exact strings obtained by substituting versions.properties into the $CURL lines of build/posix.sh at that commit. This is not a claim that the current bytes at those URLs match the 1.3.4 linux-x64 .so, and no rebuild was performed."
+  },
+  "libraries": [
+    {
+      "id": "vips",
+      "version": "8.18.7",
+      "notice_row": "libvips / LGPLv3 (via later-version of LGPLv2/2.1)",
+      "url": "https://github.com/libvips/libvips/releases/download/v8.18.7/vips-8.18.7.tar.xz",
+      "build_script_template": "https://github.com/libvips/libvips/releases/download/v${VERSION_VIPS}/vips-$(without_prerelease $VERSION_VIPS).tar.xz",
+      "sha256": "5baaead3b0bb20ffdb9e9ff09aa9fda08620923df77b63b436654cb5e0b3bf94",
+      "sha256_verified_in_this_repo": true,
+      "patches": [
+        {
+          "url": "https://gist.githubusercontent.com/lovell/313a6901e9db1bf285f2a1f1180499e4/raw/3988223c7dfa4d22745d9392034b0117abef1446/libvips-cpp-soversion.patch",
+          "sha256_verified_in_this_repo": false,
+          "note": "Applied by build/posix.sh after unpack. gist raw URL mutability and exact bytes used in the 1.3.4 binary are unverified."
+        }
+      ]
+    },
+    {
+      "id": "glib",
+      "version": "2.90.0",
+      "notice_row": "glib / LGPLv3",
+      "url": "https://download.gnome.org/sources/glib/2.90/glib-2.90.0.tar.xz",
+      "build_script_template": "https://download.gnome.org/sources/glib/$(without_patch $VERSION_GLIB)/glib-${VERSION_GLIB}.tar.xz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": [
+        {
+          "url": "https://gist.github.com/kleisauke/284d685efa00908da99ea6afbaaf39ae/raw/bdad5489a61c217850631571caf57f5db6ea8b2c/glib-without-gregex.patch",
+          "sha256_verified_in_this_repo": false,
+          "note": "Applied by build/posix.sh after unpack. gist raw URL mutability and exact bytes used in the 1.3.4 binary are unverified."
+        }
+      ]
+    },
+    {
+      "id": "fribidi",
+      "version": "1.0.17",
+      "notice_row": "fribidi / LGPLv3",
+      "url": "https://github.com/fribidi/fribidi/releases/download/v1.0.17/fribidi-1.0.17.tar.xz",
+      "build_script_template": "https://github.com/fribidi/fribidi/releases/download/v${VERSION_FRIBIDI}/fribidi-${VERSION_FRIBIDI}.tar.xz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": []
+    },
+    {
+      "id": "exif",
+      "version": "0.6.26",
+      "notice_row": "libexif / LGPLv3",
+      "url": "https://github.com/libexif/libexif/releases/download/v0.6.26/libexif-0.6.26.tar.xz",
+      "build_script_template": "https://github.com/libexif/libexif/releases/download/v${VERSION_EXIF}/libexif-${VERSION_EXIF}.tar.xz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": []
+    },
+    {
+      "id": "heif",
+      "version": "1.23.5",
+      "notice_row": "libheif / LGPLv3",
+      "url": "https://github.com/strukturag/libheif/releases/download/v1.23.5/libheif-1.23.5.tar.gz",
+      "build_script_template": "https://github.com/strukturag/libheif/releases/download/v${VERSION_HEIF}/libheif-${VERSION_HEIF}.tar.gz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": []
+    },
+    {
+      "id": "rsvg",
+      "version": "2.63.2",
+      "notice_row": "librsvg / LGPLv3",
+      "url": "https://download.gnome.org/sources/librsvg/2.63/librsvg-2.63.2.tar.xz",
+      "build_script_template": "https://download.gnome.org/sources/librsvg/$(without_patch $VERSION_RSVG)/librsvg-${VERSION_RSVG}.tar.xz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": [
+        {
+          "url": "https://github.com/GNOME/librsvg/commit/9106011db93d701728ac2c9da50c9ab2c1bb5dc6.patch",
+          "sha256_verified_in_this_repo": false,
+          "note": "Applied by build/posix.sh after unpack. Exact bytes used in the 1.3.4 binary are unverified."
+        }
+      ]
+    },
+    {
+      "id": "pango",
+      "version": "1.58.2",
+      "notice_row": "pango / LGPLv3",
+      "url": "https://download.gnome.org/sources/pango/1.58/pango-1.58.2.tar.xz",
+      "build_script_template": "https://download.gnome.org/sources/pango/$(without_patch $VERSION_PANGO)/pango-${VERSION_PANGO}.tar.xz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": []
+    },
+    {
+      "id": "proxy-libintl",
+      "version": "0.5",
+      "notice_row": "proxy-libintl / LGPLv3",
+      "url": "https://github.com/frida/proxy-libintl/archive/0.5.tar.gz",
+      "build_script_template": "https://github.com/frida/proxy-libintl/archive/${VERSION_PROXY_LIBINTL}.tar.gz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": []
+    },
+    {
+      "id": "cairo",
+      "version": "1.18.6",
+      "notice_row": "cairo / Mozilla Public License 1.1",
+      "url": "https://cairographics.org/releases/cairo-1.18.6.tar.xz",
+      "build_script_template": "https://cairographics.org/releases/cairo-${VERSION_CAIRO}.tar.xz",
+      "sha256": null,
+      "sha256_verified_in_this_repo": false,
+      "patches": []
+    }
+  ],
+  "unresolved_preferred_source_gaps": [
+    "Independent sha256 verification in this repo exists only for the libvips 8.18.7 source tarball already recorded in pins.json. The other tarball and patch sha256 values were not fetched or verified here.",
+    "No reproducible rebuild of lib/libvips-cpp.so.8.18.7 from these URLs was performed, so correspondence between the pointers and the shipped .so remains unverified.",
+    "Gist raw and GitHub commit-patch URLs are recorded as used by the build script; whether they still return the exact patch applied when 1.3.4 was built is unverified.",
+    "Other libraries compiled into the same .so (listed in versions.json, generally MIT/BSD or similar in THIRD-PARTY-NOTICES.md) are not tabulated here; their preferred-source correspondence was not separately verified.",
+    "Whether these pointers are a sufficient corresponding-source or MPL source offer for a published image is legal interpretation and is not decided here."
+  ]
+}

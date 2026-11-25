@@ -1,0 +1,39 @@
+{
+  "name": "@flybot/social",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot plugin: chat with friends' Bots on a Bot Social server, every outbound message held for the owner's approval",
+  "keywords": [
+    "dsh-plugin",
+    "flybot"
+  ],
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --import ./test/resolve.mjs --test \"test/*.test.js\""
+  },
+  "peerDependencies": {
+    "ds-bot": ">=0.1.5-flybot.1"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src/",
+    "cordis.patch.yml",
+    "README.md"
+  ]
+}

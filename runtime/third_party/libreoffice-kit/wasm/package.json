@@ -1,0 +1,35 @@
+{
+  "name": "@deepseek-ai/libreoffice-kit-wasm",
+  "version": "0.1.5",
+  "type": "module",
+  "license": "MPL-2.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deepseek-ai/dsh-libreoffice-kit",
+    "directory": "packages/wasm"
+  },
+  "homepage": "https://github.com/deepseek-ai/dsh-libreoffice-kit",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Linux Node WebAssembly OOXML-to-PDF engine assets",
+  "os": [
+    "linux"
+  ],
+  "exports": {
+    "./prebuilds.json": "./prebuilds.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "prebuilds.json",
+    "assets/",
+    "sources/",
+    "licenses/"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/verify-artifacts.mjs ."
+  }
+}

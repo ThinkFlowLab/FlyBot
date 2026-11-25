@@ -1,0 +1,20 @@
+{
+  "not_a_legal_opinion": true,
+  "package": "katex",
+  "matched_versions": ["0.18.7", "0.16.47"],
+  "primary_pin": "0.18.7",
+  "reason_primary": "dsh-v0.2.2-rc.1 packages/client/ui-primitives depends on katex ^0.18.7, resolved to 0.18.7",
+  "npm": {
+    "0.18.7": {
+      "tarball": "https://registry.npmjs.org/katex/-/katex-0.18.7.tgz",
+      "tarball_sha256": "9a80a3fba2367e99bf67b52bfff52e9534c8c7f198e4eaa12699e4f1df9a0bda",
+      "integrity": "sha512-h+UCwkZ+4Jz8WQ7MLGfj7UVFrRCizGb912fwF4luGdYsC5paYG1vx+jy+KRcC/XkpjGva/P7nAWuxNnPzRvzHw==",
+      "license_file_sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3",
+      "license_file_bytes": 1107,
+      "declared_license": "MIT"
+    }
+  },
+  "git_tag_checked_for_ofl": "v0.18.7",
+  "ofl_txt_in_package_or_git_tag": false,
+  "font_binaries_vendored": false
+}

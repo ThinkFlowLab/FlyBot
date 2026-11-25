@@ -1,0 +1,4383 @@
+// flybot-social browser half: plain JS, loaded by DSH as a classic script. Registers
+// into the FlyBot slot registry that ds-bot's client renders (src/client/flybot-slots.js).
+window.__ModuleLoader__.load({
+  id: '@flybot/social',
+  factory(require) {
+    const { createElement: h, Fragment, useEffect, useState, useRef } = require('react')
+    const slots = () => {
+      // Same bootstrap as ds-bot's flybot-registry.js: whichever bundle loads first creates it.
+      if (globalThis.__flybot__ === undefined) throw new Error('flybot-social needs ds-bot with FlyBot slots')
+      return globalThis.__flybot__.slots
+    }
+    const call = (endpoint, payload) => globalThis.__flybot__.call(endpoint, payload)
+    // #968: the terminal/retryable decision is ds-bot's (`core/src/shared/held-retry.js`), reached through
+    // the shared FlyBot object; the fallback only covers a core bundle older than the predicate.
+    const canRetry = (record) => globalThis.__flybot__?.canRetry?.(record) ?? record?.retry !== false
+
+    // Errors in English. ds-bot's api.js may localize transport errors ("HTTP 404" becomes
+    // Chinese in a zh UI), so the panel words them from the error code instead.
+    const isSocialMissing = (e) => {
+      const code = String(e?.code ?? '')
+      const message = String(e?.message ?? e ?? '')
+      return code === 'bot/not-found' || /Unknown FlyBot endpoint social\//i.test(message)
+    }
+    // Re-accepting an invite for a Bot you already have is not an error (#496).
+    const ALREADY_HAVE = "You already have this friend's Bot."
+    // A friend's Bot with its owner: `Chief (SelfA1233)`, Bot first (#384).
+    const botWithOwner = (name, owner) => (name && owner && owner !== name ? `${name} (${owner})` : name || '')
+    // The Bot the accept shares back is ours, and both homes can run a Bot with the same name (#1026): a bare
+    // `Chief is shared back` reads as the friend's Chief being shared twice. A server that names none keeps the
+    // generic noun. A name the owner already gave as "Your …" is ours already — prefixing it again is where
+    // "Your Your Bot" came from (#1037).
+    const sharedBackLine = name => {
+      const ours = !name ? 'Your Bot' : /^your\b/i.test(name) ? name : `Your ${name}`
+      return `${ours} is shared back, so they can reach you too.`
+    }
+    // One row per person must stay one readable line (#955): the access card used to join every room a share
+    // is used in, so a long-lived share printed 15 rooms / 362 characters inside a settings row. The hint names
+    // at most three rooms, says how many are left, and keeps every name in the tooltip.
+    const ROOM_HINT_LIMIT = 80
+    const ROOM_HINT_NAMES = 3
+    const ROOM_HINT_CLIP = 14
+    const roomKey = room => String(room?.id ?? room?.name ?? '')
+    const clipRoom = name => (name.length > ROOM_HINT_CLIP ? `${name.slice(0, ROOM_HINT_CLIP - 1)}…` : name)
+    // Dedupe by room id: the same face-to-face room arrives once per grant and once in view.rooms.
+    const roomList = (rooms, skip) => {
+      const seen = new Set(skip ?? [])
+      const out = []
+      for (const room of rooms ?? []) {
+        const key = roomKey(room)
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        const label = String(room?.name || room?.id || '').trim()
+        if (label) out.push({ id: key, label })
+      }
+      return out
+    }
+    // `use` counts ("In use in 15 rooms: a, b, c +12 more"); `only` keeps its own words.
+    const roomHint = (kind, rooms, skip) => {
+      const rows = roomList(rooms, skip)
+      if (!rows.length) return null
+      const head = kind === 'use' ? `In use in ${rows.length} room${rows.length === 1 ? '' : 's'}: ` : 'This room only: '
+      const build = (count, clip) => {
+        const pick = rows.slice(0, count).map(row => (clip ? clipRoom(row.label) : row.label))
+        const rest = rows.length - pick.length
+        return head + pick.join(', ') + (rest > 0 ? ` +${rest} more` : '')
+      }
+      const top = Math.min(ROOM_HINT_NAMES, rows.length)
+      // Short lists print whole names; a long-lived share falls back to clipped names so the count still shows.
+      let text = build(top, false)
+      if (text.length > ROOM_HINT_LIMIT) {
+        for (let count = top; count >= 1; count -= 1) {
+          text = build(count, true)
+          if (text.length <= ROOM_HINT_LIMIT) break
+        }
+      }
+      return { text, title: rows.map(row => row.label).join('\n'), ids: rows.map(row => row.id) }
+    }
+    const errorText = (e) => {
+      const code = String(e?.code ?? '')
+      const http = code.match(/^HTTP_(\d+)$/)
+      if (http) return `The FlyBot host did not answer (HTTP ${http[1]}). Reload the page; if this keeps happening, restart FlyBot web.`
+      if (code === 'NETWORK') return 'Could not reach FlyBot. Check that it is still running.'
+      if (isSocialMissing(e)) {
+        return 'Social is not running: the plugin did not start. See Settings → Feedback.'
+      }
+      const message = String(e?.message ?? e ?? '')
+      if (/relationship_exists/i.test(message)) return ALREADY_HAVE
+      // Only the raw server words map here. The "invite wasn't found" sentence also says "already used" (as one of its possible
+      // causes), so matching those words would relabel every unknown or mistyped link as a used one.
+      if (/invite_unavailable|invite is used|invite_used/i.test(message)) return 'This invite was already used. Ask your friend for a new one.'
+      return message
+    }
+
+    // Styles reuse ds-bot's sidebar tokens (--bt-ink, --bt-ink-2, --bt-ink-3, --bt-hover, --bt-line,
+    // --bt-line-2, --bt-card, --bt-accent, --bt-tag-bg/-ink), like @flybot/tree, so both themes follow the app.
+    const CSS = `
+.fs{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:var(--bt-ink,#141414);padding:0 4px 6px;overflow:hidden;box-sizing:border-box;max-width:100%}
+.fs *,.fs *::before,.fs *::after{box-sizing:border-box}
+.fs-head{display:flex;align-items:center;gap:4px;padding:0 0 0 0}
+.fs-head-main{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-2,rgba(20,20,20,.6));font:inherit;font-size:12px;line-height:16px;font-weight:500;text-align:left;cursor:pointer;transition:background-color .12s ease}
+.fs-head-main:hover,.fs-icon:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-chev{display:inline-flex;width:12px;justify-content:center;color:var(--bt-ink-3,rgba(20,20,20,.36));transition:transform .12s ease}
+.fs-head-main[aria-expanded=false] .fs-chev{transform:rotate(-90deg)}
+.fs-title{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-count,.fs-tag{flex:none;font-size:11px;line-height:14px;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.56));font-weight:500}
+.fs-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-2,rgba(20,20,20,.6));font:inherit;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.fs-icon[aria-expanded=true]{background:var(--bt-active,rgba(119,119,119,.17));color:var(--bt-ink,#141414)}
+.fs-body{display:flex;flex-direction:column;gap:2px;padding:2px 0 0}
+.fs-empty,.fs-hint{padding:4px 10px;font-size:12px;line-height:17px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:anywhere}
+.fs-join-as{align-items:baseline;flex-wrap:wrap;overflow-wrap:normal;word-break:normal}
+.fs-join-as-label{flex:none;white-space:nowrap;overflow-wrap:normal;word-break:keep-all}
+.fs-empty{padding:6px 10px 8px;font-size:13px;line-height:18px}
+.fs-label{padding:8px 10px 2px;font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36));display:flex;align-items:center;gap:6px}
+.fs-home-head{display:flex;align-items:center;gap:4px;min-width:0;padding:2px 4px 0 0}
+.fs-home{display:flex;align-items:baseline;gap:6px;flex:1 1 auto;min-width:0;padding:4px 8px;border:0;border-radius:8px;background:transparent;font:inherit;font-size:12px;line-height:16px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6));text-align:left;cursor:pointer}
+.fs-home:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-home .fs-chev[data-closed]{transform:rotate(-90deg)}
+.fs-home-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fs-home-handle{font-weight:400;color:var(--bt-ink-3,rgba(20,20,20,.36));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fs-auto{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));cursor:pointer;white-space:nowrap}
+.fs-auto input{margin:0;accent-color:var(--bt-accent,#4d6bfe)}
+.bt-social-rows{display:flex;flex-direction:column}
+.fs-row{display:flex;align-items:center;gap:8px;min-width:0;padding:5px 8px 5px 10px;border-radius:8px;transition:background-color .12s ease}
+.fs-row:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-avatar{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;font-weight:600;overflow:hidden}
+.fs-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.fs-face-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:var(--fs-face-size,24px);height:var(--fs-face-size,24px)}
+.fs-face-mark .bt-mark,.fs-face-mark .fs-avatar{width:100%;height:100%;font-size:calc(var(--fs-face-size,24px)*.5)}
+.fs-text{display:flex;flex-direction:column;flex:1 1 auto;min-width:0}
+.fs-name{font-size:14px;line-height:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-sub{font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-msg{white-space:normal;overflow-wrap:anywhere}
+.fs-actions{flex:none;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:100%}
+.fs-card{margin:4px 4px 2px;padding:10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px}
+.fs-friend-settings{display:flex;flex-direction:column;gap:14px;max-width:280px}
+.fs-friend-auto{margin:0}
+.fs-friend-remove{display:flex;padding:0 4px}
+.fs-friend-settings .fs-auto{align-self:flex-start;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-friend-settings .fs-auto input{flex:none;width:14px;height:14px}
+.fs-friend-settings .fs-leave-ask{flex-wrap:wrap;white-space:normal}
+.fs-friend-settings .fs-link{align-self:flex-start;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-friend-remove .fs-leave-ask{display:flex;align-items:center;gap:6px}
+.fs-card .fs-hint{padding:0}
+.fs-line{display:flex;gap:6px;min-width:0;align-items:center}
+.fs-access-col{display:flex;flex-direction:column;flex:1 1 auto;min-width:0;gap:1px}
+.fs-access-meta{display:flex;align-items:baseline;min-width:0;flex-wrap:wrap}
+.fs-access-meta .fs-sub,.fs-access-meta .fs-hint{min-width:0}
+.fs-leave-ask.fs-access-ask{flex-wrap:wrap;white-space:normal;justify-content:flex-end}
+.fs-leave-ask.fs-access-ask .fs-hint{flex:1 1 10em;white-space:normal}
+.fs-input{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;outline:none;text-overflow:ellipsis}
+.fs-input:focus{border-color:var(--bt-accent,#4d6bfe)}
+.fs-input[readonly]{background:var(--bt-tag-bg,rgba(20,20,20,.06));border-color:transparent}
+.fs-btn{flex:none;height:30px;padding:0 12px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:var(--bt-ink,#141414);font:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background-color .12s ease}
+.fs-btn:hover:not(:disabled){background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-btn:disabled{opacity:.45;cursor:default}
+.fs-btn-primary{border-color:transparent;background:var(--bt-accent,#4d6bfe);color:#fff;width:100%}
+.fs-btn-primary:hover:not(:disabled){background:var(--bt-accent,#4d6bfe);filter:brightness(1.08)}
+.fs-btn-sm{height:26px;padding:0 9px;font-size:12px}
+.fs-link{padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;cursor:pointer}
+.fs-link:hover{text-decoration:underline}
+.fs-status{padding:0;font-size:12px;line-height:17px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:anywhere}
+.fs-status[data-tone=error]{color:#e5484d}
+.fs-pending-tag{background:var(--bt-accent,#4d6bfe);color:#fff}
+.fs-refresh{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));font-weight:400}
+.fs-thinking{margin:0 12px 6px;padding-inline-start:8px;font-size:13px;line-height:20px;min-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fs-room-end{display:flex;align-items:center;gap:8px;margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink-2,rgba(20,20,20,.6));font-size:12px;line-height:16px}
+/* #998: the stand-in for a group header the host has not drawn yet (zero turns). */
+.fs-group-strip{display:flex;flex-direction:column;gap:4px;margin:6px 12px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));font-size:12px;line-height:17px}
+.fs-group-strip-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}
+.fs-group-strip-name{font-size:13px;font-weight:600;color:var(--bt-ink)}
+.fs-group-strip-members{color:var(--bt-ink-3,rgba(20,20,20,.45))}
+.fs-group-strip-invite{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fs-room-end-close{margin-left:auto;flex:none}
+/* A left or closed face room is read-only (#197): its end line replaces the composer. */
+[class*="_composerStack"]:has([data-flybot="face-room-end"]) [class*="_root"]:has(> [data-composer-card]){display:none!important}
+.fs-me{display:flex;align-items:center;gap:6px;padding:0 10px 4px;justify-content:space-between;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-me-handle{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink,#141414);font-size:13px}
+.bt-menu .fs-me button.fs-link{display:inline;flex:none;width:auto;min-height:0;padding:0 2px;border-radius:4px;font-size:12px;line-height:16px}
+.fs-me .fs-link{flex:none}
+.fs-pending{margin:4px 4px 6px;padding:6px 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
+.fs-pending .fs-label{padding:0}
+.fs-pending-item{display:flex;align-items:center;gap:8px;width:100%;max-width:100%;min-width:0;padding:4px 4px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;flex-wrap:nowrap}
+.fs-pending-item:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-pending-row{display:flex;align-items:center;gap:6px;min-width:0}
+.fs-pending-row .fs-pending-item{flex:1 1 auto;min-width:0}
+.fs-pending-row .fs-btn{flex:0 0 auto}
+.fs-pending-item .fs-text{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:row;align-items:baseline;gap:8px}
+.fs-pending-item .fs-name{flex:0 1 auto;max-width:40%;min-width:0}
+.fs-pending-one{flex:1 1 auto;font-size:12px;line-height:16px;color:var(--bt-ink-2,rgba(20,20,20,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fs-draft{font-size:13px;line-height:18px;color:var(--bt-ink,#141414);white-space:pre-wrap;overflow-wrap:anywhere;max-height:96px;overflow:auto}
+.fs-digits{flex:1 1 auto;min-width:0;width:0;height:30px;padding:0 9px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:16px;letter-spacing:.24em;font-variant-numeric:tabular-nums;outline:none;text-align:center}
+.fs-digits::placeholder{color:var(--bt-ink-3,rgba(20,20,20,.36));opacity:.75;font-weight:400;font-size:13px;letter-spacing:normal}
+.fs-digits:focus{border-color:var(--bt-accent,#4d6bfe)}
+.fs-sharing{display:flex;flex-direction:column;gap:10px}
+.fs-label-plain{text-transform:none;letter-spacing:0;font-size:13px;line-height:18px;font-weight:600;color:var(--bt-ink,#141414)}
+.fs-invite-link{width:100%;box-sizing:border-box;min-width:0}
+/* The paste box wraps, so a whole pasted link is readable at the sidebar's width (#499). */
+.fs-paste{flex:0 0 auto;width:100%;box-sizing:border-box;height:auto;min-height:30px;max-height:96px;padding:6px 9px;line-height:17px;resize:none;overflow-wrap:anywhere;word-break:break-all;field-sizing:content}
+.fs-invite-actions{flex-wrap:wrap}
+.fs-btn-fit{width:auto}
+.fs-share-request .fs-line{justify-content:flex-end}
+.fs-share-request .fs-btn-primary{flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.fs-invite-new{margin-left:auto}
+/* In Bot settings the host's titled Sharing card frames both parts (#406): one card, rows split by a line. */
+.bt-set-card .fs-sharing{gap:0}
+.bt-set-card .fs-sharing > .fs-card{margin:0;padding:10px 12px;border:0;border-radius:0;background:none}
+.bt-set-card .fs-sharing > .fs-card + .fs-card{border-top:.5px solid var(--bt-line,rgba(20,20,20,.08))}
+.fs-face{margin:4px 4px 6px;padding:8px 10px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:10px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:6px;min-width:0}
+.fs-face-item{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;overflow:hidden}
+.fs-face-row{display:flex;align-items:center;gap:6px;min-width:0;width:100%;padding:2px 0;flex-wrap:nowrap;overflow:hidden}
+.fs-face-row .fs-name{flex:1 1 0;min-width:0}
+.fs-face-row[data-open]{cursor:pointer}
+.fs-face-actions{display:flex;gap:4px;flex:none;flex-wrap:nowrap}
+.fs-face-actions .fs-btn-sm{height:22px;padding:0 6px;font-size:11px}
+.fs-stack{display:flex;flex-direction:row;align-items:center;flex:none}
+.fs-stack .fs-face-mark,.fs-stack [data-flybot=face-card-member]{margin-left:-6px}
+.fs-stack .fs-face-mark:first-child,.fs-stack [data-flybot=face-card-member]:first-child{margin-left:0}
+.fs-stack [data-flybot=face-card-member]{display:inline-flex;border-radius:50%;box-shadow:0 0 0 2px var(--bt-card,#fff)}
+.fs-stack-more{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));margin-left:4px}
+.fs-srv-form{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
+.fs-srv-quick{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.fs-srv-checked{display:flex;flex-direction:column;gap:2px}
+.fs-srv-warn{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:8px;background:var(--bt-hover,rgba(119,119,119,.09));font-size:12px;line-height:17px;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-srv-warn strong{color:var(--bt-ink,#141414);font-size:13px}
+.fs-srv-actions{display:flex;gap:6px;justify-content:flex-end}
+.fs-chip{flex:none;font-size:11px;line-height:14px;padding:1px 6px;border-radius:4px;background:var(--bt-tag-bg,rgba(20,20,20,.06));color:var(--bt-tag-ink,rgba(20,20,20,.56));white-space:nowrap}
+.fs-chip-status{min-width:44px;text-align:center;font-weight:600;letter-spacing:.01em}
+.fs-chip-status[data-status=open],.fs-chip-status[data-status=closed],.fs-chip-status[data-status=left]{font-size:12px;line-height:16px;padding:2px 8px;color:var(--bt-ink-2,rgba(20,20,20,.72));background:var(--bt-hover,rgba(119,119,119,.12))}
+.fs-face-item[data-past] .fs-face-row{gap:8px;border-radius:6px}
+.fs-face-item[data-past] .fs-chip-status{margin-left:4px}
+.fs-face-time{flex:none;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36));white-space:nowrap;font-variant-numeric:tabular-nums}
+.fs-face-item[data-past] .fs-face-row[data-open]:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-face-item[data-past] .fs-face-row[data-open]:focus-visible{outline:2px solid var(--bt-accent,#4d6bfe);outline-offset:-2px}
+.fs-face-head{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding:2px 0 6px}
+.fs-face-top{display:flex;align-items:center;gap:10px;min-width:0}
+.fs-face-head .fs-face-auto-wrap{min-width:0}
+.fs-face-head .fs-face-actions{flex:none;margin-left:auto}
+.fs-leave-ask{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.fs-past{margin:2px 0 4px}
+.fs-past-head{display:flex;align-items:center;gap:6px;width:100%;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:12px;line-height:16px;font-weight:500;text-align:left;cursor:pointer}
+.fs-past-head:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-past-head .fs-chev[data-closed]{transform:rotate(-90deg)}
+.fs-face-auto-wrap{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:0}
+.fs-face-auto{white-space:nowrap;font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-face-note{padding:0;display:none}
+.fs-chat-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+[data-flybot=chat-approvals]{display:flex;flex-direction:column;align-items:flex-end;gap:8px;width:100%;box-sizing:border-box;padding:0 0 4px}
+.fs-hold{box-sizing:border-box;width:100%;max-width:min(460px,100%);min-width:0;margin:0 0 0 auto;padding:10px 12px;border:.5px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);color:var(--bt-ink,#141414);display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(20,20,20,.06);overflow:hidden}
+.fs-hold .fs-label{padding:0;font-size:11px;line-height:14px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-hold .fs-sub{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink,#141414);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-hold .fs-draft{margin:0;font-size:13px;line-height:18px;color:var(--bt-ink-2,rgba(20,20,20,.6));overflow-wrap:break-word;word-break:normal;white-space:pre-wrap;max-height:none}
+.fs-hold .fs-draft[data-clamp]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;overflow-wrap:break-word;word-break:normal;max-height:calc(18px * 3)}
+.fs-hold-more{align-self:flex-start;margin:0;padding:0;border:0;background:none;color:var(--bt-accent,#4d6bfe);font:inherit;font-size:12px;line-height:16px;cursor:pointer}
+.fs-hold-more:hover{text-decoration:underline}
+.fs-hold .fs-actions{margin-top:2px;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap}
+.fs-hold .fs-btn{flex:none;height:28px;padding:0 12px;border-radius:999px;font-size:12px}
+.fs-hold .fs-btn-primary{width:auto;color:#fff}
+.fs-hold .fs-hold-decide{display:flex;gap:8px;flex:none}
+.fs-hold .fs-actions .fs-hold-always{order:-1;margin-right:auto;white-space:nowrap;flex:0 0 auto}
+.fs-hold[data-state] .fs-name{font-size:13px;line-height:18px;font-weight:500;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-row-wrap{position:relative;display:flex;align-items:center;gap:2px;min-width:0}
+.fs-row-wrap .fs-row,.fs-row-wrap > :first-child{flex:1 1 auto;min-width:0}
+.fs-remove{flex:none;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--bt-ink-3,rgba(20,20,20,.36));font:inherit;font-size:14px;line-height:1;cursor:pointer;opacity:0}
+.fs-row-wrap:hover .fs-remove,.fs-row-wrap:focus-within .fs-remove,.fs-remove:focus-visible,.fs-remove:disabled{opacity:1}
+.fs-remove:hover:not(:disabled),.fs-remove:focus-visible{background:var(--bt-hover,rgba(119,119,119,.09));color:var(--bt-ink,#141414)}
+.fs-remove:disabled{cursor:default;opacity:.55}
+.fs-menu{position:absolute;right:4px;top:100%;z-index:5;min-width:160px;padding:4px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:var(--bt-card,#fff);box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.fs-menu button{display:block;width:100%;text-align:left;height:28px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer}
+.fs-menu button:hover{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-chat-approval{margin:0;min-width:0}
+.fs-chat-approval[data-state=approved] .fs-label,.fs-chat-approval[data-state=rejected] .fs-label,.fs-chat-approval[data-state=approved] .fs-name,.fs-chat-approval[data-state=rejected] .fs-name{color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-dialog-back{position:fixed;inset:0;z-index:62;background:rgba(20,20,20,.4);display:flex;align-items:center;justify-content:center;padding:12px}
+.fs-dialog{width:min(420px,100%);max-height:min(640px,92vh);overflow:hidden;margin:0;padding:14px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:14px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+.fs-dialog-head{display:flex;align-items:center;gap:8px;flex:none}
+.fs-dialog-head .fs-name{flex:1 1 auto}
+.fs-dialog > form{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.fs-tiles{margin:0;padding:4px 0 0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px 6px;align-content:start}
+.fs-pick{max-height:220px;overflow:auto}
+.fs-tile{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:6px 2px;border-radius:10px}
+.fs-tile-hit{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;width:100%;margin:0;cursor:pointer;font:inherit;position:relative}
+.fs-tile-hit:hover,.fs-tile-on{background:var(--bt-hover,rgba(119,119,119,.09))}
+.fs-tile-mark{position:relative;flex:none;display:inline-flex}
+.fs-tile-name{display:block;width:100%;font-size:12px;line-height:16px;text-align:center;white-space:normal;overflow-wrap:anywhere;color:var(--bt-ink,#141414)}
+.fs-tile-sub{display:block;width:100%;font-size:11px;line-height:14px;text-align:center;white-space:normal;overflow-wrap:anywhere;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-wait-overview{margin:0 0 8px;padding:8px 10px;border:1px solid var(--bt-line,rgba(20,20,20,.08));border-radius:12px;background:var(--bt-card,#fff);display:flex;flex-direction:column;gap:8px;min-width:0;max-width:100%}
+.fs-wait-overview .fs-wait-foot{margin-top:2px}
+.fs-tile-mine{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:var(--bt-accent,#4d6bfe);box-shadow:0 0 0 2px var(--bt-card,#fff);pointer-events:none}
+.fs-tile-on .fs-face-mark{border-radius:50%;box-shadow:0 0 0 2px var(--bt-accent,#4d6bfe)}
+.fs-tile-check{position:absolute;right:-2px;bottom:-2px;width:16px;height:16px;border-radius:50%;background:var(--bt-accent,#4d6bfe);color:#fff;font-size:11px;line-height:16px;text-align:center;pointer-events:none;box-shadow:0 0 0 2px var(--bt-card,#fff)}
+.fs-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.fs-wait{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;overflow:hidden}
+.fs-wait-count{flex:none;padding:0}
+.fs-wait-code{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0 2px}
+.fs-wait-code-label{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-wait-code-digits{font-size:28px;line-height:34px;font-weight:600;letter-spacing:.28em;font-variant-numeric:tabular-nums;color:var(--bt-ink,#141414)}
+.fs-qr{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 2px}
+.fs-qr-svg{width:128px;height:128px;background:#fff;border-radius:8px;padding:6px;box-shadow:0 0 0 1px var(--bt-line-2,rgba(20,20,20,.15))}
+.fs-qr-hint{font-size:11px;line-height:14px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-scan-row{flex:none;display:flex;align-items:center;gap:8px;padding:2px 0 0}
+.fs-scan-hint{flex:1 1 auto;padding:0}
+.fs-link-row{flex:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 0 0}
+.fs-link-input{flex:1 1 180px;min-width:0;height:28px;padding:0 8px;border:1px solid var(--bt-line-2,rgba(20,20,20,.15));border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:12px;outline:none}
+.fs-link-input:focus{border-color:var(--bt-accent,#4d6bfe)}
+.fs-preview{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--bt-line-2,rgba(20,20,20,.15))}
+.fs-preview-name{font-size:12px;line-height:16px;font-weight:600;color:var(--bt-ink,#141414);overflow-wrap:anywhere}
+.fs-preview-meta{font-size:11px;line-height:15px;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-preview-foot{display:flex;align-items:center;gap:6px;padding-top:2px}
+.fs-preview-foot .fs-btn{flex:0 0 auto;width:auto;height:28px}
+
+.fs-invite{flex:none;display:flex;flex-direction:column;gap:4px;padding:6px 0 2px}
+.fs-invite-head{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.bt-flybot-room-members .fs-invite{gap:6px;padding:0}
+.bt-flybot-room-members .fs-invite-head{min-height:26px}
+.bt-flybot-room-members .fs-invite .fs-hint{padding:0}
+.fs-invite-others{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.fs-label-inline{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--bt-ink-3,rgba(20,20,20,.36))}
+.fs-invite-live{display:flex;flex-direction:column;align-items:center;gap:4px}
+.fs-invite-link{display:flex;align-items:center;gap:8px;max-width:100%}
+.fs-invite-url{font-size:11px;line-height:15px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-2,rgba(20,20,20,.6))}
+.fs-wait-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.fs-wait-foot{display:flex;align-items:stretch;gap:8px;flex:none}
+.fs-wait-foot .fs-btn{height:36px}
+.fs-wait-foot .fs-btn-primary{flex:1 1 auto;width:auto;min-width:0}
+.fs-wait[data-flybot=face-nobody] .fs-name{white-space:normal;overflow:visible;text-overflow:clip}
+.fs-fail{padding:0}
+@media (max-width:640px){.fs-hold .fs-btn{height:40px;padding:0 16px;font-size:14px}.fs-hold .fs-hold-decide{flex:1 1 auto;justify-content:flex-end}.fs-btn,.fs-btn-sm{height:40px;padding:0 14px;font-size:13px}.fs-link,.fs-hold-more{display:inline-flex;align-items:center;min-height:40px;padding:0 2px;font-size:13px}.fs-icon{height:40px;min-width:40px}.fs-input,.fs-digits,.fs-link-input{height:40px;font-size:14px}.fs-paste{min-height:40px}.fs-remove{width:32px;height:32px}.fs-pending-item,.fs-past-head{min-height:40px}.fs-hold .fs-draft{overflow-wrap:anywhere}.fs-preview-foot .fs-btn,.fs-wait-foot .fs-btn{height:40px}.bt-flybot-session-dock{padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}.fs-group-strip{margin:6px 8px}.fs-face-actions .fs-btn-sm{height:40px;padding:0 10px;font-size:13px}.bt-menu .fs-me button.fs-link{display:inline-flex;align-items:center;min-height:40px;padding:0 6px;font-size:13px}}
+`
+    function useStyles() {
+      useEffect(() => {
+        if (typeof document === 'undefined' || document.getElementById('flybot-social-css')) return
+        const style = document.createElement('style')
+        style.id = 'flybot-social-css'
+        style.textContent = CSS
+        document.head.appendChild(style)
+      }, [])
+    }
+    const initial = name => (String(name ?? '?').replace(/^@/, '').trim()[0] ?? '?').toUpperCase()
+
+    // Same FNV-1a as core lookOf, so a missing host BotMark still paints a stable per-Bot
+    // color (never the shared gray letter badge) and two ids do not collide.
+    const FACE_INKS = ['#e5484d', '#e54666', '#f76b15', '#ffc53d', '#46a758', '#12a594', '#0090ff', '#3e63dd', '#5b5bd6', '#8e4ec6']
+    function inkOf(seed) {
+      const text = String(seed ?? '')
+      let value = 2166136261
+      for (let i = 0; i < text.length; i++) value = Math.imul(value ^ text.charCodeAt(i), 16777619)
+      return FACE_INKS[(value >>> 0) % FACE_INKS.length]
+    }
+    function faceSeed(bot) {
+      const handle = typeof bot?.remote?.handle === 'string' && bot.remote.handle.trim()
+        ? bot.remote.handle
+        : typeof bot?.handle === 'string' && bot.handle.trim() && bot.remote
+          ? bot.handle
+          : ''
+      if (handle) return `remote:${handle.trim().replace(/^@+/, '').toLowerCase()}`
+      if (bot?.id !== undefined) return String(bot.id)
+      if (typeof bot?.handle === 'string' && bot.handle.trim()) return `remote:${bot.handle.trim().replace(/^@+/, '').toLowerCase()}`
+      return String(bot?.name ?? '')
+    }
+    function rosterBot(roster, id) {
+      if (!id) return undefined
+      return roster?.byId?.[id] ?? (roster?.bots ?? []).find(bot => bot.id === id)
+    }
+    function chatByHandle(remoteChats, handle) {
+      if (!handle) return undefined
+      return (remoteChats ?? []).find(chat => chat.remote?.handle === handle)
+    }
+    // Local picker rows use the team roster record (configured image / shape / color).
+    // Waiting-room "mine" matches the same local Bot; a friend's Bot uses its chat
+    // record or a handle-seeded remote look, plus any avatar the member payload carries.
+    // My own Bot is found by its room record (remote false, local id), by the handle the
+    // Bot list knows, or by the handle a join just returned (`mine`: { botId, handle }):
+    // a Bot that got its room-only identity at this join is not in the list yet, and must
+    // not be drawn with a look seeded from that new handle (#182).
+    function faceLook({ roster, remoteChats, bots, local, member, mine: joined } = {}) {
+      if (local) {
+        const full = rosterBot(roster, local.id)
+        return full ? { ...local, ...full } : local
+      }
+      if (!member) return undefined
+      const recorded = member.remote === false && member.id ? rosterBot(roster, member.id) : undefined
+      const listed = (bots ?? []).find(bot => bot.handle && bot.handle === member.handle)
+      const justJoined = member.handle ? (joined ?? []).find(item => item?.botId && item.handle === member.handle) : undefined
+      const mine = recorded || listed || (justJoined ? rosterBot(roster, justJoined.botId) || { id: justJoined.botId, name: justJoined.botName || member.displayName } : undefined)
+      if (mine) return faceLook({ roster, bots, local: mine })
+      const extra = {}
+      if (member.color) extra.color = member.color
+      if (member.avatar) extra.avatar = member.avatar
+      const chat = chatByHandle(remoteChats, member.handle)
+      if (chat) {
+        return {
+          ...chat,
+          name: member.displayName || chat.name,
+          remote: chat.remote ?? { handle: member.handle },
+          ...extra,
+        }
+      }
+      return {
+        id: member.botId || member.handle,
+        name: member.displayName || member.label || member.handle,
+        handle: member.handle,
+        remote: member.handle ? { handle: member.handle } : undefined,
+        ...extra,
+      }
+    }
+    function FaceAvatar({ bot, size = 24 } = {}) {
+      const Avatar = globalThis.__flybot__?.BotAvatar
+      const Mark = globalThis.__flybot__?.BotMark
+      const seed = faceSeed(bot)
+      const color = typeof bot?.color === 'string' && bot.color.startsWith('#') ? bot.color : inkOf(seed)
+      let inner
+      if (typeof Avatar === 'function' && bot) inner = h(Avatar, { bot, size, badge: false, live: false })
+      else if (typeof Mark === 'function' && bot) inner = h(Mark, { bot, size })
+      else {
+        const image = bot?.avatar?.image
+        const emoji = bot?.avatar?.emoji
+        inner = h('span', {
+          className: 'fs-avatar',
+          'data-color': color,
+          style: image ? undefined : { background: color, color: '#fff' },
+        }, image ? h('img', { src: image, alt: '' }) : (emoji || initial(bot?.name)))
+      }
+      return h('span', {
+        className: 'fs-face-mark',
+        'data-flybot': 'face-avatar',
+        'data-bot-id': bot?.id,
+        'data-handle': bot?.remote?.handle || bot?.handle,
+        'data-color': color,
+        'data-size': size,
+        'aria-hidden': true,
+        style: { width: size, height: size, '--fs-face-size': `${size}px` },
+      }, inner)
+    }
+
+    function faceTileParts(member) {
+      const owner = String(member?.ownerName ?? member?.owner_name ?? '').trim()
+      const raw = String(member?.displayName || member?.name || '').trim()
+      let name = raw
+      if (!name || /^bot$/i.test(name) || (owner && name.toLowerCase() === owner.toLowerCase())) {
+        // A label in the one-name form "Chief (Ann)", or an older "Chief · Ann" / "Ann's Chief".
+        const fromLabel = String(member?.label ?? '').split('·')[0].replace(/\s*\([^()]*\)\s*$/, '').replace(/'s Chief$/i, 'Chief').trim()
+        if (fromLabel && !/^bot$/i.test(fromLabel) && (!owner || fromLabel.toLowerCase() !== owner.toLowerCase())) name = fromLabel
+        else {
+          const handleText = typeof member?.handle === 'object' && member.handle
+            ? String(member.handle.handle ?? '')
+            : String(member?.handle ?? '')
+          const part = handleText.replace(/^@/, '').split('.')[0]
+          name = part && part !== 'home' && part !== 'bot'
+            ? part.charAt(0).toUpperCase() + part.slice(1)
+            : (raw || 'Bot')
+        }
+      }
+      if (/^chief$/i.test(name)) name = 'Chief'
+      return { name: name || 'Bot', owner }
+    }
+
+    function FaceTile({ bot, name, owner, member, handle, mine, pick, selected, onToggle } = {}) {
+      const parts = member ? faceTileParts(member) : { name: name || 'Bot', owner: owner || '' }
+      // One name per Bot (#384, #457): "Chief (Ann)", mine the same way; "(you)" is only on a person.
+      const title = parts.owner && parts.owner.toLowerCase() !== parts.name.toLowerCase() ? `${parts.name} (${parts.owner})` : parts.name
+      const mark = h('span', { className: 'fs-tile-mark' },
+        h(FaceAvatar, { bot, size: 48 }),
+        mine
+          ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: 'mine', 'aria-label': 'mine' })
+          : null,
+        pick && selected
+          ? h('span', { className: 'fs-tile-check', 'data-flybot': 'face-pick-check', 'aria-hidden': true }, '✓')
+          : null)
+      const caption = [
+        h('span', { key: 'n', className: 'fs-tile-name', title }, parts.name),
+        parts.owner ? h('span', { key: 'o', className: 'fs-tile-sub', 'data-flybot': 'face-owner', title: parts.owner }, parts.owner) : null,
+      ]
+      if (pick) {
+        return h('li', { className: selected ? 'fs-tile fs-tile-on' : 'fs-tile' },
+          h('label', { className: 'fs-tile-hit' },
+            h('input', {
+              type: 'checkbox',
+              className: 'fs-sr',
+              checked: !!selected,
+              'aria-label': title,
+              onChange: onToggle,
+            }),
+            mark,
+            caption))
+      }
+      return h('li', {
+        className: 'fs-tile',
+        'data-flybot': 'face-member',
+        'data-mine': mine || undefined,
+        'data-handle': handle,
+        title,
+      }, mark, caption)
+    }
+
+    // Who has joined, person-first (#457): one entry per person, mine first, each with the Bots they
+    // brought. People are told apart by home (the handle's "<person>.home"), not by display name.
+    function faceMemberHandle(member) {
+      return typeof member?.handle === 'object' && member.handle ? String(member.handle.handle ?? '') : String(member?.handle ?? '')
+    }
+    function facePersonKey(member, mine) {
+      if (mine) return ':you'
+      const parts = faceMemberHandle(member).trim().toLowerCase().replace(/^@+/, '').split('.')
+      if (parts.length >= 3 && parts.at(-1) === 'home') return `home:${parts.slice(-2).join('.')}`
+      const owner = String(member?.ownerName ?? member?.owner_name ?? '').trim().toLowerCase()
+      return owner ? `name:${owner}` : `bot:${faceMemberHandle(member) || member?.id || ''}`
+    }
+    function facePeople(members, isMine) {
+      const people = []
+      for (const member of Array.isArray(members) ? members : []) {
+        const mine = Boolean(isMine(member))
+        const key = facePersonKey(member, mine)
+        const owner = String(member?.ownerName ?? member?.owner_name ?? '').trim()
+        const known = people.find(person => person.key === key)
+        if (known) {
+          known.members.push(member)
+          if (!known.name && owner) known.name = owner
+          continue
+        }
+        people.push({ key, name: owner, mine, members: [member] })
+      }
+      return [...people.filter(person => person.mine), ...people.filter(person => !person.mine)]
+    }
+
+    // One tile per person (#457): "Ann (you)" over "Chief, Researcher". The mark is the first Bot the
+    // person brought, so the grid keeps each Bot's own look; the tooltip names every Bot.
+    function FacePersonTile({ person, look } = {}) {
+      const bots = person.members.map(member => faceTileParts(member).name)
+      const who = person.name || (person.mine ? 'You' : 'Someone')
+      const label = person.mine && person.name ? `${person.name} (you)` : who
+      const handles = person.members.map(faceMemberHandle).filter(Boolean)
+      return h('li', {
+        className: 'fs-tile',
+        'data-flybot': 'face-member',
+        'data-mine': person.mine || undefined,
+        'data-handle': handles[0],
+        'data-handles': handles.join(' ') || undefined,
+        title: `${label} · ${bots.join(', ')}`,
+      },
+        h('span', { className: 'fs-tile-mark' },
+          h(FaceAvatar, { bot: look(person.members[0]), size: 48 }),
+          person.mine ? h('span', { className: 'fs-tile-mine', 'data-flybot': 'face-mine', title: 'mine', 'aria-label': 'mine' }) : null),
+        h('span', { className: 'fs-tile-name', 'data-flybot': 'face-owner', title: label }, label),
+        h('span', { className: 'fs-tile-sub', 'data-flybot': 'face-bot', title: bots.join(', ') }, bots.join(', ')))
+    }
+
+    const AUTO_SEND_NOTE = "Don't ask each time."
+
+    function FaceAutoSend({ on, busy, onChange, bot } = {}) {
+      return h('label', { className: 'fs-auto fs-face-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'face-auto-bot' },
+        h('input', {
+          type: 'checkbox',
+          checked: on === true,
+          disabled: !!busy,
+          'aria-label': `Auto-send ${bot || 'my Bot'}'s room messages`,
+          onChange: e => onChange?.(e.target.checked),
+        }),
+        `Auto-send ${bot || 'my Bot'} → room`)
+    }
+
+    // Leave asks once (#182): leaving ends my part in the room for good.
+    // `beside`: what sits next to Leave (Enter chat in a waiting room). It steps aside while
+    // "Leave this room?" asks, so the question never crowds a live button (#458).
+    function ConfirmLeave({ busy, onLeave, flybot = 'face-leave', size = 'fs-btn fs-btn-sm', beside = null } = {}) {
+      const [ask, setAsk] = useState(false)
+      if (!ask) {
+        const leave = h('button', { type: 'button', className: size, 'data-flybot': flybot, disabled: !!busy, onClick: () => setAsk(true) }, 'Leave')
+        return beside ? h(Fragment, null, leave, beside) : leave
+      }
+      return h('span', { className: 'fs-leave-ask', 'data-flybot': 'face-leave-confirm' },
+        h('span', { className: 'fs-hint' }, 'Leave this room?'),
+        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-yes', disabled: !!busy, onClick: () => { setAsk(false); onLeave?.() } }, 'Leave'),
+        h('button', { type: 'button', className: size, 'data-flybot': 'face-leave-no', onClick: () => setAsk(false) }, 'Stay'))
+    }
+
+    // Auto-send is one switch per Bot of mine in the room (#457, owner decision: option a), each
+    // naming its pair, "Auto-send Chief → room"; a Bot of mine whose switch is off still asks.
+    function FaceAutoSendControl({ bots = [] } = {}) {
+      const [on, setOn] = useState({})
+      const [busy, setBusy] = useState('')
+      const [error, setError] = useState('')
+      const ids = bots.map(bot => bot.id).join(',')
+      useEffect(() => {
+        call('social/status', {}).then(value => setOn(value?.faceAutoSend && typeof value.faceAutoSend === 'object' ? value.faceAutoSend : {}), () => {})
+      }, [ids])
+      if (!bots.length) return null
+      const toggle = async (bot, next) => {
+        setBusy(bot.id)
+        setError('')
+        try {
+          const result = await call('social/face-auto', { botId: bot.id, on: next })
+          setOn(result?.bots && typeof result.bots === 'object' ? result.bots : (list => ({ ...list, [bot.id]: next })))
+        } catch (e) { setError(errorText(e)) }
+        finally { setBusy('') }
+      }
+      return h('div', { className: 'fs-face-auto-wrap', 'data-flybot': 'face-auto-send' },
+        bots.map(bot => h(FaceAutoSend, { key: bot.id, bot: bot.name, on: on[bot.id] === true, busy: busy === bot.id, onChange: next => toggle(bot, next) })),
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
+    }
+
+    const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
+    const looksLikeBotId = (value) => /^bot_[a-z0-9]+$/i.test(String(value ?? '').trim())
+    const looksLikeHandle = (value) => /^@[\w.-]+$/.test(String(value ?? '').trim())
+    function readableParty(value, fallback = '') {
+      const text = (typeof value === 'object' && value
+        ? String(value.owner_display_name || value.display_name || value.handle || value.name || '')
+        : String(value ?? '')).trim()
+      if (!text || looksLikeBotId(text)) return fallback
+      if (looksLikeHandle(text)) {
+        const body = text.replace(/^@+/, '').split('.')[0]
+        if (!body || looksLikeBotId(body)) return fallback
+        return body.charAt(0).toUpperCase() + body.slice(1)
+      }
+      return text
+    }
+    function pendingTitle(item) {
+      const from = readableParty(item.from, 'Bot')
+      const to = readableParty(item.toName) || (item.kind === 'face_room_message' ? 'the room' : readableParty(item.to, 'friend'))
+      return item.from || item.to || item.toName ? `${from} → ${to}` : (to || 'Outbound reply')
+    }
+
+    // Compact jump list. Approve / Reject live on the in-chat card. #P796: a failed hold lists here too,
+    // so the list carries two states and every head counts only its own rows — a failed send is never
+    // read as one more message waiting for approval.
+    function PendingApprovals({ items, onOpen, onRetry, busy }) {
+      if (!items?.length) return null
+      const rowOf = (item) => {
+        const failed = item.status === 'failed'
+        // #P796: a failed hold sitting in another chat is still the owner's, so it lists here too, with
+        // the same Retry its in-chat card offers — and only while the shared canRetry() allows one.
+        const retry = failed && typeof onRetry === 'function' && canRetry(item)
+        const row = h('button', {
+          key: item.id, type: 'button', className: 'fs-pending-item', 'data-flybot': 'pending-item',
+          ...(failed ? { 'data-state': 'failed' } : {}),
+          title: oneLine(item.text || item.summary || pendingTitle(item)),
+          onClick: () => onOpen?.(item),
+        },
+          h('span', { className: 'fs-text' },
+            h('span', { className: 'fs-name' }, pendingTitle(item)),
+            h('span', { className: 'fs-pending-one' }, failed ? oneLine(item.error || tr('Not sent')) : oneLine(item.text || item.summary || ''))))
+        if (!retry) return row
+        return h('div', { key: item.id, className: 'fs-pending-row', 'data-flybot': 'pending-row' },
+          row,
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'pending-retry',
+            // #3050: the dock drops every Retry while any decision is in flight, so the list goes
+            // disabled with it — an enabled button whose click is swallowed is a dead click.
+            disabled: !!busy, onClick: () => onRetry(item),
+          }, tr('Retry')))
+      }
+      const failedItems = items.filter(item => item.status === 'failed')
+      const waitingItems = items.filter(item => item.status !== 'failed')
+      const waitingHead = waitingItems.length ? tr('Waiting for your approval') : null
+      const failedHead = failedItems.length ? tr('Not sent') : null
+      const group = (head, rows) => rows.length
+        ? [h('div', { key: `head-${head}`, className: 'fs-label' }, head, h('span', { className: 'fs-count' }, String(rows.length))), ...rows.map(rowOf)]
+        : []
+      return h('div', {
+        className: 'fs-pending', 'data-flybot': 'pending-approvals', role: 'region',
+        'aria-label': failedItems.length ? [waitingHead, failedHead].filter(Boolean).join(' · ') : tr('Messages waiting for your approval'),
+      }, [...group(waitingHead, waitingItems), ...group(failedHead, failedItems)])
+    }
+
+    const STOP_JOIN = /6-digit|no longer valid|Too many (failed )?attempts|signed you out/i
+    function shouldStopJoin(e) {
+      const code = String(e?.code ?? '')
+      if (['invalid_code', 'code_void', 'locked_out', 'unauthorized', 'rate_limited'].includes(code)) return true
+      return STOP_JOIN.test(String(e?.message ?? e ?? ''))
+    }
+    // An invite refusal is about the ticket or the room, so it answers the same way for every Bot and
+    // the link path stops after the first one; a refusal about one Bot alone (already in the room, its
+    // token revoked, forbidden) keeps the other Bots going (#817).
+    const STOP_INVITE = ['invite_not_found', 'expired', 'revoked', 'ended', 'room_full']
+    function stopInviteJoin(e) {
+      return STOP_INVITE.includes(String(e?.code ?? '')) || shouldStopJoin(e)
+    }
+    function memberIsMine(member, bots, room) {
+      if (member?.remote === false) return true
+      const handle = typeof member?.handle === 'object' && member.handle
+        ? String(member.handle.handle ?? '')
+        : String(member?.handle ?? '')
+      if (!handle) return false
+      if ((room?.mineHandles ?? []).includes(handle)) return true
+      return (bots ?? []).some(bot => bot.handle === handle)
+    }
+
+    // #1005: a room number is exactly six digits. A stored value that is not one is no number at
+    // all — cutting 1234567 down to 123456 would name a different room, not fall back.
+    function sixRoomDigits(value) {
+      const digits = String(value ?? '').replace(/\D/g, '')
+      return digits.length === 6 ? digits : ''
+    }
+    function faceWaitCode(room, typed) {
+      return sixRoomDigits(room?.joinCode || room?.code) || sixRoomDigits(typed)
+    }
+    // QR code in byte mode, error correction level M, versions 1-10 (#773): a room number is 13
+    // bytes and an invite link is 40-70, so the version is picked from the payload. Everything is
+    // computed here — no network, no dependency, no third-party image service.
+    // network, no dependency, no third-party image service.
+    const QR_EC_M = 0
+    const QR_GF_EXP = new Uint8Array(512)
+    const QR_GF_LOG = new Uint8Array(256)
+    ;(() => {
+      let x = 1
+      for (let i = 0; i < 255; i += 1) {
+        QR_GF_EXP[i] = x
+        QR_GF_LOG[x] = i
+        x <<= 1
+        if (x & 0x100) x ^= 0x11d
+      }
+      for (let i = 255; i < 512; i += 1) QR_GF_EXP[i] = QR_GF_EXP[i - 255]
+    })()
+    const qrMul = (a, b) => (a === 0 || b === 0 ? 0 : QR_GF_EXP[QR_GF_LOG[a] + QR_GF_LOG[b]])
+    function qrRsGenerator(degree) {
+      let poly = [1]
+      for (let i = 0; i < degree; i += 1) {
+        const next = new Array(poly.length + 1).fill(0)
+        for (let j = 0; j < poly.length; j += 1) {
+          next[j] ^= poly[j]
+          next[j + 1] ^= qrMul(poly[j], QR_GF_EXP[i])
+        }
+        poly = next
+      }
+      return poly
+    }
+    function qrRsRemainder(bytes, degree) {
+      const gen = qrRsGenerator(degree)
+      const res = new Array(bytes.length + degree).fill(0)
+      for (let i = 0; i < bytes.length; i += 1) res[i] = bytes[i]
+      for (let i = 0; i < bytes.length; i += 1) {
+        const factor = res[i]
+        if (!factor) continue
+        for (let j = 0; j < gen.length; j += 1) res[i + j] ^= qrMul(gen[j], factor)
+      }
+      return res.slice(bytes.length)
+    }
+    // Version, level M: [EC codewords per block, blocks of data codewords, data codewords per block,
+    // second block group count, its data codewords]. Versions 1-10 hold every payload this needs.
+    const QR_M_BLOCKS = [
+      [10, 1, 16, 0, 0], [16, 1, 28, 0, 0], [26, 1, 44, 0, 0], [18, 2, 32, 0, 0], [24, 2, 43, 0, 0],
+      [16, 4, 27, 0, 0], [18, 4, 31, 0, 0], [22, 2, 38, 2, 39], [22, 3, 36, 2, 37], [26, 4, 43, 1, 44],
+    ]
+    const QR_ALIGN = [[], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]]
+    const QR_REMAINDER = [0, 7, 7, 7, 7, 7, 0, 0, 0, 0]
+    function qrDataCodewords(version) {
+      const [, b1, d1, b2, d2] = QR_M_BLOCKS[version - 1]
+      return b1 * d1 + b2 * d2
+    }
+    function qrUtf8(text) {
+      const bytes = []
+      for (const char of String(text)) {
+        const point = char.codePointAt(0)
+        if (point < 0x80) bytes.push(point)
+        else if (point < 0x800) bytes.push(0xc0 | (point >> 6), 0x80 | (point & 0x3f))
+        else if (point < 0x10000) bytes.push(0xe0 | (point >> 12), 0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f))
+        else bytes.push(0xf0 | (point >> 18), 0x80 | ((point >> 12) & 0x3f), 0x80 | ((point >> 6) & 0x3f), 0x80 | (point & 0x3f))
+      }
+      return bytes
+    }
+    function qrVersionFor(byteLength) {
+      for (let version = 1; version <= 10; version += 1) {
+        const bits = 4 + (version < 10 ? 8 : 16) + byteLength * 8
+        if (bits <= qrDataCodewords(version) * 8) return version
+      }
+      return 0
+    }
+    function qrCodewords(text) {
+      const bytes = qrUtf8(text)
+      const version = qrVersionFor(bytes.length)
+      if (!version) throw new Error('qr: payload too long')
+      const bits = []
+      const push = (value, width) => { for (let i = width - 1; i >= 0; i -= 1) bits.push((value >> i) & 1) }
+      push(0b0100, 4)
+      push(bytes.length, version < 10 ? 8 : 16)
+      for (const byte of bytes) push(byte, 8)
+      const capacity = qrDataCodewords(version) * 8
+      for (let i = 0; i < 4 && bits.length < capacity; i += 1) bits.push(0)
+      while (bits.length % 8) bits.push(0)
+      const data = []
+      for (let i = 0; i < bits.length; i += 8) data.push(bits.slice(i, i + 8).reduce((acc, bit) => (acc << 1) | bit, 0))
+      for (let pad = 0; data.length < qrDataCodewords(version); pad += 1) data.push(pad % 2 ? 0x11 : 0xec)
+      const [ecPerBlock, b1, d1, b2, d2] = QR_M_BLOCKS[version - 1]
+      const blocks = []
+      let at = 0
+      for (let i = 0; i < b1; i += 1) { blocks.push({ data: data.slice(at, at + d1), ec: [] }); at += d1 }
+      for (let i = 0; i < b2; i += 1) { blocks.push({ data: data.slice(at, at + d2), ec: [] }); at += d2 }
+      for (const block of blocks) block.ec = qrRsRemainder(block.data, ecPerBlock)
+      const out = []
+      const maxData = Math.max(...blocks.map(block => block.data.length))
+      for (let i = 0; i < maxData; i += 1) for (const block of blocks) if (i < block.data.length) out.push(block.data[i])
+      for (let i = 0; i < ecPerBlock; i += 1) for (const block of blocks) out.push(block.ec[i])
+      return { version, codewords: out, remainder: QR_REMAINDER[version - 1] }
+    }
+    function qrFormatBits(mask) {
+      const data = (QR_EC_M << 3) | mask
+      let value = data << 10
+      for (let i = 14; i >= 10; i -= 1) if ((value >>> i) & 1) value ^= 0x537 << (i - 10)
+      return ((data << 10) | value) ^ 0x5412
+    }
+    function qrSkeleton(version) {
+      const size = version * 4 + 17
+      const modules = Array.from({ length: size }, () => new Array(size).fill(0))
+      const fixed = Array.from({ length: size }, () => new Array(size).fill(false))
+      const set = (x, y, dark) => { modules[y][x] = dark ? 1 : 0; fixed[y][x] = true }
+      const finder = (cx, cy) => {
+        for (let dy = -4; dy <= 4; dy += 1) {
+          for (let dx = -4; dx <= 4; dx += 1) {
+            const x = cx + dx
+            const y = cy + dy
+            if (x < 0 || y < 0 || x >= size || y >= size) continue
+            const d = Math.max(Math.abs(dx), Math.abs(dy))
+            set(x, y, d !== 2 && d !== 4)
+          }
+        }
+      }
+      finder(3, 3)
+      finder(size - 4, 3)
+      finder(3, size - 4)
+      for (let i = 8; i < size - 8; i += 1) {
+        set(i, 6, i % 2 === 0)
+        set(6, i, i % 2 === 0)
+      }
+      const centers = QR_ALIGN[version - 1]
+      for (const cy of centers) {
+        for (const cx of centers) {
+          // Only the three that sit on a finder are dropped; the ones on the timing lines belong
+          // there and overwrite those modules (the spec places them, it does not skip them).
+          if ((cx === 6 && cy === 6) || (cx === 6 && cy === size - 7) || (cx === size - 7 && cy === 6)) continue
+          for (let dy = -2; dy <= 2; dy += 1) {
+            for (let dx = -2; dx <= 2; dx += 1) set(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1)
+          }
+        }
+      }
+      // The format and version blocks are function patterns too: reserve them before the data
+      // snake, or data bits would land under them and shift every codeword after.
+      for (let i = 0; i < 9; i += 1) {
+        if (i !== 6) fixed[8][i] = true
+        if (i !== 6) fixed[i][8] = true
+      }
+      for (let i = 0; i < 8; i += 1) { fixed[8][size - 1 - i] = true; fixed[size - 1 - i][8] = true }
+      if (version >= 7) {
+        for (let i = 0; i < 6; i += 1) {
+          for (let j = 0; j < 3; j += 1) { fixed[i][size - 11 + j] = true; fixed[size - 11 + j][i] = true }
+        }
+      }
+      set(8, size - 8, true)
+      return { size, modules, fixed }
+    }
+    function qrPlaceFormat(modules, fixed, mask) {
+      const size = modules.length
+      const bits = qrFormatBits(mask)
+      for (let i = 0; i < 15; i += 1) {
+        const dark = ((bits >> i) & 1) === 1
+        // Around the top-left finder, skipping the timing line.
+        if (i < 6) { modules[i][8] = dark ? 1 : 0; fixed[i][8] = true }
+        else if (i === 6) { modules[7][8] = dark ? 1 : 0; fixed[7][8] = true }
+        else if (i === 7) { modules[8][8] = dark ? 1 : 0; fixed[8][8] = true }
+        else if (i === 8) { modules[8][7] = dark ? 1 : 0; fixed[8][7] = true }
+        else { modules[8][14 - i] = dark ? 1 : 0; fixed[8][14 - i] = true }
+      }
+      for (let i = 0; i < 15; i += 1) {
+        const dark = ((bits >> i) & 1) === 1
+        if (i < 8) { modules[8][size - 1 - i] = dark ? 1 : 0; fixed[8][size - 1 - i] = true }
+        else { modules[size - 15 + i][8] = dark ? 1 : 0; fixed[size - 15 + i][8] = true }
+      }
+    }
+    function qrPlaceVersion(modules, fixed, version) {
+      if (version < 7) return
+      const size = modules.length
+      let rem = version
+      for (let i = 0; i < 12; i += 1) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25)
+      const bits = (version << 12) | rem
+      for (let i = 0; i < 18; i += 1) {
+        const dark = ((bits >> i) & 1) === 1
+        const a = size - 11 + (i % 3)
+        const b = Math.floor(i / 3)
+        modules[b][a] = dark ? 1 : 0
+        fixed[b][a] = true
+        modules[a][b] = dark ? 1 : 0
+        fixed[a][b] = true
+      }
+    }
+    function qrPlaceData(modules, fixed, codewords, remainder) {
+      const size = modules.length
+      const bits = []
+      for (const byte of codewords) for (let i = 7; i >= 0; i -= 1) bits.push((byte >> i) & 1)
+      for (let i = 0; i < remainder; i += 1) bits.push(0)
+      let index = 0
+      let upward = true
+      for (let right = size - 1; right >= 1; right -= 2) {
+        if (right === 6) right = 5
+        for (let step = 0; step < size; step += 1) {
+          const y = upward ? size - 1 - step : step
+          for (let pair = 0; pair < 2; pair += 1) {
+            const x = right - pair
+            if (fixed[y][x]) continue
+            modules[y][x] = bits[index] ?? 0
+            index += 1
+          }
+        }
+        upward = !upward
+      }
+    }
+    const QR_MASKS = [
+      (x, y) => (x + y) % 2 === 0,
+      (x, y) => y % 2 === 0,
+      (x) => x % 3 === 0,
+      (x, y) => (x + y) % 3 === 0,
+      (x, y) => (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0,
+      (x, y) => ((x * y) % 2) + ((x * y) % 3) === 0,
+      (x, y) => (((x * y) % 2) + ((x * y) % 3)) % 2 === 0,
+      (x, y) => (((x + y) % 2) + ((x * y) % 3)) % 2 === 0,
+    ]
+    function qrMasked(fixed, modules, mask) {
+      const size = modules.length
+      const rule = QR_MASKS[mask]
+      const out = modules.map(row => row.slice())
+      for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) if (!fixed[y][x] && rule(x, y)) out[y][x] ^= 1
+      return out
+    }
+    function qrPenalty(modules) {
+      const size = modules.length
+      let score = 0
+      const runs = (line) => {
+        let total = 0
+        let run = 1
+        for (let i = 1; i < line.length; i += 1) {
+          if (line[i] === line[i - 1]) run += 1
+          else { if (run >= 5) total += 3 + (run - 5); run = 1 }
+        }
+        if (run >= 5) total += 3 + (run - 5)
+        return total
+      }
+      const finderLike = (line) => {
+        let total = 0
+        const text = line.join('')
+        for (const pattern of ['10111010000', '00001011101']) {
+          let at = text.indexOf(pattern)
+          while (at >= 0) { total += 40; at = text.indexOf(pattern, at + 1) }
+        }
+        return total
+      }
+      for (let y = 0; y < size; y += 1) { const row = modules[y]; score += runs(row) + finderLike(row) }
+      for (let x = 0; x < size; x += 1) { const col = modules.map(row => row[x]); score += runs(col) + finderLike(col) }
+      for (let y = 0; y < size - 1; y += 1) {
+        for (let x = 0; x < size - 1; x += 1) {
+          const value = modules[y][x]
+          if (value === modules[y][x + 1] && value === modules[y + 1][x] && value === modules[y + 1][x + 1]) score += 3
+        }
+      }
+      let dark = 0
+      for (const row of modules) for (const value of row) dark += value
+      const percent = (dark * 100) / (size * size)
+      score += Math.floor(Math.abs(percent - 50) / 5) * 10
+      return score
+    }
+    function qrMatrix(text) {
+      const { version, codewords, remainder } = qrCodewords(String(text))
+      const { size, modules, fixed } = qrSkeleton(version)
+      qrPlaceData(modules, fixed, codewords, remainder)
+      qrPlaceVersion(modules, fixed, version)
+      let best = null
+      for (let mask = 0; mask < 8; mask += 1) {
+        const framed = modules.map(row => row.slice())
+        const framedFixed = fixed.map(row => row.slice())
+        qrPlaceFormat(framed, framedFixed, mask)
+        const maskedModules = qrMasked(framedFixed, framed, mask)
+        const score = qrPenalty(maskedModules)
+        if (!best || score < best.score) best = { mask, score, modules: maskedModules }
+      }
+      return { version, size, mask: best.mask, modules: best.modules.map(row => row.map(Boolean)) }
+    }
+
+    // The payload is the room number and nothing else: a prefix so a foreign code is easy to
+    // tell apart, no deadline and no name (the number next to it already ticks, #773).
+    const FACE_QR_PREFIX = 'FLYBOT-'
+    const faceQrText = (code) => {
+      const digits = String(code ?? '').replace(/\D/g, '').slice(0, 6)
+      return digits.length === 6 ? `${FACE_QR_PREFIX}${digits}` : ''
+    }
+    // Only our own payload is a room number: a QR carrying a website is not a way in.
+    const faceQrCode = (text) => String(text ?? '').trim().toUpperCase().match(/^FLYBOT-(\d{6})$/)?.[1] ?? ''
+    // A room invite is a link into an established room (#773, bot-social#39): the only shape this
+    // client hands out and accepts, so a scanned code and a pasted link are the same thing.
+    const faceInviteTicket = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/([A-Za-z0-9_-]{16,64})\/?(?:[?#].*)?$/i)?.[1] ?? ''
+    const INVITE_UNSUPPORTED = 'Invites need a newer Bot Social. The 6-digit number still works.'
+    const INVITE_LINK_COPY = 'That is not an invite link. It looks like https://…/r/…'
+    // Two shapes in one field (#852): the local one names the Bot to knock on, and its ticket is not a
+    // face-room invite. Same regex as the host's parseInviteLink; the sentence is shown here too.
+    const localInviteHandle = (text) => String(text ?? '').trim().match(/^(?:https?:)?\/\/[^\s/]+\/r\/(@[A-Za-z0-9._-]{1,120})\/[A-Za-z0-9_-]{16,64}\/?(?:[?#].*)?$/i)?.[1] ?? ''
+    // A core endpoint by its own name (#876): the local room's link lives in the host, not in this plugin.
+    // The interface's translator (#892): core's dictionary carries this plugin's Members-card and dialog copy,
+    // so a zh UI reads it in Chinese. An older host has none: the English stands, with {params} filled in.
+    // #892: the entry, the dialog's title and its copy name both ways in (core's dictionary has the zh).
+    // #1021: one row for two intents read as one label that names neither. The picker offers
+    // **Join by number or link** and **Start a face-to-face room** as separate rows; both open this
+    // screen, which titles itself after the row that was tapped, and only the join path carries the
+    // link and scan fields, because those are ways into someone else's group.
+    const JOIN_BY_NUMBER = 'Join by number or link'
+    const START_FACE_ROOM = 'Start a face-to-face room'
+    // #1053: a fresh code's first step is starting the room. #999: the same answer also means a
+    // room with this number may already have opened, so the hint still points at an invite link.
+    const NOBODY_TITLE = 'Start a new room with {code}'
+    const NOBODY_HINT = 'No one is waiting under this number. If someone already opened the room, the number no longer works — ask them for an invite link.'
+    const START_NEW_ROOM = 'Start a new room'
+    const JOIN_OR_CREATE_HINT = 'Enter a number, or paste a group invite link'
+    const START_FACE_HINT = 'Pick the number everyone nearby types'
+    const JOIN_OR_CREATE_ABOUT = 'Pick your Bots. Enter the same 6-digit number as everyone nearby to build a room together, or paste a group invite link or scan its QR code to join that group.'
+    // The start path has no invitation in it: a room is built by typing one number together.
+    const START_FACE_ABOUT = 'Pick your Bots and choose a 6-digit number. Everyone nearby types the same number to build the room together.'
+    const LINK_PLACEHOLDER = 'Or paste a group invite link (https://…/r/…)'
+    const tr = (text, params) => {
+      const fn = globalThis.__flybot__?.t
+      if (typeof fn === 'function') {
+        try { return fn(text, params) } catch { /* fall through to the English */ }
+      }
+      return String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? ''))
+    }
+    // Which language the window is in, for the one thing a translator cannot carry: the order a date is
+    // written in. A plain script cannot import core's `language()`, so it asks the host translator for a
+    // word the zh dictionary surely holds; a host without one keeps English, which is `tr`'s fallback too.
+    const zhUi = () => {
+      const fn = globalThis.__flybot__?.t
+      if (typeof fn !== 'function') return false
+      try { return fn('Tasks') === '任务' } catch { return false }
+    }
+    const host = (endpoint, payload) => {
+      const fn = globalThis.__flybot__?.host
+      if (typeof fn !== 'function') return Promise.reject(Object.assign(new Error('This FlyBot cannot make room links yet.'), { code: 'bot/not-found' }))
+      return fn(endpoint, payload)
+    }
+    // The host keeps a deadline in milliseconds; the countdown and the card read an ISO time.
+    const isoAt = (ms) => (Number.isFinite(Number(ms)) && Number(ms) > 0 ? new Date(Number(ms)).toISOString() : '')
+    // One sentence per way a room link is refused (#876), never the generic "not an invite link".
+    const LOCAL_REFUSAL_COPY = {
+      expired: 'That link has expired. Ask for a new one.',
+      revoked: 'That link was withdrawn. Ask for a new one.',
+      // A link admits anyone it is given to (#892): this refusal is about this home's own earlier claim.
+      'claimed-elsewhere': 'You already joined with that link using other Bots. Leave the group first to join with different ones.',
+      'own-invite': 'That link is for this FlyBot\u2019s own room.',
+      busy: 'Too many tries for now. Wait a minute and try again.',
+      unknown: 'That link does not open any room. Check that it was copied whole.',
+      'lookup-failed': 'Bot Social could not look up that link right now. Try again.',
+      consumed: 'That link cannot seat these Bots. Ask for a new one.',
+      'not-addable': 'That room cannot take guests right now.',
+      'no-sender': 'This FlyBot has no Bot Social identity yet.',
+    }
+    const localRefusal = (code) => LOCAL_REFUSAL_COPY[String(code ?? '')] ?? LOCAL_REFUSAL_COPY['lookup-failed']
+    // The preview card names a room the person has not entered (#798). `name` is that room's own
+    // string and the host passes it through as sent, so the last place before a person reads it
+    // cleans it: one line, no controls, brackets, markup or @, capped — the same rules as the
+    // server's cleanFaceName, applied to the one value the server hands over uncleaned.
+    const ROOM_NAME_MAX = 60
+    // Strip the untrusted markers to a fixed point, exactly as the server's `stripFaceMarkers` does
+    // (#822): one pass can remove a match and assemble a new one -- `<untrusted-<untrusted-filemessage>`
+    // loses the inner match and leaves a complete `<untrusted-message>` behind -- and the room's own
+    // string is only cleaned on this side before a person reads it.
+    const stripUntrustedMarkers = (text) => {
+      let out = String(text ?? '')
+      for (let previous; previous !== out;) {
+        previous = out
+        out = out.replace(/<\/?\s*untrusted-(?:file|message)/gi, '')
+      }
+      return out
+    }
+    const cleanRoomName = (value, fallback = '') => stripUntrustedMarkers(value)
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+      .replace(/[[\]"<>`@]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, ROOM_NAME_MAX) || fallback
+    // Which link of a room a panel may show (#1019): one that still works. The host answers `room-invite`
+    // with the newest open link and every open link, so an expired newest one (an older Bot Social still
+    // dates links) does not hide a later one that is still good, and a link nobody can join with is never
+    // called live. The rule is the Members card's own (#876, `client.js:1201`); the card reads its answer
+    // inline and this helper is the strip's, so the two agree on the rule without sharing the code (#1038).
+    const liveInviteOf = (value) => {
+      // The host keeps a deadline in milliseconds and this card reads an ISO time, the same unit the
+      // Members card converts (#876): handing the number straight to `qrJoinable` makes Date.parse return
+      // NaN, which calls a link that still works expired (#1019).
+      const at = item => (item?.expiresAt ? isoAt(item.expiresAt) : 'open')
+      const open = (Array.isArray(value?.invites) ? value.invites : [])
+        .filter(item => item?.url && qrJoinable(at(item), Date.now()))
+      const newest = value?.invite?.url && qrJoinable(at(value.invite), Date.now()) ? value.invite : null
+      return newest ?? open.at(-1) ?? null
+    }
+    // The card is core's, not this plugin's (#876): `invitePreviewOf` and `RoomInvitePreview` are
+    // registered by ds-bot's client bundle, so the face-room paste flow and the member-invite dialog
+    // draw one tree of elements. This file keeps no copy of the markup.
+    const invitePreview = (seen) => globalThis.__flybot__?.invitePreviewOf?.(seen) ?? null
+    const InvitePreviewCard = (props) => h(globalThis.__flybot__?.RoomInvitePreview ?? (() => null), { h, ...props })
+    const qrPath = (modules) => {
+      const parts = []
+      for (let y = 0; y < modules.length; y += 1) {
+        for (let x = 0; x < modules[y].length; x += 1) if (modules[y][x]) parts.push(`M${x} ${y}h1v1h-1z`)
+      }
+      return parts.join('')
+    }
+    // Joining stops at Bot Social's deadline (#458), so the QR goes with the number: a code on
+    // screen is never a code that no longer works. 'open' means no deadline to compare.
+    const qrJoinable = (at, now) => {
+      if (at === 'open') return true
+      const until = Date.parse(String(at ?? ''))
+      return Number.isFinite(until) && until > now
+    }
+    function QrImage({ text, label, hint, kind, attrs, at, offsetMs } = {}) {
+      if (!text || !qrJoinable(at, Date.now() + (Number(offsetMs) || 0))) return null
+      let matrix
+      try { matrix = qrMatrix(text) } catch { return null }
+      const size = matrix.size
+      return h('div', { className: 'fs-qr', 'data-flybot': kind, 'data-modules': size, ...(attrs ?? {}) },
+        h('svg', {
+          className: 'fs-qr-svg', width: size, height: size, viewBox: `0 0 ${size} ${size}`,
+          role: 'img', 'aria-label': label, shapeRendering: 'crispEdges',
+        },
+          h('rect', { width: size, height: size, fill: '#ffffff' }),
+          h('path', { d: qrPath(matrix.modules), fill: '#000000' })),
+        h('div', { className: 'fs-qr-hint', 'data-flybot': `${kind}-hint` }, hint))
+    }
+    function FaceQr({ code, at, offsetMs } = {}) {
+      const digits = faceQrCode(faceQrText(code))
+      if (!digits) return null
+      return h(QrImage, {
+        text: faceQrText(digits), kind: 'face-qr', at, offsetMs,
+        attrs: { 'data-code': digits }, label: `QR code for room number ${digits}`,
+        hint: 'Scan this with FlyBot to join',
+      })
+    }
+    // An invite into a room that already exists: the QR is the link, so a phone camera opens it and
+    // FlyBot's own scan joins with the same ticket. Nothing here is minted by the browser.
+    function FaceInviteCard({ roomId } = {}) {
+      const [invite, setInvite] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [copied, setCopied] = useState(false)
+      const [tick, setTick] = useState(0)
+      useEffect(() => {
+        if (!invite?.expiresAt) return undefined
+        return everySecond(() => setTick(n => n + 1))
+      }, [invite?.expiresAt])
+      if (!roomId) return null
+      const mint = async () => {
+        setBusy(true)
+        try {
+          const value = await call('social/face-invite', { roomId })
+          if (value?.unsupported) setInvite({ unsupported: true })
+          else if (value?.url) setInvite({ url: String(value.url), ticket: value.ticket, expiresAt: value.expiresAt })
+          else setInvite({ error: 'Bot Social did not send an invite. Try again.' })
+        } catch (e) {
+          setInvite({ error: errorText(e) })
+        } finally { setBusy(false) }
+      }
+      const revoke = async () => {
+        setBusy(true)
+        try {
+          await call('social/face-invite-revoke', { roomId, ticket: invite?.ticket })
+          setInvite({ revoked: true })
+        } catch (e) {
+          setInvite({ error: errorText(e) })
+        } finally { setBusy(false) }
+      }
+      const copy = async () => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+        try {
+          await clip?.writeText?.(invite.url)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: the link is on screen to select */ }
+      }
+      const live = invite?.url && qrJoinable(invite.expiresAt || 'open', Date.now())
+      return h('div', { className: 'fs-invite', 'data-flybot': 'face-invite', 'data-tick': tick },
+        h('div', { className: 'fs-invite-head' },
+          h('span', { className: 'fs-label-inline' }, tr('Invite by link')),
+          invite?.url && !live
+            ? h('span', { className: 'fs-hint', 'data-flybot': 'face-invite-ended' }, tr('This link has expired.'))
+            : null,
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'face-invite-mint',
+            disabled: !!busy || (!!invite?.url && live), onClick: mint,
+          }, invite?.url && live ? 'Link ready' : tr('Create link'))),
+        invite?.unsupported
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-unsupported', role: 'status' }, INVITE_UNSUPPORTED)
+          : null,
+        invite?.revoked
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-revoked', role: 'status' }, tr('The link was withdrawn. Nobody can join with it now.'))
+          : null,
+        invite?.error
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-fail', 'data-tone': 'error', role: 'status' }, invite.error)
+          : null,
+        live
+          ? h('div', { className: 'fs-invite-live', 'data-flybot': 'face-invite-live' },
+            h(QrImage, {
+              text: invite.url, kind: 'face-invite-qr', at: invite.expiresAt || 'open', attrs: { 'data-url': invite.url },
+              label: 'QR code for this room invite', hint: 'Scan to open this room',
+            }),
+            h('div', { className: 'fs-invite-link' },
+              h('code', { className: 'fs-invite-url', 'data-flybot': 'face-invite-url' }, invite.url),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-copy', onClick: copy }, copied ? 'Copied' : tr('Copy link'))),
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-invite-count' },
+              invite.expiresAt ? countdownLine(countdown(invite.expiresAt)) : 'Anyone with the link can join while the room is open.'),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'face-invite-revoke', disabled: !!busy, onClick: revoke }, tr('Withdraw link')))
+          : null)
+    }
+    // #876: Invite by link in a local group's Members card. The host makes the link (Bot Social records
+    // it, so a stranger can join); this row mints, shows the QR and the link, counts down and withdraws.
+    // Several people may each get a link (#878): the newest is shown, and a joined one stops showing.
+    function LocalInviteRow({ room, roster } = {}) {
+      useStyles()
+      const roomId = room?.id
+      const [invite, setInvite] = useState(null)
+      const [others, setOthers] = useState(0)
+      const [note, setNote] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [copied, setCopied] = useState(false)
+      const [, setTick] = useState(0)
+      const [pending, setPending] = useState(null)
+      // The newest open link is the one shown; the others still work until withdrawn (no deadline).
+      const openOf = value => (Array.isArray(value?.invites) ? value.invites.filter(item => item?.url) : [])
+      const waitingOf = value => {
+        const open = openOf(value)
+        return open.find(item => item?.waiting?.reason)?.waiting ?? (value?.invite?.waiting?.reason ? value.invite.waiting : null)
+      }
+      const take = (value) => {
+        const shown = value?.invite?.url ? value.invite : null
+        setInvite(shown)
+        setOthers(openOf(value).filter(item => item.ticket !== shown?.ticket).length)
+        setPending(waitingOf(value))
+      }
+      // How many open links there are besides the one on screen (none shown: all of them).
+      // A count that cannot be read keeps the one on screen: the mint or withdraw itself already landed.
+      const recount = async (shownTicket) => {
+        let value
+        try { value = await host('room-invite', { roomId }) } catch { return }
+        setOthers(openOf(value).filter(item => item.ticket !== shownTicket).length)
+        setPending(waitingOf(value))
+      }
+      useEffect(() => {
+        if (!roomId) return undefined
+        let gone = false
+        host('room-invite', { roomId }).then(value => { if (!gone) take(value) }, () => {})
+        return () => { gone = true }
+      }, [roomId])
+      // Only a link an older Bot Social still dates counts down.
+      useEffect(() => (invite?.expiresAt ? everySecond(() => setTick(n => n + 1)) : undefined), [invite?.expiresAt])
+      if (!roomId) return null
+      // #2418: every control this row draws writes (mint, revoke, revoke-all, seat), and a read-only
+      // window can only have them refused, so it reads the reason instead.
+      const locked = readOnlyReason(roster)
+      if (locked) {
+        return h('div', { className: 'fs-invite', 'data-flybot': 'room-invite' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-readonly', role: 'status' }, locked))
+      }
+      const run = async (fn) => {
+        setBusy(true)
+        setNote(null)
+        try { await fn() } catch (e) { setNote({ tone: 'error', text: errorText(e) }) } finally { setBusy(false) }
+      }
+      const mint = () => run(async () => {
+        const value = await host('room-invite-mint', { roomId })
+        if (!value?.invite?.url) {
+          setNote({ tone: 'error', text: tr('No link came back. Try again.') })
+          return
+        }
+        setInvite(value.invite)
+        await recount(value.invite.ticket)
+      })
+      const revoke = () => run(async () => {
+        await host('room-invite-revoke', { roomId, ticket: invite?.ticket })
+        setInvite(null)
+        await recount(undefined)
+        setNote({ tone: 'hint', text: tr('The link was withdrawn. Nobody can join with it now.') })
+      })
+      const revokeAll = () => run(async () => {
+        await host('room-invite-revoke', { roomId })
+        setInvite(null)
+        setOthers(0)
+        setPending(null)
+        setNote({ tone: 'hint', text: tr('Every unused link was withdrawn.') })
+      })
+      const seat = () => run(async () => {
+        take(await host('room-invite-seat', { roomId }))
+      })
+      const waitingText = (item) => {
+        if (item?.reason === 'not-addable') {
+          const names = (Array.isArray(item.bots) ? item.bots : []).filter(Boolean).join(', ')
+          return names
+            ? tr('{names} cannot be shown to someone who joins by link. Share them (Bot settings → Sharing) or remove them from the group, then seat the guest.', { names })
+            : tr('A Bot in this group cannot be shown to someone who joins by link. Share that Bot or remove it, then seat the guest.')
+        }
+        if (item?.reason === 'held') return tr('A guest is in the group, but telling their FlyBot is waiting for your approval.')
+        return tr('A guest is in the group, but their FlyBot has not opened it yet. Seat them again.')
+      }
+      const copy = async () => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+        try {
+          await clip?.writeText?.(invite.url)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: the link is on screen to select */ }
+      }
+      // No deadline: the QR shows as long as the link is open ('open'); a dated link stops at its date.
+      const dated = Boolean(invite?.expiresAt)
+      const at = dated ? isoAt(invite.expiresAt) : 'open'
+      const live = Boolean(invite?.url) && qrJoinable(at, Date.now())
+      const left = dated ? Math.max(0, Date.parse(at) - Date.now()) : 0
+      const leftText = `${Math.floor(Math.ceil(left / 1000) / 60)}:${String(Math.ceil(left / 1000) % 60).padStart(2, '0')}`
+      return h('div', { className: 'fs-invite', 'data-flybot': 'room-invite' },
+        h('div', { className: 'fs-invite-head' },
+          h('span', { className: 'fs-label-inline' }, tr('Invite by link')),
+          h('button', {
+            type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'room-invite-mint', disabled: busy, onClick: mint,
+          }, live ? tr('New link') : tr('Create link'))),
+        invite?.url && !live ? h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-ended' }, tr('This link has expired.')) : null,
+        live ? null : h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-about' },
+          tr('Anyone you give the link to can join with their Bot, until you withdraw it. They do not become a friend.')),
+        note ? h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-note', 'data-tone': note.tone, role: 'status' }, note.text) : null,
+        live
+          ? h('div', { className: 'fs-invite-live', 'data-flybot': 'room-invite-live' },
+            h(QrImage, {
+              text: invite.url, kind: 'room-invite-qr', at, attrs: { 'data-url': invite.url },
+              label: tr('QR code for this group invite'), hint: tr('Scan with FlyBot to join this group'),
+            }),
+            h('div', { className: 'fs-invite-link' },
+              h('code', { className: 'fs-invite-url', 'data-flybot': 'room-invite-url' }, invite.url),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-copy', onClick: copy }, copied ? tr('Copied') : tr('Copy link'))),
+            h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-count' }, dated
+              ? tr('{time} left to join', { time: leftText })
+              : tr('Works until you withdraw it.')),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke', disabled: busy, onClick: revoke }, tr('Withdraw link')))
+          : null,
+        pending ? h('div', { className: 'fs-invite-waiting' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'room-invite-waiting', role: 'status' }, waitingText(pending)),
+          h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-seat', disabled: busy, onClick: seat }, tr('Seat them'))) : null,
+        // Earlier links have no deadline either: say they still work, and let the owner end them all.
+        others > 0
+          ? h('div', { className: 'fs-invite-others', 'data-flybot': 'room-invite-others' },
+            h('span', { className: 'fs-hint' }, others === 1 ? tr('1 earlier link still works.') : tr('{count} earlier links still work.', { count: others })),
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'room-invite-revoke-all', disabled: busy, onClick: revokeAll }, tr('Withdraw all')))
+          : null)
+    }
+    function FaceWaitCode({ code, qrAt, qrOffsetMs } = {}) {
+      const digits = String(code || '').replace(/\D/g, '').slice(0, 6)
+      if (digits.length !== 6) return null
+      return h('div', { className: 'fs-wait-code', 'data-flybot': 'face-wait-code', 'aria-label': `Room number ${digits}` },
+        h('div', { className: 'fs-wait-code-label' }, 'Room number'),
+        h('div', { className: 'fs-wait-code-digits', 'data-flybot': 'face-wait-code-digits' }, digits),
+        h(FaceQr, { code: digits, at: qrAt, offsetMs: qrOffsetMs }))
+    }
+    // The JSON tail of a fenced envelope, by brace matching that knows strings and escapes, so a `}`
+    // inside a string — even one right after a `\"` — does not end the object early (#855). An absent
+    // or unparsable tail answers undefined and each caller keeps its own fallback.
+    function envelopeTail(raw, at) {
+      const start = raw.indexOf('{', at)
+      if (start < 0) return undefined
+      let depth = 0
+      let inString = false
+      let escaped = false
+      for (let i = start; i < raw.length; i += 1) {
+        const ch = raw[i]
+        if (inString) {
+          if (escaped) escaped = false
+          else if (ch === '\\') escaped = true
+          else if (ch === '"') inString = false
+          continue
+        }
+        if (ch === '"') inString = true
+        else if (ch === '{') depth += 1
+        else if (ch === '}') {
+          depth -= 1
+          if (depth > 0) continue
+          try { return JSON.parse(raw.slice(start, i + 1)) } catch { return undefined }
+        }
+      }
+      return undefined
+    }
+    // A room-share envelope is the group record a friend's FlyBot reads, never a line for a person
+    // (#847): the card says what it does in one sentence, and never prints the JSON or a local id.
+    // `to` is the name the card's own header already shows, so both name that Bot the same way.
+    function shownRoomShareText(raw, at, to) {
+      const who = cleanRoomName(to, '') || 'the invited Bot'
+      const parsed = envelopeTail(raw, at)
+      const name = typeof parsed?.name === 'string' ? cleanRoomName(parsed.name, '') : ''
+      const group = name ? `the group "${name}"` : 'a group chat'
+      const op = typeof parsed?.op === 'string' ? parsed.op : ''
+      const line = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
+      if (op === 'join') return `Invite ${who} to ${group}`
+      if (op === 'leave') return `Remove ${who} from ${group}`
+      if (op === 'line') return line ? `Group message to ${who}: ${line}` : `Group message to ${who}`
+      return `Group update for ${who} in ${group}`
+    }
+    function shownHoldText(value, to) {
+      const raw = String(value ?? '')
+      // Two envelopes can carry the other's marker in their own text, so the earlier one wins.
+      const roomAt = raw.indexOf('FLYBOT-ROOM-SHARE')
+      const faceAt = raw.indexOf('FLYBOT-FACE-HUMAN')
+      if (roomAt >= 0 && (faceAt < 0 || roomAt < faceAt)) return shownRoomShareText(raw, roomAt, to)
+      const at = faceAt
+      if (at < 0) return stripHoldPrefix(raw)
+      const parsed = envelopeTail(raw, at)
+      if (parsed === undefined) return stripHoldPrefix(raw.slice(0, at).trim())
+      const text = typeof parsed?.text === 'string' ? parsed.text.trim() : ''
+      if (text) return stripHoldPrefix(text)
+      return stripHoldPrefix(raw.slice(0, at).trim())
+    }
+    function stripHoldPrefix(text) {
+      return String(text ?? '').replace(/^(to (the )?face[ -]?room|to the room)\s*:\s*/i, '').trim()
+    }
+
+    // The room the Face-to-face dialog is waiting in: the details panel draws no second
+    // waiting card for it (#306).
+    const faceDialog = {
+      roomId: null,
+      listeners: new Set(),
+      show(id) {
+        const next = id || null
+        if (next === this.roomId) return
+        this.roomId = next
+        for (const fn of [...this.listeners]) fn()
+      },
+      subscribe(fn) {
+        this.listeners.add(fn)
+        return () => this.listeners.delete(fn)
+      },
+    }
+    // Every Leave lands on the main Bot, not on the room just left (#182, #306).
+    function openMainBot(roster, actions) {
+      // The roster names the Main Bot by id (`mainBotId`); its bot records carry no `isMain`.
+      const id = roster?.mainBotId
+        || (roster?.bots ?? []).find(bot => bot.isMain)?.id
+        || roster?.bots?.[0]?.id
+      if (id && typeof actions?.openSession === 'function') actions.openSession(id)
+    }
+    // The last chat open that was not a face room (every chat's dock tells it): Leave goes back
+    // there (#458), with the details panel closed so no Bot settings open on the way.
+    const faceNav = { last: '' }
+    function noteChat(sessionId, room) {
+      if (sessionId && room?.origin !== 'face-to-face') faceNav.last = String(sessionId)
+    }
+    function returnFromFace(roster, actions, roomId) {
+      actions?.closeOverlay?.()
+      const back = faceNav.last
+      const known = back && back !== roomId && (roster?.byId?.[back] || roster?.roomsById?.[back])
+      if (known && typeof actions?.openSession === 'function') actions.openSession(back)
+      else openMainBot(roster, actions)
+    }
+    // Some member from another home: until then the room is you alone.
+    const othersIn = (members, mine) => (members ?? []).some(member => !mine(member))
+
+    // Separate Face-to-face room screen (#92): pick Bots, join by number, live waiting room.
+    // `mode` is the picker row that opened it (#1021): `join` keeps every way in, `start` is the
+    // room being built without an invitation.
+    function FaceToFaceGroup({ actions, onClose, roster, remoteChats, mode } = {}) {
+      const starting = mode === 'start'
+      const [step, setStep] = useState('setup')
+      const [bots, setBots] = useState([])
+      const [selected, setSelected] = useState([])
+      const [code, setCode] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [status, setStatus] = useState(null)
+      const [failures, setFailures] = useState([])
+      const [room, setRoom] = useState(null)
+      const [tick, setTick] = useState(0)
+      const [scan, setScan] = useState(null)
+      const [invite, setInvite] = useState({ link: '', status: null })
+      const opened = useRef(false)
+      useEffect(() => {
+        faceDialog.show(step === 'waiting' ? room?.roomId : null)
+        return () => faceDialog.show(null)
+      }, [step, room?.roomId])
+      // Leaving the dialog must not leave the camera light on (#773).
+      useEffect(() => () => stopFaceScan(), [])
+      useEffect(() => {
+        call('social/status', {}).then(value => {
+          const list = value?.bots ?? []
+          setBots(list)
+          setSelected(current => {
+            if (current.length) return current
+            const main = list.find(bot => bot.isMain) ?? list[0]
+            return main ? [main.id] : []
+          })
+        }, () => {})
+      }, [])
+      // Closing on a number nobody uses lets that number go (#458); Escape, an outside click and
+      // Close all close the same way.
+      const dismiss = () => {
+        if (step === 'nobody' && room?.faceRoomId) void call('social/face-leave', { faceRoomId: room.faceRoomId }).catch(() => {})
+        onClose?.()
+      }
+      useEffect(() => {
+        if (!onClose || typeof document?.addEventListener !== 'function') return undefined
+        const onKey = (event) => {
+          if (event.key === 'Escape') { event.preventDefault(); dismiss() }
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+      }, [onClose, step, room?.faceRoomId])
+      useEffect(() => {
+        if (step !== 'waiting' || !(room?.faceRoomId || room?.roomId)) return undefined
+        const faceId = room.faceRoomId
+        const localId = room.roomId
+        const load = () => call('social/face-rooms', { poll: true }).then(value => {
+          const list = Array.isArray(value?.rooms) ? value.rooms : []
+          const next = list.find(item => (faceId && item.faceRoomId === faceId) || (localId && item.roomId === localId))
+          if (next) setRoom(current => current ? { ...current, ...next } : next)
+        }, () => {})
+        load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(load, 2000)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [step, room?.faceRoomId, room?.roomId])
+      useEffect(() => {
+        if (step !== 'waiting' || room?.status !== 'candidate' || !room?.expiresAt) return undefined
+        return everySecond(() => setTick(n => n + 1))
+      }, [step, room?.status, room?.expiresAt])
+      // A preview that came with a deadline counts down too, before any Bot has joined (#798).
+      useEffect(() => {
+        if (!invite?.preview?.expiresAt) return undefined
+        return everySecond(() => setTick(n => n + 1))
+      }, [invite?.preview?.expiresAt])
+      useEffect(() => {
+        if (step !== 'waiting' || room?.status !== 'open' || opened.current) return undefined
+        const id = room.roomId
+        if (!id || typeof actions?.openSession !== 'function') return undefined
+        opened.current = true
+        actions.openSession(id)
+        onClose?.()
+        return undefined
+      }, [step, room?.status, room?.roomId])
+      // `start`: the owner chose to start a room with a number nobody uses yet (#458).
+      // `code`: the number a scan read, so a scanned code joins through this same path (#773).
+      const join = async (event, { start = false, code: typed } = {}) => {
+        event?.preventDefault?.()
+        const digits = String(typed ?? code).replace(/\D/g, '').slice(0, 6)
+        if (digits.length !== 6) {
+          setStatus({ tone: 'error', text: 'Enter a 6-digit number.' })
+          return
+        }
+        if (!selected.length) {
+          setStatus({ tone: 'error', text: 'Choose which of your Bots join.' })
+          return
+        }
+        setBusy(true)
+        setStatus(null)
+        setFailures([])
+        const mine = []
+        const joined = []
+        const failed = []
+        let last
+        for (const botId of selected) {
+          const bot = bots.find(item => item.id === botId)
+          try {
+            const result = await call('social/face-join', { code: digits, botId, ...(start ? { start: true } : {}) })
+            if (result?.nobody) {
+              // Nobody is in a room with this number: no room opens; the owner checks it or starts one.
+              setRoom({ nobody: true, faceRoomId: result.faceRoomId, joinCode: digits })
+              setStep('nobody')
+              setBusy(false)
+              return
+            }
+            last = result
+            if (result?.joinedAs?.handle) {
+              mine.push(result.joinedAs.handle)
+              joined.push(result.joinedAs)
+            }
+          } catch (e) {
+            failed.push({ botId, name: bot?.name || 'Bot', text: errorText(e) })
+            if (shouldStopJoin(e) && !last) {
+              setStatus({ tone: 'error', text: errorText(e) })
+              setFailures(failed)
+              setBusy(false)
+              return
+            }
+            if (shouldStopJoin(e)) break
+          }
+        }
+        setFailures(failed)
+        if (!last) {
+          setStatus({ tone: 'error', text: failed[0]?.text || 'Could not join that room. Try another number.' })
+          setBusy(false)
+          return
+        }
+        setRoom({ ...last, mineHandles: mine, mineBots: joined, joinCode: last.joinCode || digits })
+        setStep('waiting')
+        setBusy(false)
+        // The main pane (and its title) moves to the new room at once, not the room before it (#191).
+        if (last.roomId && typeof actions?.openSession === 'function') actions.openSession(last.roomId)
+      }
+      const enter = async () => {
+        if (!room || opened.current) return
+        setBusy(true)
+        setStatus(null)
+        try {
+          let next = room
+          if (room.status === 'candidate') {
+            next = await call('social/face-start', { roomId: room.roomId, faceRoomId: room.faceRoomId })
+            setRoom(current => current ? { ...current, ...next, status: 'open' } : { ...next, status: 'open' })
+          }
+          const id = next?.roomId || room.roomId
+          opened.current = true
+          if (id && typeof actions?.openSession === 'function') actions.openSession(id)
+          onClose?.()
+        } catch (e) {
+          setStatus({ tone: 'error', text: errorText(e) })
+        } finally { setBusy(false) }
+      }
+      const cancelNobody = async () => {
+        const id = room?.faceRoomId
+        setRoom(null)
+        setStep('setup')
+        if (id) await call('social/face-leave', { faceRoomId: id }).catch(() => { /* the host lets a stale hold go on its next poll */ })
+      }
+      const leave = async () => {
+        setBusy(true)
+        setStatus(null)
+        try {
+          if (room?.faceRoomId || room?.roomId) {
+            await call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })
+          }
+          returnFromFace(roster, actions, room?.roomId)
+          onClose?.()
+        } catch (e) {
+          setStatus({ tone: 'error', text: errorText(e) })
+        } finally { setBusy(false) }
+      }
+      const toggle = (id) => {
+        setSelected(list => list.includes(id) ? list.filter(item => item !== id) : [...list, id])
+      }
+      // A link is the other way in (#773): same pipeline in the host, same waiting dialog after it.
+      // Since #798 the room is shown first: `previewLink` asks the host for it, and only the card's
+      // own Join runs `joinTicket`. The preview never gates the join — `joinTicket` is the path that
+      // already worked and still runs alone when there is no card.
+      // Every selected Bot joins, as through the number (#817): one host call each, the same
+      // per-Bot failure list, and one failure never hides the others.
+      const joinTicket = async (text, ticket) => {
+        if (!selected.length) {
+          setInvite({ link: text, status: { tone: 'error', text: 'Pick a Bot first.' } })
+          return
+        }
+        setBusy(true)
+        setFailures([])
+        setInvite({ link: text, status: { tone: 'hint', text: 'Joining with that link…' } })
+        try {
+          const mine = []
+          const joined = []
+          const failed = []
+          let last
+          for (const botId of selected) {
+            const bot = bots.find(item => item.id === botId)
+            try {
+              const result = await call('social/face-join-invite', { ticket, botId })
+              if (result?.unsupported) {
+                setInvite({ link: text, status: { tone: 'error', text: INVITE_UNSUPPORTED } })
+                return
+              }
+              last = result
+              if (result?.joinedAs?.handle) {
+                mine.push(result.joinedAs.handle)
+                joined.push(result.joinedAs)
+              }
+            } catch (e) {
+              failed.push({ botId, name: bot?.name || 'Bot', text: errorText(e) })
+              if (stopInviteJoin(e) && !last) {
+                setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
+                setFailures(failed)
+                return
+              }
+              if (stopInviteJoin(e)) break
+            }
+          }
+          setFailures(failed)
+          if (!last) {
+            setInvite({ link: text, status: { tone: 'error', text: failed[0]?.text || 'Could not join that room with that link.' } })
+            return
+          }
+          setInvite({ link: text, status: null })
+          setRoom({ ...last, mineHandles: mine, mineBots: joined, joinCode: last.joinCode })
+          setStep('waiting')
+          if (last.roomId && typeof actions?.openSession === 'function') actions.openSession(last.roomId)
+        } finally {
+          setBusy(false)
+        }
+      }
+      // The card's Clear is the dialog's other way out: the field empties and nothing is joined.
+      const clearInvite = () => setInvite({ link: '', status: null })
+      const previewLink = async (typed) => {
+        const text = String(typed ?? invite.link ?? '').trim()
+        if (localInviteHandle(text)) {
+          await previewLocal(text)
+          return
+        }
+        const ticket = faceInviteTicket(text)
+        if (!ticket) {
+          setInvite({ link: text, status: { tone: 'error', text: INVITE_LINK_COPY } })
+          return
+        }
+        // The card on screen for this ticket already answers the press (#824): asking again would cost
+        // another round trip and reset its countdown. Compare the ticket, never the text — the same
+        // link retyped with spaces, or through another host, is the same ticket and the same card.
+        if (invite.preview?.ticket === ticket) return
+        setBusy(true)
+        setFailures([])
+        setInvite({ link: text, status: { tone: 'hint', text: 'Looking up that room…' } })
+        let seen = null
+        try {
+          seen = await call('social/face-invite-preview', { ticket })
+        } catch {
+          // A 404 or a timeout is information we do not have, not a refusal.
+          seen = null
+        }
+        setBusy(false)
+        // The invite feature itself is off on that server, so a join would answer the same sentence
+        // and reach no route: the dialog stops here, the way the join path already did (#798).
+        if (seen?.unsupported === true) {
+          setInvite({ link: text, status: { tone: 'error', text: INVITE_UNSUPPORTED } })
+          return
+        }
+        const card = invitePreview(seen)
+        if (card) {
+          setInvite({ link: text, status: null, preview: { ...card, ticket } })
+          return
+        }
+        await joinTicket(text, ticket)
+      }
+      // #876: a room link of another FlyBot. The host reads Bot Social's record first (a stranger can),
+      // and Join claims it for the picked Bots; the room appears here when the inviter's home seats them.
+      const previewLocal = async (text) => {
+        if (invite.preview?.local && invite.preview.link === text) return
+        setBusy(true)
+        setFailures([])
+        setInvite({ link: text, status: { tone: 'hint', text: 'Looking up that room…' } })
+        let seen = null
+        try {
+          seen = (await host('room-invite-preview', { link: text }))?.preview ?? null
+        } catch (e) {
+          setBusy(false)
+          setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
+          return
+        }
+        setBusy(false)
+        if (seen?.refused) {
+          setInvite({ link: text, status: { tone: 'error', text: localRefusal(seen.refused) } })
+          return
+        }
+        const card = invitePreview({ name: seen?.name, lead: seen?.owner ? `${seen.lead || 'Bot'} (${seen.owner})` : seen?.lead, expiresAt: isoAt(seen?.expiresAt) })
+        if (seen?.joined) {
+          // #1176: the room is here however it arrived — a link this home claimed (#899), or the host
+          // adding one of these Bots by add-member. Neither is a knock: no Join card, no claim sent.
+          setInvite({ link: text, status: { tone: 'hint', text: 'This group is already in your sidebar.' } })
+          return
+        }
+        if (seen?.claimed) {
+          // #899: a claim with no room here is a knock nobody answered yet: say so, and let Join knock again.
+          const who = seen.owner || seen.lead || 'the group\u2019s owner'
+          setInvite({ link: text, status: { tone: 'hint', text: `Waiting for ${who} to let you in. If the group does not appear, press Join group to ask again.` }, preview: { ...(card ?? { name: 'A group on another FlyBot', lead: '', people: '', expiresAt: '', clockOffsetMs: 0 }), local: true, link: text } })
+          return
+        }
+        if (!card) {
+          // An older server has no record to read: the friend's knock is still the way in.
+          setInvite({ link: text, status: null, preview: { name: 'A group on another FlyBot', lead: '', people: '', expiresAt: '', clockOffsetMs: 0, local: true, link: text } })
+          return
+        }
+        setInvite({ link: text, status: null, preview: { ...card, local: true, link: text } })
+      }
+      const joinLocal = async (text) => {
+        if (!selected.length) {
+          setInvite(current => ({ ...current, status: { tone: 'error', text: 'Pick a Bot first.' } }))
+          return
+        }
+        setBusy(true)
+        setInvite(current => ({ ...current, status: { tone: 'hint', text: 'Joining with that link…' } }))
+        try {
+          const result = await host('room-invite-ask', { link: text, accept: true, bots: selected })
+          if (result?.refused) {
+            setInvite({ link: text, status: { tone: 'error', text: localRefusal(result.refused) } })
+            return
+          }
+          // A claim is what the other home seats from (#1064). A knock that never left, and no claim
+          // behind it, did not ask anyone — saying it did is how a guest stays on this sentence.
+          const sent = result?.sent
+          if (result?.claimed !== true && (sent === 'deny' || sent === 'hold')) {
+            setInvite({
+              link: text,
+              status: {
+                tone: 'error',
+                text: sent === 'hold'
+                  ? 'This FlyBot has not approved the request yet, so their group has not been asked.'
+                  : 'Their FlyBot was not asked. Check the link and try again.',
+              },
+            })
+            return
+          }
+          const name = invite.preview?.name && invite.preview.name !== 'A group on another FlyBot' ? `"${invite.preview.name}"` : 'the group'
+          setInvite({ link: '', status: { tone: 'ok', text: `Asked to join ${name}. It opens in your sidebar as soon as their FlyBot seats your Bots.` } })
+        } catch (e) {
+          setInvite({ link: text, status: { tone: 'error', text: errorText(e) } })
+        } finally { setBusy(false) }
+      }
+      // One sentence per way a scan can fail, and the number field is untouched either way.
+      const beginScan = () => {
+        setScan({ tone: 'hint', text: 'Point the camera at a FlyBot room code.' })
+        startFaceScan((result) => {
+          if (result?.fail) {
+            setScan({ tone: 'error', text: FACE_SCAN_COPY[result.fail] ?? FACE_SCAN_COPY.camera })
+            return
+          }
+          const raw = String(result?.raw ?? '')
+          if (localInviteHandle(raw)) {
+            setScan({ tone: 'ok', text: 'Scanned a group link.' })
+            void previewLocal(raw)
+            return
+          }
+          if (faceInviteTicket(raw)) {
+            setScan({ tone: 'ok', text: 'Scanned an invite link.' })
+            void previewLink(raw)
+            return
+          }
+          const digits = faceQrCode(raw)
+          if (!digits) {
+            setScan({ tone: 'error', text: FACE_SCAN_COPY.foreign })
+            return
+          }
+          setCode(digits)
+          setScan({ tone: 'ok', text: `Scanned ${digits}.` })
+          if (selected.length) void join(null, { code: digits })
+          else setStatus({ tone: 'hint', text: `Scanned ${digits}. Pick a Bot to join.` })
+        })
+      }
+      const members = room?.members ?? []
+      const preview = invite?.preview ?? null
+      const candidate = room?.status === 'candidate'
+      const waiting = step === 'waiting' && room
+      const digitCount = String(code).replace(/\D/g, '').length
+      const digitsTyped = digitCount === 6
+      // #1052: the helper is for a started number only. Empty stays quiet; six digits clear it.
+      const digitsPartial = digitCount > 0 && !digitsTyped
+      const nobody = step === 'nobody' ? faceWaitCode(room, code) : ''
+      // #1021: the screen names the row that opened it, so a person who tapped "join" never reads a
+      // title about starting a room (and the other way round).
+      const title = starting ? START_FACE_ROOM : JOIN_BY_NUMBER
+      return h('div', {
+        className: 'fs-dialog-back', 'data-flybot': 'face-group', role: 'dialog', 'aria-label': tr(title),
+        onClick: event => { if (event?.target === event?.currentTarget) dismiss() },
+      },
+        h('div', { className: 'fs-dialog' },
+          h('div', { className: 'fs-dialog-head' },
+            h('div', { className: 'fs-name', 'data-flybot': 'face-group-title' }, tr(title)),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: dismiss }, tr('Close'))),
+          step === 'nobody' ? h('div', { className: 'fs-wait', 'data-flybot': 'face-nobody' },
+            // #999: `nobody` means the join answer held no other home, not that the number is unused —
+            // a number whose room already opened answers the same way. #1053: the primary line offers
+            // to start; the hint keeps the invite-link caveat so this does not read as a failed join.
+            h('div', { className: 'fs-name', 'data-flybot': 'face-nobody-title' }, tr(NOBODY_TITLE, { code: nobody })),
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-nobody-hint' }, tr(NOBODY_HINT)),
+            status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null,
+            h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-nobody-foot' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-nobody-start', disabled: busy, onClick: () => join(null, { start: true }) }, tr(START_NEW_ROOM)),
+              h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'face-nobody-cancel', disabled: busy, onClick: cancelNobody }, tr('Cancel')))) : waiting ? h('div', { className: 'fs-wait', 'data-flybot': 'face-wait' },
+            h(FaceWaitCode, {
+              code: faceWaitCode(room, code),
+              qrAt: candidate ? (room.expiresAt || 'open') : null,
+              qrOffsetMs: room.clockOffsetMs,
+            }),
+            h('div', { className: 'fs-hint fs-wait-count', 'data-flybot': 'face-wait-count', 'data-tick': tick }, candidate
+              ? (room.expiresAt ? countdownLine(countdown(room.expiresAt, room.clockOffsetMs)) : 'Anyone with the number can still join.')
+              : 'The room is open. The number is no longer valid.'),
+            h('div', { className: 'fs-wait-body' },
+              h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
+                facePeople(members, member => memberIsMine(member, bots, room)).map(person => h(FacePersonTile, {
+                  key: person.key,
+                  person,
+                  look: member => faceLook({ roster, remoteChats, bots, member, mine: room.mineBots }),
+                }))),
+              othersIn(members, member => memberIsMine(member, bots, room)) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
+              failures.length ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
+                failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
+              status ? h('div', { className: 'fs-status', 'data-tone': status.tone, role: 'status' }, status.text) : null),
+            h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
+              h(ConfirmLeave, {
+                busy, onLeave: leave, size: 'fs-btn',
+                beside: h('button', {
+                  type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter',
+                  disabled: !!busy || !room.roomId, onClick: enter,
+                }, 'Enter chat'),
+              }))) : h('form', { onSubmit: join, 'data-flybot': 'face-join' },
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-join-about' }, tr(starting ? START_FACE_ABOUT : JOIN_OR_CREATE_ABOUT)),
+            h('ul', { className: 'fs-tiles fs-pick', 'data-flybot': 'face-pick', 'aria-label': 'Your Bots' },
+              bots.map(bot => h(FaceTile, {
+                key: bot.id,
+                bot: faceLook({ roster, local: bot }),
+                name: bot.name,
+                pick: true,
+                selected: selected.includes(bot.id),
+                onToggle: () => toggle(bot.id),
+              }))),
+            bots.length === 0 ? h('div', { className: 'fs-hint' }, 'Loading your Bots…') : null,
+            h('div', { className: 'fs-hint', 'data-flybot': 'face-join-room' },
+              tr('Room-only: friends do not see these Bots unless you invite them.')),
+            h('div', { className: 'fs-line' },
+              h('input', {
+                className: 'fs-digits', value: code, inputMode: 'numeric', autoComplete: 'off', maxLength: 6,
+                placeholder: tr('6 digits'), 'aria-label': tr('6-digit room number'),
+                onChange: e => setCode(String(e.target.value).replace(/\D/g, '').slice(0, 6)),
+              }),
+              h('button', {
+                type: 'submit', className: 'fs-btn',
+                // Enabled once a Bot is picked and all 6 digits are in (#458); the tooltip says what is missing.
+                disabled: busy || !selected.length || !digitsTyped,
+                title: !selected.length ? tr('Pick a Bot first.') : digitsTyped ? undefined : tr('Enter all 6 digits.'),
+              }, tr('Join'))),
+            digitsPartial ? h('div', {
+              className: 'fs-hint', 'data-flybot': 'face-join-digits', role: 'status',
+            }, tr('Enter 6 digits')) : null,
+            // #1021: a link and a scanned QR are ways into a group that already exists, so the start
+            // path — building a room out of one number typed together — does not offer them.
+            starting ? null : h('div', { className: 'fs-link-row', 'data-flybot': 'face-link-join' },
+              h('input', {
+                className: 'fs-link-input', value: invite.link, type: 'url', autoComplete: 'off', spellCheck: false,
+                placeholder: tr(LINK_PLACEHOLDER), 'aria-label': tr('Group invite link'),
+                onChange: e => setInvite({ link: String(e.target.value), status: null }),
+              }),
+              h('button', {
+                type: 'button', className: 'fs-btn', 'data-flybot': 'face-link-join-go', disabled: !!busy,
+                onClick: () => previewLink(),
+              }, tr('Join with link')),
+              invite.status ? h('div', {
+                className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-link-status', 'data-tone': invite.status.tone, role: 'status',
+              }, invite.status.text) : null),
+            preview && !starting ? h(InvitePreviewCard, {
+              preview, busy, kind: 'face-link-preview',
+              onClear: clearInvite,
+              joinLabel: preview.local ? tr('Join group') : tr('Join'),
+              onJoin: () => (preview.local ? joinLocal(preview.link) : joinTicket(preview.link ?? invite.link, preview.ticket)),
+            }) : null,
+            starting ? null : h('div', { className: 'fs-scan-row' },
+              h('button', {
+                type: 'button', className: 'fs-btn', 'data-flybot': 'face-scan', disabled: !!busy,
+                onClick: beginScan,
+              }, tr('Scan a code')),
+              scan ? h('div', {
+                className: 'fs-hint fs-scan-hint', 'data-flybot': 'face-scan-status',
+                'data-tone': scan.tone, role: 'status',
+              }, scan.text) : null),
+            !selected.length && bots.length ? h('div', { className: 'fs-hint', 'data-flybot': 'face-join-pick' }, tr('Pick a Bot first.')) : null,
+            failures.length ? h('div', { className: 'fs-status fs-fail', 'data-tone': 'error', 'data-flybot': 'face-join-fail', role: 'status' },
+              failures.map(item => `${item.name}: ${item.text}`).join(' ')) : null,
+            status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone }, status.text) : null)))
+    }
+
+    function faceChip(room) {
+      if (room.status === 'closed') return 'closed'
+      if (room.status === 'left') return 'left'
+      if (room.status === 'candidate') {
+        if (!room.expiresAt) return 'joining'
+        const at = Date.parse(room.expiresAt)
+        if (!Number.isFinite(at)) return 'joining'
+        const left = Math.max(0, at - Date.now())
+        if (left <= 0) return 'ended'
+        const minutes = Math.ceil(left / 60_000)
+        if (minutes >= 1) return `${minutes}m`
+        return `${Math.max(1, Math.ceil(left / 1000))}s`
+      }
+      return 'open'
+    }
+    function faceChipLabel(room) {
+      const chip = faceChip(room)
+      // #3090: every state this chip can show goes through the translator with the English word as its
+      // key, so a window in another language does not keep four of the five in English. `ended` is the
+      // internal status id; the word this chip shows is `Ended`.
+      if (chip === 'open') return tr('Open')
+      if (chip === 'closed') return tr('Closed')
+      if (chip === 'left') return tr('Left')
+      if (chip === 'ended') return tr('Ended')
+      if (chip === 'joining') return tr('Joining')
+      return chip
+    }
+    // Past rooms read like the room's tab and sidebar row (#304): `Face-to-face · Alice, Bob · 482913`.
+    // People come from every member when the row has them (a stored auto name can miss one), the
+    // number from the row or its stored title, else the time the room was created. Only the title the
+    // owner reads follows the window's language (#P769b); the rules above and the stored name itself
+    // stay English, because `named` is what the server saved and what the next render parses again.
+    function shownFaceTitle(room) {
+      const named = String(room?.name || '').trim()
+      if (named && named !== 'Face-to-face room' && !named.startsWith('Face-to-face · ')) return named
+      if (named.startsWith('Face-to-face · ') && !(room?.members ?? []).some(m => String(m?.ownerName || m?.owner_name || '').trim())) return named
+      const rows = []
+      const seen = new Set()
+      for (const member of room?.members ?? []) {
+        const owner = String(member.ownerName || member.owner_name || '').trim()
+        const key = owner.toLowerCase()
+        if (!owner || seen.has(key)) continue
+        seen.add(key)
+        const handle = String(member.handle || member.id || '').trim().toLowerCase()
+        rows.push({ owner, sort: handle || key })
+      }
+      rows.sort((a, b) => a.sort.localeCompare(b.sort))
+      const owners = rows.slice(0, 3).map(row => row.owner)
+      const stored = named.match(/ · (\d{6})$/)?.[1]
+      const code = sixRoomDigits(room?.joinCode || room?.code || stored)
+      const bits = [tr('Face-to-face')]
+      if (owners.length) bits.push(owners.join(', '))
+      const storedWhen = named.match(/ · ([A-Z][a-z]{2} \d{1,2} \d{2}:\d{2})$/)?.[1]
+      if (code) bits.push(code)
+      else if (storedWhen) bits.push(faceStamp(storedWhen))
+      else {
+        // Created = the joining deadline minus the 10-minute window, never the deadline itself.
+        const deadline = Date.parse(room?.expiresAt || '')
+        const at = Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : Date.parse(room?.startedAt || ''))
+        const when = Number.isFinite(at) ? new Date(at) : new Date()
+        bits.push(`${faceDay(when)} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`)
+      }
+      return bits.join(' · ')
+    }
+    // The time a Past row shows (#304): when the room ended here, else when it started (or was
+    // created). Today reads `14:05`, an earlier day `Oct 19` — `10月19日` in a zh window; the hover
+    // text names which of the two it is, in the window's language too (#P769b).
+    const FACE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    function faceDayOf(month, day) {
+      return zhUi() ? `${month + 1}月${day}日` : `${FACE_MONTHS[month]} ${day}`
+    }
+    function faceDay(when) {
+      return faceDayOf(when.getMonth(), when.getDate())
+    }
+    // A stored auto title carries its own English stamp (`Oct 19 14:05`). The rebuilt title shows it,
+    // so a zh window writes it the way `faceDay` does; the stored name is never rewritten, and an
+    // English window keeps the stamp's bytes exactly as they were saved.
+    function faceStamp(text) {
+      if (!zhUi()) return text
+      const [month, day, hhmm] = String(text).split(' ')
+      const index = FACE_MONTHS.indexOf(month)
+      return index < 0 || !day || !hhmm ? text : `${faceDayOf(index, day)} ${hhmm}`
+    }
+    function faceRowTime(room, today = new Date()) {
+      const ended = Date.parse(room?.endedAt || '')
+      const deadline = Date.parse(room?.expiresAt || '')
+      const started = Date.parse(room?.startedAt || '') || Date.parse(room?.createdAt || '') || (Number.isFinite(deadline) ? deadline - 10 * 60_000 : NaN)
+      const at = Number.isFinite(ended) ? ended : started
+      if (!Number.isFinite(at)) return undefined
+      const when = new Date(at)
+      const hhmm = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
+      const day = faceDay(when)
+      const sameDay = when.getFullYear() === today.getFullYear() && when.getMonth() === today.getMonth() && when.getDate() === today.getDate()
+      return { text: sameDay ? hhmm : day, full: `${tr(Number.isFinite(ended) ? 'Ended' : 'Started')} ${day} ${hhmm}` }
+    }
+    function FaceRoomCard({ room, actions, onChange, roster, remoteChats, past } = {}) {
+      const [busy, setBusy] = useState('')
+      const [note, setNote] = useState(null)
+      const locked = readOnlyReason(roster) !== ''
+      const run = async (label, fn) => {
+        setBusy(label)
+        setNote(null)
+        try {
+          await fn()
+          onChange?.()
+        } catch (e) { setNote({ tone: 'error', text: errorText(e) }) }
+        finally { setBusy('') }
+      }
+      const members = room.members ?? []
+      const shown = members.slice(0, 3)
+      const extra = Math.max(0, members.length - shown.length)
+      const look = (m) => (m.remote === false || m.id && roster?.byId?.[m.id]
+        ? faceLook({ roster, local: roster?.byId?.[m.id] || { id: m.id, name: m.displayName } })
+        : faceLook({ roster, remoteChats, member: m }))
+      const openable = Boolean(room.faceRoomId || room.roomId)
+      const open = async () => {
+        if (!openable || typeof actions?.openSession !== 'function') return
+        setBusy('open')
+        setNote(null)
+        try {
+          const next = await call('social/face-open', { roomId: room.roomId, faceRoomId: room.faceRoomId })
+          // #2219: a read-only host hands back the stored past view and writes no local mirror, so
+          // there is no room to open: the row stays a row and the window's own sentence says why.
+          if (next?.readOnly === true) {
+            setNote({ tone: 'info', text: readOnlyReason() || 'This window is read-only, so the room opens no chat.' })
+            return
+          }
+          const id = next?.roomId || room.roomId
+          if (id) actions.openSession(id)
+        } catch (e) { setNote({ tone: 'error', text: errorText(e) }) }
+        finally { setBusy('') }
+      }
+      const title = shownFaceTitle(room)
+      const time = past ? faceRowTime(room) : undefined
+      // A past row is one button: clicking anywhere on it opens the read-only room (#304).
+      const rowOpens = past && openable
+      return h('div', { className: 'fs-face-item', 'data-flybot': 'face-room', 'data-status': room.status, 'data-past': past || undefined },
+        h('div', {
+          className: 'fs-face-row',
+          'data-open': openable ? true : undefined,
+          onClick: openable ? () => (busy ? undefined : open()) : undefined,
+          ...(rowOpens ? {
+            // The two accessible names on this card are read out, never parsed back, so they take the
+            // dictionary like the visible copy does; the stored room name stays English (#3100).
+            role: 'button', tabIndex: 0, 'aria-label': tr('Open {title}', { title }), 'aria-busy': busy ? true : undefined,
+            onKeyDown: (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault?.()
+              return busy ? undefined : open()
+            },
+          } : {}),
+        },
+          h('span', { className: 'fs-stack', 'aria-label': tr('Members') },
+            shown.map(m => h('span', { key: m.handle || m.id, 'data-flybot': 'face-card-member', 'data-handle': m.handle },
+              h(FaceAvatar, { bot: look(m), size: 20 }))),
+            extra ? h('span', { className: 'fs-stack-more' }, `+${extra}`) : null),
+          // One line; the full title on hover when the narrow sidebar cuts it (#304).
+          h('span', { className: 'fs-name', title }, title),
+          time ? h('span', { className: 'fs-face-time', 'data-flybot': 'face-time', title: time.full }, time.text) : null,
+          h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(room) }, faceChipLabel(room)),
+          past || locked
+            ? null
+            : h('span', { className: 'fs-face-actions', onClick: event => event.stopPropagation() },
+              h(ConfirmLeave, { busy, onLeave: () => run('leave', () => call('social/face-leave', { roomId: room.roomId, faceRoomId: room.faceRoomId })) }))),
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
+    }
+
+    const WAITING_OWNER = 'Waiting for approval'
+    const WAITING_OTHERS = "Waiting for the owner's approval"
+
+    function holdParties(item) {
+      const from = readableParty(item?.from, 'Bot')
+      const to = readableParty(item?.toName) || (item?.kind === 'face_room_message' ? 'the room' : readableParty(item?.to, 'friend'))
+      return { from, to }
+    }
+    // One term, Auto-send (#417): the toast names my Bot, the person, and where to turn it off.
+    const AUTO_SEND_LINK = 'Auto-send from now on'
+    const autoSendToast = (view) => view?.scope === 'face'
+      ? `Auto-send is on for ${view.from || 'your Bots'} → ${view.to || 'the room'}. Turn it off in the room overview.`
+      : view?.botName && view?.person
+        ? `Auto-send is on for ${view.botName} → ${view.person}. Turn it off in ${view.botName} → Sharing → People with access.`
+        : 'Sent. Auto-send was not turned on: no Bot of yours wrote this.'
+    // Auto-send from now on for a held message of my Bot (#417): that pair only, my Bot → that person.
+    // The host reads the pair from the hold (`approvalId`); the answer feeds autoSendToast.
+    async function autoSendPair(callHost, approvalId) {
+      if (!approvalId) return undefined
+      const view = await callHost('social/auto-send', { approvalId })
+      return view?.autoSend === true ? { ...view, scope: 'pair' } : undefined
+    }
+
+    // Why Bot Social held a send, in words (#371). `t` is the host's translator (zh in a zh UI); without one the
+    // English stays. A category this build does not know is left out, never shown raw.
+    const HOLD_REASON_WORDS = {
+      commitment: 'commitment language', 'pii.phone': 'a phone number', 'pii.email': 'an email address', money: 'a money amount',
+      'owner.sensitive_term': 'one of your sensitive terms', 'calendar.details': 'calendar details',
+    }
+    function holdReasonLine(reasons, t) {
+      const tr = typeof t === 'function' ? t : (key, params) => String(key).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+      const words = (Array.isArray(reasons) ? reasons : []).filter(name => Object.hasOwn(HOLD_REASON_WORDS, name)).map(name => tr(HOLD_REASON_WORDS[name]))
+      return words.length ? tr('Held for your approval: contains {reasons}', { reasons: words.join(tr(', ')) }) : ''
+    }
+    function ChatApproval({ item, canDecide = true, busy, onDecide, t, onOpen } = {}) {
+      const [open, setOpen] = useState(false)
+      // A decided card goes at once, no "Approved" / "Rejected" stub (#456): the chat itself shows the outcome.
+      if (!item || item.status === 'approved' || item.status === 'rejected') return null
+      if (canDecide !== true) {
+        // #1640: name where this card is decided, and open it when that is a chat. Nothing to name keeps
+        // the neutral sentence, and a destination already on screen gets no button.
+        const tr = (text, params) => (typeof t === 'function'
+          ? t(text, params)
+          : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+        const place = item.place
+        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'other', role: 'status' },
+          h('div', { className: 'fs-name' }, WAITING_OTHERS),
+          place?.bubble ? h('div', { className: 'fs-sub', 'data-flybot': 'waiting-place' }, tr('Decide on the reply bubble above.')) : null,
+          place?.chatId ? h('div', { className: 'fs-sub', 'data-flybot': 'waiting-place' }, tr("Decide in {name}'s chat.", { name: place.name })) : null,
+          place?.chatId && typeof onOpen === 'function'
+            ? h('div', { className: 'fs-actions fs-chat-actions' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'chat-approval-open-chat', onClick: () => onOpen(place.chatId) }, tr("Open {name}'s chat", { name: place.name })))
+            : null)
+      }
+      if (item.status === 'failed') {
+        // A failed send cannot be approved or rejected: say it did not go and offer Retry, like
+        // the core's held-reply card. Approve/Reject on it would answer "already failed" silently.
+        const parties = holdParties(item)
+        return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-state': 'failed', 'data-role': 'owner', role: 'status', title: item.error || undefined },
+          h('div', { className: 'fs-label' }, tr('Not sent')),
+          item.from || item.to || item.toName ? h('div', { className: 'fs-sub' }, `${parties.from} → ${parties.to}`) : null,
+          item.error ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-error' }, item.error) : null,
+          // A failure the sender marked as never retryable (#954) offers no Retry: the Bot is gone, so the button
+          // could only repeat the same card.
+          canRetry(item) ? h('div', { className: 'fs-actions fs-chat-actions' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', 'data-flybot': 'hold-retry', disabled: !!busy, onClick: () => onDecide?.(item, 'retry') }, tr('Retry'))) : null)
+      }
+      const { from, to } = holdParties(item)
+      const text = shownHoldText(item.text || item.summary || '', to)
+      const long = text.length > 160 || text.split(/\n/).length > 3
+      const reasonLine = holdReasonLine(item.reasons, t)
+      return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval', 'data-role': 'owner', role: 'region', 'aria-label': tr(WAITING_OWNER) },
+        h('div', { className: 'fs-label' }, tr(WAITING_OWNER)),
+        item.from || item.to || item.toName || item.kind === 'face_room_message'
+          ? h('div', { className: 'fs-sub' }, `${from} → ${to}`)
+          : null,
+        reasonLine ? h('div', { className: 'fs-sub', 'data-flybot': 'hold-reason' }, reasonLine) : null,
+        text ? h('div', { className: 'fs-draft', 'data-clamp': !open && long ? true : undefined }, text) : null,
+        long ? h('button', {
+          type: 'button', className: 'fs-hold-more', 'data-flybot': 'hold-expand',
+          onClick: () => setOpen(value => !value),
+        }, open ? tr('Show less') : tr('Show more')) : null,
+        h('div', { className: 'fs-actions fs-chat-actions' },
+          // The two decisions stay together on the right; the standing choice is left of them, or alone above when narrow (#271).
+          h('span', { className: 'fs-hold-decide' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: !!busy, onClick: () => onDecide?.(item, 'approve') }, tr('Approve')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: !!busy, onClick: () => onDecide?.(item, 'reject') }, tr('Reject'))),
+          // Two buttons are the decision; the standing choice is a quiet link, not a third button (#260).
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: !!busy, onClick: () => onDecide?.(item, 'always') }, AUTO_SEND_LINK)))
+    }
+
+    function approvalsForOpenChat(items, { sessionId, room, bot, roster } = {}) {
+      const list = Array.isArray(items) ? items : []
+      const handle = bot?.remote?.handle
+      const faceId = room?.face?.roomId
+      const handles = new Set((room?.participants ?? []).map(p => p.handle).filter(Boolean))
+      if (handle) handles.add(handle)
+      return list.filter(item => {
+        if (item.kind === 'face_room_message') {
+          // A room line belongs to the one room it was held in (#188); no room means no card.
+          if (faceId && item.roomId === faceId) return true
+          return Boolean(room?.id && item.roomId === room.id)
+        }
+        if (faceId && item.roomId === faceId) return true
+        if (room?.id && item.roomId === room.id) return true
+        if (item.roomId) return false
+        // A held reply or message a local Bot wrote shows in that Bot's own chat, where its owner is (#254).
+        // One place per approval: once the friend's chat exists, that chat alone shows it (#278).
+        if (item.fromId && bot?.id && !bot.remote && item.fromId === bot.id) return !listedFriendChat(roster, item.to)
+        // A Bot's direct message to a friend belongs to the Bot's chat and the friend's chat, never to
+        // a room that merely has that friend in it (#260). Bot Social's own holds still match by handle.
+        if (item.source === 'local' && room) return false
+        // The same for Bot Social's own: a Face-to-face room holds lines for its room id only (#271).
+        if (room?.origin === 'face-to-face') return false
+        if (item.to && handles.has(item.to)) return true
+        if (sessionId && item.sessionId === sessionId) return true
+        return false
+      })
+    }
+
+    // A held room line names its Bot the way the room does, with its person (#384, #456): "Researcher (Alice)".
+    function faceFromLabel(item, room) {
+      if (item?.kind !== 'face_room_message' || room?.origin !== 'face-to-face') return ''
+      const name = String(item.from ?? '').trim().toLowerCase()
+      if (!name) return ''
+      const own = (room.presentedParticipants ?? []).find(p => p?.kind === 'bot' && !p.remote && p.leftSeq === undefined
+        && String(p.displayName || p.name || '').trim().toLowerCase() === name)
+      return typeof own?.label === 'string' ? own.label.trim() : ''
+    }
+
+    function friendChatOf(roster, handle) {
+      const want = String(handle ?? '').trim().toLowerCase()
+      if (!want.startsWith('@')) return undefined
+      return (roster?.bots ?? []).find(item => item?.remote && String(item.remote.handle ?? '').toLowerCase() === want)
+    }
+    // A friend's chat that can be opened: in the list, not hidden, not gone, not a home-level handle. A hold to
+    // any other chat has no card there, so the sender Bot's own chat shows it (#371).
+    function listedFriendChat(roster, handle) {
+      const bot = friendChatOf(roster, handle)
+      if (!bot || bot.hidden || bot.remote.gone || bot.remote.hidden) return undefined
+      const parts = String(bot.remote.handle).replace(/^@/, '').toLowerCase().split('.')
+      return parts.length === 2 && parts[1] === 'home' ? undefined : bot
+    }
+    // Who owns a friend's Bot, named as the host names it (#498: one formatter, ds-bot's
+    // shared/remote-label.js via __flybot__.names). An approval card names this person (#418):
+    // "Chief → UiA1415", never "Chief → Chief (UiA1415)".
+    function friendPerson(roster, handle) {
+      const bot = friendChatOf(roster, handle)
+      if (!bot) return ''
+      const shared = globalThis.__flybot__?.names?.friendBotOwner
+      if (typeof shared === 'function') return String(shared(bot) ?? '').trim()
+      return String(bot.remote.owner || bot.remote.homeName || '').trim()
+    }
+    function localHoldView(approval, roster) {
+      if (!approval?.id) return undefined
+      const to = approval.targetName ?? (typeof approval.request?.to === 'object' ? approval.request.to.handle : approval.request?.to)
+      const composer = approval.request?.via === 'composer'
+      return {
+        id: approval.id,
+        source: 'local',
+        // A failed local hold must read as failed and offer Retry, like the core overlay (#52).
+        status: approval.status,
+        ...(approval.error ? { error: String(approval.error) } : {}),
+        from: composer ? 'You' : approval.senderName,
+        // The local Bot that wrote it (not a line you typed): its own chat shows the card (#254).
+        ...(!composer && typeof approval.request?.from === 'string' ? { fromId: approval.request.from } : {}),
+        to,
+        // The person who gets it (#418, #498), as the host recorded it, else the friend chat's owner.
+        toName: approval.recipientName || friendPerson(roster, to) || approval.targetName || to,
+        text: approval.request?.text || approval.reason,
+        // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418), not in a dock.
+        ...(approval.request?.via === 'auto-reply' && typeof approval.request?.meta?.replyIn?.sessionId === 'string' ? { inline: approval.request.meta.replyIn.sessionId } : {}),
+        // A friend's handle is an object, never a room: only a room id may sit here.
+        roomId: approval.request?.meta?.roomId || (typeof approval.request?.to === 'string' ? approval.request.to : undefined),
+        sessionId: approval.request?.meta?.sessionId,
+      }
+    }
+    // The owner's own Bot Social handle at the top of the account menu, with copy (#181).
+    function MyHandle() {
+      useStyles()
+      const [handle, setHandle] = useState('')
+      const [copied, setCopied] = useState(false)
+      useEffect(() => {
+        let live = true
+        call('social/status', {}).then(value => { if (live) setHandle(typeof value?.home === 'string' ? value.home : '') }, () => {})
+        return () => { live = false }
+      }, [])
+      if (!handle) return null
+      const copy = async () => {
+        const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+        try {
+          await clip?.writeText?.(handle)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: skip the Copied feedback */ }
+      }
+      return h('div', { className: 'fs-me', 'data-flybot': 'my-handle-menu' },
+        h('span', { className: 'fs-me-handle', title: 'Your Bot Social handle' }, handle),
+        h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'copy-my-handle', onClick: copy }, copied ? 'Copied' : 'Copy'))
+    }
+
+    // A face-to-face room that has ended says so in plain view, naming the person who left (#191).
+    function faceEndLine(room) {
+      const status = room?.origin === 'face-to-face' ? room.face?.status : ''
+      if (status !== 'left' && status !== 'closed') return ''
+      const gone = (room.participants ?? []).filter(p => p.remote && p.leftSeq !== undefined)
+        .map(p => p.ownerName || p.displayName || p.name).filter(Boolean)
+      const names = [...new Set(gone)]
+      // The one who left reads that they left; the others read who left (#304).
+      if (status === 'left') return 'You left this room.'
+      if (names.length > 0) return `${names.join(', ')} left the room. Room closed.`
+      return 'Room closed.'
+    }
+    // A room that closed around you is no dead end (#458): one Close goes back to where you were.
+    // #998: a group made just now is a zero-turn Session, and the host hides the whole session header
+    // until the first turn, so a new group showed only its sidebar row. This strip stands in for that
+    // header while — and only while — the chat is still blank: the group's name, who is in it, and the
+    // way to invite someone. The first message ends it and the host's own header takes over.
+    // #998/#1019/#1038: the strip exists only for a blank local group. Hooks cannot sit behind that test
+    // (they must run in the same order on every render), so the test gates the work instead: a face room, a
+    // Bot chat and a chat with turns read nothing — no `room-invite` for a panel that would not draw it.
+    function GroupStrip({ room, roster, blank } = {}) {
+      useStyles()
+      const roomId = room?.id
+      // The link is kept with the room it belongs to: a session dock is handed to another Session without
+      // unmounting, so a bare link would stay on screen for the next group and Copy would copy another
+      // room's invite (#1019). Reading it through the room id also clears it in the same render that draws
+      // the new room — no frame with the old room's URL.
+      const [shown, setShown] = useState({ roomId: '', invite: null })
+      const [busy, setBusy] = useState(false)
+      const [note, setNote] = useState(null)
+      const [copied, setCopied] = useState(false)
+      // #1038: until this room's own answer is in, the panel does not know whether a link exists — and a
+      // button drawn now can be clicked before the read lands, minting the second ticket #1019 removed.
+      // `read` carries the room id, so switching rooms hides the button again in the same render.
+      const [read, setRead] = useState({ roomId: '', done: false })
+      const invite = shown.roomId === roomId ? shown.invite : null
+      const known = read.roomId === roomId && read.done
+      // The link this room already has (#1019): coming back to a group nobody has spoken in must show the
+      // link that was minted before, not mint another one. Same read the Members card's row makes (#876),
+      // so a group with a live link has nothing to mint and its list does not grow on every visit.
+      useEffect(() => {
+        if (blank !== true || !roomId || room?.face) return undefined
+        let gone = false
+        host('room-invite', { roomId }).then((value) => {
+          if (gone) return
+          setShown({ roomId, invite: liveInviteOf(value) })
+          setRead({ roomId, done: true })
+        }, () => { if (!gone) setRead({ roomId, done: true }) })
+        return () => { gone = true }
+      }, [blank, roomId, room?.face ? 'face' : ''])
+      if (blank !== true || !roomId || room?.face) return null
+      const memberNames = (Array.isArray(room.members) ? room.members : [])
+        .map(id => oneLine(roster?.byId?.[id]?.name ?? roster?.bots?.find?.(bot => bot.id === id)?.name ?? ''))
+        .filter(Boolean)
+      const mint = async () => {
+        setBusy(true)
+        setNote(null)
+        try {
+          const value = await host('room-invite-mint', { roomId })
+          if (value?.invite?.url) setShown({ roomId, invite: value.invite })
+          else setNote(tr('No link came back. Try again.'))
+        } catch (error) { setNote(errorText(error)) } finally { setBusy(false) }
+      }
+      const copy = async () => {
+        try {
+          await (typeof navigator !== 'undefined' ? navigator.clipboard : undefined)?.writeText?.(invite?.url ?? '')
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch { /* clipboard denied: the link is on screen to select */ }
+      }
+      return h('div', { className: 'fs-group-strip', 'data-flybot': 'group-strip' },
+        h('div', { className: 'fs-group-strip-head' },
+          h('span', { className: 'fs-group-strip-name', 'data-flybot': 'group-strip-name' }, oneLine(room.name) || tr('New group')),
+          memberNames.length > 0 ? h('span', { className: 'fs-group-strip-members', 'data-flybot': 'group-strip-members' }, memberNames.join(', ')) : null),
+        h('div', { className: 'fs-group-strip-invite' },
+          invite?.url
+            ? h(Fragment, null,
+              h('code', { className: 'fs-invite-url', 'data-flybot': 'group-strip-url' }, invite.url),
+              h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'group-strip-copy', onClick: copy }, copied ? tr('Copied') : tr('Copy link')))
+            : known
+              ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'group-strip-invite', disabled: busy, onClick: mint }, tr('Invite by link'))
+              : null),
+        note ? h('div', { className: 'fs-hint', 'data-flybot': 'group-strip-note', role: 'status' }, note) : null)
+    }
+
+    function FaceRoomStatus({ room, sessionId, roster, actions } = {}) {
+      noteChat(sessionId, room)
+      const text = faceEndLine(room)
+      if (!text) return null
+      const closed = room?.face?.status === 'closed'
+      return h('div', { className: 'fs-room-end', 'data-flybot': 'face-room-end', role: 'status' }, text,
+        closed ? h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-room-end-close', 'data-flybot': 'face-room-close', onClick: () => returnFromFace(roster, actions, room.id) }, 'Close') : null)
+    }
+
+
+    // "Name is thinking…" for friends' Bots (#297): one quiet line above the composer of a friend's chat or an
+    // open face room. The host polls Bot Social only while this is mounted (`social/typing`); an older
+    // server has no signal, so the line never shows and nothing else changes.
+    function thinkingLine(names) {
+      const list = names.filter(Boolean)
+      if (list.length === 0) return ''
+      if (list.length === 1) return `${list[0]} is thinking…`
+      if (list.length === 2) return `${list[0]} and ${list[1]} are thinking…`
+      return `${list[0]}, ${list[1]} and ${list.length - 2} more are thinking…`
+    }
+    // Which entries belong to this chat, and what to call them: the chat's own name for a friend's Bot, the
+    // room's participant name (with the owner when two share a name) in a face room.
+    function thinkingNames(items, { room, bot } = {}) {
+      const handle = typeof bot?.remote?.handle === 'string' ? bot.remote.handle.trim().toLowerCase() : ''
+      const faceId = room?.origin === 'face-to-face' && room.face?.status === 'open' ? room.face.roomId : ''
+      const seen = new Set()
+      const out = []
+      for (const item of Array.isArray(items) ? items : []) {
+        const mine = faceId
+          ? item.scope === 'face_room' && item.roomId === faceId
+          : handle !== '' && item.scope === 'direct' && String(item.handle).toLowerCase() === handle
+        if (!mine || seen.has(item.handle)) continue
+        seen.add(item.handle)
+        if (!faceId) {
+          // One name everywhere (#384): "Coder (Bob)", as the header and the sidebar say it.
+          const name = String(bot.name || item.name || '').trim()
+          const owner = String(bot.remote?.ownerName || bot.remote?.owner || bot.remote?.homeName || '').trim()
+          out.push(owner && !name.endsWith(`(${owner})`) ? `${name} (${owner})` : name)
+          continue
+        }
+        const people = (room.participants ?? []).filter(p => p.remote)
+        const own = people.find(p => String(p.handle ?? '').toLowerCase() === String(item.handle).toLowerCase())
+        const name = String(own?.displayName || own?.name || item.name || '').trim()
+        // One name everywhere (#384): "Coder (Bob)", as Members and the @ menu say it.
+        out.push(own?.ownerName ? `${name} (${own.ownerName})` : name)
+      }
+      return out
+    }
+    function PeerThinking({ room, bot } = {}) {
+      useStyles()
+      const [items, setItems] = useState([])
+      // A friend's 1:1 chat has the host's one thinking row, with the friend's Bot mark, from my send
+      // until the reply lands (#443); a second line here flashed in after the reply. Face rooms keep it.
+      const watching = Boolean(room?.origin === 'face-to-face' && room.face?.roomId && room.face.status === 'open')
+      useEffect(() => {
+        if (!watching) { setItems([]); return undefined }
+        let live = true
+        const load = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          call('social/typing', {}).then(value => { if (live) setItems(value?.supported === false ? [] : (Array.isArray(value?.typing) ? value.typing : [])) }, () => { if (live) setItems([]) })
+        }
+        load()
+        if (typeof setInterval !== 'function') return () => { live = false }
+        const timer = setInterval(load, 2000)
+        timer?.unref?.()
+        return () => { live = false; clearInterval(timer) }
+      }, [watching, bot?.remote?.handle, room?.id, room?.face?.roomId, room?.face?.status])
+      const text = watching ? thinkingLine(thinkingNames(items, { room, bot })) : ''
+      return text ? h('div', { className: 'fs-thinking', 'data-flybot': 'peer-thinking', role: 'status', 'aria-live': 'polite' }, h('span', { className: 'bt-shimmer' }, text)) : null
+    }
+
+    // #3082: a chat's dock is mounted per session (`conversation.input.dock` is `scope: session`), so
+    // opening another chat unmounts it and coming back mounts a new one. What a send that failed says,
+    // and which Retry already went out, cannot live in that component: the way back drew the still
+    // pending hold as a fresh wait again and offered a Retry that had already gone out (#3075 fixed the
+    // card, not the remount). This is the module-level Map + listener shape
+    // `core/src/client/approval-claims.js` uses for claims (#260, #418); the dock only subscribes.
+    // Keyed `${id}:${sessionId}`: one record per hold per chat.
+    const dockRecords = new Map()
+    const dockRecordListeners = new Set()
+    const dockRecordKey = (sessionId, id) => `${id}:${sessionId}`
+    const dockRecordChanged = () => { for (const fn of [...dockRecordListeners]) fn() }
+    const dockRecordOf = (sessionId, id) => dockRecords.get(dockRecordKey(sessionId, id))
+    const dockFailuresOf = (sessionId) => {
+      const out = {}
+      const suffix = `:${sessionId}`
+      for (const [key, record] of dockRecords) {
+        if (record.failure && key.endsWith(suffix)) out[key.slice(0, -suffix.length)] = record.failure
+      }
+      return out
+    }
+    const setDockRecord = (sessionId, id, change) => {
+      const key = dockRecordKey(sessionId, id)
+      const next = change(dockRecords.get(key) ?? {})
+      if (next.failure || next.retried) dockRecords.set(key, next)
+      else dockRecords.delete(key)
+      dockRecordChanged()
+    }
+    // A spent Retry is never dropped because its card left the lists: the send went out, and the poll that
+    // still writes the hold back as failed would otherwise offer that send again (#3082). The records are
+    // kept bounded instead: once more than this many are spent, the one entered longest ago goes first.
+    const DOCK_RETRIED_MAX = 50
+    function trimDockRetried() {
+      let spent = 0
+      for (const record of dockRecords.values()) if (record.retried) spent++
+      for (const [key, record] of [...dockRecords]) {
+        if (spent <= DOCK_RETRIED_MAX) break
+        if (!record.retried) continue
+        dockRecords.delete(key)
+        spent--
+      }
+    }
+    const rememberDockFailure = (sessionId, id, reason) => setDockRecord(sessionId, id, record => ({ ...record, failure: reason }))
+    const forgetDockFailure = (sessionId, id) => setDockRecord(sessionId, id, ({ failure, ...record }) => record)
+    const markDockRetried = (sessionId, id) => {
+      setDockRecord(sessionId, id, record => ({ ...record, retried: true }))
+      trimDockRetried()
+    }
+    const unmarkDockRetried = (sessionId, id) => setDockRecord(sessionId, id, ({ retried, ...record }) => record)
+    const dockRetried = (sessionId, id) => dockRecordOf(sessionId, id)?.retried === true
+    // The failure line goes when its id leaves the two lists the dock reads — decided here, in another
+    // window, or gone — so a stale line cannot outlive the card it explained (#3075). A spent Retry is
+    // not a line about a card that is gone, so it stays (`trimDockRetried` bounds it).
+    function pruneDockRecords(sessionId, liveIds) {
+      const suffix = `:${sessionId}`
+      let dropped = false
+      for (const key of [...dockRecords.keys()]) {
+        if (!key.endsWith(suffix) || liveIds.has(key.slice(0, -suffix.length))) continue
+        if (dockRecords.get(key)?.retried) continue
+        dockRecords.delete(key)
+        dropped = true
+      }
+      if (dropped) dockRecordChanged()
+    }
+    function onDockRecords(fn) {
+      dockRecordListeners.add(fn)
+      return () => { dockRecordListeners.delete(fn) }
+    }
+
+    function ChatApprovalDock({ sessionId, roster, room, bot, actions, claim, t } = {}) {
+      useStyles()
+      const locked = readOnlyReason(roster)
+      const [items, setItems] = useState([])
+      const [local, setLocal] = useState([])
+      // #1607: the two lists poll on their own, so an empty `mine` is "not loaded yet" as often as it is
+      // "somebody else's card". The card below only speaks once both have answered.
+      const [statusLoaded, setStatusLoaded] = useState(false)
+      const [listLoaded, setListLoaded] = useState(false)
+      const [busy, setBusy] = useState('')
+      const [error, setError] = useState('')
+      // #3075: a Bot Social send that failed leaves the upstream hold pending, so the 5 s poll writes the
+      // card back as if it never failed. The dock keeps its own memory of which sends did not go and why,
+      // keyed by id, and merges it into the cards it draws; `items` and `local` stay the host's lists.
+      // #3082: that memory, and a Retry already sent (#3075), outlive this component — a record is read
+      // from the module above, which a new mount of the same chat subscribes to again.
+      const [, bumpRecord] = useState(0)
+      useEffect(() => onDockRecords(() => bumpRecord(value => value + 1)), [sessionId])
+      const failures = dockFailuresOf(sessionId)
+      const load = () => {
+        // #3080: a tab that is not on screen has nobody reading these cards; showing it catches up below.
+        if (typeof document !== 'undefined' && document.hidden) return
+        call('social/status', {}).then(value => {
+          setItems(Array.isArray(value?.approvals) ? value.approvals : [])
+          setStatusLoaded(true)
+        }, () => {})
+        call('approvals', { status: ['pending', 'failed'] }).then(list => {
+          setLocal((Array.isArray(list) ? list : []).map(localHoldView).filter(Boolean))
+          setListLoaded(true)
+        }, () => {})
+      }
+      useEffect(() => {
+        load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(load, 5000)
+        timer?.unref?.()
+        // #3080: a tab that sat in the background catches up the moment it is shown, not one beat later
+        // (the same shape `everySecond` uses above).
+        const onShow = () => { if (typeof document === 'undefined' || !document.hidden) load() }
+        const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+        doc?.addEventListener('visibilitychange', onShow)
+        return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
+      }, [])
+      const session = { sessionId, roster, room, bot, handle: bot?.remote?.handle }
+      // The person who gets it (#418, #498), not the friend's Bot: a local hold already names the person.
+      const named = list => list.map((item) => {
+        const label = item.source === 'local' && item.toName && !looksLikeHandle(item.toName) ? '' : friendPerson(roster, item.to)
+        const from = faceFromLabel(item, room)
+        return label || from ? { ...item, ...(label ? { toName: label } : {}), ...(from ? { from } : {}) } : item
+      })
+      // A card is waiting when it is pending: a local hold (no status yet) or a Bot Social one
+      // (`status: 'pending'`). A failed hold is not approved; it is retried.
+      const waiting = entry => !entry.status || entry.status === 'pending'
+      // A Bot's reply to a friend is decided on its own bubble in the Bot's chat (#418): no dock draws it.
+      // #3075: the dock's own memory of a failed send is what keeps the card saying so across a poll. Only
+      // a waiting card is cast as failed; one the host already marks failed keeps its own reason (#P796).
+      const withFailures = item => {
+        const reason = failures[item.id]
+        return reason && waiting(item) ? { ...item, status: 'failed', error: reason } : item
+      }
+      const held = [
+        ...named(items),
+        ...named(local.filter(item => !item.inline)),
+      ].map(withFailures)
+      const mine = approvalsForOpenChat(held, session)
+      // A failure line goes when its id leaves the two lists (decided here, in another window, or gone),
+      // so a stale line cannot outlive the card it explained; a spent Retry stays for the poll below.
+      const heldKey = held.map(item => item.id).join(',')
+      useEffect(() => {
+        // Only an answered pair of lists knows a card is gone (#1607); before that, nothing is. A quiet
+        // chat never prunes its records, because a card that is missing there may still be loading.
+        if (!statusLoaded || !listLoaded) return
+        pruneDockRecords(sessionId, new Set(held.map(item => item.id)))
+      }, [heldKey, statusLoaded, listLoaded, sessionId])
+      // What this chat shows is its alone: the overlay draws no second card for the same approvals (#260).
+      const shownIds = mine.map(item => item.id).join(',')
+      useEffect(() => {
+        if (typeof claim !== 'function') return undefined
+        claim(shownIds ? shownIds.split(',') : [])
+        return () => claim([])
+      }, [shownIds, sessionId])
+      // A card for this room that this chat does not draw is still ours: it is decided on its own bubble
+      // (#418) or in the Bot's chat (#254). "Waiting for the owner's approval" therefore needs both lists
+      // answered, neither holding one for this room (#1607), and no card in the room's own list that this
+      // dock would draw. That list is the very array the room's `pendingCount` counts (channel.js), so it
+      // knows our card one 5 s poll before these two do: that beat stays quiet, never "another owner's"
+      // (#1638). A card the dock never draws keeps the line, because there the sentence is true.
+      const roomCards = approvalsForOpenChat((room?.pendingApprovals ?? []).filter(item => !item.inline), session)
+      const waitingOthers = mine.length === 0 && statusLoaded && listLoaded && roomCards.length === 0 && (room?.pendingCount ?? 0) > 0
+      // #3016: a hold that sits in another chat is still this person's, and this dock is the surface
+      // that can open every chat. When this chat draws no card of its own, the dock lists what waits
+      // elsewhere: the overlay can only point at such a hold, never say how many or to whom.
+      // #P796: a failed hold counts here too — never approved, but its row is the only way to the chat
+      // that offers its Retry, and dropping it from this list hid it from every chat but its own.
+      // Both polls answer first, or the count would grow one 5 s beat later (#1607).
+      const mineIds = new Set(mine.map(item => item.id))
+      const elsewhere = statusLoaded && listLoaded
+        ? held.filter(item => !mineIds.has(item.id) && (waiting(item) || item.status === 'failed'))
+        : []
+      // The chat that draws that card is where the row leads, the same place approvalsForOpenChat
+      // puts it: a friend's chat once it is listed (#278), else the sending Bot's own (#371).
+      const chatOfHold = (item) => {
+        // #P795: a room hold names the room by its face/wire id, while a chat opens by the room's local
+        // session id (`approvalsForOpenChat` matches the same pair). A room this window has not seen
+        // falls back to the id the hold carries, which is all there is to go on.
+        if (item.kind === 'face_room_message' && item.roomId) {
+          const room = Object.values(roster?.roomsById ?? {}).find(one => one?.id && one.face?.roomId === item.roomId)
+          return room?.id ?? item.roomId
+        }
+        const friend = listedFriendChat(roster, typeof item.to === 'object' && item.to ? item.to.handle : item.to)
+        if (friend?.id) return friend.id
+        const own = item.fromId ? (roster?.byId?.[item.fromId] ?? (roster?.bots ?? []).find(bot => bot.id === item.fromId)) : undefined
+        return own?.id ?? item.roomId ?? item.sessionId
+      }
+      const list = elsewhere.length
+        ? h(PendingApprovals, {
+          items: elsewhere,
+          busy,
+          onOpen: item => {
+            const id = chatOfHold(item)
+            if (id && typeof actions?.openSession === 'function') actions.openSession(id)
+          },
+          // One decision path, the dock's own: the in-chat card's Retry is the same `decide`. While that
+          // one is in flight a second click is dropped here too, not only disabled on the button (#P796).
+          onRetry: item => { if (busy) return; setError(''); decide(item, 'retry') },
+        })
+        : null
+      if (!mine.length && !waitingOthers && !list) return null
+      const decide = async (item, decision) => {
+        // #3044: one decision at a time. A card drawn while another send is in flight cannot start
+        // a second one, so two replies never race each other's `setBusy`/`setError`.
+        if (busy) return false
+        // #3075: a Retry acts on the card that failed, once — a click that arrives after that card's own
+        // send already went out (a stale node one frame behind the render that removed it) sends nothing.
+        // What is spent is the send that went out, not the click: a local retry the host answers with
+        // the same failure returns normally (#3075 review), so the id is only marked after a send.
+        const retry = decision === 'retry'
+        if (retry && dockRetried(sessionId, item.id)) return false
+        setBusy(item.id)
+        // The line is cleared where the person acted, not here (#3071): a batch calls this once per
+        // hold, so clearing on entry let a send that worked erase the reason the one before it had
+        // just written.
+        // #3075: the line alone dies with the next click; the card keeps the reason as its own state,
+        // so a poll that still sees the hold pending cannot draw it back as if nothing happened.
+        // (#3093) that record is the card's, whatever kind it is — a local hold the host marked failed
+        // draws its own status, and a decision the host refused never reached a send to be described.
+        const notSent = (failure) => {
+          const reason = String(failure?.message ?? failure).slice(0, 200)
+          setError(reason)
+          // A retry the host refused may be tried again; the id was never marked spent.
+          if (retry) unmarkDockRetried(sessionId, item.id)
+          rememberDockFailure(sessionId, item.id, reason)
+          return { error: reason }
+        }
+        try {
+          const always = decision === 'always'
+          // #3075: Bot Social's endpoint takes approve or reject only, and a hold that failed is still
+          // pending upstream — sending it again is an approve. The local host has its own `retry`.
+          const wanted = retry && item.source !== 'local' ? 'approve' : decision
+          const mapped = always || wanted === 'approve' || wanted === 'approved' ? 'approve' : wanted
+          let autoSend
+          if (item.source === 'local') {
+            const answer = await call('decide', { id: item.id, decision: mapped })
+            // (#3093) the local host answers a send that failed with the approval its own `release`
+            // saved as failed — status plus error, no throw — so a normal answer is not a send. Counting
+            // it as one dropped the card and let a batch's receipt name people it never reached. A
+            // rejection is the one non-approved answer that is not a failure.
+            if (answer && typeof answer === 'object' && (answer.error || answer.status === 'failed')) {
+              return notSent(String(answer.error ?? 'the send failed'))
+            }
+            if (always) {
+              // A face-room line turns on Auto-send for the Bot that wrote it only (#457).
+              if (item.kind === 'face_room_message' || room?.origin === 'face-to-face') {
+                if (item.fromId) {
+                  await call('social/face-auto', { botId: item.fromId, on: true })
+                  autoSend = { ...holdParties(item), scope: 'face' }
+                }
+              } else autoSend = await autoSendPair(call, item.id)
+            }
+          } else {
+            const result = await call('social/decide-approval', { approvalId: item.id, decision: mapped, ...(always ? { always: true } : {}) })
+            autoSend = result?.autoSend
+            // Bot Social's endpoint accepted the send, so this card has nothing left to retry.
+            if (retry) markDockRetried(sessionId, item.id)
+          }
+          const status = mapped === 'reject' || mapped === 'rejected' ? 'rejected' : 'approved'
+          // The decided card leaves now (#456); the next load agrees.
+          const drop = list => list.filter(entry => entry.id !== item.id)
+          setItems(drop)
+          setLocal(drop)
+          // The card went out, so the dock's own failed record for it is done too.
+          forgetDockFailure(sessionId, item.id)
+          if (always && status === 'approved') actions?.notify?.(autoSendToast(autoSend))
+          return true
+        } catch (failure) {
+          // A stale or failed hold must say why, never swallow the click. The reason also goes back to
+          // the caller: a batch has to report it after its last send, not lose it to that send's own
+          // clear (#3071).
+          return notSent(failure)
+        } finally { setBusy('') }
+      }
+      // #3011/#3029: one entry per person, in draw order; a hold whose person never resolved keeps the
+      // count alone rather than inventing a name.
+      const recipientNames = items => items.reduce((people, item) => {
+        const name = typeof item.toName === 'string' ? item.toName.trim() : ''
+        return name && !people.includes(name) ? [...people, name] : people
+      }, [])
+      // #3029: the click sends several holds and they leave the dock at once, so the tail reports what
+      // actually went out — one receipt for the people reached, and none when every send failed (those
+      // cards keep their own error line).
+      const approveAll = async () => {
+        const tr = (text, params) => (typeof t === 'function'
+          ? t(text, params)
+          : String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+        // The click is the person acting, so this is where the previous line goes (#3071).
+        setError('')
+        const sent = []
+        const failed = []
+        for (const item of mine.filter(waiting)) {
+          const outcome = await decide(item, 'approve')
+          if (outcome === true) sent.push(item)
+          else if (outcome?.error) {
+            const name = typeof item.toName === 'string' ? item.toName.trim() : ''
+            failed.push(name ? `${name}: ${outcome.error}` : outcome.error)
+          }
+        }
+        const reached = recipientNames(sent)
+        if (reached.length) actions?.notify?.(tr('Sent to {to}', { to: reached.join(tr(', ')) }))
+        // #3071: written once, after the last send, so no send in the batch can clear it again; the
+        // receipt above still names only the people reached.
+        if (failed.length) setError(failed.join(' '))
+      }
+      // #3011: the button says what it will send and to whom, so the blast radius of a click that
+      // cannot be undone is readable before it.
+      const toApprove = mine.filter(waiting)
+      const approveRecipients = recipientNames(toApprove)
+      const approveAllLabel = `Approve all (${toApprove.length})`
+      const approveAllTitle = approveRecipients.length
+        ? `${toApprove.length} 条 · to ${approveRecipients.join(', ')}`
+        : `${toApprove.length} 条`
+      // #1640: this card is drawn exactly when the room's own card is decided somewhere this chat does
+      // not draw. A held reply is decided on its own bubble here (#418); a Bot's hold is decided in a
+      // chat this person can open (#254). A card we cannot place keeps the neutral sentence: the dock
+      // never invents a destination.
+      const waitingPlace = () => {
+        // A room-tagged card belongs to the room that held it (#188): the same scoping the room's own
+        // list is read with (#1639), applied here to the two polls that know the destination.
+        const roomIds = new Set([room?.id, room?.face?.roomId].filter(Boolean))
+        const shown = new Set(mine.map(card => card.id))
+        const away = [...held, ...local.filter(item => item.inline)]
+          .filter(item => !shown.has(item.id) && (!item.roomId || roomIds.has(item.roomId)))
+        if (away.some(item => item.inline === sessionId)) return { bubble: true }
+        for (const item of away) {
+          // A held reply is decided where it is drawn: its own bubble, never a chat to open.
+          if (item.inline) continue
+          const friend = listedFriendChat(roster, typeof item.to === 'object' && item.to ? item.to.handle : item.to)
+          const own = item.fromId ? (roster?.byId?.[item.fromId] ?? (roster?.bots ?? []).find(bot => bot.id === item.fromId)) : undefined
+          const chat = friend ?? own
+          if (chat?.id) return { chatId: chat.id, name: chat.name ?? chat.title ?? '' }
+        }
+        return undefined
+      }
+      if (waitingOthers) {
+        return h('div', { 'data-flybot': 'chat-approvals' },
+          list,
+          h(ChatApproval, {
+            item: { id: 'waiting', place: waitingPlace() }, canDecide: false, t,
+            onOpen: chatId => actions?.openSession?.(chatId),
+          }))
+      }
+      // #2219: deciding is a write and the host refuses it in this window; the card is not offered at
+      // all, and the window's own sentence says where it can be decided.
+      if (locked) {
+        return mine.length
+          ? h('div', { 'data-flybot': 'chat-approvals' },
+            h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-approval-readonly', role: 'status' }, locked))
+          : list
+      }
+      // Another chat's hold is only a way to get there: this chat draws no decision for it (#3016).
+      if (!mine.length) return list
+      return h('div', { 'data-flybot': 'chat-approvals' },
+        mine.length > 1 && mine.some(waiting)
+          ? h('div', { className: 'fs-chat-actions' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'approve-all', disabled: !!busy, onClick: approveAll, title: approveAllTitle }, approveAllLabel))
+          : null,
+        error ? h('div', { className: 'fs-chat-error', role: 'alert', 'data-flybot': 'chat-approval-error' }, error) : null,
+        mine.map(item => h(ChatApproval, {
+          // #3044: a decision in flight locks every card, not only its own.
+          // #3071: a click on one card clears the previous line here, where the person acted.
+          key: item.id, item, canDecide: true, busy: !!busy, onDecide: (card, decision) => { setError(''); return decide(card, decision) }, t,
+        })))
+    }
+
+    // The decision on a Bot's held reply to a friend, drawn on that reply's bubble (#418): who gets
+    // it (the person, #498), Approve / Reject, and Auto-send from now on. The
+    // bubble above is the text, so the card does not repeat it.
+    function HeldReplyCard({ held, decide, call: callHost = call, actions } = {}) {
+      useStyles()
+      const [busy, setBusy] = useState(false)
+      if (!held?.id) return null
+      // #2219: the bubble card is handed no roster, so it reads the window state the sidebar saw.
+      const locked = readOnlyReason()
+      if (locked) {
+        return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'status' }, locked)
+      }
+      const { from, to } = holdParties({ from: held.from, to: held.to, toName: held.toName })
+      const onDecide = async (decision) => {
+        setBusy(true)
+        try {
+          await decide?.(decision === 'always' ? 'approve' : decision)
+          // Auto-send for this pair only, my Bot → that person (#417), never the home-wide switch.
+          if (decision === 'always') actions?.notify?.(autoSendToast(await autoSendPair(callHost, held.id)))
+        } finally { setBusy(false) }
+      }
+      return h('div', { className: 'fs-hold fs-chat-approval fs-held-reply', 'data-flybot': 'held-reply', role: 'region', 'aria-label': tr(WAITING_OWNER) },
+        h('div', { className: 'fs-label' }, tr(WAITING_OWNER)),
+        h('div', { className: 'fs-sub' }, `${from} → ${to}`),
+        h('div', { className: 'fs-actions fs-chat-actions' },
+          h('span', { className: 'fs-hold-decide' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm fs-btn-primary', disabled: busy, onClick: () => onDecide('approve') }, tr('Approve')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => onDecide('reject') }, tr('Reject'))),
+          h('button', { type: 'button', className: 'fs-link fs-hold-always', 'data-flybot': 'hold-always', disabled: busy, onClick: () => onDecide('always') }, AUTO_SEND_LINK)))
+    }
+
+    function FriendBotRow({ bot, chat, renderBot, busy, onRemove }) {
+      const [menu, setMenu] = useState(false)
+      const label = busy ? 'Removing…' : 'Remove this Bot'
+      return h('div', {
+        className: 'fs-row-wrap',
+        'data-flybot': 'friend-bot',
+        'data-handle': bot.handle,
+        onContextMenu: (event) => { event?.preventDefault?.(); setMenu(true) },
+      },
+        chat && typeof renderBot === 'function'
+          ? renderBot(chat)
+          : h('div', { className: 'fs-row', title: bot.handle },
+            h(FaceAvatar, { bot: faceLook({ member: { handle: bot.handle, displayName: bot.name, color: bot.color, avatar: bot.avatar } }), size: 24 }),
+            h('span', { className: 'fs-text' }, h('span', { className: 'fs-name' }, bot.name), h('span', { className: 'fs-sub' }, bot.handle))),
+        h('button', {
+          type: 'button',
+          className: 'fs-remove',
+          'data-flybot': 'remove-friend-bot',
+          title: 'Remove this Bot from Friends\' Bots and from your groups. This does not unfriend the owner.',
+          'aria-label': label,
+          'aria-busy': busy || undefined,
+          disabled: !!busy,
+          onClick: (event) => { event?.stopPropagation?.(); onRemove?.(bot) },
+        }, busy ? '…' : '×'),
+        menu ? h('div', { className: 'fs-menu', role: 'menu', 'data-flybot': 'friend-bot-menu' },
+          h('button', { type: 'button', role: 'menuitem', onClick: () => { setMenu(false); onRemove?.(bot) } }, 'Remove this Bot')) : null)
+    }
+
+    // Every home counts down to Bot Social's one deadline (#458): `offsetMs` is how far the server's
+    // clock runs ahead of this one (0 unless the skew is real).
+    // #2999: the number and the sentence around it are separate, so a zh window can put the same number
+    // inside its own words. `line` is the case with no dictionary entry, drawn as it always was.
+    function countdown(expiresAt, offsetMs = 0) {
+      const at = Date.parse(expiresAt) - (Number(offsetMs) || 0)
+      if (!Number.isFinite(at)) return { line: 'Anyone with the number can still join' }
+      const left = Math.max(0, at - Date.now())
+      if (left <= 0) return { line: 'Joining has ended' }
+      // m:ss, so the line visibly ticks every second (#306); minutes alone looked frozen.
+      const total = Math.max(1, Math.ceil(left / 1000))
+      return { time: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` }
+    }
+    const countdownLine = (value) => value.line ?? tr('{time} left to join', { time: value.time })
+    // ---- Scanning a room code (#773) -------------------------------------------------
+    // No camera, no platform decoder, or a camera the owner refused: one sentence each, and
+    // typing the number keeps working. FlyBot never decodes pixels itself.
+    const FACE_SCAN_COPY = {
+      'no-detector': 'This browser cannot scan codes. Type the 6-digit number instead.',
+      'no-camera': 'This browser cannot use a camera here. Type the 6-digit number instead.',
+      denied: 'FlyBot cannot use the camera. Allow the camera for this page, or type the 6-digit number instead.',
+      foreign: 'That is not a FlyBot room code. Ask for the 6-digit number instead.',
+      camera: 'The camera stopped before it read a code. Type the 6-digit number instead.',
+    }
+    const faceScanSupport = () => {
+      if (typeof globalThis.BarcodeDetector !== 'function') return 'no-detector'
+      const media = globalThis.navigator?.mediaDevices
+      return typeof media?.getUserMedia === 'function' ? '' : 'no-camera'
+    }
+    let faceScanStop = null
+    const stopFaceScan = () => {
+      const stop = faceScanStop
+      faceScanStop = null
+      try { stop?.() } catch { /* the camera was already released */ }
+    }
+    // Answers once with { code } ('' for a foreign code) or { fail: <reason> }, then releases the
+    // camera. The caller joins through the same path the number field uses.
+    function startFaceScan(onResult) {
+      const missing = faceScanSupport()
+      if (missing) {
+        onResult?.({ fail: missing })
+        return () => {}
+      }
+      // One scan at a time (#773): a second tap restarts the scan, so the camera the first tap
+      // opened is released here rather than left with nobody holding its stop handle.
+      stopFaceScan()
+      let stopped = false
+      let timer
+      let stream
+      const end = () => {
+        if (stopped) return
+        stopped = true
+        clearInterval(timer)
+        try { stream?.getTracks?.().forEach(track => track.stop?.()) } catch { /* tracks are gone */ }
+        if (faceScanStop === end) faceScanStop = null
+      }
+      const finish = (result) => {
+        if (stopped) return
+        end()
+        onResult?.(result)
+      }
+      faceScanStop = end
+      globalThis.navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((next) => {
+        if (stopped) {
+          try { next?.getTracks?.().forEach(track => track.stop?.()) } catch { /* nothing to stop */ }
+          return
+        }
+        stream = next
+        if (typeof globalThis.BarcodeDetector !== 'function') { finish({ fail: 'no-detector' }); return }
+        const video = document.createElement('video')
+        video?.setAttribute?.('playsinline', '')
+        if (video) {
+          video.muted = true
+          video.srcObject = stream
+        }
+        const started = video?.play?.()
+        // A play() the browser refuses shows up as no frames, which the loop below reports in one
+        // sentence; the rejection itself has nothing left to do.
+        if (started?.catch) started.catch(() => {})
+        // A platform can have the decoder and still refuse the format: the constructor throws, and
+        // the camera is already open, so answer one sentence and let `finish` release it.
+        let detector
+        try {
+          detector = new globalThis.BarcodeDetector({ formats: ['qr_code'] })
+        } catch {
+          finish({ fail: 'no-detector' })
+          return
+        }
+        // The camera often has a frame before the loop starts, so read once right away.
+        const read = async () => {
+          if (stopped) return
+          try {
+            const found = await detector.detect(video)
+            const raw = found?.find?.(item => item?.rawValue)?.rawValue
+            if (raw) finish({ raw })
+          } catch { /* one frame that cannot be read is not a failure */ }
+        }
+        void read()
+        if (typeof setInterval === 'function') {
+          timer = setInterval(read, 300)
+          timer?.unref?.()
+        }
+      }, (error) => {
+        finish({ fail: String(error?.name ?? '') === 'NotAllowedError' ? 'denied' : 'camera' })
+      })
+      return end
+    }
+    // A one-second tick that also catches up the moment the page is shown again, so a tab that
+    // sat in the background never shows a stale countdown (#458).
+    function everySecond(fn) {
+      if (typeof setInterval !== 'function') return undefined
+      const timer = setInterval(fn, 1000)
+      timer?.unref?.()
+      const onShow = () => { if (typeof document === 'undefined' || !document.hidden) fn() }
+      const doc = typeof document !== 'undefined' && typeof document.addEventListener === 'function' ? document : null
+      doc?.addEventListener('visibilitychange', onShow)
+      return () => { clearInterval(timer); doc?.removeEventListener('visibilitychange', onShow) }
+    }
+
+    const isPastFace = (room) => {
+      if (!room) return false
+      if (room.status === 'closed' || room.status === 'left') return true
+      return faceChip(room) === 'ended'
+    }
+    function uniqueFaceRooms(list) {
+      const seen = new Set()
+      const out = []
+      for (const room of Array.isArray(list) ? list : []) {
+        const id = room?.faceRoomId || room?.roomId
+        if (id) {
+          if (seen.has(id)) continue
+          seen.add(id)
+        }
+        out.push(room)
+      }
+      return out
+    }
+    // Past rooms stays open or folded across a reload (#304).
+    const PAST_OPEN_KEY = 'flybot.social.pastRoomsOpen'
+    function readPastOpen() {
+      try { return globalThis.localStorage?.getItem(PAST_OPEN_KEY) === '1' } catch { return false }
+    }
+    function writePastOpen(open) {
+      try { globalThis.localStorage?.setItem(PAST_OPEN_KEY, open ? '1' : '0') } catch { /* storage unavailable */ }
+    }
+    function FaceRooms({ actions, enabled = true, roster, remoteChats } = {}) {
+      const [rooms, setRooms] = useState([])
+      const [pastOpen, setPastOpen] = useState(readPastOpen())
+      const togglePast = () => {
+        writePastOpen(!pastOpen)
+        setPastOpen(!pastOpen)
+      }
+      const unique = uniqueFaceRooms(rooms)
+      const past = unique.filter(isPastFace)
+      const load = (poll = true) => call('social/face-rooms', { poll }).then(value => {
+        setRooms(Array.isArray(value?.rooms) ? value.rooms : [])
+      }, () => {})
+      useEffect(() => {
+        if (!enabled) return undefined
+        load(true)
+        if (typeof setInterval !== 'function') return undefined
+        const tick = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          load(true)
+        }
+        const timer = setInterval(tick, 5000)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [enabled])
+      if (!past.length) return null
+      const card = (room, folded) => h(FaceRoomCard, {
+        key: room.faceRoomId || room.roomId, room, past: folded, actions, onChange: () => load(true), roster, remoteChats,
+      })
+      return h('div', { 'data-flybot': 'face-rooms' },
+        h('div', { className: 'fs-past', 'data-flybot': 'face-past' },
+          h('button', { type: 'button', className: 'fs-past-head', 'aria-expanded': pastOpen, onClick: togglePast },
+            h('span', { className: 'fs-chev', 'aria-hidden': true, 'data-closed': pastOpen ? undefined : true }, '▾'),
+            'Past rooms',
+            h('span', { className: 'fs-count' }, String(past.length))),
+          pastOpen ? past.map(room => card(room, true)) : null))
+    }
+
+    function FaceRoomOverview({ room, roster, actions } = {}) {
+      useStyles()
+      const face = room?.origin === 'face-to-face' ? room.face : undefined
+      if (room?.origin !== 'face-to-face') return null
+      const [busy, setBusy] = useState('')
+      const [note, setNote] = useState(null)
+      const [tick, setTick] = useState(0)
+      const [snapshot, setSnapshot] = useState(null)
+      const [, setDialogTick] = useState(0)
+      useEffect(() => faceDialog.subscribe(() => setDialogTick(n => n + 1)), [])
+      const candidate = (snapshot?.status || face?.status) === 'candidate'
+      const live = candidate || (snapshot?.status || face?.status) === 'open'
+      useEffect(() => {
+        if (!live && face?.status !== 'candidate' && face?.status !== 'open') return undefined
+        const load = () => call('social/face-rooms', { poll: true }).then(value => {
+          const list = Array.isArray(value?.rooms) ? value.rooms : []
+          const next = list.find(item => (face?.roomId && item.faceRoomId === face.roomId) || item.roomId === room.id)
+          if (next) setSnapshot(next)
+        }, () => {})
+        load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(load, 3000)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [live, face?.roomId, room?.id])
+      useEffect(() => {
+        const expiresAt = snapshot?.expiresAt || face?.expiresAt
+        if (!candidate || !expiresAt) return undefined
+        return everySecond(() => setTick(n => n + 1))
+      }, [candidate, snapshot?.expiresAt, face?.expiresAt])
+      const run = async (label, fn) => {
+        setBusy(label)
+        setNote(null)
+        try { await fn() } catch (e) { setNote({ tone: 'error', text: errorText(e) }) }
+        finally { setBusy('') }
+      }
+      const members = snapshot?.members
+        ?? (room.presentedParticipants ?? room.participants ?? []).filter(p => p.leftSeq === undefined)
+      const expiresAt = snapshot?.expiresAt || face?.expiresAt
+      const mineMember = member => member.remote === false || Boolean(member.id && roster?.byId?.[member.id])
+      // #2228: a read-only window draws the same chip-only head as a past room — Leave, the Auto-send
+      // switch and the invite can only be refused by the host there.
+      const locked = readOnlyReason(roster) !== ''
+      if (candidate) {
+        // The open dialog already shows this waiting room: one card, not two (#306).
+        if (room.id && faceDialog.roomId === room.id) return null
+        return h('div', { className: 'fs-wait-overview', 'data-flybot': 'face-overview', 'data-wait': true },
+          h(FaceWaitCode, {
+            code: faceWaitCode(snapshot || face || room),
+            qrAt: expiresAt || 'open',
+            qrOffsetMs: snapshot?.clockOffsetMs,
+          }),
+          h('div', { className: 'fs-hint fs-wait-count', 'data-tick': tick, 'data-flybot': 'face-wait-count' },
+            expiresAt ? countdownLine(countdown(expiresAt, snapshot?.clockOffsetMs)) : 'Anyone with the number can still join.'),
+          h('ul', { className: 'fs-tiles fs-wait-roster', 'data-flybot': 'face-wait-roster', 'aria-label': 'Who has joined' },
+            facePeople(members, mineMember).map(person => h(FacePersonTile, {
+              key: person.key,
+              person,
+              // My own Bot looks as the roster draws it, as in the dialog (#306).
+              look: member => (mineMember(member) && roster?.byId?.[member.id]
+                ? faceLook({ roster, local: roster.byId[member.id] })
+                : faceLook({ roster, member })),
+            }))),
+          othersIn(members, mineMember) ? null : h('div', { className: 'fs-hint', 'data-flybot': 'face-wait-alone' }, 'Waiting for others to join…'),
+          locked ? null : h('div', { className: 'fs-wait-foot', 'data-flybot': 'face-wait-foot' },
+            h(ConfirmLeave, {
+              busy,
+              size: 'fs-btn',
+              onLeave: () => run('leave', async () => {
+                await call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })
+                returnFromFace(roster, actions, room.id)
+              }),
+              beside: h('button', {
+                type: 'button', className: 'fs-btn fs-btn-primary', 'data-flybot': 'face-enter', disabled: !!busy,
+                onClick: () => run('start', async () => {
+                  await call('social/face-start', { roomId: room.id, faceRoomId: face?.roomId })
+                  if (room.id && typeof actions?.openSession === 'function') actions.openSession(room.id)
+                }),
+              }, 'Enter chat'),
+            })),
+          note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
+      }
+      // Each Bot of mine in the room, once, for its own Auto-send switch (#457).
+      const mineBots = []
+      for (const member of members.filter(mineMember)) {
+        const local = member.id ? roster?.byId?.[member.id] : undefined
+        const id = local?.id || member.id
+        if (!id || mineBots.some(bot => bot.id === id)) continue
+        mineBots.push({ id, name: local?.name || member.displayName || member.name || 'Bot' })
+      }
+      const statusRoom = { status: snapshot?.status || face?.status || 'open', expiresAt: snapshot?.expiresAt || face?.expiresAt }
+      if (statusRoom.status === 'left' || statusRoom.status === 'closed') {
+        // A past room is read-only: its chip only, no Auto-send and no Leave (#304).
+        return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview', 'data-past': true },
+          h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)))
+      }
+      if (locked) {
+        // The window is read-only (#2228): the same chip-only head as a past room.
+        return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview', 'data-readonly': true },
+          h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)))
+      }
+      // Leave shares the status line, a row away from the Auto-send toggle, so a tap meant for one
+      // never hits the other (#306).
+      return h('div', { className: 'fs-face-head', 'data-flybot': 'face-overview' },
+        h('div', { className: 'fs-face-top' },
+          h('span', { className: 'fs-chip fs-chip-status', 'data-flybot': 'face-status', 'data-status': faceChip(statusRoom) }, faceChipLabel(statusRoom)),
+          h('span', { className: 'fs-face-actions' },
+            h(ConfirmLeave, {
+              busy,
+              onLeave: () => run('leave', async () => {
+                await call('social/face-leave', { roomId: room.id, faceRoomId: face?.roomId })
+                // Back to where you were, not a blank pane while the room closes.
+                returnFromFace(roster, actions, room.id)
+              }),
+            }))),
+        h(FaceAutoSendControl, { bots: mineBots }),
+        h(FaceInviteCard, { roomId: face?.roomId || snapshot?.faceRoomId }),
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone }, note.text) : null)
+    }
+
+    function makeOpener() {
+      let handler = null
+      let pending = false
+      let queued = null
+      return {
+        // #1021: the row that opens a panel passes which one it is, so the panel can name it.
+        open(arg) {
+          if (handler) handler(arg)
+          else { pending = true; queued = arg }
+        },
+        bind(fn) {
+          handler = fn
+          if (pending) { pending = false; fn(queued) }
+          return () => { if (handler === fn) handler = null }
+        },
+      }
+    }
+    const facePanel = makeOpener()
+    const addFriendPanel = makeOpener()
+    const openFaceToFace = (mode) => facePanel.open(mode === 'start' ? 'start' : 'join')
+    const openAddFriend = () => addFriendPanel.open()
+
+    // #2219: the shell names a read-only window in `roster.readOnly` and hands the roster to the slots
+    // that draw a Bot (sidebar section, session dock, room card). The card on a held reply's bubble
+    // (`flybot.approvals`) is handed no roster, so the last sentence any of those slots saw is kept here;
+    // a slot that gets a writable roster clears it again.
+    let windowReadOnly = ''
+    const readOnlyReason = (roster) => {
+      if (roster && typeof roster === 'object') windowReadOnly = typeof roster.readOnly === 'string' ? roster.readOnly.trim() : ''
+      return windowReadOnly
+    }
+
+    function FriendsBots({ remoteChats, actions, roster } = {}) {
+      useStyles()
+      const locked = readOnlyReason(roster) !== ''
+      const [error, setError] = useState('')
+      const [adding, setAdding] = useState(false)
+      const [faceOpen, setFaceOpen] = useState(false)
+      const [faceMode, setFaceMode] = useState('join')
+      const [shareRequests, setShareRequests] = useState([])
+      const [acceptNotices, setAcceptNotices] = useState([])
+      // null until the first status answer: a reload must not toast notices that were already there (#1054).
+      const seenAccept = useRef(null)
+      const applyStatus = (value) => {
+        setShareRequests(Array.isArray(value?.shareRequests) ? value.shareRequests : [])
+        const next = Array.isArray(value?.acceptNotices) ? value.acceptNotices : []
+        setAcceptNotices(next)
+        if (seenAccept.current === null) {
+          seenAccept.current = new Set(next.map(item => item?.id).filter(Boolean))
+          return
+        }
+        for (const item of next) {
+          if (!item?.id || seenAccept.current.has(item.id)) continue
+          seenAccept.current.add(item.id)
+          if (typeof actions?.notify === 'function') actions.notify(acceptNoticeSentence(item))
+        }
+      }
+      const loadApprovals = () => call('social/status', {}).then((value) => {
+        setError('')
+        applyStatus(value)
+      }, e => setError(errorText(e)))
+      const dismissShareRequest = item => call('social/share-request-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
+      const dismissAccept = item => call('social/accept-notice-dismiss', { id: item.id }).then(applyStatus, e => setError(errorText(e)))
+      const askShareBack = item => call('social/ask-share-back', { botId: item.botId, to: item.from, noticeId: item.id }).then(applyStatus, e => setError(errorText(e)))
+      useEffect(() => {
+        loadApprovals()
+        if (typeof setInterval !== 'function') return undefined
+        const tick = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          loadApprovals()
+        }
+        const timer = setInterval(tick, 15_000)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [])
+      useEffect(() => facePanel.bind(mode => { setFaceMode(mode === 'start' ? 'start' : 'join'); setFaceOpen(true) }), [])
+      useEffect(() => addFriendPanel.bind(() => setAdding(true)), [])
+      const unavailable = String(error).startsWith('Social is not running:')
+      if (unavailable) {
+        return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
+          h('div', { className: 'fs-empty', 'data-flybot': 'social-unavailable' }, error))
+      }
+      return h('section', { className: 'fs bt-social', 'aria-label': 'Social' },
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', style: { padding: '4px 10px' } }, error) : null,
+        h(AcceptNotices, { items: acceptNotices, onAsk: askShareBack, onDismiss: dismissAccept, locked }),
+        h(ShareRequests, { items: shareRequests, actions, onDismiss: dismissShareRequest, locked }),
+        h(FaceRooms, { actions, enabled: true, roster, remoteChats }),
+        adding ? h(AddFriend, { actions, remoteChats, onChange: loadApprovals, onDone: () => setAdding(false) }) : null,
+        faceOpen ? h(FaceToFaceGroup, { actions, roster, remoteChats, mode: faceMode, onClose: () => setFaceOpen(false) }) : null)
+    }
+
+    // Someone accepted an invite to one of my Bots (#1054). One-way stays; this card is the inviter's
+    // feedback and the one step that asks them to share a Bot back. Asking does not grant anything.
+    function acceptNoticeSentence(item) {
+      const who = item?.owner ? `${item.name} (${item.owner})` : (item?.name || 'A friend')
+      const bot = item?.botName || 'your Bot'
+      return `${who} accepted your invite. They can message ${bot}. You cannot message them until they share a Bot with you.`
+    }
+    function AcceptNotices({ items, onAsk, onDismiss, locked = false } = {}) {
+      if (!Array.isArray(items) || items.length === 0) return null
+      return h('div', { className: 'fs-share-requests', 'data-flybot': 'accept-notices' },
+        items.map((item) => h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'accept-notice' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-text' }, acceptNoticeSentence(item)),
+          item.asked ? h('div', { className: 'fs-hint', 'data-flybot': 'accept-notice-asked' }, 'You asked them to share a Bot.') : null,
+          // #2219: asking and dismissing are writes; a read-only window still reads the notice.
+          locked ? null : h('div', { className: 'fs-line' },
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'accept-notice-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+            h('button', {
+              type: 'button',
+              className: 'fs-btn fs-btn-sm fs-btn-primary',
+              'data-flybot': 'accept-notice-ask',
+              disabled: item.asked === true,
+              onClick: () => { if (!item.asked) onAsk?.(item) },
+            }, 'Ask them to share a Bot')))))
+    }
+
+    // "Share this Bot?" (#336): a friend's Bot tried to start a chat with one of my Bots that is not
+    // shared with them, and Bot Social refused it. Buttons only (#349): Share opens that Bot's Sharing,
+    // where the owner decides; Dismiss drops the card. Nothing is shared from here.
+    function ShareRequests({ items, actions, onDismiss, locked = false } = {}) {
+      if (!Array.isArray(items) || items.length === 0) return null
+      return h('div', { className: 'fs-share-requests', 'data-flybot': 'share-requests' },
+        items.map((item) => {
+          const who = item.owner ? `${item.name} (${item.owner})` : item.name
+          const bot = item.botName || 'your Bot'
+          return h('div', { key: item.id, className: 'fs-card fs-share-request', role: 'status', 'data-flybot': 'share-request' },
+            h('div', { className: 'fs-hint', 'data-flybot': 'share-request-text' }, `${who} tried to start a chat with ${bot}. ${bot} is not shared with them.`),
+            h('div', { className: 'fs-line' },
+              // #2219: dismissing is a write; opening the Sharing page is navigation and stays.
+              locked ? null : h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'share-request-dismiss', onClick: () => onDismiss?.(item) }, 'Dismiss'),
+              h('button', {
+                type: 'button',
+                className: 'fs-btn fs-btn-sm fs-btn-primary',
+                'data-flybot': 'share-request-open',
+                title: `Open ${bot}'s Sharing`,
+                disabled: typeof actions?.openSettings !== 'function',
+                onClick: () => actions.openSettings('bots', item.botId),
+              }, `Share ${bot}…`)))
+        }))
+    }
+
+    // One invite control for Add friend and a Bot's Sharing (#499): one button makes the link and copies
+    // it; then the link shows with the same Copy link / Copy with instructions / New link, and every copy
+    // note names the Bot. A plain render helper without hooks: each caller keeps its own state.
+    const INVITE_COPY_FAILED = 'Could not copy. Select the link and copy it by hand.'
+    const inviteCopied = (botName, withText) => (withText ? `Invite for ${botName} copied with instructions.` : `Invite link for ${botName} copied.`)
+    // Call it straight from a click where possible, so the clipboard write keeps its permission.
+    const copyInvite = (text, botName, withText = false) => {
+      const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+      if (!text || !clip?.writeText) return Promise.resolve({ tone: 'error', text: INVITE_COPY_FAILED })
+      return Promise.resolve(clip.writeText(text)).then(() => ({ tone: 'ok', text: inviteCopied(botName, withText) }), () => ({ tone: 'error', text: INVITE_COPY_FAILED }))
+    }
+    function inviteControls({ botName, invite, busy, onMint, onCopy, onNew } = {}) {
+      // The button names the Bot the link shares; a long name ends in an ellipsis instead of being clipped.
+      if (!invite) {
+        return h('div', { className: 'fs-line', 'data-flybot': 'invite-line' },
+          h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'mint-invite', title: `Copy invite link for ${botName}`, style: { flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }, disabled: busy, onClick: onMint }, `Copy invite link for ${botName}`))
+      }
+      // The link first, then Copy link as the one primary action; a new link is a quiet text button (#230).
+      return h(Fragment, null,
+        h('input', { className: 'fs-input fs-invite-link', readOnly: true, value: invite.link, 'aria-label': `Invite link for ${botName}`, 'data-flybot': 'invite-link', onFocus: e => e.target.select?.(), onClick: e => e.target.select?.() }),
+        h('div', { className: 'fs-line fs-invite-actions' },
+          h('button', { type: 'button', className: 'fs-btn fs-btn-primary fs-btn-fit', 'data-flybot': 'copy-link', onClick: () => onCopy(invite.link, false) }, 'Copy link'),
+          invite.text ? h('button', { type: 'button', className: 'fs-btn', 'data-flybot': 'copy-invite-text', onClick: () => onCopy(invite.text, true) }, 'Copy with instructions') : null,
+          h('button', { type: 'button', className: 'fs-link fs-invite-new', 'data-flybot': 'new-invite-link', disabled: busy, onClick: onNew }, 'New link')))
+    }
+
+    // How long an accepted invite's result shows before Add friend closes on its own (#499).
+    const ACCEPT_CLOSE_MS = 1800
+    // Add friend: accept a friend's invite, invite a friend to one of my Bots, and answer requests.
+    function AddFriend({ actions, remoteChats, onChange, onDone } = {}) {
+      const [overview, setOverview] = useState(null)
+      const [code, setCode] = useState('')
+      const [status, setStatus] = useState(null)
+      const [busy, setBusy] = useState(false)
+      // Which of my Bots joins: the friend sees and reaches only that one (default: the Main Bot).
+      const [mine, setMine] = useState([])
+      const [joiner, setJoiner] = useState('')
+      // Which of my Bots the copied invite shares (default: the Main Bot), and my own handle (#181).
+      const [sharing, setSharing] = useState('')
+      const [me, setMe] = useState('')
+      // The link that was just made, kept on screen so it can be checked or copied by hand (#343).
+      const [made, setMade] = useState(null)
+      // The friend chats as of now, read when the panel closes after an accept; the pending close (#499).
+      const chats = useRef(remoteChats)
+      chats.current = remoteChats
+      const closing = useRef(null)
+      // `keep`: a result is on screen (an accepted invite, say); a failed re-read of the friend list must not
+      // replace it with an error that looks like the action failed (#343).
+      const refresh = (keep = false) => call('social/overview', {}).then(setOverview, (e) => { if (!keep) setStatus({ tone: 'error', text: errorText(e) }) })
+      useEffect(() => {
+        refresh()
+        call('social/status', {}).then(value => {
+          const bots = value?.bots ?? []
+          setMine(bots)
+          setMe(typeof value?.home === 'string' ? value.home : '')
+          setJoiner(current => current || (bots.find(bot => bot.isMain) ?? bots[0])?.id || '')
+          setSharing(current => current || (bots.find(bot => bot.isMain) ?? bots[0])?.id || '')
+        }, () => {})
+      }, [])
+      useEffect(() => {
+        if (!onDone || typeof document?.addEventListener !== 'function') return undefined
+        const onKey = (event) => {
+          if (event.key === 'Escape') { event.preventDefault(); onDone() }
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+      }, [onDone])
+      useEffect(() => () => clearTimeout(closing.current), [])
+      const run = async (label, fn) => {
+        setBusy(true)
+        setStatus(null)
+        try {
+          // `fn` answers a sentence, or { tone, text } for a neutral note (#496).
+          const result = await fn()
+          const message = typeof result === 'string' ? { tone: 'ok', text: result } : result
+          if (message?.text) setStatus(message)
+          await refresh(Boolean(message?.text))
+          onChange?.()
+        } catch (e) {
+          const text = errorText(e)
+          setStatus(text === ALREADY_HAVE
+            ? { tone: 'info', text }
+            : { tone: 'error', text: /^This invite was already used/.test(text) ? text : `${label} failed: ${text}` })
+        } finally {
+          setBusy(false)
+        }
+      }
+      // Makes a link for the picked Bot and copies it; New link (`copy` false) only replaces the link shown.
+      const mint = (copy = true) => run('Invite', async () => {
+        const botId = sharing || mine.find(bot => bot.isMain)?.id || mine[0]?.id
+        if (!botId) throw new Error('Choose one of your Bots to invite a friend to')
+        const botName = mine.find(bot => bot.id === botId)?.name || 'your Bot'
+        const invite = await call('social/create-invite', { botId })
+        const link = invite?.link || invite?.url
+        if (!link) throw new Error('The invite came back without its link')
+        setMade({ link, text: invite?.text, botName })
+        return copy ? (await copyInvite(link, botName)).text : ''
+      })
+      const copyMade = (text, withText) => { if (made) void copyInvite(text, made.botName, withText).then(setStatus) }
+      const join = async e => {
+        e.preventDefault()
+        if (busy || !code.trim()) return
+        let accepted
+        await run('Accepting invite', async () => {
+          const r = await call('social/join-invite', { code, ...(joiner ? { botId: joiner } : {}) })
+          setCode('')
+          if (r?.alreadyHave) {
+            // Nothing changed unless a hidden or removed Bot really came back (#496).
+            const back = (r.restored ?? []).map(bot => botWithOwner(bot.name, bot.owner)).filter(Boolean)
+            if (back.length) return `${back.join(' and ')} ${back.length > 1 ? 'are' : 'is'} back in your list.`
+            const have = botWithOwner(r.botName, r.ownerName)
+            // #1000: a re-accept completes the pair now, so the line says what the click did instead of
+            // leaving the other direction silently absent.
+            if (r.sharedBack) {
+              return { tone: 'info', text: `${have ? `You already have ${have}. ` : ''}${sharedBackLine(r.sharedBackBotName)}` }
+            }
+            return { tone: 'info', text: have ? `You already have ${have}.` : ALREADY_HAVE }
+          }
+          const who = r.inviterName ?? r.inviter ?? 'Your friend'
+          const shared = r.inviterBotName || r.sharedBot
+          if (r.status === 'active') {
+            // A join that brought no Bot says so instead of claiming one was shared, and stays open.
+            if (shared) accepted = r
+            const backNote = r.sharedBack ? ` ${sharedBackLine(r.sharedBackBotName)}` : ''
+            return shared ? `${who} shared ${shared} with you.${backNote}` : `Joined ${who}'s invite, but their Bot hasn't loaded yet. It shows in your list when it does; if not, accept the link again.${backNote}`
+          }
+          return `Request sent to ${who}. They show up here once they accept.`
+        })
+        // The result shows for a moment, then the panel closes on its own and opens the new friend's
+        // Bot when it is already listed: no second click on Done (#499).
+        if (!accepted || !onDone) return
+        clearTimeout(closing.current)
+        closing.current = setTimeout(() => {
+          closing.current = null
+          const chat = chatByHandle(chats.current, accepted.inviter)
+          onDone()
+          if (chat?.id && typeof actions?.openSession === 'function') actions.openSession(chat.id)
+        }, ACCEPT_CLOSE_MS)
+      }
+      const respond = (item, decision) => run(decision === 'accept' ? 'Accepting' : 'Declining', async () => {
+        await call('social/respond', { relationshipId: item.relationshipId, decision })
+        return decision === 'accept' ? `${item.name ?? item.handle} is now a friend.` : `Declined ${item.name ?? item.handle}.`
+      })
+      const incoming = overview?.incoming ?? []
+      const outgoing = overview?.outgoing ?? []
+      const shareName = (mine.find(bot => bot.id === sharing) ?? mine.find(bot => bot.isMain) ?? mine[0])?.name || 'your Bot'
+      // Accepting and inviting are two separate groups, each with its own heading; each Bot picker is
+      // labelled with what it does, and Done closes the panel from the bottom (#343).
+      return h('div', { className: 'bt-social-add', 'data-flybot': 'add-friend' },
+        h('div', { className: 'fs-face-head' },
+          h('div', { className: 'fs-label fs-label-plain' }, tr('Add friend'))),
+        me ? h('div', { className: 'fs-hint', 'data-flybot': 'my-handle', style: { padding: '0 10px' } }, `You are ${me}`) : null,
+        h('div', { className: 'fs-label', 'data-flybot': 'accept-heading' }, 'Accept an invite'),
+        h('form', { onSubmit: join, className: 'fs-card bt-social-join', 'data-flybot': 'accept-group' },
+          // The paste box takes the full width on its own row and wraps, so a whole link is readable (#343,
+          // #499). Typing clears an error that no longer applies; Enter accepts, as in a one-line box.
+          h('textarea', {
+            className: 'fs-input fs-paste', rows: 2, style: { width: '100%' }, value: code, spellCheck: false, placeholder: 'Paste invite link or code', 'aria-label': 'Invite link or code',
+            onChange: (e) => { setCode(e.target.value); if (status?.tone === 'error') setStatus(null) },
+            onKeyDown: (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent?.isComposing) { e.preventDefault(); e.currentTarget?.form?.requestSubmit?.() } },
+          }),
+          // Accepting grants only the invited Bot to you. The Bot you talk through is not shared, so
+          // there is nothing to pick with one Bot (#228).
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'join-as', title: "Talks for you. Not shared: your friend can't use it unless you invite them to it." },
+            h('span', { className: 'fs-join-as-label', 'data-flybot': 'talk-through' }, 'Talk through '),
+            h('select', { className: 'fs-input', value: joiner, 'aria-label': 'Which of your Bots talks', onChange: e => setJoiner(e.target.value) },
+              mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
+          h('div', { className: 'fs-line' },
+            h('button', { type: 'submit', className: 'fs-btn', disabled: busy || !code.trim() }, tr('Accept invite')))),
+        h('div', { className: 'fs-label', 'data-flybot': 'invite-heading' }, 'Invite a friend'),
+        h('div', { className: 'fs-card', 'data-flybot': 'invite-group' },
+          // Which Bot the link shares is a labelled picker on its own line, not a bare `C…`; a name too long
+          // for the sidebar is whole in the tooltip and in the button's tooltip below (#343).
+          mine.length > 1 ? h('label', { className: 'fs-line fs-hint fs-join-as', 'data-flybot': 'share-as', title: 'Your friend gets this Bot only.' },
+            h('span', { className: 'fs-join-as-label' }, 'Share '),
+            h('select', { className: 'fs-input', value: sharing, title: shareName, 'aria-label': 'Which of your Bots to share', 'data-flybot': 'share-bot', onChange: e => { setSharing(e.target.value); setMade(null) } },
+              mine.map(bot => h('option', { key: bot.id, value: bot.id }, bot.name)))) : null,
+          // The same invite control as the Bot's Sharing (#499).
+          inviteControls({ botName: made?.botName || shareName, invite: made, busy, onMint: () => mint(true), onCopy: copyMade, onNew: () => mint(false) })),
+        status ? h('div', { className: 'fs-status', role: 'status', 'data-tone': status.tone, style: { padding: '2px 10px' } }, status.text) : null,
+        incoming.length ? h('div', { className: 'bt-social-requests' },
+          h('div', { className: 'fs-label' }, tr('Friend requests'), h('span', { className: 'fs-count' }, String(incoming.length))),
+          incoming.map(item => h('div', { key: item.relationshipId, className: 'fs-row bt-social-row' },
+            h(FaceAvatar, { bot: faceLook({ member: { handle: item.handle, displayName: item.name } }), size: 24 }),
+            h('span', { className: 'fs-text' },
+              h('span', { className: 'fs-name' }, item.name ?? item.handle),
+              h('span', { className: 'fs-sub' }, item.handle),
+              item.message ? h('span', { className: 'fs-sub fs-msg' }, item.message) : null),
+            h('span', { className: 'fs-actions' },
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'accept') }, tr('Accept')),
+              h('button', { type: 'button', className: 'fs-btn fs-btn-sm', disabled: busy, onClick: () => respond(item, 'decline') }, 'Decline'))))) : null,
+        outgoing.length ? h('div', { className: 'bt-social-outgoing' },
+          h('div', { className: 'fs-label' }, tr('Waiting for them to accept')),
+          outgoing.map(item => h('div', { key: item.relationshipId ?? item.handle, className: 'fs-row' },
+            h(FaceAvatar, { bot: faceLook({ member: { handle: item.handle, displayName: item.name } }), size: 24 }),
+            h('span', { className: 'fs-text' },
+              h('span', { className: 'fs-name' }, item.name ?? item.handle),
+              item.name ? h('span', { className: 'fs-sub' }, item.handle) : null),
+            h('span', { className: 'fs-tag' }, 'pending')))) : null,
+        onDone ? h('div', { className: 'fs-line', 'data-flybot': 'add-friend-done', style: { padding: '6px 10px 2px', justifyContent: 'flex-end' } },
+          h('button', { type: 'button', className: 'fs-btn fs-btn-sm', onClick: onDone }, tr('Done'))) : null)
+    }
+
+    // Which local Bots can be invited to (social/status), cached for the synchronous canInvite.
+    let status = { at: 0, value: null }
+    let statusTask
+    const statusListeners = new Set()
+    const loadStatus = () => {
+      statusTask ??= call('social/status', {}).then(value => {
+        const changed = JSON.stringify(value) !== JSON.stringify(status.value)
+        status = { at: Date.now(), value }
+        if (changed) for (const fn of [...statusListeners]) { try { fn() } catch (error) { console.error('flybot-social: status listener failed', error) } }
+        return value
+      }).finally(() => { statusTask = undefined })
+      return statusTask
+    }
+    // Fires when what canInvite answers may have changed (first status, connect/disconnect, Bots added).
+    const onStatusChange = (fn) => { statusListeners.add(fn); return () => statusListeners.delete(fn) }
+    // Sync: true when Bot Social is connected and botId is one of this team's Bots. Until the first
+    // status answer it is false (and starts loading); the cache refreshes every 30 s.
+    function canInvite(botId) {
+      if (Date.now() - status.at > 30_000) void loadStatus().catch(() => {})
+      return Boolean(status.value?.connected && status.value.bots.some(bot => bot.id === botId))
+    }
+
+    const ACCESS_POLL_MS = 5000
+    const ACCESS_NOTE = 'One row per Bot. Revoke one without affecting the rest. Default: nobody, Chief included.'
+    // Settings → Bot Social asks to land on this card (#1074). One shot: a normal open of Bot settings does not scroll.
+    let peopleAccessBot = null
+    function openPeopleAccess(actions, botId) {
+      if (typeof actions?.openSettings !== 'function' || !botId) return
+      peopleAccessBot = botId
+      actions.openSettings('bots', botId)
+    }
+    function ManageAccess({ bot, onGrants, readOnly = false }) {
+      const [view, setView] = useState(null)
+      const [busy, setBusy] = useState('')
+      const [error, setError] = useState('')
+      const [asking, setAsking] = useState('')
+      const load = async () => {
+        if (!bot?.id) return
+        try {
+          const next = await call('social/access', { botId: bot.id })
+          setView(previous => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next))
+          setError('')
+        } catch (e) { setError(errorText(e)) }
+      }
+      // A friend who accepts while this page is open shows up without reopening it (#228).
+      useEffect(() => {
+        void load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, ACCESS_POLL_MS)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [bot?.id])
+      useEffect(() => {
+        if (!bot?.id || peopleAccessBot !== bot.id || typeof document?.querySelector !== 'function') return undefined
+        peopleAccessBot = null
+        const node = document.querySelector('[data-flybot="manage-access"]')
+        if (typeof node?.scrollIntoView === 'function') node.scrollIntoView({ block: 'start' })
+        return undefined
+      }, [bot?.id])
+      // Sharing's hint mentions Revoke only once someone has access (#499).
+      const granted = (view?.grants ?? []).length
+      useEffect(() => { onGrants?.(granted) }, [granted, onGrants])
+      if (!bot?.id) return null
+      const revoke = async (grant) => {
+        setBusy(grant.id)
+        setError('')
+        try {
+          setView(await call('social/revoke-grant', { botId: bot.id, grantId: grant.id, ...((grant.grantIds ?? []).length > 1 ? { grantIds: grant.grantIds } : {}), relationshipId: grant.relationshipId, grantee: grant.grantee }))
+          const next = await call('social/access', { botId: bot.id })
+          setView(next)
+          setAsking('')
+          // The roster cache is being rebuilt from here; a share list read that started before this
+          // point saw the old roster, so it must not replace the list (#984).
+          shareListEpoch += 1
+        } catch (e) { setError(errorText(e)) }
+        finally { setBusy('') }
+      }
+      // Auto-send for this pair, next to Revoke (#417): off brings back the approval card on the next reply.
+      const toggleAutoSend = async (grant, on) => {
+        setBusy(`auto:${grant.id}`)
+        setError('')
+        try {
+          await call('social/auto-send', { botId: bot.id, home: grant.home, on })
+          setView(await call('social/access', { botId: bot.id }))
+        } catch (e) { setError(errorText(e)) }
+        finally { setBusy('') }
+      }
+      const grants = view?.grants ?? []
+      // #2446: People with access is a read, so a read-only window keeps the list and its
+      // Auto-send state, and only the two writes (Revoke, the Auto-send switch) go.
+      const note = readOnly ? 'One row per Bot. Default: nobody, Chief included.' : ACCESS_NOTE
+      // One Auto-send switch per person, however many of their Bots are rows (#995).
+      const autoShown = new Set()
+      // A room the grant rows already named must not come back under "This room only" (#955).
+      const listedRoomIds = grants.flatMap(grant => roomList(grant.rooms).map(row => row.id))
+      const roomOnlyUsage = roomHint('only', (view?.rooms ?? []).filter(room => room.origin === 'face-to-face'), listedRoomIds)
+      // The handle (or the home, when the row names no Bot) and "In use in N rooms" are inline
+      // siblings. React inserts no space between them, so the row paints `@handleIn use` (#1073).
+      const accessIdentity = (grant) => (
+        grant.handle && grant.handle !== grant.home ? grant.handle
+          : grant.home && grant.name && !String(grant.name).includes(grant.home) ? grant.home
+            : ''
+      )
+      // Revoke drops the share and the rooms that use it. Ask once, inline, as Leave does (#1073).
+      const revokeAsk = (grant) => {
+        const who = grant.name || grant.grantee || 'this person'
+        const n = roomList(grant.rooms).length
+        return n > 0
+          ? `Revoke ${who}? They lose this Bot in ${n} room${n === 1 ? '' : 's'}.`
+          : `Revoke ${who}? They lose this Bot.`
+      }
+      return h('div', { className: 'fs fs-card', 'data-flybot': 'manage-access' },
+        h('div', { className: 'fs-name' }, tr('People with access')),
+        h('div', { className: 'fs-hint fs-face-note' }, note),
+        grants.length === 0 ? h('div', { className: 'fs-hint' }, 'Nobody has this Bot yet. Copy an invite link above and send it to a friend.') : null,
+        grants.map((grant) => {
+          const grantUsage = roomHint('use', grant.rooms)
+          const identity = accessIdentity(grant)
+          // Auto-send is one setting for the pair (this Bot → that person), so a friend whose two Bots
+          // are two rows still gets one switch (#995), on the first of their rows.
+          const autoKey = grant.person || grant.home
+          const showAuto = Boolean(grant.home) && !autoShown.has(autoKey)
+          if (showAuto) autoShown.add(autoKey)
+          const grantKey = grant.id || grant.grantee
+          const confirming = asking === grantKey
+          return h('div', { key: grantKey, className: 'fs-line', 'data-flybot': 'access-grant' },
+          h('div', { className: 'fs-col fs-access-col' },
+            h('span', { className: 'fs-name' }, grant.name || grant.grantee),
+            identity || grantUsage ? h('span', { className: 'fs-access-meta', 'data-flybot': 'access-meta' },
+              identity ? h('span', { className: 'fs-sub' }, identity) : null,
+              identity && grantUsage ? ' · ' : null,
+              grantUsage ? h('span', { className: 'fs-hint', title: grantUsage.title }, grantUsage.text) : null) : null),
+          showAuto ? (readOnly
+            ? h('span', {
+              className: 'fs-hint fs-access-auto', 'data-flybot': 'access-auto-state',
+              title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.`,
+            }, grant.autoSend === true ? 'Auto-send on' : 'Auto-send off')
+            : h('label', { className: 'fs-auto fs-access-auto', 'data-flybot': 'access-auto-send', title: `${bot.name || 'This Bot'}'s replies to ${grant.person || grant.home} go out without asking you first.` },
+              h('input', {
+                type: 'checkbox', checked: grant.autoSend === true, disabled: Boolean(busy),
+                'aria-label': `Auto-send ${bot.name || 'this Bot'} → ${grant.person || grant.home}`,
+                onChange: e => { void toggleAutoSend(grant, e.target.checked) },
+              }),
+              'Auto-send')) : null,
+          readOnly ? null
+            : confirming
+            ? h('span', { className: 'fs-leave-ask fs-access-ask', 'data-flybot': 'revoke-grant-confirm' },
+              h('span', { className: 'fs-hint' }, revokeAsk(grant)),
+              h('button', {
+                type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
+                'data-flybot': 'revoke-grant-yes', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
+                onClick: () => revoke(grant),
+              }, busy === grant.id ? 'Revoking…' : 'Revoke'),
+              h('button', {
+                type: 'button', className: 'fs-btn fs-btn-sm', disabled: Boolean(busy),
+                'data-flybot': 'revoke-grant-no', onClick: () => setAsking(''),
+              }, tr('Keep')))
+            : h('button', {
+              type: 'button', className: 'fs-btn', disabled: Boolean(busy),
+              'data-flybot': 'revoke-grant', 'aria-label': `Revoke ${grant.name || grant.grantee}`,
+              onClick: () => setAsking(grantKey),
+            }, 'Revoke'))
+        }),
+        roomOnlyUsage ? h('div', { className: 'fs-hint', title: roomOnlyUsage.title }, roomOnlyUsage.text) : null,
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
+    }
+
+    function FriendChatSettings({ bot, actions, roster } = {}) {
+      const remote = bot?.remote
+      const home = remote?.home
+      const handle = remote?.handle
+      const [auto, setAuto] = useState(false)
+      const [saving, setSaving] = useState(false)
+      const [busy, setBusy] = useState(false)
+      const [asking, setAsking] = useState(false)
+      const [error, setError] = useState('')
+      useEffect(() => {
+        if (!home) return undefined
+        call('social/settings', {}).then(value => setAuto(value?.autoAccept?.[home] === true), () => {})
+      }, [home])
+      if (!handle) return null
+      const toggleAuto = async (on) => {
+        if (!home) return
+        setSaving(true)
+        setAuto(on)
+        setError('')
+        try {
+          const result = await call('social/auto-accept', { home, on })
+          setAuto(result?.autoAccept === true)
+        } catch (e) {
+          setError(errorText(e))
+          setAuto(!on)
+        } finally { setSaving(false) }
+      }
+      const named = remote.homeName || remote.owner || ''
+      const who = named || home || 'Your friend'
+      // #1001: a friend stays in the list while any of their Bots is still shared with any of mine, so
+      // removing this one leaves the friend behind with no reason given. Name the link that keeps them:
+      // the other Bots of the same friend the roster still lists. With none, there is nothing to name and
+      // the question stays the one #139 pinned. Copy only: the roster's own names, no new data.
+      const stillLinked = (Array.isArray(roster?.remoteBots) ? roster.remoteBots : [])
+        .filter(other => typeof other?.handle === 'string' && other.handle !== handle && (other.home ?? other.handle) === (home ?? handle))
+        .map(other => String(other.name ?? '').trim())
+        .filter(name => name !== '')
+      const keepLine = stillLinked.length > 0
+        ? `${who} stays a friend: still shared through ${stillLinked.join(', ')}.`
+        : `Your own Bots stay shared. ${who} can share it again.`
+      // Asked inline, like Leave on a face room (#230), not with the browser's confirm box.
+      const removeBot = async () => {
+        setAsking(false)
+        setBusy(true)
+        setError('')
+        try {
+          // social/hide-remote already leaves every room holding this Bot; a second
+          // removal from here would race it and show "not in the room" after a good Remove.
+          await call('social/hide-remote', { handle })
+          actions?.closeSettings?.()
+          actions?.closeOverlay?.()
+        } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+      }
+      return h('div', { className: 'fs fs-friend-settings', 'data-flybot': 'friend-chat-settings' },
+        // Auto-send for all my Bots to this person (#417 says what it covers; one Bot's own is in its Sharing).
+        // The box holds the setting only; the destructive link sits apart, below it (#274).
+        h('div', { className: 'fs-card fs-friend-auto', 'data-flybot': 'friend-auto-box' },
+          h('label', { className: 'fs-auto', title: AUTO_SEND_NOTE, 'data-flybot': 'friend-auto-send' },
+            h('input', { type: 'checkbox', checked: auto === true, disabled: saving || !home, onChange: e => toggleAuto(e.target.checked) }),
+            `Auto-send my Bots' replies to ${who}`),
+          h('div', { className: 'fs-hint', 'data-flybot': 'friend-auto-hint' }, `Your Bots' replies to ${who} go out without asking you first. What you type is not affected.`)),
+        h('div', { className: 'fs-friend-remove', 'data-flybot': 'friend-remove-row' }, asking
+          ? h('span', { className: 'fs-leave-ask', 'data-flybot': 'remove-friend-bot-confirm' },
+            h('span', { className: 'fs-hint' }, `Remove ${botWithOwner(bot.name, named)} from your list? ${keepLine}`),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-yes', onClick: () => { void removeBot() } }, tr('Remove')),
+            h('button', { type: 'button', className: 'fs-btn fs-btn-sm', 'data-flybot': 'remove-friend-bot-no', onClick: () => setAsking(false) }, tr('Keep')))
+          : h('button', {
+            type: 'button',
+            className: 'fs-link',
+            'data-flybot': 'remove-friend-bot',
+            title: 'Remove this Bot from your list and from your groups. This does not unfriend the owner.',
+            'aria-label': busy ? 'Removing…' : 'Remove this Bot',
+            'aria-busy': busy || undefined,
+            disabled: !!busy,
+            onClick: () => setAsking(true),
+          }, busy ? 'Removing…' : 'Remove this Bot')),
+        error ? h('div', { className: 'fs-status', 'data-tone': 'error', role: 'status' }, error) : null)
+    }
+
+    function BotSocialDetails({ bot, actions, roster } = {}) {
+      useStyles()
+      if (bot?.remote) {
+        return h('div', { 'data-flybot': 'bot-social-details' },
+          h(FriendChatSettings, { bot, actions, roster }))
+      }
+      return h(OwnBotSharing, { bot, roster })
+    }
+
+    // The host draws the Sharing title (#406). People with access tells the invite hint whether
+    // anyone has this Bot yet, so the hint mentions Revoke only then (#499).
+    function OwnBotSharing({ bot, roster } = {}) {
+      const [granted, setGranted] = useState(0)
+      // #2418: all three panels below write (create-invite, share-with-friend, revoke-grant), and a
+      // read-only window can only have them refused, so it reads the reason instead.
+      const locked = readOnlyReason(roster)
+      if (locked) {
+        // #2446: social/access is registered `{ read: true }`, so People with access stays readable
+        // here; only its writes (Revoke, Auto-send) and the two invite entries go.
+        return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
+          h('div', { className: 'fs-hint', 'data-flybot': 'sharing-readonly', role: 'status' }, locked),
+          h(ManageAccess, { bot, readOnly: true }))
+      }
+      return h('div', { className: 'fs-sharing', 'data-flybot': 'bot-social-details' },
+        h(InviteToBot, { bot, revocable: granted > 0 }),
+        h(ShareWithFriend, { bot }),
+        h(ManageAccess, { bot, onGrants: setGranted }))
+    }
+
+    // In a Bot's settings: invite a friend to this Bot, with the same control as Add friend (#499).
+    function InviteToBot({ bot, revocable = false } = {}) {
+      useStyles()
+      const [invite, setInvite] = useState(null)
+      const [note, setNote] = useState(null)
+      const [busy, setBusy] = useState(false)
+      if (!bot?.id) return null
+      const create = async (copy) => {
+        setBusy(true); setNote(null)
+        try {
+          const next = await call('social/create-invite', { botId: bot.id })
+          setInvite(next)
+          if (copy) setNote(await copyInvite(next?.link, bot.name))
+        } catch (e) { setNote({ tone: 'error', text: errorText(e) }) } finally { setBusy(false) }
+      }
+      // Called straight from the click, so the clipboard write keeps its permission.
+      const copy = (text, withText) => { void copyInvite(text, bot.name, withText).then(setNote) }
+      // Revoke is mentioned once People with access has someone to revoke (#499).
+      return h('div', { className: 'fs fs-card', 'data-flybot': 'invite-to-bot' },
+        h('div', { className: 'fs-hint', 'data-flybot': 'invite-hint-sharing' }, revocable ? `Invite grants ${bot.name} only. Revoke anytime in People with access.` : `Invite grants ${bot.name} only.`),
+        inviteControls({ botName: bot.name, invite, busy, onMint: () => create(true), onCopy: copy, onNew: () => create(false) }),
+        note ? h('div', { className: 'fs-status', role: 'status', 'data-tone': note.tone }, note.text) : null)
+    }
+
+    // #500: share this Bot with an existing friend (no invite link). Lists friends who do not
+    // already have it; one click each. Invite links for new people stay above.
+    // #984: the share list is read on a timer and can race a revoke, which drops the roster cache
+    // on the host side. A read is dated with the revoke epoch it started in, so a read that
+    // straddled a revoke is dropped instead of overwriting the list the revoke left behind.
+    let shareListEpoch = 0
+
+    function ShareWithFriend({ bot }) {
+      useStyles()
+      const [friends, setFriends] = useState(null)
+      const [busy, setBusy] = useState('')
+      // #992: two slots, not one. The friend-list read and the Share click are different failures;
+      // a share error must not overwrite the list error the retry belongs to.
+      const [note, setNote] = useState(null)
+      const [listError, setListError] = useState(null)
+      const readSeq = useRef(0)
+      const load = async () => {
+        if (!bot?.id) return
+        const seq = ++readSeq.current
+        const epoch = shareListEpoch
+        try {
+          const next = await call('social/share-friends', { botId: bot.id })
+          // A newer read started, or a revoke settled while this one was in flight: its answer is
+          // about a roster that no longer exists, so it is dropped, never written (#984).
+          if (readSeq.current !== seq || shareListEpoch !== epoch) return
+          setFriends(Array.isArray(next?.friends) ? next.friends : [])
+          // #992: a successful read settles the list error only; the share's note is its own.
+          setListError(null)
+        } catch (e) {
+          if (readSeq.current !== seq || shareListEpoch !== epoch) return
+          // Keep the rows a successful read established: a failed read established nothing, so the
+          // card says it failed and offers a retry instead of claiming nobody is left (#984).
+          setListError(errorText(e))
+        }
+      }
+      useEffect(() => {
+        setFriends(null)
+        setNote(null)
+        setListError(null)
+        void load()
+        if (typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) void load() }, 5000)
+        timer?.unref?.()
+        return () => clearInterval(timer)
+      }, [bot?.id])
+      if (!bot?.id) return null
+      // One row per friend's Bot (#973): the Bot id is what the row shares with, so it is also its key,
+      // its busy flag, and what a fallback refresh removes. A friend without a Bot id keys on the person.
+      const friendKey = friend => friend?.peerBotId || friend?.handle || friend?.home || friend?.ownerId || 'share'
+      const share = async (friend) => {
+        // #3062: `busy` is one slot for the whole card, so a second share would take the first row's
+        // label over while its grant is still in flight and post two grants at once.
+        if (busy) return
+        // #1128: the button is disabled; a click that still arrives says why instead of posting a grant.
+        if (friend.removed === true) { setNote({ tone: 'error', text: friend.reason || 'That Bot was removed from that home.' }); return }
+        setBusy(friendKey(friend))
+        setNote(null)
+        try {
+          const result = await call('social/share-with-friend', {
+            botId: bot.id,
+            home: friend.home,
+            ...(friend.peerBotId ? { friendBotId: friend.peerBotId } : {}),
+            // #1128: the row's handle goes with the click, so the host can tell "this Bot is gone from
+            // that home" (absent from the roster under both names) from an ordinary share.
+            ...(friend.handle ? { friendHandle: friend.handle } : {}),
+            // #994: the receipt says who got it; the label the row already shows goes with the click.
+            ...(friend.name ? { friendName: friend.name } : {}),
+            ...(friend.ownerId ? { ownerId: friend.ownerId } : {}),
+          })
+          setNote({ tone: 'ok', text: result?.message || `Shared ${bot.name}.` })
+          const next = await call('social/share-friends', { botId: bot.id }).catch(() => null)
+          if (next) setFriends(Array.isArray(next.friends) ? next.friends : [])
+          else setFriends(list => (list ?? []).filter(item => friendKey(item) !== friendKey(friend)))
+        } catch (e) {
+          // #992: the share's failure has its own slot; the list error and its retry stay put.
+          setNote({ tone: 'error', text: errorText(e) })
+        } finally { setBusy('') }
+      }
+      const list = friends ?? []
+      const loading = friends === null
+      return h('div', { className: 'fs fs-card', 'data-flybot': 'share-with-friend' },
+        h('div', { className: 'fs-name' }, 'Share with a friend'),
+        h('div', { className: 'fs-hint' }, `One click shares ${bot.name || 'this Bot'} with someone you already know. No invite link. They can decline; you can Revoke in People with access.`),
+        loading ? h('div', { className: 'fs-hint' }, 'Loading friends…') : null,
+        !loading && list.length === 0 && !listError
+          ? h('div', { className: 'fs-hint', 'data-flybot': 'share-with-friend-empty' }, 'No friends left to share with. Invite someone new above, or they already have this Bot.')
+          : null,
+        list.map(friend => h('div', { key: friendKey(friend), className: 'fs-line', 'data-flybot': 'share-friend-row' },
+          h('div', { className: 'fs-col' },
+            h('span', { className: 'fs-name' }, friend.name || friend.handle || friend.home),
+            friend.handle || friend.home
+              ? h('span', { className: 'fs-sub' }, friend.handle || friend.home)
+              : null,
+            friend.removed === true
+              ? h('span', { className: 'fs-sub', 'data-flybot': 'share-friend-removed' }, friend.reason || 'That Bot was removed from that home.')
+              : null),
+          h('button', {
+            type: 'button',
+            className: 'fs-btn fs-btn-sm',
+            // #1128: a row whose Bot the friend's home no longer lists stays visible, with the reason, and
+            // is not clickable: the grant would reach nobody.
+            // #3062: one share at a time, so no row invites a click while any share is sending.
+            disabled: !!busy || friend.removed === true,
+            'data-flybot': 'share-friend',
+            'aria-label': `Share ${bot.name || 'this Bot'} with ${friend.name || friend.home}`,
+            onClick: () => { void share(friend) },
+          }, busy === friendKey(friend) ? 'Sharing…' : 'Share'))),
+        note ? h('div', { className: 'fs-status', 'data-tone': note.tone, 'data-flybot': 'share-note', role: 'status' }, note.text) : null,
+        listError
+          ? h('div', { className: 'fs-status', 'data-tone': 'error', 'data-flybot': 'share-list-error', role: 'status' }, listError,
+            h('button', { type: 'button', className: 'fs-link', 'data-flybot': 'share-list-retry', onClick: () => { void load() } }, tr('Try again')))
+          : null)
+    }
+
+    // A friend chat Bot Social paused (#404): a quiet notice, no buttons. There is no turn limit and
+    // nothing to extend (owner decision 2026-10-19): the next message opens a fresh chat.
+    function PausedChat({ bot } = {}) {
+      useStyles()
+      const handle = typeof bot?.remote?.handle === 'string' ? bot.remote.handle : ''
+      const [paused, setPaused] = useState(null)
+      useEffect(() => {
+        setPaused(null)
+        if (!handle) return undefined
+        let live = true
+        const load = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          call('social/paused', { handle }).then(value => { if (live) setPaused(value?.paused ?? null) }, () => {})
+        }
+        load()
+        if (typeof setInterval !== 'function') return () => { live = false }
+        const timer = setInterval(load, 5000)
+        timer?.unref?.()
+        return () => { live = false; clearInterval(timer) }
+      }, [handle])
+      if (!handle || !paused) return null
+      return h('div', { className: 'fs-hold fs-chat-approval', 'data-flybot': 'chat-paused', role: 'status' },
+        h('div', { className: 'fs-label' }, 'Chat paused'),
+        h('div', { className: 'fs-draft' }, `${paused.reason ? `Bot Social paused the last chat with this Bot (${paused.reason}).` : 'Bot Social paused the last chat with this Bot.'} Send your message again: it starts a new chat.`))
+    }
+
+    // + menu marks (#385), drawn like the host's line icons: people nearby, and a person to add.
+    const lineMark = paths => function LineMark() {
+      return h('svg', { width: 15, height: 15, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        paths.map((d, index) => h('path', { key: index, d })))
+    }
+    const NearbyIcon = lineMark(['M10 10h.01', 'M7.5 7.5a3.5 3.5 0 0 0 0 5M12.5 7.5a3.5 3.5 0 0 1 0 5', 'M5 5a7 7 0 0 0 0 10M15 5a7 7 0 0 1 0 10'])
+    const AddPersonIcon = lineMark(['M8.5 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6z', 'M3 16.5a5.5 5.5 0 0 1 11 0', 'M16 6.5v5M13.5 9h5'])
+    const SocialPageIcon = () => h('svg', { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', 'aria-hidden': true },
+      h('circle', { cx: 8, cy: 8, r: 6 }), h('path', { d: 'M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12' }))
+
+    // Settings → Bot Social (#337): the server this FlyBot talks to. `t` is the host's translator (zh in a zh UI),
+    // `Section` / `Row` the host's Settings layout, so the page looks like Connectors.
+    const STATE_TEXT = {
+      connected: (t, view) => (view.handle ? t('Connected as {handle}', { handle: view.handle }) : t('Connected')),
+      connecting: t => t('Connecting…'),
+      'not-configured': t => t('No server set. Friends and sharing are off until you set one.'),
+      error: (t, view) => t('Could not connect: {error}', { error: view.error ?? '' }),
+    }
+    // A host alone names two servers the same: the host keeps protocol and path as the server's own
+    // identity (`server-config.js` puts both in the key), so the page draws them too (#2963). https is
+    // the default and stays out of the label; anything else keeps its scheme, which tells
+    // `http://localhost:8787` from `https://localhost:8787` without comparing two addresses.
+    const serverLabel = (address) => {
+      try {
+        const url = new URL(address)
+        const path = url.pathname.replace(/\/+$/, '')
+        return `${url.protocol !== 'https:' ? `${url.protocol}//` : ''}${url.host}${path}`
+      } catch { return String(address ?? '') }
+    }
+    // Bot Social capability ids in words (#421). An id FlyBot does not know stays out of the line and
+    // only shows in the tooltip, with the raw ids, for diagnostics.
+    const FEATURE_WORDS = { typed_by_owner: 'typing as you', mentions: '@mentions', presence: 'online status' }
+    // A peer name on this page is one line: the overview already cleans it, and a value that skipped that still cannot break the row (#1074).
+    const settingsLine = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[[\]"<>`]/g, '').replace(/\s+/g, ' ').trim()
+    const settingsName = (value) => settingsLine(value).slice(0, 80)
+    // A refusal is a sentence, not a name: the name cap above cuts the host's own plain-http reason
+    // mid-word (#2946). A reason is drawn whole up to the host's 200-character cap
+    // (`server-config.js`) and, past that, shortened at a word boundary with a visible ellipsis.
+    const settingsSentence = (value, max = 200) => {
+      const clean = settingsLine(value)
+      if (clean.length <= max) return clean
+      const head = clean.slice(0, max)
+      const space = head.lastIndexOf(' ')
+      return `${(space > 0 ? head.slice(0, space) : head).replace(/[\s,;:.!?]+$/, '')}…`
+    }
+    const friendLabel = (friend) => {
+      const name = settingsName(friend?.name)
+      const owner = settingsName(friend?.owner)
+      const handle = settingsName(friend?.handle)
+      const who = name || handle
+      if (who && owner && owner !== who && !who.includes(owner)) return `${who} (${owner})`
+      return who
+    }
+    const shareBotOf = (bot) => (bot && bot.remote !== true && typeof bot.id === 'string' && bot.id
+      ? { id: bot.id, name: settingsName(bot.name) || 'Bot', isMain: bot.isMain === true }
+      : null)
+    // The host's Row does not forward a data attribute, so this page's rows are the same markup with a hook.
+    function settingsRow({ label, hint, flybot, kind, children } = {}) {
+      return h('div', {
+        className: 'bt-set-row',
+        ...(flybot ? { 'data-flybot': flybot } : {}),
+        ...(kind ? { 'data-kind': kind } : {}),
+      },
+      h('div', { className: 'bt-set-copy' },
+        h('span', null, label),
+        hint ? h('span', { className: 'bt-set-hint' }, hint) : null),
+      children ? h('div', { className: 'bt-set-control' }, children) : null)
+    }
+    const featureLine = (features, t) => {
+      const ids = Array.isArray(features) ? features.map(String) : []
+      if (!ids.length) return t('No optional features listed.')
+      const words = ids.filter(id => Object.hasOwn(FEATURE_WORDS, id)).map(id => t(FEATURE_WORDS[id]))
+      const others = ids.length - words.length
+      const text = words.length
+        ? t('Supports: {list}', { list: words.join(', ') }) + (others ? ` ${t('(+{count} more)', { count: others })}` : '')
+        : others === 1 ? t('Supports 1 optional feature') : t('Supports {count} optional features', { count: others })
+      return h('span', { title: ids.join(', '), 'data-flybot': 'server-features' }, text)
+    }
+    function SocialServerSettings({ t: given, Section, Row, actions, roster } = {}) {
+      useStyles()
+      const t = given ?? ((text, params) => String(text).replace(/\{(\w+)\}/g, (_, key) => String(params?.[key] ?? '')))
+      // state order: view, loadError, live, form, address, name, checked, busy, error, circle, circleError, shareBots
+      const [view, setView] = useState(null)
+      const [loadError, setLoadError] = useState(null)
+      const [live, setLive] = useState(null)
+      const [form, setForm] = useState(false)
+      const [address, setAddress] = useState('')
+      const [name, setName] = useState('')
+      const [checked, setChecked] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState(null)
+      const [circle, setCircle] = useState(null)
+      const [circleError, setCircleError] = useState('')
+      const [shareBots, setShareBots] = useState(null)
+      const refresh = async () => {
+        try { setView(await call('social/server', {})); setLoadError(null) } catch (e) { setLoadError(errorText(e)) }
+      }
+      useEffect(() => { void refresh() }, [])
+      // A server that is still connecting is read again until it settles.
+      useEffect(() => {
+        if (view?.state !== 'connecting' || typeof setInterval !== 'function') return undefined
+        const timer = setInterval(() => { void refresh() }, 2000)
+        return () => clearInterval(timer)
+      }, [view?.state])
+      // What the current server lists, read once the page shows it.
+      useEffect(() => {
+        if (!view?.server || view.state === 'not-configured') return undefined
+        let off = false
+        call('social/server-check', {}).then(info => { if (!off) setLive({ ok: true, ...info }) }, e => { if (!off) setLive({ ok: false, error: errorText(e) }) })
+        return () => { off = true }
+      }, [view?.server, view?.state === 'connected'])
+      // Friends and the Bots that can be shared (#1074). Hidden until this server is actually connected.
+      useEffect(() => {
+        if (!view?.server || view.state !== 'connected') return undefined
+        let off = false
+        const fromRoster = () => (Array.isArray(roster?.bots) ? roster.bots : []).map(shareBotOf).filter(Boolean)
+        call('social/overview', {}).then((value) => {
+          if (off) return
+          setCircle({
+            friends: Array.isArray(value?.friends) ? value.friends : [],
+            incoming: Array.isArray(value?.incoming) ? value.incoming : [],
+            outgoing: Array.isArray(value?.outgoing) ? value.outgoing : [],
+          })
+          setCircleError('')
+        }, (e) => { if (!off) setCircleError(errorText(e)) })
+        call('social/status', {}).then((value) => {
+          if (off) return
+          const listed = (Array.isArray(value?.bots) ? value.bots : []).map(shareBotOf).filter(Boolean)
+          setShareBots(listed.length ? listed : fromRoster())
+        }, () => { if (!off) setShareBots(fromRoster()) })
+        return () => { off = true }
+      }, [view?.server, view?.state])
+      const platform = live?.ok ? live : view?.platform
+      const open = (value = '') => { setForm(true); setAddress(value); setChecked(null); setError(null) }
+      const close = () => { setForm(false); setChecked(null); setError(null); setBusy(false) }
+      const check = async (value = address) => {
+        setBusy(true); setError(null); setChecked(null)
+        try { setChecked(await call('social/server-check', { server: value })); setAddress(value) } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+      }
+      const change = async () => {
+        setBusy(true); setError(null)
+        try {
+          setView(await call('social/server-set', { server: checked.server, displayName: name.trim() || undefined, confirm: true }))
+          setLive(null)
+          close()
+        } catch (e) { setError(errorText(e)); void refresh() } finally { setBusy(false) }
+      }
+      if (!view) return h('div', { className: 'fs-status', 'data-tone': loadError ? 'error' : undefined, 'data-flybot': 'social-server' }, loadError ?? t('Loading…'))
+      const source = view.source === 'settings' ? t('Set here') : view.source === 'config' ? t('Profile default') : t('Not set')
+      const status = (STATE_TEXT[view.state] ?? STATE_TEXT.connecting)(t, view)
+      const quick = [...(view.defaultServer && view.source === 'settings' ? [view.defaultServer] : []), ...view.known].filter((item, at, all) => all.indexOf(item) === at)
+      const connected = view.state === 'connected'
+      // A name typed for the server already in use is a save, not a switch (#2971): the host's check
+      // says `same`, and its `server-set` parks and reads that same home back when a name comes with
+      // it (#729). The action row drew only `Check` there, so the name went nowhere. The save is
+      // offered only for a name the home does not carry already — a save that changes nothing is not.
+      const nameChanged = name.trim() !== '' && name.trim() !== (view.displayName ?? '')
+      const friendHint = (friend, kind) => {
+        const handle = settingsName(friend?.handle)
+        if (kind === 'friend') return handle || undefined
+        const sentence = kind === 'incoming' ? t('Accept them in Add friend.') : t('Waiting for them to accept')
+        return [handle, sentence].filter(Boolean).join(' · ')
+      }
+      const friendRows = circle ? ['friend', 'incoming', 'outgoing'].flatMap(kind => (circle[kind === 'friend' ? 'friends' : kind] ?? []).map((friend) => {
+        const label = friendLabel(friend)
+        if (!label) return null
+        return settingsRow({ flybot: 'settings-friend', kind, label, hint: friendHint(friend, kind) })
+      }).filter(Boolean)) : []
+      const friendStatus = circleError
+        ? settingsRow({ flybot: 'settings-friends-status', kind: 'error', label: t('Could not load friends.'), hint: circleError })
+        : circle === null
+          ? settingsRow({ flybot: 'settings-friends-status', kind: 'loading', label: t('Loading…') })
+          : friendRows.length === 0
+            ? settingsRow({ flybot: 'settings-friends-status', kind: 'empty', label: t('No friends yet.') })
+            : null
+      const orderedBots = (shareBots ?? []).slice().sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name))
+      // A reason is a sentence: drawn whole, or cut at a word boundary with '…' when it is longer than
+      // any reason this host writes. The address is not a name either (#2958): the name cap cut it at
+      // 80 with no mark, so two addresses that differ after it drew one sentence, and an empty one
+      // drew `()`. The host sends the whole address up to its own 200-character bound, so the page
+      // draws that much of it and marks only a cut beyond it.
+      const savedAddress = view.saved ? settingsSentence(view.saved.address) : ''
+      const savedReason = view.saved ? settingsSentence(view.saved.problem) : ''
+      const savedLine = view.saved ? settingsRow({
+        flybot: 'server-saved-unusable',
+        hint: `The server saved here${savedAddress ? ` (${savedAddress})` : ''} cannot be used: ${savedReason}${savedReason.endsWith('…') ? '' : '.'} ${view.defaultServer ? `Using the profile default (${view.defaultServer}).` : 'No profile default is set.'}`,
+      }) : null
+      return h('div', { 'data-flybot': 'social-server' },
+        h(Section, { title: t('Bot Social server') },
+          h(Row, { label: view.server ?? t('No server'), hint: status },
+            h('span', { className: 'fs-tag' }, source),
+            view.canChange && !form ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', 'data-flybot': 'server-change', onClick: () => open() }, t('Change server')) : null),
+          // A saved address this build refuses is named, not silently read as "Profile default" (#2946).
+          // English like the refusal it quotes: the sentence carries the host's own reason, and the two
+          // lines above this page are in the host's dictionary, which this card does not move.
+          savedLine,
+          platform ? h(Row, { label: t('Features'), hint: featureLine(platform.features, t) }, null) : null,
+          live && !live.ok ? h(Row, { label: t('Reachability'), hint: live.error }, null) : null,
+          !view.canChange ? h(Row, { label: t('Read-only'), hint: t('Another FlyBot window holds this team. Change the server there.') }, null) : null),
+        form ? h(Section, { title: t('Switch server') },
+          h('div', { className: 'fs-srv-form' },
+            h('input', { className: 'bt-input', value: address, spellCheck: false, autoFocus: true, 'aria-label': t('Server address'), placeholder: 'https://social.example', 'data-flybot': 'server-address', onChange: e => { setAddress(e.target.value); setChecked(null); setError(null) }, onKeyDown: e => { if (e.key === 'Enter' && address.trim() && !busy) void check() } }),
+            quick.length ? h('div', { className: 'fs-srv-quick' }, h('span', { className: 'bt-set-hint' }, t('Used before:')), quick.map(item => h('button', { key: item, type: 'button', className: 'fs-link', onClick: () => { setAddress(item); void check(item) } }, item === view.defaultServer ? t('{host} (profile default)', { host: serverLabel(item) }) : serverLabel(item)))) : null,
+            h('input', { className: 'bt-input', value: name, spellCheck: false, 'aria-label': t('Name for your home (optional)'), placeholder: t('Name for your home (optional)'), maxLength: 40, onChange: e => setName(e.target.value) }),
+            checked ? h('div', { className: 'fs-srv-checked', 'data-flybot': 'server-checked' },
+              h('div', { className: 'fs-status' }, `${checked.name}${checked.version ? ` ${checked.version}` : ''} · ${serverLabel(checked.server)}`),
+              h('div', { className: 'fs-status' }, featureLine(checked.features, t))) : null,
+            checked && !checked.same ? h('div', { className: 'fs-srv-warn', role: 'alert', 'data-flybot': 'server-warning' },
+              h('strong', null, t('Switching servers changes who you are')),
+              h('span', null, checked.known ? t('You used this server before. Your saved identity, friends and settings for it come back.') : t('You get a new identity on this server. The friends and sharing you have now stay on the current server; they do not move.')),
+              h('span', null, t('Your current sign-in is kept as a backup on this computer and is never deleted. Switch back any time.')),
+              h('span', null, t('Your Bots stop being shared with friends until you share them again on the new server.'))) : null,
+            checked && checked.same ? h('div', { className: 'fs-status' }, t('This is the server you already use.')) : null,
+            error ? h('div', { className: 'bt-connector-error', role: 'alert' }, error) : null,
+            h('div', { className: 'fs-srv-actions' },
+              h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: close }, t('Cancel')),
+              checked && (!checked.same || nameChanged)
+                ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, 'data-flybot': 'server-confirm', onClick: () => void change() }, checked.same ? (busy ? t('Saving…') : t('Save changes')) : busy ? t('Switching…') : t('Switch to this server'))
+                : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || address.trim() === '', 'data-flybot': 'server-check', onClick: () => void check() }, busy ? t('Checking…') : t('Check')))))
+          : null,
+        connected ? h(Section, { title: t('Friends') },
+          friendStatus,
+          ...friendRows,
+          settingsRow({
+            label: t('Add friend'),
+            hint: t('Same panel as the + menu.'),
+            children: h('button', {
+              type: 'button',
+              className: 'bt-soft bt-soft-sm',
+              'data-flybot': 'settings-add-friend',
+              onClick: () => {
+                // The panel is in the sidebar, which the Settings dialog covers.
+                if (typeof actions?.closeSettings === 'function') actions.closeSettings()
+                openAddFriend()
+              },
+            }, t('Add friend')),
+          })) : null,
+        connected ? h(Section, { title: t('Sharing') },
+          shareBots === null ? settingsRow({ label: t('Loading…') }) : null,
+          ...orderedBots.map(bot => settingsRow({
+            label: bot.name,
+            hint: bot.isMain ? t('Main Bot') : undefined,
+            children: h('button', {
+              type: 'button',
+              className: 'bt-soft bt-soft-sm',
+              'data-flybot': 'settings-people-access',
+              'data-bot': bot.id,
+              'aria-label': t('People with access to {name}', { name: bot.name }),
+              disabled: typeof actions?.openSettings !== 'function',
+              onClick: () => openPeopleAccess(actions, bot.id),
+            }, t('People with access')),
+          })),
+          shareBots && orderedBots.length === 0 ? settingsRow({ label: t('No Bots to share yet.') }) : null) : null)
+    }
+
+    let cache = { at: 0, list: [] }
+    // Friends' Bots the core's "@" rows do not list yet, in the same Bots section (no separate
+    // Friends' Bots section) and by the same name, "Coder (Bob)" (#305, #384).
+    const friendRows = async (query, context = {}) => {
+      if (Date.now() - cache.at > 30_000) cache = { at: Date.now(), list: await call('social/friends', {}) }
+      const needle = query.trim().toLowerCase().replace(/^@/, '')
+      const listed = new Set((Array.isArray(context?.roster?.remoteBots) ? context.roster.remoteBots : []).map(bot => String(bot?.handle ?? '').toLowerCase()))
+      return cache.list
+        .filter(friend => !listed.has(String(friend.handle).toLowerCase()))
+        .filter(friend => friend.handle.includes(needle) || String(friend.name).toLowerCase().includes(needle))
+        // The row inserts what it shows: the one name the bubble and the sidebar preview wear, which
+        // the host also matches as an alias of this Bot (#967). The second line stays the handle it
+        // routes on, and a core without the helper keeps the old handle insertion, which still routes.
+        .map((friend) => {
+          const label = globalThis.__flybot__?.names?.remoteMentionLabel?.(friend, cache.list) ?? ''
+          const owner = String(friend.owner || friend.homeName || '').trim()
+          const name = label || (owner ? `${friend.name} (${owner})` : friend.name)
+          return { name, description: friend.handle, section: 'Bots', value: label ? `@${label} ` : `${friend.handle} ` }
+        })
+    }
+
+    return {
+      name: 'flybot-social',
+      inject: [],
+      errorText,
+      canInvite,
+      InviteToBot,
+      ShareWithFriend,
+      ManageAccess,
+      BotSocialDetails,
+      SocialServerSettings,
+      AddFriend,
+      AcceptNotices,
+      FriendsBots,
+      ShareRequests,
+      PendingApprovals,
+      ChatApproval,
+      holdReasonLine,
+      listedFriendChat,
+      roomHint,
+      roomList,
+      ChatApprovalDock,
+      HeldReplyCard,
+      approvalsForOpenChat,
+      localHoldView,
+      friendPerson,
+      MyHandle,
+      GroupStrip,
+      FaceRoomStatus,
+      PeerThinking,
+      thinkingLine,
+      thinkingNames,
+      FriendBotRow,
+      FriendChatSettings,
+      FaceToFaceGroup,
+      LocalInviteRow,
+      FaceAvatar,
+      FaceRoomOverview,
+      FaceRoomCard,
+      FaceRooms,
+      FaceAutoSend,
+      faceWaitCode,
+      shownFaceTitle,
+      ConfirmLeave,
+      PausedChat,
+      autoSendToast,
+      autoSendPair,
+      apply(ctx) {
+        let offs = []
+        let tries = 0
+        // ds-bot's client creates the registry in its apply; wait for it if this loads first.
+        const attach = () => {
+          if (globalThis.__flybot__ === undefined) {
+            if (++tries < 100) timer = setTimeout(attach, 100)
+            else console.error('flybot-social: ds-bot FlyBot slots not found')
+            return
+          }
+          offs = [
+            slots().register('flybot.sidebar.section', { id: 'social', order: 100, component: FriendsBots }),
+            // #1021: two rows, because joining someone else's group and starting a room are different
+            // intentions. They open the same screen with the same handlers; the row says which one.
+            // #2219: every one of the three opens a panel of writes, so a read-only window is offered
+            // none of them (`visible` is the registry's own gate, read with the live roster).
+            slots().register('flybot.new-chat.action', {
+              id: 'social-face-join',
+              order: 15,
+              visible: ({ roster } = {}) => readOnlyReason(roster) === '',
+              label: JOIN_BY_NUMBER,
+              hint: JOIN_OR_CREATE_HINT,
+              icon: NearbyIcon,
+              run: ({ close } = {}) => { openFaceToFace('join'); close?.() },
+            }),
+            slots().register('flybot.new-chat.action', {
+              id: 'social-face-start',
+              order: 16,
+              visible: ({ roster } = {}) => readOnlyReason(roster) === '',
+              label: START_FACE_ROOM,
+              hint: START_FACE_HINT,
+              icon: NearbyIcon,
+              run: ({ close } = {}) => { openFaceToFace('start'); close?.() },
+            }),
+            slots().register('flybot.new-chat.action', {
+              id: 'social-add-friend',
+              order: 17,
+              visible: ({ roster } = {}) => readOnlyReason(roster) === '',
+              label: 'Add friend',
+              hint: 'Paste an invite link or code',
+              icon: AddPersonIcon,
+              run: ({ close } = {}) => { openAddFriend(); close?.() },
+            }),
+            slots().register('flybot.composer.mention', { id: 'social', order: 100, candidates: friendRows }),
+            (() => { try { return slots().register('flybot.account.header', { id: 'social-handle', order: 10, component: MyHandle }) } catch { return () => {} } })(),
+            slots().register('flybot.bot.details', { id: 'social-invite', order: 100, component: BotSocialDetails }),
+            slots().register('flybot.approvals', { id: 'social-held-reply', order: 50, policy: 'social', inline: true, component: HeldReplyCard }),
+            slots().register('flybot.settings.page', { id: 'social', order: 100, label: 'Bot Social', icon: SocialPageIcon, component: SocialServerSettings }),
+            slots().register('flybot.room.overview', { id: 'social-face', order: 50, component: FaceRoomOverview }),
+            // An older host has no Members-card slot: the row is simply not drawn there.
+            (() => { try { return slots().register('flybot.room.members', { id: 'social-room-invite', order: 50, component: LocalInviteRow }) } catch { return () => {} } })(),
+            slots().register('flybot.session.dock', { id: 'social-group-strip', order: 30, component: GroupStrip }),
+            slots().register('flybot.session.dock', { id: 'social-room-end', order: 40, component: FaceRoomStatus }),
+            slots().register('flybot.session.dock', { id: 'social-approval', order: 50, policy: 'social', component: ChatApprovalDock }),
+            slots().register('flybot.session.dock', { id: 'social-thinking', order: 60, component: PeerThinking }),
+            slots().register('flybot.session.dock', { id: 'social-paused', order: 45, component: PausedChat }),
+          ]
+          // For other plugins (the tree's per-node "Copy invite link"): ctx.flybot.social.canInvite(botId)
+          // is synchronous; flybot.call('social.createInvite', { botId }) returns { link, text, ... }.
+          const social = { canInvite, onChange: onStatusChange, createInvite: botId => call('social.createInvite', { botId }), openFaceToFace, openAddFriend }
+          globalThis.__flybot__.social = social
+          if (globalThis.__flybot__.api) globalThis.__flybot__.api.social = social
+          offs.push(() => {
+            if (globalThis.__flybot__?.social === social) delete globalThis.__flybot__.social
+            if (globalThis.__flybot__?.api?.social === social) delete globalThis.__flybot__.api.social
+          })
+          void loadStatus().catch(() => {})
+          // Keep canInvite current (and onChange firing) without callers polling.
+          if (typeof setInterval === 'function') {
+            const statusTimer = setInterval(() => { void loadStatus().catch(() => {}) }, 30_000)
+            statusTimer?.unref?.() // node tests: never keeps the process alive
+            offs.push(() => clearInterval(statusTimer))
+          }
+        }
+        let timer
+        attach()
+        const dispose = () => {
+          clearTimeout(timer)
+          for (const off of offs.splice(0)) off()
+        }
+        ctx?.effect?.(() => dispose, 'flybot-social: slots')
+        return dispose
+      },
+    }
+  },
+})
