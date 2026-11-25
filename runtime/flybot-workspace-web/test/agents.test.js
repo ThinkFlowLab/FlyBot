@@ -21,7 +21,8 @@ function fixture(options) {
   } }
   const db = new DatabaseSync(join(mkdtempSync(join(tmpdir(), 'ot-agents-')), 'a.sqlite3'))
   const created = createAgents({ db, host })
-  return { e: created.endpoints, migrate: created.migrate, rebrandBuiltinAssistant: created.rebrandBuiltinAssistant, db, ...runtime }
+  return { e: created.endpoints, migrate: created.migrate, rebrandBuiltinAssistant: created.rebrandBuiltinAssistant,
+    attachTeam:created.attachTeam, db, ...runtime }
 }
 
 test('categories stay in step with the Python source', () => {
@@ -228,6 +229,53 @@ test('existing Personal Agent binds Chief without replacing native IDs, private 
   await e.send({...scope, text:'Second native turn'})
   assert.deepEqual(turns.map(value => [value.bot,value.sessionId]), [[old.id,session],[chief.id,session]])
   assert.equal((await e.messages(scope)).items.length,4)
+})
+
+test('a Personal Agent chat can publish its actual native Bot id once', async () => {
+  const {e, db, services, attachTeam, bots} = fixture()
+  const {rt} = services
+  rt.isMain = id => id === 'main'
+  rt.pastOwners = new Map()
+  const {agent:personal} = await e.create({workspace_id:W,name:'Personal Agent',idempotency_key:'native-team-personal'})
+  db.prepare('INSERT INTO native_personal_binding VALUES(1,?,?)').run(W,personal.id)
+  const address = {workspace_id:W,id:personal.id}
+  const owner = (await e.get(address)).agent
+  assert.equal(owner.native_bot_id,'main')
+  const {conversation} = await e['conversation-create'](address)
+  const direct = services.nativeTurn.bind(services)
+  attachTeam(services)
+  let builds = 0
+  let managedSession
+  services.nativeTurn = async (botId,sessionId,text,requestId,options) => {
+    const out = () => direct(botId,sessionId,text,requestId)
+    if (!options?.personalTeamScope) {
+      assert.equal(rt.flybotWorkspaceTeam.scope(sessionId),null)
+      return out()
+    }
+    managedSession = sessionId
+    return rt.flybotWorkspaceTeam.run({botId,sessionId,requestId,scope:options.personalTeamScope},async () => {
+      const tools = rt.flybotWorkspaceTeam.scope(sessionId)
+      assert.ok(tools)
+      const profile = {name:'Test Engineer',role:'QA',instructions:'Review the release.'}
+      const build = link => {
+        builds++
+        return rt.createBot({...profile,model:'flybot/default',flybotWorkspace:link})
+      }
+      const first = await tools.createBot(profile,build)
+      assert.deepEqual(await tools.createBot(profile,build),first)
+      assert.match(first.url,/agent=[a-f0-9]{32}$/)
+      return out()
+    })
+  }
+  await e.send({...address,conversation_id:conversation.id,text:'Create a test engineer',idempotency_key:'native-team-direct-send'})
+  assert.equal(rt.flybotWorkspaceTeam.scope(managedSession),null)
+  await e.turn({agent_id:personal.id,key:conversation.id,text:'External call'})
+  const roster = (await e.list({workspace_id:W})).items.filter(row => row.name === 'Test Engineer')
+  assert.equal(roster.length,1)
+  const bot = bots[roster[0].native_bot_id]
+  assert.equal(bot.model,'flybot/default')
+  assert.equal(bot.flybotWorkspace.agent_id,roster[0].id)
+  assert.equal(builds,1)
 })
 
 test('without the DS-Bot chat service a send fails closed and is recorded', async () => {

@@ -90,10 +90,13 @@ export function apply(ctx, config = {}) {
       }
       if (stored.length) options.onStaged?.(stored)
       bridge.requireModel(botId)
-      return runTurn(rt, ctx, botId, text, requestId, undefined, parts, {
+      const turn = () => runTurn(rt, ctx, botId, text, requestId, undefined, parts, {
         sessionId, onProgress: options.onProgress, onPhase: options.onPhase, signal: options.signal,
         managedGroup: options.managedGroup,
       })
+      return options.personalTeamScope && rt.flybotWorkspaceTeam
+        ? rt.flybotWorkspaceTeam.run({botId,sessionId,requestId,scope:options.personalTeamScope}, turn)
+        : turn()
     }, botId)
     const readNativeAttachment = async file => {
       const store = attachmentStore()

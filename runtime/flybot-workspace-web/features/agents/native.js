@@ -124,7 +124,7 @@ export function nativeAgents({ host, db }) {
     const taken = Object.values(rt.state.bots).some(b => b.name === plain && b.flybotWorkspace?.agent_id !== row.id)
     return taken || row.name.length > 40 ? row.name.slice(0, 29) + '-' + row.id.slice(0, 10) : plain
   }
-  async function ensure(row) {
+  async function ensure(row, createNativeBot) {
     const s = await services(), { rt } = s
     row = one('SELECT * FROM agents WHERE id=?', row.id)
     let mapping = one('SELECT * FROM native_agent_objects WHERE agent_id=?', row.id)
@@ -141,15 +141,21 @@ export function nativeAgents({ host, db }) {
       return { ...row, archived: 1, native_bot_id: mapping.bot_id, native_deleted: true }
     }
     if (!bot) {
-      bot = await rt.createBot({ name: nativeName(rt, row), instructions: row.instructions, role: row.summary.slice(0, 24), pickModel: true })
-      // Importing/creating an object is not permission to send a greeting.
-      delete bot.kickoff
-      const main = rt.botOf(await s.mainBot())
-      bot.model = main?.model
-      bot.capabilities = row.inherit_capabilities === 0 ? [] : [...(main?.capabilities || [])]
-      bot.flybotWorkspace = { agent_id: row.id, workspace_id: row.workspace_id, summary: row.summary, category: row.category, quick_starts: JSON.parse(row.quick_starts), portrait: row.portrait }
+      const link = { agent_id: row.id, workspace_id: row.workspace_id, summary: row.summary,
+        category: row.category, quick_starts: JSON.parse(row.quick_starts), portrait: row.portrait }
+      if (createNativeBot) {
+        bot = await createNativeBot(link)
+      } else {
+        bot = await rt.createBot({ name: nativeName(rt, row), instructions: row.instructions, role: row.summary.slice(0, 24), pickModel: true })
+        // Importing/creating an object is not permission to send a greeting.
+        delete bot.kickoff
+        const main = rt.botOf(await s.mainBot())
+        bot.model = main?.model
+        bot.capabilities = row.inherit_capabilities === 0 ? [] : [...(main?.capabilities || [])]
+      }
+      bot.flybotWorkspace = { ...bot.flybotWorkspace, ...link }
       if (row.archived) bot.hidden = true
-      await rt.save()
+      await rt.save(createNativeBot ? {required:true} : undefined)
     }
     if (!mapping) run('INSERT OR IGNORE INTO native_agent_objects VALUES(?,?,?)', row.id, bot.id, bot.name)
     const lastName = mapping?.last_name || bot.name
