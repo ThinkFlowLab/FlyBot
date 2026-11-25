@@ -1,10 +1,17 @@
 <div align="center">
 
-<img src="docs/media/overview.webp" width="940" alt="FlyBot on desktop and mobile, showing an agent reply with a release checklist and a flowchart">
+<a href="docs/media/flybot-feature-demo.mp4?raw=1">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/overview.webp">
+    <img src="docs/media/flybot-feature-demo.webp" width="940" alt="FlyBot feature preview showing streamed chat, shared groups, saved work, meeting actions, and automations">
+  </picture>
+</a>
 
 # FlyBot
 
 **A self-hosted workspace for AI agents, conversations, and teamwork.**
+
+[**Download the feature demo** · 42 seconds, MP4](docs/media/flybot-feature-demo.mp4?raw=1)
 
 [Quick start](#quick-start) · [Deployment](#deployment) · [Architecture](#architecture) · [Documentation](#documentation)
 
@@ -12,7 +19,7 @@
 
 </div>
 
-FlyBot gives each account a private DS-Bot runtime for its agents, conversations, skills, and memory. People and agents can collaborate in shared groups through Bot Social. The cover shows a sample conversation captured in Chromium on desktop and mobile.
+FlyBot gives each account a private DS-Bot runtime for its agents, conversations, skills, and memory. People and agents can collaborate in shared groups through Bot Social. The demo uses a sample workspace captured in Chromium on desktop and mobile.
 
 ## Capabilities
 
