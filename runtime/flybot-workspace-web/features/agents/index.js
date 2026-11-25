@@ -1,7 +1,7 @@
 import { loadPersonalAgentBootstrap } from '../../../flybot-image/agent-bootstrap.mjs'
 import { nativeAgents } from './native.js'
 import { nativeHistoryProjection } from './native-history-projection.js'
-import { attachPersonalTeamCreation } from './team-creation.js'
+import { asksToSetUpTeam, attachPersonalTeamCreation } from './team-creation.js'
 import { importPending } from '../../src/pending-import.js'
 // Workspace agents inside the user's own DS-Bot (batch B2; moved from
 // flybot_workspace/agents.py + the agent conversation dispatch in app.py).
@@ -124,10 +124,10 @@ export function createAgents({ db, host }) {
   const all = (sql, ...a) => db.prepare(sql).all(...a)
   const run = (sql, ...a) => db.prepare(sql).run(...a)
   const personalBinding = () => one('SELECT workspace_id,agent_id FROM native_personal_binding WHERE singleton=1')
-  function personalTeamScope(agent) {
+  function personalTeamScope(agent, text) {
     const binding = personalBinding()
     if (binding?.agent_id === agent.id && binding.workspace_id === agent.workspace_id) {
-      return {workspaceId:agent.workspace_id,agentId:agent.id}
+      return {workspaceId:agent.workspace_id,agentId:agent.id,...(asksToSetUpTeam(text) ? {setupPending:true} : {})}
     }
   }
   const ws = (p) => { if (typeof p?.workspace_id !== 'string' || !ID.test(p.workspace_id)) fail('invalid', 'workspace_id required', 400); return p.workspace_id }
@@ -485,7 +485,7 @@ export function createAgents({ db, host }) {
     }
   }
 
-  function runTextReply({agent, convo, userId, replyId, text, userMeta, replyMeta, attempt, extra, returnFailed}) {
+  function runTextReply({agent, convo, userId, replyId, text, userMeta, replyMeta, attempt, extra, returnFailed, interactive = false}) {
     const stop = replyMeta.clientKey ? new AbortController() : undefined
     const signal = stop?.signal
     return trackSend(convo.id, userId, replyId, async (onProgress, onPhase) => {
@@ -494,7 +494,7 @@ export function createAgents({ db, host }) {
         const {context, refs, personalWorkspace, remember} = await privateContext(agent, convo, text, extra)
         const requestId = attempt === 1 ? `ot-agent:${userId}` : `ot-agent:${userId}:retry:${attempt}`
         const reply = await turn({agent_id:agent.id,key:convo.id,text,request_id:requestId,reply_language:userMeta.replyLanguage,context},
-          {onProgress,onPhase,signal,personalTeamScope:personalTeamScope(agent)})
+          {onProgress,onPhase,signal,interactive,personalTeamScope:personalTeamScope(agent,text)})
         if (signal?.aborted) return sentPair(userId, replyId)
         run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify({...userMeta,session_id:reply.session_id}), userId)
         run('UPDATE agent_messages SET text=?, status=?, meta=? WHERE id=?', reply.text, 'succeeded',
@@ -514,6 +514,7 @@ export function createAgents({ db, host }) {
   }
 
   async function sendWithAttachments(p, agent, convo, text, reference) {
+    const originalText = text
     const key = p.idempotency_key
     if (typeof key !== 'string' || !IDEM.test(key)) fail('invalid', 'Attachment send key required', 400)
     const stickerId = reference?.sticker_id
@@ -594,7 +595,8 @@ export function createAgents({ db, host }) {
           reply_language:p.reply_language, context}, {
           files,
           onProgress,onPhase,
-          personalTeamScope:text ? personalTeamScope(agent) : undefined,
+          interactive:!!accepted,
+          personalTeamScope:originalText ? personalTeamScope(agent,originalText) : undefined,
           onStaged(value) {
             staged = value.map((file, index) => ({
               ...file, ...(files[index]?.resource ? {resource:files[index].resource} : {}), ...(stickerId ? {sticker:true} : {}),
@@ -1266,7 +1268,7 @@ export function createAgents({ db, host }) {
         db.exec('COMMIT')
       } catch (error) { db.exec('ROLLBACK'); throw error }
 
-      const sending = runTextReply({agent,convo,userId,replyId,text,userMeta,replyMeta,attempt:1,extra:p.context,returnFailed:p.return_failed === true})
+      const sending = runTextReply({agent,convo,userId,replyId,text,userMeta,replyMeta,attempt:1,extra:p.context,returnFailed:p.return_failed === true,interactive:!!accepted})
       accepted?.()
       return sending
     },
@@ -1309,7 +1311,7 @@ export function createAgents({ db, host }) {
         db.exec('COMMIT')
       } catch (error) { db.exec('ROLLBACK'); throw error }
       if (reused) return {status:200,...sentPair(userId, replyId)}
-      void runTextReply({agent,convo,userId,replyId,text:source.text,userMeta,replyMeta,attempt,returnFailed:true})
+      void runTextReply({agent,convo,userId,replyId,text:source.text,userMeta,replyMeta,attempt,returnFailed:true,interactive:true})
         .catch(error => host.log?.('private reply retry: ' + String(error?.code ?? error?.name ?? 'error')))
       return {status:202,...sentPair(userId, replyId)}
     },

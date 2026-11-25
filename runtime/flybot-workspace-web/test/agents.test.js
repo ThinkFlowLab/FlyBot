@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { createAgents, composePrompt, CATEGORIES } from '../features/agents/index.js'
 import { loadFeatures } from '../src/features.js'
+import { asksToSetUpTeam } from '../features/agents/team-creation.js'
 import { nativeAgentFixture } from './native-agent-fixture.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -231,6 +232,15 @@ test('existing Personal Agent binds Chief without replacing native IDs, private 
   assert.equal((await e.messages(scope)).items.length,4)
 })
 
+test('only direct team setup requests trigger the focused Chief workflow', () => {
+  for (const prompt of ['你建一个Bot团队来开发ThinkFlowLab/FlyBot', '请帮我组建软件开发小队', 'Please create a team for release testing']) {
+    assert.equal(asksToSetUpTeam(prompt), true, prompt)
+  }
+  for (const prompt of ['不要创建团队', '建一个团队网站', 'create a team page', 'Explain how to create a team', '他说：“创建团队”']) {
+    assert.equal(asksToSetUpTeam(prompt), false, prompt)
+  }
+})
+
 test('a Personal Agent chat can publish its actual native Bot id once', async () => {
   const {e, db, services, attachTeam, bots} = fixture()
   const {rt} = services
@@ -256,6 +266,8 @@ test('a Personal Agent chat can publish its actual native Bot id once', async ()
     return rt.flybotWorkspaceTeam.run({botId,sessionId,requestId,scope:options.personalTeamScope},async () => {
       const tools = rt.flybotWorkspaceTeam.scope(sessionId)
       assert.ok(tools)
+      assert.deepEqual([...rt.flybotWorkspaceTeam.setupTools(sessionId)], ['list_bots','create_bot','create_group'])
+      assert.equal(rt.flybotWorkspaceTeam.setupTools('unowned-session'), null)
       const profile = {name:'Test Engineer',role:'QA',instructions:'Review the release.'}
       const build = link => {
         builds++
@@ -267,8 +279,9 @@ test('a Personal Agent chat can publish its actual native Bot id once', async ()
       return out()
     })
   }
-  await e.send({...address,conversation_id:conversation.id,text:'Create a test engineer',idempotency_key:'native-team-direct-send'})
+  await e.send({...address,conversation_id:conversation.id,text:'你建一个Bot团队来开发ThinkFlowLab/FlyBot',idempotency_key:'native-team-direct-send'})
   assert.equal(rt.flybotWorkspaceTeam.scope(managedSession),null)
+  assert.equal(rt.flybotWorkspaceTeam.setupTools(managedSession),null)
   await e.turn({agent_id:personal.id,key:conversation.id,text:'External call'})
   const roster = (await e.list({workspace_id:W})).items.filter(row => row.name === 'Test Engineer')
   assert.equal(roster.length,1)

@@ -11,8 +11,9 @@ as a browser would:
   inside *their* DS-Bot (instance marker + the real FlyBot chat page);
 * ``POST /b/api/flybot-workspace``, ``POST /b/api/bot`` and a private workspace-agent turn
   execute in their own DS-Bot;
-* a Personal Agent chat turn creates native Bots and one shared group, with the
-  same participants and room identity across the FlyBot and DS-Bot routes;
+* a Personal Agent can recover from a prior tool refusal in the same chat and
+  use native team tools to create Bots and a shared group, with the same
+  participants and room identity across the FlyBot and DS-Bot routes;
 * forged routing headers, a smuggled foreign DSH cookie, no session and a
   cross-site Origin never reach the other user's runtime;
 * a runtime's DSH cookie is useless against the other runtime;
@@ -53,6 +54,9 @@ IMAGE = sys.argv[1] if len(sys.argv) > 1 else 'flybot-workspace-flybot:test'
 NGINX = os.environ.get('FLYBOT_WORKSPACE_GATEWAY_NGINX_IMAGE', 'nginx:1.27-alpine')
 COOKIE = 'ot_dev_session'
 SECRETS: list[str] = []
+TEAM_REQUEST = '你建一个Bot团队来开发ThinkFlowLab/FlyBot'
+TEAM_REFUSAL_REQUEST = 'CI-TEAM-REFUSAL-REQUEST'
+TEAM_REFUSAL_REPLY = 'CI-TEAM-REFUSAL: I cannot see create_bot or create_group in this conversation.'
 
 FAKE_MODEL_WRITE = r"""
 const fs = require('node:fs')
@@ -60,32 +64,43 @@ fs.mkdirSync('/data/secrets', { recursive: true, mode: 0o700 })
 fs.writeFileSync('/data/secrets/model-api.json', JSON.stringify({ provider: 'openai', api_key: 'ci-fake-model-key',
   base_url: 'http://127.0.0.1:18799/v1', model: 'fake-model' }), { mode: 0o600 })
 """
-FAKE_MODEL_SERVER = r"""
+FAKE_MODEL_SERVER = (
+    f'const teamRequest = {json.dumps(TEAM_REQUEST, ensure_ascii=False)}\n'
+    f'const teamRefusalRequest = {json.dumps(TEAM_REFUSAL_REQUEST)}\n'
+    f'const teamRefusalReply = {json.dumps(TEAM_REFUSAL_REPLY)}\n'
+    + r"""
 const steps = [
+  ['list_bots', {}],
   ['create_bot', { name: 'CI Team Builder', role: 'Dev', instructions: 'Build the fixture project.' }],
   ['create_bot', { name: 'CI Team Reviewer', role: 'QA', instructions: 'Review the fixture project.' }],
   ['create_group', { name: 'CI Shared Team', members: ['CI Team Builder', 'CI Team Reviewer'] }],
 ]
+const teamTools = new Set(steps.map(([name]) => name))
 
 function teamResponse(body) {
   const messages = body.messages ?? []
-  const request = messages.findLastIndex(message =>
-    message.role === 'user' && JSON.stringify(message.content).includes('CI-CREATE-SHARED-TEAM'))
+  const request = messages.findLastIndex(message => message.role === 'user')
   if (request < 0) return {}
+  const content = JSON.stringify(messages[request].content)
+  if (content?.includes(teamRefusalRequest)) return { text: teamRefusalReply }
+  if (!content?.includes(teamRequest)) return {}
+  const priorRefusal = messages.slice(0, request).some(message =>
+    message.role === 'assistant' && JSON.stringify(message.content)?.includes(teamRefusalReply))
+  if (!priorRefusal) return { text: 'CI-TEAM-HISTORY-MISSING: previous refusal did not reach the model' }
+
   const results = messages.slice(request + 1).filter(message => message.role === 'tool')
-  if (results.length >= steps.length) return { text: 'CI-TEAM-CREATED' }
-  const [name, args] = steps[results.length]
-  const available = new Set((body.tools ?? []).map(tool => tool.function?.name).filter(Boolean))
-  if (available.has(name)) return { call: { name, arguments: JSON.stringify(args) }, step: results.length }
-  if (available.has('run_code')) {
-    return { call: { name: 'run_code', arguments: JSON.stringify({
-      description: 'Create the fixture team',
-      code: `return await tools.${name}(${JSON.stringify(args)})`,
-    }) }, step: results.length }
+  if (results.length && !JSON.stringify(results[0].content)?.includes('Bots:')) {
+    return { text: 'CI-TEAM-ROSTER-FAILED: list_bots did not return the native roster' }
   }
-  const guidance = messages.some(message => message.role === 'system' &&
-    JSON.stringify(message.content).includes('## FlyBot personal workspace'))
-  return { text: `CI-TEAM-TOOL-MISSING: ${name} (guide=${guidance}, tools=${[...available].sort().join(',')})` }
+  if (results.length >= steps.length) return { text: 'CI-TEAM-CREATED' }
+  const available = new Set((body.tools ?? []).map(tool => tool.function?.name).filter(Boolean))
+  const missing = [...teamTools].filter(name => !available.has(name))
+  const unexpected = [...available].filter(name => !teamTools.has(name))
+  if (missing.length || unexpected.length) {
+    return { text: `CI-TEAM-TOOLS-INVALID: missing=[${missing.join(',')}] unexpected=[${unexpected.join(',')}]` }
+  }
+  const [name, args] = steps[results.length]
+  return { call: { name, arguments: JSON.stringify(args) }, step: results.length }
 }
 
 require('node:http').createServer((req, res) => {
@@ -116,6 +131,7 @@ require('node:http').createServer((req, res) => {
   })
 }).listen(18799, '127.0.0.1')
 """
+)
 FAKE_MODEL_PROBE = r"""
 const s = require('node:net').connect(18799, '127.0.0.1', () => { s.end(); process.exit(0) })
 s.on('error', () => process.exit(1))
@@ -459,10 +475,20 @@ def main():
         chief_conversation = api(token_a, 'POST', chief_conversations, {'title': 'CI Chief team setup'},
                                  expected=201)['conversation']
         chief_chat = f'{chief_conversations}/{chief_conversation["id"]}'
+        refused = api(token_a, 'POST', f'{chief_chat}/messages', {'body': TEAM_REFUSAL_REQUEST},
+                      expected=201, timeout=150)['reply']
+        assert refused['status'] == 'succeeded' and refused['body'] == TEAM_REFUSAL_REPLY, redact(refused.get('body'))
+        established = api(token_a, 'GET', chief_chat)['conversation']
+        assert established['native_session_id'], 'prior refusal happened in a native Personal Agent session'
         acted = api(token_a, 'POST', f'{chief_chat}/messages',
-                    {'body': 'CI-CREATE-SHARED-TEAM: Create a builder, a reviewer, and their shared group.'},
+                    {'body': TEAM_REQUEST},
                     expected=201, timeout=150)['reply']
         assert acted['status'] == 'succeeded' and acted['body'] == 'CI-TEAM-CREATED', redact(acted.get('body'))
+        recovered = api(token_a, 'GET', chief_chat)
+        assert recovered['conversation']['native_session_id'] == established['native_session_id']
+        assert [message['body'] for message in recovered['items']] == [
+            TEAM_REFUSAL_REQUEST, TEAM_REFUSAL_REPLY, TEAM_REQUEST, 'CI-TEAM-CREATED',
+        ], 'native team actions complete after the prior refusal in the same chat'
         # Reload the actual pages and read the same backing API data as the UI.
         assert browse(token_a, 'GET', '/agents')[0] == 200
         names_created = {'CI Team Builder', 'CI Team Reviewer'}

@@ -1357,10 +1357,10 @@ for (const deliveredBeforeAck of [false, true]) {
   });
 }
 
-test('a streaming reply can be stopped before a delayed send acknowledgment', async t => {
+test('a long native reply keeps its partial text and Stop when the stream disconnects', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const post = Promise.withResolvers();
-  let sendKey, ack, historyReads = 0, receiptReads = 0;
+  let sendKey, ack, historyReads = 0, receiptReads = 0, fallbackReads = 0;
   const stopped = [];
   const {doc, el, restore, fetcher} = nativeReplyChat((path, opts, scope) => {
     if (path === '?limit=50') {
@@ -1380,6 +1380,11 @@ test('a streaming reply can be stopped before a delayed send acknowledgment', as
       receiptReads++;
       return json(200, {...ack, state:'running'});
     }
+    if (path === '/reply-progress?key=' + sendKey + '&after=1') {
+      fallbackReads++;
+      if (fallbackReads === 1) return json(200, {state:'running', text:''});
+      return json(200, {state:'running', revision:2, phase:'writing', text:'已收到部分内容，继续工作中'});
+    }
     if (path === '/reply-stop' && opts.method === 'POST') {
       stopped.push(JSON.parse(opts.body));
       return json(200, {...ack, reply:{...ack.reply, status:'cancelled', can_stop:false}});
@@ -1392,7 +1397,7 @@ test('a streaming reply can be stopped before a delayed send acknowledgment', as
     constructor() { streams.push(this); }
     addEventListener(name, fn) { this.handlers.set(name, fn); }
     close() { this.closed = true; }
-    running(text) { this.handlers.get('message')({data:JSON.stringify({state:'running', phase:'writing', text})}); }
+    running(text) { this.handlers.get('message')({data:JSON.stringify({state:'running', revision:1, phase:'writing', text})}); }
   }};
   try {
     await mount(doc, {fetcher});
@@ -1414,6 +1419,27 @@ test('a streaming reply can be stopped before a delayed send acknowledgment', as
     assert.equal(streams[0].closed, undefined);
     assert.deepEqual(list.children.map(row => row.dataset.messageId), [ack.message.id, ack.reply.id]);
     assert.equal(list.children.at(-1).children.at(-1).textContent, '已收到部分内容');
+    for (let elapsed = 0; elapsed < 190_000; elapsed += 10_000) {
+      t.mock.timers.tick(10_000);
+      streams[0].handlers.get('heartbeat')();
+      await settle();
+    }
+    assert.equal(streams[0].closed, undefined);
+    assert.equal(fallbackReads, 0);
+    streams[0].handlers.get('error')();
+    t.mock.timers.tick(0);
+    await settle();
+    assert.equal(fallbackReads, 1);
+    assert.equal(list.children.at(-1).children.at(-1).textContent, '已收到部分内容');
+    assert.equal(stop.hidden, false);
+    t.mock.timers.tick(749);
+    await settle();
+    assert.equal(fallbackReads, 1, 'unchanged fallback progress is paced');
+    t.mock.timers.tick(120_000);
+    await settle();
+    assert.equal(fallbackReads, 2);
+    assert.equal(list.children.at(-1).children.at(-1).textContent, '已收到部分内容，继续工作中');
+    assert.equal(stop.hidden, false);
     await fire(stop, 'click');
     assert.deepEqual(stopped, [{key:sendKey, attempt:1}]);
     assert.equal(stop.hidden, true);
