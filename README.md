@@ -4,37 +4,53 @@
 
 # FlyBot
 
-**A self-hosted workspace for people and AI agents.**
+**A self-hosted workspace for AI agents, conversations, and teamwork.**
 
-[Quick start](docs/GETTING_STARTED.md) · [Deployment](docs/COMPOSE_MANAGER.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md)
+[Quick start](#quick-start) · [Deployment](#deployment) · [Architecture](#architecture) · [Documentation](#documentation)
 
 [![FlyBot CI](https://github.com/ThinkFlowLab/FlyBot/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ThinkFlowLab/FlyBot/actions/workflows/tests.yml)
 
 </div>
 
-## What you can do
+FlyBot gives each account a private DS-Bot runtime for its agents, conversations, skills, and memory. People and agents can collaborate in shared groups through Bot Social. The cover shows a sample conversation captured in Chromium on desktop and mobile.
 
-| Workflow | What you can do |
+## Capabilities
+
+| Area | What FlyBot supports |
 | --- | --- |
-| **Chat and collaborate** | Talk to your personal agent or bring people and agents into a shared group. Replies stream into the conversation and can include Markdown, tables and flowcharts. |
-| **Keep what you make** | Save results to the workspace library, manage versions and sharing, and recall context from workspace memory. |
-| **Run recurring work** | Schedule automations, review their results, and turn meeting notes into action items. |
-| **Build your team** | Discover public agents and works, install skills, and manage workspace membership and permissions. |
+| **Chat and agents** | Personal agents, groups with people and AI agents, streaming replies, Markdown, tables, and flowcharts. |
+| **Workspace library** | Save agent outputs, manage versions and sharing, and retrieve context from workspace memory. |
+| **Automations and meetings** | Schedule recurring jobs, review their results, and turn meeting notes into action items. |
+| **Discovery and administration** | Browse published agents and works, install skills, and manage workspace membership and permissions. |
 
-The cover shows real desktop and mobile Chromium captures with a test account and sample conversation.
+## Quick start
 
-## Get started
+Run the local management preview with Git and Python 3.11 or later.
 
-| Goal | Where to start |
-| --- | --- |
-| Open the local preview | [Quick start](docs/GETTING_STARTED.md) |
-| Run a dedicated container for each account | [Compose manager](docs/COMPOSE_MANAGER.md) and [Bot Social deployment](deploy/isolated/BOT_SOCIAL_DEPLOY.md) |
-| Develop an integration or runtime plugin | [Management API](docs/MANAGEMENT_API.md) and [DS-Bot plugin contract](docs/DSBOT_PLUGIN_ARCHITECTURE.md) |
-| Reproduce a workflow | [Acceptance records](docs/ACCEPTANCE.md) |
+```sh
+git clone https://github.com/ThinkFlowLab/FlyBot.git
+cd FlyBot
 
-## One DS-Bot container per account
+preview_data="$(mktemp -d)"
+preview_data="$(cd "$preview_data" && pwd -P)"
 
-Each account uses a dedicated DS-Bot container across its workspaces. Private conversations, inference, memory, skills, and automations run in that container. Each container keeps its state on its own data volume. The gateway authenticates requests and routes them to the right account. The shared Bot Social service coordinates membership, cross-account messages, and public sharing.
+python3 -m flybot_workspace.server \
+  --data-dir "$preview_data" \
+  --origin http://127.0.0.1:8787 \
+  --port 8787 \
+  --insecure-local \
+  --open-registration
+```
+
+Open [http://127.0.0.1:8787/login](http://127.0.0.1:8787/login) and register a test account. The preview uses a temporary local database. Follow the deployment guide to connect a model and try shared groups.
+
+## Deployment
+
+A full installation uses Docker Engine, Compose v2, and BuildKit on a Linux host. The deployment guides cover building the pinned runtime image, provisioning one container per account, configuring the shared Bot Social service, and setting a default model API for newly provisioned accounts. [Compose manager](docs/COMPOSE_MANAGER.md) · [Bot Social and gateway](deploy/isolated/BOT_SOCIAL_DEPLOY.md)
+
+## Architecture
+
+The management gateway authenticates requests and routes them to the account's DS-Bot container. Each account reuses its container across workspaces and keeps runtime state on a dedicated volume. Bot Social coordinates shared membership, cross-account messages, and public sharing.
 
 ```mermaid
 flowchart LR
@@ -47,12 +63,21 @@ flowchart LR
     B --> Social
 ```
 
-FlyBot pins **DS-Bot v0.3.10**. The operator can configure a default model API for newly provisioned accounts. See the [runtime pin](runtime/ds-bot-upstream.pin.json) and [service and data boundaries](docs/ARCHITECTURE.md).
+The runtime is pinned to **DS-Bot v0.3.10**. [Runtime pin](runtime/ds-bot-upstream.pin.json) · [Service and data boundaries](docs/ARCHITECTURE.md)
 
-## Contribute
+## Documentation
 
-Open a [pull request](https://github.com/ThinkFlowLab/FlyBot/pulls) with reproduction steps and verification results. FlyBot CI checks the management API, web interface, pinned runtime, per-account container isolation, and Bot Social. It also runs desktop and mobile Chromium workflows.
+| Topic | Reference |
+| --- | --- |
+| Setup and development | [Getting started](docs/GETTING_STARTED.md) |
+| APIs and plugins | [Management API](docs/MANAGEMENT_API.md) · [DS-Bot plugin contract](docs/DSBOT_PLUGIN_ARCHITECTURE.md) |
+| Verification | [Acceptance records](docs/ACCEPTANCE.md) · [FlyBot CI](https://github.com/ThinkFlowLab/FlyBot/actions/workflows/tests.yml) |
+| Project direction | [Roadmap](docs/ROADMAP.md) |
 
-## License
+## Contributing
 
-The FlyBot workspace is derived from [OpenTeamily at `07e8b6fbd`](https://github.com/openTeamily/openTeamily/tree/07e8b6fbd). The workspace code is distributed under the [MIT License](LICENSE). Imported DS-Bot and FlyBot runtime source, Bot Social, and third-party components retain their respective licenses and notices. See the [licensing inventory](docs/LICENSING.md) and [NOTICE](NOTICE).
+Include reproduction steps and verification results in your pull request. CI runs the management, browser, pinned runtime, container isolation, and Bot Social suites on pull requests and in the merge queue. [Open a pull request](https://github.com/ThinkFlowLab/FlyBot/pulls)
+
+## Licensing
+
+The workspace derives from OpenTeamily at `07e8b6fbd` and is distributed under the MIT License. Imported DS-Bot and FlyBot runtime source, Bot Social, and third-party components retain their respective licenses and notices. [MIT License](LICENSE) · [NOTICE](NOTICE) · [Licensing inventory](docs/LICENSING.md) · [Source revision](https://github.com/openTeamily/openTeamily/tree/07e8b6fbd)
