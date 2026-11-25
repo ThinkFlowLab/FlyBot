@@ -319,7 +319,7 @@ export function nativeGroupClient(host, raw) {
         pendingSave.delete(cid)
       })
     }
-    const api = { sync, archive, relay }
+    const api = { sync, archive, relay, create: create.create }
     installed.set(rt, api)
     return api
   }
@@ -352,5 +352,10 @@ export function nativeGroupClient(host, raw) {
     if (result?.kind === 'group' && result.id) return syncForPlugin(api, result)
     return result
   }
-  return { ...raw, request, get: (path,options) => request('GET',path,undefined,options), post: (path,b={}) => request('POST',path,b), put: (path,b={}) => request('PUT',path,b), patch: (path,b={}) => request('PATCH',path,b), del: path => request('DELETE',path) }
+  async function createNativeGroup(payload) {
+    const api = await install()
+    if (!api) throw new Error('The native group service is not ready')
+    return api.create(payload)
+  }
+  return { ...raw, request, createNativeGroup, get: (path,options) => request('GET',path,undefined,options), post: (path,b={}) => request('POST',path,b), put: (path,b={}) => request('PUT',path,b), patch: (path,b={}) => request('PATCH',path,b), del: path => request('DELETE',path) }
 }

@@ -9,6 +9,18 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const sourceDir = fileURLToPath(new URL('../ds-bot-upstream/ds-bot/', import.meta.url))
 const patch = fileURLToPath(new URL('./native-ds-bot.patch', import.meta.url))
 const files = {
+  'src/host/tools.js': [
+    'a5c743b7c75c96498775808f029a5f15c7e08dbe6eaf33089d29b3c2a9ffb382',
+    '1826917126e67e426becdcb15a4fe4be08129f29a7b29ef34ff637b9b9cb46df',
+  ],
+  'src/host/roster.js': [
+    '20461d2d4aeae6ca373e3431a5802317d1130468e1940d22032189134429f984',
+    '31c4ec4f68067b79ef2d4fc967e254e15b5854cbc1928eed831c725030dd77aa',
+  ],
+  'src/host/prompt.js': [
+    'b15fd1dd8b046589533540b45388e6573e84fdf51bb09aa48a97e694c1e83c21',
+    'ebf5a93da2ef5941e0417f4018635350cb251212c9eb9384671f2ef9a7bbc2b8',
+  ],
   'client.js': [
     '98713d86c6cbf85adab1d0a2d303140778d9ed85fb2220abdadfab377a5f539f',
     '8e97d8e25cc1e04ec36f8b7449dc644e1d2d31ec5d6a8fe4071df35701806308',

@@ -2049,3 +2049,92 @@ diff --git a/src/host/groups.js b/src/host/groups.js
        && (noticeOnly ? !round.starting : round.nudge !== undefined && !round.closed && !round.abort?.signal.aborted))
      if (running !== undefined) {
        if (extra.failed !== undefined) {
+diff --git a/src/host/tools.js b/src/host/tools.js
+--- a/src/host/tools.js
++++ b/src/host/tools.js
+@@ -477,7 +477,13 @@
+         const served = new Set((await rt.catalog()).filter(entry => entry.needsKey !== true && rt.isLocalAgentRef?.(entry.ref) !== true).map(entry => entry.ref))
+         const fallback = [state.prefs.defaultBotModel, creator?.model].find(ref => ref && served.has(ref))
+         const model = args.model || fallback
+-        const bot = await rt.createBot({ ...args, avatar: avatar === undefined ? undefined : { image: avatar }, model, workDir, effort: args.effort, section: args.section, createdBy: creator?.id })
++        const create = flybotWorkspace => rt.createBot({ ...args, avatar: avatar === undefined ? undefined : { image: avatar }, model, workDir, effort: args.effort, section: args.section, createdBy: creator?.id, flybotWorkspace })
++        const workspace = rt.flybotWorkspaceTeam?.scope(exec.agent?.session?.id ?? exec.agent?.id)
++        if (workspace) {
++          const bot = await workspace.createBot({ name: name.slice(0, 40), role: String(args.role ?? '').trim().slice(0, 24), instructions: String(args.instructions ?? '').trim() }, create)
++          return `Created and added ${bot.name} to the user's FlyBot agent directory. Chat: ${bot.url}`
++        }
++        const bot = await create()
+         return `Created ${bot.name}${workDir ? `, working in ${workDir}` : ''}. It is greeting the user now.`
+       } catch (error) {
+         return `Could not create the Bot: ${error.message}`
+@@ -631,9 +637,9 @@
+
+   rt.teamTools.push(defineTool({
+     name: 'create_group',
+-    description: 'Main Bot only. Create a group chat with the user and some Bots. You join it as its admin unless you name another member.',
++    description: 'Main Bot only. Create a group with the user and the specified Bots. A FlyBot workspace group adds only the specified Bots. In DS Bot local groups you join as admin unless another is named.',
+     parameters: {
+-      members: { type: 'array', required: true, items: { type: 'string' }, description: 'Exact names of the other Bots to add; you are added automatically' },
++      members: { type: 'array', required: true, items: { type: 'string' }, description: 'Exact names of the Bots to add' },
+       name: { type: 'string', description: 'Group name; defaults to the member names' },
+       notice: { type: 'string', description: 'Shared instructions every member reads before speaking in this group; at most 2000 characters' },
+       admin: { type: 'string', description: 'Member who leads the group; defaults to you' },
+@@ -647,6 +653,15 @@
+       if (!rt.isMain(self)) return 'Only a Main Bot can create group chats. Ask a Main Bot instead.'
+       const { bots, unknown } = resolveBots(args.members)
+       if (unknown.length > 0) return `No Bot named ${unknown.join(', ')}. Team: ${teamNames()}`
++      const workspace = rt.flybotWorkspaceTeam?.scope(exec.agent?.session?.id ?? exec.agent?.id)
++      if (workspace) {
++        try {
++          const group = await workspace.createGroup({ ...args, members: bots })
++          return `Created group "${group.title}" with ${bots.map(bot => bot.name).join(', ')}. Open it in the FlyBot sidebar: ${group.url}${group.noticeSaved ? '' : ' (the notice could not be saved)'}`
++        } catch (error) {
++          return `Could not create the group: ${error.message}`
++        }
++      }
+       const admin = args.admin ? rt.findBot(args.admin) : rt.botOf(self)
+       if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
+       const members = [...new Set([self, ...bots.map(bot => bot.id), admin.id])]
+diff --git a/src/host/roster.js b/src/host/roster.js
+--- a/src/host/roster.js
++++ b/src/host/roster.js
+@@ -190,7 +190,7 @@
+     return holdName('bot', cleanName, () => buildBot(cleanName, options))
+   }
+
+-  async function buildBot(cleanName, { role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, copyOf, pickModel = false, section, sectionId }) {
++  async function buildBot(cleanName, { role = '', instructions = '', color, brief = '', createdBy, main = false, avatar, model, effort, workDir, copyOf, pickModel = false, section, sectionId, flybotWorkspace }) {
+     const cleanAvatarValue = cleanAvatar(avatar)
+     // The model is fixed at creation, so a later change of the DSH default leaves it alone.
+     const modelRef = model ? await rt.resolveModel(model) : pickModel ? undefined : await rt.defaultBotModel()
+@@ -225,6 +225,7 @@
+         createdBy: createdBy ?? null,
+         capabilities: [],
+         packs: [],
++        ...(flybotWorkspace ? { flybotWorkspace } : {}),
+       }
+       if (main) state.mainBotIds.push(id)
+       const creator = rt.botOf(createdBy)
+diff --git a/src/host/prompt.js b/src/host/prompt.js
+--- a/src/host/prompt.js
++++ b/src/host/prompt.js
+@@ -51,12 +51,19 @@
+     const bot = rt.botOf(self)
+     if (bot !== undefined) {
+       const main = rt.isMainForTurn?.(id) ?? rt.isMain(self)
++      const workspace = main && rt.flybotWorkspaceTeam?.scope(id)
+       return [
+         '# Your identity',
+         `You are ${bot.name}, a Bot on the user's team in DS Bot.${bot.role ? ` Your role: ${bot.role}.` : ''}`,
+         bot.instructions ? `\n${bot.instructions}` : '',
+         '',
+         main ? `${MAIN_RULES}\n\n${TEAM_RULES}` : TEAM_RULES,
++        ...(workspace ? [
++          '',
++          '## FlyBot personal workspace',
++          'When the user asks you to create or assemble a team, use list_bots to reuse existing specialists, call create_bot for missing roles, and call create_group with their exact names. Use DS Bot tool discovery if these tools are not listed directly. You can do this from the current conversation.',
++          'FlyBot shared groups include only the Bots you list. Include yourself only if the user asks. Supply the name and members, plus a notice if requested. Leave admin, reply mode, and section to group settings. After the tools confirm creation, name the actual Bots and link to the group using the returned link.',
++        ] : []),
+       ].join('\n')
+     }
+     const room = rt.roomOf(id)

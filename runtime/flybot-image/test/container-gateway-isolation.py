@@ -11,14 +11,16 @@ as a browser would:
   inside *their* DS-Bot (instance marker + the real FlyBot chat page);
 * ``POST /b/api/flybot-workspace``, ``POST /b/api/bot`` and a private workspace-agent turn
   execute in their own DS-Bot;
+* a Personal Agent chat turn creates native Bots and one shared group, with the
+  same participants and room identity across the FlyBot and DS-Bot routes;
 * forged routing headers, a smuggled foreign DSH cookie, no session and a
   cross-site Origin never reach the other user's runtime;
 * a runtime's DSH cookie is useless against the other runtime;
 * no DSH cookie is ever sent to the browser.
 
-A fixture model runs inside one runtime's loopback. No external provider, Bot
-Social or published port is involved. The bridge and containers are removed
-afterwards. Secrets (DSH tokens/cookies) are never printed.
+A fixture model runs inside one runtime's loopback. A local Bot Social container
+stores its shared group. No external provider or published port is involved.
+The bridge and containers are removed afterwards. Secrets are never printed.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ import http.client
 import json
 import os
 import re
+import runpy
 import secrets
 import subprocess
 import sys
@@ -41,7 +44,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from flybot_workspace import dsbot_gateway as gw  # noqa: E402
-from flybot_workspace import lifecycle  # noqa: E402
+from flybot_workspace import dsbot_bundle, lifecycle, personal  # noqa: E402
 from flybot_workspace.security import digest  # noqa: E402
 from flybot_workspace.server import QuietHandler, ThreadedWSGIServer  # noqa: E402
 from flybot_workspace.store import Store  # noqa: E402
@@ -58,6 +61,31 @@ fs.writeFileSync('/data/secrets/model-api.json', JSON.stringify({ provider: 'ope
   base_url: 'http://127.0.0.1:18799/v1', model: 'fake-model' }), { mode: 0o600 })
 """
 FAKE_MODEL_SERVER = r"""
+const steps = [
+  ['create_bot', { name: 'CI Team Builder', role: 'Dev', instructions: 'Build the fixture project.' }],
+  ['create_bot', { name: 'CI Team Reviewer', role: 'QA', instructions: 'Review the fixture project.' }],
+  ['create_group', { name: 'CI Shared Team', members: ['CI Team Builder', 'CI Team Reviewer'] }],
+]
+
+function teamResponse(body) {
+  const messages = body.messages ?? []
+  const request = messages.findLastIndex(message =>
+    message.role === 'user' && JSON.stringify(message.content).includes('CI-CREATE-SHARED-TEAM'))
+  if (request < 0) return {}
+  const results = messages.slice(request + 1).filter(message => message.role === 'tool')
+  if (results.length >= steps.length) return { text: 'CI-TEAM-CREATED' }
+  const [name, args] = steps[results.length]
+  const available = new Set((body.tools ?? []).map(tool => tool.function?.name))
+  if (available.has(name)) return { call: { name, arguments: JSON.stringify(args) }, step: results.length }
+  if (available.has('run_code')) {
+    return { call: { name: 'run_code', arguments: JSON.stringify({
+      description: 'Create the fixture team',
+      code: `return await tools.${name}(${JSON.stringify(args)})`,
+    }) }, step: results.length }
+  }
+  return { text: 'CI-TEAM-TOOL-MISSING: ' + name }
+}
+
 require('node:http').createServer((req, res) => {
   let raw = ''
   req.on('data', (c) => { raw += c })
@@ -66,18 +94,23 @@ require('node:http').createServer((req, res) => {
     if (req.headers.authorization !== 'Bearer ci-fake-model-key') { res.writeHead(401); res.end('{}'); return }
     let body = {}
     try { body = JSON.parse(raw) } catch {}
-    const text = 'CI-DSBOT-REPLY profile=' + (raw.includes('CI-PROFILE-MARK') ? 'yes' : 'no')
+    const team = teamResponse(body)
+    const text = team.text ?? 'CI-DSBOT-REPLY profile=' + (raw.includes('CI-PROFILE-MARK') ? 'yes' : 'no')
+    const call = team.call && { id: 'ci-team-call-' + team.step, type: 'function', function: team.call }
+    const finish = call ? 'tool_calls' : 'stop'
     const base = { id: 'chatcmpl-ci', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: 'fake-model' }
+    const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
     if (body.stream) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
-      res.write('data: ' + JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }] }) + '\n\n')
-      res.write('data: ' + JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }) + '\n\n')
+      const delta = call ? { role: 'assistant', tool_calls: [{ index: 0, ...call }] } : { role: 'assistant', content: text }
+      res.write('data: ' + JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] }) + '\n\n')
+      res.write('data: ' + JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: finish }], usage }) + '\n\n')
       res.end('data: [DONE]\n\n')
       return
     }
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ...base, object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }))
+    const message = call ? { role: 'assistant', content: null, tool_calls: [call] } : { role: 'assistant', content: text }
+    res.end(JSON.stringify({ ...base, object: 'chat.completion', choices: [{ index: 0, message, finish_reason: finish }], usage }))
   })
 }).listen(18799, '127.0.0.1')
 """
@@ -131,11 +164,49 @@ def wait_for(fn, what, seconds=90):
     raise RuntimeError(f'timed out waiting for {what}: {redact(last)}')
 
 
-def start_runtime(name, network, instance_id, volume_id):
+def start_runtime(name, network, instance_id, volume_id, mounts=()):
     docker('run', '--detach', '--name', name, '--network', network, '--user', '1000:1000', '--read-only',
            '--tmpfs', '/tmp:rw,noexec,nosuid,size=67108864', '--mount', f'type=volume,src={name}-data,dst=/data',
            '-e', 'DSH_TELEMETRY_DISABLED=1', '-e', 'DSH_LISTEN_PORT=8080',
-           '-e', f'FLYBOT_WORKSPACE_INSTANCE_ID={volume_id}', '-e', f'FLYBOT_WORKSPACE_ROUTING_INSTANCE_ID={instance_id}', IMAGE)
+           '-e', f'FLYBOT_WORKSPACE_INSTANCE_ID={volume_id}', '-e', f'FLYBOT_WORKSPACE_ROUTING_INSTANCE_ID={instance_id}',
+           *mounts, IMAGE)
+
+
+def start_bot_social(tmp, network, subnet, run, started):
+    make_tls = runpy.run_path(str(Path(__file__).with_name('container-social-two-dsbots.py')))['make_tls']
+    host, app = f'ot-gw-{run}-social', f'ot-gw-{run}-social-app'
+    origin = f'https://{host}'
+    ca, key, cert = make_tls(tmp, host)
+    image = 'flybot-workspace-bot-social:ci-gateway'
+    docker('build', '-q', '-t', image, str(ROOT / 'services' / 'bot-social'), timeout=900)
+    docker('run', '--detach', '--name', app, '--network', network, '--tmpfs', '/data',
+           '-e', f'PUBLIC_BASE_URL={origin}', '-e', f'TRUST_PROXY={subnet}', image)
+    started.append(app)
+    conf = tmp / 'social-tls.conf'
+    conf.write_text(f'''server {{
+  listen 443 ssl;
+  server_name {host};
+  ssl_certificate /tls/tls.crt;
+  ssl_certificate_key /tls/tls.key;
+  location / {{
+    proxy_pass http://{app}:8787;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+  }}
+}}\n''')
+    os.chmod(conf, 0o644)
+    docker('run', '--detach', '--name', host, '--network', network, '--read-only',
+           '--tmpfs', '/var/cache/nginx', '--tmpfs', '/var/run', '--tmpfs', '/tmp',
+           '-v', f'{conf}:/etc/nginx/conf.d/default.conf:ro', '-v', f'{cert}:/tls/tls.crt:ro',
+           '-v', f'{key}:/tls/tls.key:ro', NGINX)
+    started.append(host)
+    config = tmp / 'bot-social.json'
+    config.write_text(json.dumps({'server': origin, 'displayName': 'CI Chief ' + run, 'source': 'platform'}))
+    os.chmod(config, 0o644)
+    return ['-v', f'{config}:/run/secrets/flybot-workspace-bot-social.json:ro',
+            '-v', f'{ca}:/run/flybot-workspace-ci-ca.pem:ro',
+            '-e', 'NODE_EXTRA_CA_CERTS=/run/flybot-workspace-ci-ca.pem']
 
 
 def launch_url(name):
@@ -155,14 +226,20 @@ def seed(store, runtimes, now):
         gw.ensure_schema(db)
         for n, rt in enumerate(runtimes):
             user, ws = uuid4().hex, uuid4().hex
+            username = f'ci-gateway-user-{n}'
+            db.execute('INSERT INTO users VALUES(?,?,?,?)', (user, username, 'x', now))
+            if n == 0:
+                binding, _ = personal.ensure(db, {'id': user, 'username': username}, 2, 5, 1, now)
+                ws = binding['workspace_id']
+                rt['personal_agent_id'] = binding['agent_id']
+                rt['bootstrap'] = dsbot_bundle.build_personal_bootstrap(db, user, rt['id'], now)
+            else:
+                db.execute('INSERT INTO workspaces VALUES(?,?,?,?,?,?)', (ws, user, 'ci', now, f'k{n}', f'r{n}'))
             rt['workspace_id'] = ws
-            db.execute('INSERT INTO users VALUES(?,?,?,?)', (user, f'ci-gateway-user-{n}', 'x', now))
-            db.execute('INSERT INTO workspaces VALUES(?,?,?,?,?,?)', (ws, user, 'ci', now, f'k{n}', f'r{n}'))
             db.execute("INSERT INTO instances(id,workspace_id,owner_id,profile,backend_mode,image_ref,volume_ref,desired,revision,"
                        "operation_id,operation_type,observed,observed_revision,health,process_ref,error_code,blocked,create_key,created) "
                        "VALUES(?,?,?,'flybot','compose','ci',?,'running',1,'op','create','running',1,'healthy',NULL,NULL,0,?,?)",
                        (rt['id'], ws, user, rt['name'], f'c{n}', now + n))
-            gw.record_upstream(db, rt['id'], rt['address'], rt['cookie'], now)
             token = secrets.token_urlsafe(32)
             SECRETS.append(token)
             db.execute('INSERT INTO sessions VALUES(?,?,?,?,?)', (digest(token), digest('csrf'), user, now + 3600, now))
@@ -180,21 +257,32 @@ def main():
     tmp = tempfile.TemporaryDirectory()
     try:
         docker('network', 'create', '--driver', 'bridge', '--label', 'io.flybot-workspace.ci=gateway', network)
-        gateway_ip = json.loads(docker('network', 'inspect', network).stdout)[0]['IPAM']['Config'][0]['Gateway']
-        runtimes = []
-        for index, name in enumerate(names):
-            rt = {'name': name, 'id': uuid4().hex}
-            rt['volume_id'] = uuid4().hex if index == 0 else rt['id']
-            start_runtime(name, network, rt['id'], rt['volume_id'])
-            started.append(name)
-            runtimes.append(rt)
+        ipam = json.loads(docker('network', 'inspect', network).stdout)[0]['IPAM']['Config'][0]
+        gateway_ip = ipam['Gateway']
+        runtimes = [{'name': name, 'id': uuid4().hex} for name in names]
+        a, b = runtimes
+        a['volume_id'], b['volume_id'] = uuid4().hex, b['id']
+        os.chmod(tmp.name, 0o700)
+        store = Store(os.path.join(tmp.name, 'platform'))
+        now = int(time.time())
+        token_a, token_b = seed(store, runtimes, now)
+        bootstrap_path = Path(tmp.name) / 'personal-bootstrap.json'
+        bootstrap_path.write_text(json.dumps({'agent_bootstrap': a['bootstrap']}))
+        os.chmod(bootstrap_path, 0o644)
+        social_mounts = start_bot_social(Path(tmp.name), network, ipam['Subnet'], run, started)
+        for rt in runtimes:
+            mounts = [*social_mounts, '-v', f'{bootstrap_path}:/run/secrets/flybot-workspace-runtime-key.json:ro'] if rt is a else []
+            start_runtime(rt['name'], network, rt['id'], rt['volume_id'], mounts)
+            started.append(rt['name'])
         for rt in runtimes:
             url = launch_url(rt['name'])
             rt['address'] = gw.validate_address(ip_on(rt['name'], network) + ':8080')
             wait_for(lambda: request(rt['address'], 'GET', '/', {'Host': rt['address']})[0] in (200, 401), f'{rt["name"]} HTTP')
             rt['cookie'] = wait_for(lambda: gw.exchange_launch_url(url, rt['address']), f'{rt["name"]} DSH session')
             SECRETS.append(rt['cookie'].split('=', 1)[1])
-        a, b = runtimes
+        with store.transaction() as db:
+            for rt in runtimes:
+                gw.record_upstream(db, rt['id'], rt['address'], rt['cookie'], int(time.time()))
 
         # A runtime's own cookie works on it, and is useless on the other runtime.
         ok = request(a['address'], 'POST', '/api/flybot-workspace', {'Host': a['address'], 'Cookie': a['cookie'],
@@ -204,10 +292,6 @@ def main():
                         'Content-Type': 'application/json'}, json.dumps({'endpoint': 'shell/identity'}))
         assert cross[0] == 401, f'A cookie must not open B runtime, got {cross[0]}'
 
-        os.chmod(tmp.name, 0o700)
-        store = Store(os.path.join(tmp.name, 'platform'))
-        now = int(time.time())
-        token_a, token_b = seed(store, runtimes, now)
         key = secrets.token_urlsafe(32)
         SECRETS.append(key)
         httpd = make_server(gateway_ip, 0, lambda e, s: None, handler_class=QuietHandler, server_class=ThreadedWSGIServer)
@@ -305,9 +389,7 @@ def main():
             assert status == expected, f'{method} {path}: {status} {redact(body[:300])}'
             return json.loads(body)
 
-        # Use the same workspace-agent routes as the real chat UI. An unseeded
-        # runtime has no personal binding; the Compose lifecycle test proves
-        # signup/manager bootstrapping separately.
+        # Use the same workspace-agent routes as the real chat UI.
         agents = f'/v1/workspaces/{a["workspace_id"]}/agents'
         agent = api(token_a, 'POST', agents, {'name': 'CI assistant', 'instructions': 'CI-PROFILE-MARK'},
                     expected=201)['agent']
@@ -326,6 +408,41 @@ def main():
         assert [m['role'] for m in history['items']] == ['user', 'assistant']
         assert api(token_b, 'GET', agents)['items'] == [], "B never sees A's agents"
         api(token_b, 'GET', chat, expected=404)
+
+        def plugin(token, endpoint, payload=None, kind='flybot-workspace'):
+            status, _h, response = browse(token, 'POST', f'/b/api/{kind}',
+                                          json.dumps({'endpoint': endpoint, 'payload': payload}))
+            body = json.loads(response)
+            assert status == 200 and body.get('ok'), f'{endpoint}: {status} {redact(body.get("error"))}'
+            return body['value']
+
+        wait_for(lambda: plugin(token_a, 'social/status').get('connected'), 'Bot Social onboarding')
+        chief = api(token_a, 'GET', f'{agents}/{a["personal_agent_id"]}')['agent']
+        chief_conversations = f'{agents}/{chief["id"]}/conversations'
+        chief_conversation = api(token_a, 'POST', chief_conversations, {'title': 'CI Chief team setup'},
+                                 expected=201)['conversation']
+        chief_chat = f'{chief_conversations}/{chief_conversation["id"]}'
+        acted = api(token_a, 'POST', f'{chief_chat}/messages',
+                    {'body': 'CI-CREATE-SHARED-TEAM: Create a builder, a reviewer, and their shared group.'},
+                    expected=201, timeout=150)['reply']
+        assert acted['status'] == 'succeeded' and acted['body'] == 'CI-TEAM-CREATED', redact(acted.get('body'))
+        # Reload the actual pages and read the same backing API data as the UI.
+        assert browse(token_a, 'GET', '/agents')[0] == 200
+        names_created = {'CI Team Builder', 'CI Team Reviewer'}
+        created = [row for row in api(token_a, 'GET', agents)['items'] if row['name'] in names_created]
+        assert len(created) == 2 and {row['name'] for row in created} == names_created
+        assert all(row['native_bot_id'] for row in created)
+        assert browse(token_a, 'GET', '/chat')[0] == 200
+        groups = f'/v1/workspaces/{a["workspace_id"]}/social/conversations'
+        found = [row for row in api(token_a, 'GET', groups)['items'] if row['title'] == 'CI Shared Team']
+        assert len(found) == 1 and found[0]['kind'] == 'group' and found[0]['account_group']
+        group = api(token_a, 'GET', f'{groups}/{found[0]["id"]}')['conversation']
+        assert group['native_room_id'] and group['native_session_id'] == group['native_room_id']
+        assert {agent['id'] for agent in group['agent_members']} == {row['id'] for row in created}
+        native = plugin(token_a, 'flybot-workspace-group-open', {'conversation_id': group['id']}, kind='bot')
+        assert native['conversation_id'] == group['id'] and native['room']['id'] == group['native_room_id']
+        assert set(native['room']['members']) == {row['native_bot_id'] for row in created}
+        assert api(token_b, 'GET', agents)['items'] == [], "B never sees the Bots created by A's Personal Agent"
         # An old volume can retain its native identity while using its
         # canonical manager-issued ID in external Agent API keys.
         external_key = api(token_a, 'POST', f'{agents}/{agent["id"]}/api-keys',
@@ -349,7 +466,7 @@ def main():
         assert result['status'] == 'succeeded' and result['engine'] == 'ds-bot'
         assert result['reply'].startswith('CI-DSBOT-REPLY')
         print(json.dumps({'gateway_isolation': 'ok', 'runtimes': 2, 'served_by': 'ds-bot', 'chat': 'ds-bot-native',
-                          'instances': [a['id'], b['id']]}))
+                          'chief_team_creation': 'ok', 'instances': [a['id'], b['id']]}))
     except Exception as error:
         for name in started:
             logs = docker('logs', '--tail', '80', name, check=False)

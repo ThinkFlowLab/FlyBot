@@ -1,6 +1,7 @@
 import { loadPersonalAgentBootstrap } from '../../../flybot-image/agent-bootstrap.mjs'
 import { nativeAgents } from './native.js'
 import { nativeHistoryProjection } from './native-history-projection.js'
+import { attachPersonalTeamCreation } from './team-creation.js'
 import { importPending } from '../../src/pending-import.js'
 // Workspace agents inside the user's own DS-Bot (batch B2; moved from
 // flybot_workspace/agents.py + the agent conversation dispatch in app.py).
@@ -122,6 +123,13 @@ export function createAgents({ db, host }) {
   const one = (sql, ...a) => db.prepare(sql).get(...a)
   const all = (sql, ...a) => db.prepare(sql).all(...a)
   const run = (sql, ...a) => db.prepare(sql).run(...a)
+  const personalBinding = () => one('SELECT workspace_id,agent_id FROM native_personal_binding WHERE singleton=1')
+  function personalTeamScope(agent) {
+    const binding = personalBinding()
+    if (binding?.agent_id === agent.id && binding.workspace_id === agent.workspace_id) {
+      return {workspaceId:agent.workspace_id,agentId:agent.id}
+    }
+  }
   const ws = (p) => { if (typeof p?.workspace_id !== 'string' || !ID.test(p.workspace_id)) fail('invalid', 'workspace_id required', 400); return p.workspace_id }
   async function requireAgentManager(workspaceId, message = 'Only workspace owners and admins can manage archived agents') {
     const binding = await host.call('agents/personal-binding', {})
@@ -486,7 +494,7 @@ export function createAgents({ db, host }) {
         const {context, refs, personalWorkspace, remember} = await privateContext(agent, convo, text, extra)
         const requestId = attempt === 1 ? `ot-agent:${userId}` : `ot-agent:${userId}:retry:${attempt}`
         const reply = await turn({agent_id:agent.id,key:convo.id,text,request_id:requestId,reply_language:userMeta.replyLanguage,context},
-          {onProgress,onPhase,signal})
+          {onProgress,onPhase,signal,personalTeamScope:personalTeamScope(agent)})
         if (signal?.aborted) return sentPair(userId, replyId)
         run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify({...userMeta,session_id:reply.session_id}), userId)
         run('UPDATE agent_messages SET text=?, status=?, meta=? WHERE id=?', reply.text, 'succeeded',
@@ -586,6 +594,7 @@ export function createAgents({ db, host }) {
           reply_language:p.reply_language, context}, {
           files,
           onProgress,onPhase,
+          personalTeamScope:text ? personalTeamScope(agent) : undefined,
           onStaged(value) {
             staged = value.map((file, index) => ({
               ...file, ...(files[index]?.resource ? {resource:files[index].resource} : {}), ...(stickerId ? {sticker:true} : {}),
@@ -658,6 +667,24 @@ export function createAgents({ db, host }) {
     return {status: 201, row: load(workspaceId, id)}
   }
 
+  function attachTeam({rt}) {
+    attachPersonalTeamCreation(rt, {
+      host, binding:personalBinding,
+      publishBot: (profile, createNativeBot) => native.write(async ({ensure}) => {
+        const {status,row} = reserveAgent(profile, false, null)
+        return view(await ensure(row, async link => {
+          try { return await createNativeBot(link) }
+          catch (error) {
+            if (status === 201 && !Object.values(rt.state.bots).some(bot => bot.flybotWorkspace?.agent_id === row.id)) {
+              run('DELETE FROM agents WHERE id=?', row.id)
+            }
+            throw error
+          }
+        }))
+      }),
+    })
+  }
+
   const templateRoleConflict = (roleName) => Object.assign(new Error('Template role is unavailable'),
     {code: 'agents/template-role-conflict', status: 409, roleName})
 
@@ -667,7 +694,7 @@ export function createAgents({ db, host }) {
   }
 
   const endpoints = {
-    async 'personal-binding'() { return one('SELECT workspace_id,agent_id FROM native_personal_binding WHERE singleton=1') || null },
+    async 'personal-binding'() { return personalBinding() || null },
     async 'adopt-personal-chat'(p, materialize = true) {
       const agent = load(ws(p), p.id)
       const binding = one('SELECT * FROM native_personal_binding WHERE singleton=1')
@@ -784,7 +811,7 @@ export function createAgents({ db, host }) {
         }
         // The reservations are durable for retry. Keep the roster lock until all
         // independent native Sessions finish, even if one fails.
-        const settled = await Promise.allSettled(reservations.map(ensure))
+        const settled = await Promise.allSettled(reservations.map(row => ensure(row)))
         const items = settled.map((result, index) => {
           const {name} = roles[index]
           if (result.status === 'rejected') checkTemplateRoleError(result.reason, name)
@@ -1513,12 +1540,12 @@ export function createAgents({ db, host }) {
   }
 
   const migrate = async (bundle) => (bundle?.format === 'flybot-workspace-dsbot-import' ? importOfficialBundle(endpoints, bundle) : endpoints.import(bundle))
-  return { endpoints, migrate, rebrandBuiltinAssistant, attachHistory:historyProjection.attach }
+  return { endpoints, migrate, rebrandBuiltinAssistant, attachHistory:historyProjection.attach, attachTeam }
 }
 
 export default async function agents(host) {
   const db = await openDatabase(host, 'agents.sqlite3')
-  const { endpoints, migrate, rebrandBuiltinAssistant, attachHistory } = createAgents({ db, host })
+  const { endpoints, migrate, rebrandBuiltinAssistant, attachHistory, attachTeam } = createAgents({ db, host })
   await importPending({ host, db, migrate })
   const binding = await endpoints['personal-binding']()
   if (!binding) {
@@ -1548,8 +1575,12 @@ export default async function agents(host) {
   }, 10000)
   timer.unref?.()
   const runtime = host.currentRuntime?.()
-  if (runtime) attachHistory(runtime)
-  else void host.runtime().then(attachHistory, () => {})
+  const attach = services => {
+    attachHistory(services)
+    attachTeam(services)
+  }
+  if (runtime) attach(runtime)
+  else void host.runtime().then(attach, () => {})
   const wrapped = {}
   for (const [name, fn] of Object.entries(endpoints)) wrapped[name] = async (payload) => fn(payload ?? {})
   wrapped.replyStream = async (payload, call) => {
