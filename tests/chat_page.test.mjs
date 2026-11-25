@@ -1735,52 +1735,29 @@ test('a lost group retry acknowledgement resumes progress for only the matching 
   } finally { restore(); }
 });
 
-test('manual group requests preserve a failed draft and append the eventual accepted group message', async t => {
-  t.mock.timers.enable({apis: ['setTimeout']});
-  const promptText = '请总结这次讨论';
-  const message = {id: 'requested', body: promptText, user_id: alice, created: 1, seq: 1,
-    reply_jobs: [{id: 'manual-job', attempt: 1, agent_name: '助手一', status: 'queued'}]};
+test('an account group uses the bottom composer without a second send form', async () => {
   const sends = [];
-  let historyReads = 0;
   const {doc, el, restore, fetcher} = groupReplyChat((path, opts, conversation) => {
-    if (!path) {
-      historyReads += 1;
-      return json(200, {conversation, items: []});
-    }
-    if (path === '/agent-replies') {
-      sends.push({body: JSON.parse(opts.body), key: opts.headers['Idempotency-Key']});
-      return sends.length === 1 ? json(503, {}) : json(202, {message});
-    }
-    assert.equal(path, '/reply-progress');
-    return json(200, {items: [{id: 'manual-job', message_id: message.id, attempt: 1, text: '讨论要点'}]});
+    if (!path) return json(200, {conversation:{...conversation,account_group:true}, items:[]});
+    if (path === '/reply-progress') return json(200, {items:[]});
+    sends.push({path, body:JSON.parse(opts.body)});
+    return json(201, {message:{id:'sent', user_id:alice, seq:1, created:1, body:sends.at(-1).body.body}});
   });
-  const querySelectorAll = doc.querySelectorAll;
-  doc.querySelectorAll = selector => selector === '#group-agent-choices input[name="group-agent"]:checked'
-    ? el('group-agent-choices').children.map(label => label.children[0]).filter(box => box.checked)
-    : querySelectorAll(selector);
   try {
     await mount(doc, {fetcher});
-    const prompt = el('group-agent-prompt');
-    const selected = el('group-agent-choices').children[0].children[0];
-    selected.checked = true;
-    prompt.value = promptText;
-    const submit = () => fire(el('group-agent-form'), 'submit', {preventDefault() {}});
-    await submit();
-    assert.equal(prompt.value, promptText);
-    assert.equal(selected.checked, true);
-    assert.equal(el('message-list').children.length, 0);
-
-    await submit();
-    assert.equal(prompt.value, '');
-    assert.deepEqual(sends[0].body, {agent_ids: ['agent-1'], prompt: promptText});
-    assert.equal(sends[0].key, sends[1].key);
-    const original = el('message-list').children[0];
-    assert.equal(original.dataset.messageId, message.id);
-    const preview = descendants(el('message-list')).find(node => node.classList.contains('group-reply-preview'));
-    t.mock.timers.tick(500); await settle();
-    assert.equal(preview.textContent, '讨论要点');
-    assert.equal(historyReads, 1);
-  } finally { restore(); }
+    assert.equal(el('group-agent-action').hidden, false);
+    assert.equal(el('group-agent-chips').children.length, 2);
+    el('conversation-agents-sheet').open = true;
+    await fire(el('conversation-agents-sheet'), 'toggle');
+    assert.equal(el('group-agent-form').hidden, true);
+    assert.equal(el('group-agent-choices').children.length, 0);
+    await fire(el('group-agent-form'), 'submit', {preventDefault() {}});
+    assert.deepEqual(sends, []);
+    el('chat-body').value = '用底部输入框发送';
+    await fire(el('chat-form'), 'submit', {preventDefault() {}});
+    await settle();
+    assert.deepEqual(sends, [{path:'/messages', body:{body:'用底部输入框发送'}}]);
+  } finally {restore();}
 });
 
 test('only the matching same-name assistant row becomes the durable reply in transcript order', async t => {
@@ -5744,6 +5721,7 @@ test('named team group replies explicitly pin what was previewed and keep drafts
   try {
     await mount(doc, {fetcher});
     assert.equal(el('group-studio').hidden, false);
+    assert.equal(el('group-studio-send').hidden, true);
     assert.equal(calls.some(call => call.path.startsWith(documentPath)), false);
     const prompt = el('group-agent-prompt');
     prompt.value = '用这份文档回答';
@@ -5760,6 +5738,7 @@ test('named team group replies explicitly pin what was previewed and keep drafts
     assert.equal(el('group-studio-excerpt').textContent, excerpt);
     assert.equal(el('group-studio-truncated').hidden, false);
     await fire(el('group-studio-confirm'), 'click');
+    assert.equal(el('group-studio-send').hidden, false);
     await submit();
     assert.equal(prompt.value, '用这份文档回答');
     assert.equal(picker.value, documentId);
@@ -5772,10 +5751,12 @@ test('named team group replies explicitly pin what was previewed and keep drafts
     assert.match(el('group-studio-status').textContent, /重新预览/);
     assert.equal(el('status').textContent, '另一个聊天状态');
     assert.equal(el('group-agent-submit').disabled, true);
+    assert.equal(el('group-studio-send').hidden, true);
     await fire(el('group-studio-review'), 'click');
     assert.equal(el('group-studio-revision').textContent, '版本 2');
     assert.equal(el('group-studio-status').textContent, '');
     await fire(el('group-studio-confirm'), 'click');
+    assert.equal(el('group-studio-send').hidden, false);
     await submit();
     assert.notEqual(attempts[2].key, attempts[1].key);
     assert.equal(attempts[2].body.studio_reference.revision, 2);
@@ -6068,7 +6049,7 @@ test('a human-only group can select Everyone in the picker without sending or lo
   } finally {restore();}
 });
 
-test('group requests distinguish the same agent id across owners and retain the draft after roster changes', async t => {
+test('team document requests distinguish the same agent id across owners and retain the draft after roster changes', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const fixture = linkedChatFixture(`#workspace=${linkTeam}&social=${linkSocial}`);
   const {doc, el, routes, restore} = fixture;
@@ -6079,8 +6060,9 @@ test('group requests distinguish the same agent id across owners and retain the 
   const promptText = '协助核对发布材料';
   const agentId = 'same-agent';
   const legacyKey = 'group-reply-legacy-edit';
-  saved.set(storageKey, JSON.stringify({prompt: promptText, agentIds: [agentId],
-    attempt: {key: legacyKey, prompt: promptText, agentIds: [agentId]}}));
+  const studioReference = {document_id:'f'.repeat(32), revision:1};
+  saved.set(storageKey, JSON.stringify({prompt: promptText, agentIds: [agentId], studioReference,
+    attempt: {key: legacyKey, prompt: promptText, agentIds: [agentId], studioReference}}));
   const own = {id: agentId, name: '核对助手', mine: true, owner_id: 'owner-a', owner_name: 'Alice'};
   const teammate = {id: agentId, name: '核对助手', mine: false, owner_id: 'owner-b', owner_name: 'Bob'};
   const path = linkBase(linkTeam) + linkSocialPath;
@@ -6119,7 +6101,7 @@ test('group requests distinguish the same agent id across owners and retain the 
     assert.equal(originalRole.textContent, '核对助手 · Bob · AI 智能体');
     const submit = () => fire(el('group-agent-form'), 'submit', {preventDefault() {}});
     await submit();
-    assert.deepEqual(attempts[0], {body: {agent_ids: [agentId], prompt: promptText}, key: legacyKey});
+    assert.deepEqual(attempts[0], {body: {agent_ids: [agentId], prompt: promptText, studio_reference:studioReference}, key: legacyKey});
 
     children()[1].children[0].checked = true;
     await fire(el('group-agent-choices'), 'change');
@@ -6127,7 +6109,7 @@ test('group requests distinguish the same agent id across owners and retain the 
     assert.notEqual(attempts[1].key, legacyKey);
     assert.deepEqual(attempts[1].body, {agent_targets: [
       {owner_id: own.owner_id, agent_id: agentId}, {owner_id: teammate.owner_id, agent_id: agentId},
-    ], prompt: promptText});
+    ], prompt: promptText, studio_reference:studioReference});
     assert.deepEqual(JSON.parse(saved.get(storageKey)).agentKeys, ['owner-a/' + agentId, 'owner-b/' + agentId]);
     await submit();
     await settle();
@@ -6140,7 +6122,7 @@ test('group requests distinguish the same agent id across owners and retain the 
 
     await submit();
     assert.notEqual(attempts[3].key, attempts[2].key);
-    assert.deepEqual(attempts[3].body, {agent_targets: [{owner_id: own.owner_id, agent_id: agentId}], prompt: promptText});
+    assert.deepEqual(attempts[3].body, {agent_targets: [{owner_id: own.owner_id, agent_id: agentId}], prompt: promptText, studio_reference:studioReference});
     assert.equal(el('group-agent-prompt').value, '');
     const queuedRole = el('message-list').children.find(row => row.dataset.replyJobId === 'job-own').children[0];
     assert.equal(queuedRole.textContent, '核对助手 · Alice · AI 智能体');

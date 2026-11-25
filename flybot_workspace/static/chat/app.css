@@ -513,7 +513,6 @@ body.app-workspace > #status[data-announce-only="true"] {
 #group-agent-action { padding: .6rem 1rem; border-bottom: 1px solid var(--ot-line); }
 #group-agent-action[hidden] { display: none; }
 #group-agent-action h2 { font-size: .9rem; margin: 0 0 .3rem; }
-#group-agent-form { display: flex; align-items: end; gap: .5rem; flex-wrap: wrap; }
 #group-agent-form label { flex: 1; min-width: 10rem; }
 #group-agent-form textarea { width: 100%; }
 #group-agent-requests { max-height: 7rem; overflow: auto; padding-left: 1rem; }
@@ -1237,7 +1236,8 @@ body.app-workspace.chat-open > main { border-radius: 0 .875rem .875rem 0; }
 #group-agent-roster .agent-add button { flex: none; white-space: nowrap; }
 #group-agent-chips, #group-agent-chips .agent-chip { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 #group-agent-chips .agent-chip button { flex: none; }
-#group-agent-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: end; margin-top: .5rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
+#group-agent-form { margin-top: .5rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
+#group-studio-send { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: end; margin-top: .5rem; }
 #group-agent-form fieldset { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; min-width: 0; }
 #group-agent-form legend { padding: 0; margin-bottom: .25rem; color: var(--ot-muted); font-size: .75rem; font-weight: 500; }
 #group-agent-form label { display: grid; gap: .25rem; color: var(--ot-muted); font-size: .75rem; }
@@ -1249,7 +1249,7 @@ body.app-workspace.chat-open > main { border-radius: 0 .875rem .875rem 0; }
 #group-agent-choice-status:empty, #group-agent-empty[hidden] { display: none; }
 #group-agent-form textarea { min-height: 2.5rem; resize: vertical; }
 #group-agent-form button[type="submit"] { min-height: 2.25rem; border-radius: 999px; }
-#group-agent-form #group-studio { grid-column: 1 / -1; margin: 0; padding: 0; min-width: 0; }
+#group-agent-form #group-studio { margin: 0; padding: 0; min-width: 0; }
 #group-studio-toggle { width: fit-content; padding: .35rem .5rem; color: var(--ot-ink); font-size: .8125rem; cursor: pointer; }
 #group-studio-mark { color: var(--ot-muted); }
 .group-studio-picker { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; margin: .25rem 0; }
@@ -1971,7 +1971,6 @@ html[data-theme-resolved="dark"] .plus-create [data-tone="doc"] .plus-ico { colo
 .group-roster-glyph { display: grid; flex: none; place-items: center; width: 1.375rem; height: 1.375rem; border-radius: .375rem; background: var(--ot-accent-soft); color: var(--ot-accent-hover); font-size: .75rem; font-weight: 650; }
 .group-roster-name { min-width: 0; overflow-wrap: anywhere; }
 #group-agent-form { margin-top: .65rem; padding-top: .6rem; border-top: 1px solid var(--ot-line); }
-#group-agent-request-help { margin: 0 0 .5rem; }
 .group-composer-routing { display: flex; align-items: flex-start; gap: .45rem; margin: 0 .4rem .15rem; padding: .3125rem .5rem; border-radius: .5rem; color: var(--ot-muted); font-size: .75rem; line-height: 1.4; overflow-wrap: anywhere; }
 .group-composer-routing svg { flex: none; margin-top: .05rem; }
 .group-composer-routing[data-kind="targeted"] { background: var(--ot-accent-soft); color: var(--ot-ink); }
@@ -2420,6 +2419,102 @@ html[data-theme-resolved="dark"] #announcement-save:hover { background: #5943b3;
   background: var(--ot-accent-soft);
   color: var(--ot-ink);
 }
+
+[data-group-bot-tone="0"] { --group-bot-color: light-dark(#5042a2, #b9acf9); }
+[data-group-bot-tone="1"] { --group-bot-color: light-dark(#23558f, #99c3fc); }
+[data-group-bot-tone="2"] { --group-bot-color: light-dark(#11635f, #8ce0d5); }
+[data-group-bot-tone="3"] { --group-bot-color: light-dark(#24613b, #99daa8); }
+[data-group-bot-tone="4"] { --group-bot-color: light-dark(#6f510c, #f1cf77); }
+[data-group-bot-tone="5"] { --group-bot-color: light-dark(#8a481c, #f2ae7d); }
+[data-group-bot-tone="6"] { --group-bot-color: light-dark(#8f373d, #f2a6ac); }
+[data-group-bot-tone="7"] { --group-bot-color: light-dark(#863262, #f0a8d0); }
+[data-group-bot-tone="8"] { --group-bot-color: light-dark(#643786, #d1adfa); }
+[data-group-bot-tone="9"] { --group-bot-color: light-dark(#24566a, #8bcddf); }
+[data-group-bot-tone="10"] { --group-bot-color: light-dark(#303f88, #a6affc); }
+[data-group-bot-tone="11"] { --group-bot-color: light-dark(#566019, #d2dc8b); }
+[data-group-bot-tone="12"] { --group-bot-color: light-dark(#7c354c, #f1abbc); }
+[data-group-bot-tone="13"] { --group-bot-color: light-dark(#694232, #dbb09a); }
+[data-group-bot-tone="14"] { --group-bot-color: light-dark(#455569, #afc5db); }
+[data-group-bot-tone="15"] { --group-bot-color: light-dark(#72417c, #e0b3ee); }
+[data-mention-everyone], [data-group-mention-kind="everyone"] { --group-bot-color: light-dark(#6e3c06, #ffd19a); }
+
+:is([data-group-bot-tone], [data-mention-everyone], [data-group-mention-kind="everyone"]) {
+  --group-bot-wash: color-mix(in srgb, var(--group-bot-color, var(--ot-accent)) 12%, var(--ot-surface-2));
+  --group-bot-line: color-mix(in srgb, var(--group-bot-color, var(--ot-accent)) 28%, var(--ot-line));
+}
+.group-bot-avatar {
+  --group-bot-avatar-size: 1.65rem;
+  --look-size: 100%;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--group-bot-avatar-size);
+  block-size: var(--group-bot-avatar-size);
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--group-bot-line, var(--ot-line));
+  border-radius: .45rem;
+  background: var(--group-bot-wash, var(--ot-accent-soft));
+  color: var(--group-bot-color, var(--ot-accent-hover));
+  font-size: .66rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.group-bot-avatar[data-group-bot-initials]::before { content: attr(data-group-bot-initials); }
+.group-bot-avatar > :is(img, .look-avatar) {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.group-bot-byline {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  color: var(--group-bot-color, var(--ot-ink));
+}
+#main-panel[data-chat-kind="group"] #message-list > li[data-chat-author="agent"][data-group-bot-tone] {
+  border-inline-start-color: color-mix(in srgb, var(--group-bot-color) 46%, var(--ot-line));
+}
+#main-panel[data-chat-kind="group"] #message-list > li[data-chat-author="agent"] > .role.group-bot-byline {
+  color: var(--group-bot-color, var(--ot-ink));
+}
+.group-bot-byline .group-bot-avatar { --group-bot-avatar-size: 1.5rem; order: -1; }
+.group-message-mention {
+  padding: .07em .28em;
+  border-radius: .32em;
+  background: var(--group-bot-wash, var(--ot-accent-soft));
+  color: var(--group-bot-color, var(--ot-accent-hover));
+  font-weight: 650;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.chat-agent-mention-options > button[data-group-bot-tone] {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  text-align: start;
+}
+.chat-agent-mention-options > button[data-group-bot-tone] > span:last-child { overflow-wrap: anywhere; }
+.chat-agent-mention-options .group-bot-avatar { --group-bot-avatar-size: 1.3rem; }
+.chat-agent-mention-options > button:is([data-group-bot-tone], [data-mention-everyone]),
+.chat-agent-mentions > button[data-group-bot-tone] {
+  border-color: var(--group-bot-line);
+  background: var(--group-bot-wash);
+  color: var(--group-bot-color);
+}
+.chat-agent-mention-options > button:is([data-group-bot-tone], [data-mention-everyone])[aria-selected="true"] {
+  box-shadow: inset 0 0 0 1px var(--group-bot-color);
+}
+.chat-agent-picker-choice:is([data-group-bot-tone], [data-mention-everyone]) { color: var(--group-bot-color); }
+.chat-agent-picker-choice:is([data-group-bot-tone], [data-mention-everyone]) > input { accent-color: var(--group-bot-color); }
+.chat-agent-picker-choice[data-mention-everyone] { background: var(--group-bot-wash); font-weight: 650; }
+.chat-agent-picker-choice:is([data-group-bot-tone], [data-mention-everyone]) small { font-weight: 450; }
 
 .voice-draft-panel {
   margin: .375rem .5rem;

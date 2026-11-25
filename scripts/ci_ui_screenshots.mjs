@@ -63,14 +63,6 @@ async function shot(page, outDir, name) {
 }
 
 
-async function openGroupAgentSheet(page) {
-  const sheet = page.locator('#group-agent-action details.group-agent-sheet');
-  if (!(await sheet.count())) return;
-  if (await sheet.getAttribute('open') === null) {
-    await sheet.locator(':scope > summary').click();
-  }
-}
-
 async function openListItem(page, title, listSelector = '#main-panel') {
   const button = page.locator(`${listSelector} button.link`, { hasText: title }).first();
   await button.waitFor({ state: 'visible', timeout: 15000 });
@@ -976,22 +968,26 @@ async function main() {
 
     try {
       await page.locator('#conversation-list button').filter({hasText: '[CI FIXTURE] Agent members group'}).click();
-      await page.locator('#group-agent-action').waitFor({state: 'visible', timeout: 8000});
-      await openGroupAgentSheet(page);
-      const groupAgentChoice = page.locator(`#group-agent-choices input[name="group-agent"][value="${ready.agent_id}"]`);
-      await groupAgentChoice.waitFor({state: 'visible', timeout: 8000});
-      await groupAgentChoice.check();
-      await page.locator('#group-agent-prompt').fill('[CI FIXTURE] Explicit one-shot group request to the labeled fake provider');
+      await waitForLocatorText(page, '#chat-title', '[CI FIXTURE] Agent members group', 8000);
+      const composer = page.locator('#chat-form #chat-body');
+      const prompt = '[CI FIXTURE] Explicit group mention to the labeled fake provider';
+      const reply = page.locator('#message-list [data-chat-author="agent"]')
+        .filter({has:page.getByText(ready.provider_text, {exact:true})});
+      await composer.fill('@');
+      await page.locator('#chat-agent-mention-options').getByRole('option')
+        .filter({hasText:ready.agent_name}).click();
+      await waitForLocatorText(page, '#chat-agent-mentions', ready.agent_name, 8000);
+      await composer.fill(prompt);
       screenshots.push(path.basename(await shot(page, outDir, '81-group-agent-request.png')));
-      await page.locator('#group-agent-submit').click();
-      await page.locator('#group-agent-requests [data-reply-status="succeeded"]').waitFor({state: 'visible', timeout: 30000});
+      await page.locator('#chat-form #chat-send').click();
+      await reply.waitFor({state: 'visible', timeout: 30000});
       await page.reload({waitUntil: 'load'});
-      await waitForLocatorText(page, '#message-list', ready.provider_text, 20000);
+      await reply.waitFor({state: 'visible', timeout: 20000});
       const transcript = await visibleText(page.locator('#message-list'));
       record('group_agent_explicit_reply',
-        transcript.includes('AI 智能体 · 运行时回复') && transcript.includes(ready.provider_text)
-          && await page.locator('#group-agent-requests [data-reply-status="succeeded"]').count() === 1,
-        'Explicit request completed through the runtime fixture and persisted after reload: ' + transcript);
+        transcript.includes(prompt) && await reply.count() === 1
+          && (await visibleText(reply.locator('.role'))).includes(ready.agent_name),
+        'The composer mention received one runtime reply and it persisted after reload: ' + transcript);
       screenshots.push(path.basename(await shot(page, outDir, '82-group-agent-reply.png')));
     } catch (error) {
       record('group_agent_explicit_reply', false, String(error));
@@ -1098,8 +1094,7 @@ async function main() {
       const saved = await response.json();
       await waitForLocatorText(page, '#message-list', ready.provider_text, 15000);
       record('chat_search_group_agent_open', response.status() === 200 && saved.conversation.id === groupId
-        && saved.items.some(item => item.role === 'agent' && item.body === ready.provider_text)
-        && (await visibleText(page.locator('#message-list'))).includes('AI 智能体 · 运行时回复'),
+        && saved.items.some(item => item.role === 'agent' && item.agent_id === ready.agent_id && item.body === ready.provider_text),
         'Search result fetched the same saved group and runtime-authored reply');
     } catch (error) {
       record('chat_search_group_agent_reply', false, String(error));

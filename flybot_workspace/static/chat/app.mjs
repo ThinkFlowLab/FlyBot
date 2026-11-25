@@ -1,5 +1,7 @@
 import { decodeVoice, mountVoiceRecorder } from './voice.mjs';
 import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mountAgentMentions } from './mentions.mjs';
+import { createGroupBotIdentities, groupBotIdentity, createGroupBotAvatar } from './group-identity.mjs';
+import { groupMentionPainter } from './group-mentions-display.mjs';
 import { AGENT_FILE_ACCEPT, chatFileDownload, chatUploadProgress, deferModule, localChatFile, mountChatFiles,
   ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
 import { mountGroupTranslation } from './translation.mjs';
@@ -353,13 +355,14 @@ function mayContainChatMarkdown(text, assistantReply) {
     /^(?:#{1,6}\s|[ \t]*(?:>|[-+]\s|\d+[.)]\s|-{3,}$))/m.test(text));
 }
 
-function appendMessageMarkdown(doc, parent, source, assistantReply, updatePreview) {
+function appendMessageMarkdown(doc, parent, source, assistantReply, updatePreview, paintMentions) {
   const node = doc.createElement('div');
   node.textContent = source;
   parent.append(node);
   const format = module => {
     if (!assistantReply && !module.hasExplicitRichContent(source)) return;
     module.renderChatMarkdown(doc, node, source);
+    paintMentions?.(node);
     updatePreview?.();
   };
   if (richContent) {
@@ -422,7 +425,7 @@ function paintStreamingReply(doc, node, source) {
   }).catch(() => {}).finally(() => { view.loading = null; });
 }
 
-function renderMessageBody(doc, node, text, prefs, assistantReply = false, preview) {
+function renderMessageBody(doc, node, text, prefs, assistantReply = false, preview, paintMentions) {
   const source = String(text || '');
   const rich = mayContainChatMarkdown(source, assistantReply) &&
     (!richContent || assistantReply || richContent.hasExplicitRichContent(source));
@@ -430,7 +433,7 @@ function renderMessageBody(doc, node, text, prefs, assistantReply = false, previ
     renderMessageText(doc, node, source, prefs.message_folding, prefs.link_previews, (parent, value, updatePreview) => {
       const streamed = assistantReply && streamingReplies.get(preview);
       if (!streamed?.markdown || !value.startsWith(streamed.source.trimEnd())) {
-        appendMessageMarkdown(doc, parent, value, assistantReply, updatePreview);
+        appendMessageMarkdown(doc, parent, value, assistantReply, updatePreview, paintMentions);
         return;
       }
       richContent.renderStreamingMarkdown(doc, streamed.markdown, value, {complete:true});
@@ -457,6 +460,7 @@ function renderMessageBody(doc, node, text, prefs, assistantReply = false, previ
     link.title = '';
     if (!existing) node.append(link);
   }
+  paintMentions?.(node);
   return rich || node.children[0]?.tagName === 'DETAILS';
 }
 
@@ -628,35 +632,39 @@ export function chatIdentity(name) {
   return {title, initial: placeholder ? '' : initial(title), showAvatar: !placeholder};
 }
 
-export function applyChatAvatarStack(document, conversation) {
+export function applyChatAvatarStack(document, conversation, identities) {
   const stack = document.getElementById('chat-avatar-stack');
   const avatar = document.getElementById('chat-avatar');
   if (!stack) return false;
   stack.replaceChildren();
   const faces = [];
   for (const member of (conversation && conversation.members) || []) {
-    faces.push(member.username || member.name || '');
+    faces.push({name:member.username || member.name});
   }
   for (const agent of (conversation && conversation.agent_members) || []) {
-    faces.push(agent.name || '');
+    faces.push({name:agent.name,agent});
   }
-  const names = faces.filter(Boolean).slice(0, 4);
+  const names = faces.filter(({name}) => name).slice(0, 4);
   const grouped = Boolean(conversation && conversation.kind === 'group' && names.length);
   stack.hidden = !grouped;
   if (grouped) {
     if (avatar) avatar.hidden = true;
-    for (const name of names) {
-      const face = document.createElement('span');
-      face.className = 'avatar stack-face';
-      face.textContent = initial(name);
-      if (face.dataset) face.dataset.tone = avatarTone(name);
+    for (const {name, agent} of names) {
+      const bot = createGroupBotAvatar(groupBotIdentity(identities, agent), document);
+      const face = bot || document.createElement('span');
+      if (bot) face.classList.add('avatar', 'stack-face');
+      else {
+        face.className = 'avatar stack-face';
+        face.textContent = initial(name);
+        if (face.dataset) face.dataset.tone = avatarTone(name);
+      }
       stack.appendChild(face);
     }
   }
   return grouped;
 }
 
-export function applyChatIdentity(document, name, conversation, look) {
+export function applyChatIdentity(document, name, conversation, look, identities) {
   const identity = chatIdentity(name);
   const title = document.getElementById('chat-title');
   const avatar = document.getElementById('chat-avatar');
@@ -676,7 +684,7 @@ export function applyChatIdentity(document, name, conversation, look) {
       if (avatar.dataset) avatar.dataset.tone = avatarTone(identity.title);
     }
   }
-  const stacked = applyChatAvatarStack(document, conversation);
+  const stacked = applyChatAvatarStack(document, conversation, identities);
   if (stacked && avatar) avatar.hidden = true;
   if (!stacked && avatar && (identity.showAvatar || canRenderLook)) avatar.hidden = false;
   return identity;
@@ -972,6 +980,33 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let currentUser = null;
   let workspaces = [];
   let agents = [];
+  const groupAppearances = new WeakMap();
+
+  function groupAppearance(conversation = currentConversation) {
+    if (conversation?.kind !== 'group') return {};
+    const cached = groupAppearances.get(conversation);
+    const {agent_members:roster, members:people} = conversation;
+    if (cached && cached.roster === roster && cached.people === people && cached.catalogue === agents && cached.look === personalLook) return cached;
+    const profiles = new Map(agents.map(agent => [agent.id,agent]));
+    const active = (roster || []).map(agent => {
+      const profile = agent.mine === true && profiles.get(agent.id);
+      if (!profile) return agent;
+      const look = agent.id === personalAgentId ? personalLook : undefined;
+      return {...agent, portrait:profile.portrait, avatar:profile.avatar, look};
+    });
+    const identities = createGroupBotIdentities(active);
+    const appearance = {roster,people,catalogue:agents,look:personalLook,identities,paint:groupMentionPainter(active, people, identities)};
+    groupAppearances.set(conversation, appearance);
+    return appearance;
+  }
+
+  function decorateBotByline(row, node, bot, identities) {
+    const identity = groupBotIdentity(identities, bot);
+    if (!identity) { delete row.dataset.groupBotTone; return; }
+    node.classList.add('group-bot-byline');
+    row.dataset.groupBotTone = node.dataset.groupBotTone = identity.tone;
+    node.append(createGroupBotAvatar(identity, document));
+  }
   let members = [];
   let socialConversations = [];
   let sessions = [];
@@ -1086,7 +1121,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     if (!currentUser || currentSource !== 'social' || !currentConversation || currentConversation.public_agent ||
         (currentConversation.kind !== 'group' && !direct)) return null;
     return {scope:sendScope(), agents:currentConversation.agent_members || [],
-      members:currentConversation.members || [], viewerId:currentUser.id, direct};
+      members:currentConversation.members || [], viewerId:currentUser.id, direct,
+      botIdentities:groupAppearance().identities};
   }, (targets, stale) => {
     groupMentions = {scope:sendScope(), targets, stale};
     renderGroupComposerRouting();
@@ -2128,8 +2164,9 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const button = document.getElementById('group-agent-submit');
     const busy = groupReplyBusy.has(scope);
     const draft = groupReplyDraft(scope);
-    const pendingReview = groupStudio?.scope === scope && (groupStudio.preview || (draft.studioDocumentId && !draft.studioReference));
-    button.disabled = busy || Boolean(pendingReview) || !document.getElementById('group-agent-choices').querySelector('input:not(:disabled)');
+    const canSendReference = groupStudio?.scope === scope && !groupStudio.preview && Boolean(draft.studioReference);
+    groupStudioNode('send').hidden = !canSendReference;
+    button.disabled = busy || !canSendReference || !document.getElementById('group-agent-choices').querySelector('input:not(:disabled)');
     const label = button.firstElementChild || button;
     label.textContent = busy ? uiLabel('发送中…', 'Sending…') : uiLabel('发送并请求回复', 'Send and request a reply');
   }
@@ -2141,14 +2178,19 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
 
   function renderAgentRoster(saved, {direct, paired}) {
     const chips = document.getElementById('group-agent-chips');
+    const {identities} = groupAppearance();
     chips.replaceChildren();
     for (const agent of saved) {
       const li = document.createElement('li');
       li.className = 'agent-chip';
-      const glyph = document.createElement('span');
-      glyph.className = 'group-roster-glyph';
-      glyph.setAttribute('aria-hidden', 'true');
-      glyph.textContent = leadGlyph(agent.name);
+      const identity = groupBotIdentity(identities, agent);
+      const glyph = createGroupBotAvatar(identity, document) || document.createElement('span');
+      if (identity) li.dataset.groupBotTone = identity.tone;
+      else {
+        glyph.className = 'group-roster-glyph';
+        glyph.setAttribute('aria-hidden', 'true');
+        glyph.textContent = leadGlyph(agent.name);
+      }
       const name = document.createElement('span');
       const fullName = paired ? groupAgentName(agent.name, groupAgentOwnerLabel(agent), agent.owner_id,
         agent.mine === false ? agent.owner_handle : '') : agent.name;
@@ -2267,11 +2309,11 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const label = direct ? uiLabel('私聊智能体', 'Chat agents') : uiLabel('群内智能体', 'Group agents');
     document.getElementById('conversation-agents-text').textContent = label;
     document.getElementById('conversation-agents-heading').textContent = label;
-    document.getElementById('group-agent-request-help').hidden = direct;
     document.getElementById('direct-agent-help').hidden = !direct;
-    document.getElementById('group-agent-form').hidden = direct;
+    const studioGroup = namedTeamGroup();
+    document.getElementById('group-agent-form').hidden = !studioGroup;
     const list = document.getElementById('group-agent-requests');
-    list.hidden = direct;
+    list.hidden = !studioGroup;
     const saved = currentConversation.agent_members || [];
     renderGroupRosterSummary(saved, {direct});
     const paired = direct || currentConversation.group_agent_requests === true;
@@ -2283,6 +2325,10 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     }
     directAgentStatus('');
     renderAgentAddition(agents, saved);
+    if (!studioGroup) {
+      setGroupStudio();
+      return;
+    }
     const choices = new Map();
     const ownKeys = new Map();
     for (const agent of saved) {
@@ -2361,13 +2407,14 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       item.dataset.replyStatus = request.status;
       list.append(item);
     }
-    setGroupStudio(namedTeamGroup() ? scope : '');
+    setGroupStudio(scope);
     syncGroupReplySubmit(scope);
   }
 
   function renderGroupRosterSummary(saved, {direct}) {
     const count = document.getElementById('conversation-agents-count');
     const preview = document.getElementById('conversation-agents-preview');
+    const {identities} = groupAppearance();
     const help = document.getElementById('social-agent-members');
     const available = saved.filter(agent => !agent.archived);
     count.hidden = false;
@@ -2376,6 +2423,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       const chip = document.createElement('span');
       chip.className = 'group-roster-preview-chip';
       chip.textContent = agent.name;
+      const identity = groupBotIdentity(identities, agent);
+      if (identity) chip.dataset.groupBotTone = identity.tone;
       return chip;
     });
     if (available.length > previews.length) {
@@ -3283,15 +3332,15 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     };
   }
 
-  function transcriptMessageBody(previous, text, assistantReply = false, preview) {
+  function transcriptMessageBody(previous, text, assistantReply = false, preview, paintMentions) {
     const rendered = interactiveMessageBodies.get(previous);
     const language = document.documentElement?.lang;
     if (rendered && rendered.text === text && rendered.assistantReply === assistantReply &&
-        rendered.prefs === chatPreferences && rendered.language === language) return previous;
+        rendered.prefs === chatPreferences && rendered.language === language && rendered.paintMentions === paintMentions) return previous;
 
     const body = document.createElement('div');
-    if (renderMessageBody(document, body, text, chatPreferences, assistantReply, preview)) {
-      interactiveMessageBodies.set(body, {text, assistantReply, prefs:chatPreferences, language});
+    if (renderMessageBody(document, body, text, chatPreferences, assistantReply, preview, paintMentions)) {
+      interactiveMessageBodies.set(body, {text, assistantReply, prefs:chatPreferences, language, paintMentions});
     }
     return body;
   }
@@ -4938,6 +4987,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const role = document.createElement('p');
     role.className = 'role';
     role.textContent = groupReplyAuthor(job);
+    decorateBotByline(row,role,job,groupAppearance().identities);
     const note = document.createElement('div');
     note.className = 'group-reply-state';
     note.setAttribute('role', 'status');
@@ -5226,6 +5276,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     groupReplyViews.clear();
     document.getElementById('chat-empty').hidden = (items || []).length > 0;
     const people = currentConversation && currentConversation.members || members;
+    const {identities,paint} = groupAppearance();
     const pendingKeys = pendingMessageKeys();
     const unread = socialHistory?.unread;
     let needsDivider = Boolean(unread?.firstId);
@@ -5259,7 +5310,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       role.className = mine && item.role !== 'agent' && !item.forwarded_from ? 'role visually-hidden' : 'role';
       role.textContent = socialMessageAuthor(item, people);
       const body = transcriptMessageBody(bodyViews.bodies.get(item.id), item.retracted ? '此消息已撤回' : (item.body || ''),
-        servedByDsbot && item.role === 'agent' && !item.retracted, previousGroupViews.get(groupReplyID)?.preview);
+        servedByDsbot && item.role === 'agent' && !item.retracted, previousGroupViews.get(groupReplyID)?.preview,
+        item.retracted ? undefined : paint);
       body.className = 'body';
       body.hidden = item.attachment?.bytes !== undefined && item.body === item.attachment.title;
       if (item.forwarded_from && !item.retracted) {
@@ -5273,6 +5325,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       const time = document.createElement('p');
       time.className = 'time';
       time.textContent = formatTime(item.created);
+      if (item.role === 'agent') decorateBotByline(li,role,item,identities);
       li.append(role);
       if (item.role !== 'agent' && !item.retracted && item.reply_preview) {
         const original = editedSources.get(item.reply_preview.message_id);
@@ -5932,14 +5985,17 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     workspaceEvents?.start(id);
   }
 
-  function memberRow(name, note, kind) {
+  function memberRow(name, note, kind, identity) {
     const row = document.createElement('li');
     row.className = 'group-info-member';
     row.dataset.kind = kind;
-    const avatar = document.createElement('span');
-    avatar.className = 'group-info-member-avatar';
-    avatar.setAttribute('aria-hidden', 'true');
-    avatar.textContent = kind === 'empty' ? '+' : leadGlyph(name);
+    const avatar = createGroupBotAvatar(identity, document) || document.createElement('span');
+    if (identity) row.dataset.groupBotTone = identity.tone;
+    else {
+      avatar.className = 'group-info-member-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = kind === 'empty' ? '+' : leadGlyph(name);
+    }
     const text = document.createElement('span');
     const strong = document.createElement('strong');
     strong.textContent = name;
@@ -5990,7 +6046,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     renderSessions();
     if (!groupMatches(target) || currentConversation.group_management.revision > revision) return;
     Object.assign(currentConversation, fields);
-    applyChatIdentity(document, conversationLabel(currentConversation,currentUser.id), currentConversation);
+    applyChatIdentity(document, conversationLabel(currentConversation,currentUser.id), currentConversation,
+      undefined, groupAppearance().identities);
     setChatSubtitle(groupHeaderSubtitle(currentConversation));
     setGroupInfo(currentConversation);
     renderGroupRosterSummary(currentConversation.agent_members || [], {direct:false});
@@ -6415,7 +6472,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       }
       currentConversation = result.body.conversation;
       const title = conversationLabel(currentConversation, currentUser?.id);
-      applyChatIdentity(document, title, currentConversation);
+      applyChatIdentity(document, title, currentConversation, undefined, groupAppearance().identities);
       setChatSubtitle(groupHeaderSubtitle(currentConversation));
       setGroupInfo(currentConversation);
       renderGroupRosterSummary(currentConversation.agent_members || [], {direct:false});
@@ -6444,7 +6501,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     if (agent.archived) note = uiLabel('已归档', 'Archived');
     else if (agent.native_deleted) note = uiLabel('已不可用', 'Unavailable');
     else if (canAutoReply) note = agent.auto_reply ? '自动回复已开启' : '自动回复已关闭';
-    const row = memberRow(name, note, 'agent');
+    const row = memberRow(name, note, 'agent', groupBotIdentity(groupAppearance(conversation).identities, agent));
     if (!agent.mine || !canAutoReply) return row;
     const wid = workspaceId();
     const key = `${wid}/${conversation.id}/${agent.id}`;
@@ -6936,7 +6993,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     setSessionsOpen(false);
     syncMuteButton(currentConversation);
     applyChatIdentity(document, conversationLabel(
-      currentConversation, currentUser && currentUser.id), currentConversation);
+      currentConversation, currentUser && currentUser.id), currentConversation, undefined, groupAppearance().identities);
     setDirectoryLink({source: 'social', public_agent: currentConversation.public_agent});
     if (!link) writeHash({workspace: wid, social: conversationId});
     if (selecting && (!lastSocialItems.length || lastSocialItems[0].conversation_id !== conversationId)) {
@@ -9284,8 +9341,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   });
   document.getElementById('group-agent-form').addEventListener('submit', async event => {
     event.preventDefault();
-    if (currentSource !== 'social' || currentConversation?.kind !== 'group'
-      || currentConversation.public_agent) return;
+    if (!namedTeamGroup()) return;
     const cid = currentConversation.id;
     const scope = sendScope();
     if (groupReplyBusy.has(scope) || groupReplyFormScope !== scope) return;
@@ -9305,8 +9361,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     choiceStatus.textContent = '';
     rememberGroupReplyDraft();
     const draft = groupReplyDraft(scope);
-    const studioReference = namedTeamGroup() ? draft.studioReference : null;
-    if (draft.studioDocumentId && (!studioReference || groupStudio?.preview)) return;
+    const studioReference = draft.studioReference;
+    if (!studioReference || groupStudio?.preview) return;
     const targets = agentKeys.map(groupAgentTarget);
     const paired = currentConversation.group_agent_requests === true;
     if (paired && !targets.every(target => target.owner_id)) return;

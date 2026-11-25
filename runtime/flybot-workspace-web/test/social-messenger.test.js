@@ -757,7 +757,9 @@ test('group chooser forwards distinct owner-agent pairs, projected attribution, 
   assert.equal(transcript.body.conversation.group_agent_requests,true)
   assert.equal(transcript.body.items[0].agent_owner_id,'owner-b')
   assert.equal(transcript.body.items[0].agent_owner_handle,'bea.home')
-  assert.equal(transcript.body.items[1].agent_owner_id,undefined)
+  assert.equal(transcript.body.items[1].agent_owner_id,'owner-b')
+  assert.equal(transcript.body.items[1].agent_owner_handle,undefined)
+  assert.equal(transcript.body.items[1].reply_job_id,undefined)
 })
 
 test('a teammate request is text-only and fails closed if its claim lacks the restriction', async () => {

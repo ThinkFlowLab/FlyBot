@@ -754,14 +754,7 @@
         </div>
       </div>
       <p id="direct-agent-status" class="note" role="status" hidden></p>
-      <form id="group-agent-form">
-        <p id="group-agent-request-help" class="note" data-ui-text="chat.group.request_reply_help">请求会作为一条消息发送到群聊，并请选中的智能体回复。</p>
-        <fieldset>
-          <legend data-ui-text="chat.group.select_reply_agents">请求哪些智能体回复</legend>
-          <div id="group-agent-choices" class="agent-choices"></div>
-          <p id="group-agent-empty" class="note" data-ui-text="chat.group.no_reply_agents" hidden>群里还没有可请求的智能体。</p>
-          <p id="group-agent-choice-status" class="note" role="status"></p>
-        </fieldset>
+      <form id="group-agent-form" hidden>
         <details id="group-studio" hidden>
           <summary id="group-studio-toggle"><span data-ui-text="chat.group.studio_reference">引用团队文档</span><span id="group-studio-mark"></span></summary>
           <div class="group-studio-picker">
@@ -781,9 +774,17 @@
             <p id="group-studio-truncated" class="note" data-ui-text="chat.group.studio_truncated" hidden>只引用正文开头的 2400 个字符。</p>
             <button type="button" id="group-studio-confirm" data-ui-text="chat.group.studio_confirm">引用此版本</button>
           </section>
+          <div id="group-studio-send" hidden>
+            <fieldset>
+              <legend data-ui-text="chat.group.select_reply_agents">请求哪些智能体回复</legend>
+              <div id="group-agent-choices" class="agent-choices"></div>
+              <p id="group-agent-empty" class="note" data-ui-text="chat.group.no_reply_agents" hidden>群里还没有可请求的智能体。</p>
+              <p id="group-agent-choice-status" class="note" role="status"></p>
+            </fieldset>
+            <label><span data-ui-text="chat.group.message">群消息</span> <textarea id="group-agent-prompt" maxlength="4000" required rows="2"></textarea></label>
+            <button id="group-agent-submit" type="submit"><span data-ui-text="chat.group.send_request">发送并请求回复</span></button>
+          </div>
         </details>
-        <label><span data-ui-text="chat.group.message">群消息</span> <textarea id="group-agent-prompt" maxlength="4000" required rows="2"></textarea></label>
-        <button id="group-agent-submit" type="submit"><span data-ui-text="chat.group.send_request">发送并请求回复</span></button>
       </form>
       <ul id="group-agent-requests" aria-live="polite"></ul>
       </div>
