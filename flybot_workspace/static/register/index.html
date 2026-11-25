@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>创建账户 · FlyBot</title>
+  <link rel="icon" href="/shell/flybot-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/shell/app.css">
+  <link rel="stylesheet" href="/home/auth.css">
+  <script type="module" src="/register/app.mjs"></script>
+</head>
+<body class="auth-page">
+<header class="auth-header">
+  <a class="auth-brand" href="/">
+    <img class="brand-glyph" src="/shell/flybot-logo.svg" width="28" height="28" alt="">
+    FlyBot
+  </a>
+  <a href="/discover">发现</a>
+</header>
+<main class="auth-content">
+  <h1>创建账户</h1>
+  <section class="auth-card" aria-label="注册表单">
+    <nav class="auth-switch" aria-label="账户入口">
+      <a href="/login">登录</a>
+      <span aria-current="page">注册新账户</span>
+    </nav>
+    <p id="register-policy" class="auth-policy" role="status"></p>
+    <form id="register-form" class="auth-form" method="post" action="/v1/auth/register">
+      <div class="auth-field">
+        <label for="register-username">用户名</label>
+        <input type="text" id="register-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,63}" aria-describedby="username-help">
+        <p id="username-help" class="auth-hint">3–64 个字符，以字母或数字开头，可用下划线、点或短横线。</p>
+      </div>
+      <div class="auth-field">
+        <label for="register-password">密码</label>
+        <input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256" aria-describedby="password-help">
+        <p id="password-help" class="auth-hint">12–256 个字符。</p>
+      </div>
+      <p id="register-status" class="auth-feedback" role="status"></p>
+      <button id="register-submit" class="auth-submit" type="submit">创建账户并继续</button>
+    </form>
+  </section>
+  <noscript>请启用 JavaScript 后注册。账户信息仅通过同源 POST 提交。</noscript>
+  <footer class="auth-legal"><a href="/help">帮助中心</a><a href="/terms">服务条款</a><a href="/privacy">隐私政策</a></footer>
+</main>
+</body>
+</html>

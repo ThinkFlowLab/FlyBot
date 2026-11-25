@@ -1,0 +1,15 @@
+# Image-owned overlay for the FlyBot FlyBot runtime container.
+# The compose manager starts this container with a read-only rootfs, a /data
+# volume, and a tmpfs /tmp, so the Bot workspace must live on /data.
+- id: permission
+  config:
+    presets:
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+        name: Full access
+        description: The container is the boundary. Bots can change every file it can see under /data.
+    defaultPreset: danger-full-access
+- id: bot
+  config:
+    workspace: /data/workspace

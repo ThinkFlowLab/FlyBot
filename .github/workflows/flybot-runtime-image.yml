@@ -1,0 +1,89 @@
+name: FlyBot runtime image
+# Builds the FlyBot-authored runtime/flybot-image recipe and smokes it under
+# the compose manager contract (UID 1000, read-only, /data, port 8080). After the
+# smoke, inventories packages and licenses in the built image and uploads that
+# listing as a CI artifact. The image is not published. Related tracking remains
+# open: issue 1, issue 3, issue 5. This job does not authorize a public
+# redistributable release.
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recipe-contract:
+    name: Image recipe contract tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Run recipe unit tests (no npm install)
+        working-directory: runtime/flybot-image
+        run: npm test
+      - name: Run web-slot host unit tests (no npm install)
+        working-directory: runtime/flybot-web-slots
+        run: npm test
+      - name: Run FlyBot DS-Bot plugin unit tests (no npm install)
+        working-directory: runtime/flybot-workspace-web
+        run: npm test
+
+  image-build-smoke:
+    name: Build and smoke under the manager contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: DSH version from the pin
+        id: pin
+        run: |
+          dsh=$(node -p "require('./runtime/ds-bot-upstream.pin.json').dsh")
+          if [[ ! "$dsh" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid DSH version in pin: $dsh"
+            exit 1
+          fi
+          echo "dsh=$dsh" >> "$GITHUB_OUTPUT"
+          echo "DSH $dsh"
+      - name: Build the FlyBot runtime image
+        env:
+          DSH_VERSION: ${{ steps.pin.outputs.dsh }}
+        run: |
+          if [[ ! "$DSH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid DSH version: $DSH_VERSION"
+            exit 1
+          fi
+          docker build -f runtime/flybot-image/Dockerfile \
+            --build-arg "DSH_VERSION=${DSH_VERSION}" \
+            --build-context flybot-workspace-static=flybot_workspace/static \
+            -t flybot-workspace-flybot:test \
+            runtime
+      - name: Smoke the image as the compose manager would start it
+        run: node runtime/flybot-image/test/smoke.mjs flybot-workspace-flybot:test
+
+      - name: Prove Compose lifecycle, personal bootstrap and retained volume
+        run: python3 runtime/flybot-image/test/container-compose-lifecycle.py flybot-workspace-flybot:test
+
+      - name: Prove the platform gateway routes each user only to their own DS-Bot
+        run: python3 runtime/flybot-image/test/container-gateway-isolation.py flybot-workspace-flybot:test
+
+      - name: Prove two users' DS-Bots collaborate through a real Bot Social (team, invite, DM, group, discover)
+        run: python3 runtime/flybot-image/test/container-social-two-dsbots.py flybot-workspace-flybot:test
+
+      - name: Inventory licenses in the built image
+        run: |
+          out="${RUNNER_TEMP}/image-inventory"
+          mkdir -p "$out"
+          bash runtime/flybot-image/inventory/run-in-image.sh flybot-workspace-flybot:test "$out"
+      - name: Upload the image license inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flybot-runtime-image-license-inventory
+          path: ${{ runner.temp }}/image-inventory
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,10 @@
+ARG WEB_IMAGE
+ARG MANAGER_BASE
+FROM ${WEB_IMAGE} AS web
+
+FROM ${MANAGER_BASE}
+RUN rm -rf /app/flybot_workspace /app/manager
+COPY --from=web /app/flybot_workspace/ /app/flybot_workspace/
+COPY --from=web /app/wsgi.py /app/wsgi.py
+COPY release/manager/ /app/manager/
+COPY manager-poll.py /app/manager-poll.py

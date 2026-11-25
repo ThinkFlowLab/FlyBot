@@ -1,0 +1,2051 @@
+diff --git a/client.js b/client.js
+index 30e9d8f..44a8b6b 100644
+--- a/client.js
++++ b/client.js
+@@ -14126,6 +14126,45 @@ var ZH = {
+   "{name} leads this group: it can call members with @Name, change the group, and post here.": "{name} 主持这个群：可以用 @名字 点名成员、修改群设置、在群里发言。",
+   "No admin yet. An admin can call members with @Name, change the group, and post here.": "还没有管理员。管理员可以用 @名字 点名成员、修改群设置、在群里发言。",
+   "Who answers": "谁来回答",
++  "Create FlyBot group": "创建 FlyBot 群聊",
++  "FlyBot groups": "FlyBot 群聊",
++  "Could not load shared groups.": "暂时无法加载共享群聊。",
++  "Could not open this shared group. Refresh the list or try again.": "暂时无法打开这个群聊，请重试或刷新群聊列表。",
++  "Loading shared groups…": "正在加载共享群聊…",
++  "You haven’t joined any shared groups.": "你还没有加入共享群聊。",
++  "Refresh shared groups": "刷新群聊列表",
++  "Load more groups": "加载更多群聊",
++  "Could not load FlyBot workspaces.": "无法加载 FlyBot 工作区。",
++  "Loading workspaces…": "正在加载工作区…",
++  "No FlyBot workspaces are available.": "当前没有可用的 FlyBot 工作区。",
++  "Choose a workspace": "选择工作区",
++  "Personal workspace": "个人空间",
++  "Bots in this workspace": "工作区智能体",
++  "There are no available Bots in this workspace.": "这个工作区没有可用的智能体。",
++  "Member handles (optional)": "成员账号（可选）",
++  "Separate handles with commas": "多个账号用逗号隔开",
++  "Choose at least one Bot or member.": "请选择至少一位智能体或成员。",
++  "Enter no more than 49 member handles.": "最多可填写 49 个成员账号。",
++  "Could not create the FlyBot group.": "无法创建 FlyBot 群聊。",
++  "Group created. Retry opening it here.": "群聊已创建，可以重试打开。",
++  "Opening group…": "正在打开群聊…",
++  "Open created group": "打开已创建的群聊",
++  "Group defaults": "群组默认",
++  "All agents": "全体智能体",
++  "Agent leads": "指定主答",
++  "Only when mentioned": "仅在被 @ 时回复",
++  "Only @mentioned agents answer. Use @everyone to ask all agents.": "只有被 @ 的智能体才会回复。用 @所有人 向全体智能体提问。",
++  "Lead {name}": "{name} 主答",
++  "Lead unavailable": "主答智能体不可用",
++  "Current reply policy": "当前回复策略",
++  "All group agents decide whether to respond.": "群内智能体各自判断是否回复。",
++  "The selected lead decides whether to respond.": "由指定智能体判断是否回复。",
++  "The saved lead is unavailable. Other available group agents decide whether to reply.": "已设置的主答智能体不可用，由其他可用的群内智能体判断是否回复。",
++  "Reply policy": "回复策略",
++  "Lead agent": "主答智能体",
++  "Choose a lead agent": "选择主答智能体",
++  "Only a human can change shared group reply settings": "只有用户可以更改共享群组的回复设置。",
++  "Only the group owner can change who answers": "只有群主可以更改回复对象。",
+   "Choose an admin first": "先选一个管理员",
+   "@mentions always pick who answers.": "@提及总是指定由谁回答。",
+   Notice: "群公告",
+@@ -16472,6 +16511,10 @@ function teamActions({ call: call2, after, partFor, roster, ui, live, cards, hel
+     importAvatars: (items) => call2("avatar-import", { items }),
+     deleteAvatar: (id) => call2("avatar-delete", { id }),
+     createRoom: (members, options = {}) => after(call2("create-room", { members, ...options })),
++    sharedGroupWorkspaces: () => call2("flybot-workspace-group-workspaces", {}),
++    createSharedGroup: (payload) => after(call2("flybot-workspace-group-create", payload)),
++    sharedGroupDirectory: (cursor) => call2("flybot-workspace-group-directory", cursor ? { cursor } : {}),
++    openSharedGroup: (conversation_id) => after(call2("flybot-workspace-group-open", { conversation_id })),
+     updateBot: (id, patch) => after(call2("update-bot", { id, ...patch })),
+     // Give up one wait the Bot has on a hand-off that will not come back.
+     abandonWork: (id) => after(call2("abandon-work", { id })),
+@@ -22016,7 +22059,7 @@ var COMPUTER_CSS = `
+ .bt-cstep-shot-open img{max-height:280px;max-width:480px}
+ `;
+
+-// node_modules/deep-view/src/react/ui.js
++// ../../../../node_modules/deep-view/src/react/ui.js
+ var import_react13 = require("react");
+ var FallbackMarkdown = ({ text }) => (0, import_react13.createElement)("span", null, String(text ?? ""));
+ var ViewUi = (0, import_react13.createContext)({ t: (key) => key, Markdown: FallbackMarkdown });
+@@ -22083,7 +22126,7 @@ function useOptionKeys2(count, onPick, ownRef) {
+   return count > 0 && listening <= 1;
+ }
+
+-// node_modules/deep-view/src/core/formula.js
++// ../../../../node_modules/deep-view/src/core/formula.js
+ var FUNCTIONS = {
+   min: { args: [1, Infinity], run: (...values) => Math.min(...values.map(num)) },
+   max: { args: [1, Infinity], run: (...values) => Math.max(...values.map(num)) },
+@@ -22364,7 +22407,7 @@ function evaluate(tree, lookup) {
+   }
+ }
+
+-// node_modules/deep-view/src/core/views.js
++// ../../../../node_modules/deep-view/src/core/views.js
+ var LAYOUT = ["stack", "row"];
+ var DISPLAY = ["text", "metric", "table", "chart", "progress", "callout", "sources", "html"];
+ var INPUT_TYPES = ["slider", "choice", "toggle", "number"];
+@@ -22996,7 +23039,7 @@ function validateForm(node, values) {
+   return { fields };
+ }
+
+-// node_modules/deep-view/src/react/chart.js
++// ../../../../node_modules/deep-view/src/react/chart.js
+ var import_react14 = require("react");
+ var PALETTE = ["var(--dv-accent)", "var(--dv-ink-tangerine)", "var(--dv-ink-green)", "var(--dv-ink-violet)", "var(--dv-ink-sky)", "var(--dv-ink-rose)", "var(--dv-ink-yellow)", "var(--dv-ink-cyan)", "var(--dv-ink-magenta)"];
+ var colorAt = (index) => PALETTE[index % PALETTE.length];
+@@ -23435,7 +23478,7 @@ var CHART_CSS = `
+ @media (prefers-reduced-motion:reduce){.dv-chart-mark,.dv-chart-dot{transition:none}.dv-chart-tip{animation:none}}
+ `;
+
+-// node_modules/deep-view/src/react/frame.js
++// ../../../../node_modules/deep-view/src/react/frame.js
+ var import_react15 = require("react");
+ var THEME_VARS = [
+   ["--view-ink", "--bt-ink", "--dv-ink"],
+@@ -23517,7 +23560,7 @@ var HTML_CSS = `
+ .dv-view-frame-stopped{margin:0;font-size:13px;line-height:18px;color:var(--dv-ink-2)}
+ `;
+
+-// node_modules/deep-view/src/react/card.js
++// ../../../../node_modules/deep-view/src/react/card.js
+ var import_react16 = require("react");
+ var mdLabels2 = (ui) => ({ code: { copyLabel: ui.t("Copy"), copiedLabel: ui.t("Copied") }, footnotes: ui.t("Footnotes") });
+ var TONES2 = ["good", "warn", "bad"];
+@@ -24259,7 +24302,7 @@ ${CHART_CSS}
+ ${HTML_CSS}
+ `;
+
+-// node_modules/deep-view/src/react/styles.js
++// ../../../../node_modules/deep-view/src/react/styles.js
+ var THEME_CSS = `
+ body{
+ --dv-ink:var(--dsw-alias-label-primary);
+@@ -24357,10 +24400,10 @@ button.dv-q-opt:active{background:var(--dv-active)}
+ @media (prefers-reduced-motion:reduce){.dv-q,.dv-view-bare,.dv-q-submit,.dv-menu,.dv-q-check{animation:none}}
+ `;
+
+-// node_modules/deep-view/src/react/index.js
++// ../../../../node_modules/deep-view/src/react/index.js
+ var DEEP_VIEW_CSS = THEME_CSS + QUESTION_CSS + WIDGET_CSS;
+
+-// node_modules/deep-view/src/core/reply.js
++// ../../../../node_modules/deep-view/src/core/reply.js
+ var REPLY_KIND = "user-question-reply";
+ var REPLY_SOURCE_KIND = "deep-view-reply";
+ function viewCardText(args) {
+@@ -34705,9 +34748,140 @@ var ROOM_MODES = [
+   ["everyone", "Everyone", "Every member answers in turn, admin first."]
+ ];
+ var shownMode = (room2, roster) => roster.byId[room2.admin] ? room2.mode : "everyone";
++var SHARED_REPLY_MODES = [
++  ["default", "Group defaults"],
++  ["everyone", "All agents"],
++  ["lead", "Agent leads"],
++  ["mentions", "Only when mentioned"]
++];
++var replyPairKey = (pair) => pair ? JSON.stringify([pair.owner_id, pair.agent_id]) : "";
++var replyModeLabel = (mode) => SHARED_REPLY_MODES.find(([value]) => value === mode)?.[1] ?? "Group defaults";
++var replyLead = (policy) => policy.targets.find((target) => replyPairKey(target) === replyPairKey(policy.lead));
+ function roomSubtitle(room2, roster) {
++  const count = t("{count} members", { count: room2.members.length });
++  const policy = room2.flybotWorkspace?.reply_policy;
++  if (room2.flybotWorkspace?.conversation_id) {
++    const lead = policy?.mode === "lead" && !policy.lead_unavailable && replyLead(policy);
++    return [count, lead ? t("Lead {name}", { name: lead.name }) : t(policy?.lead_unavailable ? "Lead unavailable" : replyModeLabel(policy?.mode))].join(" · ");
++  }
+   const admin = roster.byId[room2.admin];
+-  return [t("{count} members", { count: room2.members.length }), admin ? t("Admin {name}", { name: admin.name }) : t("No admin")].join(" · ");
++  return [count, admin ? t("Admin {name}", { name: admin.name }) : t("No admin")].join(" · ");
++}
++function SharedReplyPolicy({ policy, update }) {
++  const [mode, setMode] = (0, import_react38.useState)(policy?.mode ?? "default");
++  const savedLead = replyPairKey(policy?.lead);
++  const [lead, setLead] = (0, import_react38.useState)(savedLead);
++  const [busy, setBusy] = (0, import_react38.useState)(false);
++  const [failed, setFailed] = (0, import_react38.useState)(false);
++  const target = policy?.targets.find((item) => replyPairKey(item) === lead);
++  const editable = policy?.can_edit === true && Number.isSafeInteger(policy.revision);
++  const needsRefresh = !policy || policy.can_edit && !editable || failed;
++  const currentLead = policy?.mode === "lead" && !policy.lead_unavailable ? replyLead(policy) : void 0;
++  const changed = mode !== policy?.mode || mode === "lead" && lead !== savedLead;
++  const canSave = editable && changed && (mode !== "lead" || target);
++  const submit = async (patch) => {
++    setBusy(true);
++    try {
++      setFailed(!await update({ flybotWorkspaceReplyPolicy: patch }));
++    } finally {
++      setBusy(false);
++    }
++  };
++  (0, import_react38.useEffect)(() => {
++    if (policy && !(policy.can_edit && !Number.isSafeInteger(policy.revision))) return;
++    let current2 = true;
++    setBusy(true);
++    void update({ flybotWorkspaceReplyPolicy: { refresh: true } }).then((done) => {
++      if (current2) setFailed(!done);
++    }).finally(() => {
++      if (current2) setBusy(false);
++    });
++    return () => {
++      current2 = false;
++    };
++  }, [policy?.can_edit, policy?.revision]);
++  const save = () => submit({
++    mode,
++    revision: policy.revision,
++    ...mode === "lead" ? { lead: { owner_id: target.owner_id, agent_id: target.agent_id } } : {}
++  });
++  return (0, import_react38.createElement)(
++    Card2,
++    { title: t("Who answers") },
++    policy ? (0, import_react38.createElement)(
++      Row,
++      { label: t("Current reply policy"), hint: policy.lead_unavailable ? t("The saved lead is unavailable. Other available group agents decide whether to reply.") : t(policy.mode === "everyone" ? "All group agents decide whether to respond." : policy.mode === "lead" ? "The selected lead decides whether to respond." : policy.mode === "mentions" ? "Only @mentioned agents answer. Use @everyone to ask all agents." : "@mentions always pick who answers."), stack: true },
++      (0, import_react38.createElement)(
++        "span",
++        { className: "bt-set-hint", "data-ot-shared-reply-current": true },
++        currentLead ? t("Lead {name}", { name: currentLead.name }) : t(policy.lead_unavailable ? "Lead unavailable" : replyModeLabel(policy.mode))
++      )
++    ) : null,
++    editable ? (0, import_react38.createElement)(
++      "div",
++      { "data-ot-shared-reply-controls": true },
++      (0, import_react38.createElement)(
++        Row,
++        { label: t("Reply policy") },
++        (0, import_react38.createElement)(
++          "select",
++          {
++            className: "bt-bs-input",
++            "aria-label": t("Reply policy"),
++            value: mode,
++            disabled: busy,
++            onChange: (event) => setMode(event.target.value)
++          },
++          SHARED_REPLY_MODES.map(([value, label]) => (0, import_react38.createElement)("option", {
++            key: value,
++            value,
++            disabled: value === "lead" && !policy.targets.length && policy.mode !== "lead"
++          }, t(label)))
++        )
++      ),
++      mode === "lead" ? (0, import_react38.createElement)(
++        Row,
++        { label: t("Lead agent") },
++        (0, import_react38.createElement)(
++          "select",
++          {
++            className: "bt-bs-input",
++            "aria-label": t("Lead agent"),
++            value: target ? lead : "",
++            disabled: busy,
++            onChange: (event) => setLead(event.target.value)
++          },
++          (0, import_react38.createElement)("option", { value: "", disabled: true }, t("Choose a lead agent")),
++          policy.targets.map((item) => {
++            const key = replyPairKey(item);
++            return (0, import_react38.createElement)("option", { key, value: key }, [item.name, item.owner_name].filter(Boolean).join(" · "));
++          })
++        )
++      ) : null,
++      (0, import_react38.createElement)(
++        "div",
++        { className: "bt-set-row bt-task-foot" },
++        (0, import_react38.createElement)("button", {
++          type: "button",
++          className: "bt-soft bt-soft-sm",
++          disabled: busy || !canSave,
++          "data-ot-shared-reply-save": true,
++          onClick: () => void save()
++        }, t("Save"))
++      )
++    ) : policy && !policy.can_edit ? (0, import_react38.createElement)(Row, { label: t("Read only") }) : null,
++    needsRefresh ? (0, import_react38.createElement)(
++      "div",
++      { className: "bt-set-row bt-task-foot" },
++      (0, import_react38.createElement)("button", {
++        type: "button",
++        className: "bt-soft bt-soft-sm",
++        disabled: busy,
++        "data-ot-shared-reply-refresh": true,
++        onClick: () => void submit({ refresh: true })
++      }, t("Refresh"))
++    ) : null
++  );
+ }
+ function GroupPermission({ room: room2, catalog, update }) {
+   if (!catalog?.options?.length) return null;
+@@ -34781,6 +34955,8 @@ function GroupSettingsForm({ room: room2, roster, actions, run: run2, onDeleted
+     const timer = setTimeout(() => setConfirming(false), 4e3);
+     return () => clearTimeout(timer);
+   }, [confirming]);
++  const shared2 = Boolean(room2.flybotWorkspace?.conversation_id);
++  const replyPolicy = room2.flybotWorkspace?.reply_policy;
+   const members = room2.members.map((id) => roster.byId[id]).filter(Boolean);
+   const outside = roster.bots.filter((bot) => !room2.members.includes(bot.id));
+   const admin = roster.byId[room2.admin];
+@@ -34828,7 +35004,21 @@ function GroupSettingsForm({ room: room2, roster, actions, run: run2, onDeleted
+         (0, import_react39.createElement)(InlineText, { label: t("Group notice"), value: room2.notice, multiline: true, maxLength: 2e3, placeholder: t("Shared instructions every member reads before speaking…"), onSave: (notice) => update({ notice }) })
+       )
+     ),
+-    (0, import_react39.createElement)(
++    room2.flybotWorkspace?.conversation_id ? (0, import_react39.createElement)(
++      Card2,
++      { title: "Shared human participants" },
++      (0, import_react39.createElement)(
++        Row,
++        { label: "Bot Social handles", hint: "Comma-separated handles. Membership and history are shared with FlyBot.", stack: true },
++        (0, import_react39.createElement)(InlineText, {
++          label: "Shared human participants",
++          value: (room2.remoteParticipants || []).map((m) => m.handle).join(", "),
++          maxLength: 4e3,
++          onSave: (text) => update({ remoteParticipants: text.split(",").map((x) => x.trim()).filter(Boolean) })
++        })
++      )
++    ) : null,
++    shared2 ? (0, import_react39.createElement)(SharedReplyPolicy, { key: room2.id + ":" + (replyPolicy?.revision ?? ""), policy: replyPolicy, update }) : (0, import_react39.createElement)(
+       Card2,
+       { title: t("Who answers") },
+       (0, import_react39.createElement)(
+@@ -34862,7 +35052,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run: run2, onDeleted
+       Card2,
+       { title: t("Members · {count}", { count: members.length }) },
+       members.map((member) => {
+-        const leads = room2.admin === member.id;
++        const leads = !shared2 && room2.admin === member.id;
+         return (0, import_react39.createElement)(
+           "div",
+           { key: member.id, className: "bt-set-row bt-bs-row bt-gs-member" },
+@@ -34873,7 +35063,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run: run2, onDeleted
+             (0, import_react39.createElement)("span", { className: "bt-row-title" }, member.name),
+             leads ? (0, import_react39.createElement)("span", { className: "bt-tag" }, t("Admin")) : null
+           ),
+-          leads ? (0, import_react39.createElement)("button", { type: "button", className: "bt-mini", title: t("Leave the group without an admin"), onClick: () => update({ admin: null }) }, t("Unset")) : (0, import_react39.createElement)("button", { type: "button", className: "bt-mini", onClick: () => update({ admin: member.id }) }, t("Make admin")),
++          shared2 ? null : leads ? (0, import_react39.createElement)("button", { type: "button", className: "bt-mini", title: t("Leave the group without an admin"), onClick: () => update({ admin: null }) }, t("Unset")) : (0, import_react39.createElement)("button", { type: "button", className: "bt-mini", onClick: () => update({ admin: member.id }) }, t("Make admin")),
+           members.length > 2 ? (0, import_react39.createElement)("button", { type: "button", className: "bt-x", "aria-label": t("Remove {name} from the group", { name: member.name }), title: t("Remove from group"), onClick: () => update({ remove: [member.id] }) }, "×") : null
+         );
+       }),
+@@ -34890,7 +35080,7 @@ function GroupSettingsForm({ room: room2, roster, actions, run: run2, onDeleted
+         )),
+         (0, import_react39.createElement)("button", { key: "cancel", type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(false) }, t("Cancel"))
+       ] : outside.length > 0 ? (0, import_react39.createElement)("button", { type: "button", className: "bt-set-row bt-bs-row bt-gs-add", onClick: () => setAdding(true) }, (0, import_react39.createElement)(PlusIcon), t("Add member")) : null,
+-      (0, import_react39.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react39.createElement)(
++      shared2 ? null : (0, import_react39.createElement)("div", { className: "bt-set-row bt-gs-note" }, (0, import_react39.createElement)(
+         "span",
+         { className: "bt-set-hint" },
+         // The host checks for two members on every change, even a rename.
+@@ -36595,7 +36785,7 @@ var CONNECTORS_PAGE_CSS = `
+ @media (prefers-reduced-motion:reduce){.bt-app[data-fresh]::after,.bt-app[data-fresh] .bt-app-icon,.bt-app[data-fresh] .bt-app-btn-done{animation:none}}
+ `;
+
+-// node_modules/qrcode-generator/dist/qrcode.mjs
++// ../../../../node_modules/qrcode-generator/dist/qrcode.mjs
+ var qrcode = function(typeNumber, errorCorrectionLevel) {
+   const PAD0 = 236;
+   const PAD1 = 17;
+@@ -45145,6 +45335,28 @@ var BOTS_SOURCE = "ds-bot";
+ var CHATS_SOURCE = "ds-bot-chats";
+ var ROOM_ALL = ["all", "everyone", "所有人", "全体"];
+ var OTHER_CHATS_MAX = 8;
++var SHARED_AGENT_PREFIX = "ot-agent:";
++var SHARED_AGENT_ID = /^[A-Za-z0-9._:-]{1,80}$/;
++function sharedMentionRows(room2, needle) {
++  const targets = (room2.flybotWorkspace.reply_policy?.targets ?? []).filter((target) => typeof target?.name === "string" && target.name.trim() && !/[\r\n]/.test(target.name) && SHARED_AGENT_ID.test(target.owner_id ?? "") && SHARED_AGENT_ID.test(target.agent_id ?? ""));
++  const people = room2.remoteParticipants?.length ?? 0;
++  const rows2 = [];
++  for (const target of targets) {
++    const name = target.name;
++    const handle = target.owner_handle;
++    const owner = target.owner_name;
++    if (!`${name} ${owner ?? ""} ${handle ?? ""}`.toLowerCase().includes(needle)) continue;
++    const role = [owner, handle && handle !== owner ? `@${handle}` : void 0].filter(Boolean).join(" · ");
++    const id = `${SHARED_AGENT_PREFIX}${target.owner_id}/${target.agent_id}`;
++    const ref = `@[${name.replace(/[[\]\\]/g, "\\$&")}](${id})`;
++    rows2.push({ bot: { id, name, role }, ref });
++  }
++  const everyone = t("Everyone");
++  if ((targets.length || people > 1) && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
++    rows2.push({ room: room2, count: targets.length + people, text: `@${everyone} ` });
++  }
++  return rows2;
++}
+ var conversationOf = (roster, sessionId) => {
+   if (!roster.ready) return null;
+   const room2 = roster.roomsById[sessionId];
+@@ -45155,8 +45367,9 @@ var conversationOf = (roster, sessionId) => {
+ function mentionRows(roster, sessionId, query = "") {
+   const here = conversationOf(roster, sessionId);
+   if (here === null) return null;
+-  const bots = here.room ? here.room.members.map((id) => roster.byId[id]).filter(Boolean) : roster.bots.filter((bot) => bot.id !== here.self.id);
+   const needle = query.trim().toLowerCase();
++  if (here.room?.flybotWorkspace?.conversation_id) return sharedMentionRows(here.room, needle);
++  const bots = here.room ? here.room.members.map((id) => roster.byId[id]).filter(Boolean) : roster.bots.filter((bot) => bot.id !== here.self.id);
+   const rows2 = bots.filter((bot) => bot.name.toLowerCase().includes(needle)).map((bot) => ({ bot, text: `@${bot.name} ` }));
+   const everyone = t("Everyone");
+   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some((word) => word.toLowerCase().startsWith(needle))) {
+@@ -45195,13 +45408,20 @@ function atSources({ roster, sessions, launched, iconFor }) {
+       return (mentionRows(roster.getSnapshot(), session.sessionId, query) ?? []).map((row) => ({
+         name: row.bot ? row.bot.name : t("Everyone"),
+         ...row.bot?.role ? { description: row.bot.role } : {},
+-        ...row.room ? { description: t("{count} members", { count: row.room.members.length }) } : {},
++        ...row.room ? { description: t("{count} members", { count: row.count ?? row.room.members.length }) } : {},
+         icon: iconFor(row),
+         section: t("Bots"),
+-        value: row.text
++        value: row.ref ? SHARED_AGENT_PREFIX + row.ref : row.text
+       }));
+     },
+-    onPick: ({ candidate }) => candidate.value ? { text: candidate.value } : void 0
++    onPick({ candidate: { value, name, description } }) {
++      if (!value) return void 0;
++      if (!value.startsWith(SHARED_AGENT_PREFIX)) return { text: value };
++      const ref = value.slice(SHARED_AGENT_PREFIX.length);
++      const label = `@${name}${description ? ` · ${description}` : ""}`;
++      return { insert: { source: BOTS_SOURCE, ref, label, appearance: "session", clipboardText: ref + " " } };
++    },
++    codec: { clipboardText: (ref) => ref + " ", serialize: (ref) => Promise.resolve(ref + " ") }
+   };
+   const chats = {
+     trigger: "@",
+@@ -46750,10 +46970,278 @@ var PASTE_CSS = `
+
+ // src/client/new-chat.js
+ var import_react71 = require("react");
++function SharedGroupForm({ roster, actions, back, onCreated }) {
++  const [workspaces, setWorkspaces] = (0, import_react71.useState)(null);
++  const [workspace, setWorkspace] = (0, import_react71.useState)("");
++  const [title, setTitle] = (0, import_react71.useState)("");
++  const [picked, setPicked] = (0, import_react71.useState)([]);
++  const [handles, setHandles] = (0, import_react71.useState)("");
++  const [loadVersion, setLoadVersion] = (0, import_react71.useState)(0);
++  const [busy, setBusy] = (0, import_react71.useState)(false);
++  const [loadFailed, setLoadFailed] = (0, import_react71.useState)(false);
++  const [created, setCreated] = (0, import_react71.useState)(false);
++  const [error, setError] = (0, import_react71.useState)("");
++  const request = (0, import_react71.useRef)(null);
++  const mounted = (0, import_react71.useRef)(false);
++  const workspaceField = (0, import_react71.useRef)(null);
++  (0, import_react71.useEffect)(() => {
++    mounted.current = true;
++    return () => {
++      mounted.current = false;
++    };
++  }, []);
++  (0, import_react71.useEffect)(() => {
++    let current2 = true;
++    setLoadFailed(false);
++    void actions.sharedGroupWorkspaces().then((result) => {
++      if (current2) {
++        setWorkspaces(result.workspaces);
++        requestAnimationFrame(() => {
++          if (current2) workspaceField.current?.focus();
++        });
++      }
++    }).catch(() => {
++      if (current2) setLoadFailed(true);
++    });
++    return () => {
++      current2 = false;
++    };
++  }, [loadVersion]);
++  const selectedWorkspace = workspaces?.find((row) => row.workspace_id === workspace);
++  const bots = (selectedWorkspace?.bot_ids ?? []).map((id) => roster.byId[id]).filter(Boolean);
++  const people = [...new Set(handles.trim().split(/[\s,，、]+/u).filter(Boolean))];
++  const participants = picked.length + people.length;
++  const valid = !!selectedWorkspace && title.trim().length > 0 && participants > 0 && people.length <= 49;
++  const disabled = busy || created;
++  const submit = async (event) => {
++    event.preventDefault();
++    if (!valid || busy || request.current?.pending) return;
++    const input = { workspace_id: workspace, title: title.trim(), bot_ids: picked, ...people.length ? { member_handles: people } : {} };
++    const signature = JSON.stringify(input);
++    if (request.current?.signature !== signature) {
++      request.current = { signature, key: "shared-group-" + crypto.randomUUID().replaceAll("-", "") };
++    }
++    const attempt = request.current;
++    attempt.pending = true;
++    setBusy(true);
++    setError("");
++    try {
++      const result = await actions.createSharedGroup({ ...input, request_key: attempt.key });
++      if (!mounted.current) return;
++      if (!result.room?.id) {
++        setCreated(true);
++        return;
++      }
++      onCreated(result.room);
++    } catch (failure) {
++      if (mounted.current) setError(failure?.message || t("Could not create the FlyBot group."));
++    } finally {
++      attempt.pending = false;
++      if (mounted.current) setBusy(false);
++    }
++  };
++  const field = (label, control) => (0, import_react71.createElement)(
++    "label",
++    { key: label, className: "bt-field" },
++    (0, import_react71.createElement)("span", { className: "bt-field-label" }, t(label)),
++    control
++  );
++  return (0, import_react71.createElement)(
++    "div",
++    { className: "bt-newchat", role: "dialog", "aria-label": t("Create FlyBot group") },
++    (0, import_react71.createElement)(
++      "div",
++      { className: "bt-to" },
++      (0, import_react71.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: back, disabled: busy }, t("Back")),
++      (0, import_react71.createElement)("strong", null, t("Create FlyBot group"))
++    ),
++    (0, import_react71.createElement)(
++      "form",
++      { className: "bt-drawer-body", style: { width: "min(100%, 550px)", boxSizing: "border-box", marginInline: "auto" }, onSubmit: submit },
++      loadFailed ? (0, import_react71.createElement)(
++        "div",
++        { className: "bt-field" },
++        (0, import_react71.createElement)("p", { role: "alert", className: "bt-error" }, t("Could not load FlyBot workspaces.")),
++        (0, import_react71.createElement)("div", { className: "bt-actions" }, (0, import_react71.createElement)("button", { type: "button", className: "bt-soft", onClick: () => setLoadVersion((value) => value + 1) }, t("Retry")))
++      ) : workspaces === null ? (0, import_react71.createElement)("p", { role: "status", className: "bt-note" }, t("Loading workspaces…")) : workspaces.length === 0 ? (0, import_react71.createElement)("p", { role: "status", className: "bt-note" }, t("No FlyBot workspaces are available.")) : [
++        field("Workspace", (0, import_react71.createElement)(
++          "select",
++          {
++            ref: workspaceField,
++            className: "bt-input",
++            value: workspace,
++            required: true,
++            disabled,
++            onChange: (event) => {
++              setWorkspace(event.target.value);
++              setPicked([]);
++              setHandles("");
++              setError("");
++            }
++          },
++          (0, import_react71.createElement)("option", { value: "" }, t("Choose a workspace")),
++          workspaces.map((row) => (0, import_react71.createElement)("option", { key: row.workspace_id, value: row.workspace_id }, row.kind === "personal" ? t("Personal workspace") : row.name))
++        )),
++        field("Group name", (0, import_react71.createElement)("input", { className: "bt-input", value: title, disabled, required: true, maxLength: 80, onChange: (event) => setTitle(event.target.value) })),
++        selectedWorkspace ? (0, import_react71.createElement)(
++          "fieldset",
++          { key: "bots", disabled, style: { margin: 0, padding: 0, border: 0, minWidth: 0 } },
++          (0, import_react71.createElement)("legend", { className: "bt-field-label" }, t("Bots in this workspace")),
++          bots.length === 0 ? (0, import_react71.createElement)("p", { className: "bt-note" }, t("There are no available Bots in this workspace.")) : bots.map((bot) => {
++            const checked = picked.includes(bot.id);
++            return (0, import_react71.createElement)(
++              "label",
++              { key: bot.id, className: "bt-option" },
++              (0, import_react71.createElement)("input", {
++                type: "checkbox",
++                checked,
++                disabled: disabled || !checked && picked.length >= 10,
++                onChange: () => setPicked((current2) => checked ? current2.filter((id) => id !== bot.id) : [...current2, bot.id])
++              }),
++              (0, import_react71.createElement)(BotMark, { bot, size: 22 }),
++              (0, import_react71.createElement)("span", { className: "bt-option-label" }, bot.name)
++            );
++          })
++        ) : null,
++        selectedWorkspace ? field("Member handles (optional)", (0, import_react71.createElement)("input", {
++          className: "bt-input",
++          value: handles,
++          disabled,
++          autoComplete: "off",
++          placeholder: t("Separate handles with commas"),
++          onChange: (event) => setHandles(event.target.value)
++        })) : null,
++        selectedWorkspace && (participants === 0 || people.length > 49) ? (0, import_react71.createElement)("p", { key: "participants", className: "bt-note" }, t(participants === 0 ? "Choose at least one Bot or member." : "Enter no more than 49 member handles.")) : null,
++        created ? (0, import_react71.createElement)("p", { key: "created", role: "status", className: "bt-note" }, t("Group created. Retry opening it here.")) : null,
++        error ? (0, import_react71.createElement)("p", { key: "error", role: "alert", className: "bt-error" }, error) : null,
++        (0, import_react71.createElement)("div", { key: "submit", className: "bt-actions" }, (0, import_react71.createElement)(
++          "button",
++          { type: "submit", className: "bt-send", disabled: busy || !valid },
++          busy ? t("Opening group…") : created ? t("Open created group") : t("Create group chat")
++        ))
++      ]
++    )
++  );
++}
++function SharedGroupDirectory({ actions, back, onOpened }) {
++  const [directory, setDirectory] = (0, import_react71.useState)({ items: [], cursor: null, error: "", busy: true });
++  const operation = (0, import_react71.useRef)(null);
++  const first = (0, import_react71.useRef)(null);
++  const load = async (cursor) => {
++    if (operation.current) return;
++    const pending = {};
++    operation.current = pending;
++    setDirectory((current2) => ({ ...current2, busy: true, error: "" }));
++    try {
++      const result = await actions.sharedGroupDirectory(cursor);
++      if (operation.current !== pending) return;
++      setDirectory((current2) => {
++        const items = cursor ? current2.items.slice() : [];
++        const seen = new Set(items.map((row) => row.conversation_id));
++        for (const row of result.items) {
++          if (seen.has(row.conversation_id)) continue;
++          items.push(row);
++          seen.add(row.conversation_id);
++        }
++        return { items, cursor: result.next_cursor, error: "", busy: false };
++      });
++    } catch {
++      if (operation.current === pending) {
++        setDirectory((current2) => ({ ...current2, busy: false, error: t("Could not load shared groups.") }));
++      }
++    } finally {
++      if (operation.current === pending) operation.current = null;
++    }
++  };
++  (0, import_react71.useEffect)(() => {
++    first.current?.focus();
++    void load(null);
++    return () => {
++      operation.current = null;
++    };
++  }, []);
++  const open = async (conversationId) => {
++    if (operation.current) return;
++    const pending = {};
++    operation.current = pending;
++    setDirectory((current2) => ({ ...current2, busy: true, opening: conversationId, error: "" }));
++    try {
++      const result = await actions.openSharedGroup(conversationId);
++      if (operation.current !== pending) return;
++      if (result?.conversation_id !== conversationId || !result.room?.id) throw new Error("Shared group unavailable");
++      onOpened(result.room);
++    } catch {
++      if (operation.current === pending) {
++        setDirectory((current2) => ({ ...current2, busy: false, opening: null, error: t("Could not open this shared group. Refresh the list or try again.") }));
++      }
++    } finally {
++      if (operation.current === pending) operation.current = null;
++    }
++  };
++  return (0, import_react71.createElement)(
++    "div",
++    { className: "bt-newchat", role: "dialog", "aria-label": t("FlyBot groups") },
++    (0, import_react71.createElement)(
++      "div",
++      { className: "bt-to" },
++      (0, import_react71.createElement)("button", { ref: first, type: "button", className: "bt-soft bt-soft-sm", onClick: back }, t("Back")),
++      (0, import_react71.createElement)("strong", null, t("FlyBot groups"))
++    ),
++    (0, import_react71.createElement)(
++      "div",
++      { className: "bt-drawer-body", style: { width: "min(100%, 550px)", boxSizing: "border-box", marginInline: "auto" } },
++      (0, import_react71.createElement)(
++        "ul",
++        { style: { margin: 0, padding: 0, listStyle: "none" } },
++        directory.items.map((row) => (0, import_react71.createElement)(
++          "li",
++          { key: row.conversation_id },
++          (0, import_react71.createElement)(
++            "button",
++            {
++              type: "button",
++              className: "bt-option",
++              disabled: directory.busy,
++              onClick: () => open(row.conversation_id)
++            },
++            (0, import_react71.createElement)("span", { className: "bt-option-icon", "aria-hidden": true }, (0, import_react71.createElement)(PeopleIcon)),
++            (0, import_react71.createElement)(
++              "span",
++              { style: { minWidth: 0, flex: 1, display: "grid" } },
++              (0, import_react71.createElement)("span", { className: "bt-option-label" }, row.title),
++              (0, import_react71.createElement)("span", { className: "bt-note" }, row.kind === "personal" ? t("Personal workspace") : row.workspace_name)
++            ),
++            directory.opening === row.conversation_id ? (0, import_react71.createElement)("span", { role: "status", className: "bt-note" }, t("Opening group…")) : null
++          )
++        ))
++      ),
++      directory.error ? (0, import_react71.createElement)("p", { role: "alert", className: "bt-error" }, directory.error) : null,
++      directory.busy && !directory.opening ? (0, import_react71.createElement)("p", { role: "status", className: "bt-note" }, t("Loading shared groups…")) : null,
++      !directory.busy && !directory.error && !directory.items.length ? (0, import_react71.createElement)("p", { className: "bt-note" }, t("You haven’t joined any shared groups.")) : null,
++      directory.error || directory.cursor ? (0, import_react71.createElement)(
++        "div",
++        { className: "bt-actions" },
++        directory.error ? (0, import_react71.createElement)("button", {
++          type: "button",
++          className: "bt-soft",
++          disabled: directory.busy,
++          onClick: () => load(null)
++        }, t("Refresh shared groups")) : null,
++        directory.cursor ? (0, import_react71.createElement)("button", {
++          type: "button",
++          className: "bt-soft",
++          disabled: directory.busy,
++          onClick: () => load(directory.cursor)
++        }, t("Load more groups")) : null
++      ) : null
++    )
++  );
++}
+ function NewChat({ mode, sectionId = null, paneLeft, roster, actions }) {
+   const [query, setQuery] = (0, import_react71.useState)("");
+   const [picked, setPicked] = (0, import_react71.useState)([]);
+   const [group, setGroup] = (0, import_react71.useState)(mode === "group");
++  const [shared2, setShared] = (0, import_react71.useState)(null);
+   const [admin, setAdmin] = (0, import_react71.useState)(null);
+   const [message, setMessage] = (0, import_react71.useState)("");
+   const [pasted, setPasted] = (0, import_react71.useState)(null);
+@@ -46864,6 +47352,12 @@ function NewChat({ mode, sectionId = null, paneLeft, roster, actions }) {
+       }) });
+     }
+   }
++  if (mode !== "search" && wanted === "" && !picked.length && admin === null && actions.sharedGroupWorkspaces) {
++    options.push({ key: "shared-group", icon: (0, import_react71.createElement)(PeopleIcon), label: t("Create FlyBot group"), run: () => setShared("create") });
++  }
++  if (wanted === "" && !picked.length && admin === null && actions.sharedGroupDirectory) {
++    options.push({ key: "shared-directory", icon: (0, import_react71.createElement)(PeopleIcon), label: t("FlyBot groups"), run: () => setShared("directory") });
++  }
+   for (const bot of matches3) {
+     options.push({ key: bot.id, bot, label: bot.name, hint: choosingAdmin ? t("Make admin") : group || picked.length > 0 ? t("Add to group chat") : void 0, run: () => openBot(bot) });
+   }
+@@ -46893,6 +47387,21 @@ ${listed}`, { axis: "y", ...QUICK_EDGES });
+       })
+     );
+   }
++  if (shared2) {
++    const back = () => {
++      setShared(null);
++      requestAnimationFrame(() => inputRef.current?.focus());
++    };
++    const opened = (room2) => {
++      actions.openSession(room2.id);
++      close();
++    };
++    return (0, import_react71.createElement)(
++      "div",
++      { className: "bt-pane", style: { left: paneLeft } },
++      shared2 === "create" ? (0, import_react71.createElement)(SharedGroupForm, { roster, actions, back, onCreated: opened }) : (0, import_react71.createElement)(SharedGroupDirectory, { actions, back, onOpened: opened })
++    );
++  }
+   const adminBot = admin === null ? void 0 : roster.byId[admin];
+   const recipients = adminBot ? [adminBot, ...pickedBots] : pickedBots;
+   const placeholder = recipients.length > 0 ? t("Message {name}", { name: recipients.map((bot) => bot.name).join(t(" and ")) }) : t("Message Bot");
+diff --git a/src/client/at-menu.js b/src/client/at-menu.js
+index ca6c5b7..fdf1981 100644
+--- a/src/client/at-menu.js
++++ b/src/client/at-menu.js
+@@ -11,6 +11,31 @@ export const CHATS_SOURCE = 'ds-bot-chats'
+ // The words the group host reads as "everyone" (groups.js ROOM_ALL).
+ const ROOM_ALL = ['all', 'everyone', '所有人', '全体']
+ const OTHER_CHATS_MAX = 8
++const SHARED_AGENT_PREFIX = 'ot-agent:'
++const SHARED_AGENT_ID = /^[A-Za-z0-9._:-]{1,80}$/
++
++function sharedMentionRows(room, needle) {
++  const targets = (room.flybotWorkspace.reply_policy?.targets ?? []).filter(target =>
++    typeof target?.name === 'string' && target.name.trim() && !/[\r\n]/.test(target.name) &&
++    SHARED_AGENT_ID.test(target.owner_id ?? '') && SHARED_AGENT_ID.test(target.agent_id ?? ''))
++  const people = room.remoteParticipants?.length ?? 0
++  const rows = []
++  for (const target of targets) {
++    const name = target.name
++    const handle = target.owner_handle
++    const owner = target.owner_name
++    if (!`${name} ${owner ?? ''} ${handle ?? ''}`.toLowerCase().includes(needle)) continue
++    const role = [owner, handle && handle !== owner ? `@${handle}` : undefined].filter(Boolean).join(' · ')
++    const id = `${SHARED_AGENT_PREFIX}${target.owner_id}/${target.agent_id}`
++    const ref = `@[${name.replace(/[[\]\\]/g, '\\$&')}](${id})`
++    rows.push({ bot:{id,name,role}, ref })
++  }
++  const everyone = t('Everyone')
++  if ((targets.length || people > 1) && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {
++    rows.push({ room, count:targets.length + people, text:`@${everyone} ` })
++  }
++  return rows
++}
+
+ const conversationOf = (roster, sessionId) => {
+   if (!roster.ready) return null
+@@ -25,10 +50,11 @@ const conversationOf = (roster, sessionId) => {
+ export function mentionRows(roster, sessionId, query = '') {
+   const here = conversationOf(roster, sessionId)
+   if (here === null) return null
++  const needle = query.trim().toLowerCase()
++  if (here.room?.flybotWorkspace?.conversation_id) return sharedMentionRows(here.room, needle)
+   const bots = here.room
+     ? here.room.members.map(id => roster.byId[id]).filter(Boolean)
+     : roster.bots.filter(bot => bot.id !== here.self.id)
+-  const needle = query.trim().toLowerCase()
+   const rows = bots.filter(bot => bot.name.toLowerCase().includes(needle)).map(bot => ({ bot, text: `@${bot.name} ` }))
+   const everyone = t('Everyone')
+   if (here.room && bots.length > 1 && [everyone, ...ROOM_ALL].some(word => word.toLowerCase().startsWith(needle))) {
+@@ -81,13 +107,20 @@ export function atSources({ roster, sessions, launched, iconFor }) {
+       return (mentionRows(roster.getSnapshot(), session.sessionId, query) ?? []).map(row => ({
+         name: row.bot ? row.bot.name : t('Everyone'),
+         ...(row.bot?.role ? { description: row.bot.role } : {}),
+-        ...(row.room ? { description: t('{count} members', { count: row.room.members.length }) } : {}),
++        ...(row.room ? { description: t('{count} members', { count: row.count ?? row.room.members.length }) } : {}),
+         icon: iconFor(row),
+         section: t('Bots'),
+-        value: row.text,
++        value: row.ref ? SHARED_AGENT_PREFIX + row.ref : row.text,
+       }))
+     },
+-    onPick: ({ candidate }) => (candidate.value ? { text: candidate.value } : undefined),
++    onPick({ candidate: { value, name, description } }) {
++      if (!value) return undefined
++      if (!value.startsWith(SHARED_AGENT_PREFIX)) return { text:value }
++      const ref = value.slice(SHARED_AGENT_PREFIX.length)
++      const label = `@${name}${description ? ` · ${description}` : ''}`
++      return { insert:{source:BOTS_SOURCE, ref, label, appearance:'session', clipboardText:ref + ' '} }
++    },
++    codec: { clipboardText:ref => ref + ' ', serialize:ref => Promise.resolve(ref + ' ') },
+   }
+   const chats = {
+     trigger: '@',
+diff --git a/src/client/group-settings.js b/src/client/group-settings.js
+index fce5203..177dd4d 100644
+--- a/src/client/group-settings.js
++++ b/src/client/group-settings.js
+@@ -16,9 +16,87 @@ export const ROOM_MODES = [
+ // Without an admin the host answers as everyone, whatever the stored mode says.
+ export const shownMode = (room, roster) => (roster.byId[room.admin] ? room.mode : 'everyone')
+
++const SHARED_REPLY_MODES = [
++  ['default', 'Group defaults'],
++  ['everyone', 'All agents'],
++  ['lead', 'Agent leads'],
++  ['mentions', 'Only when mentioned'],
++]
++const replyPairKey = pair => pair ? JSON.stringify([pair.owner_id, pair.agent_id]) : ''
++const replyModeLabel = mode => SHARED_REPLY_MODES.find(([value]) => value === mode)?.[1] ?? 'Group defaults'
++const replyLead = policy => policy.targets.find(target => replyPairKey(target) === replyPairKey(policy.lead))
++
+ export function roomSubtitle(room, roster) {
++  const count = t('{count} members', { count: room.members.length })
++  const policy = room.flybotWorkspace?.reply_policy
++  if (room.flybotWorkspace?.conversation_id) {
++    const lead = policy?.mode === 'lead' && !policy.lead_unavailable && replyLead(policy)
++    return [count, lead ? t('Lead {name}', { name: lead.name }) : t(policy?.lead_unavailable
++      ? 'Lead unavailable' : replyModeLabel(policy?.mode))].join(' · ')
++  }
+   const admin = roster.byId[room.admin]
+-  return [t('{count} members', { count: room.members.length }), admin ? t('Admin {name}', { name: admin.name }) : t('No admin')].join(' · ')
++  return [count, admin ? t('Admin {name}', { name: admin.name }) : t('No admin')].join(' · ')
++}
++
++function SharedReplyPolicy({ policy, update }) {
++  const [mode, setMode] = useState(policy?.mode ?? 'default')
++  const savedLead = replyPairKey(policy?.lead)
++  const [lead, setLead] = useState(savedLead)
++  const [busy, setBusy] = useState(false)
++  const [failed, setFailed] = useState(false)
++  const target = policy?.targets.find(item => replyPairKey(item) === lead)
++  const editable = policy?.can_edit === true && Number.isSafeInteger(policy.revision)
++  const needsRefresh = !policy || (policy.can_edit && !editable) || failed
++  const currentLead = policy?.mode === 'lead' && !policy.lead_unavailable ? replyLead(policy) : undefined
++  const changed = mode !== policy?.mode || (mode === 'lead' && lead !== savedLead)
++  const canSave = editable && changed && (mode !== 'lead' || target)
++  const submit = async patch => {
++    setBusy(true)
++    try { setFailed(!await update({ flybotWorkspaceReplyPolicy: patch })) }
++    finally { setBusy(false) }
++  }
++  useEffect(() => {
++    if (policy && !(policy.can_edit && !Number.isSafeInteger(policy.revision))) return
++    let current = true
++    setBusy(true)
++    void update({ flybotWorkspaceReplyPolicy: { refresh: true } }).then(done => {
++      if (current) setFailed(!done)
++    }).finally(() => { if (current) setBusy(false) })
++    return () => { current = false }
++  }, [policy?.can_edit, policy?.revision])
++  const save = () => submit({ mode, revision: policy.revision,
++    ...(mode === 'lead' ? { lead: { owner_id: target.owner_id, agent_id: target.agent_id } } : {}) })
++  return h(Card, { title: t('Who answers') },
++    policy ? h(Row, { label: t('Current reply policy'), hint: policy.lead_unavailable
++      ? t('The saved lead is unavailable. Other available group agents decide whether to reply.')
++      : t(policy.mode === 'everyone' ? 'All group agents decide whether to respond.' : policy.mode === 'lead'
++        ? 'The selected lead decides whether to respond.' : policy.mode === 'mentions'
++          ? 'Only @mentioned agents answer. Use @everyone to ask all agents.' : '@mentions always pick who answers.'), stack: true },
++      h('span', { className: 'bt-set-hint', 'data-ot-shared-reply-current': true },
++        currentLead ? t('Lead {name}', { name: currentLead.name })
++          : t(policy.lead_unavailable ? 'Lead unavailable' : replyModeLabel(policy.mode)))) : null,
++    editable ? h('div', { 'data-ot-shared-reply-controls': true },
++      h(Row, { label: t('Reply policy') },
++        h('select', { className: 'bt-bs-input', 'aria-label': t('Reply policy'), value: mode,
++          disabled: busy, onChange: event => setMode(event.target.value) },
++        SHARED_REPLY_MODES.map(([value, label]) => h('option', {
++          key: value, value, disabled: value === 'lead' && !policy.targets.length && policy.mode !== 'lead',
++        }, t(label))))),
++      mode === 'lead' ? h(Row, { label: t('Lead agent') },
++        h('select', { className: 'bt-bs-input', 'aria-label': t('Lead agent'),
++          value: target ? lead : '', disabled: busy, onChange: event => setLead(event.target.value) },
++        h('option', { value: '', disabled: true }, t('Choose a lead agent')),
++        policy.targets.map(item => {
++          const key = replyPairKey(item)
++          return h('option', { key, value: key }, [item.name, item.owner_name].filter(Boolean).join(' · '))
++        }))) : null,
++      h('div', { className: 'bt-set-row bt-task-foot' },
++        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy || !canSave,
++          'data-ot-shared-reply-save': true, onClick: () => void save() }, t('Save')))) : policy && !policy.can_edit
++      ? h(Row, { label: t('Read only') }) : null,
++    needsRefresh ? h('div', { className: 'bt-set-row bt-task-foot' },
++      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy,
++        'data-ot-shared-reply-refresh': true, onClick: () => void submit({ refresh: true }) }, t('Refresh'))) : null)
+ }
+
+ // One preset for every member in the group, or each member's own. Turning it on starts
+@@ -73,6 +151,8 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+     const timer = setTimeout(() => setConfirming(false), 4000)
+     return () => clearTimeout(timer)
+   }, [confirming])
++  const shared = Boolean(room.flybotWorkspace?.conversation_id)
++  const replyPolicy = room.flybotWorkspace?.reply_policy
+   const members = room.members.map(id => roster.byId[id]).filter(Boolean)
+   const outside = roster.bots.filter(bot => !room.members.includes(bot.id))
+   const admin = roster.byId[room.admin]
+@@ -95,7 +175,12 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+         h(InlineText, { label: t('Group name'), value: room.named ? room.name : '', placeholder: t('Name after members'), maxLength: 60, onSave: name => update({ name }) })),
+       h(Row, { label: t('Notice'), hint: t('Every member reads it before speaking in this group.'), stack: true },
+         h(InlineText, { label: t('Group notice'), value: room.notice, multiline: true, maxLength: 2000, placeholder: t('Shared instructions every member reads before speaking…'), onSave: notice => update({ notice }) }))),
+-    h(Card, { title: t('Who answers') },
++    room.flybotWorkspace?.conversation_id ? h(Card, { title: 'Shared human participants' },
++      h(Row, { label: 'Bot Social handles', hint: 'Comma-separated handles. Membership and history are shared with FlyBot.', stack: true },
++        h(InlineText, { label: 'Shared human participants', value: (room.remoteParticipants || []).map(m=>m.handle).join(', '), maxLength: 4000,
++          onSave: text => update({ remoteParticipants: text.split(',').map(x=>x.trim()).filter(Boolean) }) }))) : null,
++    shared ? h(SharedReplyPolicy, { key: room.id + ':' + (replyPolicy?.revision ?? ''), policy: replyPolicy, update })
++      : h(Card, { title: t('Who answers') },
+       h('div', { className: 'bt-set-row bt-bs-row bt-bs-stack' },
+         h(Segmented, { label: t('Who answers'), value: mode }, ROOM_MODES.map(([id, label]) => h('button', {
+           key: id, type: 'button', 'aria-pressed': mode === id, disabled: id === 'admin' && !admin,
+@@ -110,13 +195,13 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+     h(GroupPermission, { room, catalog: roster.permissions, update }),
+     h(Card, { title: t('Members · {count}', { count: members.length }) },
+       members.map((member) => {
+-        const leads = room.admin === member.id
++        const leads = !shared && room.admin === member.id
+         return h('div', { key: member.id, className: 'bt-set-row bt-bs-row bt-gs-member' },
+           h('button', { type: 'button', className: 'bt-gs-who', title: t("Open {name}'s chat", { name: member.name }), onClick: () => openBot(member.id) },
+             h(BotAvatar, { bot: member, size: 26, main: isMainOf(roster, member.id), admin: leads, live: false }),
+             h('span', { className: 'bt-row-title' }, member.name),
+             leads ? h('span', { className: 'bt-tag' }, t('Admin')) : null),
+-          leads
++          shared ? null : leads
+             ? h('button', { type: 'button', className: 'bt-mini', title: t('Leave the group without an admin'), onClick: () => update({ admin: null }) }, t('Unset'))
+             : h('button', { type: 'button', className: 'bt-mini', onClick: () => update({ admin: member.id }) }, t('Make admin')),
+           members.length > 2 ? h('button', { type: 'button', className: 'bt-x', 'aria-label': t('Remove {name} from the group', { name: member.name }), title: t('Remove from group'), onClick: () => update({ remove: [member.id] }) }, '×') : null)
+@@ -130,7 +215,7 @@ export function GroupSettingsForm({ room, roster, actions, run, onDeleted }) {
+         : outside.length > 0
+           ? h('button', { type: 'button', className: 'bt-set-row bt-bs-row bt-gs-add', onClick: () => setAdding(true) }, h(PlusIcon), t('Add member'))
+           : null,
+-      h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
++      shared ? null : h('div', { className: 'bt-set-row bt-gs-note' }, h('span', { className: 'bt-set-hint' },
+         // The host checks for two members on every change, even a rename.
+         members.length < 2 ? t('Add a Bot first: a group chat needs at least two.')
+           : admin ? t('{name} leads this group: it can call members with @Name, change the group, and post here.', { name: admin.name })
+diff --git a/src/client/i18n.js b/src/client/i18n.js
+index 0c5908c..6db127f 100644
+--- a/src/client/i18n.js
++++ b/src/client/i18n.js
+@@ -456,6 +456,45 @@ const ZH = {
+   '{name} leads this group: it can call members with @Name, change the group, and post here.': '{name} 主持这个群：可以用 @名字 点名成员、修改群设置、在群里发言。',
+   'No admin yet. An admin can call members with @Name, change the group, and post here.': '还没有管理员。管理员可以用 @名字 点名成员、修改群设置、在群里发言。',
+   'Who answers': '谁来回答',
++  'Create FlyBot group': '创建 FlyBot 群聊',
++  'FlyBot groups': 'FlyBot 群聊',
++  'Could not load shared groups.': '暂时无法加载共享群聊。',
++  'Could not open this shared group. Refresh the list or try again.': '暂时无法打开这个群聊，请重试或刷新群聊列表。',
++  'Loading shared groups…': '正在加载共享群聊…',
++  'You haven’t joined any shared groups.': '你还没有加入共享群聊。',
++  'Refresh shared groups': '刷新群聊列表',
++  'Load more groups': '加载更多群聊',
++  'Could not load FlyBot workspaces.': '无法加载 FlyBot 工作区。',
++  'Loading workspaces…': '正在加载工作区…',
++  'No FlyBot workspaces are available.': '当前没有可用的 FlyBot 工作区。',
++  'Choose a workspace': '选择工作区',
++  'Personal workspace': '个人空间',
++  'Bots in this workspace': '工作区智能体',
++  'There are no available Bots in this workspace.': '这个工作区没有可用的智能体。',
++  'Member handles (optional)': '成员账号（可选）',
++  'Separate handles with commas': '多个账号用逗号隔开',
++  'Choose at least one Bot or member.': '请选择至少一位智能体或成员。',
++  'Enter no more than 49 member handles.': '最多可填写 49 个成员账号。',
++  'Could not create the FlyBot group.': '无法创建 FlyBot 群聊。',
++  'Group created. Retry opening it here.': '群聊已创建，可以重试打开。',
++  'Opening group…': '正在打开群聊…',
++  'Open created group': '打开已创建的群聊',
++  'Group defaults': '群组默认',
++  'All agents': '全体智能体',
++  'Agent leads': '指定主答',
++  'Only when mentioned': '仅在被 @ 时回复',
++  'Only @mentioned agents answer. Use @everyone to ask all agents.': '只有被 @ 的智能体才会回复。用 @所有人 向全体智能体提问。',
++  'Lead {name}': '{name} 主答',
++  'Lead unavailable': '主答智能体不可用',
++  'Current reply policy': '当前回复策略',
++  'All group agents decide whether to respond.': '群内智能体各自判断是否回复。',
++  'The selected lead decides whether to respond.': '由指定智能体判断是否回复。',
++  'The saved lead is unavailable. Other available group agents decide whether to reply.': '已设置的主答智能体不可用，由其他可用的群内智能体判断是否回复。',
++  'Reply policy': '回复策略',
++  'Lead agent': '主答智能体',
++  'Choose a lead agent': '选择主答智能体',
++  'Only a human can change shared group reply settings': '只有用户可以更改共享群组的回复设置。',
++  'Only the group owner can change who answers': '只有群主可以更改回复对象。',
+   'Choose an admin first': '先选一个管理员',
+   '@mentions always pick who answers.': '@提及总是指定由谁回答。',
+   Notice: '群公告',
+diff --git a/src/client/new-chat.js b/src/client/new-chat.js
+index c9203b3..33627e3 100644
+--- a/src/client/new-chat.js
++++ b/src/client/new-chat.js
+@@ -1,4 +1,4 @@
+-import { createElement as h, useRef, useState } from 'react'
++import { createElement as h, useEffect, useRef, useState } from 'react'
+ import { FishLogo } from './dsh-primitives.js'
+ import { PlusIcon, PeopleIcon, ArrowUpIcon } from './icons.js'
+ import { AdminStar, BotMark } from './mark.js'
+@@ -9,10 +9,192 @@ import { t } from './i18n.js'
+ import { sendsOnEnter } from './enter-key.js'
+ import { PasteCard, foldPastedText } from './paste-card.js'
+
++function SharedGroupForm({ roster, actions, back, onCreated }) {
++  const [workspaces, setWorkspaces] = useState(null)
++  const [workspace, setWorkspace] = useState('')
++  const [title, setTitle] = useState('')
++  const [picked, setPicked] = useState([])
++  const [handles, setHandles] = useState('')
++  const [loadVersion, setLoadVersion] = useState(0)
++  const [busy, setBusy] = useState(false)
++  const [loadFailed, setLoadFailed] = useState(false)
++  const [created, setCreated] = useState(false)
++  const [error, setError] = useState('')
++  const request = useRef(null)
++  const mounted = useRef(false)
++  const workspaceField = useRef(null)
++  useEffect(() => {
++    mounted.current = true
++    return () => { mounted.current = false }
++  }, [])
++  useEffect(() => {
++    let current = true
++    setLoadFailed(false)
++    void actions.sharedGroupWorkspaces().then(result => {
++      if (current) {
++        setWorkspaces(result.workspaces)
++        requestAnimationFrame(() => { if (current) workspaceField.current?.focus() })
++      }
++    }).catch(() => { if (current) setLoadFailed(true) })
++    return () => { current = false }
++  }, [loadVersion])
++
++  const selectedWorkspace = workspaces?.find(row => row.workspace_id === workspace)
++  const bots = (selectedWorkspace?.bot_ids ?? []).map(id => roster.byId[id]).filter(Boolean)
++  const people = [...new Set(handles.trim().split(/[\s,，、]+/u).filter(Boolean))]
++  const participants = picked.length + people.length
++  const valid = !!selectedWorkspace && title.trim().length > 0 && participants > 0 && people.length <= 49
++  const disabled = busy || created
++  const submit = async event => {
++    event.preventDefault()
++    if (!valid || busy || request.current?.pending) return
++    const input = { workspace_id: workspace, title: title.trim(), bot_ids: picked, ...(people.length ? { member_handles: people } : {}) }
++    const signature = JSON.stringify(input)
++    if (request.current?.signature !== signature) {
++      request.current = { signature, key: 'shared-group-' + crypto.randomUUID().replaceAll('-', '') }
++    }
++    const attempt = request.current
++    attempt.pending = true
++    setBusy(true)
++    setError('')
++    try {
++      const result = await actions.createSharedGroup({ ...input, request_key: attempt.key })
++      if (!mounted.current) return
++      if (!result.room?.id) {
++        setCreated(true)
++        return
++      }
++      onCreated(result.room)
++    } catch (failure) {
++      if (mounted.current) setError(failure?.message || t('Could not create the FlyBot group.'))
++    } finally {
++      attempt.pending = false
++      if (mounted.current) setBusy(false)
++    }
++  }
++  const field = (label, control) => h('label', { key: label, className: 'bt-field' },
++    h('span', { className: 'bt-field-label' }, t(label)), control)
++  return h('div', { className: 'bt-newchat', role: 'dialog', 'aria-label': t('Create FlyBot group') },
++    h('div', { className: 'bt-to' },
++      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: back, disabled: busy }, t('Back')),
++      h('strong', null, t('Create FlyBot group'))),
++    h('form', { className: 'bt-drawer-body', style: { width: 'min(100%, 550px)', boxSizing: 'border-box', marginInline: 'auto' }, onSubmit: submit },
++      loadFailed ? h('div', { className: 'bt-field' },
++        h('p', { role: 'alert', className: 'bt-error' }, t('Could not load FlyBot workspaces.')),
++        h('div', { className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft', onClick: () => setLoadVersion(value => value + 1) }, t('Retry'))))
++        : workspaces === null ? h('p', { role: 'status', className: 'bt-note' }, t('Loading workspaces…'))
++        : workspaces.length === 0 ? h('p', { role: 'status', className: 'bt-note' }, t('No FlyBot workspaces are available.'))
++        : [
++          field('Workspace', h('select', { ref: workspaceField, className: 'bt-input', value: workspace, required: true, disabled,
++            onChange: event => { setWorkspace(event.target.value); setPicked([]); setHandles(''); setError('') } },
++            h('option', { value: '' }, t('Choose a workspace')),
++            workspaces.map(row => h('option', { key: row.workspace_id, value: row.workspace_id }, row.kind === 'personal' ? t('Personal workspace') : row.name)))),
++          field('Group name', h('input', { className: 'bt-input', value: title, disabled, required: true, maxLength: 80, onChange: event => setTitle(event.target.value) })),
++          selectedWorkspace ? h('fieldset', { key: 'bots', disabled, style: { margin: 0, padding: 0, border: 0, minWidth: 0 } },
++            h('legend', { className: 'bt-field-label' }, t('Bots in this workspace')),
++            bots.length === 0 ? h('p', { className: 'bt-note' }, t('There are no available Bots in this workspace.')) : bots.map(bot => {
++              const checked = picked.includes(bot.id)
++              return h('label', { key: bot.id, className: 'bt-option' },
++                h('input', { type: 'checkbox', checked, disabled: disabled || (!checked && picked.length >= 10),
++                  onChange: () => setPicked(current => checked ? current.filter(id => id !== bot.id) : [...current, bot.id]) }),
++                h(BotMark, { bot, size: 22 }), h('span', { className: 'bt-option-label' }, bot.name))
++            })) : null,
++          selectedWorkspace ? field('Member handles (optional)', h('input', { className: 'bt-input', value: handles, disabled, autoComplete: 'off',
++            placeholder: t('Separate handles with commas'), onChange: event => setHandles(event.target.value) })) : null,
++          selectedWorkspace && (participants === 0 || people.length > 49) ? h('p', { key: 'participants', className: 'bt-note' }, t(participants === 0 ? 'Choose at least one Bot or member.' : 'Enter no more than 49 member handles.')) : null,
++          created ? h('p', { key: 'created', role: 'status', className: 'bt-note' }, t('Group created. Retry opening it here.')) : null,
++          error ? h('p', { key: 'error', role: 'alert', className: 'bt-error' }, error) : null,
++          h('div', { key: 'submit', className: 'bt-actions' }, h('button', { type: 'submit', className: 'bt-send', disabled: busy || !valid },
++            busy ? t('Opening group…') : created ? t('Open created group') : t('Create group chat'))),
++        ]))
++}
++
++function SharedGroupDirectory({ actions, back, onOpened }) {
++  const [directory, setDirectory] = useState({ items: [], cursor: null, error: '', busy: true })
++  const operation = useRef(null)
++  const first = useRef(null)
++
++  const load = async cursor => {
++    if (operation.current) return
++    const pending = {}
++    operation.current = pending
++    setDirectory(current => ({ ...current, busy: true, error: '' }))
++    try {
++      const result = await actions.sharedGroupDirectory(cursor)
++      if (operation.current !== pending) return
++      setDirectory(current => {
++        const items = cursor ? current.items.slice() : []
++        const seen = new Set(items.map(row => row.conversation_id))
++        for (const row of result.items) {
++          if (seen.has(row.conversation_id)) continue
++          items.push(row)
++          seen.add(row.conversation_id)
++        }
++        return { items, cursor: result.next_cursor, error: '', busy: false }
++      })
++    } catch {
++      if (operation.current === pending) {
++        setDirectory(current => ({ ...current, busy: false, error: t('Could not load shared groups.') }))
++      }
++    } finally {
++      if (operation.current === pending) operation.current = null
++    }
++  }
++
++  useEffect(() => {
++    first.current?.focus()
++    void load(null)
++    return () => { operation.current = null }
++  }, [])
++
++  const open = async conversationId => {
++    if (operation.current) return
++    const pending = {}
++    operation.current = pending
++    setDirectory(current => ({ ...current, busy: true, opening: conversationId, error: '' }))
++    try {
++      const result = await actions.openSharedGroup(conversationId)
++      if (operation.current !== pending) return
++      if (result?.conversation_id !== conversationId || !result.room?.id) throw new Error('Shared group unavailable')
++      onOpened(result.room)
++    } catch {
++      if (operation.current === pending) {
++        setDirectory(current => ({ ...current, busy: false, opening: null, error: t('Could not open this shared group. Refresh the list or try again.') }))
++      }
++    } finally {
++      if (operation.current === pending) operation.current = null
++    }
++  }
++
++  return h('div', { className: 'bt-newchat', role: 'dialog', 'aria-label': t('FlyBot groups') },
++    h('div', { className: 'bt-to' },
++      h('button', { ref: first, type: 'button', className: 'bt-soft bt-soft-sm', onClick: back }, t('Back')),
++      h('strong', null, t('FlyBot groups'))),
++    h('div', { className: 'bt-drawer-body', style: { width: 'min(100%, 550px)', boxSizing: 'border-box', marginInline: 'auto' } },
++      h('ul', { style: { margin: 0, padding: 0, listStyle: 'none' } },
++        directory.items.map(row => h('li', { key: row.conversation_id },
++          h('button', { type: 'button', className: 'bt-option', disabled: directory.busy,
++            onClick: () => open(row.conversation_id) },
++            h('span', { className: 'bt-option-icon', 'aria-hidden': true }, h(PeopleIcon)),
++            h('span', { style: { minWidth: 0, flex: 1, display: 'grid' } },
++              h('span', { className: 'bt-option-label' }, row.title),
++              h('span', { className: 'bt-note' }, row.kind === 'personal' ? t('Personal workspace') : row.workspace_name)),
++            directory.opening === row.conversation_id ? h('span', { role: 'status', className: 'bt-note' }, t('Opening group…')) : null)))),
++      directory.error ? h('p', { role: 'alert', className: 'bt-error' }, directory.error) : null,
++      directory.busy && !directory.opening ? h('p', { role: 'status', className: 'bt-note' }, t('Loading shared groups…')) : null,
++      !directory.busy && !directory.error && !directory.items.length ? h('p', { className: 'bt-note' }, t('You haven’t joined any shared groups.')) : null,
++      directory.error || directory.cursor ? h('div', { className: 'bt-actions' },
++        directory.error ? h('button', { type: 'button', className: 'bt-soft', disabled: directory.busy,
++          onClick: () => load(null) }, t('Refresh shared groups')) : null,
++        directory.cursor ? h('button', { type: 'button', className: 'bt-soft', disabled: directory.busy,
++          onClick: () => load(directory.cursor) }, t('Load more groups')) : null) : null))
++}
++
+ export function NewChat({ mode, sectionId = null, paneLeft, roster, actions }) {
+   const [query, setQuery] = useState('')
+   const [picked, setPicked] = useState([])
+   const [group, setGroup] = useState(mode === 'group')
++  const [shared, setShared] = useState(null)
+   // A new group chat picks its admin first, then the other members.
+   const [admin, setAdmin] = useState(null)
+   const [message, setMessage] = useState('')
+@@ -109,6 +291,12 @@ export function NewChat({ mode, sectionId = null, paneLeft, roster, actions }) {
+       options.push({ key: 'agent', icon: h(FishLogo, { size: 16 }), label: t('Add DSH Agent'), run: () => run(async () => { await actions.addAgent(); close() }) })
+     }
+   }
++  if (mode !== 'search' && wanted === '' && !picked.length && admin === null && actions.sharedGroupWorkspaces) {
++    options.push({ key: 'shared-group', icon: h(PeopleIcon), label: t('Create FlyBot group'), run: () => setShared('create') })
++  }
++  if (wanted === '' && !picked.length && admin === null && actions.sharedGroupDirectory) {
++    options.push({ key: 'shared-directory', icon: h(PeopleIcon), label: t('FlyBot groups'), run: () => setShared('directory') })
++  }
+   for (const bot of matches) {
+     options.push({ key: bot.id, bot, label: bot.name, hint: choosingAdmin ? t('Make admin') : group || picked.length > 0 ? t('Add to group chat') : undefined, run: () => openBot(bot) })
+   }
+@@ -127,6 +315,13 @@ export function NewChat({ mode, sectionId = null, paneLeft, roster, actions }) {
+         onCreated: created,
+       }))
+   }
++  if (shared) {
++    const back = () => { setShared(null); requestAnimationFrame(() => inputRef.current?.focus()) }
++    const opened = room => { actions.openSession(room.id); close() }
++    return h('div', { className: 'bt-pane', style: { left: paneLeft } },
++      shared === 'create' ? h(SharedGroupForm, { roster, actions, back, onCreated: opened })
++        : h(SharedGroupDirectory, { actions, back, onOpened: opened }))
++  }
+   const adminBot = admin === null ? undefined : roster.byId[admin]
+   const recipients = adminBot ? [adminBot, ...pickedBots] : pickedBots
+   const placeholder = recipients.length > 0 ? t('Message {name}', { name: recipients.map(bot => bot.name).join(t(' and ')) }) : t('Message Bot')
+diff --git a/src/client/team-actions.js b/src/client/team-actions.js
+index 3c1d1f7..103df32 100644
+--- a/src/client/team-actions.js
++++ b/src/client/team-actions.js
+@@ -169,6 +169,10 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
+     importAvatars: items => call('avatar-import', { items }),
+     deleteAvatar: id => call('avatar-delete', { id }),
+     createRoom: (members, options = {}) => after(call('create-room', { members, ...options })),
++    sharedGroupWorkspaces: () => call('flybot-workspace-group-workspaces', {}),
++    createSharedGroup: payload => after(call('flybot-workspace-group-create', payload)),
++    sharedGroupDirectory: cursor => call('flybot-workspace-group-directory', cursor ? { cursor } : {}),
++    openSharedGroup: conversation_id => after(call('flybot-workspace-group-open', { conversation_id })),
+     updateBot: (id, patch) => after(call('update-bot', { id, ...patch })),
+     // Give up one wait the Bot has on a hand-off that will not come back.
+     abandonWork: id => after(call('abandon-work', { id })),
+diff --git a/src/host/bot-tasks.js b/src/host/bot-tasks.js
+index 9116437..1ee020e 100644
+--- a/src/host/bot-tasks.js
++++ b/src/host/bot-tasks.js
+@@ -14,7 +14,7 @@ import { HANDOFF_ACK, HISTORY_TIMEOUT_MS, SOURCE_KIND, STEER_CUT } from './const
+ import { within } from './folders.js'
+ import { absoluteLinks } from './links.js'
+ import { textOf } from './text.js'
+-import { activeTasksOf, isActiveTask, threadCurrentOfPart, threadOfPart } from './threads.js'
++import { activeTasksOf, isActiveTask, isFlyBotWorkspaceForeground, threadCurrentOfPart, threadOfPart } from './threads.js'
+ import { output } from './tools.js'
+ import { answerSender, cutOffText, turnFailure } from './turns.js'
+
+@@ -702,7 +702,7 @@ export function install(rt) {
+   // a fast mid-model steer cut. Disabled for local CLI agents in v1.
+   function shouldMoveForeground(bot, sessionId) {
+     if (bot === undefined || sessionId === undefined || rt.readOnly?.() !== undefined) return false
+-    if (sessionId !== rt.chatOf(bot.id)) return false
++    if (sessionId !== rt.chatOf(bot.id) || isFlyBotWorkspaceForeground(bot, sessionId)) return false
+     if (rt.groupOwners.has(sessionId) || rt.taskOwners?.has(sessionId)) return false
+     if (rt.isSwitchingPart?.(sessionId)) return false
+     const session = ctx.get('agents')?.get(sessionId)?.session
+diff --git a/src/host/capabilities.js b/src/host/capabilities.js
+index efe6323..85c65df 100644
+--- a/src/host/capabilities.js
++++ b/src/host/capabilities.js
+@@ -397,7 +397,9 @@ export function install(rt) {
+   }
+   const desiredFor = (agent, bot) => {
+     const sessionId = agent.session.id
+-    const desired = bot ? expandCapabilityNames(bot.capabilities, library()) : new Set()
++    const names = bot ? expandCapabilityNames(bot.capabilities, library()) : new Set()
++    const desired = bot && rt.config?.filterNativeCapabilities
++      ? rt.config.filterNativeCapabilities(bot, names, library()) : names
+     const entries = loaded.get(sessionId)
+     if (agent.status !== 'running') {
+       for (const root of entries?.keys() ?? []) {
+diff --git a/src/host/channel.js b/src/host/channel.js
+index c911d2b..0d13f30 100644
+--- a/src/host/channel.js
++++ b/src/host/channel.js
+@@ -184,6 +184,7 @@ export function install(rt) {
+   // What a host that only reads the team may still answer.
+   // Updates change the dsh profile, not the team, so a reading host may run them too.
+   const READS = new Set(['secret-store', 'secret-unlock', 'state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'agent-chat', 'bot-task-read', 'run-stats', 'room-progress', 'group-rows', 'group-relay-replies', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'computer-system-status', 'computer-shot', 'local-agents', 'local-agent-models', 'browser-frame', 'hello', 'notices', 'avatar', 'room-chat', 'usage-summary', 'image', 'markdown-image', 'file-download', 'changes-check', 'deepseek-services', 'deepseek-synthesize'])
++  READS.add('flybot-workspace-group-directory')
+
+   async function setPrefs(body) {
+     if (body.theme !== undefined) {
+@@ -441,6 +442,8 @@ export function install(rt) {
+           await rt.load()
+           const { room, changes } = await rt.updateRoom(body.id, {
+             name: body.name,
++            remoteParticipants: Array.isArray(body.remoteParticipants) ? body.remoteParticipants : undefined,
++            flybotWorkspaceReplyPolicy: body.flybotWorkspaceReplyPolicy,
+             notice: body.notice,
+             mode: body.mode,
+             admin: body.admin,
+@@ -669,6 +672,10 @@ export function install(rt) {
+         case 'markdown-image':
+         case 'usage-summary':
+         case 'memory-edit':
++        case 'flybot-workspace-group-workspaces':
++        case 'flybot-workspace-group-create':
++        case 'flybot-workspace-group-directory':
++        case 'flybot-workspace-group-open':
+         case 'memory-add':
+           await rt.load()
+           return ok(await rt.mobileEndpoint(endpoint, body))
+diff --git a/src/host/parts.js b/src/host/parts.js
+index 109ec22..7ca438b 100644
+--- a/src/host/parts.js
++++ b/src/host/parts.js
+@@ -405,6 +405,7 @@ export function install(rt) {
+     if (bot === undefined) return []
+     const thread = sessionId === undefined ? undefined : threadOfPart(bot, sessionId)
+     if (thread === undefined) return partsOf(bot.id)
++    if (thread.thread === 'open') return partsOf(bot.id, undefined, thread.segments, threadCurrentOfPart(bot, sessionId))
+     if (thread.thread === 'task') {
+       const task = bot.tasks[thread.index]
+       // A foreground turn moved into a background task keeps read_own_chat access to the
+@@ -1021,6 +1022,7 @@ export function install(rt) {
+     if (owner.botId !== undefined) {
+       const bot = rt.botOf(owner.botId)
+       const thread = threadOfPart(bot, sessionId)
++      if (thread?.thread === 'open') return threadCurrentOfPart(bot, sessionId)
+       if (thread?.thread === 'task') {
+         const live = threadCurrentOfPart(bot, sessionId)
+         if (live !== undefined) return live
+diff --git a/src/host/store.js b/src/host/store.js
+index 5839b17..7cd0dd0 100644
+--- a/src/host/store.js
++++ b/src/host/store.js
+@@ -8,7 +8,7 @@ import { LEGACY_THEMES, MAX_EXCHANGES, ROOM_MODES, SECTION_COLORS, SECTION_NAME_
+ import { replaceFile } from './files.js'
+ import { homeLock } from './home-lock.js'
+ import { currentColor, headOf, normalize, unquote } from './text.js'
+-import { isActiveTask } from './threads.js'
++import { isActiveTask, flybotWorkspaceParts, retainsFlyBotWorkspaceParts, threadOfPart } from './threads.js'
+ import { AMBIGUOUS_OLD_ROUTES, legacyRoute } from './local-agents/engines.js'
+
+ // A table read that sees only the keys the table holds itself. Ids that come from
+@@ -202,9 +202,62 @@ export function install(rt) {
+         if (memberSid !== undefined) liveTeamSessions.add(memberSid)
+       }
+     }
++    // Reserve native owners before accepting the FlyBot conversations
++    // on an existing volume. A duplicate claim must never reassign a Session.
++    const managed = Object.values(state.bots).filter(bot => flybotWorkspaceParts(bot).length > 0)
++    if (managed.length > 0) {
++      const claimed = new Set(liveTeamSessions)
++      const reserve = segments => {
++        for (const part of Array.isArray(segments) ? segments : []) {
++          const sid = sessionIdOf(part?.sessionId)
++          if (sid !== undefined) claimed.add(sid)
++        }
++      }
++      for (const bot of Object.values(state.bots)) reserve(bot?.segments)
++      for (const room of Object.values(state.rooms)) {
++        reserve(room?.parts)
++        for (const segments of Object.values(room?.segments ?? {})) reserve(segments)
++      }
++      for (const agent of Object.values(state.agents ?? {})) {
++        for (const sid of Array.isArray(agent?.sessions) ? agent.sessions : []) {
++          if (sessionIdOf(sid) !== undefined) claimed.add(sid)
++        }
++      }
++      const retained = new Map()
++      for (const bot of managed) {
++        const parts = []
++        for (const part of bot.openParts) {
++          const sid = sessionIdOf(part?.sessionId)
++          if (sid === undefined || claimed.has(sid)) continue
++          claimed.add(sid)
++          parts.push(part)
++        }
++        retained.set(bot, parts)
++      }
++      for (const [bot, parts] of retained) {
++        if (parts.length !== bot.openParts.length) {
++          bot.openParts = parts
++          migrated = true
++        }
++        for (const part of parts) {
++          const all = Array.isArray(part.segments) ? part.segments : []
++          const own = all.filter(segment => {
++            const sid = sessionIdOf(segment?.sessionId)
++            if (sid === undefined || claimed.has(sid)) return false
++            claimed.add(sid)
++            return true
++          })
++          if (own.length !== all.length || (part.segments !== undefined && !Array.isArray(part.segments))) {
++            part.segments = own
++            migrated = true
++          }
++        }
++      }
++    }
+     let foldedOpenParts = false
+     for (const [id, bot] of Object.entries(state.bots)) {
+       if (bot === null || typeof bot !== 'object' || !Object.hasOwn(bot, 'openParts')) continue
++      if (retainsFlyBotWorkspaceParts(bot)) continue
+       const botId = sessionIdOf(bot.id) ?? id
+       const existingSegments = Array.isArray(bot.segments) ? bot.segments : []
+       const seen = new Set([...liveTeamSessions, ...existingSegments.map(segment => sessionIdOf(segment?.sessionId)).filter(Boolean)])
+@@ -412,7 +465,9 @@ export function install(rt) {
+           if (sessionId !== undefined) {
+             // Never archive or move schedules off any live team session (foreground chat,
+             // active #783 background task, group member session, or group's own session).
+-            if (chatOwners.has(sessionId) || groupOwners.has(sessionId) || roomOwners.has(sessionId)) {
++            const past = pastOwners.get(sessionId)
++            const openPart = past?.roomId === undefined && threadOfPart(botOf(past?.botId), sessionId)?.thread === 'open'
++            if (chatOwners.has(sessionId) || groupOwners.has(sessionId) || roomOwners.has(sessionId) || openPart) {
+               dropEntry(entry, sessionId)
+               continue
+             }
+@@ -718,6 +773,11 @@ export function install(rt) {
+       indexPast(bot.segments, { botId })
+       const currentSid = chatOf(botId)
+       if (sessionIdOf(currentSid) !== undefined) chatOwners.set(currentSid, botId)
++      for (const part of flybotWorkspaceParts(bot)) {
++        const sid = sessionIdOf(part?.sessionId)
++        if (sid !== undefined) chatOwners.set(sid, botId)
++        indexPast(part?.segments, { botId })
++      }
+       // Background tasks keep their own stable records. Only
+       // active tasks stay in chatOwners/taskOwners; settled tasks move to pastOwners
+       // so folder/engine/model sweeps do not wake them again.
+diff --git a/src/host/threads.js b/src/host/threads.js
+index 70319ca..2e55079 100644
+--- a/src/host/threads.js
++++ b/src/host/threads.js
+@@ -7,6 +7,20 @@
+ // (store.js chatOf falls back to it).
+ export const currentSession = bot => bot?.sessionId ?? bot?.id
+
++export function retainsFlyBotWorkspaceParts(bot) {
++  const instance = process.env.FLYBOT_WORKSPACE_ROUTING_INSTANCE_ID ?? process.env.FLYBOT_WORKSPACE_INSTANCE_ID
++  return /^[0-9a-f]{32}$/.test(instance ?? '') || bot?.flybotWorkspace?.managedOpenParts === true
++}
++
++export const flybotWorkspaceParts = bot => retainsFlyBotWorkspaceParts(bot) && Array.isArray(bot?.openParts) ? bot.openParts : []
++
++// A mapped legacy foreground chat must still queue inputs on its own chain.
++export function isFlyBotWorkspaceForeground(bot, sessionId) {
++  if (!bot || !retainsFlyBotWorkspaceParts(bot) || currentSession(bot) !== sessionId) return false
++  const keys = Object.values(bot.flybotWorkspace?.sessionKeys ?? {})
++  return keys.includes(sessionId) || (bot.segments ?? []).some(part => keys.includes(part.sessionId))
++}
++
+ export const ACTIVE_TASK_STATUSES = new Set(['running', 'waiting_work', 'waiting_approval'])
+
+ export const isActiveTask = task => task !== undefined && ACTIVE_TASK_STATUSES.has(task.status)
+@@ -23,7 +37,9 @@ export function threadOf(bot, sessionId) {
+   if (bot === undefined || sessionId === undefined) return undefined
+   if (currentSession(bot) === sessionId) return { thread: 'current', segments: bot.segments ?? [] }
+   const taskAt = (bot.tasks ?? []).findIndex(task => task?.sessionId === sessionId)
+-  return taskAt === -1 ? undefined : { thread: 'task', index: taskAt, taskId: bot.tasks[taskAt].id, segments: bot.tasks[taskAt].segments ?? [] }
++  if (taskAt !== -1) return { thread: 'task', index: taskAt, taskId: bot.tasks[taskAt].id, segments: bot.tasks[taskAt].segments ?? [] }
++  const openAt = flybotWorkspaceParts(bot).findIndex(part => part?.sessionId === sessionId)
++  return openAt === -1 ? undefined : { thread: 'open', index: openAt, segments: bot.openParts[openAt].segments ?? [] }
+ }
+
+ export const threadSegments = (bot, sessionId) => threadOf(bot, sessionId)?.segments ?? []
+@@ -33,6 +49,7 @@ export function threadCurrent(bot, sessionId) {
+   const thread = threadOf(bot, sessionId)
+   if (thread === undefined) return undefined
+   if (thread.thread === 'current') return currentSession(bot)
++  if (thread.thread === 'open') return bot.openParts[thread.index].sessionId
+   return bot.tasks[thread.index].sessionId
+ }
+
+@@ -45,7 +62,9 @@ export function threadOfPart(bot, sessionId) {
+   if (found !== undefined || bot === undefined || sessionId === undefined) return found
+   if ((bot.segments ?? []).some(segment => segment.sessionId === sessionId)) return { thread: 'current', segments: bot.segments }
+   const taskAt = (bot.tasks ?? []).findIndex(task => (task.segments ?? []).some(segment => segment.sessionId === sessionId))
+-  return taskAt === -1 ? undefined : { thread: 'task', index: taskAt, taskId: bot.tasks[taskAt].id, segments: bot.tasks[taskAt].segments ?? [] }
++  if (taskAt !== -1) return { thread: 'task', index: taskAt, taskId: bot.tasks[taskAt].id, segments: bot.tasks[taskAt].segments ?? [] }
++  const openAt = flybotWorkspaceParts(bot).findIndex(part => part?.segments?.some(segment => segment.sessionId === sessionId))
++  return openAt === -1 ? undefined : { thread: 'open', index: openAt, segments: bot.openParts[openAt].segments }
+ }
+
+ // The live session a part's thread goes on in: a reply to, or input given to, an
+@@ -56,6 +75,7 @@ export function threadCurrentOfPart(bot, sessionId) {
+   const thread = threadOfPart(bot, sessionId)
+   if (thread === undefined) return undefined
+   if (thread.thread === 'current') return currentSession(bot)
++  if (thread.thread === 'open') return bot.openParts[thread.index].sessionId
+   const task = bot.tasks[thread.index]
+   return isActiveTask(task) ? task.sessionId : undefined
+ }
+@@ -68,6 +88,10 @@ export function pushThreadPart(bot, sessionId, freshId, segment) {
+   if (thread.thread === 'current') {
+     ;(bot.segments ??= []).push(segment)
+     bot.sessionId = freshId
++  } else if (thread.thread === 'open') {
++    const part = bot.openParts[thread.index]
++    ;(part.segments ??= []).push(segment)
++    part.sessionId = freshId
+   } else {
+     const task = bot.tasks[thread.index]
+     ;(task.segments ??= []).push(segment)
+@@ -78,13 +102,15 @@ export function pushThreadPart(bot, sessionId, freshId, segment) {
+ }
+
+ // Every session this Bot keeps outside its current thread, for cleanup, memory and usage.
+-export const openSessions = bot => (bot?.tasks ?? [])
+-  .flatMap(task => [task.sessionId, ...(task.segments ?? []).map(segment => segment.sessionId)])
++export const openSessions = bot => [...flybotWorkspaceParts(bot), ...(bot?.tasks ?? [])]
++  .flatMap(part => [part.sessionId, ...(part.segments ?? []).map(segment => segment.sessionId)])
+   .filter(Boolean)
+
+-// A part that just moved on records a successor only when it belongs to a task thread:
+-// the foreground chat keeps its current part in `bot.sessionId`.
+-export const successorOfMovedPart = (bot, freshId) => (threadOf(bot, freshId)?.thread === 'task' ? freshId : undefined)
++// A part outside the foreground records a successor for its own thread.
++export const successorOfMovedPart = (bot, freshId) => {
++  const thread = threadOf(bot, freshId)?.thread
++  return thread === 'task' || thread === 'open' ? freshId : undefined
++}
+
+ // Whether two Session ids belong to the same Bot conversation thread or group membership.
+ // Stays stable across part switches while isolating the foreground chat, background tasks
+@@ -107,9 +133,9 @@ export function sameConversation(state, botId, sessionA, sessionB) {
+   return threadA.thread === threadB.thread && threadA.index === threadB.index
+ }
+
+-// Every live thread's current session (foreground and active tasks only). Settled tasks
+-// are excluded so folder/engine/model sweeps do not wake them.
++// Settled tasks are excluded so folder/engine/model sweeps do not wake them.
+ export const ownChatSessions = bot => [
+   currentSession(bot),
++  ...flybotWorkspaceParts(bot).map(part => part.sessionId),
+   ...activeTasksOf(bot).map(task => task.sessionId),
+ ].filter((id, index, list) => id !== undefined && list.indexOf(id) === index)
+diff --git a/src/host/groups.js b/src/host/groups.js
+--- a/src/host/groups.js
++++ b/src/host/groups.js
+@@ -867,6 +867,42 @@
+   // `finished` is what a batch woke the member for (finishedLines): its result lines, the
+   // ones the prompt does not show anyway coming after the earlier lines, and the members
+   // that finished without a closing message.
++  // A restricted shared round can select remote seats without registering them
++  // as local Bots or giving them access to local Sessions and tools.
++  function groupBots(room, shared = false) {
++    if (!shared || !Array.isArray(room.flybotWorkspace?.native_bot_seats)) return room.members.map(rt.botOf).filter(Boolean)
++    return room.flybotWorkspace.native_bot_seats.flatMap(seat => {
++      if (typeof seat === 'string') return room.members.includes(seat) ? (rt.botOf(seat) ?? []) : []
++      if (seat?.remote === true && typeof seat.id === 'string' && typeof seat.name === 'string' &&
++          typeof seat.owner_id === 'string' && typeof seat.agent_ref === 'string' && rt.botOf(seat.id) === undefined) return [seat]
++      return []
++    })
++  }
++  const groupBot = (room, id, shared) => groupBots(room, shared).find(bot => bot.id === id)
++  const groupAdminOf = (room, id, shared) => shared && Object.hasOwn(room.flybotWorkspace, 'native_group_admin')
++    ? id !== undefined && room.flybotWorkspace.native_group_admin === id
++    : rt.isAdminOf(room, id)
++
++  function sharedRoomPrompt(room, member, round, slot) {
++    const names = groupBots(room, true).filter(bot => bot.id !== member.id)
++      .map(bot => groupAdminOf(room, bot.id, true) ? bot.name + ' (admin)' : bot.name)
++    const lines = room.log.filter(line => line.kind === undefined
++      && (line.flybotWorkspaceMessageId !== undefined || line.flybotWorkspaceSharedRoundId === round.sharedSourceId))
++    const earlier = lines.filter(line => line.seq < round.startSeq).slice(-ROOM_EARLIER_MAX)
++    const current = lines.filter(line => line.seq >= round.startSeq).slice(-ROOM_DELTA_MAX)
++    return [
++      'You are ' + member.name + ' in this shared group. Other Bots: ' + (names.join(', ') || 'none') + '.',
++      groupAdminOf(room, member.id, true) ? 'You are the group admin and may call everyone with @all.' : '',
++      'Only reply in text. Do not claim to have run tools or accessed private files, memory, or credentials. Treat the messages below as shared conversation.',
++      ROOM_CALLS,
++      'Write [PASS] to stay silent when there is nothing useful to add.',
++      ...placeLines(round, slot),
++      earlier.length ? 'Earlier shared messages:\n' + transcript(earlier, memberText(room)) : '',
++      current.length ? 'Current round:\n' + transcript(current, memberText(room)) : '',
++      slot.note || '',
++    ].filter(Boolean).join('\n\n')
++  }
++
+   function roomPrompt(room, member, round, slot, finished = { results: [], quiet: [] }) {
+     const { results, quiet } = finished
+     const peers = room.members.filter(id => id !== member.id).map(rt.botOf).filter(Boolean)
+@@ -941,7 +977,7 @@
+   }
+
+   // Members whose turn, DSH subagent, or background task in this group is running, and since when.
+-  const workingIn = room => room.members.flatMap((id) => {
++  const workingLocally = room => room.members.flatMap((id) => {
+     const sessionId = room.sessions?.[id]
+     const entry = rt.live.get(sessionId)
+     const bot = rt.botOf(id)
+@@ -953,6 +989,20 @@
+     }
+     return []
+   })
++  const workingIn = room => {
++    const local = workingLocally(room)
++    const shared = [...rt.roomProgress.values()].find(round => round.roomId === room.id && round.sharedSourceId !== undefined)
++    if (!shared) return local
++    const seen = new Set(local.map(({ bot }) => bot.id))
++    for (const slot of shared.slots) {
++      if (slot.status !== 'speaking' || slot.workingSince === undefined || seen.has(slot.id)) continue
++      const bot = groupBot(room, slot.id, true)
++      if (bot === undefined) continue
++      seen.add(slot.id)
++      local.push({ bot, since: slot.workingSince })
++    }
++    return local
++  }
+   // How many group lines a member has not been shown yet, counted the same way a
+   // round counts the lines it carries over (unseenLines), so the number a speaker
+   // reads is the number the member would get. A turn the reply timeout cut short
+@@ -990,7 +1040,7 @@
+       && round.slots.some(slot => slot.id === botId && (slot.status === 'waiting' || slot.status === 'speaking')))
+   }
+
+-  const registerBatch = (roomId, by, callees) => {
++  const registerBatch = (roomId, by, callees, sharedSourceId) => {
+     if (by === undefined || callees.length === 0) return undefined
+     // A group that was deleted takes its batches with it, also one whose wake never came.
+     for (const [key, old] of Object.entries(batches())) if (rt.roomOf(old.roomId) === undefined) delete batches()[key]
+@@ -1005,11 +1055,12 @@
+       results: [],
+       worked: false,
+       answered: false,
++      ...(sharedSourceId === undefined ? {} : { sharedSourceId }),
+       at: Date.now(),
+     }
+     for (const peer of callees) {
+       const prev = batchOf(roomId, peer.id, by)
+-      if (prev === undefined) continue
++      if (prev === undefined || prev.sharedSourceId !== sharedSourceId) continue
+       unpend(prev, peer.id)
+       if (prev.pending.length === 0) {
+         batch.done.push(...prev.done)
+@@ -1027,7 +1078,8 @@
+
+   const pruneBatchPending = (room, batch) => {
+     for (const otherId of batch.pending) {
+-      if (!room.members.includes(otherId) || !activeInRoom(room, otherId)) unpend(batch, otherId)
++      const inRoom = batch.sharedSourceId === undefined ? room.members.includes(otherId) : groupBot(room, otherId, true) !== undefined
++      if (!inRoom || !activeInRoom(room, otherId)) unpend(batch, otherId)
+     }
+   }
+
+@@ -1055,7 +1107,7 @@
+     pruneBatchPending(room, batch)
+     if (batch.pending.length === 0) {
+       if (!keep) delete batches()[batch.key]
+-      void rt.goalSettled?.(room).catch(error => rt.warn('ds-bot: goal settle in %s failed: %s', room.name, error))
++      if (batch.sharedSourceId === undefined) void rt.goalSettled?.(room).catch(error => rt.warn('ds-bot: goal settle in %s failed: %s', room.name, error))
+     }
+     saveSoon()
+   }
+@@ -1084,7 +1136,7 @@
+     let changed = false
+     for (const batch of Object.values(batches())) {
+       const room = rt.roomOf(batch.roomId)
+-      if (room === undefined || rt.botOf(batch.by) === undefined) {
++      if (room === undefined || batch.sharedSourceId !== undefined || rt.botOf(batch.by) === undefined) {
+         delete batches()[batch.key]
+         changed = true
+         continue
+@@ -1128,8 +1180,8 @@
+   }
+
+   // A member's message in the round, for the members after it and the user.
+-  const postInRound = (room, member, text, duration, claims, changes) => {
+-    say(room, { who: member.name, botId: member.id, text, ...(duration === undefined ? {} : { duration }), ...(claims === undefined ? {} : { claims }), ...(changes === undefined ? {} : { changes }) })
++  const postInRound = (room, member, text, duration, claims, changes, metadata = {}) => {
++    say(room, { who: member.name, botId: member.id, text, ...(duration === undefined ? {} : { duration }), ...(claims === undefined ? {} : { claims }), ...(changes === undefined ? {} : { changes }), ...metadata })
+     void rt.save().catch(() => {})
+     return room.seq
+   }
+@@ -1273,7 +1325,7 @@
+   function callIn(round, callees, note, by, { ordered = false } = {}) {
+     if (callees.length === 0) return
+     round.batches = (round.batches ?? 0) + 1
+-    const batchKey = registerBatch(round.roomId, by, callees)
++    const batchKey = registerBatch(round.roomId, by, callees, round.sharedSourceId)
+     let last
+     for (const peer of callees) {
+       const waiting = round.slots.findIndex(slot => slot.id === peer.id && slot.status === 'waiting' && (by === undefined || slot.by === undefined || slot.by === by))
+@@ -1320,8 +1372,9 @@
+     else delete room.paused
+     for (const entry of due) {
+       if (round.slots.some(slot => slot.id === entry.id && slot.status === 'waiting')) continue
+-      const peer = rt.botOf(entry.id)
+-      const batchKey = peer && entry.by !== undefined ? registerBatch(room.id, entry.by, [peer]) : undefined
++      const peer = groupBot(room, entry.id, round.sharedSourceId !== undefined)
++      if (peer === undefined && round.sharedSourceId !== undefined) continue
++      const batchKey = peer && entry.by !== undefined ? registerBatch(room.id, entry.by, [peer], round.sharedSourceId) : undefined
+       round.batches = (round.batches ?? 0) + 1
+       round.slots.push({
+         id: entry.id, name: entry.name, status: 'waiting', batch: round.batches,
+@@ -1354,7 +1407,7 @@
+   // leaves the Session's inbox, so it does not open another round when this one ends.
+   function drainRoomInbox(room, round, agent) {
+     // The greeting's prompt tells the admin the user has not written yet.
+-    if (round.kickoff) return
++    if (round.kickoff || round.sharedSourceId !== undefined) return
+     const lines = waitingLines(agent).filter(line => agent.inbox.remove(line.id))
+     if (lines.length === 0) return
+     unpauseRoomIdle(room)
+@@ -1427,11 +1480,11 @@
+   // nobody: that step is what a group answering itself runs on. Once the room is paused
+   // (or this step reaches the limit) the calls it would make wait for the user.
+   function callFrom(room, round, member, text, called, { worked = false, byBot = false } = {}) {
+-    const everyone = room.members.map(rt.botOf).filter(Boolean)
++    const everyone = groupBots(room, round.sharedSourceId !== undefined)
+     const others = everyone.filter(other => other.id !== member.id)
+     const { all, found: named } = mentionsIn(text, everyone)
+     const found = named.filter(other => other.id !== member.id)
+-    const callees = (rt.isAdminOf(room, member.id) && all ? [...found, ...others.filter(other => !found.includes(other))] : found)
++    const callees = (groupAdminOf(room, member.id, round.sharedSourceId !== undefined) && all ? [...found, ...others.filter(other => !found.includes(other))] : found)
+       .filter(peer => !called.has(peer.id))
+     // Counted before the callers below, because a status post calls nobody at all.
+     let idleStep = false
+@@ -1453,7 +1506,7 @@
+     if (callees.length === 0) return
+     callIn(round, callees, `${member.name} mentioned you`, member.id)
+     // An @Name from the admin hands the member its goal task.
+-    if (rt.isAdminOf(room, member.id)) for (const peer of callees) rt.goalTaskWorking?.(room.id, peer.id)
++    if (round.sharedSourceId === undefined && rt.isAdminOf(room, member.id)) for (const peer of callees) rt.goalTaskWorking?.(room.id, peer.id)
+   }
+
+   // A round runs every call that can start, and wakes when a turn ends, a call comes
+@@ -1499,34 +1552,39 @@
+   // One call's turn in the round. Its status says how it ended; what it says calls
+   // members as soon as each line is posted.
+   async function memberTurn(room, round, slot, signal) {
+-    const member = rt.botOf(slot.id)
++    const shared = round.sharedSourceId !== undefined
++    const member = groupBot(room, slot.id, shared)
+     // Settings may change mid-round, for example when the admin removes someone.
+-    if (member === undefined || !room.members.includes(slot.id)) {
++    if (member === undefined) {
+       slot.status = 'left'
+       dropMemberFromBatch(room, slot.id)
+       return
+     }
+     slot.status = 'speaking'
+     let session
+-    try {
+-      session = await groupSessionFor(room, member)
+-    } catch (error) {
+-      rt.warn('ds-bot: group Session for %s in %s failed: %s', member.name, room.name, error)
+-      slot.status = 'failed'
+-      const own = batchOfSlot(room.id, slot)
+-      if (own !== undefined) leaveBatch(room, own, member.id)
+-      round.failed.push(member.name)
+-      noteFailure(room, member, { code: 'SESSION', message: String(error?.message ?? error).slice(0, 300) })
+-      return
+-    }
+-    if (session === undefined) {
+-      slot.status = 'left'
+-      dropMemberFromBatch(room, member.id)
+-      return
+-    }
+-    const prompt = roomPrompt(room, member, round, slot, await finishedLines(room, slot))
+-    round.shown?.push(member.id)
+-    const text = session.brief === undefined ? prompt.text : `${session.brief}\n\n${prompt.text}`
++    let prompt
++    let text
++    if (!shared) {
++      try {
++        session = await groupSessionFor(room, member)
++      } catch (error) {
++        rt.warn('ds-bot: group Session for %s in %s failed: %s', member.name, room.name, error)
++        slot.status = 'failed'
++        const own = batchOfSlot(room.id, slot)
++        if (own !== undefined) leaveBatch(room, own, member.id)
++        round.failed.push(member.name)
++        noteFailure(room, member, { code: 'SESSION', message: String(error?.message ?? error).slice(0, 300) })
++        return
++      }
++      if (session === undefined) {
++        slot.status = 'left'
++        dropMemberFromBatch(room, member.id)
++        return
++      }
++      prompt = roomPrompt(room, member, round, slot, await finishedLines(room, slot))
++      round.shown?.push(member.id)
++      text = session.brief === undefined ? prompt.text : `${session.brief}\n\n${prompt.text}`
++    }
+     const said = []
+     // The log lines this turn posted: its result for the Bot that called it.
+     const posted = []
+@@ -1542,18 +1600,42 @@
+       clearIdleStreak(room)
+       markSlotWorked(room.id, slot)
+     }
+-    const reply = await roomTurn(
+-      room, member, session.id, { text, images: prompt.images, files: prompt.files }, slot.note ?? 'your turn', signal, round, slot.by, said,
+-      (line) => {
+-        posted.push(room.seq)
+-        callFrom(room, round, member, line, called, { worked, byBot: answeredBot })
+-      },
+-      onWork,
+-    )
++    let reply
++    let nativeTurnId
++    if (shared) {
++      try {
++        if (!member.remote) slot.workingSince = Date.now()
++        const result = await rt.sharedRoomTextTurn({
++          room, bot: member, text: sharedRoomPrompt(room, member, round, slot), signal, callKey: randomUUID(), sourceId: round.sharedSourceId,
++        })
++        const value = typeof result === 'string' ? result : result?.text
++        if (typeof value !== 'string') throw new Error('No shared group reply text')
++        nativeTurnId = typeof result?.turnId === 'string' ? result.turnId : undefined
++        if (member.remote && nativeTurnId === undefined && !isPass(value.trim())) throw new Error('Missing shared group turn receipt')
++        if (rt.roomOf(room.id) !== room || groupBot(room, slot.id, true) === undefined) {
++          slot.status = 'left'
++          dropMemberFromBatch(room, slot.id)
++          return
++        }
++        reply = signal.aborted ? null : stripOwnName(member.name, value)
++      } catch (error) {
++        rt.warn('ds-bot: shared group turn of %s in %s failed: %s', member.name, room.name, error)
++        reply = signal.aborted ? null : { failure: { code: 'SHARED_TEXT', message: 'The shared group reply could not be completed.' } }
++      }
++    } else {
++      reply = await roomTurn(
++        room, member, session.id, { text, images: prompt.images, files: prompt.files }, slot.note ?? 'your turn', signal, round, slot.by, said,
++        (line) => {
++          posted.push(room.seq)
++          callFrom(room, round, member, line, called, { worked, byBot: answeredBot })
++        },
++        onWork,
++      )
++    }
+     const final = typeof reply === 'string' && !isPass(reply) ? reply : undefined
+     // Tool-only turns can finish without assistant text; their changes still belong here.
+-    const changes = await rt.turnChanges?.(session.id)
+-    const bgRunning = rt.hasSubagents?.(session.id) === true || rt.hasRoomTasks?.(room.id, member.id) === true
++    const changes = shared ? undefined : await rt.turnChanges?.(session.id)
++    const bgRunning = !shared && (rt.hasSubagents?.(session.id) === true || rt.hasRoomTasks?.(room.id, member.id) === true)
+     if (reply?.failure !== undefined) {
+       // Not a pass: the user sees why the member is silent, and the round goes on.
+       slot.status = 'failed'
+@@ -1587,7 +1669,9 @@
+     } else if (final !== undefined || (typeof reply === 'string' && said.length > 0)) {
+       slot.status = 'posted'
+       if (final !== undefined && final.trim() !== '') {
+-        posted.push(postInRound(room, member, final, Date.now() - startedAt, claimsOf(session, final, worked, callsIn(room, member, final)), changes))
++        const claims = shared ? undefined : claimsOf(session, final, worked, callsIn(room, member, final))
++        const metadata = shared ? { flybotWorkspaceSharedRoundId: round.sharedSourceId, ...(nativeTurnId === undefined ? {} : { nativeTurnId }) } : undefined
++        posted.push(postInRound(room, member, final, Date.now() - startedAt, claims, changes, metadata))
+         callFrom(room, round, member, final, called, { worked, byBot: answeredBot })
+       } else if (changes !== undefined) {
+         // The turn wrote nothing to hang the change line on (a pass, or an empty final
+@@ -1608,8 +1692,8 @@
+       }
+     }
+     // A result the admin asked for reports its goal task; a failed model call puts it back.
+-    if (slot.status === 'posted' && slot.by === room.admin && final !== undefined) rt.goalTaskReported?.(room.id, member.id)
+-    if (reply?.failure !== undefined) rt.goalTaskReset?.(room.id, member.id, 'Could not finish: its model call failed')
++    if (!shared && slot.status === 'posted' && slot.by === room.admin && final !== undefined) rt.goalTaskReported?.(room.id, member.id)
++    if (!shared && reply?.failure !== undefined) rt.goalTaskReset?.(room.id, member.id, 'Could not finish: its model call failed')
+     // Yielding to work, approval or an unanswered turn keeps the task pending.
+     if (['posted', 'passed', 'failed', 'left', 'cancelled'].includes(slot.status)) {
+       const batch = batchOfSlot(room.id, slot)
+@@ -1623,11 +1707,11 @@
+         }
+         leaveBatch(room, batch, member.id)
+         if (batch.pending.length === 0 && batch.done.length > 0 && batch.worked && !batch.answered && !signal.aborted) {
+-          const caller = rt.botOf(batch.by)
++          const caller = groupBot(room, batch.by, shared)
+           const wake = { names: [...batch.done], results: [...batch.results] }
+           // A caller still waiting in this round starts with the results. One still in its
+           // own turn cannot see them, so it answers in a turn after that one.
+-          if (caller !== undefined && room.members.includes(caller.id)) {
++          if (caller !== undefined) {
+             if (!round.slots.some(other => other.id === caller.id && other.status === 'waiting')) callIn(round, [caller], finishedNote(wake.names), undefined)
+             giveResults(round, caller.id, wake)
+           }
+@@ -1673,7 +1757,7 @@
+       else startRound(room, posts, agent ?? await rt.resolveAgent(rt.sessionOfRoom(room)))
+       return
+     }
+-    if (round.closed || round.abort?.signal.aborted) {
++    if (round.closed || round.abort?.signal.aborted || round.sharedSourceId !== undefined) {
+       laterPosts.set(room.id, [...(laterPosts.get(room.id) ?? []), ...posts])
+       return
+     }
+@@ -1720,10 +1804,10 @@
+     for (const round of rt.roomProgress.values()) round.abort?.abort()
+   }, 'ds-bot: group rounds')
+
+-  function startRound(room, queued, agent, key = randomUUID()) {
++  function startRound(room, queued, agent, key = randomUUID(), sharedSourceId) {
+     const controller = new AbortController()
+     // Taken at once, so a call that comes in while this one sets up joins it.
+-    const holder = { roomId: room.id, slots: [], starting: true, abort: controller }
++    const holder = { roomId: room.id, slots: [], starting: true, abort: controller, sharedSourceId }
+     holder.ready = new Promise((resolve) => { holder.settle = resolve })
+     rt.roomProgress.set(key, holder)
+     const run = runRoundFrom(room, queued, agent, key, controller.signal, holder)
+@@ -1741,7 +1825,32 @@
+     })
+     return run
+   }
++  // FlyBot supplies an already persisted, owner-authenticated human line.
++  // Native callFrom, work tracking and loop guards govern the entire round.
++  rt.sharedRoomCursor = roomId => {
++    const room = rt.roomOf(roomId)
++    if (!room?.flybotWorkspace?.conversation_id) throw new Error('Not a shared room')
++    ensureRoomLog(room)
++    return room.seq
++  }
++  rt.beginSharedRoomRound = async (roomId, { text, sourceId, mentions, author, textOnly = false, all = false }) => {
++    const room = rt.roomOf(roomId)
++    const matches = () => room?.flybotWorkspace?.native_exchange?.id === sourceId && room.flybotWorkspace.native_exchange.dispatched === true
++    if (!sourceId || !matches() || !writes()) throw new Error('Not an active shared room')
++    if (textOnly && typeof rt.sharedRoomTextTurn !== 'function') throw new Error('Shared group text turns are unavailable')
++    const agent = textOnly ? undefined : await rt.resolveAgent(rt.sessionOfRoom(room))
++    if (rt.roomOf(roomId) !== room || !matches() || !writes() || rt.roomActive(roomId)
++        || workingIn(room).length > 0) throw new Error('The shared room is busy')
++    ensureRoomLog(room)
++    const eligible = new Set(groupBots(room, textOnly).map(bot => bot.id))
++    if (mentions?.some(id => !eligible.has(id))) throw new Error('A selected Bot left the shared room')
++    const addressed = mentions === undefined && !all ? undefined : { ids: mentions ?? [], all }
++    startRound(room, [{ text, flybotWorkspaceMessageId: sourceId, author, ...(addressed === undefined ? {} : { mentions: addressed }) }],
++      agent, undefined, textOnly ? sourceId : undefined)
++  }
++
+   async function runRoundFrom(room, queued, agent, key, signal, holder) {
++    const shared = holder.sharedSourceId !== undefined
+     const posts = queued.length > 0 ? queued : [{ text: '' }]
+     // A goal post queued for a goal that moved on is dropped: a check or resume
+     // for a goal that is gone, idle or no longer active is stale, and a draft for
+@@ -1769,11 +1878,12 @@
+       // Images and files stay with their line and reach each member the line is shown to.
+       const readings = post.images === undefined ? [] : await rt.imagesForGroup(post.images, rt.sessionOfRoom(room))
+       const text = [post.text, ...readings, ...(post.files ?? []).map(fileLine)].filter(Boolean).join('\n')
+-      const who = post.botId ? rt.botOf(post.botId)?.name ?? post.name ?? 'Bot' : 'User'
++      const who = post.botId ? rt.botOf(post.botId)?.name ?? post.name ?? 'Bot' : post.author || 'User'
+       say(room, {
+         who,
+         ...(post.botId ? { botId: post.botId } : {}),
+         text,
++        ...(post.flybotWorkspaceMessageId === undefined ? {} : { flybotWorkspaceMessageId: post.flybotWorkspaceMessageId }),
+         ...(post.images === undefined ? {} : { images: post.images }),
+         ...(post.files === undefined ? {} : { files: post.files }),
+         ...(post.via === undefined ? {} : { via: post.via }),
+@@ -1785,17 +1895,17 @@
+       if (post.batch !== undefined && text !== '') recordResult(post.batch, who, room.seq)
+     }
+     await rt.save()
+-    if (posts.some(userPost)) rt.goalUserMessage?.(room.id)
++    if (!shared && posts.some(userPost)) rt.goalUserMessage?.(room.id)
+     // An event post, and a member post that calls nobody, never pick the speakers
+     // over a message queued with them. A post whose members an earlier round already
+     // called (`called`) picks none.
+-    const callsNobody = post => post.member === true && openingSpeakers(room, post).length === 0
++    const callsNobody = post => post.member === true && openingCall(room, post, shared).speakers.length === 0
+     const open = posts.filter(post => post.called !== true)
+     const opener = open.findLast(post => !event(post) && !callsNobody(post)) ?? open.findLast(post => !event(post)) ?? open.at(-1) ?? { text: '', quiet: true }
+     const references = posts.flatMap(post => post.references ?? [])
+     // A member a Bot's post calls by name works for that Bot. The saved list is the
+     // whole message; the text may be only its opening.
+-    const everyone = room.members.map(rt.botOf).filter(Boolean)
++    const everyone = groupBots(room, shared)
+     // A Bot's status post is a round of its own: in a group where everyone answers, that
+     // post is what starts the next round of status turns (#853). It counts once as an
+     // idle round; a post with new work in it, or the user's own message, clears the
+@@ -1807,18 +1917,18 @@
+     // wait for the user. A post with work in it goes ahead.
+     const holdsPost = idlePost && room.idlePaused !== undefined
+     const named = opener.botId === undefined ? [] : (mentionsOf(opener, everyone) ?? mentionsIn(opener.text ?? '', everyone)).found
+-    const opened = openingCall(room, opener)
++    const opened = openingCall(room, opener, shared)
+     const speakers = holdsPost ? [] : opened.speakers
+     const ordered = holdsPost ? false : opened.ordered
+     // A batch's last result wakes the Bot that asked, with the results of the whole batch.
+     const wake = opener.batch === undefined || opener.askedBy === undefined ? undefined : wakeOf(opener.batch)
+     const calledByOpener = speakers.filter(member => named.includes(member))
+-    const openingBatchKey = opener.botId !== undefined && calledByOpener.length > 0 ? registerBatch(room.id, opener.botId, calledByOpener) : undefined
++    const openingBatchKey = opener.botId !== undefined && calledByOpener.length > 0 ? registerBatch(room.id, opener.botId, calledByOpener, holder.sharedSourceId) : undefined
+     // The admin's own post that opens a round hands goal tasks the same way a call does.
+-    if (rt.isAdminOf(room, opener.botId)) for (const member of calledByOpener) rt.goalTaskWorking?.(room.id, member.id)
++    if (!shared && rt.isAdminOf(room, opener.botId)) for (const member of calledByOpener) rt.goalTaskWorking?.(room.id, member.id)
+     // The admin alone with the user's message: when it passes, the round ends with
+     // nothing said, and the group says so once.
+-    const admin = room.members.map(rt.botOf).filter(Boolean).find(bot => rt.isAdminOf(room, bot.id))
++    const admin = everyone.find(bot => groupAdminOf(room, bot.id, shared))
+     const soleAdmin = opener.botId === undefined && !opener.kickoff && opener.goal === undefined && room.mode === 'admin' && admin !== undefined
+       && speakers.length === 1 && speakers[0].id === admin.id
+     // A goal draft queued with another post still brings the admin in, on its note.
+@@ -1826,7 +1936,8 @@
+     if (draftPost !== undefined && admin !== undefined && !speakers.some(member => member.id === admin.id)) speakers.push(admin)
+     const round = {
+       roomId: room.id,
+-      members: room.members,
++      members: shared ? everyone.map(bot => bot.id) : room.members,
++      sharedSourceId: holder.sharedSourceId,
+       startSeq,
+       goalRevision: room.goal?.revision,
+       ...(posts.some(userPost) ? { userMessage: true } : {}),
+@@ -1883,6 +1994,9 @@
+     } finally {
+       finalizing.add(room.id)
+       rt.roomProgress.delete(key)
++      if (shared) for (const [batchKey, batch] of Object.entries(batches())) {
++        if (batch.roomId === room.id && batch.sharedSourceId === holder.sharedSourceId) delete batches()[batchKey]
++      }
+       round.to = room.seq
+       // How the round ended, beside what was said in it.
+       rt.ledger.append(bookOf(room.id), { event: 'round', from: round.from, to: round.to, passed: round.passed, failed: round.failed, ...(signal.aborted ? { stopped: true } : {}), time: Date.now() })
+@@ -1893,7 +2007,7 @@
+           void rt.stopRoomTurn?.(room.sessions?.[turn.botId] ?? turn.sessionId, turn.exchangeId)
+             ?.catch(error => rt.warn('ds-bot: stopping a turn of the round in %s failed: %s', room.name, error))
+         }
+-      } else if (rt.goalDrive !== undefined) {
++      } else if (!shared && rt.goalDrive !== undefined) {
+         // A round that ends with an active goal and nothing running may wake the admin.
+         try {
+           await rt.goalDrive(room, round)
+@@ -1924,7 +2038,7 @@
+       const stopped = stoppedFinishing.delete(room.id)
+       if (!signal.aborted && !stopped && !disposed && later.length > 0 && rt.roomOf(room.id) === room) {
+         laterPosts.delete(room.id)
+-        startRound(room, later, agent)
++        startRound(room, later, agent ?? await rt.resolveAgent(rt.sessionOfRoom(room)))
+       }
+     }
+   }
+@@ -2066,10 +2180,10 @@
+   // user asked for is left for the user to read.
+   // `ordered`: a plain message everyone answers in turn, admin first; any other call
+   // starts its members at once.
+-  function openingCall(room, opener) {
+-    const everyone = room.members.map(rt.botOf).filter(Boolean)
++  function openingCall(room, opener, shared = false) {
++    const everyone = groupBots(room, shared)
+     const members = everyone.filter(bot => bot.id !== opener.botId)
+-    const admin = members.find(bot => rt.isAdminOf(room, bot.id))
++    const admin = members.find(bot => groupAdminOf(room, bot.id, shared))
+     const at = speakers => ({ speakers, ordered: false })
+     if (opener.kickoff) return at(admin ? [admin] : [])
+     if (opener.quiet) return at([])
+@@ -2086,7 +2200,6 @@
+     const speakers = admin ? [admin, ...members.filter(bot => bot !== admin)] : members
+     return { speakers, ordered: !all && speakers.length > 1 }
+   }
+-  const openingSpeakers = (room, opener) => openingCall(room, opener).speakers
+
+   // A Bot's post that lands while a round runs calls its members in that round at
+   // once, as the relay it opens would. Returns whether it called anyone. A post that
+@@ -2128,6 +2241,7 @@
+   async function postToRoom(room, sender, text, extra = {}, files = []) {
+     const noticeOnly = extra.resumed === true || (extra.stopped === true && !extra.askedBy) || (extra.failed !== undefined && !extra.askedBy)
+     const running = [...rt.roomProgress.values()].find(round => round.roomId === room.id
++      && round.sharedSourceId === undefined
+       && (noticeOnly ? !round.starting : round.nudge !== undefined && !round.closed && !round.abort?.signal.aborted))
+     if (running !== undefined) {
+       if (extra.failed !== undefined) {

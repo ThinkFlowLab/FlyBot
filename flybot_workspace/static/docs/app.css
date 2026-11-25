@@ -1,0 +1,55 @@
+/* Shared layout for the public help centre, terms and privacy pages. */
+.doc-main {
+  box-sizing: border-box;
+  width: min(100%, 68rem);
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+.doc-head { max-width: 46rem; }
+.doc-head h1 { margin: 0 0 .5rem; font-size: 1.5rem; }
+.doc-head p { margin: 0; color: var(--ot-muted); }
+.doc-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem .75rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.doc-jump a {
+  display: inline-block;
+  padding: .25rem .625rem;
+  border: 1px solid var(--ot-line);
+  border-radius: 999px;
+  font-size: .8125rem;
+  text-decoration: none;
+}
+.doc-section {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ot-line);
+  max-width: 52rem;
+}
+.doc-section h2 { margin: 0 0 .5rem; font-size: 1.0625rem; }
+.doc-section h3 { margin: 1rem 0 .35rem; font-size: .875rem; }
+.doc-section p,
+.doc-section li { font-size: .875rem; line-height: 1.65; }
+.doc-section ul { margin: .25rem 0 .5rem; padding-left: 1.25rem; }
+.doc-section dl { margin: .5rem 0 0; }
+.doc-section dt { font-weight: 600; font-size: .8125rem; }
+.doc-section dd { margin: .15rem 0 .6rem 0; font-size: .875rem; line-height: 1.6; color: var(--ot-muted); }
+.doc-callout {
+  margin: 1rem 0 0;
+  padding: .75rem 1rem;
+  border: 1px solid var(--ot-line);
+  border-radius: var(--ot-radius-md, .5rem);
+  background: var(--ot-surface);
+  font-size: .8125rem;
+  line-height: 1.6;
+}
+.doc-facts { font-size: .8125rem; }
+.doc-facts code { font: inherit; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .doc-main { padding: 1.25rem 1rem 3rem; }
+  .doc-head h1 { font-size: 1.25rem; }
+}

@@ -1,0 +1,73 @@
+{
+  "repo": "Fei2411/DS-Bot",
+  "url": "https://github.com/Fei2411/DS-Bot",
+  "license": "Apache-2.0",
+  "tag": "v0.3.10",
+  "commit": "d104d9ca18d69a35460f14e15dff4d553181433a",
+  "committed": "2026-11-22T18:25:36+08:00",
+  "version": "0.3.10",
+  "dsh": "0.2.2-rc.1",
+  "note": "runtime/ds-bot-upstream/<path> is byte-identical to upstream <commit>:<path> (git object ids below). Never edit it; OpenTeamily changes live outside it (see runtime/ds-bot-upstream/UPSTREAM.md). Update with: node scripts/ds-bot-upstream.mjs sync <tag>",
+  "paths": {
+    "ds-bot": {
+      "type": "tree",
+      "id": "ef97b8b191631f100cbfc2426dc97d19f1dc61e6",
+      "mode": "040000"
+    },
+    "link": {
+      "type": "tree",
+      "id": "2e8f3f56ce98c91d8a31cbb9088abefd03470ccd",
+      "mode": "040000"
+    },
+    "app/package.json": {
+      "type": "blob",
+      "id": "38b90037c04eb7cb81f460fa60c96a78071c7023",
+      "mode": "100644"
+    },
+    "app/ui/src": {
+      "type": "tree",
+      "id": "f814feec0cfcb2b12c816f10897a036138817a89",
+      "mode": "040000"
+    },
+    "mobile/src/team/gated.ts": {
+      "type": "blob",
+      "id": "962134406c3bb87df2fe97a4720995164a5ea81a",
+      "mode": "100644"
+    },
+    "start.ps1": {
+      "type": "blob",
+      "id": "8b9fa46128bf866b8b8f7b4812a0ab696e84a8ec",
+      "mode": "100644"
+    },
+    "docker/Dockerfile": {
+      "type": "blob",
+      "id": "a9ae387faa21e080914619111c4005c3f22ef6bb",
+      "mode": "100644"
+    },
+    "docker/entrypoint.sh": {
+      "type": "blob",
+      "id": "56f48c13f38672552a642e600225eaf4576c7f7e",
+      "mode": "100644"
+    },
+    "docker/docker.patch.yml": {
+      "type": "blob",
+      "id": "3417c350d13f21c71698c04136fd4084704cdbd7",
+      "mode": "100644"
+    },
+    "docker/test.mjs": {
+      "type": "blob",
+      "id": "a2f76b753233894abe986526a6858df51f812fee",
+      "mode": "100644"
+    },
+    "LICENSE": {
+      "type": "blob",
+      "id": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+      "mode": "100644"
+    },
+    "NOTICE": {
+      "type": "blob",
+      "id": "d9618dc66b0ac5e0e15b2e29cc4bd9a86259b0b0",
+      "mode": "100644"
+    }
+  }
+}

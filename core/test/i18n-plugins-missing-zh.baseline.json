@@ -1,7 +1,0 @@
-{
-  "version": 1,
-  "entries": [
-    "plugins/social/client.js:New group",
-    "plugins/workflow/client.js:This host does not pass task writes to Workflows, so a card on the board cannot start a run."
-  ]
-}

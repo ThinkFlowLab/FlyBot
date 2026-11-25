@@ -1,0 +1,11 @@
+{
+  "name": "@flybot-workspace/flybot-image",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlyBot Workspace runtime image recipe and contract tests. The image it builds also contains Apache-2.0 vendor trees; see README.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/recipe.test.js test/model-api.test.js test/bot-social-config.test.js test/inventory.test.js test/notices.test.js test/native-shared-groups.test.mjs"
+  }
+}

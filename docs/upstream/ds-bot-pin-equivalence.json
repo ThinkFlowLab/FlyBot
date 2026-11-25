@@ -1,0 +1,10 @@
+{
+  "status": "not_imported",
+  "reason": "This PR no longer vendors FlyBot core/ or ds-bot.pin.json. OpenTeamily tracks upstream DS-Bot v0.3.6 as the runtime baseline (https://github.com/openTeamily/openTeamily/pull/21).",
+  "historical_flybot_core_pin": {
+    "pinned_commit": "2b10c70b614e969117b68ddc6fd14e68968272f2",
+    "ds_bot_tree": "5834c00d9c21b972e4b32ad90489443da2a10324",
+    "equivalent_commit_after_rewrite": "0f130e7d134bf63e8988b2d53fd6846138ac3d73",
+    "note": "Historical only. The v0.1.5 fork that recorded this pin was dropped from runtime/flybot/."
+  }
+}

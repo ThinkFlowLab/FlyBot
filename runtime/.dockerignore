@@ -1,0 +1,2 @@
+# Fixture trees for collector unit tests; not part of the runtime image.
+flybot-image/inventory/testdata

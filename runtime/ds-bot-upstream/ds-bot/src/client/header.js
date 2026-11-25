@@ -1,0 +1,328 @@
+import { createElement as h, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { currentPart, latestMemoryChange } from './text.js'
+import { ArrowUpIcon, CloseIcon, ArrowDownIcon, GoalIcon, MemoryIcon, SearchIcon } from './icons.js'
+import { botState, BotAvatar, RoomAvatar } from './mark.js'
+import { AgentBadge } from './agent-badge.js'
+import { ActivityIndicator } from './activity-row.js'
+import { clockLabel, newDividerIn, openingTurn, unseenSince } from './cells.js'
+import { GoalIsland, goalView } from './goal.js'
+import { ApprovalIslandPod, roomApprovals } from './member-status.js'
+import { TaskIslandPod, isActiveTask, tasksForChat } from './bot-tasks.js'
+import { viewBottom } from './motion.js'
+import { t } from './i18n.js'
+
+// -------------------------------------------------------------------------
+// Conversation header
+
+// The pill's tail: a → that springs in on hover, flipping to ← while details are open.
+const GoArrow = () => h('svg', { width: 14, height: 14, viewBox: '-12 -12 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M-7 0H7M2 -5L7 0L2 5' }))
+
+// How long the pill says "Memory updated" after the change reaches this window.
+const MEMORY_NOTICE_MS = 3_200
+const noNews = select => select({})
+
+// True while the latest memory change of the Bots in this conversation is news.
+function useMemoryNotice(ids, useMemoryNews) {
+  const seen = useMemoryNews(map => Math.max(0, ...ids.map(id => map?.[id]?.seen ?? 0)))
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const left = seen + MEMORY_NOTICE_MS - Date.now()
+    setShown(seen > 0 && left > 0)
+    if (seen === 0 || left <= 0) return undefined
+    const timer = setTimeout(() => setShown(false), left)
+    return () => clearTimeout(timer)
+  }, [seen])
+  return shown
+}
+
+// The notice the pill stretches to show. Its width is measured, so the pill's spring
+// runs between two real widths.
+function MemoryNotice({ shown }) {
+  const inner = useRef(null)
+  const [width, setWidth] = useState(0)
+  const label = t('Memory updated')
+  useLayoutEffect(() => { if (shown) setWidth(inner.current?.scrollWidth ?? 0) }, [label, shown])
+  return h('span', { className: 'bt-pill-mem', 'aria-hidden': true, style: { '--bt-mem-w': `${width}px` } },
+    h('span', { className: 'bt-pill-mem-in', ref: inner }, h('span', { className: 'bt-pill-mem-ico' }, h(MemoryIcon)), label))
+}
+
+export function HeaderPill({ sessionId, useRoster, useSessions, useSessionStatus, useSession, useActivity, useMemoryNews, useTurnClock, useUi, useLive, useWork, useComputer, useStore, useConversationViews, selectView, actions, PendingLearning }) {
+  const roster = useRoster(value => value)
+  const selectedView = useStore?.(state => state.view)
+  const away = useConversationViews?.(views => views.some(view => view.id === selectedView && view.id !== 'chat')) === true
+    && typeof selectView === 'function'
+  const title = useSessions(list => list.byId[sessionId]?.displayTitle ?? list.byId[sessionId]?.title ?? '')
+  const firstTurns = useSessions((list) => {
+    const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline
+    return Array.isArray(outline) ? outline.slice(0, 8).map(entry => entry.turn).join(',') : ''
+  })
+  const hiddenTurns = roster.exchangeTurns?.[sessionId]
+  const visit = useUi(state => state.visits?.[sessionId])
+  // The opening separator has no turn before it, so the transcript column draws it,
+  // unless the opening is unread: then the first trigger draws it under the divider.
+  const opening = useTurnClock((state) => {
+    const first = openingTurn(state[sessionId], firstTurns, hiddenTurns)
+    return first && !unseenSince(visit, first.start) ? clockLabel(first.start) : ''
+  })
+  useEffect(() => {
+    if (opening) document.body.style.setProperty('--bt-first-sep', JSON.stringify(opening))
+    else document.body.style.removeProperty('--bt-first-sep')
+    return () => document.body.style.removeProperty('--bt-first-sep')
+  }, [opening])
+  const running = useSessionStatus(map => map.get(sessionId)?.running === true)
+  const owner = roster.byId[sessionId]?.id ?? sessionId
+  const doing = useActivity(map => map[owner])
+  const bot = roster.byId[sessionId]
+  const room = roster.roomsById[sessionId]
+  const goal = room?.goal
+  // Goal panels are keyed by the group, never by its current Session: `composeGoal` and
+  // `toggleGoal` store `room.id`, and a group's Session moves to a fresh part when its
+  // folder changes, so the two differ for every group whose folder was changed.
+  const goalCompose = useUi(state => room !== undefined && state.goalCompose === room.id)
+  const goalOpen = useUi(state => room !== undefined && state.goalOpen === room.id)
+  const approvalTargetId = room?.id ?? bot?.id
+  const approvalOpen = useUi(state => approvalTargetId !== undefined && state.approvalOpen === approvalTargetId)
+  const taskDeckState = useUi(state => (approvalTargetId !== undefined && state.taskDeck?.targetId === approvalTargetId ? state.taskDeck : null))
+  const taskDeckOpen = taskDeckState !== null
+  const chatTasks = !away ? tasksForChat({ bot, room, roster }) : []
+  const activeTasks = chatTasks.filter(isActiveTask)
+  // The island's live faces and pending approvals: non-group chats subscribe only
+  // to their own Bot's background-task approvals so unrelated group work does not redraw them.
+  const roomWorkKey = useWork?.(work => (room ? JSON.stringify(work.rooms?.[room.id] ?? []) : '')) ?? '[]'
+  const roomWork = room ? JSON.parse(roomWorkKey || '[]') : []
+  const workApprovalsKey = useWork?.(work => (room
+    ? JSON.stringify((work.approvals ?? []).filter(entry => entry.roomId === room.id))
+    : bot
+      ? JSON.stringify((work.approvals ?? []).filter(entry => entry.botId === bot.id && entry.taskId !== undefined && entry.answerable !== false))
+      : '')) ?? '[]'
+  const computerAsksKey = useComputer?.(comp => (room ? JSON.stringify(Object.values(comp?.asks ?? {}).filter(ask => ask.roomId === room.id)) : '')) ?? '[]'
+  const approvals = room
+    ? roomApprovals(room, { approvals: JSON.parse(workApprovalsKey || '[]') }, { asks: JSON.parse(computerAsksKey || '[]') }, roster)
+    : bot
+      ? JSON.parse(workApprovalsKey || '[]').map(entry => ({ kind: 'tool', id: entry.id, bot, approval: entry, at: entry.at ?? 0 }))
+      : []
+  const view = goal ? goalView(goal, { roster, roomWork }) : null
+  const goalShown = room !== undefined && !away && goal !== undefined
+  const detailsOpen = useUi(state => state.details === sessionId)
+  const name = bot?.name ?? room?.name ?? ''
+  const useNews = useMemoryNews ?? noNews
+  const memoryIds = bot ? [bot.id] : room ? [room.id, ...room.members] : []
+  const notice = useMemoryNotice(memoryIds, useNews)
+  // While the notice shows, the pill opens the memory that changed: a Bot's, or the group's.
+  const changed = useNews(map => latestMemoryChange(map, memoryIds))
+  // The composer placeholder is not localizable per Session, so CSS reads it from here.
+  useEffect(() => {
+    document.body.style.setProperty('--bt-placeholder', JSON.stringify(name ? t('Message {name}', { name }) : t('Message')))
+  }, [name, t('Message')])
+  // The unread label under a pending steering bubble reads its text from here.
+  useEffect(() => {
+    document.body.style.setProperty('--bt-steer-unread', JSON.stringify(t('Not read yet')))
+  }, [t('Not read yet')])
+  useEffect(() => {
+    actions.beginVisit(sessionId)
+    return () => actions.endVisit(sessionId)
+  }, [sessionId])
+  // Stands in for DSH's header: a terminal this Session's Agent starts gets its tab.
+  useEffect(() => actions.watchAgentTerminals?.(sessionId), [sessionId])
+  // Group chats have no voice mode, so the composer CSS needs to know the Session kind.
+  useEffect(() => {
+    if (room) document.body.dataset.btRoom = ''
+    else delete document.body.dataset.btRoom
+    return () => { delete document.body.dataset.btRoom }
+  }, [Boolean(room)])
+  const memoryNotice = !away && notice && changed !== null && roster.memory !== false
+  const showGoal = room !== undefined && !away && (goal !== undefined || goalCompose)
+  const showTasks = approvalTargetId !== undefined && !away && activeTasks.length > 0
+  // When active background tasks are shown, TaskIslandPod + TaskFocusOverlay already
+  // surface every pending approval for this chat in one unified deck (no double bars).
+  const showApprovals = approvalTargetId !== undefined && !away && approvals.length > 0 && !showTasks
+  const showIsland = showGoal || showApprovals || showTasks
+  // Once the last approval is answered, reset approvalOpen so future approvals
+  // appear as a compact bar rather than popping straight into a 560px panel.
+  useEffect(() => {
+    if (approvalOpen && !showApprovals) actions.closeApproval?.()
+  }, [approvalOpen, showApprovals])
+  useEffect(() => {
+    if (taskDeckOpen && !showTasks) actions.closeTaskDeck?.()
+  }, [taskDeckOpen, showTasks])
+  const taskHoverReveal = showTasks && !showGoal && !showApprovals
+  const podRows = (showGoal ? 1 : 0) + (showApprovals ? 1 : 0) + (showTasks && !taskHoverReveal ? 1 : 0)
+  // The island pads the transcript so its pod does not cover the first message.
+  useEffect(() => {
+    if (podRows > 0) document.body.dataset.btGoal = podRows > 1 ? '2' : ''
+    else delete document.body.dataset.btGoal
+    return () => { delete document.body.dataset.btGoal }
+  }, [podRows])
+  const pill = h('button', {
+    type: 'button', className: 'bt-pill', 'aria-expanded': away ? undefined : detailsOpen, 'data-memory': memoryNotice ? 'updated' : undefined,
+    'aria-label': away ? t('Back to chat') : memoryNotice ? t('Memory updated. Open {name}\'s memory', { name: roster.byId[changed]?.name ?? name }) : t('View conversation details'),
+    title: away ? name : undefined,
+    onClick: () => (away ? selectView('chat') : memoryNotice ? actions.openMemory(changed) : actions.toggleDetails(sessionId)),
+  },
+    bot ? h(BotAvatar, { bot, size: 24, state: botState(running, doing, roster.questions?.[currentPart(bot)] !== undefined), badge: false })
+      : room ? h(RoomAvatar, { room, roster, size: 24 }) : null,
+    goalShown
+      ? h('span', { className: 'bt-pill-swap' },
+        h('span', { className: 'bt-pill-goal' }, h('span', { className: 'bt-pill-ico', 'aria-hidden': true }, h(GoalIcon)), h('span', { className: 'bt-pill-title' }, view.title)),
+        h('span', { className: 'bt-pill-name' }, name))
+      : h('span', { className: 'bt-pill-name' }, away ? t('Back to chat') : bot?.name ?? room?.name ?? (title || t('New chat')), !away && bot?.engine ? h(AgentBadge, { engine: bot.engine }) : null),
+    goalShown && view?.number !== undefined ? h('span', { className: 'bt-pill-count' }, `${view.number}/${view.count}`) : null,
+    h(MemoryNotice, { shown: memoryNotice }),
+    h('span', { className: 'bt-pill-go', 'aria-hidden': true }, h(GoArrow)))
+  const approvalPod = showApprovals ? h(ApprovalIslandPod, { approvals, open: approvalOpen, room, targetId: approvalTargetId, actions }) : null
+  const taskPod = showTasks ? h(TaskIslandPod, { bot, room, roster, tasks: chatTasks, approvals, open: taskDeckOpen, focusTaskId: taskDeckState?.taskId ?? null, targetId: approvalTargetId, actions }) : null
+  const taskWaiting = Math.max(activeTasks.filter(item => item.status === 'waiting_approval').length, approvals.length)
+  const taskBadge = taskHoverReveal
+    ? h('button', {
+        type: 'button',
+        className: 'bt-island-chip',
+        'data-approval': taskWaiting > 0 || undefined,
+        'aria-label': taskWaiting > 0
+          ? t('{count} background tasks · {waiting} needs approval', { count: activeTasks.length, waiting: taskWaiting })
+          : t('{count} background tasks running', { count: activeTasks.length }),
+        onClick: () => (actions.toggleTaskDeck ? actions.toggleTaskDeck(approvalTargetId) : actions.openTaskDeck?.(approvalTargetId)),
+      },
+      h('span', { className: 'bt-island-chip-dot', 'aria-hidden': true }),
+      h('span', null, activeTasks.length))
+    : null
+  return h('div', { className: 'bt-head' },
+    showIsland ? h(GoalIsland, { room, goal, view, open: goalOpen, composing: goalCompose, approvalPod, approvalOpen, approvalsCount: approvals.length, taskPod, taskOpen: taskDeckOpen, taskCount: activeTasks.length, taskHoverReveal, taskBadge, roomWork, roster, actions, pill }) : pill,
+    !away && PendingLearning ? h(PendingLearning, { key: sessionId, sessionId, useRoster, actions }) : null,
+    h('span', { className: 'bt-sr', role: 'status' }, memoryNotice ? t('Memory updated') : ''),
+    room !== undefined && !away
+      ? h('button', {
+        type: 'button', className: 'bt-icon-btn bt-head-search', 'aria-label': t('Search this group'), title: t('Search this group'),
+        onClick: () => actions.openGroupSearch(room.id),
+      }, h(SearchIcon))
+      : null,
+    h(NewMessagePills, { key: sessionId, sessionId, useSessions, useUi, useTurnClock }),
+    h(ActivityIndicator, { key: `activity:${sessionId}`, sessionId, useRoster, useSessionStatus, useSession, useLive, useWork, actions }))
+}
+
+// The shell's Back to bottom slot comes after the transcript, so a query for it walks
+// the whole transcript, every frame, while it is absent (the user is pinned). DSH marks
+// the chat root with data-chat-following-tail exactly when it leaves the slot out, and
+// that root comes before the transcript; keeping both elements answers without a walk.
+export function pinWatch() {
+  let slot = null
+  let tail = null
+  return (scroller) => {
+    if (slot?.isConnected && scroller.contains(slot)) return [...slot.children].some(child => child.tagName === 'BUTTON')
+    if (tail?.isConnected && scroller.contains(tail) && tail.hasAttribute('data-chat-following-tail')) return false
+    tail = scroller.querySelector('[data-chat-following-tail]')
+    if (tail) return false
+    slot = scroller.querySelector('[class*="_toBottomSlot"]')
+    return slot?.querySelector(':scope>button') != null
+  }
+}
+
+// New-message pills. "N new messages ↓" takes Back to bottom's place when
+// replies land while the user is scrolled up; "N new messages ↑" points at an unread
+// divider above the viewport until it has been seen. The shell shows Back to bottom
+// only while unpinned, so its presence is the pinned signal.
+function useTranscriptView() {
+  const [view, setView] = useState(null)
+  useEffect(() => {
+    let frame = 0
+    let watched = null
+    const unpinned = pinWatch()
+    const observer = new MutationObserver(() => schedule())
+    const measure = () => {
+      frame = 0
+      const scroller = document.querySelector('[data-conversation-scroll]')
+      if (scroller !== watched) {
+        observer.disconnect()
+        watched = scroller
+        if (scroller) observer.observe(scroller, { childList: true, subtree: true })
+      }
+      if (!scroller) { setView(null); return }
+      const box = scroller.getBoundingClientRect()
+      const headerBottom = document.querySelector('header[class*="_header"]')?.getBoundingClientRect().bottom ?? box.top + 50
+      const sep = newDividerIn(scroller)
+      let divider = null
+      if (sep) {
+        const at = sep.getBoundingClientRect()
+        divider = at.bottom <= headerBottom ? 'above' : at.top >= box.bottom ? 'below' : 'in-view'
+      }
+      const composer = parseFloat(getComputedStyle(scroller).getPropertyValue('--dsh-composer-height')) || 152
+      const next = {
+        unpinned: unpinned(scroller),
+        divider,
+        center: Math.round(box.left + box.width / 2),
+        top: Math.round(headerBottom + 8),
+        bottom: Math.round(viewBottom() - box.bottom + composer + 8),
+      }
+      setView(prev => (prev && Object.keys(next).every(key => prev[key] === next[key]) ? prev : next))
+    }
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
+    document.addEventListener('scroll', schedule, true)
+    window.addEventListener('resize', schedule)
+    window.visualViewport?.addEventListener('resize', schedule)
+    window.visualViewport?.addEventListener('scroll', schedule)
+    schedule()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      document.removeEventListener('scroll', schedule, true)
+      window.removeEventListener('resize', schedule)
+      window.visualViewport?.removeEventListener('resize', schedule)
+      window.visualViewport?.removeEventListener('scroll', schedule)
+    }
+  }, [])
+  return view
+}
+
+function NewMessagePills({ sessionId, useSessions, useUi, useTurnClock }) {
+  const replies = useSessions((list) => {
+    const outline = list.projectionsBySession?.[sessionId]?.values?.turnOutline ?? list.byId[sessionId]?.projectionValues?.turnOutline
+    return Array.isArray(outline) ? outline.reduce((count, entry) => count + (entry.response ? 1 : 0), 0) : 0
+  })
+  const visit = useUi(state => state.visits?.[sessionId])
+  const unread = useTurnClock((state) => {
+    if (typeof visit?.seen !== 'number') return 0
+    let count = 0
+    for (const entry of Object.values(state[sessionId] ?? {})) {
+      if (entry.first !== undefined && entry.first > visit.seen && entry.first <= visit.entered) count += 1
+    }
+    return count
+  })
+  const view = useTranscriptView()
+  const unpinned = view?.unpinned === true
+  const [release, setRelease] = useState({ base: null, dismissed: false })
+  const [above, setAbove] = useState({ seen: false, dismissed: false })
+  useEffect(() => { setRelease({ base: unpinned ? replies : null, dismissed: false }) }, [unpinned])
+  useEffect(() => { if (view?.divider === 'in-view') setAbove(state => (state.seen ? state : { ...state, seen: true })) }, [view?.divider])
+  const fresh = release.base === null ? 0 : replies - release.base
+  const showDown = unpinned && fresh > 0 && !release.dismissed
+  const showUp = view?.divider === 'above' && !above.seen && !above.dismissed
+  useEffect(() => {
+    const scroller = document.querySelector('[data-conversation-scroll]')
+    if (!scroller) return undefined
+    scroller.toggleAttribute('data-bt-news', showDown)
+    return () => scroller.removeAttribute('data-bt-news')
+  }, [showDown])
+  if (!view || (!showDown && !showUp)) return null
+  const label = count => (count === 1 ? t('1 new message') : count > 0 ? t('{count} new messages', { count }) : t('New messages'))
+  const pill = (direction, count, style, onJump, onDismiss) => h('div', { className: 'bt-news', 'data-direction': direction, style },
+    h('button', { type: 'button', className: 'bt-news-jump', onClick: onJump },
+      h('span', { className: 'bt-news-ico' }, h(direction === 'up' ? ArrowUpIcon : ArrowDownIcon)), label(count)),
+    h('button', {
+      type: 'button', className: 'bt-news-x', 'aria-label': t('Dismiss new messages'),
+      onClick: (event) => { event.stopPropagation(); onDismiss() },
+    }, h(CloseIcon)))
+  const toLatest = () => {
+    const scroller = document.querySelector('[data-conversation-scroll]')
+    const back = scroller?.querySelector('[class*="_toBottomSlot"]>button')
+    if (back) back.click()
+    else scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' })
+  }
+  const toDivider = () => {
+    const scroller = document.querySelector('[data-conversation-scroll]')
+    if (scroller) newDividerIn(scroller)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+  return createPortal(h(Fragment, null,
+    showUp ? pill('up', unread, { left: view.center, top: view.top }, toDivider, () => setAbove(state => ({ ...state, dismissed: true }))) : null,
+    showDown ? pill('down', fresh, { left: view.center, bottom: view.bottom }, toLatest, () => setRelease(state => ({ ...state, dismissed: true }))) : null),
+  document.body)
+}

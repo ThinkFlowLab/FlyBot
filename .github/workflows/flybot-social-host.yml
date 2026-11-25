@@ -1,0 +1,66 @@
+name: FlyBot social host adapter
+# Proves @flybot/social can sit on the pinned upstream DS-Bot runtime
+# through runtime/flybot-social-host, including the 0.3.5+ write-ahead group ledger.
+# Does not edit runtime/ds-bot-upstream/.
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  facade-and-ledger:
+    name: Façade and ledger unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Run adapter unit tests (no npm install)
+        working-directory: runtime/flybot-social-host
+        run: npm test
+
+  host-integration:
+    name: Social plugin on the pinned DS-Bot host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: DSH version from the pin
+        id: pin
+        run: |
+          dsh=$(node -p "require('./runtime/ds-bot-upstream.pin.json').dsh")
+          if [[ ! "$dsh" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid DSH version in pin: $dsh"
+            exit 1
+          fi
+          echo "dsh=$dsh" >> "$GITHUB_OUTPUT"
+          echo "DSH $dsh"
+      - name: Install upstream ds-bot and phone-link packages
+        working-directory: runtime/ds-bot-upstream/ds-bot
+        run: |
+          npm ci --no-fund --no-audit
+          npm ci --no-fund --no-audit --prefix ../link
+      - name: Install DSH test harness (version from pin)
+        working-directory: runtime/ds-bot-upstream/ds-bot
+        env:
+          DSH_VERSION: ${{ steps.pin.outputs.dsh }}
+        run: |
+          if [[ ! "$DSH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
+            echo "invalid DSH version: $DSH_VERSION"
+            exit 1
+          fi
+          npm run harness -- --no-save "@deepseek-ai/dsh@${DSH_VERSION}" "@deepseek-ai/dsh-agent-loop-testkit@${DSH_VERSION}"
+      - name: Run social plugin against the pinned DS-Bot host
+        working-directory: runtime/flybot-social-host
+        run: npm run test:host
+        env:
+          CI: true

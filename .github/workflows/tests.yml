@@ -1,0 +1,94 @@
+name: FlyBot CI
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: flybot-ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  frontend:
+    name: Web and compose planner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: node --test tests/*.test.mjs manager/compose-planner/compose-command-planner.test.js
+
+  management:
+    name: Management API · Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Python tests with explicit trusted runner Node
+        run: |
+          install -d -m 0700 "$RUNNER_TEMP/flybot-workspace-planner-bin"
+          install -m 0500 "$(command -v node)" "$RUNNER_TEMP/flybot-workspace-planner-bin/node"
+          export FLYBOT_WORKSPACE_PLANNER_NODE="$RUNNER_TEMP/flybot-workspace-planner-bin/node"
+          python -m unittest discover -s tests -v
+      - run: python -m compileall -q flybot_workspace tests
+      - run: python -m flybot_workspace.server --help
+
+  upstream:
+    uses: ./.github/workflows/ds-bot-upstream.yml
+
+  runtime-image:
+    uses: ./.github/workflows/flybot-runtime-image.yml
+
+  social-host:
+    uses: ./.github/workflows/flybot-social-host.yml
+
+  browser:
+    uses: ./.github/workflows/ui-screenshots.yml
+
+  provenance:
+    uses: ./.github/workflows/upstream-migration.yml
+
+  required:
+    name: FlyBot required checks
+    if: ${{ always() }}
+    needs: [frontend, management, upstream, runtime-image, social-host, browser, provenance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every suite to succeed
+        env:
+          FRONTEND: ${{ needs.frontend.result }}
+          MANAGEMENT: ${{ needs.management.result }}
+          UPSTREAM: ${{ needs.upstream.result }}
+          RUNTIME_IMAGE: ${{ needs.runtime-image.result }}
+          SOCIAL_HOST: ${{ needs.social-host.result }}
+          BROWSER: ${{ needs.browser.result }}
+          PROVENANCE: ${{ needs.provenance.result }}
+        run: |
+          for suite in FRONTEND MANAGEMENT UPSTREAM RUNTIME_IMAGE SOCIAL_HOST BROWSER PROVENANCE; do
+            if [[ "${!suite}" != success ]]; then
+              echo "::error::${suite} finished with result: ${!suite}"
+              exit 1
+            fi
+          done

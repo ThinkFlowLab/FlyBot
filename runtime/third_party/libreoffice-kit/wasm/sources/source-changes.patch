@@ -1,0 +1,1022 @@
+diff --git a/configure.ac b/configure.ac
+index 32651cf64..4b2cc710b 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -3870,8 +3870,13 @@ if test $_os = Darwin; then
+     if test ! -d "$MACOSX_SDK_PATH"; then
+         AC_MSG_ERROR([Could not find an appropriate macOS SDK])
+     fi
+-    macosx_sdk=`xcodebuild -version -sdk "$MACOSX_SDK_PATH" SDKVersion`
+-    MACOSX_SDK_BUILD_VERSION=$(xcodebuild -version -sdk "$MACOSX_SDK_PATH" ProductBuildVersion)
++    if test "$libo_build_tools_only" = yes; then
++        macosx_sdk=$(xcrun --sdk macosx --show-sdk-version)
++        MACOSX_SDK_BUILD_VERSION=$(xcrun --sdk macosx --show-sdk-build-version)
++    else
++        macosx_sdk=`xcodebuild -version -sdk "$MACOSX_SDK_PATH" SDKVersion`
++        MACOSX_SDK_BUILD_VERSION=$(xcodebuild -version -sdk "$MACOSX_SDK_PATH" ProductBuildVersion)
++    fi
+     # format changed between 10.9 and 10.10 - up to 10.9 it was just four digits (1090), starting
+     # with macOS 10.10 it was switched to account for x.y.z with six digits, 10.10 is 101000,
+     # 10.10.2 is 101002
+@@ -3910,27 +3915,39 @@ if test $_os = Darwin; then
+     FRAMEWORKSHOME="$MACOSX_SDK_PATH/System/Library/Frameworks"
+     MACOSX_DEPLOYMENT_TARGET="$with_macosx_version_min_required"
+ 
+-    AC_MSG_CHECKING([whether Xcode is new enough])
+-    my_xcode_ver1=$(xcrun xcodebuild -version | head -n 1)
+-    my_xcode_ver2=${my_xcode_ver1#Xcode }
+-    my_xcode_ver3=$(printf %s "$my_xcode_ver2" | $AWK -F. '{ print $1*100+($2<100?$2:99) }')
+-    if test "$my_xcode_ver3" -ge 1403; then
+-        AC_MSG_RESULT([yes ($my_xcode_ver2)])
+-        if test $MAC_OS_X_VERSION_MIN_REQUIRED -lt 120000; then
+-            if test "$my_xcode_ver3" -eq 1500; then
+-                dnl the bug was already fixed on 15.1 and 15.2 still has the same OS requirements as 15.0
+-                dnl in other words all affected users could update to a working Xcode version
+-                AC_MSG_WARN([Use a current version of XCode or bump the minimum deployment target])
+-                AC_MSG_WARN([[see https://developer.apple.com/documentation/xcode-release-notes/xcode-15-release-notes#Linking]])
+-                AC_MSG_ERROR([Xcode 15.0 has a bug in the new linker that causes runtime crashes on macOS 11 - aborting])
+-            fi
++    if test "$libo_build_tools_only" = yes; then
++        # Cross-build tools use the installed SDK and clang; they do not package a macOS app.
++        AC_MSG_CHECKING([whether the build-tools clang is new enough])
++        libo_build_clang=$(xcrun clang -dumpversion)
++        libo_build_clang_major=${libo_build_clang%%.*}
++        if test "$libo_build_clang_major" -lt 14; then
++            AC_MSG_ERROR([clang $libo_build_clang is too old for the macOS build tools])
+         fi
++        AC_MSG_RESULT([$libo_build_clang])
++        MACOSX_XCODE_BUILD_VERSION=
+     else
+-        AC_MSG_ERROR(["$my_xcode_ver1" is too old or unrecognized, must be at least Xcode 14.3])
+-    fi
++        AC_MSG_CHECKING([whether Xcode is new enough])
++        my_xcode_ver1=$(xcrun xcodebuild -version | head -n 1)
++        my_xcode_ver2=${my_xcode_ver1#Xcode }
++        my_xcode_ver3=$(printf %s "$my_xcode_ver2" | $AWK -F. '{ print $1*100+($2<100?$2:99) }')
++        if test "$my_xcode_ver3" -ge 1403; then
++            AC_MSG_RESULT([yes ($my_xcode_ver2)])
++            if test $MAC_OS_X_VERSION_MIN_REQUIRED -lt 120000; then
++                if test "$my_xcode_ver3" -eq 1500; then
++                    dnl the bug was already fixed on 15.1 and 15.2 still has the same OS requirements as 15.0
++                    dnl in other words all affected users could update to a working Xcode version
++                    AC_MSG_WARN([Use a current version of XCode or bump the minimum deployment target])
++                    AC_MSG_WARN([[see https://developer.apple.com/documentation/xcode-release-notes/xcode-15-release-notes#Linking]])
++                    AC_MSG_ERROR([Xcode 15.0 has a bug in the new linker that causes runtime crashes on macOS 11 - aborting])
++                fi
++            fi
++        else
++            AC_MSG_ERROR(["$my_xcode_ver1" is too old or unrecognized, must be at least Xcode 14.3])
++        fi
+ 
+-    my_xcode_ver1=$(xcrun xcodebuild -version | tail -n 1)
+-    MACOSX_XCODE_BUILD_VERSION=${my_xcode_ver1#Build version }
++        my_xcode_ver1=$(xcrun xcodebuild -version | tail -n 1)
++        MACOSX_XCODE_BUILD_VERSION=${my_xcode_ver1#Build version }
++    fi
+ 
+     LIBTOOL=/usr/bin/libtool
+     INSTALL_NAME_TOOL=install_name_tool
+@@ -6358,7 +6375,7 @@ if test "$cross_compiling" = "yes"; then
+         $with_build_platform_configure_options \
+         --srcdir=$srcdir
+ 
+-    ./configure \
++    libo_build_tools_only=yes ./configure \
+         $sub_conf_defaults \
+         --with-parallelism="$with_parallelism" \
+         --with-theme="$with_theme" \
+@@ -13213,8 +13230,9 @@ if test "$ENABLE_PDFIMPORT" = "TRUE" -a "$ENABLE_POPPLER" != "TRUE" -a "$ENABLE_
+     AC_MSG_ERROR([Cannot import PDF without either Pdfium or Poppler; please enable either of them.])
+ fi
+ 
+-if test "$ENABLE_PDFIMPORT" != "TRUE" -a \( "$ENABLE_POPPLER" = "TRUE" -o "$ENABLE_PDFIUM" = "TRUE" \); then
+-    AC_MSG_ERROR([Cannot enable Pdfium or Poppler when PDF importing is disabled; please enable PDF import first.])
++# PDFium also renders PDF graphics embedded in OOXML/EMF without the desktop PDF import filters.
++if test "$ENABLE_PDFIMPORT" != "TRUE" -a "$ENABLE_POPPLER" = "TRUE"; then
++    AC_MSG_ERROR([Cannot enable Poppler when PDF importing is disabled; please enable PDF import first.])
+ fi
+ 
+ if test "$ENABLE_PDFIMPORT" = "TRUE" -a "$ENABLE_POPPLER" = "TRUE"; then
+diff --git a/cui/source/dialogs/passwdomdlg.cxx b/cui/source/dialogs/passwdomdlg.cxx
+index a3720b6d7..fd6ffac99 100644
+--- a/cui/source/dialogs/passwdomdlg.cxx
++++ b/cui/source/dialogs/passwdomdlg.cxx
+@@ -131,10 +131,15 @@ IMPL_LINK(PasswordToOpenModifyDialog, ChangeHdl, weld::Entry&, rEntry, void)
+     }
+ 
+     // if password doesn't meet policy cap the percentage at 70%
++#if defined(DISABLE_DYNLOADING)
++    if (pLevelBar)
++        pLevelBar->set_visible(false);
++#else
+     if (pLevelBar)
+         pLevelBar->set_percentage(
+             std::min(SvPasswordHelper::GetPasswordStrengthPercentage(aPasswordText),
+                      bPasswordMeetsPolicy ? std::numeric_limits<double>::max() : 70.0));
++#endif
+ 
+     if (m_nMaxPasswdLen)
+     {
+diff --git a/desktop/Executable_soffice_bin.mk b/desktop/Executable_soffice_bin.mk
+index 5987a9a4d..a310cc5b5 100644
+--- a/desktop/Executable_soffice_bin.mk
++++ b/desktop/Executable_soffice_bin.mk
+@@ -29,6 +29,17 @@ $(eval $(call gb_Executable_add_cobjects,soffice_bin,\
+ ))
+ 
+ ifeq ($(OS),EMSCRIPTEN)
++$(eval $(call gb_Executable_add_ldflags,soffice_bin, \
++    -sMODULARIZE=1 \
++    -sEXPORT_NAME=createLibreOfficeModule \
++    -sENVIRONMENT=web$(COMMA)node$(COMMA)worker \
++    -sSTACK_SIZE=1048576 \
++    -sSTACK_OVERFLOW_CHECK=2 \
++    -sALLOW_MEMORY_GROWTH=1 \
++    -sINITIAL_MEMORY=402653184 \
++    -sMAXIMUM_MEMORY=4294967296 \
++))
++
+ $(call gb_LinkTarget_get_target,$(call gb_Executable_get_linktarget,soffice_bin)) : $(gb_CustomTarget_workdir)/static/emscripten_fs_image/soffice.data.js.link
+ 
+ # don't sort; later can override previous settings!
+diff --git a/desktop/Library_sofficeapp.mk b/desktop/Library_sofficeapp.mk
+index 4e24628d9..72038d66f 100644
+--- a/desktop/Library_sofficeapp.mk
++++ b/desktop/Library_sofficeapp.mk
+@@ -155,4 +155,11 @@ $(eval $(call gb_Library_set_componentfile,sofficeapp,desktop/lokclipboard,servi
+ endif
+ endif
+ 
++ifeq ($(OS),EMSCRIPTEN)
++$(eval $(call gb_Library_add_defs,sofficeapp,-DDSH_LOK_HEADLESS))
++$(eval $(call gb_Library_add_exception_objects,sofficeapp, \
++    desktop/source/lib/dsh_wasm \
++))
++endif
++
+ # vim: set ts=4 sw=4 et:
+diff --git a/desktop/source/lib/init.cxx b/desktop/source/lib/init.cxx
+index a605030eb..1ee11c171 100644
+--- a/desktop/source/lib/init.cxx
++++ b/desktop/source/lib/init.cxx
+@@ -98,6 +98,7 @@
+ 
+ #include <com/sun/star/connection/XConnection.hpp>
+ #include <com/sun/star/document/MacroExecMode.hpp>
++#include <com/sun/star/document/UpdateDocMode.hpp>
+ #include <com/sun/star/beans/XPropertySet.hpp>
+ #include <com/sun/star/container/XNameAccess.hpp>
+ #include <com/sun/star/document/XTypeDetection.hpp>
+@@ -106,6 +107,7 @@
+ #include <com/sun/star/frame/DispatchResultState.hpp>
+ #include <com/sun/star/frame/XDispatchProvider.hpp>
+ #include <com/sun/star/frame/XDispatchResultListener.hpp>
++#include <com/sun/star/sheet/XCalculatable.hpp>
+ #include <com/sun/star/frame/XSynchronousDispatch.hpp>
+ #include <com/sun/star/frame/XStorable.hpp>
+ #include <com/sun/star/lang/Locale.hpp>
+@@ -1215,6 +1217,7 @@ static void doc_setGraphicSelection (LibreOfficeKitDocument* pThis,
+                                   int nX,
+                                   int nY);
+ static void doc_resetSelection (LibreOfficeKitDocument* pThis);
++static int doc_calculateAll(LibreOfficeKitDocument* pThis);
+ static char* doc_getCommandValues(LibreOfficeKitDocument* pThis, const char* pCommand);
+ static void doc_setClientZoom(LibreOfficeKitDocument* pThis,
+                                     int nTilePixelWidth,
+@@ -1535,6 +1538,7 @@ LibLODocument_Impl::LibLODocument_Impl(uno::Reference <css::lang::XComponent> xC
+         m_pDocumentClass->renderNextSlideLayer = doc_renderNextSlideLayer;
+         m_pDocumentClass->setViewOption = doc_setViewOption;
+         m_pDocumentClass->setColorPreviewState = doc_setColorPreviewState;
++        m_pDocumentClass->calculateAll = doc_calculateAll;
+ 
+         gDocumentClass = m_pDocumentClass;
+     }
+@@ -2947,16 +2951,11 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
+             comphelper::makePropertyValue(u"FilterOptions"_ustr, aOptions),
+             comphelper::makePropertyValue(u"InteractionHandler"_ustr, uno::Reference<task::XInteractionHandler2>(pInteraction)),
+             comphelper::makePropertyValue(u"MacroExecutionMode"_ustr, nMacroExecMode),
++            comphelper::makePropertyValue(u"UpdateDocMode"_ustr, sal_Int16(document::UpdateDocMode::NO_UPDATE)),
+             comphelper::makePropertyValue(u"AsTemplate"_ustr, false),
+             comphelper::makePropertyValue(u"Silent"_ustr, !aBatch.isEmpty())
+         };
+ 
+-        /* TODO
+-        sal_Int16 nUpdateDoc = document::UpdateDocMode::ACCORDING_TO_CONFIG;
+-        aFilterOptions[3].Name = "UpdateDocMode";
+-        aFilterOptions[3].Value <<= nUpdateDoc;
+-        */
+-
+         OutputDevice::StartTrackingFontMappingUse();
+ 
+         if (const char* pExemptVerifyHost = ::getenv("LOK_EXEMPT_VERIFY_HOST"))
+@@ -5294,6 +5293,25 @@ static bool isCommandAllowed(std::u16string_view command)
+     return std::find(std::begin(denyList), std::end(denyList), command) == std::end(denyList);
+ }
+ 
++// Calculation through the model does not require an interactive dispatcher or event loop.
++static int doc_calculateAll(LibreOfficeKitDocument* pThis)
++{
++    SolarMutexGuard aGuard;
++    SetLastExceptionMsg();
++    try
++    {
++        auto* pDocument = static_cast<LibLODocument_Impl*>(pThis);
++        uno::Reference<sheet::XCalculatable> xCalculatable(pDocument->mxComponent, uno::UNO_QUERY_THROW);
++        xCalculatable->calculateAll();
++        return 1;
++    }
++    catch (const uno::Exception& exception)
++    {
++        SetLastExceptionMsg("exception: " + exception.Message);
++    }
++    return 0;
++}
++
+ static void doc_postUnoCommand(LibreOfficeKitDocument* pThis, const char* pCommand, const char* pArguments, bool bNotifyWhenFinished)
+ {
+     comphelper::ProfileZone aZone("doc_postUnoCommand");
+@@ -7689,7 +7707,7 @@ static bool initialize_uno(const OUString& aAppProgramURL)
+     xSFactory.set(xFactory, uno::UNO_QUERY_THROW);
+     comphelper::setProcessServiceFactory(xSFactory);
+ 
+-#if defined __EMSCRIPTEN__
++#if defined __EMSCRIPTEN__ && !defined DSH_LOK_HEADLESS
+     initJsUnoScripting();
+ #endif
+ 
+diff --git a/desktop/util/Executable_soffice_bin-emscripten-exports b/desktop/util/Executable_soffice_bin-emscripten-exports
+index 2206ccccb..3016df5cb 100644
+--- a/desktop/util/Executable_soffice_bin-emscripten-exports
++++ b/desktop/util/Executable_soffice_bin-emscripten-exports
+@@ -12,3 +12,40 @@ _lok_preinit
+ _lok_preinit_2
+ _malloc
+ _free
++_dsh_lok_initialize
++_dsh_lok_document_load
++_dsh_lok_document_save_pdf
++_dsh_lok_document_export
++_dsh_lok_document_destroy
++_dsh_lok_error
++_dsh_lok_destroy
++_dsh_lok_document_initialize_rendering
++_dsh_lok_document_type
++_dsh_lok_document_parts
++_dsh_lok_document_page_rectangles
++_dsh_lok_document_size
++_dsh_lok_document_tile_mode
++_dsh_lok_document_paint
++_dsh_lok_document_save
++_dsh_lok_document_listen
++_dsh_lok_document_key
++_dsh_lok_document_mouse
++_dsh_lok_document_composition
++_dsh_lok_document_command
++_dsh_lok_document_command_values
++_dsh_lok_document_paste
++_dsh_lok_document_selection
++_dsh_lok_document_part
++_dsh_lok_document_part_name
++_dsh_lok_document_viewport
++_dsh_lok_pump
++_dsh_lok_document_part_info
++_dsh_lok_document_create_view
++_dsh_lok_document_get_view
++_dsh_lok_document_set_view
++_dsh_lok_document_destroy_view
++_dsh_pdf_open
++_dsh_pdf_page_count
++_dsh_pdf_page_size
++_dsh_pdf_paint
++_dsh_pdf_destroy
+diff --git a/external/argon2/ExternalProject_argon2.mk b/external/argon2/ExternalProject_argon2.mk
+index 80d6b0596..e9cf8a9cf 100644
+--- a/external/argon2/ExternalProject_argon2.mk
++++ b/external/argon2/ExternalProject_argon2.mk
+@@ -43,7 +43,7 @@ $(call gb_ExternalProject_get_state_target,argon2,build):
+ 	$(call gb_Trace_StartRange,argon2,EXTERNAL)
+ 	$(call gb_ExternalProject_run,build,\
+ 		CFLAGS="$(CFLAGS) $(if $(filter-out WNT MACOSX,$(OS)),-fvisibility=hidden) -fPIC" \
+-		MAKEFLAGS= $(MAKE) \
++		MAKEFLAGS= $(MAKE) $(if $(filter EMSCRIPTEN,$(OS)),libargon2.a) \
+ 			OPTTARGET=$(if $(filter X86_64,$(CPUNAME)),x86-64,forcefail) \
+ 		$(if $(CROSS_COMPILING),,&& $(MAKE) test) \
+ 	)
+diff --git a/external/argon2/UnpackedTarball_argon2.mk b/external/argon2/UnpackedTarball_argon2.mk
+index dc379cca9..9a7cc6443 100644
+--- a/external/argon2/UnpackedTarball_argon2.mk
++++ b/external/argon2/UnpackedTarball_argon2.mk
+@@ -15,6 +15,7 @@ $(eval $(call gb_UnpackedTarball_add_patches,argon2,\
+ 	external/argon2/0001-Fix-possible-compiler-error-due-to-undefined-_MSC_VE.patch \
+ 	$(if $(filter WNT_AARCH64,$(OS)_$(CPUNAME)),external/argon2/0002-Add-WinARM64-vcxproj-config.patch) \
+ 	external/argon2/private-symbols.patch.0 \
++	external/argon2/use-configured-archiver.patch.0 \
+ ))
+ 
+ # vim: set noet sw=4 ts=4:
+diff --git a/external/libcdr/ExternalProject_libcdr.mk b/external/libcdr/ExternalProject_libcdr.mk
+index 3a4be9d9c..ee093bcf7 100644
+--- a/external/libcdr/ExternalProject_libcdr.mk
++++ b/external/libcdr/ExternalProject_libcdr.mk
+@@ -38,7 +38,7 @@ $(call gb_ExternalProject_get_state_target,libcdr,build) :
+ 			--disable-weffc \
+ 			$(if $(gb_FULLDEPS),,--disable-dependency-tracking) \
+ 			$(if $(verbose),--disable-silent-rules,--enable-silent-rules) \
+-			CXXFLAGS="$(gb_CXXFLAGS) $(call gb_ExternalProject_get_build_flags,libcdr)" \
++			CXXFLAGS="$(CXXFLAGS) $(gb_CXXFLAGS) $(call gb_ExternalProject_get_build_flags,libcdr)" \
+ 			CPPFLAGS="$(CPPFLAGS) $(BOOST_CPPFLAGS)" \
+ 			LDFLAGS="$(call gb_ExternalProject_get_link_flags,libcdr)" \
+ 			$(gb_CONFIGURE_PLATFORMS) \
+diff --git a/external/openssl/ExternalProject_openssl.mk b/external/openssl/ExternalProject_openssl.mk
+index a31945fab..d776766bb 100644
+--- a/external/openssl/ExternalProject_openssl.mk
++++ b/external/openssl/ExternalProject_openssl.mk
+@@ -52,7 +52,7 @@ OPENSSL_PLATFORM := \
+             $(if $(filter X86_64,$(CPUNAME)),darwin64-x86_64-cc)\
+             $(if $(filter AARCH64,$(CPUNAME)),darwin64-arm64-cc)\
+ 	  ,\
+-	    $(if $(filter EMSCRIPTEN,$(OS)),no-engine no-dso no-dgram no-srtp no-err no-ocsp no-psk no-ts no-asm) \
++	    $(if $(filter EMSCRIPTEN,$(OS)),gcc -pthread no-engine no-dso no-dgram no-srtp no-err no-ocsp no-psk no-ts no-asm) \
+           )\
+         )\
+       )\
+@@ -79,7 +79,7 @@ $(call gb_ExternalProject_get_state_target,openssl,build):
+ 	$(call gb_Trace_StartRange,openssl,EXTERNAL)
+ 	$(call gb_ExternalProject_run,build,\
+ 		unset MAKEFLAGS && \
+-		$(if $(filter LINUX MACOSX FREEBSD ANDROID SOLARIS iOS,$(OS)), \
++		$(if $(filter LINUX MACOSX FREEBSD ANDROID SOLARIS iOS EMSCRIPTEN,$(OS)), \
+ 			./Configure, \
+ 		$(if $(filter WNT,$(OS)), \
+ 			$(PERL) Configure, \
+diff --git a/external/pdfium/Library_pdfium.mk b/external/pdfium/Library_pdfium.mk
+index 3a69170bd..16393f387 100644
+--- a/external/pdfium/Library_pdfium.mk
++++ b/external/pdfium/Library_pdfium.mk
+@@ -713,7 +713,7 @@ $(eval $(call gb_Library_add_generated_exception_objects,pdfium,\
+ ))
+ endif
+ 
+-ifneq (,$(filter LINUX FREEBSD OPENBSD,$(OS)))
++ifneq (,$(filter LINUX FREEBSD OPENBSD EMSCRIPTEN,$(OS)))
+ # fxge
+ $(eval $(call gb_Library_add_generated_exception_objects,pdfium,\
+     UnpackedTarball/pdfium/core/fxge/linux/fx_linux_impl \
+diff --git a/include/LibreOfficeKit/LibreOfficeKit.h b/include/LibreOfficeKit/LibreOfficeKit.h
+index ade0ae67f..f0eb9e2cc 100644
+--- a/include/LibreOfficeKit/LibreOfficeKit.h
++++ b/include/LibreOfficeKit/LibreOfficeKit.h
+@@ -570,6 +570,9 @@ struct LibreOfficeKitDocumentClassStruct
+     /// @see lok::Document::setColorPreviewState().
+     void (*setColorPreviewState) (LibreOfficeKitDocument* pThis, int nId, bool nEnabled);
+ 
++    // DeepSeek Kit: synchronously calculate every formula; return zero on failure.
++    int (*calculateAll)(LibreOfficeKitDocument* pThis);
++
+ #endif // defined LOK_USE_UNSTABLE_API || defined LIBO_INTERNAL_ONLY
+ };
+ 
+diff --git a/oox/source/drawingml/misccontexts.cxx b/oox/source/drawingml/misccontexts.cxx
+index 57a4e9705..90b535273 100644
+--- a/oox/source/drawingml/misccontexts.cxx
++++ b/oox/source/drawingml/misccontexts.cxx
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include <drawingml/misccontexts.hxx>
++#include <comphelper/lok.hxx>
+ #include <oox/helper/attributelist.hxx>
+ #include <oox/helper/graphichelper.hxx>
+ #include <oox/core/xmlfilterbase.hxx>
+@@ -313,6 +314,9 @@ BlipContext::BlipContext(ContextHandler2Helper const & rParent, const AttributeL
+     }
+     else if( rAttribs.hasAttribute( R_TOKEN( link ) ) )
+     {
++        // Kit imports use cached embedded graphics and never load external picture data.
++        if (comphelper::LibreOfficeKit::isActive())
++            return;
+         // external URL
+ 
+         // we will embed this link, this is better than just doing nothing...
+diff --git a/sal/Library_sal.mk b/sal/Library_sal.mk
+index eef90ebf4..35e447d4d 100644
+--- a/sal/Library_sal.mk
++++ b/sal/Library_sal.mk
+@@ -32,7 +32,7 @@ $(eval $(call gb_Library_add_defs,sal,\
+ 	-DSAL_DLLIMPLEMENTATION \
+ 	-DRTL_OS="\"$(RTL_OS)\"" \
+ 	-DRTL_ARCH="\"$(RTL_ARCH)\"" \
+-	-DSRCDIR="\"$(SRCDIR)\"" \
++	-DSRCDIR="\"/build/libreoffice-kit/source\"" \
+     $(call gb_CondLibSalTextenc,-DCOND_LIB_SAL_TEXTENC) \
+ ))
+ 
+diff --git a/sc/source/ui/miscdlgs/protectiondlg.cxx b/sc/source/ui/miscdlgs/protectiondlg.cxx
+index a606ce46a..3caad9e49 100644
+--- a/sc/source/ui/miscdlgs/protectiondlg.cxx
++++ b/sc/source/ui/miscdlgs/protectiondlg.cxx
+@@ -162,8 +162,12 @@ IMPL_LINK(ScTableProtectionDlg, PasswordModifyHdl, weld::Entry&, rEntry, void)
+     OUString aPass1 = m_xPassword1Edit->get_text();
+     if (&rEntry == m_xPassword1Edit.get())
+     {
++#if defined(DISABLE_DYNLOADING)
++        m_xPasswordStrengthBar->set_visible(false);
++#else
+         m_xPasswordStrengthBar->set_percentage(
+             SvPasswordHelper::GetPasswordStrengthPercentage(aPass1));
++#endif
+     }
+     OUString aPass2 = m_xPassword2Edit->get_text();
+     m_xBtnOk->set_sensitive(aPass1 == aPass2);
+diff --git a/sfx2/source/dialog/passwd.cxx b/sfx2/source/dialog/passwd.cxx
+index 78d8743f6..3dccba10c 100644
+--- a/sfx2/source/dialog/passwd.cxx
++++ b/sfx2/source/dialog/passwd.cxx
+@@ -47,8 +47,12 @@ void SfxPasswordDialog::ModifyHdl()
+     // if there's a confirm entry, the dialog is being used for setting a password
+     if (m_xConfirm1ED->get_visible())
+     {
++#if defined(DISABLE_DYNLOADING)
++        m_xPassword1StrengthBar->set_visible(false);
++#else
+         m_xPassword1StrengthBar->set_percentage(
+             SvPasswordHelper::GetPasswordStrengthPercentage(aPassword1Text));
++#endif
+         bool bPasswordMeetsPolicy = SvPasswordHelper::PasswordMeetsPolicy(
+             aPassword1Text, moPasswordPolicy);
+         m_xPassword1ED->set_message_type(bPasswordMeetsPolicy ? weld::EntryMessageType::Normal
+@@ -61,8 +65,12 @@ void SfxPasswordDialog::ModifyHdl()
+     {
+         OUString aPassword2Text = m_xPassword2ED->get_text();
+ 
++#if defined(DISABLE_DYNLOADING)
++        m_xPassword2StrengthBar->set_visible(false);
++#else
+         m_xPassword2StrengthBar->set_percentage(
+             SvPasswordHelper::GetPasswordStrengthPercentage(m_xPassword2ED->get_text()));
++#endif
+ 
+         // second password is optional, ignore policy if it is empty
+         bool bPasswordMeetsPolicy
+diff --git a/solenv/bin/concat-deps.c b/solenv/bin/concat-deps.c
+index 844b8bbd3..b6a010beb 100644
+--- a/solenv/bin/concat-deps.c
++++ b/solenv/bin/concat-deps.c
+@@ -1091,7 +1091,7 @@ static int process(struct hash* dep_hash, char* fn)
+                     created_line = generate_phony_line(src_relative, "o");
+                     rc = generate_phony_file(fn, created_line);
+                 }
+-                else if(strncmp(src_relative, "GenAsmObject/", 14) == 0)
++                else if(strncmp(src_relative, "GenAsmObject/", 13) == 0)
+                 {
+                     created_line = generate_phony_line(src_relative, "o");
+                     rc = generate_phony_file(fn, created_line);
+diff --git a/solenv/gbuild/Conditions.mk b/solenv/gbuild/Conditions.mk
+index 0a7b88969..c334672c4 100644
+--- a/solenv/gbuild/Conditions.mk
++++ b/solenv/gbuild/Conditions.mk
+@@ -13,7 +13,7 @@
+ # or the $(2) multiple times.
+ 
+ define gb_CondExeLockfile
+-$(if $(and $(filter-out ANDROID MACOSX iOS WNT,$(OS))),$(1),$(2))
++$(if $(or $(filter-out ANDROID MACOSX iOS WNT,$(OS)),$(and $(filter MACOSX,$(OS)),$(filter EMSCRIPTEN,$(BUILD_TYPE_FOR_HOST)))),$(1),$(2))
+ endef
+ 
+ define gb_CondExeRegistryTools
+diff --git a/solenv/gbuild/LinkTarget.mk b/solenv/gbuild/LinkTarget.mk
+index 3550b856d..430702966 100644
+--- a/solenv/gbuild/LinkTarget.mk
++++ b/solenv/gbuild/LinkTarget.mk
+@@ -62,11 +62,13 @@ endif
+ 
+ # generic cflags/cxxflags to use (optimization flags, debug flags)
+ # user supplied CFLAGS/CXXFLAGS override default debug/optimization flags
++# Prefix maps change build metadata, not optimization or debug policy.
++gb_LinkTarget__get_userflags=$(if $(strip $(filter-out -ffile-prefix-map=% -fdebug-prefix-map=% /pathmap:% /experimental:deterministic,$(1))),$(1),$(call gb_LinkTarget__get_debugflags,$(2)) $(1))
+ # call gb_LinkTarget__get_cflags,linktargetmakefilename
+-gb_LinkTarget__get_cflags=$(if $(CFLAGS),$(CFLAGS),$(call gb_LinkTarget__get_debugflags,$(1)))
+-gb_LinkTarget__get_objcflags=$(if $(OBJCFLAGS),$(OBJCFLAGS),$(call gb_LinkTarget__get_debugflags,$(1)))
+-gb_LinkTarget__get_cxxflags=$(if $(CXXFLAGS),$(CXXFLAGS),$(call gb_LinkTarget__get_debugflags,$(1)))
+-gb_LinkTarget__get_objcxxflags=$(if $(OBJCXXFLAGS),$(OBJCXXFLAGS),$(call gb_LinkTarget__get_debugflags,$(1)))
++gb_LinkTarget__get_cflags=$(call gb_LinkTarget__get_userflags,$(CFLAGS),$(1))
++gb_LinkTarget__get_objcflags=$(call gb_LinkTarget__get_userflags,$(OBJCFLAGS),$(1))
++gb_LinkTarget__get_cxxflags=$(call gb_LinkTarget__get_userflags,$(CXXFLAGS),$(1))
++gb_LinkTarget__get_objcxxflags=$(call gb_LinkTarget__get_userflags,$(OBJCXXFLAGS),$(1))
+ gb_LinkTarget__get_cxxclrflags=$(call gb_LinkTarget__get_debugflags,$(1))
+ # call gb_LinkTarget__get_ldflags,linktargetmakefilename
+ gb_LinkTarget__get_ldflags=$(if $(LDFLAGS),$(LDFLAGS),$(call gb_LinkTarget__get_debugldflags,$(1)))
+@@ -646,7 +648,7 @@ endif
+ gb_GenAsmObject_get_source = $(call gb_AsmObject_get_source,$(WORKDIR),$(1))
+ 
+ $(call gb_GenAsmObject_get_target,%) :
+-	$(call gb_AsmObject__command,$@,$*,$<,$(call gb_GenAsmObject_get_dep_target,$*))
++	$(call gb_AsmObject__command,$@,$*,$(call gb_GenAsmObject_get_source,$*),$(call gb_GenAsmObject_get_dep_target,$*))
+ 
+ ifeq ($(gb_FULLDEPS),$(true))
+ $(dir $(call gb_GenAsmObject_get_dep_target,%)).dir :
+diff --git a/solenv/gbuild/Rdb.mk b/solenv/gbuild/Rdb.mk
+index fff774dcb..21a92061a 100644
+--- a/solenv/gbuild/Rdb.mk
++++ b/solenv/gbuild/Rdb.mk
+@@ -42,7 +42,7 @@ define gb_Rdb__Rdb_impl
+ # specific even in the corner case of an empty Rdb with no gb_Rdb_add_component calls, so that the
+ # use of $(COMPONENTS) in gb_Rdb__command would not accidentally pick a global COMPONENTS variable:
+ $(call gb_Rdb_get_target,$(1)) : COMPONENTS ?=
+-$(call gb_Rdb_get_target,$(1)) : $(gb_Module_CURRENTMAKEFILE)
++$(call gb_Rdb_get_target,$(1)) : $(gb_Module_CURRENTMAKEFILE) $(BUILDDIR)/config_host.mk
+ $$(eval $$(call gb_Module_register_target,$(2),$(call gb_Rdb_get_clean_target,$(1))))
+ $(call gb_Helper_make_userfriendly_targets,$(1),Rdb,$(2))
+ 
+diff --git a/solenv/gbuild/platform/EMSCRIPTEN_INTEL_GCC.mk b/solenv/gbuild/platform/EMSCRIPTEN_INTEL_GCC.mk
+index 17bc0ba3f..b26fb40af 100644
+--- a/solenv/gbuild/platform/EMSCRIPTEN_INTEL_GCC.mk
++++ b/solenv/gbuild/platform/EMSCRIPTEN_INTEL_GCC.mk
+@@ -9,6 +9,10 @@
+ 
+ include $(GBUILDDIR)/platform/unxgcc.mk
+ 
++ifeq ($(OS_FOR_BUILD),MACOSX)
++gb_Library_PLAINEXT_FOR_BUILD := .dylib
++endif
++
+ gb_RUN_CONFIGURE := $(SRCDIR)/solenv/bin/run-configure
+ # avoid -s SAFE_HEAP=1 - c.f. gh#8584 this breaks source maps
+ gb_EMSCRIPTEN_CPPFLAGS := -pthread -s USE_PTHREADS=1 -D_LARGEFILE64_SOURCE -D_LARGEFILE_SOURCE -s SUPPORT_LONGJMP=wasm
+@@ -27,7 +31,7 @@ gb_EMSCRIPTEN_LDFLAGS += -sSTACK_SIZE=131072 -sDEFAULT_PTHREAD_STACK_SIZE=65536
+ # To keep the link time (and memory) down, prevent all rewriting options from wasm-emscripten-finalize
+ # See emscripten.py, finalize_wasm, modify_wasm = True
+ # So we need WASM_BIGINT=1 and ASSERTIONS=1 (2 implies STACK_OVERFLOW_CHECK)
+-gb_EMSCRIPTEN_LDFLAGS += --bind -s FORCE_FILESYSTEM=1 -s WASM_BIGINT=1 -s ERROR_ON_UNDEFINED_SYMBOLS=1 -s FETCH=1 -s ASSERTIONS=1 -s EXIT_RUNTIME=0 -s EXPORTED_RUNTIME_METHODS=["UTF16ToString","stringToUTF16","UTF8ToString","ccall","cwrap","addOnPreMain","addOnPostRun","registerType","throwBindingError","ClassHandle","HEAPU16","HEAPU32"$(if $(ENABLE_QT6),$(COMMA)"FS"$(COMMA)"callMain"$(COMMA)"specialHTMLTargets")]
++gb_EMSCRIPTEN_LDFLAGS += --bind -s FORCE_FILESYSTEM=1 -s WASM_BIGINT=1 -s ERROR_ON_UNDEFINED_SYMBOLS=1 -s FETCH=1 -s ASSERTIONS=1 -s EXIT_RUNTIME=0 -s EXPORTED_RUNTIME_METHODS=["UTF16ToString","stringToUTF16","UTF8ToString","ccall","cwrap","addOnPreMain","addOnPostRun","registerType","throwBindingError","ClassHandle","HEAPU16","HEAPU32","FS","ENV","PThread"$(if $(ENABLE_QT6),$(COMMA)"FS"$(COMMA)"callMain"$(COMMA)"specialHTMLTargets")]
+ gb_EMSCRIPTEN_QTDEFS := -DQT_NO_LINKED_LIST -DQT_NO_JAVA_STYLE_ITERATORS -DQT_NO_EXCEPTIONS -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
+ 
+ ifeq ($(ENABLE_EMSCRIPTEN_JSPI),TRUE)
+@@ -69,7 +73,7 @@ endif
+ endif
+ 
+ # Linker and compiler optimize + debug flags are handled in LinkTarget.mk
+-gb_LINKEROPTFLAGS :=
++gb_LINKEROPTFLAGS := -Oz
+ gb_LINKERSTRIPDEBUGFLAGS :=
+ # This maps to g3, no source maps, but DWARF with current emscripten!
+ # https://developer.chrome.com/blog/wasm-debugging-2020/
+@@ -79,7 +83,13 @@ ifeq ($(HAVE_EXTERNAL_DWARF),TRUE)
+ gb_DEBUGINFO_FLAGS += -gseparate-dwarf -gsplit-dwarf -gpubnames
+ endif
+ 
+-gb_COMPILEROPTFLAGS := -O3
++gb_COMPILEROPTFLAGS := -Oz
++
++ifeq ($(ENABLE_LTO),TRUE)
++# Emscripten's LLVM tools consume bitcode directly, without a native gold plugin.
++gb_LTOFLAGS := -flto
++gb_LTOPLUGINFLAGS :=
++endif
+ 
+ # We need at least code elimination, otherwise linking OOMs even with 64GB.
+ # So we "fake" -Og support to mean -O1 for Emscripten and always enable it for debug in configure.
+diff --git a/static/CustomTarget_emscripten_fs_image.mk b/static/CustomTarget_emscripten_fs_image.mk
+index 7e4057ec9..ee34164ef 100644
+--- a/static/CustomTarget_emscripten_fs_image.mk
++++ b/static/CustomTarget_emscripten_fs_image.mk
+@@ -1703,7 +1703,6 @@ gb_emscripten_fs_image_files += \
+     $(INSTROOT)/$(LIBO_SHARE_PRESETS_FOLDER)/config/autotbl.fmt \
+     $(INSTROOT)/$(LIBO_SHARE_PRESETS_FOLDER)/gallery/sg30.sdv \
+     $(INSTROOT)/$(LIBO_SHARE_PRESETS_FOLDER)/gallery/sg30.thm \
+-    $(INSTROOT)/$(LIBO_SHARE_RESOURCE_FOLDER)/common/fonts/opens___.ttf \
+     $(INSTROOT)/$(LIBO_URE_ETC_FOLDER)/$(call gb_Helper_get_rcfile,uno) \
+     $(INSTROOT)/$(LIBO_URE_MISC_FOLDER)/services.rdb \
+     $(SRCDIR)/android/default-document/example.odt \
+diff --git a/svl/Library_svl.mk b/svl/Library_svl.mk
+index f8fe1a073..3339c34e9 100644
+--- a/svl/Library_svl.mk
++++ b/svl/Library_svl.mk
+@@ -29,7 +29,7 @@ $(eval $(call gb_Library_use_externals,svl,\
+     icuuc \
+     mdds_headers \
+     libxml2 \
+-    zxcvbn-c \
++    $(if $(DISABLE_DYNLOADING),,zxcvbn-c) \
+ ))
+ 
+ $(eval $(call gb_Library_set_componentfile,svl,svl/util/svl,services))
+diff --git a/svl/source/misc/PasswordHelper.cxx b/svl/source/misc/PasswordHelper.cxx
+index e7e187cee..fe41b44fb 100644
+--- a/svl/source/misc/PasswordHelper.cxx
++++ b/svl/source/misc/PasswordHelper.cxx
+@@ -25,7 +25,9 @@
+ #include <unicode/regex.h>
+ #include <unicode/unistr.h>
+ #include <unicode/errorcode.h>
++#if !defined(DISABLE_DYNLOADING)
+ #include <zxcvbn.h>
++#endif
+ #include <sal/log.hxx>
+ 
+ #include <com/sun/star/uno/Sequence.hxx>
+@@ -136,6 +138,7 @@ bool SvPasswordHelper::CompareHashPassword(const uno::Sequence<sal_Int8>& rOldPa
+     return bResult;
+ }
+ 
++#if !defined(DISABLE_DYNLOADING)
+ double SvPasswordHelper::GetPasswordStrengthPercentage(const char* pPassword)
+ {
+     // Entropy bits ≥ 112 are mapped to 100% password strength.
+@@ -153,6 +156,8 @@ double SvPasswordHelper::GetPasswordStrengthPercentage(const OUString& aPassword
+     return GetPasswordStrengthPercentage(aPasswordUtf8.getStr());
+ }
+ 
++#endif
++
+ bool SvPasswordHelper::PasswordMeetsPolicy(const char* pPassword,
+                                            const std::optional<OUString>& oPasswordPolicy)
+ {
+diff --git a/uui/Library_uui.mk b/uui/Library_uui.mk
+index 0e82e131b..11dbe4c1c 100644
+--- a/uui/Library_uui.mk
++++ b/uui/Library_uui.mk
+@@ -17,7 +17,7 @@ $(eval $(call gb_Library_set_include,uui,\
+ $(eval $(call gb_Library_set_componentfile,uui,uui/util/uui,services))
+ 
+ $(eval $(call gb_Library_use_external,uui,boost_headers))
+-$(eval $(call gb_Library_use_external,uui,curl))
++$(if $(ENABLE_CURL),$(eval $(call gb_Library_use_external,uui,curl)))
+ 
+ $(eval $(call gb_Library_use_custom_headers,uui,\
+     officecfg/registry \
+diff --git a/uui/source/masterpasscrtdlg.cxx b/uui/source/masterpasscrtdlg.cxx
+index fa1061eb9..aa1d9cd02 100644
+--- a/uui/source/masterpasscrtdlg.cxx
++++ b/uui/source/masterpasscrtdlg.cxx
+@@ -35,8 +35,12 @@ IMPL_LINK_NOARG(MasterPasswordCreateDialog, EditHdl_Impl, weld::Entry&, void)
+ {
+     OUString aPasswordText = m_xEDMasterPasswordCrt->get_text();
+     m_xOKBtn->set_sensitive(aPasswordText.getLength() >= 1);
++#if defined(DISABLE_DYNLOADING)
++    m_xPasswdStrengthBar->set_visible(false);
++#else
+     m_xPasswdStrengthBar->set_percentage(
+         SvPasswordHelper::GetPasswordStrengthPercentage(aPasswordText));
++#endif
+ 
+     if(m_oPasswordPolicy)
+     {
+diff --git a/vcl/headless/svpinst.cxx b/vcl/headless/svpinst.cxx
+index 33f2ba9f8..e7ba8e26f 100644
+--- a/vcl/headless/svpinst.cxx
++++ b/vcl/headless/svpinst.cxx
+@@ -300,6 +300,15 @@ void SvpSalInstance::ProcessEvent( SalUserEvent aEvent )
+ 
+ #if defined __EMSCRIPTEN__
+ 
++// A browser-owned LibreOfficeKit instance yields between messages instead of
++// entering the application's Emscripten main loop. Never wait on the Worker.
++extern "C" bool dsh_lok_yield()
++{
++    SolarMutexGuard guard;
++    auto* instance = SvpSalInstance::s_pDefaultInstance;
++    return instance && instance->ImplYield(false, true);
++}
++
+ static void loop(void * arg) {
+     SolarMutexGuard g;
+     static_cast<SvpSalInstance *>(arg)->ImplYield(comphelper::LibreOfficeKit::isActive(), false);
+diff --git a/vcl/inc/font/PhysicalFontCollection.hxx b/vcl/inc/font/PhysicalFontCollection.hxx
+index b5509b8f6..81e195a49 100644
+--- a/vcl/inc/font/PhysicalFontCollection.hxx
++++ b/vcl/inc/font/PhysicalFontCollection.hxx
+@@ -29,6 +29,10 @@
+ 
+ #include <array>
+ #include <string_view>
++#if defined __EMSCRIPTEN__
++#include <unordered_set>
++#include <vector>
++#endif
+ 
+ #define MAX_GLYPHFALLBACK 16
+ 
+@@ -81,6 +85,12 @@ public:
+     SAL_DLLPRIVATE std::unique_ptr<vcl::font::PhysicalFontFaceCollection> GetFontFaceCollection() const;
+ 
+ private:
++#if defined __EMSCRIPTEN__
++    mutable std::unordered_set<OUString> maDemandFontFiles;
++    mutable std::unordered_set<OUString> maDemandFontFamilies;
++    std::vector<OUString> EnsureSystemFonts(const vcl::font::FontSelectPattern&,
++                                           const OUString& rMissingCodes, bool& rAdded) const;
++#endif
+     mutable bool            mbMatchData;    // true if matching attributes are initialized
+ 
+     typedef std::unordered_map<OUString, std::unique_ptr<vcl::font::PhysicalFontFamily>> PhysicalFontFamilies;
+diff --git a/vcl/inc/unx/freetypetextrender.hxx b/vcl/inc/unx/freetypetextrender.hxx
+index e3bba325c..4b0a1d624 100644
+--- a/vcl/inc/unx/freetypetextrender.hxx
++++ b/vcl/inc/unx/freetypetextrender.hxx
+@@ -49,6 +49,9 @@ public:
+     virtual bool                AddTempDevFont( vcl::font::PhysicalFontCollection*, const OUString& rFileURL, const OUString& rFontName ) override;
+     virtual bool                RemoveTempDevFont( const OUString& rFileURL, const OUString& rFontName ) override;
+ 
++    static bool RegisterFontFile(vcl::font::PhysicalFontCollection*, const OUString& rFileURL,
++                                 const OUString& rFontName);
++
+     virtual std::unique_ptr<GenericSalLayout>
+                                 GetTextLayout(int nFallbackLevel) override;
+ };
+diff --git a/vcl/source/font/PhysicalFontCollection.cxx b/vcl/source/font/PhysicalFontCollection.cxx
+index 5ce7a60cb..2f0a0d3ea 100644
+--- a/vcl/source/font/PhysicalFontCollection.cxx
++++ b/vcl/source/font/PhysicalFontCollection.cxx
+@@ -31,6 +31,15 @@
+ #include <font/PhysicalFontCollection.hxx>
+ #include <font/fontsubstitution.hxx>
+ 
++#if defined __EMSCRIPTEN__
++#include <cstdlib>
++#include <stdexcept>
++#include <emscripten.h>
++#include <osl/file.hxx>
++#include <rtl/ustrbuf.hxx>
++#include <unx/freetypetextrender.hxx>
++#endif
++
+ static ImplFontAttrs lcl_IsCJKFont( std::u16string_view rFontName )
+ {
+     // Test, if Fontname includes CJK characters --> In this case we
+@@ -68,6 +77,110 @@ static ImplFontAttrs lcl_IsCJKFont( std::u16string_view rFontName )
+ namespace vcl::font
+ {
+ 
++#if defined __EMSCRIPTEN__
++std::vector<OUString> PhysicalFontCollection::EnsureSystemFonts(
++    const FontSelectPattern& rPattern, const OUString& rMissingCodes, bool& rAdded) const
++{
++    rAdded = false;
++    const OUString aLanguage = LanguageTag(rPattern.meLanguage).getBcp47();
++    char aError[4096] = {};
++    int nFatal = 0;
++    // The resolver runs on the runtime's JS thread, including when layout runs in a pthread.
++    // It may read host files and write MEMFS, but must not reenter LibreOffice.
++    auto* pPaths = static_cast<char*>(MAIN_THREAD_EM_ASM_PTR({
++        try {
++            const resolver = Module['dshResolveSystemFonts'];
++            const faceResolver = Module['dshResolveSystemFontFaces'];
++            if (typeof faceResolver !== 'function' && typeof resolver !== 'function')
++                throw new Error('LibreOffice system font resolver is not configured');
++            const request = ({
++                family: UTF16ToString($0),
++                style: UTF16ToString($1),
++                weight: $2,
++                italic: $3,
++                width: $4,
++                pitch: $5,
++                language: UTF16ToString($6),
++                codePoints: Array.from(UTF16ToString($7), char => char.codePointAt(0))
++            });
++            const faces = typeof faceResolver === 'function' ? faceResolver(request)
++                : resolver(request).map(path => ({ path, family: "" }));
++            const invalid = value => typeof value !== 'string' || ([0, 9, 10, 13]).some(code =>
++                value.includes(String.fromCharCode(code)));
++            if (!Array.isArray(faces) || faces.some(face => !face || invalid(face.path)
++                || !face.path.startsWith('/') || invalid(face.family)))
++                throw new TypeError('LibreOffice font resolver must return MEMFS face records synchronously');
++            if (faces.length === 0)
++                return 0;
++            const records = faces.map(face => face.path + String.fromCharCode(9) + face.family);
++            const bytes = new TextEncoder().encode(records.join(String.fromCharCode(10)) + String.fromCharCode(0));
++            const pointer = Module['_malloc'](bytes.length);
++            if (!pointer)
++                throw new Error('LibreOffice system font response allocation failed');
++            HEAPU8.set(bytes, pointer);
++            return pointer;
++        } catch (error) {
++            if (error instanceof WebAssembly.RuntimeError) {
++                if (typeof Module['onAbort'] === 'function')
++                    Module['onAbort'](error);
++                HEAP32[$10 >> 2] = 1;
++                return 0;
++            }
++            stringToUTF8('LibreOffice system font callback failed: ' + String(error), $8, $9);
++            return 0;
++        }
++    }, rPattern.GetFamilyName().getStr(), rPattern.GetStyleName().getStr(),
++       static_cast<int>(rPattern.GetWeight()), static_cast<int>(rPattern.GetItalic()),
++       static_cast<int>(rPattern.GetWidthType()), static_cast<int>(rPattern.GetPitch()),
++       aLanguage.getStr(), rMissingCodes.getStr(), aError, sizeof(aError), &nFatal));
++    // WASM traps bypass C++ unwinding; an aborted engine cannot safely allocate an exception.
++    if (nFatal)
++        __builtin_trap();
++    // EM_ASM imports are nothrow; construct the C++ exception only after returning from JS.
++    if (aError[0] != '\0')
++        throw std::runtime_error(aError);
++    std::unique_ptr<char, decltype(&std::free)> aOwnedPaths(pPaths, std::free);
++    if (!pPaths)
++        return {};
++
++    std::vector<OUString> aFamilies;
++    const OUString aPaths = OUString::fromUtf8(pPaths);
++    sal_Int32 nPosition = 0;
++    do
++    {
++        const OUString aRecord = aPaths.getToken(0, '\n', nPosition);
++        const sal_Int32 nSeparator = aRecord.indexOf('\t');
++        if (nSeparator < 0)
++            throw std::runtime_error("LibreOffice received an invalid font face record");
++        const OUString aPath = aRecord.copy(0, nSeparator);
++        const OUString aFamily = aRecord.copy(nSeparator + 1);
++        if (!aFamily.isEmpty())
++        {
++            aFamilies.push_back(aFamily);
++            maDemandFontFamilies.insert(GetEnglishSearchFontName(aFamily));
++        }
++        if (maDemandFontFiles.find(aPath) != maDemandFontFiles.end())
++            continue;
++        OUString aFileURL;
++        if (osl::FileBase::getFileURLFromSystemPath(aPath, aFileURL) != osl::FileBase::E_None
++            || !FreeTypeTextRenderImpl::RegisterFontFile(
++                const_cast<PhysicalFontCollection*>(this), aFileURL, aFamily))
++            throw std::runtime_error("LibreOffice could not register a supplied system font");
++        maDemandFontFiles.insert(aPath);
++        rAdded = true;
++    } while (nPosition >= 0);
++
++    if (rAdded)
++    {
++        // Active layout objects keep their font faces; only derived matching data becomes stale.
++        mbMatchData = false;
++        mpFallbackList.reset();
++        mnFallbackCount = -1;
++    }
++    return aFamilies;
++}
++#endif
++
+ PhysicalFontCollection::PhysicalFontCollection()
+     : mbMatchData( false )
+     , mpPreMatchHook( nullptr )
+@@ -92,6 +205,10 @@ void PhysicalFontCollection::SetFallbackHook(GlyphFallbackFontSubstitution* pHoo
+ 
+ void PhysicalFontCollection::Clear()
+ {
++#if defined __EMSCRIPTEN__
++    maDemandFontFiles.clear();
++    maDemandFontFamilies.clear();
++#endif
+     // remove fallback lists
+     mpFallbackList.reset();
+     mnFallbackCount = -1;
+@@ -185,6 +302,60 @@ PhysicalFontFamily* PhysicalFontCollection::GetGlyphFallbackFont(FontSelectPatte
+                                                                  OUString& rMissingCodes,
+                                                                  int nFallbackLevel) const
+ {
++#if defined __EMSCRIPTEN__
++    bool bAdded = false;
++    const auto aFamilies = EnsureSystemFonts(rFontSelData, rMissingCodes, bAdded);
++    if (bAdded)
++    {
++        for (sal_Int32 nIndex = 0; nIndex < rMissingCodes.getLength();)
++        {
++            const sal_UCS4 nCode = rMissingCodes.iterateCodePoints(&nIndex);
++            OUString aFamily;
++            bool bEmbolden;
++            ItalicMatrix aMatrix;
++            if (pFontInstance->GetFallbackForUnicode(nCode, rFontSelData.GetWeight(),
++                                                    &aFamily, &bEmbolden, &aMatrix))
++                pFontInstance->IgnoreFallbackForUnicode(nCode, rFontSelData.GetWeight(), aFamily);
++        }
++    }
++    // Script subsets have distinct families. Choose by cmap instead of asking
++    // Fontconfig to choose among the original font's identically named files.
++    for (const auto& rFamily : aFamilies)
++    {
++        auto* pFamily = FindFontFamily(rFamily);
++        auto* pFace = pFamily ? pFamily->FindBestFontFace(rFontSelData) : nullptr;
++        const FontCharMapRef pMap = pFace ? pFace->GetFontCharMap() : nullptr;
++        if (!pMap)
++            continue;
++        const OUString aSearchName = GetEnglishSearchFontName(rFamily);
++        OUStringBuffer aRemaining;
++        bool bCovered = false;
++        for (sal_Int32 nIndex = 0; nIndex < rMissingCodes.getLength();)
++        {
++            const sal_UCS4 nCode = rMissingCodes.iterateCodePoints(&nIndex);
++            if (!pMap->HasChar(nCode))
++            {
++                aRemaining.appendUtf32(nCode);
++                continue;
++            }
++            bCovered = true;
++            OUString aOldFamily;
++            bool bOldEmbolden;
++            ItalicMatrix aOldMatrix;
++            if (pFontInstance->GetFallbackForUnicode(nCode, rFontSelData.GetWeight(),
++                                                    &aOldFamily, &bOldEmbolden, &aOldMatrix))
++                pFontInstance->IgnoreFallbackForUnicode(nCode, rFontSelData.GetWeight(), aOldFamily);
++            pFontInstance->AddFallbackForUnicode(nCode, rFontSelData.GetWeight(), aSearchName,
++                                                 rFontSelData.mbEmbolden, rFontSelData.maItalicMatrix);
++        }
++        if (bCovered)
++        {
++            rFontSelData.maSearchName = aSearchName;
++            rMissingCodes = aRemaining.makeStringAndClear();
++            return pFamily;
++        }
++    }
++#endif
+     PhysicalFontFamily* pFallbackData = nullptr;
+ 
+     // find a matching font candidate for platform specific glyph fallback
+@@ -941,6 +1112,10 @@ std::shared_ptr<PhysicalFontCollection> PhysicalFontCollection::Clone() const
+     auto xClonedCollection = std::make_shared<PhysicalFontCollection>();
+     xClonedCollection->mpPreMatchHook = mpPreMatchHook;
+     xClonedCollection->mpFallbackHook = mpFallbackHook;
++#if defined __EMSCRIPTEN__
++    xClonedCollection->maDemandFontFiles = maDemandFontFiles;
++    xClonedCollection->maDemandFontFamilies = maDemandFontFamilies;
++#endif
+ 
+     // TODO: clone the config-font attributes too?
+     xClonedCollection->mbMatchData    = false;
+@@ -1008,6 +1183,20 @@ static bool FindMetricCompatibleFont_impl(FontSelectPattern& rFontSelData)
+ 
+ PhysicalFontFamily* PhysicalFontCollection::FindFontFamily(FontSelectPattern& rFSD) const
+ {
++#if defined __EMSCRIPTEN__
++    const OUString aRequested = GetEnglishSearchFontName(rFSD.GetFamilyName());
++    if (maDemandFontFamilies.find(aRequested) != maDemandFontFamilies.end())
++        return FindFontFamily(aRequested);
++    bool bAdded = false;
++    for (const auto& rFamily : EnsureSystemFonts(rFSD, OUString(), bAdded))
++    {
++        if (auto* pFamily = FindFontFamily(rFamily))
++        {
++            rFSD.maSearchName = GetEnglishSearchFontName(rFamily);
++            return pFamily;
++        }
++    }
++#endif
+     // give up if no fonts are available
+     if( !Count() )
+         return nullptr;
+diff --git a/vcl/source/image/ImplImageTree.cxx b/vcl/source/image/ImplImageTree.cxx
+index a883b13c5..6a07650b0 100644
+--- a/vcl/source/image/ImplImageTree.cxx
++++ b/vcl/source/image/ImplImageTree.cxx
+@@ -499,9 +499,9 @@ void ImplImageTree::createStyle()
+     if (isVclDemo())
+     {
+         if (maCurrentStyle == "default")
+-            sThemeUrl = "file://" SRC_ROOT "/icon-themes/colibre-svg";
++            sThemeUrl = "file:///build/libreoffice-kit/source/icon-themes/colibre-svg";
+         else
+-            sThemeUrl = "file://" SRC_ROOT "/icon-themes/" + maCurrentStyle;
++            sThemeUrl = "file:///build/libreoffice-kit/source/icon-themes/" + maCurrentStyle;
+     }
+     else if (maCurrentStyle != "default")
+     {
+diff --git a/vcl/source/outdev/font.cxx b/vcl/source/outdev/font.cxx
+index 8a71a2ef0..bdc2dbacf 100644
+--- a/vcl/source/outdev/font.cxx
++++ b/vcl/source/outdev/font.cxx
+@@ -50,6 +50,7 @@
+ #include <font/PhysicalFontFaceCollection.hxx>
+ #include <font/PhysicalFontCollection.hxx>
+ #include <font/FeatureCollector.hxx>
++#include <font/FontSelectPattern.hxx>
+ #include <impglyphitem.hxx>
+ #include <sallayout.hxx>
+ #include <salgdi.hxx>
+@@ -650,6 +651,15 @@ void OutputDevice::ImplInitFontList() const
+     SAL_INFO( "vcl.gdi", "OutputDevice::ImplInitFontList()" );
+     mpGraphics->GetDevFontList(mxFontCollection.get());
+ 
++#ifdef __EMSCRIPTEN__
++    if (!mxFontCollection->Count())
++    {
++        vcl::font::FontSelectPattern aPattern(maFont, maFont.GetFamilyName(), maFont.GetFontSize(),
++                                            static_cast<float>(maFont.GetFontSize().Height()));
++        mxFontCollection->FindFontFamily(aPattern);
++    }
++#endif
++
+     // There is absolutely no way there should be no fonts available on the device
+     if( !mxFontCollection->Count() )
+     {
+diff --git a/vcl/unx/generic/gdi/freetypetextrender.cxx b/vcl/unx/generic/gdi/freetypetextrender.cxx
+index 2af043a48..4786ce5cc 100644
+--- a/vcl/unx/generic/gdi/freetypetextrender.cxx
++++ b/vcl/unx/generic/gdi/freetypetextrender.cxx
+@@ -95,6 +95,12 @@ FreeTypeTextRenderImpl::SetTextColor( Color nColor )
+ 
+ bool FreeTypeTextRenderImpl::AddTempDevFont(vcl::font::PhysicalFontCollection* pFontCollection,
+                                             const OUString& rFileURL, const OUString& rFontName)
++{
++    return RegisterFontFile(pFontCollection, rFileURL, rFontName);
++}
++
++bool FreeTypeTextRenderImpl::RegisterFontFile(vcl::font::PhysicalFontCollection* pFontCollection,
++                                             const OUString& rFileURL, const OUString& rFontName)
+ {
+     // inform PSP font manager
+     psp::PrintFontManager& rMgr = psp::PrintFontManager::get();

@@ -1,0 +1,288 @@
+import { createElement as h, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useTurnFacts } from './btw.js'
+import { agentEditRows, answerFailure, answerKeepsCard, lineDiff, proposalCards, proposalPlacement, withoutEntry } from './learning-card-model.js'
+import { currentPart } from './text.js'
+import { t } from './i18n.js'
+import { CheckIcon, MemoryIcon, PencilIcon } from './icons.js'
+import { spring, SPRING_TAP, useLinger } from './motion.js'
+import { useEscape } from './overlay-hooks.js'
+
+// One entry per proposal still waiting for another try, kept across remounts.
+const failedAnswers = new Map()
+
+export function PendingLearning({ sessionId, useRoster, actions }) {
+  const roster = useRoster(value => value)
+  const bot = roster.byId?.[sessionId]
+  const proposals = bot && currentPart(bot) === sessionId ? roster.learning?.[bot.id] ?? [] : []
+  const settledIds = (bot === undefined ? [] : roster.learningSettled?.[bot.id] ?? []).map(entry => entry.id)
+  const [open, setOpen] = useState(false)
+  const root = useRef(null)
+  const [shown, leaving] = useLinger(open, 120)
+  useEffect(() => { setOpen(false) }, [sessionId, proposals.length === 0])
+  useEffect(() => {
+    if (settledIds.length === 0) return
+    for (const id of settledIds) failedAnswers.delete(id)
+  }, [settledIds.join('|')])
+  useEffect(() => {
+    if (!open) return
+    const outside = event => { if (!root.current?.contains(event.target)) setOpen(false) }
+    document.addEventListener('pointerdown', outside)
+    return () => document.removeEventListener('pointerdown', outside)
+  }, [open])
+  if (proposals.length === 0) return null
+  const onFailure = (proposal, failure) => {
+    if (answerKeepsCard(failure)) failedAnswers.set(proposal.id, { proposal, error: failure?.message ?? String(failure) })
+    else failedAnswers.delete(proposal.id)
+  }
+  const onResolved = id => { failedAnswers.delete(id) }
+  return h('div', { className: 'bt-learning-pending', ref: root },
+    h('button', { type: 'button', className: 'bt-learning-pending-toggle', 'aria-expanded': open, onClick: () => setOpen(!open) },
+      h('span', { className: 'bt-learning-dot', 'aria-hidden': true }),
+      h('span', { className: 'bt-learning-pending-label' }, t('Awaiting approval'), ` · ${proposals.length}`)),
+    shown ? h(PendingLearningPanel, { proposals, actions, onFailure, onResolved, leaving, close: () => { setOpen(false); root.current?.querySelector('button')?.focus() } }) : null)
+}
+
+function PendingLearningPanel({ proposals, actions, onFailure, onResolved, close, leaving }) {
+  useEscape(close)
+  return h('div', { className: 'bt-learning-pending-panel', 'data-leaving': leaving || undefined, role: 'region', 'aria-label': t('Awaiting approval') },
+    proposals.map(proposal => h(ProposalCard, {
+      key: proposal.id,
+      proposal,
+      initialError: failedAnswers.get(proposal.id)?.error,
+      onFailure,
+      onResolved,
+      actions,
+    })))
+}
+
+// `proposal.outcome` set: an answered card, read-only and folded to one row (what
+// it was, how it ended, its name); the row opens the change.
+function ProposalCard({ proposal, initialError = '', onFailure, onResolved, actions }) {
+  const outcome = proposal.outcome
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(initialError)
+  const [open, setOpen] = useState(false)
+  const busyRef = useRef(false)
+  const titleId = useId()
+  const answer = approve => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setError('')
+    void Promise.resolve().then(() => actions.learningAnswer(proposal.id, approve))
+      .then(() => onResolved(proposal.id), failure => {
+        setError(failure?.message ?? String(failure))
+        onFailure(proposal, failure)
+      })
+      .finally(() => {
+        busyRef.current = false
+        setBusy(false)
+      })
+  }
+  const update = proposal.action === 'update'
+  const agents = proposal.kind === 'agents'
+  const rows = useMemo(() => lineDiff(update ? proposal.previous?.content : '', proposal.content), [update, proposal.previous?.content, proposal.content])
+  const change = agents
+    ? [
+      h(FileBox, { key: 'file', name: 'AGENTS.md', path: proposal.folder, state: proposal.exists === false ? 'Added' : 'Modified', blocks: proposal.edits.map(agentEditRows) }),
+      ...proposal.edits.map((edit, index) => edit.why ? h('p', { className: 'bt-learning-why', key: `why-${index}` }, edit.why) : null),
+    ]
+    : [
+      h(FileBox, { key: 'file', name: 'SKILL.md', path: `skills/${proposal.name}`, state: update ? 'Updated' : 'Added', blocks: [rows] }),
+      proposal.why ? h('p', { className: 'bt-learning-why', key: 'why' }, proposal.why) : null,
+    ]
+  const kind = t(agents ? 'AGENTS.md update' : update ? 'Skill update' : 'New skill')
+  if (outcome) {
+    const what = agents ? proposal.folder : proposal.name
+    return h('section', { className: 'bt-q bt-q-settled bt-learning-card bt-learning-settled', role: 'group', 'aria-label': `${kind} · ${what}`, 'data-outcome': outcome },
+      h('button', { type: 'button', className: 'bt-learning-fold', 'aria-expanded': open, onClick: () => setOpen(!open) },
+        h('span', { className: 'bt-learning-icon', 'aria-hidden': true }, h(agents ? PencilIcon : MemoryIcon)),
+        h('span', { className: 'bt-learning-kind' }, kind),
+        h('span', { className: 'bt-learning-sum' }, `${t(outcome === 'approved' ? 'Approved' : 'Declined')} · ${what}`)),
+      open ? change : null)
+  }
+  const oldDetail = update && typeof proposal.previous?.description === 'string' && proposal.previous.description !== proposal.description ? proposal.previous.description : undefined
+  return h('section', { className: 'bt-q bt-learning-card', role: 'group', 'aria-labelledby': titleId, 'aria-busy': busy },
+    agents
+      ? h(ProposalHead, { titleId, icon: PencilIcon, title: kind })
+      : h(ProposalHead, { titleId, title: proposal.name, kind, detail: proposal.description, oldDetail }),
+    change,
+    error ? h('div', { className: 'bt-learning-error', role: 'alert' }, error) : null,
+    h(ProposalFoot, { busy, answer }))
+}
+
+function ProposalHead({ titleId, icon = MemoryIcon, title, kind, detail, oldDetail }) {
+  return h('div', { className: 'bt-q-head' },
+    h('span', { className: 'bt-learning-icon', 'aria-hidden': true }, h(icon)),
+    h('div', { className: 'bt-q-text' },
+      h('p', { className: 'bt-q-title', id: titleId }, title),
+      kind ? h('div', { className: 'bt-q-detail' }, kind) : null,
+      oldDetail ? h('p', { className: 'bt-learning-description bt-learning-old' }, h('del', null, oldDetail)) : null,
+      detail ? h('p', { className: 'bt-learning-description' }, detail) : null),
+    h('span', { className: 'bt-q-badge bt-learning-status' }, h('span', { className: 'bt-learning-dot', 'aria-hidden': true }), t('Awaiting approval')))
+}
+
+function ProposalFoot({ busy, answer }) {
+  return h('div', { className: 'bt-q-foot bt-learning-foot' },
+    h('button', { type: 'button', className: 'bt-learning-btn bt-learning-decline', disabled: busy, onClick: () => answer(false) }, t('Decline')),
+    h('button', { type: 'button', className: 'bt-learning-btn bt-learning-approve', disabled: busy, onClick: () => answer(true) },
+      h(CheckIcon), t('Approve')))
+}
+
+const COLLAPSE_ROWS = 8
+const SIGNS = { added: '+', removed: '\u2212', same: '' }
+
+function FileBox({ name, path, state, blocks }) {
+  const [open, setOpen] = useState(false)
+  const all = blocks.flat()
+  const added = all.filter(row => row.kind === 'added').length
+  const removed = all.filter(row => row.kind === 'removed').length
+  const folds = all.length > COLLAPSE_ROWS
+  const shut = folds && !open
+  return h('div', { className: 'bt-learning-file' },
+    h('div', { className: 'bt-learning-filehead' },
+      h('span', { className: 'bt-learning-name' }, name),
+      path ? h('span', { className: 'bt-learning-path' }, path) : null,
+      h('span', { className: 'bt-learning-spacer' }),
+      added > 0 ? h('span', { className: 'bt-learning-plus' }, `+${added}`) : null,
+      removed > 0 ? h('span', { className: 'bt-learning-minus' }, `\u2212${removed}`) : null,
+      h('span', { className: `bt-learning-state bt-learning-state-${state.toLowerCase()}` }, t(state))),
+    h('div', { className: shut ? 'bt-learning-code bt-learning-shut' : 'bt-learning-code' },
+      blocks.map((rows, blockIndex) => [
+        blockIndex > 0 ? h('div', { className: 'bt-learning-gap', key: `gap-${blockIndex}` }) : null,
+        ...rows.map((row, rowIndex) => h('div', { className: `bt-learning-row bt-learning-${row.kind}`, key: `${blockIndex}-${rowIndex}` },
+          h('span', { className: 'bt-learning-num', 'aria-hidden': true }, row.number ?? ''),
+          h('span', { className: 'bt-learning-sign', 'aria-hidden': true }, SIGNS[row.kind]),
+          h('span', { className: 'bt-learning-text' }, row.line || '\u00a0'))),
+      ])),
+    folds ? h('div', { className: shut ? 'bt-learning-morebar bt-learning-morebar-shut' : 'bt-learning-morebar' },
+      h('button', { type: 'button', className: 'bt-learning-more', 'aria-expanded': open, onClick: () => setOpen(!open) },
+        t(open ? 'Show less' : 'Show all {count} lines', { count: all.length }))) : null)
+}
+
+function LearningProposals({ turn, dock, sessionId, useRoster, actions }) {
+  const roster = useRoster(value => value)
+  const facts = useTurnFacts(sessionId, actions)
+  const [failed, setFailed] = useState({})
+  const bot = roster.byId?.[sessionId]
+  // A proposal answered in another window or turn takes its failure with it, so this map
+  // holds only the answers still waiting for another try (#1339).
+  const settledIds = (bot === undefined ? [] : roster.learningSettled?.[bot.id] ?? []).map(entry => entry.id)
+  useEffect(() => {
+    if (settledIds.length === 0) return
+    for (const id of settledIds) failedAnswers.delete(id)
+    setFailed(current => settledIds.reduce((next, id) => withoutEntry(next, id), current))
+  }, [settledIds.join('|')])
+  if (!bot || currentPart(bot) !== sessionId) return null
+  const proposals = roster.learning?.[bot.id] ?? []
+  // Answered cards stay in place, read-only; a waiting copy of the same card wins.
+  const settled = roster.learningSettled?.[bot.id] ?? []
+  const remembered = Object.fromEntries([...failedAnswers.values(), ...Object.values(failed)]
+    .filter(entry => entry.proposal.botId === bot.id)
+    .map(entry => [entry.proposal.id, entry]))
+  const visible = proposalCards({ proposals, settled, failures: remembered })
+  const cards = visible.filter(proposal => {
+    const placement = proposalPlacement(proposal, facts?.turns)
+    return dock ? placement.kind === 'dock' : placement.kind === 'turn' && placement.turn === turn?.turn
+  })
+  if (cards.length === 0) return null
+  // An answer the host no longer knows (`bot/stale`) drops the card: the proposal is gone,
+  // so a retry cannot work and leaving it up only pins a dead card. Every other failure —
+  // network, a host error, a skill of that name already existing — keeps it for another go.
+  const onFailure = (proposal, failure) => {
+    if (answerKeepsCard(failure)) failedAnswers.set(proposal.id, { proposal, error: failure?.message ?? String(failure) })
+    else failedAnswers.delete(proposal.id)
+    setFailed(current => answerFailure(current, proposal, failure))
+  }
+  const onResolved = id => setFailed(current => {
+    failedAnswers.delete(id)
+    return withoutEntry(current, id)
+  })
+  return h('div', { className: dock ? 'bt-learning-stack bt-learning-dock' : 'bt-learning-stack' }, cards.map(proposal => h('div', { className: 'bt-q-inline', key: proposal.id },
+    h(ProposalCard, {
+      proposal,
+      initialError: failed[proposal.id]?.error ?? failedAnswers.get(proposal.id)?.error,
+      onFailure,
+      onResolved,
+      actions,
+    }))))
+}
+
+export function LearningTurnTail(props) {
+  return h(LearningProposals, { ...props, dock: false })
+}
+
+export function LearningDock(props) {
+  return h(LearningProposals, { ...props, dock: true })
+}
+
+export const LEARNING_CSS = `
+.bt-learning-pending{pointer-events:auto;position:static;flex:0 1 auto;min-width:0;max-width:45%;margin-left:8px;-webkit-app-region:no-drag}
+.bt-learning-pending-toggle{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;height:32px;padding:0 12px;border:1px solid var(--bt-line);border-radius:999px;background:var(--bt-card);color:var(--bt-ink);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+.bt-learning-pending-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.bt-learning-pending-toggle:hover{background:var(--bt-hover)}
+.bt-learning-pending-toggle:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
+.bt-learning-pending-panel{position:absolute;top:48px;left:16px;right:16px;z-index:20;width:auto;max-width:560px;margin:0 auto;max-height:65vh;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--bt-line);border-radius:20px;background:var(--bt-main);box-shadow:var(--bt-dialog-shadow)}
+.bt-learning-pending-panel{animation:bt-learning-in .12s ease}
+.bt-learning-pending-panel[data-leaving]{opacity:0;pointer-events:none;transition:opacity .12s ease}
+.bt-learning-pending-panel .bt-q-head{flex-wrap:wrap}
+.bt-learning-pending-panel .bt-q-text{flex-basis:140px}
+.bt-learning-pending-panel .bt-learning-status{margin-left:auto}
+@keyframes bt-learning-in{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.bt-learning-pending-panel{animation:none;transition:none}}
+.bt-learning-stack{display:flex;flex-direction:column;gap:4px}
+.bt-learning-dock{width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;box-sizing:border-box}
+.bt-learning-card .bt-q-head{gap:12px}
+.bt-learning-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:var(--bt-hover);color:var(--bt-ink-2)}
+.bt-learning-icon svg{width:18px;height:18px}
+.bt-learning-description{margin:6px 0 0;font-size:13px;line-height:19px;color:var(--bt-ink)}
+.bt-learning-old{color:var(--bt-ink-3)}
+.bt-learning-status{display:inline-flex;align-items:center;gap:6px;border-style:solid;border-color:color-mix(in srgb,var(--bt-star) 35%,transparent);color:color-mix(in srgb,var(--bt-star) 80%,var(--bt-ink))}
+.bt-learning-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--bt-star)}
+.bt-learning-file{border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--bt-ink) 2.5%,var(--bt-card));box-shadow:inset 0 0 0 1px var(--bt-q-rule)}
+.bt-learning-filehead{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px;box-shadow:inset 0 -1px 0 var(--bt-q-rule-2);font-size:12px;line-height:18px}
+.bt-learning-name{flex:none;font-weight:600;color:var(--bt-ink)}
+.bt-learning-path{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bt-ink-3)}
+.bt-learning-spacer{flex:1}
+.bt-learning-plus,.bt-learning-minus{flex:none;font-weight:600;font-variant-numeric:tabular-nums}
+.bt-learning-plus{color:var(--bt-green)}
+.bt-learning-minus{color:var(--bt-danger)}
+.bt-learning-state{flex:none;height:20px;padding:0 8px;border-radius:999px;font-size:11px;line-height:20px;font-weight:500;background:var(--bt-hover);color:var(--bt-ink-2)}
+.bt-learning-state-added{background:color-mix(in srgb,var(--bt-green) 13%,transparent);color:color-mix(in srgb,var(--bt-green) 70%,var(--bt-ink))}
+.bt-learning-code{padding:6px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:20px;color:var(--bt-ink)}
+.bt-learning-shut{max-height:172px;overflow:hidden}
+.bt-learning-row{display:grid;grid-template-columns:36px 16px 1fr}
+.bt-learning-num{padding-right:6px;text-align:right;color:var(--bt-ink-3);font-variant-numeric:tabular-nums;user-select:none}
+.bt-learning-sign{text-align:center;user-select:none}
+.bt-learning-text{min-width:0;padding-right:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.bt-learning-added{background:color-mix(in srgb,var(--bt-green) 9%,transparent)}
+.bt-learning-added .bt-learning-sign{color:var(--bt-green)}
+.bt-learning-removed{background:color-mix(in srgb,var(--bt-danger) 7%,transparent)}
+.bt-learning-removed .bt-learning-sign{color:var(--bt-danger)}
+.bt-learning-removed .bt-learning-text{color:var(--bt-ink-2)}
+.bt-learning-gap{height:1px;margin:6px 12px;background:var(--bt-q-rule)}
+.bt-learning-morebar{display:flex;justify-content:center;padding:4px 0 8px}
+.bt-learning-morebar-shut{position:relative;margin-top:-36px;padding-top:28px;background:linear-gradient(transparent,color-mix(in srgb,var(--bt-ink) 2.5%,var(--bt-card)) 60%)}
+.bt-learning-more{height:24px;padding:0 10px;border:0;border-radius:999px;background:var(--bt-card);box-shadow:inset 0 0 0 1px var(--bt-q-edge);font:inherit;font-size:12px;color:var(--bt-ink-2);cursor:pointer;transition:background-color .12s ease,color .12s ease}
+.bt-learning-more:hover{background:var(--bt-hover);color:var(--bt-ink)}
+.bt-learning-more:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
+.bt-learning-why{margin:0;font-size:12px;line-height:17px;color:var(--bt-ink-2)}
+.bt-learning-btn{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 16px;border:0;border-radius:999px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;transition:background-color .12s ease,opacity .12s ease,${spring(SPRING_TAP, 'scale')}}
+.bt-learning-btn svg{width:15px;height:15px}
+.bt-learning-decline{background:transparent;box-shadow:inset 0 0 0 1px var(--bt-line-2);color:var(--bt-ink)}
+.bt-learning-decline:hover:not(:disabled){background:var(--bt-hover)}
+.bt-learning-approve{padding-left:13px;background:var(--bt-accent);color:var(--bt-accent-ink)}
+.bt-learning-approve:hover:not(:disabled){opacity:.86}
+.bt-learning-btn:disabled{opacity:.45;cursor:default}
+.bt-learning-btn:active:not(:disabled){scale:.96}
+.bt-learning-btn:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.bt-learning-btn{transition:background-color .12s ease,opacity .12s ease}.bt-learning-btn:active:not(:disabled){scale:none}}
+.bt-learning-settled{gap:10px}
+.bt-learning-fold{display:flex;align-items:center;gap:10px;min-width:0;width:100%;margin:-4px 0;padding:4px 0;border:0;background:none;font:inherit;text-align:start;color:var(--bt-ink);cursor:pointer}
+.bt-learning-fold .bt-learning-icon{width:28px;height:28px;border-radius:8px}
+.bt-learning-fold .bt-learning-icon svg{width:16px;height:16px}
+.bt-learning-kind{flex:none;font-size:14px;line-height:20px;font-weight:600}
+.bt-learning-sum{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:20px;color:var(--bt-ink-2)}
+.bt-learning-fold:focus-visible{outline:2px solid var(--bt-accent);outline-offset:2px;border-radius:8px}
+.bt-learning-error{font-size:12px;line-height:16px;color:var(--bt-danger)}
+`

@@ -1,0 +1,26 @@
+# Add to a FlyBot Workspace Compose project.
+# Set the HTTPS public /social URL before starting the service.
+services:
+  bot-social:
+    image: ${FLYBOT_WORKSPACE_BOT_SOCIAL_IMAGE:-flybot-workspace-bot-social:local}
+    restart: unless-stopped
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      DATA_DIR: /data
+      PUBLIC_BASE_URL: ${FLYBOT_WORKSPACE_BOT_SOCIAL_PUBLIC_URL:?Set the FlyBot Workspace public /social URL}
+      TRUST_PROXY: ${FLYBOT_WORKSPACE_BOT_SOCIAL_TRUST_PROXY:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16,loopback}
+    volumes:
+      - bot-social-data:/data
+    ports:
+      - "127.0.0.1:${FLYBOT_WORKSPACE_BOT_SOCIAL_HEALTH_PORT:-18783}:8787"
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+volumes:
+  bot-social-data:

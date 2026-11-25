@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title data-ui-text="settings.title">设置 · FlyBot</title>
+  <link rel="icon" href="/shell/flybot-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/shell/app.css">
+  <link rel="stylesheet" href="/settings/app.css">
+  <script type="module" src="/shell/app.mjs"></script>
+  <script type="module" src="/shell/dsbot-api.mjs"></script>
+  <script type="module" src="/settings/app.mjs"></script>
+  <script type="module" src="/settings/connected-tools.mjs"></script>
+  <script type="module" src="/settings/custom-mcp.mjs"></script>
+</head>
+<body class="app-workspace app-primary">
+  <a data-ui-text="shell.skip" class="skip-link" href="#main">跳到主要内容</a>
+  <nav class="app-rail" data-ui-label="shell.nav" aria-label="应用导航">
+    <a data-ui-title="shell.brand.home" class="brand-mark" href="/" title="FlyBot 首页" aria-label="FlyBot"><img class="brand-glyph" src="/shell/flybot-logo.svg" width="28" height="28" alt=""></a>
+    <div class="rail-actions">
+      <a data-ui-title="shell.home" data-ui-label="shell.home" href="/" title="首页" aria-label="首页"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg><span data-ui-text="shell.home" class="rail-label">首页</span></a>
+      <a data-ui-title="shell.chat" data-ui-label="shell.chat" href="/chat" title="聊天" aria-label="聊天"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H9l-5 4V4Z"/></svg><span data-ui-text="shell.chat" class="rail-label">聊天</span></a>
+      <a data-ui-title="shell.agents" data-ui-label="shell.agents" href="/agents" title="智能体" aria-label="智能体"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14v12H5z M9 3h6 M12 3v4 M8 12h1 M15 12h1 M9 16h6"/></svg><span data-ui-text="shell.agents" class="rail-label">智能体</span></a>
+      <a data-ui-title="shell.skills" data-ui-label="shell.skills" href="/skills" title="技能" aria-label="技能"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z M8.5 10.5h7 M8.5 14h4.5"/></svg><span data-ui-text="shell.skills" class="rail-label">技能</span></a>
+      <a data-ui-title="shell.automations" data-ui-label="shell.automations" href="/automations" title="自动化" aria-label="自动化"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h3v3H4z M11 6h9 M4 11h3v3H4z M11 12h9 M4 17h3v3H4z M11 18h9"/></svg><span data-ui-text="shell.automations" class="rail-label">自动化</span></a>
+      <a data-ui-title="shell.memory" data-ui-label="shell.memory" href="/memory" title="记忆" aria-label="记忆"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4a4 4 0 0 0-4 4v8a4 4 0 0 0 4 4 M16 4a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4 M8 8h8 M8 12h8 M8 16h8 M12 4v16"/></svg><span data-ui-text="shell.memory" class="rail-label">记忆</span></a>
+      <a data-ui-title="shell.space" data-ui-label="shell.space" href="/space" title="作品" aria-label="作品"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5"/></svg><span data-ui-text="shell.space" class="rail-label">作品</span></a>
+      <a data-ui-title="shell.meetings" data-ui-label="shell.meetings" href="/meetings" title="会议" aria-label="会议"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v14H4z M8 3v4 M16 3v4 M4 10h16"/></svg><span data-ui-text="shell.meetings" class="rail-label">会议</span></a>
+      <a data-ui-title="shell.discover" data-ui-label="shell.discover" href="/discover" title="发现" aria-label="发现"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z m4 5-2 6-6 2 2-6 6-2Z"/></svg><span data-ui-text="shell.discover" class="rail-label">发现</span></a>
+      <a data-ui-title="shell.contacts" data-ui-label="shell.contacts" href="/contacts" title="联系人" aria-label="联系人"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-2a7 7 0 0 1 14 0v2 M17 4a3.5 3.5 0 0 1 0 7 M19 14a6 6 0 0 1 3 5v2"/></svg><span data-ui-text="shell.contacts" class="rail-label">联系人</span></a>
+      <a data-ui-title="shell.download" data-ui-label="shell.download" href="/download" title="下载" aria-label="下载"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12 m-5-5 5 5 5-5 M4 16v5h16v-5"/></svg><span data-ui-text="shell.download" class="rail-label">下载</span></a>
+    </div>
+    <button data-ui-title="shell.appearance.hint" type="button" id="appearance-toggle" class="rail-link rail-signed-in" hidden title="切换浅色或深色。">浅色</button>
+    <div class="account-slot" hidden>
+      <button data-ui-title="shell.account.menu" type="button" id="account-menu-button" class="account-trigger" data-account-icon aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="账户菜单" title="账户菜单">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0 M4 21v-2a8 8 0 0 1 16 0v2"/></svg>
+      </button>
+      <div id="account-menu" class="account-menu" role="menu" hidden>
+        <p id="account-identity" class="account-identity"></p>
+        <a data-ui-label="shell.profile.view" data-ui-text="shell.profile.view" href="/profile" role="menuitem" aria-label="查看我的资料">查看我的资料</a>
+        <a data-ui-text="shell.team.new" href="/team" role="menuitem">创建团队</a>
+        <div class="account-sub">
+          <button data-ui-text="shell.help" type="button" id="help-menu-button" aria-expanded="false" aria-controls="help-menu">帮助</button>
+          <div id="help-menu" hidden>
+            <a data-ui-text="shell.help.center" href="/help" role="menuitem">帮助中心</a>
+            <a data-ui-text="shell.guide" href="/guide" role="menuitem">功能指引</a>
+            <a data-ui-text="shell.about" href="/about" role="menuitem">关于</a>
+            <a data-ui-label="shell.download" data-ui-text="shell.download" href="/download" role="menuitem" aria-label="下载">下载</a>
+            <a data-ui-text="shell.shortcuts" href="/settings#send-shortcut" role="menuitem">快捷键</a>
+            <a data-ui-text="shell.terms" href="/terms" role="menuitem">服务条款</a>
+            <a data-ui-text="shell.privacy" href="/privacy" role="menuitem">隐私政策</a>
+            <a data-ui-title="shell.issue.hint" data-ui-text="shell.issue" href="https://github.com/ThinkFlowLab/FlyBot/issues" rel="noreferrer" target="_blank" role="menuitem" title="打开本项目的问题列表">报告问题</a>
+          </div>
+        </div>
+        <a data-ui-label="shell.settings.all" data-ui-text="shell.settings.all" href="/settings" role="menuitem" aria-label="所有设置">所有设置</a>
+        <form id="logout-form" method="post" action="/v1/auth/logout">
+          <button data-ui-text="shell.signout" type="submit">退出登录</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+  <p id="status" role="status"></p>
+  <main id="main">
+  <section id="login-panel" hidden>
+    <h2 data-ui-text="shell.signin">登录</h2>
+    <form id="login-form" method="post" action="/v1/auth/login">
+      <label><span data-ui-text="shell.username">用户名</span> <input type="text" id="username" name="username" required autocomplete="username" maxlength="64"></label>
+      <label><span data-ui-text="shell.password">密码</span> <input id="password" name="password" type="password" required autocomplete="current-password" minlength="12" maxlength="256"></label>
+      <button data-ui-text="shell.signin" type="submit">登录</button>
+    </form>
+    <p><a data-ui-text="shell.register" class="login-register-button" href="/register">注册新账户</a> · <span data-ui-text="shell.register.policy">需要管理员开放本实例注册。</span></p>
+    <div id="oidc-providers"></div>
+  </section>
+  <section id="settings-panel" hidden>
+    <div data-settings-hub>
+    <header class="page-top">
+      <h1 data-ui-text="shell.settings">设置</h1>
+    </header>
+    <p id="whoami"></p>
+    <nav data-ui-label="shell.workspace" class="workspace-links" aria-label="工作区">
+      <a data-ui-text="shell.members" href="/members">成员</a>
+    </nav>
+    <nav data-ui-label="settings.groups" id="settings-index" class="settings-index" aria-label="设置分组">
+      <section class="settings-cluster" aria-labelledby="group-account">
+        <h2 data-ui-text="settings.account" id="group-account">账户与资料</h2>
+        <div class="settings-group">
+        <a class="settings-row" href="/profile">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3.5a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM5 19.2c.6-3.4 3.4-5.2 7-5.2s6.4 1.8 7 5.2c.1.6-.3 1.3-1 1.3H6c-.7 0-1.1-.7-1-1.3z"/></svg></span>
+          <span data-ui-text="settings.account" class="settings-row-label">账户与资料</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        </div>
+      </section>
+      <section class="settings-cluster" aria-labelledby="group-ai">
+        <h2 data-ui-text="settings.ai" id="group-ai">AI 与智能体设置</h2>
+        <div class="settings-group">
+        <a class="settings-row" href="/settings/language">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 5h9v2H8.6A13 13 0 0 0 11 11.5c1.3-1 2.4-2.1 3.3-3.3l1.5 1.3C14.5 11 13 12.5 11.4 13.7L14 18h-2.2l-1.8-3.1c-1 .7-2.1 1.3-3.3 1.8l-.8-1.8c1-.4 2-.9 2.8-1.5A15 15 0 0 1 6.2 7H4V5zm11 0h5v2h-2.1l-2.2 12h-2.1L16.9 7H15V5z"/></svg></span>
+          <span data-ui-text="settings.language" class="settings-row-label">语言</span>
+          <span id="language-current" class="settings-row-meta"></span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/settings/channels">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4.8 10.5A8.5 8.5 0 0 1 19.2 7l-1.3 1.3A6.7 6.7 0 0 0 6 11.7l-1.2-1.2zm3 3A5 5 0 0 1 16.5 10l-1.3 1.3a3.3 3.3 0 0 0-5.1 1.5L8 13.5zM12 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg></span>
+          <span data-ui-text="settings.channels" class="settings-row-label">Agent 渠道</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row settings-row-stack" href="/settings/agent-access">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 3h6v2h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3l-3 3-3-3H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3V3zm-1 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg></span>
+          <span class="settings-row-copy">
+            <span class="settings-row-title">Agent API</span>
+            <span data-ui-text="settings.agent-api.hint" class="settings-row-meta">在本实例之外使用你的 agent：网站、API、AI 客户端</span>
+          </span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="#model-api">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3 M16 3v3 M8 18v3 M16 18v3 M3 8h3 M3 16h3 M18 8h3 M18 16h3 M6 6h12v12H6z M10 10h4v4h-4z"/></svg></span>
+          <span data-ui-text="settings.model-api" class="settings-row-label">模型 API</span>
+          <span data-ui-text="settings.model-api.loading" id="model-key-state" class="settings-row-meta">正在读取</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/settings/skill-configuration">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg></span>
+          <span data-ui-text="settings.skills" class="settings-row-label">技能配置</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row settings-row-stack" href="/settings/connectors">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 3h2v5h4V3h2v5h1a2 2 0 0 1 2 2v3a6 6 0 0 1-5 5.9V21H10v-2.1A6 6 0 0 1 5 13V10a2 2 0 0 1 2-2h1V3z"/></svg></span>
+          <span class="settings-row-copy">
+            <span data-ui-text="settings.connectors" class="settings-row-title">应用连接器</span>
+            <span data-ui-text="settings.connectors.hint" class="settings-row-meta">你的 agent 可以使用的第三方账号</span>
+          </span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        </div>
+      </section>
+      <section class="settings-cluster" aria-labelledby="group-prefs">
+        <h2 data-ui-text="settings.preferences" id="group-prefs">偏好与安全</h2>
+        <div class="settings-group">
+        <label class="settings-row settings-toggle">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10.6 13.4a4 4 0 0 1 0-5.6l3-3a4 4 0 1 1 5.6 5.6l-1.5 1.5-1.4-1.4 1.5-1.5a2 2 0 0 0-2.8-2.8l-3 3a2 2 0 0 0 0 2.8l1.4 1.4-1.4 1.4-1.4-1.4zm2.8-2.8a4 4 0 0 1 0 5.6l-3 3a4 4 0 1 1-5.6-5.6l1.5-1.5 1.4 1.4-1.5 1.5a2 2 0 1 0 2.8 2.8l3-3a2 2 0 0 0 0-2.8L11.2 9l1.4-1.4 1.4 1.4z"/></svg></span>
+          <span data-ui-text="settings.link-previews" class="settings-row-label">显示链接预览</span>
+          <input type="checkbox" name="link_previews" form="settings-form" role="switch">
+        </label>
+        <label class="settings-row settings-toggle">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3a6 6 0 0 1 6 6v3.2l1.6 2.6H4.4L6 12.2V9a6 6 0 0 1 6-6zm-3 15a3 3 0 0 0 6 0H9z"/></svg></span>
+          <span data-ui-text="settings.reminders" class="settings-row-label">任务完成提醒</span>
+          <input type="checkbox" name="task_completion_reminders" form="settings-form" role="switch">
+        </label>
+        <a class="settings-row" href="/settings/message-folding">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 5h14v2H5V5zm0 4h10v2H5V9zm0 4h14v2H5v-2zm0 4h10v2H5v-2z"/></svg></span>
+          <span data-ui-text="settings.folding" class="settings-row-label">消息折叠</span>
+          <span id="folding-current" class="settings-row-meta"></span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/settings/appearance">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3a9 9 0 0 1 0 18H9a3 3 0 0 1 0-6h1.5A1.5 1.5 0 0 0 12 13.5 4.5 4.5 0 1 0 7.5 9H9A3 3 0 0 1 12 3zm-4 5a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 8 8zm3-2.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4zM16 8a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 16 8zm1.5 3.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z"/></svg></span>
+          <span data-ui-text="settings.appearance" class="settings-row-label">外观</span>
+          <span id="appearance-current" class="settings-row-meta"></span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/settings/privacy">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 9V7a4 4 0 1 1 8 0v2h1.5A1.5 1.5 0 0 1 19 10.5v8A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-8A1.5 1.5 0 0 1 6.5 9H8zm2 0h4V7a2 2 0 1 0-4 0v2z"/></svg></span>
+          <span data-ui-text="settings.privacy" class="settings-row-label">隐私设置</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/settings/shortcuts">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 8h9.5a4.5 4.5 0 1 1 0 9H12v-2h2.5a2.5 2.5 0 0 0 0-5H5l-2 2v3l2 2h3v-2H6l-1-1v-1l1-1h8v-2H5z"/></svg></span>
+          <span data-ui-text="settings.send-shortcuts" class="settings-row-label">发送快捷键</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        </div>
+      </section>
+      <section class="settings-cluster" aria-labelledby="group-notification-prefs">
+        <h2 data-ui-text="settings.notifications" id="group-notification-prefs">通知收件箱</h2>
+        <div class="settings-group">
+          <label class="settings-row settings-toggle" id="row-notify-mentions">
+            <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 5 16.5M21 12v1.5a2.5 2.5 0 0 1-5 0V7.5M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/></svg></span>
+            <span class="settings-row-copy">
+              <span class="settings-row-title" id="notify-label-mentions" data-ui-text="settings.notify.mentions">@ 提及</span>
+              <span class="settings-row-meta" id="notify-about-mentions" data-ui-text="settings.notify.mentions.about">别人在聊天中提及你。</span>
+            </span>
+            <input type="checkbox" id="notify-mentions" role="switch" aria-labelledby="notify-label-mentions" aria-describedby="notify-about-mentions" disabled>
+          </label>
+          <label class="settings-row settings-toggle" id="row-notify-task-completion">
+            <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg></span>
+            <span class="settings-row-copy">
+              <span class="settings-row-title" id="notify-label-task-completion" data-ui-text="settings.notify.task_completion">自动化运行结果</span>
+              <span class="settings-row-meta" id="notify-about-task-completion" data-ui-text="settings.notify.task_completion.about">自动化运行结束后显示结果通知。</span>
+            </span>
+            <input type="checkbox" id="notify-task-completion" role="switch" aria-labelledby="notify-label-task-completion" aria-describedby="notify-about-task-completion" disabled>
+          </label>
+          <label class="settings-row settings-toggle" id="row-notify-artifacts">
+            <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM13 3v5h5M9 12h6m-6 4h6"/></svg></span>
+            <span class="settings-row-copy">
+              <span class="settings-row-title" id="notify-label-artifacts" data-ui-text="settings.notify.artifacts">共享作品</span>
+              <span class="settings-row-meta" id="notify-about-artifacts" data-ui-text="settings.notify.artifacts.about">别人通过聊天向你分享作品。</span>
+            </span>
+            <input type="checkbox" id="notify-artifacts" role="switch" aria-labelledby="notify-label-artifacts" aria-describedby="notify-about-artifacts" disabled>
+          </label>
+        </div>
+        <p id="notification-prefs-state" class="note" role="status" aria-live="polite"></p>
+      </section>
+      <section class="settings-cluster" aria-labelledby="group-support">
+        <h2 data-ui-text="settings.support" id="group-support">支持与法律</h2>
+        <div class="settings-group">
+        <a class="settings-row" href="/help">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z M8 6V5a4 4 0 0 1 8 0v1"/></svg></span>
+          <span data-ui-text="shell.help.center" class="settings-row-label">帮助中心</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/guide">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.1.9-1.1 1.8 M12 17h.01"/></svg></span>
+          <span data-ui-text="shell.guide" class="settings-row-label">功能指引</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/terms">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h8l4 4v12H7z M15 4v4h4 M9 12h6 M9 16h6"/></svg></span>
+          <span data-ui-text="shell.terms" class="settings-row-label">服务条款</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/privacy">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 19 6v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg></span>
+          <span data-ui-text="shell.privacy" class="settings-row-label">隐私政策</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a class="settings-row" href="/about">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 11v6 M12 8h.01"/></svg></span>
+          <span data-ui-text="shell.about" class="settings-row-label">关于</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        <a data-ui-title="shell.issue.hint" class="settings-row" href="https://github.com/ThinkFlowLab/FlyBot/issues" rel="noreferrer" target="_blank" title="打开本项目的问题列表">
+          <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5 M12 16h.01"/></svg></span>
+          <span data-ui-text="shell.issue" class="settings-row-label">报告问题</span>
+          <span class="settings-row-chevron" aria-hidden="true">›</span>
+        </a>
+        </div>
+      </section>
+    </nav>
+    </div>
+    <form id="settings-form" method="post" action="/v1/settings">
+      <div lang="zh-CN" data-settings-page="appearance" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 外观</a>
+        </header>
+        <p class="settings-lead">选择应用在此设备上的显示外观。</p>
+        <fieldset id="appearance" class="settings-card">
+          <legend class="visually-hidden">外观</legend>
+          <label class="choice"><input type="radio" name="appearance" value="light"> <span>浅色<span class="hint">始终使用浅色主题。</span></span></label>
+          <label class="choice"><input type="radio" name="appearance" value="dark"> <span>深色<span class="hint">始终使用深色主题。</span></span></label>
+          <label class="choice"><input type="radio" name="appearance" value="auto"> <span>自动<span class="hint">白天浅色、夜间深色。按下面的时段或你设定的时间切换。</span></span></label>
+          <label class="choice"><input type="radio" name="appearance" value="system"> <span>跟随系统<span class="hint">与设备的浅色或深色设置保持一致。</span></span></label>
+        </fieldset>
+        <fieldset id="appearance-schedule-card" class="settings-card">
+          <legend class="visually-hidden">自动切换</legend>
+          <h2 class="settings-card-title">自动切换</h2>
+          <label class="choice"><input type="radio" name="appearance_schedule" value="sunset_sunrise"> <span>默认夜间时段<span class="hint">22:00 至次日 06:00 使用深色主题。</span></span></label>
+          <label class="choice"><input type="radio" name="appearance_schedule" value="custom"> <span>自定义时段<span class="hint">在你设定的时间切换。</span></span></label>
+          <div id="custom-period-fields" hidden>
+            <label>开始 <input type="time" name="appearance_start"></label>
+            <label>结束 <input type="time" name="appearance_end"></label>
+          </div>
+          <p class="note">时区为 <span id="appearance-time-zone">Asia/Shanghai</span>。重新打开页面时，按当前时间显示主题。</p>
+          <p id="appearance-status" class="settings-appearance-status" role="status"></p>
+        </fieldset>
+      </div>
+      <div data-settings-page="language" hidden>
+        <header class="settings-subhead">
+          <a data-ui-label="settings.back" data-ui-text="settings.language.back" href="/settings" class="settings-back" aria-label="返回设置">‹ 语言</a>
+        </header>
+        <fieldset id="language-section" class="settings-card">
+          <legend data-ui-text="settings.language" class="visually-hidden">语言</legend>
+          <label class="settings-field"><span data-ui-text="settings.language.system">系统语言</span>
+            <select name="language" aria-describedby="system-language-scope">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+              <optgroup data-ui-option-group="settings.language.unavailable" label="界面翻译暂未提供" disabled>
+                <option value="fa">فارسی</option>
+                <option value="fr">Français</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Español</option>
+                <option value="it">Italiano</option>
+                <option value="pt-BR">Português (Brasil)</option>
+                <option value="ru">Русский</option>
+                <option value="id">Bahasa Indonesia</option>
+                <option value="ms">Bahasa Melayu</option>
+                <option value="hi">हिन्दी</option>
+                <option value="bn">বাংলা</option>
+                <option value="th">ภาษาไทย</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="zh-HK">繁體中文(香港)</option>
+                <option value="zh-TW">繁體中文(台灣)</option>
+              </optgroup>
+            </select>
+          </label>
+          <p data-ui-text="settings.language.scope" id="system-language-scope" class="note">设置首页、语言页、主要聊天控件和导航支持简体中文及英文。</p>
+          <p data-ui-text="settings.language.fallback" id="system-language-fallback" class="note" hidden>已保留所选语言。该界面翻译暂未提供，目前显示简体中文。</p>
+          <label class="settings-field"><span data-ui-text="settings.language.chat">聊天语言</span>
+            <select name="chat_language">
+              <option data-ui-text="settings.language.auto" value="auto">根据消息语言回复</option>
+              <option value="en">English</option>
+              <option value="fa">فارسی</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Español</option>
+              <option value="pt">Português</option>
+              <option value="it">Italiano</option>
+              <option value="ru">Русский</option>
+              <option value="id">Bahasa Indonesia</option>
+              <option value="vi">Tiếng Việt</option>
+              <option value="bn">বাংলা</option>
+              <option value="th">ไทย</option>
+              <option value="ar">العربية</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="zh-Hant">繁體中文</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </label>
+          <p class="note" id="chat-language-effect"></p>
+          <label class="settings-check"><input type="checkbox" name="auto_translate"> <span data-ui-text="settings.language.auto-translate">自动翻译消息</span></label>
+        </fieldset>
+      </div>
+      <div lang="zh-CN" data-settings-page="shortcuts" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 快捷键</a>
+        </header>
+        <section id="send-shortcut" class="settings-card">
+          <h2 class="settings-card-title">消息</h2>
+          <label class="settings-shortcut-row">发送消息
+            <select name="send_shortcut" aria-label="发送消息">
+              <option value="enter">Enter</option>
+              <option value="mod_enter">Ctrl + Enter</option>
+            </select>
+          </label>
+          <div class="settings-shortcut-row">
+            <span>换行</span>
+            <span id="newline-keys" class="shortcut-keys" aria-label="换行快捷键">
+              <kbd>Shift</kbd><span class="shortcut-plus">+</span><kbd>Enter</kbd>
+            </span>
+          </div>
+        </section>
+      </div>
+      <div lang="zh-CN" data-settings-page="message-folding" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 设置</a>
+        </header>
+        <p class="settings-lead">选择长消息在对话里最先展示多少内容。</p>
+        <fieldset id="message-display" class="settings-card">
+          <legend class="visually-hidden">消息折叠</legend>
+          <label class="choice"><input type="radio" name="message_folding" value="compact"> <span>紧凑<span class="hint">只展示很短的预览。适合以扫读为主的场景。</span></span></label>
+          <label class="choice"><input type="radio" name="message_folding" value="standard"> <span>标准<span class="hint">展示适中的预览。推荐。</span></span></label>
+          <label class="choice"><input type="radio" name="message_folding" value="none"> <span>不折叠<span class="hint">完整展示每条消息。长消息会把对话推得很高。</span></span></label>
+          <label class="settings-row settings-toggle">
+            <span class="settings-row-copy">
+              <span class="settings-row-title">长文档收成卡片</span>
+              <span class="hint">含多个章节的消息会显示为卡片，可在对话旁边打开阅读，不再铺满消息流。</span>
+            </span>
+            <input type="checkbox" name="document_cards" role="switch">
+          </label>
+        </fieldset>
+      </div>
+      <div lang="zh-CN" data-settings-page="privacy" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 隐私设置</a>
+        </header>
+        <fieldset id="privacy" class="settings-card">
+          <legend class="visually-hidden">隐私设置</legend>
+          <p class="settings-card-intro">管理你的社交动态对他人的可见性</p>
+          <label class="settings-row settings-toggle">
+            <span class="settings-row-copy">
+              <span class="settings-row-title">点赞列表</span>
+              <span class="hint">允许他人查看你点赞的内容</span>
+            </span>
+            <input type="checkbox" name="likes_visible" role="switch">
+          </label>
+          <label class="settings-row settings-toggle">
+            <span class="settings-row-copy">
+              <span class="settings-row-title">收藏列表</span>
+              <span class="hint">允许他人查看你收藏的内容</span>
+            </span>
+            <input type="checkbox" name="favorites_visible" role="switch">
+          </label>
+          <button type="submit" id="save" disabled>保存更改</button>
+        </fieldset>
+      </div>
+    </form>
+    <div data-settings-page="model-api" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置" data-ui-label="settings.back" data-ui-text="settings.model-api.back">‹ 模型 API</a>
+        </header>
+    <form id="model-api-form" method="post" action="/v1/model-api">
+      <section id="model-api" class="settings-card" aria-labelledby="model-effective">
+        <h2 id="model-effective" aria-live="polite"><span id="model-effective-source" data-ui-text="settings.model-api.loading">正在读取</span><bdi id="model-effective-model"></bdi></h2>
+        <p id="model-platform-ready" class="note" data-ui-text="settings.model-api.platform-ready" hidden>可以直接使用，无需填写个人 API 密钥。</p>
+        <button type="button" id="retry-model-api" class="secondary" data-ui-text="settings.model-api.retry" hidden>重试读取模型状态</button>
+      </section>
+      <details class="settings-card" id="model-api-override" hidden>
+        <summary id="model-api-override-title" data-ui-text="settings.model-api.override">使用自己的模型 API</summary>
+        <fieldset id="model-api-fields" disabled>
+          <legend class="visually-hidden" data-ui-text="settings.model-api.override">使用自己的模型 API</legend>
+          <label><span data-ui-text="settings.model-api.provider">提供商</span>
+            <select name="provider" required>
+              <option value="" data-ui-text="settings.model-api.choose-provider">选择提供商</option>
+              <option value="openai" data-ui-text="settings.model-api.openai">OpenAI 兼容</option>
+              <option value="azure">Azure</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="custom" data-ui-text="settings.model-api.custom">自定义</option>
+            </select>
+          </label>
+          <label><span data-ui-text="settings.model-api.base-url">接口地址</span> <input type="url" name="base_url" maxlength="512" placeholder="https://" autocomplete="off" required></label>
+          <label><span data-ui-text="settings.model-api.model">模型</span> <input type="text" name="model" maxlength="128" autocomplete="off" required></label>
+          <label><span data-ui-text="settings.model-api.key">API 密钥</span> <input type="password" name="api_key" maxlength="4096" autocomplete="new-password"></label>
+          <p id="model-key-state-detail" class="note" data-ui-text="settings.model-api.key-set" hidden>留空会保留已保存的个人密钥。恢复平台默认会移除该密钥。</p>
+          <div class="model-api-actions">
+            <button type="submit" id="save-model-api" data-ui-text="settings.model-api.save">保存个人配置</button>
+            <button type="button" id="restore-platform-model" aria-describedby="model-key-state-detail" data-ui-text="settings.model-api.restore" hidden>恢复平台默认</button>
+          </div>
+        </fieldset>
+      </details>
+    </form>
+    <form id="image-api-form" method="post" action="/v1/model-api/image" lang="zh-CN">
+      <fieldset id="image-api" class="settings-card" disabled>
+        <legend>图片生成</legend>
+        <p class="note">使用支持图片生成的 OpenAI 兼容 HTTPS API。密钥仅用于这个账号的图片任务。</p>
+        <label>接口地址 <input type="url" name="base_url" maxlength="512" autocomplete="off" required></label>
+        <label>图片模型 <input type="text" name="model" maxlength="128" autocomplete="off" required></label>
+        <label>图片 API 密钥 <input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="留空保留已保存密钥"></label>
+        <p id="image-api-status" class="note" role="status"></p>
+        <div class="settings-form-actions">
+          <button type="submit" id="save-image-api">保存图片配置</button>
+          <button type="button" id="clear-image-api" hidden>移除图片密钥</button>
+        </div>
+      </fieldset>
+    </form>
+    <form id="video-api-form" method="post" action="/v1/model-api/video" lang="zh-CN">
+      <fieldset id="video-api" class="settings-card" disabled>
+        <legend>视频模型</legend>
+        <p class="note">使用 Runway Gen-4.5 生成 5 秒视频。此密钥仅用于当前账号的视频任务。</p>
+        <label>视频 API 密钥 <input type="password" name="api_key" maxlength="4096" autocomplete="new-password"></label>
+        <p id="video-api-status" class="note" role="status"></p>
+        <div class="settings-form-actions">
+          <button type="submit" id="save-video-api">保存视频配置</button>
+          <button type="button" id="clear-video-api" hidden>移除视频密钥</button>
+        </div>
+      </fieldset>
+    </form>
+    <form id="music-api-form" method="post" action="/v1/model-api/music" lang="zh-CN">
+      <fieldset id="music-api" class="settings-card" disabled>
+        <legend>音乐模型</legend>
+        <p class="note">使用 ElevenLabs Music 生成纯音乐或带人声的歌曲。此密钥仅用于当前账号的音乐任务。</p>
+        <label>音乐 API 密钥 <input type="password" name="api_key" maxlength="4096" autocomplete="new-password"></label>
+        <p id="music-api-status" class="note" role="status"></p>
+        <div class="settings-form-actions">
+          <button type="submit" id="save-music-api">保存音乐配置</button>
+          <button type="button" id="clear-music-api" hidden>移除音乐密钥</button>
+        </div>
+      </fieldset>
+    </form>
+    <form id="model3d-api-form" method="post" action="/v1/model-api/model3d" lang="zh-CN">
+      <fieldset id="model3d-api" class="settings-card" disabled>
+        <legend>3D 模型</legend>
+        <p class="note">使用 Meshy 7.1 将描述或参考图生成 GLB 文件。此密钥仅用于当前账号的 3D 生成任务。</p>
+        <label>Meshy API 密钥 <input type="password" name="api_key" maxlength="4096" autocomplete="new-password"></label>
+        <p id="model3d-api-status" class="note" role="status"></p>
+        <div class="settings-form-actions">
+          <button type="submit" id="save-model3d-api">保存 3D 配置</button>
+          <button type="button" id="clear-model3d-api" hidden>移除 3D 密钥</button>
+        </div>
+      </fieldset>
+    </form>
+    </div>
+    <div lang="zh-CN" data-settings-page="skill-configuration" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 技能配置</a>
+        </header>
+        <div class="skill-banner" role="note">
+          <span class="skill-banner-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v6c0 5 3.2 7.6 7 9 3.8-1.4 7-4 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+          </span>
+          <div>
+            <p class="skill-banner-title">用于技能授权</p>
+            <p class="skill-banner-body">部分技能需要 API Key 才能调用第三方服务。请在此添加密钥，名称须与技能声明的名称完全一致（区分大小写，例如 MY_API_KEY）。配置值加密存储，仅在技能运行时使用，不会在对话中展示。</p>
+          </div>
+        </div>
+        <details class="skill-help">
+          <summary>
+            <span class="skill-help-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6 M10 22h4 M12 2a7 7 0 0 0-4 13c.6.5 1 1.2 1 2h6c0-.8.4-1.5 1-2A7 7 0 0 0 12 2Z"/></svg>
+            </span>
+            正在编写 Skill?
+            <span class="skill-help-chevron" aria-hidden="true">▾</span>
+          </summary>
+          <p class="note">密钥名称只能用大写字母、数字和下划线，并且必须以字母开头。值保存后不会回显。这是本实例自己的技能密钥页，不复制外部编写教程。</p>
+        </details>
+        <div class="skill-head">
+          <h2 class="skill-head-title">我的密钥</h2>
+          <button type="button" id="skill-add-open" class="skill-add">+ 添加密钥</button>
+        </div>
+        <div id="skill-empty" class="skill-empty">
+          <span class="skill-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="10" r="3.2"/><path d="M11 11.5 20 20 M16.5 16.5 19 19 M14 18.5h3"/></svg>
+          </span>
+          <p class="skill-empty-title">暂无密钥</p>
+          <p class="skill-empty-body">添加智能体技能所需的密钥，即可免去在对话中输入密钥。</p>
+        </div>
+    <form id="skill-secrets-form" method="post" action="/v1/skill-secrets" hidden>
+      <fieldset id="skill-secrets" class="settings-card skill-form-card">
+        <legend class="visually-hidden">技能密钥</legend>
+        <p class="note">名称只能用大写字母、数字和下划线，并且必须以字母开头。值保存后不会回显。</p>
+        <ul id="skill-secret-list"></ul>
+        <label>名称 <input name="name" maxlength="64" autocomplete="off" spellcheck="false"></label>
+        <label>值 <input name="value" type="password" maxlength="4096" autocomplete="new-password"></label>
+        <div class="skill-form-actions">
+          <button type="button" id="skill-add-cancel" class="secondary">取消</button>
+          <button type="submit" id="save-skill-secret">保存技能密钥</button>
+        </div>
+      </fieldset>
+    </form>
+    </div>
+    <div lang="zh-CN" data-settings-page="channels" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ Agent 渠道</a>
+        </header>
+        <p class="settings-lead">外部渠道暂未开放连接。可在下方查看接入说明。</p>
+        <ul class="settings-card channel-list">
+          <li class="channel-row" data-channel="wechat">
+            <span class="channel-mark" data-mark="wechat" aria-hidden="true"></span>
+            <span class="channel-name">WeChat Official Account</span>
+            <a class="channel-link" href="/help#channel-wechat" aria-label="微信公众号接入说明">接入说明</a>
+          </li>
+          <li class="channel-row" data-channel="imessage">
+            <span class="channel-mark" data-mark="imessage" aria-hidden="true"></span>
+            <span class="channel-name">Apple iMessage</span>
+            <a class="channel-link" href="/help#channel-imessage" aria-label="iMessage 接入说明">接入说明</a>
+          </li>
+          <li class="channel-row" data-channel="slack">
+            <span class="channel-mark" data-mark="slack" aria-hidden="true"></span>
+            <span class="channel-name">Slack</span>
+            <a class="channel-link" href="/help#channel-slack" aria-label="Slack 接入说明">接入说明</a>
+          </li>
+          <li class="channel-row" data-channel="whatsapp">
+            <span class="channel-mark" data-mark="whatsapp" aria-hidden="true"></span>
+            <span class="channel-name">WhatsApp</span>
+            <a class="channel-link" href="/help#channel-whatsapp" aria-label="WhatsApp 接入说明">接入说明</a>
+          </li>
+        </ul>
+    </div>
+    <div lang="zh-CN" data-settings-page="agent-access" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ Agent API</a>
+        </header>
+        <p class="settings-lead">为智能体生成调用密钥后，外部程序可以通过 Agent API 发起对话。</p>
+        <h2 class="settings-section-title">调用密钥管理</h2>
+        <div class="settings-card">
+          <p>选择智能体，在「外部 API 访问」中查看有效密钥、生成新密钥或撤销已有密钥。</p>
+          <a class="settings-link" href="/agents">前往智能体管理密钥</a>
+        </div>
+        <p class="note">外部程序目前通过调用密钥授权。AI 客户端授权和跨智能体密钥汇总尚未开放。</p>
+    </div>
+    <div lang="zh-CN" data-settings-page="connectors" hidden>
+        <header class="settings-subhead">
+          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 应用连接器</a>
+        </header>
+        <section class="composio-key-card" id="composio-key-card" aria-labelledby="composio-key-title">
+          <div class="composio-key-head">
+            <span class="composio-key-mark" aria-hidden="true"></span>
+            <div class="composio-key-copy">
+              <h2 id="composio-key-title" class="composio-key-title">Composio API key</h2>
+              <p class="composio-key-lead">应用连接通过你自己的 Composio 项目授权。到 Composio 项目设置里复制 API key 填到这里。密钥只保存在本实例，保存后不再显示原文。每个人只用自己的 key。</p>
+            </div>
+            <span id="composio-key-state" class="connector-status" data-state="loading">正在读取配置…</span>
+          </div>
+          <form id="composio-key-form" class="composio-key-form" autocomplete="off">
+            <label class="visually-hidden" for="composio-key-input">Composio API key</label>
+            <input id="composio-key-input" name="api_key" type="password" maxlength="512" placeholder="粘贴你的 Composio API key" autocomplete="off" spellcheck="false" disabled>
+            <button type="submit" id="composio-key-save" disabled>保存</button>
+            <button type="button" id="composio-key-remove" hidden>移除</button>
+          </form>
+          <p id="composio-key-message" class="composio-key-message" role="status" aria-live="polite"></p>
+          <p id="composio-read-message" class="composio-key-message" role="status" aria-live="polite"></p>
+          <button type="button" id="composio-retry" class="secondary" hidden>重试读取状态</button>
+        </section>
+        <div class="connectors-overview">
+          <p>
+            <span id="connectors-catalog-count"></span>
+            <span id="connectors-connected-count" role="status" hidden></span>
+          </p>
+          <a id="connectors-key-jump" href="#composio-key-input" hidden>配置 Composio 密钥</a>
+        </div>
+        <div class="connectors-toolbar">
+          <label class="visually-hidden" for="connector-search">搜索应用</label>
+          <div class="connector-search-field">
+            <svg class="connector-search-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+              <circle cx="6.5" cy="6.5" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"></circle>
+              <path d="M9.75 9.75 L13.25 13.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+            </svg>
+            <input id="connector-search" type="search" placeholder="搜索应用…" maxlength="80" autocomplete="off">
+          </div>
+          <button type="button" id="add-mcp-server" aria-haspopup="dialog" aria-controls="mcp-dialog" aria-expanded="false">+ 添加 MCP 服务器</button>
+        </div>
+        <div id="connectors-filters" class="connectors-filters" role="group" aria-label="按分类筛选" hidden>
+          <button type="button" data-connector-group="all" aria-pressed="true">全部 <span></span></button>
+          <button type="button" data-connector-group="dev" aria-pressed="false">开发 <span></span></button>
+          <button type="button" data-connector-group="docs" aria-pressed="false">文档 <span></span></button>
+          <button type="button" data-connector-group="work" aria-pressed="false">办公 <span></span></button>
+          <button type="button" data-connector-group="commerce" aria-pressed="false">商业 <span></span></button>
+          <button type="button" data-connector-group="data" aria-pressed="false">数据 <span></span></button>
+          <button type="button" data-connector-group="design" aria-pressed="false">设计 <span></span></button>
+          <button type="button" data-connector-group="search" aria-pressed="false">搜索与地图 <span></span></button>
+          <button type="button" data-connector-group="mail" aria-pressed="false">邮件 <span></span></button>
+        </div>
+        <ul id="connectors-catalog" class="connector-list">
+          <li class="connector-row" data-connector-id="github" data-composio-toolkit="github" data-composio-managed="yes" data-category="dev">
+            <span class="connector-mark" data-mark="github" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">GitHub</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Repositories, issues, and pull requests</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="notion" data-composio-toolkit="notion" data-composio-managed="yes" data-category="docs">
+            <span class="connector-mark" data-mark="notion" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Notion</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Pages, databases, and wiki content</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="linear" data-composio-toolkit="linear" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="linear" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Linear</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Issues, projects, and cycles</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="atlassian" data-composio-toolkit="jira" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="atlassian" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Atlassian</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Jira issues and Confluence pages</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="sentry" data-composio-toolkit="sentry" data-composio-managed="yes" data-category="dev">
+            <span class="connector-mark" data-mark="sentry" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Sentry</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Errors, traces, and releases</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="stripe" data-composio-toolkit="stripe" data-composio-managed="yes" data-category="commerce">
+            <span class="connector-mark" data-mark="stripe" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Stripe</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Payments, invoices, and customers</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="paypal" data-composio-toolkit="paypal" data-composio-managed="own" data-category="commerce">
+            <span class="connector-mark" data-mark="paypal" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">PayPal</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Orders, payments, and invoices</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="square" data-composio-toolkit="square" data-composio-managed="yes" data-category="commerce">
+            <span class="connector-mark" data-mark="square" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Square</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Payments, orders, and catalog</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="cloudflare" data-composio-toolkit="cloudflare" data-composio-managed="key" data-category="dev">
+            <span class="connector-mark" data-mark="cloudflare" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Cloudflare</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Workers, DNS, and account resources</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="vercel" data-composio-toolkit="vercel" data-composio-managed="own" data-category="dev">
+            <span class="connector-mark" data-mark="vercel" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Vercel</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Projects, deployments, and logs</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="supabase" data-composio-toolkit="supabase" data-composio-managed="yes" data-category="data">
+            <span class="connector-mark" data-mark="supabase" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Supabase</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Databases, tables, and project settings</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="neon" data-composio-toolkit="neon" data-composio-managed="own" data-category="data">
+            <span class="connector-mark" data-mark="neon" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Neon</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Postgres databases and branches</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="figma" data-composio-toolkit="figma" data-composio-managed="yes" data-category="design">
+            <span class="connector-mark" data-mark="figma" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Figma</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Design files, components, and comments</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="canva" data-composio-toolkit="canva" data-composio-managed="yes" data-category="design">
+            <span class="connector-mark" data-mark="canva" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Canva</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Designs, folders, and exports</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="intercom" data-composio-toolkit="intercom" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="intercom" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Intercom</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Conversations, contacts, and articles</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="monday" data-composio-toolkit="monday" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="monday" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">monday.com</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Boards, items, and workflows</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="webflow" data-composio-toolkit="webflow" data-composio-managed="own" data-category="design">
+            <span class="connector-mark" data-mark="webflow" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Webflow</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Sites, pages, and CMS content</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="wix" data-composio-toolkit="wix" data-composio-managed="own" data-category="design">
+            <span class="connector-mark" data-mark="wix" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Wix</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Sites, pages, and site content</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="netlify" data-category="dev">
+            <span class="connector-mark" data-mark="netlify" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Netlify</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Sites, deploys, and forms</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="airtable" data-composio-toolkit="airtable" data-composio-managed="yes" data-category="data">
+            <span class="connector-mark" data-mark="airtable" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Airtable</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Bases, tables, and records</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="dropbox" data-composio-toolkit="dropbox" data-composio-managed="yes" data-category="docs">
+            <span class="connector-mark" data-mark="dropbox" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Dropbox</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Files and folders</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="zapier" data-category="work">
+            <span class="connector-mark" data-mark="zapier" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Zapier</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Zaps and app actions</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="clickup" data-composio-toolkit="clickup" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="clickup" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">ClickUp</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Tasks, lists, and docs</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="todoist" data-composio-toolkit="todoist" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="todoist" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Todoist</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Tasks and projects</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="miro" data-composio-toolkit="miro" data-composio-managed="yes" data-category="design">
+            <span class="connector-mark" data-mark="miro" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Miro</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Boards and whiteboard items</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="attio" data-composio-toolkit="attio" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="attio" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Attio</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">CRM records, lists, and notes</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="postman" data-composio-toolkit="postman" data-composio-managed="key" data-category="dev">
+            <span class="connector-mark" data-mark="postman" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Postman</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Collections, requests, and workspaces</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="asana" data-composio-toolkit="asana" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="asana" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Asana</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Tasks, projects, and workspaces</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="box" data-composio-toolkit="box" data-composio-managed="yes" data-category="docs">
+            <span class="connector-mark" data-mark="box" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Box</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Files, folders, and metadata</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="hubspot" data-composio-toolkit="hubspot" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="hubspot" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">HubSpot</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Contacts, deals, and tickets</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="slack" data-composio-toolkit="slack" data-composio-managed="yes" data-category="work">
+            <span class="connector-mark" data-mark="slack" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Slack</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Channels and messages</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="huggingface" data-composio-toolkit="hugging_face" data-composio-managed="yes" data-category="data">
+            <span class="connector-mark" data-mark="huggingface" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Hugging Face</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Models, datasets, and Spaces</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="exa" data-composio-toolkit="exa" data-composio-managed="key" data-category="search">
+            <span class="connector-mark" data-mark="exa" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Exa</span>
+                <span class="connector-status" data-state="loading">正在读取…</span>
+              </div>
+              <p class="connector-about">Web search for agents</p>
+            </div>
+            <button type="button" data-composio-action="connect" disabled title="正在读取连接配置。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="deepwiki" data-category="docs">
+            <span class="connector-mark" data-mark="deepwiki" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">DeepWiki</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Documentation for public code repositories</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="context7" data-category="docs">
+            <span class="connector-mark" data-mark="context7" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Context7</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Library documentation and code examples</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="mslearn" data-category="docs">
+            <span class="connector-mark" data-mark="mslearn" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Microsoft Learn</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Microsoft product documentation</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="cloudflare-docs" data-category="docs">
+            <span class="connector-mark" data-mark="cloudflare-docs" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Cloudflare Docs</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Cloudflare product documentation</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="amap" data-category="search">
+            <span class="connector-mark" data-mark="amap" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Amap</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Maps, places, and routes in China</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+          <li class="connector-row" data-connector-id="mail" data-category="mail">
+            <span class="connector-mark" data-mark="mail" aria-hidden="true"></span>
+            <div class="connector-copy">
+              <div class="connector-title">
+                <span class="connector-name">Mailbox</span>
+                <span class="connector-status" data-state="unavailable">未接通</span>
+              </div>
+              <p class="connector-about">Read and send email over IMAP and SMTP</p>
+            </div>
+            <button type="button" disabled title="未接通：Composio 没有这个应用，暂时不能连接。">+ 连接</button>
+          </li>
+        </ul>
+        <p id="connectors-empty" class="settings-card settings-empty" role="status" hidden>没有匹配的应用。</p>
+        <section class="composio-key-card" id="custom-mcp-card">
+          <h2>自定义 MCP 服务器 · 仅当前账号</h2>
+          <p>公开 HTTPS:443 Streamable HTTP；不支持本地命令、私网、重定向或 URL 查询参数。凭据仅加密保存在管理服务，不会交给 DS-Bot。每次工具调用（包括读取）都需要在上方逐次确认。</p>
+          <div id="custom-mcp-list" aria-live="polite"></div>
+          <form id="custom-mcp-form" autocomplete="off">
+            <label>名称 <input name="name" required maxlength="60"></label>
+            <label>MCP HTTPS 地址 <input name="url" type="url" required maxlength="512" placeholder="https://mcp.example.com/mcp"></label>
+            <label>Bearer token（可空） <input name="bearer_token" type="password" maxlength="4096" autocomplete="new-password"></label>
+            <button type="submit">保存到我的 DS-Bot</button>
+          </form>
+          <p id="custom-mcp-status" role="status"></p>
+        </section>
+        <p class="note">自定义 MCP 工具会在下一条私人聊天中由你的 DS-Bot 原生 MCP 工具桥加载；断开连接会使尚未执行的授权失效。</p>
+        <div id="mcp-dialog" class="mcp-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="mcp-dialog-title">
+          <div class="mcp-dialog-card">
+            <h2 id="mcp-dialog-title">在智能体里添加自定义 MCP 服务器</h2>
+            <p>在本页「自定义 MCP 服务器」填写公开 HTTPS 地址和可选 Bearer token，保存后开始私人聊天。工具由你的 DS-Bot 加载，调用须在本页逐次批准。</p>
+            <div class="mcp-dialog-actions">
+              <button type="button" id="mcp-dialog-ack">知道了</button>
+            </div>
+          </div>
+        </div>
+    </div>
+  </section>
+  </main>
+  <nav class="mobile-primary-nav" aria-label="主导航" data-ui-label="shell.nav.mobile"></nav>
+</body>
+</html>

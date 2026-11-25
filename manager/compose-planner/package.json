@@ -1,0 +1,13 @@
+{
+  "name": "flybot-workspace-compose-command-planner-draft",
+  "version": "0.0.0-draft",
+  "private": true,
+  "type": "module",
+  "description": "Local unpublished draft: allowlisted Compose command planner. Does not execute Docker.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

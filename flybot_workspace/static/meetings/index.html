@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>会议 · FlyBot</title>
+  <link rel="icon" href="/shell/flybot-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/shell/app.css">
+  <link rel="stylesheet" href="/meetings/app.css">
+  <script type="module" src="/shell/app.mjs"></script>
+  <script type="module" src="/shell/dsbot-api.mjs"></script>
+  <script type="module" src="/meetings/app.mjs"></script>
+</head>
+<body class="app-workspace app-primary">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <nav class="app-rail" aria-label="应用导航">
+    <a class="brand-mark" href="/" title="FlyBot 首页" aria-label="FlyBot"><img class="brand-glyph" src="/shell/flybot-logo.svg" width="28" height="28" alt=""></a>
+    <div class="rail-actions">
+      <a href="/" title="首页" aria-label="首页"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg><span class="rail-label">首页</span></a>
+      <a href="/chat" title="聊天" aria-label="聊天"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H9l-5 4V4Z"/></svg><span class="rail-label">聊天</span></a>
+      <a href="/agents" title="智能体" aria-label="智能体"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14v12H5z M9 3h6 M12 3v4 M8 12h1 M15 12h1 M9 16h6"/></svg><span class="rail-label">智能体</span></a>
+      <a href="/skills" title="技能" aria-label="技能"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z M8.5 10.5h7 M8.5 14h4.5"/></svg><span class="rail-label">技能</span></a>
+      <a href="/automations" title="自动化" aria-label="自动化"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h3v3H4z M11 6h9 M4 11h3v3H4z M11 12h9 M4 17h3v3H4z M11 18h9"/></svg><span class="rail-label">自动化</span></a>
+      <a href="/memory" title="记忆" aria-label="记忆"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4a4 4 0 0 0-4 4v8a4 4 0 0 0 4 4 M16 4a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4 M8 8h8 M8 12h8 M8 16h8 M12 4v16"/></svg><span class="rail-label">记忆</span></a>
+      <a href="/space" title="作品" aria-label="作品"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5"/></svg><span class="rail-label">作品</span></a>
+      <a href="/meetings" title="会议" aria-label="会议"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v14H4z M8 3v4 M16 3v4 M4 10h16"/></svg><span class="rail-label">会议</span></a>
+      <a href="/discover" title="发现" aria-label="发现"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z m4 5-2 6-6 2 2-6 6-2Z"/></svg><span class="rail-label">发现</span></a>
+      <a href="/contacts" title="联系人" aria-label="联系人" data-ui-title="shell.contacts" data-ui-label="shell.contacts"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-2a7 7 0 0 1 14 0v2 M17 4a3.5 3.5 0 0 1 0 7 M19 14a6 6 0 0 1 3 5v2"/></svg><span data-ui-text="shell.contacts" class="rail-label">联系人</span></a>
+      <a href="/download" title="下载" aria-label="下载"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12 m-5-5 5 5 5-5 M4 16v5h16v-5"/></svg><span class="rail-label">下载</span></a>
+    </div>
+    <button type="button" id="appearance-toggle" class="rail-link rail-signed-in" hidden title="切换浅色或深色外观">浅色</button>
+    <div class="account-slot" hidden>
+      <button type="button" id="account-menu-button" class="account-trigger" data-account-icon aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="账户菜单" title="账户菜单">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0 M4 21v-2a8 8 0 0 1 16 0v2"/></svg>
+      </button>
+      <div id="account-menu" class="account-menu" role="menu" hidden>
+        <p id="account-identity" class="account-identity"></p>
+        <a href="/profile" role="menuitem" aria-label="查看我的资料">查看我的资料</a>
+        <a href="/team" role="menuitem">创建团队</a>
+        <div class="account-sub">
+          <button type="button" id="help-menu-button" aria-expanded="false" aria-controls="help-menu">帮助</button>
+          <div id="help-menu" hidden>
+            <a href="/help" role="menuitem">帮助中心</a>
+            <a href="/guide" role="menuitem">功能指引</a>
+            <a href="/download" role="menuitem" aria-label="下载">下载</a>
+            <a href="/settings#send-shortcut" role="menuitem">快捷键</a>
+            <a href="/terms" role="menuitem">服务条款</a>
+            <a href="/privacy" role="menuitem">隐私政策</a>
+            <a href="https://github.com/ThinkFlowLab/FlyBot/issues" rel="noreferrer" target="_blank" role="menuitem" title="打开 FlyBot 问题反馈">报告问题</a>
+          </div>
+        </div>
+        <a href="/settings" role="menuitem" aria-label="所有设置">所有设置</a>
+        <form id="logout-form" method="post" action="/v1/auth/logout">
+          <button type="submit">退出登录</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+  <p id="status" role="status"></p>
+  <main id="main">
+  <section id="login-panel" hidden>
+    <h2>登录</h2>
+    <form id="login-form" method="post" action="/v1/auth/login">
+      <label>用户名 <input type="text" id="username" name="username" required autocomplete="username" maxlength="64"></label>
+      <label>密码 <input id="password" name="password" type="password" required autocomplete="current-password" minlength="12" maxlength="256"></label>
+      <button type="submit">登录</button>
+    </form>
+  </section>
+  <section id="main-panel" hidden>
+    <header class="page-top meeting-page-top">
+      <a id="meeting-library" href="/space?view=meetings" aria-label="返回会议资料">‹ 返回会议资料</a>
+      <h1>会议</h1>
+      <p id="whoami" class="visually-hidden"></p>
+      <label class="workspace-pick">工作区
+        <select id="workspace"></select>
+      </label>
+      <button type="button" id="meeting-inbox-open" class="secondary" aria-controls="meeting-inbox" aria-expanded="false" hidden>待办行动项</button>
+    </header>
+    <section id="meeting-inbox" class="meeting-list-pane" aria-labelledby="meeting-inbox-heading" hidden>
+      <header class="meeting-list-head">
+        <h2 id="meeting-inbox-heading" tabindex="-1">会议行动项</h2>
+        <button type="button" id="meeting-inbox-close" class="secondary">返回会议</button>
+      </header>
+      <div class="meeting-inbox-filters">
+        <label><span id="meeting-inbox-source-label">来源</span>
+          <select id="meeting-inbox-source" aria-labelledby="meeting-inbox-source-label">
+            <option value="owned">工作区纪要</option>
+            <option value="received">收到的纪要</option>
+          </select>
+        </label>
+        <label>状态
+          <select id="meeting-inbox-state">
+            <option value="open">待完成</option>
+            <option value="completed">已完成</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="meeting-inbox-mine"> 分配给我</label>
+        <button type="button" id="meeting-inbox-refresh" class="secondary">刷新</button>
+      </div>
+      <ul id="meeting-inbox-list"></ul>
+      <p id="meeting-inbox-status" class="note" role="status"></p>
+      <p id="meeting-inbox-empty" class="note" hidden></p>
+      <button type="button" id="meeting-inbox-more" class="secondary" hidden>加载更多行动项</button>
+    </section>
+    <div class="meeting-layout" id="meeting-layout" data-view="catalogue">
+      <header class="meeting-mobile-toolbar">
+        <a id="meeting-library-mobile" href="/space?view=meetings" hidden>‹ 返回会议资料</a>
+        <button type="button" id="meeting-back-to-list" class="secondary">‹ 会议列表</button>
+        <button type="button" id="meeting-inbox-return" class="secondary" hidden>‹ 会议行动项</button>
+        <button type="submit" id="save-meeting-mobile" form="meeting-form">保存</button>
+      </header>
+      <section class="meeting-list-pane" id="meeting-list-pane" aria-label="会议列表">
+        <div class="meeting-list-head">
+          <h2>会议记录</h2>
+          <button type="button" id="new-meeting" disabled>新建会议</button>
+        </div>
+        <button type="button" id="meeting-shares-history" class="secondary" aria-haspopup="dialog" hidden>分享记录</button>
+        <button type="button" id="meeting-resume" class="secondary" hidden>继续编辑会议</button>
+        <form id="meeting-list-filters" role="search" hidden>
+          <label for="meeting-search">搜索会议</label>
+          <input id="meeting-search" type="search" maxlength="80" placeholder="标题、参会人、摘要、转写或行动项">
+          <label class="meeting-open-filter"><input id="meeting-open-only" type="checkbox"> 只看有未完成行动项的会议</label>
+        </form>
+        <p id="meeting-list-status" class="note" role="status"></p>
+        <ul id="meeting-list"></ul>
+        <p id="meetings-empty" class="note" hidden>还没有会议记录。点击「新建会议」开始。</p>
+        <div class="meeting-list-pagination">
+          <button type="button" id="meeting-list-more" class="secondary" hidden>加载更多会议</button>
+          <button type="button" id="meeting-list-retry" class="secondary" hidden>重试加载会议</button>
+        </div>
+      </section>
+      <section class="meeting-editor-pane" id="meeting-editor-pane" aria-label="会议详情" tabindex="-1">
+        <p id="meeting-empty" class="note">选择一份会议记录，或新建会议。</p>
+        <article id="shared-meeting-detail" hidden aria-labelledby="shared-meeting-title">
+          <button type="button" id="shared-meeting-inbox-return" class="secondary" hidden>‹ 会议行动项</button>
+          <header>
+            <p class="shared-meeting-badge">共享纪要</p>
+            <h2 id="shared-meeting-title" tabindex="-1"></h2>
+            <p id="shared-meeting-meta" class="note"></p>
+          </header>
+          <section aria-labelledby="shared-meeting-summary-label">
+            <h3 id="shared-meeting-summary-label">摘要</h3>
+            <p id="shared-meeting-summary"></p>
+          </section>
+          <section aria-labelledby="shared-meeting-action-label">
+            <h3 id="shared-meeting-action-label">行动项</h3>
+            <ul id="shared-meeting-actions"></ul>
+            <p id="shared-meeting-no-actions" class="note" hidden>没有行动项。</p>
+          </section>
+          <button type="button" id="print-shared-meeting" class="secondary" aria-haspopup="dialog" hidden>打印纪要</button>
+          <div class="meeting-actions" id="shared-meeting-discussion-entry" hidden>
+            <button type="button" id="shared-meeting-discussion" class="secondary" aria-haspopup="dialog">与个人智能体讨论</button>
+          </div>
+        </article>
+        <form id="meeting-form" hidden>
+          <nav id="meeting-detail-nav" aria-label="会议内容">
+            <button type="button" class="secondary" data-meeting-section="meeting-transcript-heading">转写</button>
+            <button type="button" class="secondary" data-meeting-section="meeting-summary-heading">摘要</button>
+            <button type="button" class="secondary" data-meeting-section="meeting-actions-heading">行动项</button>
+          </nav>
+          <p id="meeting-call-source" class="note" tabindex="-1" hidden>来自通话</p>
+          <div class="meeting-actions" id="meeting-discussion-entry" hidden>
+            <button type="button" id="meeting-discussion" class="secondary" aria-haspopup="dialog">与个人智能体讨论</button>
+            <p id="meeting-discussion-entry-status" class="note" role="status"></p>
+          </div>
+          <div id="meeting-draft-top" role="group" aria-label="纪要草稿" tabindex="-1" hidden>
+            <button type="button" id="meeting-draft-review" class="secondary" aria-controls="meeting-draft" hidden>查看草稿</button>
+          </div>
+          <label>标题 <input id="meeting-title" maxlength="120" required></label>
+          <label>开始时间 <input id="meeting-started-at" type="datetime-local" required></label>
+          <label>参会人 <input id="meeting-attendees" maxlength="2000" placeholder="用逗号分隔"></label>
+          <ul id="attendee-matches" class="attendee-matches" role="listbox" aria-label="成员候选" hidden></ul>
+          <h2 class="meeting-section-heading" id="meeting-transcript-heading" tabindex="-1">转写 / 正文</h2>
+          <textarea id="meeting-transcript" aria-labelledby="meeting-transcript-heading" maxlength="40000" rows="6"></textarea>
+          <div id="meeting-transcript-import" class="meeting-transcript-import" hidden>
+            <input type="file" id="meeting-transcript-import-file" accept=".txt,.md,.markdown,.vtt,.srt" hidden>
+            <div class="meeting-actions">
+              <button type="button" id="meeting-transcript-import-open" class="secondary" aria-haspopup="dialog">导入文字转写</button>
+              <button type="button" id="meeting-transcript-import-undo" class="secondary" hidden>撤销导入</button>
+            </div>
+            <p id="meeting-transcript-import-status" class="note" role="status"></p>
+          </div>
+          <div id="meeting-transcript-find" class="meeting-transcript-find" role="search" aria-label="查找会议转写" hidden>
+            <label>查找转写 <input id="meeting-transcript-search" type="search" maxlength="80"></label>
+            <div class="meeting-transcript-navigation">
+              <button type="button" class="secondary" id="meeting-transcript-prev" disabled>上一处</button>
+              <button type="button" class="secondary" id="meeting-transcript-next" disabled>下一处</button>
+            </div>
+            <p id="meeting-transcript-search-status" class="note" role="status"></p>
+            <p id="meeting-transcript-hit" tabindex="-1" hidden></p>
+            <button type="button" class="secondary" id="meeting-transcript-location" hidden>定位到正文</button>
+          </div>
+          <details id="meeting-audio" class="meeting-draft">
+            <summary>音频转写</summary>
+            <p class="note">可录音或上传音频，最长 10 分钟。请先征得参会人同意。音频和转写进度保留在当前编辑页面。</p>
+            <div class="meeting-actions">
+              <button type="button" id="meeting-audio-prepare" hidden>准备语音识别</button>
+              <button type="button" id="meeting-audio-record" disabled>录音</button>
+              <button type="button" id="meeting-audio-stop" hidden>停止录音</button>
+              <label>上传音频 <input type="file" id="meeting-audio-file" accept="audio/*,.webm,.ogg,.m4a" disabled></label>
+            </div>
+            <audio id="meeting-audio-preview" controls preload="metadata" hidden></audio>
+            <div class="meeting-actions">
+              <button type="button" id="meeting-audio-start" disabled>开始转写</button>
+              <button type="button" class="secondary" id="meeting-audio-add-partial" hidden>加入已识别片段</button>
+              <button type="button" class="secondary" id="meeting-audio-discard" disabled>移除音频</button>
+            </div>
+            <p class="note" id="meeting-audio-status" role="status"></p>
+          </details>
+          <div id="meeting-draft-controls" class="meeting-actions">
+            <button type="button" id="generate-meeting-draft" class="secondary" disabled>生成纪要草稿</button>
+            <button type="button" id="stop-meeting-draft-wait" class="secondary" hidden>停止等待</button>
+            <p id="meeting-draft-status" class="note" role="status"></p>
+          </div>
+          <section id="meeting-draft" class="meeting-draft" aria-labelledby="meeting-draft-heading" hidden>
+            <h3 id="meeting-draft-heading" tabindex="-1">纪要草稿</h3>
+            <p id="meeting-draft-summary"></p>
+            <ul id="meeting-draft-items" hidden></ul>
+            <div class="meeting-actions">
+              <button type="button" id="apply-meeting-draft">采用草稿</button>
+              <button type="button" id="discard-meeting-draft" class="secondary">丢弃草稿</button>
+            </div>
+            <p id="meeting-draft-review-error" class="note" role="status"></p>
+          </section>
+          <h2 class="meeting-section-heading" id="meeting-summary-heading" tabindex="-1">摘要</h2>
+          <textarea id="meeting-summary" aria-labelledby="meeting-summary-heading" maxlength="8000" rows="3"></textarea>
+          <fieldset class="meeting-action-section">
+            <legend id="meeting-actions-heading" class="meeting-section-heading" tabindex="-1">行动项</legend>
+            <p id="meeting-action-progress" class="meeting-action-progress" hidden></p>
+            <p id="meeting-action-status" class="note" role="status"></p>
+            <div id="action-list" class="action-list"></div>
+            <button type="button" id="add-action">添加行动项</button>
+          </fieldset>
+          <p id="meeting-meta" class="note"></p>
+          <p id="meeting-save-status" class="note" role="status"></p>
+          <div class="meeting-actions">
+            <button type="submit" id="save-meeting">保存</button>
+            <button type="button" id="review-meeting-conflict" class="secondary" aria-haspopup="dialog" hidden>核对最新版本</button>
+            <button type="button" id="cancel-meeting" class="secondary">取消</button>
+            <button type="button" id="share-meeting" class="secondary" aria-haspopup="dialog" hidden>分享纪要</button>
+            <button type="button" id="save-meeting-artifact" class="secondary" aria-describedby="meeting-artifact-description" title="按已保存的摘要和行动项生成纪要" hidden>保存到资料空间</button>
+            <button type="button" id="save-meeting-memory" class="secondary" aria-describedby="meeting-artifact-description" hidden>存入记忆</button>
+            <a id="export-meeting" class="secondary" download hidden>导出 Markdown</a>
+            <button type="button" id="print-meeting" class="secondary" aria-haspopup="dialog" hidden>打印纪要</button>
+            <button type="button" id="remove-meeting" class="secondary" hidden>删除</button>
+          </div>
+          <div class="meeting-artifact-result">
+            <p id="meeting-artifact-description" class="visually-hidden">将会议已保存版本的摘要和行动项复制到当前工作区。</p>
+            <p id="meeting-artifact-status" class="note" role="status"></p>
+            <a id="meeting-artifact-link" target="_blank" rel="noopener" hidden>打开已保存的纪要</a>
+            <p id="meeting-memory-status" class="note" role="status"></p>
+            <a id="meeting-memory-link" target="_blank" rel="noopener" hidden>打开纪要记忆页</a>
+          </div>
+        </form>
+      </section>
+    </div>
+  </section>
+  <dialog id="meeting-transcript-import-dialog" aria-labelledby="meeting-transcript-import-heading">
+    <h2 id="meeting-transcript-import-heading">核对导入的转写</h2>
+    <p id="meeting-transcript-import-filename" class="note"></p>
+    <label for="meeting-transcript-import-preview">文字预览
+      <textarea id="meeting-transcript-import-preview" rows="7" readonly></textarea>
+    </label>
+    <p id="meeting-transcript-import-feedback" class="note" role="status"></p>
+    <div class="meeting-actions">
+      <button type="button" id="meeting-transcript-import-cancel" class="secondary" autofocus>取消</button>
+      <button type="button" id="meeting-transcript-import-replace" class="secondary" hidden>替换正文</button>
+      <button type="button" id="meeting-transcript-import-append" class="primary">追加到正文</button>
+    </div>
+  </dialog>
+  <dialog id="meeting-print-dialog" aria-labelledby="meeting-print-heading" aria-describedby="meeting-print-description">
+    <div class="meeting-print-controls">
+      <div>
+        <h2 id="meeting-print-heading">打印预览</h2>
+        <p id="meeting-print-description" class="note">仅包含所选版本的摘要和行动项。</p>
+      </div>
+      <div class="meeting-actions">
+        <button type="button" id="meeting-print-close" class="secondary" autofocus>关闭</button>
+        <button type="button" id="meeting-print-confirm">打印或保存为 PDF</button>
+      </div>
+    </div>
+    <article id="meeting-print-preview"></article>
+  </dialog>
+  <dialog id="meeting-conflict-dialog" aria-labelledby="meeting-conflict-title" aria-describedby="meeting-conflict-description">
+    <h2 id="meeting-conflict-title">核对纪要修改</h2>
+    <p id="meeting-conflict-description" class="note"></p>
+    <div id="meeting-conflict-fields"></div>
+    <div class="meeting-actions">
+      <button type="button" id="cancel-meeting-conflict" class="secondary">返回编辑</button>
+      <button type="button" id="apply-meeting-conflict">载入并继续编辑</button>
+    </div>
+  </dialog>
+  <dialog id="meeting-unsaved-dialog" aria-labelledby="meeting-unsaved-title" aria-describedby="meeting-unsaved-message">
+    <h2 id="meeting-unsaved-title">离开会议编辑？</h2>
+    <p id="meeting-unsaved-message"></p>
+    <div class="meeting-actions">
+      <button type="button" id="keep-meeting-edits" autofocus>继续编辑</button>
+      <button type="button" id="discard-meeting-edits" class="secondary">放弃修改</button>
+    </div>
+  </dialog>
+  <dialog id="meeting-delete-dialog" aria-labelledby="meeting-delete-title">
+    <h2 id="meeting-delete-title">删除会议记录</h2>
+    <p id="meeting-delete-target"></p>
+    <div class="meeting-actions">
+      <button type="button" class="secondary" id="cancel-remove-meeting" autofocus>取消</button>
+      <button type="button" id="confirm-remove-meeting">确认删除</button>
+    </div>
+  </dialog>
+  <dialog id="meeting-action-copy-dialog" aria-labelledby="meeting-action-copy-heading">
+    <h2 id="meeting-action-copy-heading">存入我的待办</h2>
+    <p id="meeting-action-copy-source" class="note"></p>
+    <form id="meeting-action-copy-form">
+      <label>待办标题 <input id="meeting-action-copy-title" maxlength="80" required autofocus></label>
+      <label>备注 <textarea id="meeting-action-copy-notes" maxlength="2000" rows="3"></textarea></label>
+      <label>截止日期 <input id="meeting-action-copy-date" type="date" min="1970-01-01" max="2038-01-19"></label>
+      <p id="meeting-action-copy-status" class="note" role="status"></p>
+      <div class="meeting-actions">
+        <button type="button" class="secondary" id="meeting-action-copy-close">取消</button>
+        <button type="submit" id="meeting-action-copy-submit">保存到个人空间</button>
+        <a id="meeting-action-copy-link" class="secondary" target="_blank" rel="noopener" hidden>打开我的待办</a>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="meeting-share-dialog" aria-labelledby="meeting-share-title">
+    <header class="meeting-share-head">
+      <h2 id="meeting-share-title">分享纪要</h2>
+      <button type="button" class="secondary" id="meeting-share-close" autofocus>关闭</button>
+    </header>
+    <p id="meeting-share-lead" class="note"></p>
+    <form id="meeting-share-form">
+      <label for="meeting-share-conversation">接收范围</label>
+      <select id="meeting-share-conversation" required disabled></select>
+      <fieldset id="meeting-share-recipients">
+        <legend>接收人</legend>
+        <div id="meeting-share-recipient-items"></div>
+        <p id="meeting-share-recipient-status" class="note" role="status"></p>
+      </fieldset>
+      <div class="meeting-actions">
+        <button type="submit" id="meeting-share-submit" disabled>确认分享</button>
+        <p id="meeting-share-status" class="note" role="status"></p>
+      </div>
+    </form>
+    <section class="meeting-share-history" aria-labelledby="meeting-share-history-title">
+      <h3 id="meeting-share-history-title">已分享</h3>
+      <ul id="meeting-share-sent"></ul>
+      <p id="meeting-share-sent-status" class="note" role="status"></p>
+      <button type="button" class="secondary" id="meeting-share-sent-more" hidden>加载更多分享</button>
+    </section>
+  </dialog>
+  <dialog id="meeting-discussion-dialog" aria-labelledby="meeting-discussion-title">
+    <h2 id="meeting-discussion-title">与个人智能体讨论</h2>
+    <form id="meeting-discussion-form">
+      <label for="meeting-discussion-question">想讨论的问题</label>
+      <textarea id="meeting-discussion-question" rows="2" maxlength="1000" required autofocus></textarea>
+      <label id="meeting-discussion-transcript-option" class="meeting-discussion-option"><input type="checkbox" id="meeting-discussion-transcript"> 包含已保存的转写 / 正文</label>
+      <label for="meeting-discussion-preview">会议内容预览</label>
+      <textarea id="meeting-discussion-preview" rows="7" readonly></textarea>
+      <p id="meeting-discussion-notice" class="note"></p>
+      <p id="meeting-discussion-status" class="note" role="status"></p>
+      <div class="meeting-actions">
+        <button type="button" class="secondary" id="meeting-discussion-cancel">取消</button>
+        <button type="submit" id="meeting-discussion-submit">打开对话草稿</button>
+      </div>
+    </form>
+  </dialog>
+  </main>
+  <article id="meeting-print-paper" hidden></article>
+  <nav class="mobile-primary-nav" aria-label="主导航" data-ui-label="shell.nav.mobile"></nav>
+</body>
+</html>

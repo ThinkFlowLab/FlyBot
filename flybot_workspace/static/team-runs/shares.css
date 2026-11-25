@@ -1,0 +1,136 @@
+#team-shared-runs:not([hidden]) {
+  margin-block: 1.25rem;
+  padding-block-start: 1rem;
+  border-top: 1px solid var(--ot-line);
+}
+
+.shared-runs-heading,
+.shared-run-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.shared-runs-heading {
+  justify-content: space-between;
+}
+
+.shared-runs-heading :is(h2, h3),
+.shared-run-confirm p {
+  margin: 0;
+}
+
+.shared-run-confirm p {
+  flex-basis: 100%;
+}
+
+.shared-runs-feedback,
+.shared-run-meta,
+.shared-runs-list small {
+  color: var(--ot-muted);
+}
+
+.shared-run-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+  margin-block: .4rem;
+}
+
+.shared-run-links .shared-runs-feedback {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.shared-run-link-fallback {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.shared-runs-feedback:empty {
+  display: none;
+}
+
+.shared-runs-list {
+  padding: 0;
+  margin: .5rem 0;
+  list-style: none;
+}
+
+.shared-runs-list li {
+  display: grid;
+  gap: .15rem;
+  padding: .35rem .55rem;
+  border-bottom: 1px solid var(--ot-line);
+}
+
+.shared-runs-list button {
+  padding: 0;
+  border: 0;
+  justify-self: start;
+  background: transparent;
+  text-align: start;
+  box-shadow: none;
+  color: var(--ot-ink);
+  font-weight: 650;
+  min-height: 2.75rem;
+}
+
+.shared-runs-list button:hover {
+  color: var(--ot-accent);
+  background: transparent;
+}
+
+.shared-run-detail,
+.shared-run-confirm {
+  padding: .75rem;
+  margin-block: .65rem;
+  border: 1px solid var(--ot-line);
+  border-radius: .75rem;
+  background: var(--ot-surface);
+}
+
+.shared-run-goal,
+.shared-run-steps p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.shared-run-steps {
+  padding-inline-start: 1.25rem;
+}
+
+.shared-run-steps li {
+  padding: .25rem 0;
+}
+
+.shared-run-choice,
+.shared-run-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.shared-run-choice {
+  width: fit-content;
+  min-height: 2.75rem;
+}
+
+.shared-run-source:not([hidden]) {
+  padding: .75rem;
+  border: 1px solid var(--ot-line);
+  border-radius: .75rem;
+}
+
+.shared-run-source p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+#share-team-run .shared-runs-feedback {
+  display: block;
+  margin-top: .35rem;
+}

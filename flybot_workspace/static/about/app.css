@@ -1,0 +1,75 @@
+html, body.about-page {
+  margin: 0;
+  min-height: 100%;
+  background: #ffffff;
+  color: #1f2a24;
+  font: 16px/1.6 system-ui, sans-serif;
+}
+body.about-page > main { background: #ffffff; max-width: none; margin: 0; padding: 0; }
+.about-bar {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.65rem 1rem; border-bottom: 1px solid #e6ebe7;
+  position: sticky; top: 0; background: #ffffff; z-index: 2;
+}
+.about-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 999px; color: #1f2a24;
+  text-decoration: none; font-size: 1.15rem;
+}
+.about-icon:hover { background: #eef2ef; }
+.about-main { padding: 2.5rem 1.25rem 4rem; }
+.about-article { max-width: 42rem; margin: 0 auto; }
+.about-article h1 {
+  margin: 0 0 0.85rem; font-size: 1.85rem; font-weight: 700; line-height: 1.3;
+  color: #1f2a24;
+}
+.about-lead { font-size: 1rem; line-height: 1.65; color: #5c6b64; }
+.about-cover {
+  display: grid; place-items: center; margin: 1.5rem 0 0.75rem;
+  min-height: 14rem; border-radius: 1.1rem;
+  background: linear-gradient(160deg, #2a5644, #1a3328 50%, #101c16);
+  color: #ffffff; font-size: 1.15rem; font-weight: 650;
+}
+.about-cover p { margin: 0; color: #ffffff; }
+.about-caption { margin: 0 0 1.75rem; text-align: center; font-size: 0.8rem; color: #5c6b64; font-style: italic; }
+.about-article h2 { margin: 1.75rem 0 0.6rem; font-size: 1.25rem; }
+.about-article p { line-height: 1.7; }
+.about-article a { color: #097845; }
+
+body.about-page a,
+body.about-page a:hover,
+body.about-page a:visited { color: #097845; }
+.about-icon,
+.about-icon:hover,
+.about-icon:visited,
+.about-icon:focus { color: #1f2a24 !important; }
+.about-icon:hover { background: #eef2ef; }
+
+.about-wordmark {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  margin-left: 0.25rem; text-decoration: none; color: #1f2a24 !important;
+}
+.about-wordmark:hover, .about-wordmark:visited { color: #1f2a24 !important; }
+.about-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem; border-radius: 50%;
+  background: #097845; color: #ffffff;
+}
+.about-mark .brand-glyph { width: 1.1rem; height: 1.1rem; }
+.brand-wordmark-text { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.03em; }
+.about-cover {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.75rem;
+}
+.about-cover .about-mark {
+  width: 3.25rem; height: 3.25rem; background: rgb(255 255 255 / 16%);
+  color: #ffffff;
+}
+.about-cover .about-mark .brand-glyph { width: 2rem; height: 2rem; }
+.about-cover p { font-size: 1.25rem; letter-spacing: -0.03em; }
+
+/* The about article pins light colours; keep the skip link legible too
+   (it otherwise inherits the dark-scheme accent behind the green link text). */
+body.about-page a.skip-link,
+body.about-page a.skip-link:hover,
+body.about-page a.skip-link:focus-visible { background: #097845; color: #ffffff; }

@@ -1,0 +1,17 @@
+{
+  "env": { "browser": true, "node": true, "es2024": true },
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": ["error", { "ignoreRestSiblings": true }]
+  },
+  "overrides": [
+    {
+      "files": ["src/client/**/*.js"],
+      "plugins": ["react"],
+      "rules": {
+        "react/rules-of-hooks": "error",
+        "react/exhaustive-deps": "off"
+      }
+    }
+  ]
+}

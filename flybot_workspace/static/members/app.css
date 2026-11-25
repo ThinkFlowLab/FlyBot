@@ -1,0 +1,421 @@
+/* Members, invites, join requests and the local team directory.
+   Row density and typography follow the shared Teamily-aligned
+   settings/list language. Inline confirm for remove / leave / revoke
+   is unchanged in behaviour. */
+
+body.app-workspace #main-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.25rem 2.25rem;
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.page-heading h1 {
+  margin: 0;
+}
+
+.page-toolbar,
+.directory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  align-items: center;
+}
+
+.workspace-field,
+.pill-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--ot-muted);
+}
+
+.workspace-field select,
+.pill-search input,
+#accept-form input,
+#add-form input,
+#invite-form input,
+#directory-summary,
+#directory-query {
+  font: inherit;
+  color: var(--ot-ink);
+  border: 1px solid var(--ot-line);
+  border-radius: 0.7rem;
+  background: var(--ot-surface);
+  padding: 0.45rem 0.75rem;
+}
+
+.pill-search {
+  flex: 1 1 14rem;
+  position: relative;
+}
+
+.pill-search input {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 999px;
+  padding-left: 0.9rem;
+}
+
+#role-note {
+  margin: 0;
+  color: var(--ot-muted);
+  font-size: 0.8125rem;
+}
+
+#workspace-chat {
+  margin-inline-start: auto;
+  min-height: 2.75rem;
+  padding-inline: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ot-line);
+  border-radius: 999px;
+  color: var(--ot-accent);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+#workspace-chat[hidden] { display: none; }
+#workspace-chat:hover { background: var(--ot-accent-soft); }
+#directory-results button { min-height: 2.75rem; }
+
+#members-panel h2,
+#invites-panel h2,
+#join-requests-panel h2,
+#my-join-requests h2,
+#team-directory-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--ot-muted);
+  letter-spacing: 0.02em;
+}
+
+#member-list,
+#invite-list,
+#join-request-list,
+#my-join-request-list,
+#directory-results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--ot-line);
+  border-radius: 0.9rem;
+  background: var(--ot-surface);
+  overflow: hidden;
+}
+
+#member-list li,
+#invite-list li,
+#join-request-list li,
+#my-join-request-list li,
+#directory-results li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--ot-line);
+}
+
+#member-list li:last-child,
+#invite-list li:last-child,
+#join-request-list li:last-child,
+#my-join-request-list li:last-child,
+#directory-results li:last-child {
+  border-bottom: 0;
+}
+
+.requests-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-block-end: .4rem; }
+#members-panel .requests-heading h2, #my-join-requests .requests-heading h2, #join-requests-panel .requests-heading h2 { margin: 0; }
+.requests-heading button, #my-join-request-list button, #join-request-list button { min-height: 2.75rem; }
+#my-join-request-list:empty, #join-request-list:empty, :is(#my-join-requests-status, #join-requests-status):empty { display: none; }
+#my-join-request-list .role-pill[data-state="approved"] { color: var(--ot-success, #147044); }
+#my-join-request-list .role-pill[data-state="rejected"] { color: var(--ot-danger); }
+#my-join-request-list .member-name { overflow-wrap: anywhere; }
+#my-join-requests-status, #join-requests-status { margin: .25rem 0 .5rem; }
+
+.member-id {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+
+.member-id .avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.member-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.member-copy strong,
+.member-name {
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.member-copy .note,
+.invite-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ot-muted);
+}
+
+.role-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--ot-bg-accent);
+  color: var(--ot-muted);
+}
+
+.role-pill.is-owner {
+  background: var(--ot-accent-soft);
+  color: var(--ot-accent);
+}
+
+#member-list li button,
+#invite-list li button,
+#join-request-list li button,
+#directory-results li button {
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  background: transparent;
+}
+
+@media (pointer: coarse) {
+  #member-list li button { min-height: 2.75rem; }
+}
+
+#join-request-list li button:first-of-type {
+  background: var(--ot-accent);
+  color: #fff;
+  border-color: var(--ot-accent);
+}
+
+#join-request-list li button + button,
+#member-list li button:is([data-row-action="remove"], [data-row-action="transfer"]),
+#invite-list li button[data-row-action="revoke"] {
+  background: transparent;
+  color: var(--ot-danger);
+  border-color: color-mix(in srgb, var(--ot-danger) 35%, var(--ot-line));
+}
+
+.row-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.8125rem;
+  padding: 0.15rem 0;
+}
+
+.row-confirm button[data-confirm-action="ok"] {
+  color: var(--ot-danger);
+  border-color: color-mix(in srgb, var(--ot-danger) 35%, var(--ot-line));
+}
+
+#add-form fieldset,
+#invite-form fieldset,
+#accept-form fieldset,
+#directory-listing-form fieldset,
+#join-requests-panel,
+#team-directory-panel {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--ot-line);
+  border-radius: 0.9rem;
+  background: var(--ot-surface);
+  box-shadow: none;
+}
+
+#add-form legend,
+#invite-form legend,
+#accept-form legend,
+#directory-listing-form legend {
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--ot-muted);
+}
+
+#add-form label,
+#invite-form label,
+#accept-form label,
+#directory-listing-form label,
+#directory-search-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0 0 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+#add-form .check-row,
+#invite-form .check-row,
+#directory-listing-form label:has(> input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 500;
+}
+
+#add-form button[type="submit"],
+#invite-form button[type="submit"],
+#accept-form button[type="submit"],
+#directory-listing-form button[type="submit"],
+#directory-search-form button[type="submit"] {
+  border-radius: 999px;
+  padding: 0.4rem 0.95rem;
+  background: var(--ot-accent);
+  color: #fff;
+  border-color: var(--ot-accent);
+  font-weight: 650;
+}
+
+#issued-token {
+  margin: 0.6rem 0 0;
+  word-break: break-all;
+}
+
+.empty-state,
+#members-empty,
+#invites-empty,
+#join-requests-empty,
+#directory-empty {
+  margin: 0.75rem 0 0;
+  padding: 0.9rem 1rem;
+  text-align: center;
+  color: var(--ot-muted);
+  font-size: 0.875rem;
+  background: var(--ot-surface-2);
+  border-radius: 0.9rem;
+}
+
+#members-empty[hidden],
+#invites-empty[hidden],
+#join-requests-empty[hidden],
+#directory-empty[hidden] {
+  display: none;
+}
+
+#directory-search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 0.75rem;
+}
+
+#directory-search-form input {
+  min-width: 14rem;
+}
+
+#directory-results {
+  margin-top: 0.25rem;
+}
+
+#directory-results li .note {
+  margin: 0;
+  flex: 1 1 12rem;
+}
+
+#directory-results li button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+#join-requests-panel,
+#team-directory-panel,
+#directory-listing-form fieldset {
+  margin-top: 0;
+}
+
+
+#add-form label,
+#invite-form label,
+#accept-form label,
+#directory-listing-form label {
+  align-items: stretch;
+  text-align: left;
+  width: 100%;
+}
+
+#add-form input,
+#add-form select,
+#invite-form input,
+#invite-form select,
+#accept-form input,
+#directory-summary {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+
+#add-form .check-row,
+#invite-form .check-row,
+#directory-listing-form label:has(> input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+}
+
+#add-form .check-row input,
+#invite-form .check-row input,
+#directory-listing-form label:has(> input[type="checkbox"]) input {
+  width: auto;
+  flex: 0 0 auto;
+}
+.invite-link { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .625rem; margin-top: .75rem; }
+.invite-link label { flex: 1 1 12rem; min-width: 0; }
+.invite-link input { width: 100%; min-height: 2.75rem; }
+.workspace-write-status { margin: .55rem 0 0; overflow-wrap: anywhere; }
+.workspace-write-status[data-kind="error"] { color: var(--ot-danger); }
+#invitation-preview { margin: .25rem 0; color: var(--ot-ink); }
+#accept-form[data-linked="true"] { max-width: 34rem; margin-top: 0; }
+#accept-form[data-linked="true"] #confirm-invite {
+  min-height: 2.75rem;
+  background: var(--ot-accent);
+  color: var(--ot-on-accent);
+}
+
+#group-invite-panel {
+  box-sizing: border-box;
+  width: min(calc(100% - 2rem), 29rem);
+  margin: clamp(1rem, 7vh, 4rem) auto 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--ot-line);
+  border-radius: 1rem;
+  background: var(--ot-surface);
+}
+#group-invite-panel h1 { margin: 0 0 .75rem; font-size: 1.25rem; }
+#group-invite-title { margin: 0 0 .25rem; font-weight: 650; overflow-wrap: anywhere; }
+#group-invite-title:empty { display: none; }
+#group-invite-message { margin: 0 0 1rem; color: var(--ot-muted); }
+.group-invite-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.group-invite-actions :is(button,a) { min-height: 2.75rem; }
+.group-invite-actions a { display: inline-flex; align-items: center; }

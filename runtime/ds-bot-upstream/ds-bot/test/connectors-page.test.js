@@ -1,0 +1,472 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
+import { build } from 'esbuild'
+
+// jsdom comes from the harness that test/harness-resolve.mjs found, like the dsh packages.
+const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
+const { JSDOM } = createRequire(join(process.env.DSH_HARNESS ?? join(PLUGIN, '..', 'deepseek-harness'), 'package.json'))('jsdom')
+
+// The mailbox catalog row, bundled once and rendered with a minimal React stand-in whose
+// useState survives re-renders: hooks are numbered by expansion order, which is
+// stable because the tree expands the same way every pass.
+const { outputFiles } = await build({
+  stdin: {
+    contents: "export { AddMenu, ConnectorRow, MailCatalogRow, MailToolCell } from './src/client/connectors.js'\nexport { ConnectorsPage } from './src/client/connectors-page.js'",
+    resolveDir: PLUGIN,
+  },
+  bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
+  external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
+})
+const slots = []
+let idx = 0
+let concrete = null
+let props = {}
+const expand = (node) => {
+  if (node === null || node === undefined || node === false || node === true) return node
+  if (Array.isArray(node)) return node.map(expand)
+  if (typeof node !== 'object') return node
+  if (typeof node.type === 'function') return expand(node.type(node.props))
+  return { ...node, props: { ...(node.props ?? {}), children: expand(node.props?.children) } }
+}
+let active = () => expand(MailCatalogRow(props))
+const rerender = () => { idx = 0; concrete = active() }
+const react = {
+  createContext: (initial) => { const ctx = { value: initial }; ctx.Provider = ({ value, children }) => { ctx.value = value; return children }; return ctx },
+  useContext: ctx => ctx.value,
+  useCallback: fn => fn,
+  useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
+  createElement: (type, p, ...children) => ({ type, props: { ...(p ?? {}), children } }),
+  Fragment: 'fragment',
+  useEffect() {}, useLayoutEffect() {},
+  useState: (init) => {
+    const i = idx++
+    if (!(i in slots)) slots[i] = typeof init === 'function' ? init() : init
+    return [slots[i], (value) => { slots[i] = typeof value === 'function' ? value(slots[i]) : value; rerender() }]
+  },
+  useMemo: make => make(),
+  useRef: (current) => {
+    const i = idx++
+    if (!(i in slots)) slots[i] = { current }
+    return slots[i]
+  },
+  useId: () => 'id',
+}
+const opened = []
+const clipboard = { writeText: () => Promise.resolve() }
+const dom = new JSDOM('<!doctype html><body></body>')
+const module = { exports: {} }
+runInNewContext(outputFiles[0].text, {
+  module, exports: module.exports,
+  document: dom.window.document,
+  navigator: { clipboard },
+  window: { matchMedia: () => ({ matches: false }), dshDesktop: {}, open: (url) => { opened.push(url); return null } },
+  require: name => (name === 'react' ? react : name === 'react-dom' ? { createPortal: node => node } : {}),
+})
+const { AddMenu, ConnectorRow, MailCatalogRow, MailToolCell, ConnectorsPage } = module.exports
+// The mail tests below draw MailCatalogRow; the connector tests name their own component.
+const render = (component = MailCatalogRow) => { active = () => expand(component(props)); rerender() }
+const renderCell = (cellProps) => { slots.length = 0; active = () => expand(MailToolCell(cellProps)); rerender() }
+
+const renderPage = (pageProps) => { active = () => expand(ConnectorsPage(pageProps)); rerender() }
+
+const flatten = (node, out = []) => {
+  if (node === null || node === undefined || node === false || node === true) return out
+  if (Array.isArray(node)) { node.forEach(n => flatten(n, out)); return out }
+  if (typeof node === 'string' || typeof node === 'number') { out.push(String(node)); return out }
+  flatten(node.props?.children, out)
+  return out
+}
+const collect = (match, out = []) => {
+  const walk = (node) => {
+    if (node === null || node === undefined || node === false || node === true) return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (typeof node !== 'object') return
+    if (match(node)) out.push(node)
+    walk(node.props?.children)
+  }
+  walk(concrete)
+  return out
+}
+const click = (text) => {
+  const button = collect(n => n.type === 'button' && flatten(n).join('') === text)[0]
+  assert.ok(button, `button "${text}"`)
+  button.props.onClick?.()
+}
+const fill = (label, value) => {
+  const input = collect(n => n.type === 'input' && n.props?.['aria-label'] === label)[0]
+  assert.ok(input, `input "${label}"`)
+  input.props.onChange?.({ target: { value } })
+}
+const addressAt = domain => ['me', domain].join('@')
+const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+
+test('the mail form shows the QQ guide with its links and closes after a good add', async () => {
+  const adds = []
+  const actions = {
+    mailAccountAdd: (body) => { adds.push(body); return Promise.resolve({ accounts: [] }) },
+    mailAccountRemove: () => Promise.resolve(true),
+  }
+  props = { mail: { accounts: [] }, actions }
+  slots.length = 0
+  render()
+  click('Connect')
+  click('QQ')
+  const guide = collect(n => n.props?.className === 'bt-mail-guide')[0]
+  assert.ok(guide, 'guide list')
+  assert.equal(collect(n => n.type === 'li').length, 3)
+  const links = collect(n => n.type === 'button' && n.props?.className === 'bt-connector-link')
+  assert.equal(links.length, 2)
+  opened.length = 0
+  links.forEach(link => link.props.onClick())
+  assert.equal(opened[0], 'https://mail.qq.com')
+  assert.match(opened[1], /help\.mail\.qq\.com/)
+  fill('Email address', addressAt('qq.com'))
+  fill('Authorization code', 'CODE')
+  click('Add')
+  await flush()
+  assert.equal(adds.length, 1)
+  assert.equal(adds[0].provider, 'qq')
+  assert.equal(collect(n => String(n.props?.className ?? '').includes('bt-mail-form')).length, 0, 'form closed after a resolved add')
+})
+
+test('a busy mail add blocks a second click and a good add clears the fields', async () => {
+  const adds = []
+  let release = null
+  const actions = {
+    mailAccountAdd: (body) => { adds.push(body); return new Promise(resolve => { release = resolve }) },
+    mailAccountRemove: () => Promise.resolve(true),
+  }
+  props = { mail: { accounts: [] }, actions }
+  slots.length = 0
+  render()
+  click('Connect')
+  fill('Email address', addressAt('qq.com'))
+  fill('Authorization code', 'CODE')
+  click('Add')
+  await flush()
+  assert.equal(adds.length, 1)
+  const adding = collect(n => n.type === 'button' && flatten(n).join('') === 'Verifying…')[0]
+  assert.ok(adding, 'busy button reads Verifying…')
+  assert.equal(adding.props.disabled, true)
+  adding.props.onClick?.()
+  await flush()
+  assert.equal(adds.length, 1, 'a second click while busy adds nothing')
+  const address = collect(n => n.type === 'input' && n.props?.['aria-label'] === 'Email address')[0]
+  assert.equal(address.props.disabled, true, 'the fields are disabled while busy')
+  release({ accounts: [] })
+  await flush()
+  assert.equal(collect(n => String(n.props?.className ?? '').includes('bt-mail-form')).length, 0, 'form closed after a resolved add')
+  // The closed form unmounted; the stand-in keeps hook slots by index, so start them over.
+  slots.length = 0
+  render()
+  click('Connect')
+  assert.equal(collect(n => n.type === 'input' && n.props?.['aria-label'] === 'Email address')[0].props.value, '', 'address cleared')
+  assert.equal(collect(n => n.type === 'input' && String(n.props?.className ?? '') === 'bt-secret-input')[0].props.value, '', 'code cleared')
+  const qq = collect(n => n.type === 'button' && flatten(n).join('') === 'QQ')[0]
+  assert.equal(qq.props['aria-pressed'], true, 'provider back to the default')
+  click('Other')
+  assert.equal(collect(n => n.type === 'input' && n.props?.['aria-label'] === 'IMAP host')[0].props.value, '', 'IMAP host cleared')
+  assert.equal(collect(n => n.type === 'input' && n.props?.['aria-label'] === 'SMTP host')[0].props.value, '', 'SMTP host cleared')
+})
+
+test('the mail send card is an editable show_view form card with the approval rule menu', async () => {
+  const bot = { id: 'b1', name: 'Chief' }
+  const sender = addressAt('qq.com')
+  const body = 'Hi **all**\n<!-- hidden --> [link](https://x.test)\n\nBye'
+  const roster = {
+    byId: { s1: bot },
+    connectors: { mail: { accounts: [{ id: sender, address: sender }] } },
+    mailRequests: {
+      b1: [{ id: 'r1', callId: 'c1', sessionId: 's1', status: 'pending', account: sender, to: 'team@corp.dev', subject: 'Weekly_1', body, attachmentDetails: [{ name: 'report.pdf', size: 2048 }] }],
+    },
+  }
+  const answers = []
+  const ruleSets = []
+  let opened = false
+  renderCell({
+    sessionId: 's1', callId: 'c1', roster,
+    actions: {
+      mailSendAnswer: (...args) => { answers.push(args); return Promise.resolve() },
+      mailRuleSet: (payload) => { ruleSets.push(payload); return Promise.resolve() },
+      openConnectors: () => { opened = true },
+    },
+  })
+  const card = collect(n => String(n.props?.className ?? '').split(' ').includes('dv-view'))[0]
+  assert.ok(card, 'view card root')
+  assert.ok(card.props.className.split(' ').includes('dv-q'), 'framed like the show_view answer cards')
+  assert.equal( flatten(collect(n => n.props?.className === 'dv-view-title')[0]).join(''), 'Mail')
+  assert.ok(collect(n => n.props?.className === 'dv-view-icon')[0], 'mail icon in header')
+  // Prefilled fields: subject, readOnly from, editable to, editable cc, multiline body.
+  const subjectInput = collect(n => n.type === 'input' && n.props?.['aria-label'] === 'Subject')[0]
+  const fromInput = collect(n => n.type === 'input' && n.props?.['aria-label'] === 'From')[0]
+  const toInput = collect(n => n.type === 'input' && n.props?.['aria-label'] === 'To')[0]
+  const ccInput = collect(n => n.type === 'input' && n.props?.['aria-label'] === 'Cc')[0]
+  const bodyArea = collect(n => n.type === 'textarea' && n.props?.['aria-label'] === 'Write a message…')[0]
+  assert.equal(subjectInput.props.value, 'Weekly_1')
+  assert.equal(fromInput.props.value, sender)
+  assert.equal(fromInput.props.readOnly, true)
+  assert.equal(toInput.props.value, 'team@corp.dev')
+  assert.equal(ccInput.props.value, '')
+  assert.equal(bodyArea.props.value, body, 'body stays literal in textarea')
+  const texts = collect(n => typeof n.props?.text === 'string' && n.props?.variant === 'compact').map(n => n.props.text)
+  assert.ok(texts.some(text => text.includes('report\\.pdf \\(2 KB\\)')), 'attachments')
+  // Approval menu defaults to Needs approval.
+  const ruleBtn = collect(n => n.type === 'button' && n.props?.className === 'bt-mail-rule-btn')[0]
+  assert.equal(flatten(ruleBtn).join(''), 'Needs approval')
+  ruleBtn.props.onClick()
+  click('Allow recipient')
+  await flush()
+  assert.equal(ruleSets.length, 1)
+  assert.equal(ruleSets[0].mode, 'allow-recipient')
+  assert.equal(flatten(collect(n => n.type === 'button' && n.props?.className === 'bt-mail-rule-btn')[0]).join(''), 'Allow recipient')
+  // Manage rules opens Connectors settings.
+  collect(n => n.type === 'button' && n.props?.className === 'bt-mail-rule-btn')[0].props.onClick()
+  click('Manage rules')
+  assert.equal(opened, true)
+  // Edit recipient and body in the card, then press Send.
+  toInput.props.onChange({ target: { value: 'edited@corp.dev' } })
+  collect(n => n.type === 'textarea' && n.props?.['aria-label'] === 'Write a message…')[0].props.onChange({ target: { value: 'Edited body' } })
+  const send = collect(n => n.type === 'button' && n.props?.className === 'dv-q-submit')[0]
+  assert.equal(flatten(send).join(''), 'Send')
+  assert.equal(flatten(collect(n => n.type === 'button' && n.props?.className === 'dv-q-btn')[0]).join(''), 'Discard')
+  const formNode = collect(n => n.type === 'form' && n.props?.className === 'dv-widget-form')[0]
+  formNode.props.onSubmit({ preventDefault() {} })
+  await flush()
+  assert.equal(answers.length, 1)
+  assert.equal(answers[0][0], 'r1')
+  assert.equal(answers[0][1], 'send')
+  assert.equal(answers[0][2].rule, 'allow-recipient')
+  assert.equal(answers[0][2].fields.to, 'edited@corp.dev')
+  assert.equal(answers[0][2].fields.body, 'Edited body')
+})
+
+test('a failed mail add shows the host message inside the form', async () => {
+  const actions = {
+    mailAccountAdd: () => Promise.reject(new Error('The password was refused. Use the mailbox app password or authorization code, not the account password.')),
+    mailAccountRemove: () => Promise.resolve(true),
+  }
+  props = { mail: { accounts: [] }, actions }
+  slots.length = 0
+  render()
+  click('Connect')
+  fill('Email address', addressAt('qq.com'))
+  fill('Authorization code', 'WRONG')
+  click('Add')
+  await flush()
+  const alert = collect(n => n.props?.role === 'alert')[0]
+  assert.ok(alert, 'inline error')
+  assert.match(flatten(alert).join(''), /password was refused/)
+  assert.ok(String(collect(n => String(n.props?.className ?? '').includes('bt-mail-form'))[0]?.props?.className ?? '').includes('bt-mail-form'), 'form stays open')
+})
+
+// Your own MCP servers: an address may sign in with OAuth, a command cannot.
+test('the add form offers OAuth only for an address and sends the flag', async () => {
+  const adds = []
+  const actions = { connectorAdd: (body) => { adds.push(body); return Promise.resolve({ connectors: [] }) } }
+  // The real page passes a `run` that shows failures; here it just awaits.
+  props = { actions, run: task => Promise.resolve(task) }
+  slots.length = 0
+  render(AddMenu)
+  click('Add')
+  // The switch keeps its own aria-label inside the row.
+  const findToggle = () => collect(n => n.type === 'button' && n.props?.['aria-label'] === 'Sign in')[0]
+  const findAdd = () => collect(n => n.type === 'button' && flatten(n).join('') === 'Add').at(-1)
+  assert.ok(findToggle(), 'the address form offers OAuth sign-in')
+  fill('Server address', 'https://mcp.example.com/mcp')
+  findToggle().props.onClick()
+  assert.equal(findToggle().props['aria-checked'], true)
+  fill('Name', 'Example')
+  findAdd().props.onClick()
+  await flush()
+  // Bodies cross the vm boundary, so compare field by field rather than by prototype.
+  const pick = body => ({ ...body })
+  assert.deepEqual(pick(adds[0]), { name: 'Example', url: 'https://mcp.example.com/mcp', oauth: true })
+
+  // Off by default: a fixed-header server sends no flag and behaves as it always did.
+  adds.length = 0
+  slots.length = 0
+  render(AddMenu)
+  click('Add')
+  fill('Server address', 'https://fixed.example.com/mcp')
+  fill('Name', 'Fixed')
+  findAdd().props.onClick()
+  await flush()
+  assert.deepEqual(pick(adds[0]), { name: 'Fixed', url: 'https://fixed.example.com/mcp' })
+
+  // A command has no browser sign-in to offer, and switching back drops the flag.
+  slots.length = 0
+  render(AddMenu)
+  click('Add')
+  fill('Server address', 'https://mcp.example.com/mcp')
+  click('Command')
+  assert.equal(collect(n => n.props?.['aria-label'] === 'Sign in').length, 0, 'no OAuth switch for command')
+  click('Address')
+  assert.equal(findToggle().props['aria-checked'], false)
+
+  // Turning it on and then switching kinds must not carry the choice back: an address
+  // submitted after that would otherwise silently ask for OAuth.
+  slots.length = 0
+  render(AddMenu)
+  click('Add')
+  fill('Server address', 'https://mcp.example.com/mcp')
+  findToggle().props.onClick()
+  assert.equal(findToggle().props['aria-checked'], true)
+  click('Command')
+  click('Address')
+  assert.equal(findToggle().props['aria-checked'], false, 'switching kinds clears the OAuth choice')
+  adds.length = 0
+  fill('Server address', 'https://after-switch.example.com/mcp')
+  fill('Name', 'After switch')
+  findAdd().props.onClick()
+  await flush()
+  assert.deepEqual(pick(adds[0]), { name: 'After switch', url: 'https://after-switch.example.com/mcp' })
+})
+
+// An added OAuth server that has not signed in yet keeps a way to be removed.
+test('an unconnected added server still offers Remove', async () => {
+  const removed = []
+  const actions = { connectorDisconnect: (id) => { removed.push(id); return Promise.resolve({ connectors: [] }) } }
+  const renderRow = (connector) => { props = { connector, actions }; slots.length = 0; render(ConnectorRow) }
+  const base = { id: 'box', name: 'Simular Box', category: 'custom', about: 'https://mcp.box.simular.ai/mcp', auth: { kind: 'oauth' }, custom: true, offFor: [], tools: 0 }
+
+  renderRow({ ...base, state: 'off' })
+  const offRemove = collect(n => n.type === 'button' && flatten(n).join('') === 'Remove')[0]
+  assert.ok(offRemove, 'an added server that never signed in can be removed')
+  offRemove.props.onClick()
+  await flush()
+  assert.deepEqual(removed, ['box'])
+
+  // A catalog connector with no sign-in still says Disconnect, not Remove.
+  renderRow({ id: 'context7', name: 'Context7', category: 'docs', about: '', auth: { kind: 'none' }, offFor: [], tools: 0, state: 'off' })
+  assert.equal(collect(n => n.type === 'button' && flatten(n).join('') === 'Remove').length, 0, 'catalog rows never say Remove')
+})
+
+// An added server has no catalog category, and an OAuth one stays off until its
+// sign-in finishes: without a section of its own it is on neither the default page
+// nor Connected, and Connect and Remove are reachable by search only.
+test('an added OAuth server that has not signed in is listed on the default page', async () => {
+  slots.length = 0
+  const connects = []
+  const added = { id: 'example-mcp', name: 'Example MCP', category: 'custom', about: 'https://mcp.example.com/mcp', auth: { kind: 'oauth' }, custom: true, offFor: [], tools: 0, state: 'off' }
+  const actions = { connectorConnect: (id) => { connects.push(id); return Promise.resolve({ connectors: [added] }) } }
+  renderPage(pageWith(added, actions))
+  const connect = sectionButton('Other MCP server', 'Connect')
+  assert.ok(connect, 'the added server offers Connect under its own heading')
+  connect.props.onClick()
+  await flush()
+  assert.deepEqual(connects, ['example-mcp'])
+})
+
+// The rows the host sends (`pending` is the row built in connectors/index.js).
+const githubAuth = { kind: 'oauth', client: { id: 'client' }, token: true }
+const github = extra => ({ id: 'github', name: 'GitHub', category: 'dev', auth: githubAuth, state: 'off', ...extra })
+const devicePending = userCode => ({ state: 'connecting', pending: { kind: 'device', userCode, verificationUri: 'https://github.com/login/device', expiresAt: 4102444800000 } })
+const pageWith = (app, actions = {}) => ({ roster: { connectors: { connectors: [app], mail: { accounts: [] } } }, actions })
+const has = className => collect(n => String(n.props?.className ?? '').split(' ').includes(className))
+const pageText = () => flatten(concrete).join(' ')
+const sectionOf = (node) => {
+  for (const section of collect(n => n.type === 'section')) {
+    const inside = []
+    const walk = (n) => { if (Array.isArray(n)) n.forEach(walk); else if (n && typeof n === 'object') { inside.push(n); walk(n.props?.children) } }
+    walk(section)
+    if (inside.includes(node)) return flatten(collect(n => n === section)[0].props.children[0]).join('')
+  }
+  return null
+}
+const sectionButton = (section, text) => collect(n => n.type === 'button' && flatten(n).join('') === text).find(n => sectionOf(n) === section)
+
+test('a device sign-in shows its code on the clicked tile and says copied only once the write worked', async () => {
+  slots.length = 0
+  opened.length = 0
+  let finishCopy = null
+  const written = []
+  clipboard.writeText = (text) => { written.push(text); return new Promise((resolve) => { finishCopy = resolve }) }
+  const pending = github(devicePending('WDJB-MJHT'))
+  const actions = { connectorConnect: () => Promise.resolve({ connectors: [pending] }) }
+  const page = pageWith(github(), actions)
+  renderPage(page)
+  sectionButton('Developer', 'Connect').props.onClick()
+  // The host's update reaches the page while the clipboard write is still running.
+  page.roster = pageWith(pending).roster
+  await flush()
+  rerender()
+  assert.deepEqual(written, ['WDJB-MJHT'])
+  assert.deepEqual(opened, [], 'the page waits for the clipboard: it takes the focus as it opens')
+  assert.equal(has('bt-connector-code').length, 1, 'one tile draws the code')
+  assert.equal(flatten(has('bt-connector-code')[0]).join(''), 'WDJB-MJHT')
+  assert.equal(sectionOf(has('bt-connector-code')[0]), 'Developer', 'on the tile that was clicked')
+  assert.match(pageText(), /github\.com\/login\/device/)
+  assert.doesNotMatch(pageText(), /Copied to clipboard/)
+  finishCopy()
+  await flush()
+  rerender()
+  assert.match(pageText(), /Copied to clipboard/)
+  assert.deepEqual(opened.slice(-1), ['https://github.com/login/device'])
+})
+
+test('a refused clipboard write shows no copied hint and the Copy button can still do it', async () => {
+  slots.length = 0
+  clipboard.writeText = () => Promise.reject(new Error('Document is not focused'))
+  const pending = github(devicePending('REFU-SED1'))
+  const page = pageWith(github(), { connectorConnect: () => Promise.resolve({ connectors: [pending] }) })
+  renderPage(page)
+  sectionButton('Recommended', 'Connect').props.onClick()
+  await flush()
+  page.roster = pageWith(pending).roster
+  await flush()
+  rerender()
+  assert.equal(flatten(has('bt-connector-code')[0]).join(''), 'REFU-SED1')
+  assert.doesNotMatch(pageText(), /Copied to clipboard/)
+  clipboard.writeText = () => Promise.resolve()
+  click('Copy')
+  await flush()
+  rerender()
+  assert.match(pageText(), /Copied to clipboard/)
+})
+
+test('a sign-in found after a reload is drawn once, and a browser sign-in says where to finish', () => {
+  slots.length = 0
+  renderPage(pageWith(github(devicePending('RELO-ADED'))))
+  assert.equal(has('bt-connector-code').length, 1)
+  assert.equal(sectionOf(has('bt-connector-code')[0]), 'Recommended')
+  slots.length = 0
+  renderPage(pageWith(github({ state: 'connecting', pending: { kind: 'browser', url: 'https://github.com/login/oauth' } })))
+  assert.equal(pageText().split('Finish signing in in your browser.').length - 1, 1)
+})
+
+test('the client form says where to allow the redirect URL before the client is pasted', () => {
+  const sent = []
+  const slack = {
+    id: 'slack', name: 'Slack', state: 'needs-client',
+    auth: { kind: 'oauth', clientSetup: { kind: 'slack', appUrl: 'https://api.slack.com/apps' } },
+    redirectUri: 'http://127.0.0.1:38517/callback',
+  }
+  const drawRow = (connector, actions) => {
+    slots.length = 0
+    active = () => expand(ConnectorRow({ connector, actions }))
+    rerender()
+  }
+  drawRow(slack, { connectorClient: (id, clientId, clientSecret) => { sent.push({ id, clientId, clientSecret }); return Promise.resolve({ connectors: [] }) } })
+  const setup = collect(node => node.props?.className === 'bt-connector-setup')[0]
+  assert.ok(setup, 'setup hint')
+  assert.equal(collect(node => node.props?.className === 'bt-connector-actions').length, 0, 'no duplicate Connect button while ClientPanel is open')
+  const text = flatten(setup).join(' ')
+  // Slack names the place to configure, the address to allow, and what to turn on.
+  assert.match(text, /OAuth & Permissions at api\.slack\.com\/apps/)
+  assert.match(text, /http:\/\/127\.0\.0\.1:38517\/callback/)
+  assert.match(text, /MCP features and scopes/)
+  assert.match(text, /Copy the Client ID and Client Secret here\./)
+  opened.length = 0
+  click('Open app settings')
+  assert.equal(opened[0], 'https://api.slack.com/apps')
+  fill('Client ID', 'cid-1')
+  click('Continue')
+  assert.deepEqual(sent, [{ id: 'slack', clientId: 'cid-1', clientSecret: undefined }])
+  // A service without its own steps still names the address its app has to allow.
+  drawRow({ ...slack, id: 'notion', name: 'Notion', auth: { kind: 'oauth' } }, {})
+  assert.match(flatten(collect(node => node.props?.className === 'bt-connector-setup')[0]).join(' '), /In the app settings, add this redirect URL:/)
+})

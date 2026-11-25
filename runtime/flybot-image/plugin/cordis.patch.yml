@@ -1,0 +1,6 @@
+# Mount the FlyBot wrapper as the Bot host (id: bot). apply() already
+# boots unmodified createRuntime and the social façade. Do not also insert
+# name: ds-bot, or the runtime would start twice.
+- insert:
+    - id: bot
+      name: '@flybot-workspace/flybot-runtime'

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title>团队任务 · FlyBot</title>
+  <link rel="icon" href="/shell/flybot-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/shell/app.css">
+  <link rel="stylesheet" href="/team-runs/app.css">
+  <link rel="modulepreload" href="/shell/thumb.mjs">
+  <script type="module" src="/shell/app.mjs"></script>
+  <script type="module" src="/shell/dsbot-api.mjs"></script>
+  <script type="module" src="/team-runs/app.mjs"></script>
+</head>
+<body class="app-workspace app-primary">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <nav class="app-rail" aria-label="应用导航">
+    <a class="brand-mark" href="/" title="FlyBot 首页" aria-label="FlyBot"><img class="brand-glyph" src="/shell/flybot-logo.svg" width="28" height="28" alt=""></a>
+    <div class="rail-actions">
+      <a href="/" title="首页" aria-label="首页"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg><span class="rail-label">首页</span></a>
+      <a href="/chat" title="聊天" aria-label="聊天"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H9l-5 4V4Z"/></svg><span class="rail-label">聊天</span></a>
+      <a href="/agents" title="智能体" aria-label="智能体"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14v12H5z M9 3h6 M12 3v4 M8 12h1 M15 12h1 M9 16h6"/></svg><span class="rail-label">智能体</span></a>
+      <a href="/skills" title="技能" aria-label="技能"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z M8.5 10.5h7 M8.5 14h4.5"/></svg><span class="rail-label">技能</span></a>
+      <a href="/automations" title="自动化" aria-label="自动化"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h3v3H4z M11 6h9 M4 11h3v3H4z M11 12h9 M4 17h3v3H4z M11 18h9"/></svg><span class="rail-label">自动化</span></a>
+      <a href="/memory" title="记忆" aria-label="记忆"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4a4 4 0 0 0-4 4v8a4 4 0 0 0 4 4 M16 4a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4 M8 8h8 M8 12h8 M8 16h8 M12 4v16"/></svg><span class="rail-label">记忆</span></a>
+      <a href="/space" title="作品" aria-label="作品"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5"/></svg><span class="rail-label">作品</span></a>
+      <a href="/meetings" title="会议" aria-label="会议"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v14H4z M8 3v4 M16 3v4 M4 10h16"/></svg><span class="rail-label">会议</span></a>
+      <a href="/discover" title="发现" aria-label="发现"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z m4 5-2 6-6 2 2-6 6-2Z"/></svg><span class="rail-label">发现</span></a>
+      <a href="/contacts" title="联系人" aria-label="联系人" data-ui-title="shell.contacts" data-ui-label="shell.contacts"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-2a7 7 0 0 1 14 0v2 M17 4a3.5 3.5 0 0 1 0 7 M19 14a6 6 0 0 1 3 5v2"/></svg><span data-ui-text="shell.contacts" class="rail-label">联系人</span></a>
+      <a href="/download" title="下载" aria-label="下载"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12 m-5-5 5 5 5-5 M4 16v5h16v-5"/></svg><span class="rail-label">下载</span></a>
+    </div>
+    <button type="button" id="appearance-toggle" class="rail-link rail-signed-in" hidden title="切换外观">浅色</button>
+    <div class="account-slot" hidden>
+      <button type="button" id="account-menu-button" class="account-trigger" data-account-icon aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="账户菜单" title="账户菜单">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0 M4 21v-2a8 8 0 0 1 16 0v2"/></svg>
+      </button>
+      <div id="account-menu" class="account-menu" role="menu" hidden>
+        <p id="account-identity" class="account-identity"></p>
+        <a href="/profile" role="menuitem" aria-label="查看我的资料">查看我的资料</a>
+        <a href="/team" role="menuitem">创建团队</a>
+        <div class="account-sub">
+          <button type="button" id="help-menu-button" aria-expanded="false" aria-controls="help-menu">帮助</button>
+          <div id="help-menu" hidden>
+            <a href="/help" role="menuitem">帮助中心</a>
+            <a href="/guide" role="menuitem">功能指引</a>
+            <a href="/download" role="menuitem" aria-label="下载">下载</a>
+            <a href="/settings#send-shortcut" role="menuitem">快捷键</a>
+            <a href="/terms" role="menuitem">服务条款</a>
+            <a href="/privacy" role="menuitem">隐私政策</a>
+            <a href="https://github.com/ThinkFlowLab/FlyBot/issues" rel="noreferrer" target="_blank" role="menuitem" title="打开 FlyBot 问题反馈">报告问题</a>
+          </div>
+        </div>
+        <a href="/settings" role="menuitem" aria-label="所有设置">所有设置</a>
+        <form id="logout-form" method="post" action="/v1/auth/logout">
+          <button type="submit">退出登录</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+  <p id="status" role="status">正在读取工作区…</p>
+  <main id="main">
+    <section id="login-panel" hidden>
+      <h1>团队任务</h1>
+      <p>登录后可创建任务或查看已有结果。</p>
+      <a class="secondary" href="/login">登录</a>
+    </section>
+    <section id="main-panel" class="team-run-page" hidden>
+      <header class="team-run-header">
+        <div>
+          <h1>团队任务</h1>
+          <p class="note">让多个智能体分步骤完成一个目标。</p>
+        </div>
+        <button type="button" id="team-runs-new" disabled>新建任务</button>
+      </header>
+      <p id="whoami" class="visually-hidden"></p>
+      <div class="team-run-toolbar">
+        <label>工作区 <select id="team-runs-workspace"></select></label>
+        <button type="button" id="team-runs-refresh">刷新</button>
+      </div>
+      <section id="team-run-handoff" class="team-run-confirm" aria-labelledby="team-run-handoff-title" hidden>
+        <h2 id="team-run-handoff-title">跟进自动化运行</h2>
+        <p id="team-run-handoff-status" role="status"></p>
+        <div class="team-run-actions">
+          <button type="button" id="team-run-handoff-continue" class="secondary" hidden>继续现有草稿</button>
+          <button type="button" id="team-run-handoff-replace" hidden>用运行结果新建草稿</button>
+          <button type="button" id="team-run-handoff-retry" class="secondary" hidden>重试读取结果</button>
+        </div>
+      </section>
+      <div id="team-run-list-panels">
+        <section id="team-runs-list-view" aria-labelledby="team-runs-list-heading">
+          <h2 id="team-runs-list-heading" tabindex="-1">我的任务</h2>
+          <form id="team-run-filters" class="team-run-filters" role="search" aria-label="查找我的团队任务" hidden>
+            <label>搜索任务 <input id="team-run-search" type="search" maxlength="80" placeholder="任务名称或目标"></label>
+            <label>状态
+              <select id="team-run-filter-status">
+                <option value="">全部状态</option>
+                <option value="running">运行中</option>
+                <option value="succeeded">已完成</option>
+                <option value="failed">失败</option>
+                <option value="cancelled">已取消</option>
+              </select>
+            </label>
+            <button type="button" id="team-run-clear-filters" class="secondary" hidden>清除筛选</button>
+          </form>
+          <p id="team-run-filter-count" class="note team-run-filter-count" role="status" hidden></p>
+          <ul id="team-run-list" class="team-run-list"></ul>
+          <p id="team-runs-empty" class="empty-state" hidden>还没有任务。新建任务后，可以在这里跟踪进度。</p>
+        </section>
+        <section id="team-shared-runs" hidden></section>
+      </div>
+      <form id="team-run-form" hidden>
+        <header class="team-run-subhead">
+          <button type="button" class="secondary" data-back-to-team-runs>‹ 返回任务列表</button>
+          <h2 id="team-run-form-heading" tabindex="-1">新建任务</h2>
+        </header>
+        <p id="team-run-draft-status" class="note" role="status" hidden></p>
+        <p id="team-run-agent-status" class="note" role="status"></p>
+        <fieldset id="team-run-fields" class="team-run-fields">
+          <legend class="visually-hidden">任务与执行步骤</legend>
+          <div id="team-run-reuse-source" class="team-run-actions" hidden>
+            <a class="team-run-link" id="team-run-draft-original" hidden>查看原任务</a>
+            <button type="button" class="secondary" id="team-run-unlink-reuse">移除原任务引用</button>
+          </div>
+          <div id="team-run-source" class="shared-run-source" hidden>
+            <p id="team-run-source-status" class="note"></p>
+            <button type="button" class="secondary" id="team-run-review-source">查看共享结果</button>
+            <a class="team-run-link" id="team-run-source-link" hidden>查看原运行</a>
+            <button type="button" class="secondary" id="team-run-remove-source">移除引用</button>
+          </div>
+          <label>任务名称 <input id="team-run-title" type="text" required maxlength="80"></label>
+          <label>目标 <textarea id="team-run-goal" required rows="3" maxlength="2000"></textarea></label>
+          <div class="team-run-steps-label">
+            <h3>执行步骤</h3>
+            <p class="note">添加 2–8 步。勾选前序步骤可引用其结果，未设依赖的步骤可并行运行。</p>
+          </div>
+          <div id="team-run-steps"></div>
+          <button type="button" class="secondary" id="team-run-add-step">添加步骤</button>
+        </fieldset>
+        <p id="team-run-start-status" class="note" role="status"></p>
+        <div class="team-run-actions">
+          <button type="submit" id="team-run-start">开始运行</button>
+        </div>
+      </form>
+      <section id="team-run-detail" hidden aria-labelledby="team-run-heading">
+        <header class="team-run-subhead">
+          <button type="button" class="secondary" data-back-to-team-runs>‹ 返回任务列表</button>
+          <span id="team-run-detail-scope" class="team-run-detail-compact note"></span>
+          <button type="button" id="team-run-detail-refresh" class="team-run-detail-compact secondary">刷新</button>
+          <h2 id="team-run-heading" tabindex="-1">任务详情</h2>
+        </header>
+        <p id="team-run-goal-detail" class="team-run-goal"></p>
+        <p id="team-run-progress" role="status"></p>
+        <p id="team-run-status" class="note" role="status"></p>
+        <div class="team-run-actions">
+          <button type="button" class="secondary" id="team-run-open-source" hidden>查看引用的共享结果</button>
+          <a class="team-run-link" id="team-run-detail-source" hidden>查看原运行</a>
+          <a class="team-run-link" id="team-run-original" hidden>查看原任务</a>
+          <a class="team-run-link" id="team-run-latest-reuse" hidden>查看最近的复用任务</a>
+          <a class="team-run-link" id="team-run-export" download hidden>导出 Markdown</a>
+          <button type="button" class="secondary" id="team-run-reuse" hidden>复用为新任务</button>
+          <button type="button" class="secondary" id="team-run-cancel" hidden>取消任务</button>
+          <button type="button" class="secondary" id="team-run-remove" hidden>删除记录</button>
+          <div id="share-team-run" hidden></div>
+        </div>
+        <div id="team-run-confirm" class="team-run-confirm" role="alertdialog" aria-modal="false" aria-labelledby="team-run-confirm-label" hidden>
+          <p id="team-run-confirm-label"></p>
+          <div class="team-run-actions">
+            <button type="button" class="secondary" id="team-run-keep">返回</button>
+            <button type="button" id="team-run-confirm-action">确认</button>
+          </div>
+        </div>
+        <ol id="team-run-results" class="team-run-results"></ol>
+      </section>
+    </section>
+  </main>
+  <nav class="mobile-primary-nav" aria-label="主导航" data-ui-label="shell.nav.mobile"></nav>
+</body>
+</html>

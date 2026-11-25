@@ -1,0 +1,23 @@
+{
+  "not_a_legal_opinion": true,
+  "public_redistributable_image": false,
+  "font_binaries_vendored": false,
+  "playwright_core": "1.64.1",
+  "playwright_tag": "v1.64.1",
+  "playwright_git": "cfe490d941f992655948eee8fd4fd94e1c4234bf",
+  "npm_tarball": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.1.tgz",
+  "npm_tarball_sha256": "3af03703c967c95037454f2283f709d53ce804a4776d4219d319f5bbcc2a0185",
+  "source_font": "packages/web/src/third_party/vscode/codicon.ttf",
+  "source_license": "packages/web/src/third_party/vscode/LICENSE.txt",
+  "source_license_url": "https://github.com/microsoft/playwright/blob/cfe490d941f992655948eee8fd4fd94e1c4234bf/packages/web/src/third_party/vscode/LICENSE.txt",
+  "font_sha256": "0f1d5219934e96e83b8db162d60b4d8c09b5de1e7d38031cbafe4a3c0f2889c9",
+  "font_bytes": 80340,
+  "license_sha256": "20535828272932407c2f5172aeb714ac7b374a34e5ecb1825af509f2902cde54",
+  "license_bytes": 1087,
+  "npm_tarball_ships_license_beside_font": false,
+  "image_paths": [
+    "/opt/dsh-template/profiles/web/node_modules/ds-bot/node_modules/playwright-core/lib/vite/dashboard/assets/codicon-DCmgc-ay.ttf",
+    "/opt/dsh-template/profiles/web/node_modules/ds-bot/node_modules/playwright-core/lib/vite/recorder/assets/codicon-DCmgc-ay.ttf",
+    "/opt/dsh-template/profiles/web/node_modules/ds-bot/node_modules/playwright-core/lib/vite/traceViewer/codicon.DCmgc-ay.ttf"
+  ]
+}
