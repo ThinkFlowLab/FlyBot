@@ -130,7 +130,14 @@ test('the image overlay checks pinned inputs before adding native group and skil
   const copy = mkdtempSync(join(tmpdir(), 'ot-native-overlay-'))
   t.after(() => rmSync(copy, {recursive:true, force:true}))
   const upstream = join(repo, 'runtime', 'ds-bot-upstream', 'ds-bot')
-  for (const path of ['client.js', 'src/client/at-menu.js', 'src/client/group-settings.js', 'src/client/i18n.js', 'src/client/new-chat.js', 'src/client/team-actions.js', 'src/client/text.js', 'src/host/capabilities.js', 'src/host/channel.js', 'src/host/groups.js', 'src/host/bot-tasks.js', 'src/host/parts.js', 'src/host/store.js', 'src/host/threads.js', 'src/shared/mentions.js']) {
+  const files = [
+    'client.js', 'src/client/at-menu.js', 'src/client/group-settings.js', 'src/client/i18n.js',
+    'src/client/new-chat.js', 'src/client/team-actions.js', 'src/client/text.js', 'src/host/bot-tasks.js',
+    'src/host/capabilities.js', 'src/host/channel.js', 'src/host/groups.js', 'src/host/parts.js',
+    'src/host/prompt.js', 'src/host/roster.js', 'src/host/store.js', 'src/host/threads.js',
+    'src/host/tools.js', 'src/shared/mentions.js',
+  ]
+  for (const path of files) {
     mkdirSync(dirname(join(copy, path)), {recursive:true})
     copyFileSync(join(upstream, path), join(copy, path))
   }
