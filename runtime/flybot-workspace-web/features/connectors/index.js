@@ -32,7 +32,7 @@ export default function connectors(host) {
       pending = setTimeout(() => { pending = null; sync().then((done) => { if (done === false && !host.currentRuntime()?.mainBot) schedule(5000) }).catch(error => { host.log(`apps capability sync failed: ${String(error?.code ?? error?.message ?? 'error').slice(0, 80)}`); schedule(15000) }) }, delay)
       pending.unref?.()
     }
-    const apps = Object.freeze({ connectedToolkits: api.connectedToolkits, ownerPrivateToolUrl: tools.ownerPrivateToolUrl, sync })
+    const apps = Object.freeze({ connectedToolkits: api.connectedToolkits, sync })
     const attach = runtime => {
       if (!runtime?.rt) return
       runtime.rt.flybotWorkspaceApps = apps

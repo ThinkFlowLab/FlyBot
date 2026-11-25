@@ -114,6 +114,7 @@ test('native connector tools use the mounted Composio connection without asking 
     const args = {id:'github',purpose:'Inspect a repository'}
     const result = String(await list.execute({},exec))
     assert.match(result,/GitHub \(github\).*connected through FlyBot \(Composio\).*mcp__ot-apps__GITHUB_LIST_REPOS/)
+    assert.match(result,/run automatically within the authorized GitHub permissions/)
     assert.doesNotMatch(result,/GITHUB_CREATE_ISSUE/)
     assert.match(String(await request.execute(args,exec)),/connected through FlyBot \(Composio\)/)
     assert.equal(rt.state.connectorRequests?.writer?.length ?? 0,0)

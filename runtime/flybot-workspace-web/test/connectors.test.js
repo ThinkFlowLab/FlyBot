@@ -206,26 +206,26 @@ test('custom MCP servers: public HTTPS only, bearer sealed, endpoint change need
 test('manual tool calls wait for the owner, run once, and scrub credentials', async () => {
   const { api, v1, composio, mcp } = make()
   await v1('POST', '/v1/composio/key', { api_key: KEY })
-  await v1('POST', '/v1/composio/connections', { toolkit: 'github' })
+  composio.accounts.set('ca_slack', {id:'ca_slack', status:'ACTIVE', toolkit:{slug:'slack'}, user_id:USER})
   await v1('GET', '/v1/composio/connections')
   await v1('POST', '/v1/mcp/servers', { name: 'Docs', url: 'https://mcp.example/mcp', bearer_token: 'tok_secret_123' })
   const tools = await api.discover({ force: true })
   const names = tools.map(t => t.name)
-  assert.ok(names.includes('GITHUB_LIST_REPOS'))
+  assert.ok(names.includes('SLACK_LIST_CHANNELS'))
   assert.ok(!names.includes('COMPOSIO_SEARCH'))
   const mcpName = names.find(n => n.startsWith('OTMCP_'))
   assert.ok(mcpName)
   assert.ok(!JSON.stringify(tools).includes('tok_secret_123'))
 
-  const waiting = await api.callTool('GITHUB_LIST_REPOS', { per_page: 1 }, { waitMs: 0 })
+  const waiting = await api.callTool('SLACK_LIST_CHANNELS', { per_page: 1 }, { waitMs: 0 })
   assert.equal(waiting.error, 'tool_pending')
   assert.equal(composio.calls.filter(c => c.path.includes('/tools/execute/')).length, 0, 'nothing executes before approval')
   const listing = await v1('GET', '/v1/composio/approvals')
   const item = listing.body.items[0]
-  assert.deepEqual([item.status, item.arguments, item.account.toolkit], ['pending', { per_page: 1 }, 'github'])
+  assert.deepEqual([item.status, item.arguments, item.account.toolkit], ['pending', { per_page: 1 }, 'slack'])
   assert.equal((await v1('POST', `/v1/composio/approvals/${item.id}`, { decision: 'maybe' })).status, 400)
   assert.equal((await v1('POST', `/v1/composio/approvals/${item.id}`, { decision: 'approve' })).body.call.status, 'approved')
-  const result = await api.callTool('GITHUB_LIST_REPOS', { per_page: 1 }, { waitMs: 0 })
+  const result = await api.callTool('SLACK_LIST_CHANNELS', { per_page: 1 }, { waitMs: 0 })
   assert.deepEqual(result.data.repos, ['a'])
   assert.equal(result.data.echo, '[redacted]', 'our key never comes back to the agent')
   assert.equal(composio.calls.filter(c => c.path.includes('/tools/execute/')).length, 1)
@@ -253,20 +253,19 @@ test('approvals expire, and a key change blocks an approved call', async () => {
   await v1('POST', '/v1/composio/connections', { toolkit: 'github' })
   await v1('GET', '/v1/composio/connections')
   await api.discover({ force: true })
-  const first = await api.callTool('GITHUB_LIST_REPOS', {}, { waitMs: 0 })
+  const first = api.propose('GITHUB_LIST_REPOS', {})
   tick(301)
-  assert.equal((await v1('POST', `/v1/composio/approvals/${first.approval_id}`, { decision: 'approve' })).status, 409)
-  const second = await api.callTool('GITHUB_LIST_REPOS', {}, { waitMs: 0 })
-  await v1('POST', `/v1/composio/approvals/${second.approval_id}`, { decision: 'approve' })
+  assert.equal((await v1('POST', `/v1/composio/approvals/${first.id}`, { decision: 'approve' })).status, 409)
+  const second = api.propose('GITHUB_LIST_REPOS', {})
+  assert.equal(second.status, 'approved')
   await v1('POST', '/v1/composio/key', { api_key: KEY })
-  assert.equal((await api.run(second.approval_id)).result.error, 'connection_changed')
+  assert.equal((await api.run(second.id)).result.error, 'connection_changed')
   assert.equal(composio.calls.filter(c => c.path.includes('/tools/execute/')).length, 0)
 })
 
-test('concurrent callers consume an approved receipt once while the provider call is in flight', async () => {
-  const upstream = fakeComposio()
-  const checkedApproval = Promise.withResolvers()
-  const allowApprovalPoll = Promise.withResolvers()
+test('identical automatic GitHub writes execute once while the provider call is in flight', async () => {
+  const write = 'GITHUB_CREATE_AN_ISSUE_COMMENT'
+  const upstream = fakeComposio({githubTools:[write]})
   const providerStarted = Promise.withResolvers()
   const releaseProvider = Promise.withResolvers()
   let executes = 0
@@ -279,29 +278,21 @@ test('concurrent callers consume an approved receipt once while the provider cal
       }
       return upstream.transport(...args)
     },
-    async sleep() {
-      checkedApproval.resolve()
-      await allowApprovalPoll.promise
-    },
   })
   api.saveKey({api_key: KEY})
-  upstream.accounts.set('ca_1', {id:'ca_1', status:'ACTIVE', toolkit:{slug:'github'}, user_id:USER})
+  await api.connect({toolkit:'github'})
   await api.syncConnections()
-  const first = api.callTool('GITHUB_LIST_REPOS', {})
-  await checkedApproval.promise
-  const approval = api.approvals().items[0]
-  api.decide(approval.id,{decision:'approve'})
-  allowApprovalPoll.resolve()
-  await providerStarted.promise
-
-  const concurrent = api.run(approval.id)
-  releaseProvider.resolve()
-  const [result, second] = await Promise.all([first,concurrent])
-  assert.equal(result.successful, true)
-  assert.equal(second.status,'executing')
-  assert.equal(executes,1)
-  assert.equal((await api.run(approval.id)).status,'succeeded')
-  assert.equal(executes,1)
+  const args = {issue_number:1, body:'Fixture'}
+  const first = api.callTool(write, args)
+  try {
+    await providerStarted.promise
+    assert.equal((await api.callTool(write, args)).error, 'tool_executing')
+    assert.equal(executes, 1)
+  } finally {
+    releaseProvider.resolve()
+  }
+  assert.equal((await first).successful, true)
+  assert.equal(api.approvals().items.filter(row => row.name === write).length, 1)
 })
 
 test('the pending approval view returns only a boolean without writing expired state', async () => {
@@ -311,10 +302,10 @@ test('the pending approval view returns only a boolean without writing expired s
   assert.deepEqual(await pending(),{pending:false})
   assert.equal((await v1('GET',path,undefined,'view=pending&extra=true')).status,400)
   api.saveKey({api_key: KEY})
-  composio.accounts.set('ca_1', {id:'ca_1', status:'ACTIVE', toolkit:{slug:'github'}, user_id:USER})
+  composio.accounts.set('ca_1', {id:'ca_1', status:'ACTIVE', toolkit:{slug:'slack'}, user_id:USER})
   await api.syncConnections()
   await api.discover()
-  api.propose('GITHUB_LIST_REPOS',{organization:'private-fixture'})
+  api.propose('SLACK_LIST_CHANNELS',{organization:'private-fixture'})
   const saved = readFileSync(api.store.file,'utf8')
   assert.deepEqual(await pending(),{pending:true})
   tick(301)
@@ -323,60 +314,80 @@ test('the pending approval view returns only a boolean without writing expired s
   assert.equal((await v1('GET',path)).body.items[0].status,'expired')
 })
 
-test('verified GitHub reads run automatically only for a trusted private call', async () => {
-  const read = 'GITHUB_CHECK_IF_PULL_REQUEST_MERGED'
-  const alias = 'GITHUB_CHECK_IF_PULL_REQUEST_HAS_BEEN_MERGED'
-  const history = 'GITHUB_LIST_REPOS'
-  const write = 'GITHUB_CREATE_AN_ISSUE'
-  const unknown = 'GITHUB_GET_UNVERIFIED_ACTION'
-  const upstream = fakeComposio({githubTools:[read,alias,history,write,unknown]})
+test('the native tool endpoint runs authorized GitHub reads and writes while other connectors wait', async t => {
+  const read = 'GITHUB_GET_A_PULL_REQUEST'
+  const write = 'GITHUB_CREATE_AN_ISSUE_COMMENT'
+  const close = 'GITHUB_UPDATE_AN_ISSUE'
+  const upstream = fakeComposio({githubTools:[read,write,close]})
   const { api } = make({transport:upstream.transport})
-  api.saveKey({api_key: KEY})
+  api.saveKey({api_key:KEY})
   await api.connect({toolkit:'github'})
+  upstream.accounts.set('ca_slack', {id:'ca_slack',status:'ACTIVE',toolkit:{slug:'slack'},user_id:USER})
   await api.syncConnections()
-  const args = {owner:'fixture',repo:'example',pull_number:5}
+  api.saveServer({name:'Remote',url:'https://mcp.example/mcp'})
+  const mcpTool = (await api.discover()).find(tool => tool.description.startsWith('Remote:'))
 
-  const shared = await api.callTool(read,args,{waitMs:0})
-  assert.equal(shared.error,'tool_pending')
-  const privateReceipt = api.propose(read,args,{automaticReads:true})
-  assert.notEqual(privateReceipt.id,shared.approval_id)
-  assert.equal(await api.run(privateReceipt.id),null)
-  assert.equal(upstream.calls.filter(call => call.path.includes('/tools/execute/')).length,0)
-
-  for (const name of [read,alias,history]) {
-    const result = await api.callTool(name,args,{automaticReads:true,waitMs:0})
+  const mcp = startToolServer(api)
+  t.after(mcp.close)
+  const url = await mcp.ready
+  for (const [index, name] of [read, write, close].entries()) {
+    const response = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({jsonrpc:'2.0', id:index+1, method:'tools/call',
+        params:{name,arguments:{issue_number:1}}})})
+    assert.equal(response.status, 200)
+    const result = JSON.parse((await response.json()).result.content[0].text)
     assert.equal(result.successful,true)
     assert.notEqual(result.data.echo,KEY)
   }
-  for (const name of [write,unknown]) {
-    assert.equal((await api.callTool(name,args,{automaticReads:true,waitMs:0})).error,'tool_pending')
+  for (const name of ['SLACK_LIST_CHANNELS', mcpTool.name]) {
+    assert.equal((await api.callTool(name,{}, {waitMs:0})).error,'tool_pending')
   }
-  api.saveServer({name:'Remote',url:'https://mcp.example/mcp'})
-  const mcpTool = (await api.discover()).find(tool=>tool.description.startsWith('Remote:'))
-  assert.equal((await api.callTool(mcpTool.name,{}, {automaticReads:true,waitMs:0})).error,'tool_pending')
   assert.deepEqual(upstream.calls.filter(call => call.path.includes('/tools/execute/'))
     .map(call=>[call.path.split('/').at(-1),call.body.connected_account_id,call.body.user_id]),
-    [read,alias,history].map(name=>[name,'ca_1',USER]))
-  const items = api.approvals().items
-  assert.equal(items.find(row=>row.id===shared.approval_id).status,'pending')
-  assert.ok(items.slice(0,4).every(row=>row.status==='pending'))
-  assert.deepEqual(items.filter(row=>row.approval_mode==='automatic_read').map(row=>row.status),
-    ['succeeded','succeeded','succeeded'])
+    [read,write,close].map(name=>[name,'ca_1',USER]))
+  assert.deepEqual(api.approvals().items.map(row => row.status).sort(),
+    ['pending','pending','succeeded','succeeded','succeeded'])
+  assert.equal(api.approvals().items.filter(row => row.approval_mode==='automatic').length, 3)
 })
 
-test('a burst of automatic read history preserves a write still waiting for approval', async () => {
-  const read = 'GITHUB_LIST_REPOS'
-  const write = 'GITHUB_CREATE_AN_ISSUE'
-  const upstream = fakeComposio({githubTools:[read,write]})
-  const { api, tick } = make({transport:upstream.transport})
+test('a live legacy GitHub approval runs only on a fresh call and expired history is preserved', async () => {
+  const write = 'GITHUB_CREATE_AN_ISSUE_COMMENT'
+  const upstream = fakeComposio({githubTools:[write]})
+  const { api } = make({transport:upstream.transport})
   api.saveKey({api_key:KEY})
   await api.connect({toolkit:'github'})
   await api.syncConnections()
-  const pending = await api.callTool(write,{title:'Fixture'},{automaticReads:true,waitMs:0})
+  await api.discover()
+  const args = {issue_number:1, body:'Fixture'}
+  const old = api.propose(write,args)
+  api.store.update(draft => {
+    const pending = draft.calls[0]
+    delete pending.approval_mode
+    pending.status = 'pending'
+    draft.calls.push({...pending,id:'e'.repeat(32), arguments:'{"issue_number":2}', expires:pending.created-1})
+  })
+
+  assert.equal(api.approvals().items.find(row=>row.id===old.id).status,'pending')
+  assert.equal(upstream.calls.filter(call => call.path.includes('/tools/execute/')).length,0)
+  assert.equal((await api.callTool(write,args)).successful,true)
+  const rows = api.approvals().items
+  assert.equal(rows.length, 2)
+  assert.equal(rows.find(row=>row.id===old.id).approval_mode,'automatic')
+  assert.equal(rows.find(row=>row.id===old.id).status,'succeeded')
+  assert.equal(rows.find(row=>row.id==='e'.repeat(32)).status,'expired')
+})
+
+test('a burst of automatic GitHub history preserves a different app awaiting approval', async () => {
+  const { api, composio, tick } = make()
+  api.saveKey({api_key:KEY})
+  await api.connect({toolkit:'github'})
+  composio.accounts.set('ca_slack', {id:'ca_slack',status:'ACTIVE',toolkit:{slug:'slack'},user_id:USER})
+  await api.syncConnections()
+  const pending = await api.callTool('SLACK_LIST_CHANNELS',{limit:1},{waitMs:0})
   assert.equal(pending.error,'tool_pending')
   for (let i = 0; i < 105; i += 1) {
     tick(1)
-    assert.equal((await api.callTool(read,{page:i+1},{automaticReads:true,waitMs:0})).successful,true)
+    assert.equal((await api.callTool('GITHUB_LIST_REPOS',{page:i+1},{waitMs:0})).successful,true)
   }
   assert.equal(api.approvals().items[0].id,pending.approval_id)
   assert.equal(api.approvals().items[0].status,'pending')
