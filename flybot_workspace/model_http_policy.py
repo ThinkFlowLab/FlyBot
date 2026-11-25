@@ -15,7 +15,7 @@ import stat
 
 FORMAT = 'flybot-workspace.exact-http-task.v1'
 HEADER = 'X-FlyBot-Workspace-Model-HTTP'
-WSGI_HEADER = 'HTTP_X_OPENTEAMILY_MODEL_HTTP'
+WSGI_HEADER = 'HTTP_' + HEADER.upper().replace('-', '_')
 # Keep in sync with runtime/flybot-image/model-http-policy.mjs. Use an explicit
 # conservative union, not is_global alone (multicast is_global is True on some
 # Python versions). IPv6, including mapped IPv4, is intentionally unsupported.

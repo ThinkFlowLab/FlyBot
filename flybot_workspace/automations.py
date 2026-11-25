@@ -1,12 +1,4 @@
-"""Workspace automations persistence (issue #6, slice 1).
-
-Self-written for FlyBot; no FlyBot Project plugin, Bot Social, DS-Bot or
-Teamily source. Schedule kinds, the twelve work templates, and the tag
-compiler follow the 2026-11-16 round-1 Teamily contrast. Titles are
-rephrased; this is not a verbatim copy and not automation parity. Life
-templates were not captured. Scheduling and run records live in
-scheduler.py; run records can now carry a durable agent result. This module still does not execute containers.
-"""
+"""Workspace automation templates, schedules, and run records."""
 import json
 import re
 from datetime import date, datetime

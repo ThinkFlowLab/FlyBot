@@ -1,7 +1,4 @@
-/* Members, invites, join requests and the local team directory.
-   Row density and typography follow the shared Teamily-aligned
-   settings/list language. Inline confirm for remove / leave / revoke
-   is unchanged in behaviour. */
+/* Members, invites, join requests and the local team directory. */
 
 body.app-workspace #main-panel {
   display: flex;

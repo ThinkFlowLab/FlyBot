@@ -1176,7 +1176,10 @@ class App:
             body = self.body(env, ['job_id', 'observed_revision', 'lease'])
             if set(body) != {'job_id', 'observed_revision', 'lease'} or not isinstance(body['job_id'], str) or not re.fullmatch(r'[0-9a-f]{32}', body['job_id']):
                 refuse(400, 'invalid', 'Incomplete or invalid manager observation')
-            return 200, runtime.runtime_secret(manager, secret[1], body['job_id'], body['observed_revision'], body['lease'], http_policy=self.model_http_policy, capability=env.get('HTTP_X_OPENTEAMILY_MODEL_HTTP')), []
+            from .model_http_policy import WSGI_HEADER
+            return 200, runtime.runtime_secret(
+                manager, secret[1], body['job_id'], body['observed_revision'], body['lease'],
+                http_policy=self.model_http_policy, capability=env.get(WSGI_HEADER)), []
         collaboration = re.fullmatch(r'/v1/internal/instances/([0-9a-f]{32})/runtime-bot-social', path)
         if collaboration and method == 'POST' and not query:
             body = self.body(env, ['job_id', 'observed_revision', 'lease'])

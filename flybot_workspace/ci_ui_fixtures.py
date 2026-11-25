@@ -1,8 +1,7 @@
-"""Synthetic, clearly labeled fixtures for CI screenshots of the management UI.
+"""Synthetic fixtures for CI screenshots of the management UI.
 
-Throwaway data only. Never log or return passwords, session cookies, invite
-tokens, runtime keys, or public homepage tokens. Not a Teamily or production
-dataset.
+Passwords, session cookies, invite tokens, runtime keys, and public homepage
+tokens stay out of logs and fixture responses.
 """
 from datetime import datetime, timezone
 import os

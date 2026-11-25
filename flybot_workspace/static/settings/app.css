@@ -832,8 +832,7 @@ body.app-workspace > main > #settings-panel { max-width: 34rem; padding: clamp(1
 #settings-panel .skill-form-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .6rem; }
 #settings-panel .skill-empty { border: 0; box-shadow: none; background: var(--ot-surface-2, #f4f7f5); }
 
-/* Original geometric connector marks. These are not vendor trademarks
-   and were not traced from Teamily, Google, or GitHub assets. */
+/* Geometric connector icons for the settings interface. */
 .connector-mark {
   width: 2.25rem;
   height: 2.25rem;

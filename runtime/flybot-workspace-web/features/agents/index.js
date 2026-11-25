@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { openDatabase, newId } from '../../src/store.js'
 import { agentsV1 } from './v1.js'
 import { PRIVATE_FILE_COUNT, privateFiles, fingerprintAttachments } from './files.js'
-import { importOfficialBundle } from './migrate.js'
+import { importOfficialBundle, verifyOfficial } from './migrate.js'
 import { PRIVATE_TEXT_LIMIT, sendId, textReplyKey, textReplyAttempt } from './private-reply.js'
 import { replyStream, waitForReplyChange } from './reply-stream.js'
 import { rank, noteBlock, personalizationBlock } from '../chat/recall.js'
@@ -1468,15 +1468,60 @@ export function createAgents({ db, host }) {
     return endpoints.create(payload ?? {}, false, call.source ?? null)
   }
   endpoints.v1 = agentsV1({ endpoints, chatDirectory, host, log: host?.log })
+  async function rebrandBuiltinAssistant(bundle, binding) {
+    const tables = verifyOfficial(bundle)
+    if (!tables.personal_agents?.some(row =>
+      row.agent_id === binding.agent_id && row.workspace_id === binding.workspace_id)) return
+    const builtin = tables.builtin_agents?.find(row =>
+      row.builtin_key === 'flybot-assistant' && row.workspace_id === binding.workspace_id)
+    if (!builtin) return
+    const seed = tables.workspace_agents?.find(row =>
+      row.id === builtin.agent_id && row.workspace_id === binding.workspace_id)
+    if (!seed || !validName(seed.name) || !validSummary(seed.summary)) return
+    const previous = one("SELECT * FROM agents WHERE id=? AND workspace_id=? AND imported_from='management'",
+      seed.id, binding.workspace_id)
+    const oldName = 'Teamily Agent'
+    const oldSummary = 'Teamily 平台助手'
+    if (!previous || (previous.name !== oldName && previous.summary !== oldSummary)) return
+
+    await native.write(async ({ensure, update}) => {
+      const row = await ensure(previous)
+      if (row.native_deleted) return
+      const {rt} = await host.runtime()
+      const bot = rt.botOf(row.native_bot_id)
+      if (bot?.flybotWorkspace?.agent_id !== row.id || bot.flybotWorkspace.workspace_id !== row.workspace_id) return
+      const changes = {}
+      if (row.name === oldName && seed.name !== oldName) {
+        let name = seed.name
+        let suffix = 2
+        while (one('SELECT 1 FROM agents WHERE workspace_id=? AND name_hash=? AND id<>?',
+          row.workspace_id, sha(name.toLowerCase()), row.id)) {
+          name = seed.name.slice(0, 72) + ' ' + suffix++
+        }
+        changes.name = name
+      }
+      if (row.summary === oldSummary && seed.summary !== oldSummary &&
+          (bot.role === oldSummary || bot.role === seed.summary.slice(0, 24))) {
+        changes.summary = seed.summary
+      }
+      if (!Object.keys(changes).length) return
+      await update(row, changes)
+      const {name = row.name, summary = row.summary} = changes
+      run('UPDATE agents SET name=?, name_hash=?, summary=?, revision=revision+1, updated=? WHERE id=?',
+        name, sha(name.toLowerCase()), summary, now(), row.id)
+    }, previous.id)
+  }
+
   const migrate = async (bundle) => (bundle?.format === 'flybot-workspace-dsbot-import' ? importOfficialBundle(endpoints, bundle) : endpoints.import(bundle))
-  return { endpoints, migrate, attachHistory:historyProjection.attach }
+  return { endpoints, migrate, rebrandBuiltinAssistant, attachHistory:historyProjection.attach }
 }
 
 export default async function agents(host) {
   const db = await openDatabase(host, 'agents.sqlite3')
-  const { endpoints, migrate, attachHistory } = createAgents({ db, host })
+  const { endpoints, migrate, rebrandBuiltinAssistant, attachHistory } = createAgents({ db, host })
   await importPending({ host, db, migrate })
-  if (!await endpoints['personal-binding']()) {
+  const binding = await endpoints['personal-binding']()
+  if (!binding) {
     let bootstrap
     try { bootstrap = loadPersonalAgentBootstrap() } catch {
       throw new Error('Personal agent bootstrap configuration is unreadable')
@@ -1488,7 +1533,19 @@ export default async function agents(host) {
       await migrate(bootstrap)
     }
   }
-  const timer = setTimeout(() => endpoints.reconcile().catch(() => host.log('native agent history reconciliation pending; retry agents/reconcile')), 10000)
+  const timer = setTimeout(async () => {
+    if (binding) {
+      try {
+        const bootstrap = loadPersonalAgentBootstrap()
+        if (bootstrap?.instance_id && bootstrap.instance_id === (host.identity?.routingInstanceId || host.identity?.instanceId)) {
+          await rebrandBuiltinAssistant(bootstrap, binding)
+        }
+      } catch {
+        host.log('Built-in assistant name update will retry on the next startup.')
+      }
+    }
+    await endpoints.reconcile().catch(() => host.log('native agent history reconciliation pending; retry agents/reconcile'))
+  }, 10000)
   timer.unref?.()
   const runtime = host.currentRuntime?.()
   if (runtime) attachHistory(runtime)

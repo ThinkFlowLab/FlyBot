@@ -1,9 +1,7 @@
 """Platform and workspace Bot Social collaboration endpoint.
 
-Management records only a validated server URL (and optional display name).
-Connector tokens stay on the instance volume after onboarding; they are never
-accepted, stored, or returned here. Workspace override wins over the platform
-default. Self-written; not a Teamily parity claim.
+A workspace override can replace the platform server URL and display name.
+Connector credentials live on the instance volume.
 """
 from urllib.parse import urlsplit
 

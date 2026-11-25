@@ -604,8 +604,7 @@ pre {
   }
 }
 
-/* App workspace chrome for /chat and the agent directory.
-   Structure follows the 2026-11-17 Teamily visit; colors stay FlyBot tokens. */
+/* Shared workspace layout for chat and the agent directory. */
 body.app-workspace {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr);
@@ -1083,11 +1082,7 @@ body.app-workspace .account-menu {
 }
 body.app-workspace #login-panel { width: min(24rem, calc(100% - 2rem)); box-sizing: border-box; }
 
-/* ------------------------------------------------------------------
-   Page parity layer (2026-11-19). Original CSS recreating the spatial
-   rhythm seen in private read-only Teamily captures: quiet page ground,
-   one white rounded canvas, 14px UI type, soft pill controls. No Teamily
-   pixels, icons, fonts or logos are used. */
+/* Shared workspace typography and page surfaces. */
 body.app-workspace { font-size: .875rem; line-height: 1.5; }
 body.app-workspace > main {
   margin: .375rem .375rem .375rem 0;
@@ -1140,8 +1135,8 @@ body.app-workspace > .app-rail .brand-mark {
 }
 body.app-workspace > .app-rail .brand-mark .brand-glyph {
   display: block;
-  width: 1.85rem;
-  height: 1.85rem;
+  width: 100%;
+  height: 100%;
 }
 html[data-theme-resolved="dark"] body.app-workspace > .app-rail > a.brand-mark:hover {
   background: var(--ot-accent-hover);
@@ -1571,9 +1566,9 @@ body.app-workspace > .app-rail {
 
 body.app-workspace > .app-rail > .brand-mark,
 html[data-theme-resolved="dark"] body.app-workspace > .app-rail > .brand-mark {
-  border: 1px solid var(--ot-glass-line);
-  border-radius: .8rem;
-  background: #f4f7ff;
+  border: 0;
+  border-radius: .6rem;
+  background: transparent;
   box-shadow: var(--ot-shadow-sm);
 }
 

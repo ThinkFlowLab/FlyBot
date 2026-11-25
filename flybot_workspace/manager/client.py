@@ -7,6 +7,7 @@ import threading
 from urllib.parse import urlsplit, urlencode
 
 from ..dsbot_bundle import FORMAT as BUNDLE_FORMAT
+from ..model_http_policy import FORMAT as HTTP_POLICY_FORMAT, HEADER as HTTP_POLICY_HEADER, valid_grant
 from .safety import ManagerError, require, json_loads
 
 HEX = re.compile(r'[0-9a-f]{32}')
@@ -73,7 +74,7 @@ class ManagerClient:
             conn.request(method, path, body=body, headers={
                 'Host': self.host_header, 'Authorization': f'Bearer {self.manager_id}.{self._token}',
                 'Content-Type': 'application/json', 'Accept': 'application/json', 'Connection': 'close',
-                'X-FlyBot-Workspace-Model-HTTP': 'flybot-workspace.exact-http-task.v1'})
+                HTTP_POLICY_HEADER: HTTP_POLICY_FORMAT})
             response = conn.getresponse()
             raw = response.read(131073)
             require(len(raw) <= 131072, 'response_limit')
@@ -182,7 +183,6 @@ class ManagerClient:
             require(isinstance(doc[key], str) and doc[key], 'secret_shape')
         require(doc['source'] in ('platform', 'user'), 'secret_shape')
         from .. import model_api
-        from ..model_http_policy import valid_grant
         grant = doc.get('http_endpoint_grant')
         require(valid_grant(doc['base_url'], grant) if 'http_endpoint_grant' in doc else model_api.valid_base_url(doc['base_url']), 'model_endpoint')
         return doc

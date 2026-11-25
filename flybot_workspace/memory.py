@@ -1,12 +1,7 @@
-"""Workspace memory pages, next actions, and the relationship graph (issue 8).
+"""Workspace memory pages, next actions, and the relationship graph.
 
-Self-written for FlyBot; no upstream, Timeline, Project, or Teamily
-source, fonts or marketing copy. Pages, next actions, topics and links are
-workspace-scoped. Pages and actions persist on create and can be edited or
-deleted. The graph is derived from optional page topics, [[Title]] mentions
-in page bodies, and optional manual links. Export covers one saved page as a
-Markdown file; it is not a workspace export, a share link, a profile, or
-Teamily memory parity, and it is not browser E2E acceptance.
+The graph derives edges from page topics, [[Title]] references, and manual
+links. A saved page can be exported as Markdown.
 """
 from datetime import datetime, timezone
 import json

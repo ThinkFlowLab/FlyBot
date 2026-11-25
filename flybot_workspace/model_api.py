@@ -1,16 +1,8 @@
 """Per-account and per-workspace model API configuration.
 
-FlyBot does not implement Teamily account credits, billing or usage limits.
-A self-host operator configures a platform default model API; accounts and
-workspaces may optionally override it. Resolution is override-if-set, else the
-platform default.
-The key is stored only as a wrapped blob in the private data directory, never
-returned by the API. Runtime hooks receive it in-process. The compose manager
-writes the already-resolved key to a private 0600 file and bind-mounts it into
-the container at start; the key is not placed in claim or observe JSON.
-
-Self-written; no upstream or Teamily source. Provider names and URL rules are
-FlyBot defaults and are not Teamily parity.
+An operator configures a platform default; accounts and workspaces may
+override it. Management stores a wrapped key. The compose manager writes
+the resolved key to a private file and mounts it into the instance at startup.
 """
 import hmac
 import hashlib

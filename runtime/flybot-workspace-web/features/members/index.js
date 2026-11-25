@@ -9,7 +9,7 @@ export default function members(host) {
     pages: ['members'],
     endpoints: {
       v1: membersV1(host),
-      // Wizard step 3 (#281): static FlyBot role copy, not a Teamily claim.
+      // Wizard step 3 uses the workspace role descriptions.
       roles: async () => ({ roles: [
         { role: 'owner', title: 'Owner', summary: 'Can delete the team, assign admin/member roles, and transfer ownership before leaving. Cannot be removed or suspended.' },
         { role: 'admin', title: 'Admin', summary: 'Manages members (except the owner), invites and join requests; cannot change roles.' },

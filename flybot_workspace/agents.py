@@ -1,19 +1,7 @@
-"""Workspace agent directory and public homepages (issue #6).
+"""Workspace agent metadata and public homepages.
 
-Self-written for FlyBot; no upstream or Teamily source. Teamily's
-create flow and Auto / Instant / Agentic mode differences were not fully
-observed, so this slice does not invent modes or embeddable conversations.
-Public homepages are unlisted share links: name, summary, and optional
-owner-set quick starts only, never instructions. The public HTML follows
-the recorded profile typography (identity, talk-via, start-a-conversation
-list, a web-conversation panel with typography-only quick-start cards,
-and a create footer that links to the existing /agents page) but does
-not copy Teamily marks, a verified badge, LIVE state, or the recorded
-official Teamily Agent prompts. The public page still does not run a
-conversation, send a starter, or call a model. These
-records live in the management database only: the management process
-does not run agents. Container execution, embed routes, and Teamily
-comparison remain later slices and must not be claimed from these tests.
+An unlisted homepage shows the agent name, summary, and optional quick starts.
+Management holds metadata while agent execution belongs to DS-Bot.
 """
 from html import escape
 import re

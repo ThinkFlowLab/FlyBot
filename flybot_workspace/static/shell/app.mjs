@@ -282,9 +282,7 @@ export function ensureOnboardingMenuItem(doc) {
   return placeMenuLink(menu, link, reference);
 }
 
-/* Recorded Teamily account menu has Agent 渠道 and 应用连接器 after 创建团队
-   (and the skipped credit/plan rows) and before 新手引导/帮助. Both pages already
-   exist; this only adds navigation. Connector account linking stays unconnected. */
+/* Place channel and connector links above the guide and help links. */
 export function ensureChannelsAndConnectorsMenuItems(doc) {
   const menu = doc.getElementById('account-menu');
   if (!menu) return null;

@@ -6,10 +6,8 @@ Bot Social handles shared activity across accounts. DS-Bot v0.3.10 has passed
 the [two-account container upgrade and Chromium checks](ACCEPTANCE.md#verified-ds-bot-v0310-upgrade).
 
 The product goal is usable everyday workflows with responsive pages, clear
-controls and fast interaction feedback. Compare each workflow with Teamily when
-there is direct evidence for the same task and user role. The capability map
-below describes the scope of work. [Acceptance records](ACCEPTANCE.md) record
-which flows have passed.
+controls and fast interaction feedback. [Acceptance records](ACCEPTANCE.md)
+identify which flows have passed and the exact revisions tested.
 
 ## Functional domains
 
@@ -40,12 +38,11 @@ independent features.
   interrupted requests. Verify mobile layouts and desktop keyboard access in
   Chromium alongside API tests.
 - Verify runtime upgrades with retained volumes and separate account sessions.
-  Keep deployment, browser and product-comparison evidence tied to tested
-  revisions.
+  Keep deployment and browser evidence tied to tested revisions.
 
 ## Existing planning input (historical, read-only)
 
-An earlier requirement inventory and 11 work-package issues exist in [FlyBot #3110](https://github.com/ThinkFlowLab/FlyBot/issues/3110) and #3113–#3123. They are reference material only: the subsequent decision to create this independent repository supersedes their instructions to develop in the original repository and their fixed branding assumptions. Do not close, rewrite or extend those old issues as part of the new project.
+[FlyBot #3110](https://github.com/ThinkFlowLab/FlyBot/issues/3110) and #3113–#3123 record the earlier requirement inventory and work packages. Use them as historical reference for how the current scope was developed.
 
 The earlier inventory provides functional requirements. Use the
 [architecture](DSBOT_PLUGIN_ARCHITECTURE.md) for current plugin boundaries and

@@ -7,7 +7,7 @@
   "committed": "2026-11-22T18:25:36+08:00",
   "version": "0.3.10",
   "dsh": "0.2.2-rc.1",
-  "note": "runtime/ds-bot-upstream/<path> is byte-identical to upstream <commit>:<path> (git object ids below). Never edit it; OpenTeamily changes live outside it (see runtime/ds-bot-upstream/UPSTREAM.md). Update with: node scripts/ds-bot-upstream.mjs sync <tag>",
+  "note": "runtime/ds-bot-upstream/<path> is byte-identical to upstream <commit>:<path> (git object ids below). Never edit it; FlyBot changes live outside it (see runtime/ds-bot-upstream/UPSTREAM.md). Update with: node scripts/ds-bot-upstream.mjs sync <tag>",
   "paths": {
     "ds-bot": {
       "type": "tree",

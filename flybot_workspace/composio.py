@@ -15,8 +15,7 @@ Composio REST API v3.1 (https://docs.composio.dev/reference):
 - GET  /connected_accounts?user_ids=...           a user's connected accounts
 - DELETE /connected_accounts/{nanoid}             disconnect
 
-Self-written; no upstream, Composio SDK or Teamily source. No brand logos are
-fetched or returned.
+Toolkit metadata is returned without external logo assets.
 """
 import json
 import re

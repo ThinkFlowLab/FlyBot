@@ -1,9 +1,4 @@
-"""Team profiles and the create/convert wizard (round-1 contrast).
-
-Self-written for FlyBot; no Teamily source. Name length, Team ID pattern
-and "new workspace vs convert current" follow the 2026-11-16 contrast. Roles
-and invites were not comparable on a free personal account. Not team parity.
-"""
+"""Team profiles and the create or convert workspace wizard."""
 import re
 
 SCHEMA = '''

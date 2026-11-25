@@ -42,14 +42,11 @@ body.home-page:not(.home-signed-in):has(#main-panel[hidden]) {
   color: var(--ot-accent-hover);
 }
 
-.auth-brand svg {
+.auth-brand .brand-glyph {
   display: block;
   width: 2rem;
   height: 2rem;
-  padding: .16rem;
-  border-radius: .65rem;
-  background: var(--ot-accent);
-  color: var(--ot-on-accent);
+  flex: none;
 }
 
 body.home-page:not(.home-signed-in):has(#main-panel[hidden]) > #main {

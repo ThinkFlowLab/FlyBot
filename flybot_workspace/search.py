@@ -1,9 +1,7 @@
-"""Workspace-authorized message search (issue #88).
+"""Workspace-authorized substring search with bounded pages.
 
-Self-written for FlyBot; no upstream or Teamily source. Searches only the
-messages the caller may already read: their own user↔agent conversations and
-social conversations they belong to. It is a simple substring scan with a
-bounded page, not a full-text index, ranking model or semantic search.
+Search only the caller’s agent conversations and social conversations
+they are allowed to read.
 """
 import re
 

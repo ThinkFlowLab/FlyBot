@@ -78,7 +78,7 @@ async function closeServer(server) {
 }
 
 export async function startNativeUI() {
-  const temp = await realpath(await mkdtemp(join(tmpdir(), 'ot-native-screenshots-')));
+  const temp = await realpath(await mkdtemp(join(tmpdir(), 'flybot-native-ui-')));
   const scope = new AsyncLocalStorage();
   const accounts = new Map();
   let auth, app, social, engine, socialSocket;

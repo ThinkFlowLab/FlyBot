@@ -20,6 +20,7 @@ from wsgiref.simple_server import make_server
 import test_runtime as fixtures
 from flybot_workspace.app import App, Config
 from flybot_workspace.lifecycle import Lifecycle, RuntimeFault, RuntimePolicy, ManagerIdentity
+from flybot_workspace.model_http_policy import ModelHttpPolicy
 from flybot_workspace.store import Store
 from flybot_workspace.manager.client import ManagerClient
 from flybot_workspace.manager.engine import Registry, Runner, ComposeEngine, manifest, compatible_manifest_upgrade, BOT_SOCIAL_TARGET, RUNTIME_KEY_TARGET, SOCIAL_SOCKET_BIND, SOCIAL_SOCKET_SOURCE, SOCIAL_SOCKET_TARGET, compose_bytes
@@ -590,6 +591,15 @@ class ComposeManagerTests(unittest.TestCase):
         path = self.engine.secret_path(self.iid)
         self.assertEqual(path.read_text(), '')
         assert_container_readable_secret(self, path)
+
+    def test_runtime_secret_accepts_the_manager_model_http_capability(self):
+        endpoint = 'http://203.0.114.10:8081/v1'
+        self.app.model_http_policy = ModelHttpPolicy((endpoint,))
+        self.put_model_api('platform', 'sk-model-http-test-key', provider='openai', base_url=endpoint)
+        client = self.start_http()
+        claim = client.claim(self.iid)
+        secret = client.runtime_secret(self.iid, claim)
+        self.assertEqual(secret['http_endpoint_grant'], self.app.model_http_policy.grant_for(endpoint))
 
     def test_runtime_secret_requires_a_lease_and_rejects_stop_jobs(self):
         client = self.start_http()

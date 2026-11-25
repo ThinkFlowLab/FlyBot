@@ -21,7 +21,7 @@ function fixture(options) {
   } }
   const db = new DatabaseSync(join(mkdtempSync(join(tmpdir(), 'ot-agents-')), 'a.sqlite3'))
   const created = createAgents({ db, host })
-  return { e: created.endpoints, migrate: created.migrate, db, ...runtime }
+  return { e: created.endpoints, migrate: created.migrate, rebrandBuiltinAssistant: created.rebrandBuiltinAssistant, db, ...runtime }
 }
 
 test('categories stay in step with the Python source', () => {
@@ -311,6 +311,45 @@ test('official agents bundle imports once including history', async () => {
     [['user/message', mid]])
   assert.equal(turns.length, 0, 'history import never starts a model turn')
   assert.equal((await migrate(bundle)).imported, 0)
+})
+
+test('an authenticated bootstrap ID rebrands its existing native built-in and retries interrupted writes', async () => {
+  const {createHash} = await import('node:crypto')
+  const {e, rebrandBuiltinAssistant, bots, services, db} = fixture()
+  const id = 'c'.repeat(32), otherId = 'd'.repeat(32)
+  const binding = {workspace_id: W, agent_id: 'e'.repeat(32)}
+  const old = {workspace_id: W, name: 'Teamily Agent', summary: 'Teamily 平台助手', instructions: 'Keep my edit'}
+  await e.import({agents: [{id, ...old}, {id: otherId, ...old, workspace_id: 'b'.repeat(32)}]})
+  const payload = {workspace_id: W, id}
+  const {agent: before} = await e.get(payload)
+  const {agent: other} = await e.get({workspace_id: 'b'.repeat(32), id: otherId})
+  const current = {id, ...old, name: 'FlyBot Assistant', summary: 'FlyBot 平台助手'}
+  const tables = {}, manifest = {}
+  for (const [name, rows] of Object.entries({
+    personal_agents: [binding], workspace_agents: [current],
+    builtin_agents: [{workspace_id: W, agent_id: id, builtin_key: 'flybot-assistant'}],
+  })) {
+    tables[name] = JSON.stringify(rows)
+    manifest[name] = {rows: rows.length, sha256: createHash('sha256').update(tables[name]).digest('hex')}
+  }
+  const bundle = {format: 'flybot-workspace-dsbot-import', version: 1, feature: 'agents', tables, manifest}
+  const bot = bots[before.native_bot_id]
+  services.rt.save = async () => { throw new Error('interrupted native save') }
+  await assert.rejects(rebrandBuiltinAssistant(bundle, binding), /interrupted native save/)
+  assert.equal(db.prepare('SELECT name FROM agents WHERE id=?').get(id).name, old.name)
+  services.rt.save = async () => {}
+  await rebrandBuiltinAssistant(bundle, binding)
+  const {agent: after} = await e.get(payload)
+  assert.equal(after.id, id)
+  assert.equal(after.native_bot_id, before.native_bot_id)
+  assert.equal(after.name, current.name)
+  assert.equal(after.summary, current.summary)
+  assert.equal(bot.name, current.name)
+  assert.equal(bot.instructions, old.instructions)
+  assert.equal(bots[other.native_bot_id].name.startsWith('Teamily Agent'), true)
+  await rebrandBuiltinAssistant(bundle, binding)
+  assert.equal((await e.get(payload)).agent.revision, after.revision)
+  db.close()
 })
 
 test('official personal history is durable before native attachment and binds to Chief on first use', async () => {

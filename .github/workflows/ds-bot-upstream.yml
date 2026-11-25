@@ -77,8 +77,8 @@ jobs:
       - name: Check managed private histories with the native DSH host
         working-directory: .
         run: node --test runtime/flybot-image/test/native-open-parts.test.mjs
-      # Upstream's annotation test owns its mock clock. The restart fixture's
-      # cleanup waits for pending writes before removing its temporary directory.
+      # Upstream's annotation test owns its mock clock. The restart and dedup
+      # fixtures stop their runtimes before removing their temporary directories.
       # Every assertion and vendor byte stays intact; source hashes fail closed.
       - name: Full pinned upstream suite with checked fixture lifecycle
         run: NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$(realpath ../../../scripts/upstream-test-clock.mjs)" npm test -- --test-concurrency=1

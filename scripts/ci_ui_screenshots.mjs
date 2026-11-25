@@ -2234,7 +2234,7 @@ async function main() {
           && !homeText.includes("Help me organize today's priorities")
           && !homeText.includes('Create something with my team')
           && !homeText.includes('Connect a messaging channel')
-          && !/(?<!Open)Teamily|AVAILABLE NOW|\bLIVE\b/.test(homeText)
+          && !/Teamily|AVAILABLE NOW|\bLIVE\b/.test(homeText)
           && !homeText.includes(ready.workspace_id)
           && !homeText.includes(ready.agent_id)
           && !homeText.includes(token),
@@ -2592,7 +2592,7 @@ async function main() {
       'Captured from a throwaway management app on a GitHub Actions runner, not a local box desktop browser and not production.',
       'Model responses come from a local fake provider, not a real vendor.',
       'Fixture data is synthetic and clearly labeled. Login secrets were not written into this manifest or the PNG artifacts.',
-      'This is not a completed Teamily feature-parity comparison and not a real-Docker or real-Bot-Social acceptance.',
+      'The browser fixture exercises the management app. Container and Bot Social integration have separate checks.',
     ],
   };
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

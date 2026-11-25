@@ -1,10 +1,5 @@
-"""Workspace meeting notes and action items (issue #212).
-
-Self-written for FlyBot; no upstream or Teamily source. This slice stores
-manual meeting notes only: title, start time, attendees, transcript, summary and
-action items. It does not record audio/video, transcribe, diarize, or dispatch
-action items to agents. The existing /space meeting chrome is reused, not
-reimplemented.
+"""Workspace meeting records with titles, start times, attendees, transcript,
+summary, and action items.
 """
 from datetime import datetime, timezone
 import json

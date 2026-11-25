@@ -6,7 +6,7 @@ unmodified `runtime/ds-bot-upstream/` tree and is **not** a FlyBot
 
 It sits between:
 
-- the pinned upstream DS-Bot runtime (`runtime/ds-bot-upstream`, v0.3.6), and
+- the pinned upstream DS-Bot runtime (`runtime/ds-bot-upstream`, [version pin](../ds-bot-upstream.pin.json)), and
 - the imported `@flybot/social` plugin (`runtime/flybot/plugins/social`).
 
 The plugin injects a `flybot` Cordis service that upstream DS-Bot does not
@@ -34,7 +34,7 @@ truth.
   only `ot-fake-` tokens: first start writes mode 0600 credentials, the token
   does not appear in logs, a second start does not onboard again, and a torn
   credentials file is refused rather than replaced.
-- Richer group/DM façade flows on the v0.3.6 ledger: notices, human and
+- Richer group/DM façade flows on the native ledger: notices, human and
   remote lines, face-to-face upsert/apply/drop, inbound DM deliver, and
   approval/invite hooks.
 - Room-link seating on the host seam: mint/claim/revoke go through
@@ -51,7 +51,6 @@ truth.
   `docs/BOT_SOCIAL.md`.
 - Composer `@` mentions and the Bot details drawer in the official
   ds-bot / dsh web client.
-- Live Bot Social room-invite HTTP, a Members-card UI, or a Teamily
-  comparison of group/DM or room-link flows.
+- Live Bot Social room-invite HTTP or a Members-card UI.
 
 See `docs/upstream/GAPS.md` and `docs/upstream/INTEGRATION.md`.

@@ -102,7 +102,7 @@ function installShareGlobals({pathname = '/profile', clipboard = 'stub'} = {}) {
   const savedHistory = globalThis.history;
   const copied = [];
   const pushes = [];
-  const loc = {pathname, origin: 'https://teamily.ai', search: '', href: 'https://teamily.ai' + pathname};
+  const loc = {pathname, origin: 'https://flybot.test', search: '', href: 'https://flybot.test' + pathname};
   globalThis.location = loc;
   globalThis.history = {
     pushState(state, title, url) {
@@ -402,7 +402,7 @@ test('有 FlyBot ID 时分享按钮把公开主页链接复制到剪贴板', asy
     });
     try {
       await shareHandler(doc)({preventDefault() {}});
-      assert.deepEqual(env.copied, ['https://teamily.ai/p/alice.smith'],
+      assert.deepEqual(env.copied, ['https://flybot.test/p/alice.smith'],
         'clicking 分享 must copy the public profile URL built from the saved handle');
       const status = doc.getElementById('status');
       assert.equal(status.dataset.kind, 'ok');
@@ -452,7 +452,7 @@ test('剪贴板不可用时把链接显示出来让人手动复制', async () =>
       assert.equal(fallback.hidden, false,
         'when the clipboard refuses the copy the URL must be shown for manual copying');
       assert.equal(doc.querySelector('#profile-share-link').textContent,
-        'https://teamily.ai/p/alice.smith');
+        'https://flybot.test/p/alice.smith');
     } finally { restore(); }
   } finally { env.restore(); }
 });

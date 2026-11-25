@@ -1,11 +1,7 @@
 """Per-user Personal Agent and built-in agent roster (issue #130 / #1).
 
-Self-written for FlyBot; no upstream or Teamily prompt source. The observed
-Teamily account defaults to a "<username>'s Personal Agent" plus a built-in
-assistant roster. This slice creates an explicit personal workspace, the
-personal agent, ten built-in assistant records and one welcome conversation.
-It does not implement the 4-step onboarding, a shared "对话" agent-only group,
-credits, or real vendor/container acceptance.
+Create the personal workspace, the user's personal agent, ten built-in
+assistant records, and a welcome conversation.
 """
 import re
 
@@ -41,8 +37,10 @@ class WorkspaceCapacity(ValueError):
     pass
 
 
+WORKSPACE_ASSISTANT = ('flybot-assistant', 'FlyBot Assistant', 'FlyBot 平台助手', '帮助用户了解和使用平台功能。')
+
 BUILTINS = (
-    ('teamily-agent', 'Teamily Agent', 'Teamily 平台助手', '帮助用户了解和使用平台功能。'),
+    WORKSPACE_ASSISTANT,
     ('content-creator', 'Content Creator', '内容创作助手', '协助起草、改写和润色内容。'),
     ('finance-assistant', 'Finance Assistant', '财务助手', '帮助整理预算、账单与财务问题。'),
     ('health-assistant', 'Health Assistant', '健康助手', '提供一般性的健康与运动建议。'),
@@ -70,6 +68,37 @@ def builtins(db, workspace_id):
         'JOIN workspace_agents a ON a.id=b.agent_id '
         'WHERE b.workspace_id=? ORDER BY b.rowid', (workspace_id,),
     ).fetchall()
+
+
+
+def rebrand_builtin_assistant(db):
+    """Rename the built-in in place, including in existing personal workspaces."""
+    from . import agents
+
+    key, default_name, default_summary, _ = WORKSPACE_ASSISTANT
+    rows = db.execute(
+        'SELECT b.workspace_id, a.id, a.name, a.summary FROM builtin_agents b '
+        'JOIN workspace_agents a ON a.id=b.agent_id WHERE b.builtin_key=?',
+        ('teamily-agent',),
+    ).fetchall()
+    for row in rows:
+        db.execute('UPDATE builtin_agents SET builtin_key=? WHERE agent_id=?', (key, row['id']))
+        name, summary = row['name'], row['summary']
+        if name == 'Teamily Agent':
+            name = default_name
+            suffix = 2
+            while db.execute('SELECT 1 FROM workspace_agents WHERE workspace_id=? AND name_hash=?',
+                             (row['workspace_id'], agents.name_hash(name))).fetchone():
+                name = f'{default_name} {suffix}'
+                suffix += 1
+        if summary == 'Teamily 平台助手':
+            summary = default_summary
+        if (name, summary) != (row['name'], row['summary']):
+            db.execute(
+                "UPDATE workspace_agents SET name=?, name_hash=?, summary=?, revision=revision+1, "
+                "updated=MAX(updated, CAST(strftime('%s','now') AS INTEGER)) WHERE id=?",
+                (name, agents.name_hash(name), summary, row['id']),
+            )
 
 
 def _insert_agent(db, workspace_id, name, summary, instructions, user_id, key, now):

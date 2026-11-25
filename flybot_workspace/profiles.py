@@ -1,10 +1,7 @@
-"""Self-service account profile and public handle projection.
+"""Self-service account profiles and a public handle projection.
 
-Self-written for FlyBot; no upstream or Teamily source. The observed 2026-11-18
-profile editor fields are the basis (name, FlyBot ID handle, bio, tags, gender,
-location, website, private life goals, avatar). This slice implements the text
-fields, private goals and the account avatar; social posts/follows/likes are not
-included. The public projection never returns goals, email, or account ids.
+The account owns its avatar, identity fields, and private life goals.
+The public projection omits goals, email, and account IDs.
 """
 import hashlib
 import json

@@ -1,6 +1,12 @@
 # Evidence and acceptance status
 
-Record release verification and product comparison separately. The linked prior runs cover the OpenTeamily source build and environment named in each run. FlyBot Workspace requires its own release verification. A Teamily comparison requires the same operation in both products with equivalent roles and relevant settings.
+Record each result against the tested revision, user role, and environment.
+
+## FlyBot 0.3.0
+
+All 16 jobs passed in the [FlyBot release candidate CI run](https://github.com/ThinkFlowLab/FlyBot/actions/runs/45523580750) for [PR #3377](https://github.com/ThinkFlowLab/FlyBot/pull/3377). The run covered the management API, desktop and mobile Chromium, the pinned DS-Bot suite, Compose lifecycle and retained volumes, gateway isolation, and collaboration between two DS-Bot accounts through Bot Social. The [merge queue run](https://github.com/ThinkFlowLab/FlyBot/actions/runs/45526147080) passed at the squash commit.
+
+The two sections below preserve verification history from the OpenTeamily source repository.
 
 ## Verified DS-Bot v0.3.10 upgrade
 
@@ -14,7 +20,7 @@ The [DS-Bot conversation upgrade job](https://github.com/openTeamily/openTeamily
 
 The [runtime image checks](https://github.com/openTeamily/openTeamily/actions/runs/45196194354) also passed on the same PR head. They cover the Compose lifecycle and retained volume, owner-specific gateway routing and two DS-Bots sharing state through Bot Social. The upgrade uses a deterministic local model and disposable accounts. It covers runtime migration and browser behavior on the test volumes. An operator rollout and a Teamily comparison each require their own evidence.
 
-Reproduce the upgrade check with the [workflow](../.github/workflows/ds-bot-conversation-upgrade.yml) and [test runner](../runtime/flybot-image/test/upgrade/check.py). See [Compose manager](COMPOSE_MANAGER.md) for deployment and existing-volume boundaries.
+The [source workflow](https://github.com/openTeamily/openTeamily/blob/07e8b6fbd05788e1c4c14cac65f18e392e82f452/.github/workflows/ds-bot-conversation-upgrade.yml) records the original test inputs. See the [test runner](../runtime/flybot-image/test/upgrade/check.py) and [Compose manager](COMPOSE_MANAGER.md) for the runner and deployment details.
 
 ## Memory and navigation release
 

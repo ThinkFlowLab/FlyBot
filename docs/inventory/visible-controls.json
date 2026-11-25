@@ -166,7 +166,7 @@
       "backend_state": "Original static help documentation landed on main in contributor PR 307",
       "execution_path": "settings_page allowlist -> served help page and real internal navigation",
       "verification": "Individual control unverified unless explicitly exercised; route evidence: tests/docs_pages.test.mjs and tests/test_docs_pages.py",
-      "external_dependency_or_gap": "Teamily scene parity and every help scenario unverified",
+      "external_dependency_or_gap": "Individual help scenarios require browser verification",
       "checklist": "docs/VISIBLE_FUNCTIONS_INVENTORY.md"
     },
     "terms": {
@@ -190,7 +190,7 @@
       "backend_state": "Original static branding/version/license information",
       "execution_path": "Static served page and real repository links",
       "verification": "Individual control unverified unless explicitly exercised; route evidence: Existing branding/page suites and CI scene",
-      "external_dependency_or_gap": "No Teamily assets; full scene parity unverified",
+      "external_dependency_or_gap": "Individual branding and link states remain unverified",
       "checklist": "docs/VISIBLE_FUNCTIONS_INVENTORY.md"
     },
     "download": {
@@ -2473,8 +2473,8 @@
     {"source": "flybot_workspace/static/discover/comments.mjs", "line": 84, "construction": "const button = document.createElement('button');", "execution_profile": "discover", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/discover/document-reader.mjs", "line": 14, "construction": "const retry = document.createElement('button');", "execution_profile": "discover", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/discover/followed-creators.mjs", "line": 39, "construction": "const button = document.createElement('button');", "execution_profile": "discover", "verification": "unverified dynamic construction site; conditional instances require execution"},
-    {"source": "flybot_workspace/static/guide/app.mjs", "line": 330, "construction": "const button = document.createElement('button');", "execution_profile": "guide", "verification": "unverified dynamic construction site; conditional instances require execution"},
-    {"source": "flybot_workspace/static/guide/app.mjs", "line": 383, "construction": "const button = document.createElement('button');", "execution_profile": "guide", "verification": "unverified dynamic construction site; conditional instances require execution"},
+    {"source": "flybot_workspace/static/guide/app.mjs", "line": 328, "construction": "const button = document.createElement('button');", "execution_profile": "guide", "verification": "unverified dynamic construction site; conditional instances require execution"},
+    {"source": "flybot_workspace/static/guide/app.mjs", "line": 381, "construction": "const button = document.createElement('button');", "execution_profile": "guide", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/home/app.mjs", "line": 371, "construction": "const retry = document.createElement('button');", "execution_profile": "home", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/home/app.mjs", "line": 377, "construction": "const back = document.createElement('a');", "execution_profile": "home", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/meetings/app.mjs", "line": 145, "construction": "const link = document.createElement('a');", "execution_profile": "meetings", "verification": "unverified dynamic construction site; conditional instances require execution"},
@@ -2544,7 +2544,7 @@
     {"source": "flybot_workspace/static/settings/connected-tools.mjs", "line": 46, "construction": "const button = document.createElement('button')", "execution_profile": "settings", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/settings/custom-mcp.mjs", "line": 23, "construction": "const remove = document.createElement('button')", "execution_profile": "settings", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/shell/app.mjs", "line": 261, "construction": "link = doc.createElement('a');", "execution_profile": "shell", "verification": "unverified dynamic construction site; conditional instances require execution"},
-    {"source": "flybot_workspace/static/shell/app.mjs", "line": 439, "construction": "const skip = document.createElement('a');", "execution_profile": "shell", "verification": "unverified dynamic construction site; conditional instances require execution"},
+    {"source": "flybot_workspace/static/shell/app.mjs", "line": 437, "construction": "const skip = document.createElement('a');", "execution_profile": "shell", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/shell/dsbot-api.mjs", "line": 219, "construction": "const link = win.document.createElement('a');", "execution_profile": "shell", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/shell/markdown.mjs", "line": 171, "construction": "const el = document.createElement('a');", "execution_profile": "shell", "verification": "unverified dynamic construction site; conditional instances require execution"},
     {"source": "flybot_workspace/static/shell/markdown.mjs", "line": 203, "construction": "const checkbox = document.createElement('input');", "execution_profile": "shell", "verification": "unverified dynamic construction site; conditional instances require execution"},
@@ -2567,12 +2567,12 @@
     {"source": "flybot_workspace/static/team/app.mjs", "line": 440, "construction": "const mail = document.createElement('a');", "execution_profile": "team", "verification": "unverified dynamic construction site; conditional instances require execution"}
   ],
   "server_template_controls": [
-    {"source": "flybot_workspace/agents.py", "line": 370, "tag": "button", "id": null, "name": null, "href": null, "type": "button", "label": "未接通：公开主页不会发送消息。 Send", "initially_disabled": true, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
-    {"source": "flybot_workspace/agents.py", "line": 507, "tag": "a", "id": null, "name": null, "href": "/agents", "type": null, "label": "打开工作区智能体页。公开主页不会直接创建智能体。 Create your own Agent", "initially_disabled": false, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
-    {"source": "flybot_workspace/agents.py", "line": 418, "tag": "button", "id": null, "name": null, "href": null, "type": "button", "label": " Web", "initially_disabled": true, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
-    {"source": "flybot_workspace/agents.py", "line": 488, "tag": "button", "id": null, "name": null, "href": null, "type": "button", "label": "未接通：公开主页还不能连接即时通讯渠道。 Channels", "initially_disabled": true, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
-    {"source": "flybot_workspace/agents.py", "line": 376, "tag": "a", "id": null, "name": null, "href": "/chat", "type": null, "label": "FlyBot FlyBot", "initially_disabled": false, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
-    {"source": "flybot_workspace/composio.py", "line": 536, "tag": "a", "id": null, "name": null, "href": "/settings/connectors", "type": null, "label": " 应用连接器", "initially_disabled": false, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"}
+    {"source": "flybot_workspace/agents.py", "line": 358, "tag": "button", "id": null, "name": null, "href": null, "type": "button", "label": "未接通：公开主页不会发送消息。 Send", "initially_disabled": true, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
+    {"source": "flybot_workspace/agents.py", "line": 495, "tag": "a", "id": null, "name": null, "href": "/agents", "type": null, "label": "打开工作区智能体页。公开主页不会直接创建智能体。 Create your own Agent", "initially_disabled": false, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
+    {"source": "flybot_workspace/agents.py", "line": 406, "tag": "button", "id": null, "name": null, "href": null, "type": "button", "label": " Web", "initially_disabled": true, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
+    {"source": "flybot_workspace/agents.py", "line": 476, "tag": "button", "id": null, "name": null, "href": null, "type": "button", "label": "未接通：公开主页还不能连接即时通讯渠道。 Channels", "initially_disabled": true, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
+    {"source": "flybot_workspace/agents.py", "line": 364, "tag": "a", "id": null, "name": null, "href": "/chat", "type": null, "label": "FlyBot FlyBot", "initially_disabled": false, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"},
+    {"source": "flybot_workspace/composio.py", "line": 535, "tag": "a", "id": null, "name": null, "href": "/settings/connectors", "type": null, "label": " 应用连接器", "initially_disabled": false, "data": {}, "execution_profile": "server", "verification": "unverified individual control/state; route-level evidence is not universal acceptance"}
   ],
   "routes": {
     "flybot_workspace/static/about/index.html": {
