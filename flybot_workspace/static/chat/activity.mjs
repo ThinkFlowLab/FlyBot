@@ -56,3 +56,38 @@ export function mountChatActivity(document, {request, update, interval = 2000}) 
     },
   };
 }
+
+// App approvals are account-level. Read them only during a visible private reply.
+export function mountChatApprovalNotice(document, {request, interval = 3000}) {
+  const notice = document.getElementById('chat-app-approvals');
+  let state;
+
+  function stop() {
+    const current = state;
+    state = null;
+    clearTimeout(current?.timer);
+    current?.controller.abort();
+    if (notice) notice.hidden = true;
+  }
+
+  async function refresh(current) {
+    const active = () => current === state && current.ownsView();
+    if (!active()) return;
+    const signal = AbortSignal.any([current.controller.signal, AbortSignal.timeout(4000)]);
+    const result = await request('GET', '/v1/composio/approvals?view=pending', undefined, undefined, signal).catch(() => null);
+    if (!active()) return;
+    notice.hidden = !(result?.status === 200 && result.body?.pending === true);
+    current.timer = setTimeout(() => void refresh(current), interval);
+    current.timer?.unref?.();
+  }
+
+  return {
+    start(ownsView) {
+      stop();
+      if (!notice) return;
+      state = {ownsView, controller: new AbortController()};
+      return refresh(state);
+    },
+    stop,
+  };
+}

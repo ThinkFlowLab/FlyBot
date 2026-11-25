@@ -80,3 +80,26 @@ export async function syncCapability({ rt, mainBot }, url, version, wanted) {
   if (!attached) await rt.changeCapabilityAttachment('attach', { name: CAPABILITY }, botId)
   return true
 }
+
+export function createCapabilityPublisher({ runtime, ready, wanted, publish = syncCapability }) {
+  let version = 0
+  let published
+  let pending
+  async function publishLatest() {
+    for (;;) {
+      const owner = runtime()
+      if (!owner?.rt || typeof owner.mainBot !== 'function') return false
+      const next = version
+      if (published?.rt === owner.rt && published.version === next) return published.attached
+      const url = await ready
+      if (next !== version || owner.rt !== runtime()?.rt) continue
+      const attached = await publish(owner, url, next, wanted())
+      published = { rt: owner.rt, version: next, attached }
+      if (next === version && owner.rt === runtime()?.rt) return attached
+    }
+  }
+  return {
+    invalidate() { version += 1 },
+    sync() { return pending ??= publishLatest().finally(() => { pending = undefined }) },
+  }
+}

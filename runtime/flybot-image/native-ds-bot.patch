@@ -2156,3 +2156,93 @@ diff --git a/src/host/prompt.js b/src/host/prompt.js
        ].join('\n')
      }
      const room = rt.roomOf(id)
+diff --git a/src/host/connectors/index.js b/src/host/connectors/index.js
+--- a/src/host/connectors/index.js
++++ b/src/host/connectors/index.js
+@@ -3,7 +3,7 @@
+ // gateway (gateway.js), so every Bot gets mcp__<id>__* tools while credentials
+ // stay DS Bot secrets that never reach the mcp-client config. OAuth sign-in is
+ // in oauth.js, the service list in catalog.js, mail in mail/.
+-import { randomBytes, randomUUID } from 'node:crypto'
++import { createHash, randomBytes, randomUUID } from 'node:crypto'
+ import { createServer } from 'node:http'
+ import { readFile } from 'node:fs/promises'
+ import { homedir, platform } from 'node:os'
+@@ -514,6 +514,25 @@
+
+   // --- request cards (request_connector) ---------------------------------
+
++  const appsPrefix = 'mcp__ot-apps__'
++  const publicAppTool = slug => {
++    const name = appsPrefix + slug
++    if (name.length <= 64) return name
++    // Match DSH's shortened, collision-resistant MCP name.
++    const hash = createHash('sha256').update('ot-apps\0' + slug).digest('hex').slice(0, 12)
++    return name.slice(0, 51) + '_' + hash
++  }
++  const composioFor = async (bot, agent) => {
++    const attached = bot.capabilities?.includes('ot-apps')
++    if ((!attached && !rt.isMain(bot.id)) || !rt.flybotWorkspaceApps) return new Map()
++    const rows = await rt.flybotWorkspaceApps.connectedToolkits()
++    const visible = new Set(attached ? (agent?.ctx?.tools?.schemas?.(agent) ?? []).map(tool => tool.name) : [])
++    return new Map(rows.map(({ slug, tools }) => [slug, tools.map(publicAppTool).filter(name => visible.has(name))]))
++  }
++  const describeComposio = tools => tools.length
++    ? `connected through FlyBot (Composio); ${tools.length} app tools available in this chat, including ${tools.slice(0, 5).join(', ')}. Calls require owner approval in /settings/connectors.`
++    : 'connected through FlyBot (Composio); no app tools are currently mounted in this chat. Check /settings/connectors.'
++
+   const requestsOf = (botId) => {
+     const requests = (state.connectorRequests ??= {})
+     if (!Object.hasOwn(requests, botId) && rt.botOf(botId) === undefined) return []
+@@ -539,7 +558,7 @@
+
+   rt.teamTools.push(defineTool({
+     name: 'list_connectors',
+-    description: 'List the connectors the team can use: name, what it offers, whether it is connected, and whether you may use it. Connect one for yourself with request_connector.',
++    description: 'List the connectors you can use, including connected FlyBot (Composio) apps and their available tools. Use an available tool directly, or request_connector when the service needs authorization.',
+     parameters: {},
+     output,
+     async execute(_args, exec) {
+@@ -547,14 +566,20 @@
+       const self = rt.selfOf(exec.agent?.id)
+       const bot = rt.botOf(self)
+       if (!bot) return 'Only Bots on the team can use list_connectors.'
++      const apps = await composioFor(bot, exec.agent)
+       const rows = entries().filter(entry => entry.id !== 'mail' || mailHasAccounts())
+-      if (rows.length === 0) return 'No connectors are set up.'
+       const lines = rows.map((entry) => {
+         const connected = entry.id === 'mail' ? mailHasAccounts() : (statuses.get(entry.id)?.state === undefined && mounts.has(entry.id)) || hasCredential(entry.id)
+         const usable = !offFor(entry.id).includes(bot.id)
++        const tools = apps.get(entry.id)
++        if (tools && (tools.length || !connected || !usable)) return `- ${entry.name} (${entry.id}) — ${describeComposio(tools)}`
+         return `- ${entry.name} (${entry.id}) — ${entry.about} — ${connected ? 'connected' : 'not connected'}${usable ? '' : '; turned off for you'}`
+       })
+-      return ['Connectors:', ...lines].join('\n')
++      const native = new Set(rows.map(entry => entry.id))
++      for (const [slug, tools] of apps) {
++        if (!native.has(slug)) lines.push(`- ${slug} — ${describeComposio(tools)}`)
++      }
++      return lines.length ? ['Connectors:', ...lines].join('\n') : 'No connectors are set up.'
+     },
+   }))
+
+@@ -570,13 +595,17 @@
+       await rt.load()
+       const id = String(args.id ?? '').trim()
+       const entry = id === 'mail' ? entryOf('mail') : entryFor(id)
+-      if (entry === undefined) return `No connector named ${id}.`
+       const agentId = exec.agent?.id
+       const bot = rt.botOf(rt.selfOf(agentId))
+       if (bot === undefined) return 'Only Bots on the team can use request_connector.'
++      const apps = await composioFor(bot, exec.agent)
++      const appTools = apps.get(id)
+       const connected = id === 'mail' ? mailHasAccounts() : hasCredential(id)
+       const signIn = statuses.get(id)?.state === 'needs-sign-in'
+-      if (connected && !signIn && !offFor(id).includes(bot.id)) return `${entry.name} is already connected; use its tools (mcp__${id}__*).`
++      if (appTools?.length) return `${entry?.name ?? id} is ${describeComposio(appTools)}`
++      if (entry && connected && !signIn && !offFor(id).includes(bot.id)) return `${entry.name} is already connected; use its tools (mcp__${id}__*).`
++      if (appTools) return `${entry?.name ?? id} is ${describeComposio(appTools)}`
++      if (entry === undefined) return `No connector named ${id}.`
+       if (offFor(id).includes(bot.id)) return `${entry.name} is turned off for you. The user can turn it on in your details.`
+       if (rt.taskOwners?.has(agentId)) return 'Background tasks cannot show connector cards. Finish or report back to your own chat so it can ask the user.'
+       if (rt.groupOwners.has(agentId)) return 'Connector cards only work in your own chat. Tell the group you will ask the user in your own chat, and call request_connector there.'

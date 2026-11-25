@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { compatHandler } from '../lib/b4/compat.js'
 import { createConnectors, scrub } from '../features/connectors/connectors.js'
 import { endpoint, publicIp, pinnedTransport } from '../features/connectors/mcp.js'
-import { handleRpc, startToolServer, syncCapability, CAPABILITY } from '../features/connectors/tool-server.js'
+import { createCapabilityPublisher, handleRpc, startToolServer, syncCapability, CAPABILITY } from '../features/connectors/tool-server.js'
 
 const KEY = 'ck_test_' + 'z'.repeat(20)
 const identity = { instanceId: 'a'.repeat(32) }
@@ -29,7 +29,14 @@ function fakeComposio() {
     if (p === '/connected_accounts' && method === 'GET') return reply({ items: [...accounts.values()] })
     if (p.startsWith('/connected_accounts/') && method === 'GET') { const a = accounts.get(decodeURIComponent(p.split('/').pop())); return a ? reply(a) : [404, Buffer.from('{}')] }
     if (p.startsWith('/connected_accounts/') && method === 'DELETE') { accounts.delete(decodeURIComponent(p.split('/').pop())); return reply({}) }
-    if (p === '/tools') return reply({ items: [{ slug: 'GITHUB_LIST_REPOS', version: '1.0', toolkit: { slug: 'github' }, description: 'List repos', input_parameters: { type: 'object', properties: {} } }, { slug: 'COMPOSIO_SEARCH', version: '1', toolkit: { slug: 'github' }, input_parameters: {} }] })
+    if (p === '/tools') {
+      const toolkit = u.searchParams.get('toolkit_slug')
+      const tool = toolkit === 'slack' ? 'SLACK_LIST_CHANNELS' : 'GITHUB_LIST_REPOS'
+      return reply({ items: [
+        { slug: tool, version: '1.0', toolkit: { slug: toolkit }, description: 'List resources', input_parameters: { type: 'object', properties: {} } },
+        { slug: 'COMPOSIO_SEARCH', version: '1', toolkit: { slug: toolkit }, input_parameters: {} },
+      ] })
+    }
     if (p.startsWith('/tools/execute/')) return reply({ successful: true, data: { repos: ['a'], echo: KEY } })
     return [404, Buffer.from('{}')]
   }
@@ -99,6 +106,54 @@ test('connect refuses without a configured public origin (no guessed callback)',
   const { v1 } = make({ env: {} })
   await v1('POST', '/v1/composio/key', { api_key: KEY })
   assert.equal((await v1('POST', '/v1/composio/connections', { toolkit: 'github' })).status, 503)
+})
+
+test('an OAuth transition refreshes a nonempty native catalog immediately, with no key or vendor identifiers exposed', async () => {
+  const { api, composio } = make()
+  let changes = 0
+  api.onChange(() => { changes += 1 })
+  assert.deepEqual(await api.connectedToolkits(), [])
+  assert.equal(api.hasTools(), false)
+  assert.equal(composio.calls.length, 0)
+  api.saveKey({api_key: KEY})
+  assert.equal(api.hasTools(), false)
+  composio.accounts.set('ca_github', {id:'ca_github', status:'ACTIVE', toolkit:{slug:'github'}, user_id:USER})
+  composio.accounts.set('ca_slack', {id:'ca_slack', status:'INITIATED', toolkit:{slug:'slack'}, user_id:USER})
+  const pending = await api.syncConnections()
+  assert.equal(api.hasTools(), true)
+  assert.deepEqual(await api.connectedToolkits(), [{slug:'github',tools:['GITHUB_LIST_REPOS']}])
+  await api.syncConnections()
+  assert.equal(changes, 2, 'an unchanged poll does not invalidate the catalog')
+
+  composio.accounts.get('ca_slack').status = 'ACTIVE'
+  const slack = pending.items.find(row => row.toolkit === 'slack')
+  await api.refreshConnection(slack.id)
+  assert.equal(changes, 3)
+  assert.deepEqual(await api.connectedToolkits(), [
+    {slug:'github',tools:['GITHUB_LIST_REPOS']}, {slug:'slack',tools:['SLACK_LIST_CHANNELS']},
+  ])
+  await api.disconnect(slack.id,{})
+  assert.deepEqual(await api.connectedToolkits(), [{slug:'github',tools:['GITHUB_LIST_REPOS']}])
+})
+
+test('the native roster still reports an authorized app during an empty catalog and republishes when tools recover', async () => {
+  const upstream = fakeComposio()
+  let unavailable = true
+  const { api, tick } = make({transport: (...args) => {
+    if (unavailable && new URL(args[1]).pathname.endsWith('/tools')) return [503, Buffer.from('{}')]
+    return upstream.transport(...args)
+  }})
+  let changes = 0
+  api.onChange(() => { changes += 1 })
+  api.saveKey({api_key: KEY})
+  upstream.accounts.set('ca_1', {id:'ca_1', status:'ACTIVE', toolkit:{slug:'github'}, user_id:USER})
+  await api.syncConnections()
+  assert.deepEqual(await api.connectedToolkits(), [{slug:'github',tools:[]}])
+  assert.equal(changes, 2)
+  unavailable = false
+  tick(11)
+  assert.deepEqual(await api.connectedToolkits(), [{slug:'github',tools:['GITHUB_LIST_REPOS']}])
+  assert.equal(changes, 3)
 })
 
 test('Composio connection failures preserve the gateway status and never expose vendor details', async () => {
@@ -207,6 +262,66 @@ test('approvals expire, and a key change blocks an approved call', async () => {
   assert.equal(composio.calls.filter(c => c.path.includes('/tools/execute/')).length, 0)
 })
 
+test('concurrent callers consume an approved receipt once while the provider call is in flight', async () => {
+  const upstream = fakeComposio()
+  const checkedApproval = Promise.withResolvers()
+  const allowApprovalPoll = Promise.withResolvers()
+  const providerStarted = Promise.withResolvers()
+  const releaseProvider = Promise.withResolvers()
+  let executes = 0
+  const { api } = make({
+    async transport(...args) {
+      if (new URL(args[1]).pathname.includes('/tools/execute/')) {
+        executes += 1
+        providerStarted.resolve()
+        await releaseProvider.promise
+      }
+      return upstream.transport(...args)
+    },
+    async sleep() {
+      checkedApproval.resolve()
+      await allowApprovalPoll.promise
+    },
+  })
+  api.saveKey({api_key: KEY})
+  upstream.accounts.set('ca_1', {id:'ca_1', status:'ACTIVE', toolkit:{slug:'github'}, user_id:USER})
+  await api.syncConnections()
+  const first = api.callTool('GITHUB_LIST_REPOS', {})
+  await checkedApproval.promise
+  const approval = api.approvals().items[0]
+  api.decide(approval.id,{decision:'approve'})
+  allowApprovalPoll.resolve()
+  await providerStarted.promise
+
+  const concurrent = api.run(approval.id)
+  releaseProvider.resolve()
+  const [result, second] = await Promise.all([first,concurrent])
+  assert.equal(result.successful, true)
+  assert.equal(second.status,'executing')
+  assert.equal(executes,1)
+  assert.equal((await api.run(approval.id)).status,'succeeded')
+  assert.equal(executes,1)
+})
+
+test('the pending approval view returns only a boolean without writing expired state', async () => {
+  const { api, composio, tick, v1 } = make()
+  const path = '/v1/composio/approvals'
+  const pending = async () => (await v1('GET',path,undefined,'view=pending')).body
+  assert.deepEqual(await pending(),{pending:false})
+  assert.equal((await v1('GET',path,undefined,'view=pending&extra=true')).status,400)
+  api.saveKey({api_key: KEY})
+  composio.accounts.set('ca_1', {id:'ca_1', status:'ACTIVE', toolkit:{slug:'github'}, user_id:USER})
+  await api.syncConnections()
+  await api.discover()
+  api.propose('GITHUB_LIST_REPOS',{organization:'private-fixture'})
+  const saved = readFileSync(api.store.file,'utf8')
+  assert.deepEqual(await pending(),{pending:true})
+  tick(301)
+  assert.deepEqual(await pending(),{pending:false})
+  assert.equal(readFileSync(api.store.file,'utf8'), saved)
+  assert.equal((await v1('GET',path)).body.items[0].status,'expired')
+})
+
 test('MCP endpoint and IP policy', () => {
   for (const ip of ['8.8.8.8', '2606:4700::1111']) assert.equal(publicIp(ip), true, ip)
   for (const ip of ['10.0.0.1', '127.0.0.1', '169.254.1.1', '100.64.0.1', '192.168.1.1', '::1', 'fd00::1', '::ffff:8.8.8.8', '2001:db8::1', '2002::1', '64:ff9b::808:808']) assert.equal(publicIp(ip), false, ip)
@@ -249,6 +364,31 @@ test('capability sync attaches ot-apps to the Main Bot and detaches without tool
   assert.deepEqual(bot.capabilities, [CAPABILITY])
   assert.equal(await syncCapability(runtime, 'http://127.0.0.1:1/mcp/t', 4, false), false)
   assert.deepEqual(bot.capabilities, [])
+})
+
+test('native apps share a single pending publication and await the latest connection revision', async () => {
+  const started = Promise.withResolvers()
+  const proceed = Promise.withResolvers()
+  const seen = []
+  const runtime = {rt:{},mainBot:async () => 'chief'}
+  let wanted = false
+  const publisher = createCapabilityPublisher({ runtime: () => runtime, ready: Promise.resolve('http://loopback'),
+    wanted: () => wanted,
+    async publish(_runtime, _url, version, value) {
+      seen.push([version, value])
+      if (version === 0) { started.resolve(); await proceed.promise }
+      return value
+    },
+  })
+  const first = publisher.sync()
+  await started.promise
+  assert.equal(publisher.sync(), first)
+  wanted = true
+  publisher.invalidate()
+  proceed.resolve()
+  assert.equal(await first, true)
+  assert.equal(await publisher.sync(), true)
+  assert.deepEqual(seen, [[0,false],[1,true]])
 })
 
 test('scrub removes credential fields and known secrets', () => {

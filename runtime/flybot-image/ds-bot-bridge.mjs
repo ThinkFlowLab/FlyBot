@@ -237,6 +237,10 @@ export async function prepareNativeChat(rt, botId, savedSessionId) {
   const bot = rt.botOf(botId)
   const sessionId = livePrivateChat(rt, botId, savedSessionId)
   if (!sessionId) throw new Error('Mapped native chat is no longer active')
+  if (rt.flybotWorkspaceApps && (rt.isMain?.(botId) || bot.capabilities?.includes('ot-apps'))) {
+    try { await rt.flybotWorkspaceApps.sync() }
+    catch { rt.warn?.('FlyBot app tools could not be refreshed before this turn') }
+  }
   const ref = await rt.applyModel(bot)
   const route = splitRef(ref)
   if (route) {
