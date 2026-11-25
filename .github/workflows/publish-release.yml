@@ -1,0 +1,87 @@
+name: Publish FlyBot release
+on:
+  workflow_run:
+    workflows: [FlyBot CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+concurrency:
+  group: flybot-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ThinkFlowLab/FlyBot' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the tested version with committed release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          version=$(gh api "repos/$GH_REPO/contents/VERSION?ref=$TESTED_SHA" -H 'Accept: application/vnd.github.raw+json')
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::VERSION must be a stable semantic version."
+            exit 1
+          fi
+          tag="v$version"
+
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          if ! gh api "repos/$GH_REPO/contents/docs/releases/$tag.md?ref=$TESTED_SHA" \
+              -H 'Accept: application/vnd.github.raw+json' >"$work/notes.md" 2>"$work/error"; then
+            if grep -Fq '(HTTP 404)' "$work/error"; then
+              echo "No release notes for $tag at $TESTED_SHA."
+              exit 0
+            fi
+            cat "$work/error" >&2
+            exit 1
+          fi
+          test -s "$work/notes.md"
+
+          release=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\") | .draft")
+          if [[ "$release" == false ]]; then
+            echo "$tag is already published."
+            exit 0
+          fi
+          if [[ -n "$release" ]]; then
+            echo "::error::A release for $tag already exists and is not published."
+            exit 1
+          fi
+
+          main_sha=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)
+          if [[ "$main_sha" != "$TESTED_SHA" ]]; then
+            echo "main advanced during CI. Its current commit will publish after its own successful run."
+            exit 0
+          fi
+
+          tag_ref="refs/tags/$tag"
+          existing_tag=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" --jq ".[] | select(.ref == \"$tag_ref\") | .ref")
+          if [[ -z "$existing_tag" ]]; then
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=$tag_ref" -f "sha=$TESTED_SHA" --silent
+          fi
+          tag_object=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object | [.type, .sha] | @tsv')
+          read -r tag_type tagged_sha <<< "$tag_object"
+          if [[ "$tag_type" == tag ]]; then
+            tagged_sha=$(gh api "repos/$GH_REPO/git/tags/$tagged_sha" --jq '.object | select(.type == "commit") | .sha')
+          elif [[ "$tag_type" != commit ]]; then
+            echo "::error::$tag does not reference a commit."
+            exit 1
+          fi
+          if [[ "$tagged_sha" != "$TESTED_SHA" ]]; then
+            echo "::error::$tag points to $tagged_sha instead of the tested commit $TESTED_SHA."
+            exit 1
+          fi
+          gh release create "$tag" --repo "$GH_REPO" --verify-tag --title "FlyBot $tag" --notes-file "$work/notes.md"
