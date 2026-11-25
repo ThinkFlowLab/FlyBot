@@ -2712,7 +2712,7 @@ test('own message editing and confirmed retraction call versioned endpoints', as
   const {doc, el} = fakeChatDocument(chatHtml());
   const {fetcher: original} = sessionFetcher();
   let text = 'Original', revision = 1, retracted = false;
-  const message = () => ({id:'mine-1', seq:1, user_id:alice, workspace_id:'ws-1', conversation_id:'conv-1',
+  const message = () => ({id:'mine-1', seq:1, user_id:'social-owner', mine:true, workspace_id:'ws-1', conversation_id:'conv-1',
     body:text, revision, retracted, edited:revision > 1 ? 15 : null});
   const waiting = Promise.withResolvers();
   let holdDirectory = false;
@@ -4899,7 +4899,8 @@ test('a native group send releases the next message only after activity confirms
   routes.set(activity, () => snapshot('other-message', 9));
   routes.set(activity + '&since=other-message', () => snapshot('own-message', 10));
   routes.set(receiptPath, () => json(200, {
-    items:[{...first, client_key:keys[0], user_id:calls.filter(call => call.path === receiptPath).length === 1 ? bob : alice}],
+    items:[{...first, client_key:keys[0], user_id:'social-owner',
+      mine:calls.filter(call => call.path === receiptPath).length === 2}],
   }));
   const fetcher = async (url, options = {}) => {
     if (url !== path || options.method !== 'POST') return fixture.fetcher(url, options);
@@ -4925,6 +4926,7 @@ test('a native group send releases the next message only after activity confirms
     assert.equal(keys.length, 2);
     assert.notEqual(keys[0],keys[1]);
     assert.deepEqual(fixture.messages(), [linkSocialLatest,first.id,second.id]);
+    assert.equal(el('message-list').children.find(row => row.dataset.messageId === first.id).className, 'mine');
     heldResponse.resolve(json(502,{}));
     await settle();
     assert.deepEqual(fixture.messages(), [linkSocialLatest,first.id,second.id]);

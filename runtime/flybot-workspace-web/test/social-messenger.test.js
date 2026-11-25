@@ -51,6 +51,33 @@ test('messenger endpoints map to the shared conversation routes', async () => {
   assert.deepEqual(f.calls[0].body, { kind: 'dm', peer: 'bea.home' })
 })
 
+test('group message receipts and history retain the authenticated Bot Social ownership', async () => {
+  const dir = fixture()
+  const workspace = 'a'.repeat(32)
+  const route = '/v1/ot/conversations/otc_group'
+  const author = {kind:'member', owner_id:'social-owner', handle:'ann.home'}
+  const mine = {id:'otm_mine', author, mine:true, client_key:'group-message-key', body:'Hey'}
+  const peer = {id:'otm_peer', author:{kind:'member', owner_id:'social-peer', handle:'bea.home'},
+    mine:false, client_key:'not-the-viewers-key', body:'Hi'}
+  const f = fake({
+    'GET /v1/ot/me': () => author,
+    ['GET ' + route]: () => ({id:'otc_group', kind:'group', account_group:true}),
+    ['GET ' + route + '/messages']: () => ({messages:[mine, peer]}),
+    ['POST ' + route + '/messages']: () => mine,
+  })
+  setSharedBotSocial(createBotSocial({server:SERVER, credentialsPath:join(dir,'bot','flybot-social.json'), fetch:f.fetch}))
+  const {v1} = messenger({dataDir:dir, async call() {return {workspace_id:workspace}}}).endpoints
+  const path = `/v1/workspaces/${workspace}/social/conversations/otc_group/messages`
+  const receipt = await v1({method:'POST', path, body:{body:mine.body}, idempotency_key:mine.client_key})
+  const history = await v1({method:'GET', path})
+  assert.equal(receipt.status, 201)
+  assert.deepEqual(history.body.items[0], receipt.body.message)
+  assert.equal(receipt.body.message.mine, true)
+  assert.equal(receipt.body.message.client_key, mine.client_key)
+  assert.equal(history.body.items[1].mine, false)
+  assert.equal(history.body.items[1].client_key, undefined)
+})
+
 test('call consent forwards only the exact lease fields through either signed native call route', async () => {
   const dir = fixture()
   const workspace = 'a'.repeat(32)

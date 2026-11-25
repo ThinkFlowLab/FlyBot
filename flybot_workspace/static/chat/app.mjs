@@ -3,7 +3,7 @@ import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mou
 import { createGroupBotIdentities, groupBotIdentity, createGroupBotAvatar } from './group-identity.mjs';
 import { groupMentionPainter } from './group-mentions-display.mjs';
 import { AGENT_FILE_ACCEPT, chatFileDownload, chatUploadProgress, deferModule, localChatFile, mountChatFiles,
-  ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
+  ownSocialMessage, ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
 import { mountGroupTranslation } from './translation.mjs';
 import { mountChatActivity, mountChatApprovalNotice } from './activity.mjs';
 import { meetingCodeFromHash, meetingDraftFromCallHref, stageMeetingFromChat } from '../shell/meeting-link.mjs';
@@ -1460,7 +1460,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   function socialMessageAuthor(item, people = currentConversation?.members || members) {
     if (item.role === 'agent') return item.reply_job_id ? groupReplyAuthor(item)
       : (item.agent_name || uiLabel('智能体', 'Agent')) + uiLabel(' · AI 智能体 · 运行时回复', ' · AI agent · DS-Bot');
-    if (item.user_id === currentUser?.id) return uiLabel('我', 'Me');
+    if (ownSocialMessage(item, currentUser?.id)) return uiLabel('我', 'Me');
     return people.find(entry => entry.user_id === item.user_id)?.username || uiLabel('成员', 'Member');
   }
 
@@ -5040,7 +5040,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       const receipt = await historyPage(history,query,AbortSignal.timeout(4500)).catch(() => null);
       const original = receipt?.status === 200 && Array.isArray(receipt.body.items) && receipt.body.items.find(message =>
         message.id === item.id && !message.retracted && message.conversation_id === cid &&
-        message.workspace_id === history.wid && message.user_id === history.owner);
+        message.workspace_id === history.wid && ownSocialMessage(message, history.owner));
       next = Array.isArray(original?.reply_jobs) && original.reply_jobs.find(advanced);
     }
     if (groupReplyRetries.get(job.id) !== retry) return;
@@ -5303,7 +5303,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       }
       li.dataset.messageId = item.id;
       if (Number.isSafeInteger(item.seq)) li.dataset.messageSeq = String(item.seq);
-      const mine = item.role !== 'agent' && item.user_id === (currentUser && currentUser.id);
+      const mine = ownSocialMessage(item, currentUser?.id);
       li.dataset.chatAuthor = item.role === 'agent' ? 'agent' : 'person';
       li.className = mine ? 'mine' : 'other';
       const role = document.createElement('p');
@@ -5405,7 +5405,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
           confirm.removeAttribute('aria-busy');
           if (currentUser !== owner || workspaceId() !== wid) return;
           const message = result.body?.message;
-          if (result.status !== 200 || message?.id !== item.id || message.user_id !== owner.id ||
+          if (result.status !== 200 || message?.id !== item.id || !ownSocialMessage(message, owner.id) ||
               message.workspace_id !== wid || message.conversation_id !== cid || !Number.isSafeInteger(message.revision) ||
               message.revision <= payload.revision || message.retracted !== (operation === 'retract')) {
             if (scope === sendScope()) {
@@ -8615,7 +8615,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
           const start = Math.max(0, index - 48);
           return {
             kind: 'social', conversation_id: conversationId, message_id: item.id, created: item.created,
-            role: item.role === 'agent' ? 'assistant' : item.user_id && item.user_id === viewer ? 'user' : '',
+            role: item.role === 'agent' ? 'assistant' : ownSocialMessage(item, viewer) ? 'user' : '',
             agent_name: item.agent_name,
             author: item.user_id && people.find(member => member.user_id === item.user_id)?.username,
             snippet: (start > 0 ? '…' : '') + body.slice(start, start + 160) + (body.length > start + 160 ? '…' : ''),
