@@ -3460,8 +3460,11 @@ body.app-workspace .mobile-inbox-heading h1 {
 }
 #main-panel .chat-actions button { border-radius: .7rem; }
 #main-panel[data-chat-kind="group"] #group-agent-action.group-agent-panel {
-  padding-inline: var(--chat-gutter);
+  width: 100%;
   background: var(--chat-glass);
+}
+#main-panel[data-chat-kind="group"] #group-agent-action :is(#conversation-agents-label, .group-agent-sheet-body) {
+  padding-inline: var(--chat-gutter);
 }
 #main-panel #message-scroller {
   padding: 1.1rem var(--chat-gutter) .65rem;
