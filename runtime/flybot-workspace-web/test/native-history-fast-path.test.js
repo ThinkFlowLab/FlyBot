@@ -37,10 +37,41 @@ test('history adoption appends a same-second question before its answer', async 
       return event
     },
   }
-  const rt = {async *eventsBackwards() {}, resolveAgent: async () => ({session})}
-  const ctx = {sessions: {flush: async () => {}}}
+  let maintaining = false
+  const agent = {
+    session,
+    async whenIdle() {},
+    async runMaintenance(job) {
+      maintaining = true
+      try { return await job(new AbortController().signal) }
+      finally { maintaining = false }
+    },
+  }
+  const rt = {async *eventsBackwards() {}, resolveAgent: async () => agent}
+  const ctx = {
+    sessions: {flush: async () => {}},
+    agents: {turnBoundaryOf() {
+      assert.equal(maintaining, true)
+      return {lastTurn: events.findLast(event => event.type === 'turn/end')?.data.turn ?? 0}
+    }},
+  }
   assert.deepEqual(await importHistory({db, rt, ctx, bot: {}, conversationId: 'c', sessionId: 's'}),
     {imported: 2, matched: 0})
   assert.deepEqual(events.filter(event => /^(user|assistant)\/message$/.test(event.type))
     .map(event => event.data.source.flybotWorkspaceMessageId), ['zzz', 'aaa'])
+})
+
+test('a composed reply with an owned native receipt never creates a synthetic turn', async t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  db.exec(`CREATE TABLE agent_messages (id TEXT PRIMARY KEY, conversation_id TEXT, created INTEGER, meta TEXT, status TEXT,
+    role TEXT, text TEXT);
+    INSERT INTO agent_messages VALUES
+      ('combined','c',1,'{"engine":"ds-bot","session_id":"s","turn_id":"turn-2"}','succeeded','assistant','First pass and final answer');`)
+  const rt = {resolveAgent() { assert.fail('An owned receipt does not require replay or a native scan') }}
+  const args = {db, rt, conversationId:'c', sessionId:'s', bot:{}}
+  assert.deepEqual(await importHistory(args), {imported:0, matched:1})
+  const record = db.prepare('SELECT * FROM native_agent_events').get()
+  assert.deepEqual({...record}, {message_id:'combined', session_id:'s', event_seq:null, source:'native'})
+  assert.deepEqual(await importHistory(args), {imported:0, matched:0})
 })
