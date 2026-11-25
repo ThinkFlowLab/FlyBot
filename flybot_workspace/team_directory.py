@@ -1,11 +1,7 @@
-"""Public team directory and search (issues #5 #86).
+"""Public team directory for signed-in accounts.
 
-Self-written for FlyBot; no Teamily layout evidence for this surface, so it
-is a functional flow that has not been compared with Teamily. An owner may list
-a workspace with a short summary. Any signed-in account on this instance can
-search listed teams and ask to join; joining always goes through the existing
-owner/admin approval queue, backed by an approval-required member invite that
-the listing owns. Nothing is visible to anonymous visitors.
+An owner can list a workspace with a short summary. A request to join uses the
+workspace’s membership approval queue.
 """
 import re
 

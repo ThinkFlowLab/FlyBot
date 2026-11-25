@@ -225,7 +225,10 @@ def build_personal_bootstrap(db, user_id, instance_id, now):
     messages = db.execute(
         'SELECT * FROM agent_messages WHERE conversation_id=? AND seq=1 AND role=?',
         (welcome['id'], 'assistant')).fetchall() if welcome else []
-    raw = {'personal_agents': [binding], 'workspace_agents': roster,
+    builtins = db.execute(
+        'SELECT agent_id, workspace_id, builtin_key FROM builtin_agents WHERE workspace_id=? ORDER BY agent_id',
+        (workspace,)).fetchall()
+    raw = {'personal_agents': [binding], 'workspace_agents': roster, 'builtin_agents': builtins,
            'agent_conversations': [welcome] if welcome else [], 'agent_messages': messages}
     tables = {name: canonical([dict(row) for row in rows]) for name, rows in raw.items()}
     manifest = {name: {'rows': len(raw[name]), 'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest()}

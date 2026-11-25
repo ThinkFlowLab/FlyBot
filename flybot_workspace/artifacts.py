@@ -1,11 +1,7 @@
-"""Workspace artifacts (issue 9, second slice).
+"""Workspace documents, websites, media uploads, and whiteboards.
 
-Self-written for FlyBot; no upstream or Teamily source, fonts or
-marketing copy. This slice adds media uploads and structured whiteboards
-with real persistence, in addition to documents, websites, provenance and
-explicit revocable shares. It is not a works-library parity claim and not
-browser E2E acceptance. Management has no message store, so message-to-library
-is not implemented here.
+This metadata store records provenance and revocable sharing. DS-Bot owns
+live message history.
 """
 import hashlib
 import json

@@ -100,7 +100,7 @@ test('syncOverviewCurrentValues shows saved choices in the current language', ()
   assert.equal(folding.textContent, '');
 });
 
-test('the settings overview lists preference and support rows in the recorded Teamily order', () => {
+test('the settings overview lists preference and support rows in order', () => {
   const html = readFileSync(new URL('../flybot_workspace/static/settings/index.html', import.meta.url), 'utf8');
   const prefs = html.slice(html.indexOf('id="group-prefs"'), html.indexOf('id="group-notification-prefs"'));
   const prefHrefs = [...prefs.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);

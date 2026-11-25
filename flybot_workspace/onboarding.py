@@ -1,11 +1,6 @@
-"""Work-context onboarding (industry and role).
+"""Work-context onboarding for industry and role.
 
-Self-written for FlyBot; no upstream or Teamily prompt source. The 2026-11-18
-real-account walk captured the four onboarding steps (work context, app
-connectors, automation picks, Personal Agent look). This slice implements only
-the captured work-context step and stores it for later recommendations.
-Connectors are intentionally out of scope (Birfy/Bot Social territory); the
-automation and avatar steps remain pending.
+The stored context supports later workspace recommendations.
 """
 import json
 import re
@@ -105,13 +100,8 @@ def load(db, user_id):
     return db.execute('SELECT * FROM user_onboarding WHERE user_id=?', (user_id,)).fetchone()
 
 
-# Steps 2-4 (issue #130). The 2026-11-18 walk captured the step titles, the app
-# list and the look attributes, but not a comparable layout, so this is a
-# functional flow that has not been compared with Teamily. Step 2 lists apps
-# honestly as not connected (no OAuth here); step 3 stores picks of self-written
-# task/routine suggestions (saving never creates automations; an explicit opt-in
-# button may create paused templates); step 4 stores the Personal
-# Agent look. Recommendation copy and look option labels are self-written.
+# App suggestions, automation picks, and the Personal Agent's appearance.
+# A separate opt-in action creates paused automation templates.
 STEPS_SCHEMA = '''
 CREATE TABLE IF NOT EXISTS user_onboarding_steps (
  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

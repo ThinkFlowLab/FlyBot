@@ -1,9 +1,4 @@
-"""Workspace membership and roles (issue #7, slice 1).
-
-Self-written for FlyBot; no upstream or Teamily source. Roles and
-permission defaults below are FlyBot choices. Teamily team creation,
-invites and role behavior have not been compared yet; do not claim parity.
-"""
+"""Workspace membership, roles, and permission defaults."""
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS workspace_members (
@@ -24,7 +19,7 @@ CREATE TABLE IF NOT EXISTS workspace_member_suspensions (
 
 # A suspended member keeps their membership row (role, history, authored data)
 # but loses all workspace access until an owner/admin resumes them. The owner can
-# never be suspended. FlyBot semantics; Teamily freeze behaviour not observed.
+# never be suspended.
 ACTIVE = ('(SELECT workspace_id FROM workspace_members WHERE user_id=? AND NOT EXISTS '
           '(SELECT 1 FROM workspace_member_suspensions s WHERE s.workspace_id=workspace_members.workspace_id '
           'AND s.user_id=workspace_members.user_id))')

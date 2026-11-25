@@ -1,7 +1,4 @@
-/* Independent /chat workspace. Structure follows the 2026-11-17 Teamily
-   visit (rail + ~350px session column + main canvas + bottom composer).
-   Colors stay FlyBot tokens. Non-empty message bubbles are an original
-   supplement and were not compared this round. */
+/* Chat workspace: navigation rail, conversation list, messages and composer. */
 .visually-hidden,
 body.app-workspace > #status[data-announce-only="true"] {
   position: absolute;
@@ -1449,7 +1446,7 @@ html[data-theme-resolved="dark"] { --ot-bubble-mine: var(--ot-accent-soft); }
 #message-scroller { background: linear-gradient(180deg, var(--ot-surface) 0%, var(--ot-surface-2) 100%); }
 #conversation-list .session-row[aria-current="true"], #conversation-list .session-row[aria-current="true"]:hover { box-shadow: none; }
 .chat-header .chat-title, #chat-title { font-size: .875rem; font-weight: 650; }
-/* Recorded Teamily shows no persistent per-message toolbar: actions surface on hover/focus only. */
+/* Reveal message actions on hover or keyboard focus. */
 @media (hover: hover) {
   #message-list > li > button, #message-list > li > .reaction-add, #message-list > li .reactions > .reaction-add, #message-list > li > .message-actions {
     opacity: 0; transition: opacity .12s ease;

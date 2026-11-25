@@ -136,8 +136,7 @@ def _public_ready(seed, origin, login_file, run_status, connection_status, chat_
         'git_sha': git_sha,
         'note': (
             'Synthetic throwaway CI data on a GitHub Actions runner. '
-            'The model provider is a local fake, not a real vendor. '
-            'This is not production and not a Teamily parity claim.'
+            'Model responses come from a simulated provider on the same runner.'
         ),
     }
 

@@ -2,11 +2,7 @@
 
 The manager runs the isolated DS-Bot containers and reports verified state back to the platform. The web service handles account sessions and provisioning. A separate, operator-managed process executes the Docker work over an authenticated loopback connection. Execution and automatic account provisioning are opt-in.
 
-The v0.3.10 build passed real Docker/Compose lifecycle, volume retention, gateway
-routing and two-account Bot Social tests. Chromium verified private-chat history
-on two separate account volumes before upgrade, after upgrade and after restart.
-[Runtime image checks](https://github.com/openTeamily/openTeamily/actions/runs/45196194354)
-and [upgrade acceptance](ACCEPTANCE.md#verified-ds-bot-v0310-upgrade) record the evidence.
+[FlyBot 0.3.0 CI](https://github.com/ThinkFlowLab/FlyBot/actions/runs/45523580750) verified Docker Compose lifecycle, volume retention, gateway isolation, and two-account Bot Social collaboration. The [DS-Bot v0.3.10 upgrade record](ACCEPTANCE.md#verified-ds-bot-v0310-upgrade) also documents Chromium verification of private chat history on two separate account volumes before upgrade, after upgrade, and after restart.
 
 ## Scope and prerequisites
 

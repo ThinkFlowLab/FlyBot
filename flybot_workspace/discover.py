@@ -1,11 +1,7 @@
-"""Opt-in public agent catalog (issue #87).
+"""Opt-in public catalogs for agents and published works.
 
-Self-written for FlyBot; no upstream or Teamily source. Only workspace
-owners/admins can list an agent. The public listing exposes a whitelisted
-name/summary/slug projection and never instructions, workspace ids or tokens.
-This is not Teamily Discover parity: there is no recommendation, ranking,
-follow, like or federation support. An opt-in public works feed can list
-voluntarily published artifacts without inventing engagement counts.
+Workspace owners and admins publish listings. The public projection exposes
+only allowlisted fields.
 """
 import re
 

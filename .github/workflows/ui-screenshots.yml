@@ -24,8 +24,8 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           set -eu
-          mkdir -p ot-playwright
-          cd ot-playwright
+          mkdir -p flybot-playwright
+          cd flybot-playwright
           npm init -y >/dev/null
           npm install playwright@1.56.1
           npx playwright install chromium --with-deps
@@ -33,7 +33,7 @@ jobs:
         run: |
           set -eu
           # Playwright is resolved next to the browser runner script.
-          ln -sfn "$RUNNER_TEMP/ot-playwright/node_modules" "$GITHUB_WORKSPACE/node_modules"
+          ln -sfn "$RUNNER_TEMP/flybot-playwright/node_modules" "$GITHUB_WORKSPACE/node_modules"
           node --import ./services/bot-social/node_modules/tsx/dist/loader.mjs \
             scripts/ci-native-ui-screenshots.mjs "$GITHUB_WORKSPACE/ui-screenshots"
       - name: Upload screenshots

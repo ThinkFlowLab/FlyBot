@@ -1,11 +1,4 @@
-"""Workspace invite links (issue #5, slice 1).
-
-Self-written for FlyBot; no upstream or Teamily source. Teamily pricing
-copy mentioned joining by invite link, and a chat-bar Invite entry was seen,
-but no invite was created or accepted and wizard steps 2/3 were not opened.
-Credits-center invite codes are a different, unpaid-referral feature and are
-not implemented here. These defaults are not Teamily parity.
-"""
+"""Workspace invite links and membership approval."""
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS workspace_invites (
@@ -37,9 +30,7 @@ CREATE TABLE IF NOT EXISTS workspace_join_requests (
  UNIQUE(workspace_id, user_id));
 '''
 
-# Approval and freeze (issue #5): an invite may require an owner/admin decision
-# before membership, and may be frozen (paused) without being revoked. These
-# are FlyBot semantics; Teamily approval behaviour was not observed.
+# An invite can require owner or admin approval and can be paused independently.
 
 TOKEN = __import__('re').compile(r'[A-Za-z0-9_-]{32,128}')
 

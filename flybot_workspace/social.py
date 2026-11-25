@@ -1,10 +1,6 @@
-"""Workspace human-to-human social messenger (issue #86).
+"""Workspace conversation metadata for direct messages and groups.
 
-Self-written for FlyBot; no upstream or Teamily source. This slice adds
-direct messages and named group conversations between members of the same
-workspace. Groups may persist agent members (not speakers). It does not add unread
-counts, notifications, attachments or cross-workspace delivery. Those remain
-separate issues; do not describe this as Teamily messenger parity.
+Groups can include workspace agents as well as human members.
 """
 import re
 
@@ -119,7 +115,7 @@ CREATE TABLE IF NOT EXISTS social_reactions (
  PRIMARY KEY(message_id, user_id, emoji));
 '''
 
-# Fixed, self-chosen reaction set (FlyBot default, not a Teamily copy).
+# Default reaction set.
 REACTIONS = ('👍', '❤️', '😄', '🎉', '👀', '✅')
 
 KINDS = ('dm', 'group')

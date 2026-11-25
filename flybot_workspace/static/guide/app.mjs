@@ -13,7 +13,7 @@ export const CATEGORIES = [
   {id: 'other', label: '其他'},
 ];
 
-// FlyBot's own catalog. Do not copy Teamily guide prose or its 295-item counts.
+// Guide entries for FlyBot pages.
 export const CATALOG = [
   {id: 'open-chat', href: '/chat', category: 'chat', title: '打开聊天', body: '在左侧应用栏打开「聊天」，查看已经统一的会话列表。人与智能体的会话在同一页，不是单独的消息页。', path: ['应用栏', '聊天']},
   {id: 'conversation-search', href: '/chat', category: 'chat', title: '会话内搜索', body: '在打开的会话标题栏里搜索当前会话中的已授权消息。这不是全站搜索面板。', path: ['聊天', '会话标题栏', '搜索']},
@@ -189,9 +189,7 @@ async function request(method, path, body) {
   return {status: response.status, body: payload};
 }
 
-// Original icons for FlyBot's own catalog. They follow the recorded
-// Teamily guide placements (category chip, group title, row) and meanings,
-// without copying Teamily artwork or its 295-item catalog.
+// Category icons shared by filter chips, section titles, and guide rows.
 export const CATEGORY_ICON_PATHS = {
   all: 'M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z',
   chat: 'M4 4h16v11H8.8L4 19.2V4zm2 2v9.2l2.1-1.7H18V6H6z',

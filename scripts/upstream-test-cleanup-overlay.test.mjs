@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
-import {target,marker,replacements,transformRestartFixture} from './upstream-test-cleanup-overlay.mjs';
+import {
+ deliveryMarker,deliveryReplacements,deliveryTarget,marker,replacements,target,
+ transformDeliveryFixture,transformRestartFixture,
+} from './upstream-test-cleanup-overlay.mjs';
 import {load} from './upstream-test-clock-loader.mjs';
 const original=readFileSync(new URL(target),'utf8');
 const patched=transformRestartFixture(original);
@@ -43,4 +46,55 @@ test('overlay retains every assertion byte, reverses exactly, rejects drift and 
  assert.throws(()=>transformRestartFixture(original.replace('assert.equal(new Set(seqs).size, seqs.length)','assert.equal(true, true)')),/fixture changed/);
  assert.equal((await load(target,{},async()=>({format:'module',source:Buffer.from(original)}))).source,patched);
  const other={format:'module',source:'untouched'};assert.equal(await load('file:///production.js',{},async()=>other),other);
+});
+
+
+async function deliveryHooks(source, stop, remove) {
+ const start = source.indexOf('  const home =', source.indexOf(deliveryMarker));
+ const end = source.indexOf('  const agent =', start);
+ const registered = [];
+ const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+ const register = new AsyncFunction(
+  't', 'mkdtempSync', 'join', 'tmpdir', 'rmSync', 'writeFileSync', 'baseSeed', 'createRestartHost',
+  source.slice(start, end),
+ );
+ const context = {after: callback => registered.push(callback)};
+ await register(context, () => '/tmp/delivery', () => '', () => '', remove, () => {}, () => ({}), async () => ({stop}));
+ return registered;
+}
+
+test('dedup fixture drains the existing runtime before its original directory removal', async () => {
+ const original = readFileSync(new URL(deliveryTarget), 'utf8');
+ const patched = transformDeliveryFixture(original);
+ const order = [];
+ const originalHooks = await deliveryHooks(original, () => order.push('stop'), () => order.push('remove'));
+ assert.equal(originalHooks.length, 2);
+ for (const callback of originalHooks) await callback();
+ assert.deepEqual(order, ['remove', 'stop']);
+
+ let stopped = false;
+ let removed = 0;
+ let release;
+ const patchedHooks = await deliveryHooks(patched, async () => {
+  await new Promise(resolve => { release = resolve; });
+  stopped = true;
+ }, (directory, options) => {
+  assert.equal(stopped, true);
+  assert.equal(directory, '/tmp/delivery');
+  assert.deepEqual(options, {recursive: true, force: true, maxRetries: 5, retryDelay: 20});
+  removed++;
+ });
+ assert.equal(patchedHooks.length, 1);
+ const pending = patchedHooks[0]();
+ assert.equal(typeof release, 'function');
+ assert.equal(removed, 0);
+ release();
+ await pending;
+ assert.equal(removed, 1);
+
+ let restored = patched;
+ for (const [before, after] of [...deliveryReplacements].reverse()) restored = restored.replace(after, before);
+ assert.equal(restored, original);
+ assert.throws(() => transformDeliveryFixture(original + '\n'), /fixture changed/);
+ assert.equal((await load(deliveryTarget, {}, async () => ({format: 'module', source: Buffer.from(original)}))).source, patched);
 });

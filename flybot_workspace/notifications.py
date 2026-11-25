@@ -1,11 +1,8 @@
-"""Workspace notification center: @mentions in messenger conversations (issues #4 #86).
+"""Workspace notifications for messages, group agent requests, and reminders.
 
-Self-written for FlyBot; no upstream or Teamily source. A notification is
-created only when a human message names another human member of the same
-conversation as ``@username``. Visibility is re-checked on every read: a
-recipient who left the conversation or a retracted message stops showing.
-Group agent request completion and due message reminders are also listed.
-Work shares and creator publication notices live on Bot Social.
+A mention requires a human sender and recipient in the same conversation.
+Visibility is checked again on every read. Work shares and creator notices
+come from Bot Social.
 """
 import json
 import re

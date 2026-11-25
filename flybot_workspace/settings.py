@@ -1,10 +1,6 @@
-"""Per-account interface preferences (issue #4, domain 10).
+"""Per-account interface preferences.
 
-Self-written for FlyBot; no upstream or Teamily source. Option semantics
-follow the 2026-11-16 Teamily contrasts (rounds 1 and 2). Teamily does not
-expose locale codes; the codes below are our mapping of the recaptured labels.
-Custom appearance period fields were not captured; start/end stay as HH:MM
-and are unverified. Still not settings parity.
+Locale codes are FlyBot mappings. Custom appearance times use HH:MM.
 """
 import json
 import re
@@ -15,7 +11,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
  document TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision >= 1), updated INTEGER NOT NULL);
 '''
 
-# Codes are FlyBot mappings of labels recaptured from Teamily's lists.
+# Use stable FlyBot locale codes.
 LANGUAGES = (
     'en', 'fa', 'fr', 'de', 'es', 'it', 'pt-BR', 'ru',
     'id', 'ms', 'hi', 'bn', 'th', 'ja', 'ko', 'zh-HK', 'zh-TW', 'zh-CN',

@@ -1,5 +1,4 @@
-/* Agent directory: card grid + manage drawer. Structure follows the
-   2026-11-17 Teamily visit; palette stays FlyBot tokens. */
+/* Agent directory card grid and management drawer. */
 body.app-workspace #main-panel {
   display: flex;
   flex-direction: column;

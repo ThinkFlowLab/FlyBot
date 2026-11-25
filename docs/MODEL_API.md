@@ -1,8 +1,6 @@
 # Model API configuration
 
-Related: [#4](https://github.com/openTeamily/openTeamily/issues/4), [#6](https://github.com/openTeamily/openTeamily/issues/6), [#1](https://github.com/openTeamily/openTeamily/issues/1).
-
-FlyBot does **not** implement Teamily account credits, billing or usage limits. A self-host operator configures a platform default model API; an account or workspace may optionally override it. The effective configuration is “override if a key is set, otherwise the platform default”. This is an FlyBot choice, not Teamily parity.
+A self-host operator configures FlyBot's platform default model API. An account or workspace can override it. FlyBot uses the override when it contains a key and the platform default otherwise.
 
 The API key is stored only as a wrapped blob next to the private management database. It is never returned in JSON, logs or run records. Runtime hooks receive the unwrapped key in-process. The compose manager fetches the already-resolved key over a lease-gated loopback endpoint (`POST /v1/internal/instances/{id}/runtime-secret`) and writes it to a private 0600 file that is bind-mounted read-only into the container. The key is not echoed on user HTTP APIs, claim receipts, observe payloads or operator logs; the lease-gated response is written to disk and not logged. The wrapping construction is a local HMAC-SHA256 keystream with an encrypt-then-MAC tag, using a 32-byte key in `model-api.wrap` (mode 0600). It is not a substitute for disk encryption or a cryptographic review.
 
@@ -24,6 +22,6 @@ Instances include a redacted `model_api` object for the manager-supplied configu
 
 `--operator-admin` is a private JSON file `{"credential_hash":"<sha256 hex of the bearer token>"}`. The token itself is never stored. Disabled if the flag is omitted. Do not commit this file or put secrets in the repository.
 
-## Not in this slice
+## Deployment verification
 
-No credits, no quotas, no live call to a model provider, no Teamily billing UI. Browser acceptance is not claimed. Live Docker create/start/stop of a real FlyBot container on an operator host is documented in `docs/COMPOSE_MANAGER.md` and is not proven by the unit tests in this repository (this box has no Docker engine).
+Repository tests use a deterministic model fixture. To verify your model provider, follow the [Compose manager deployment guide](COMPOSE_MANAGER.md#account-provisioning-and-deployment) and send a message from a newly provisioned account.

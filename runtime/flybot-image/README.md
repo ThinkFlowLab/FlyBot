@@ -37,6 +37,7 @@ From the repository root (context is `runtime/`):
 dsh=$(node -p "require('./runtime/ds-bot-upstream.pin.json').dsh")
 docker build -f runtime/flybot-image/Dockerfile \
   --build-arg "DSH_VERSION=$dsh" \
+  --build-context flybot-workspace-static=flybot_workspace/static \
   -t flybot-workspace-flybot:local \
   runtime
 ```
@@ -52,12 +53,9 @@ is generated into the same artifact. None of that is legal clearance.
 
 ## What this slice does not claim
 
-- Related tracking remains open: [issue 3](https://github.com/openTeamily/openTeamily/issues/3),
-  [issue 1](https://github.com/openTeamily/openTeamily/issues/1), and
-  [issue 5](https://github.com/openTeamily/openTeamily/issues/5).
-  DeepSeek Harness `0.2.2-rc.1`, the Node/Debian base image, and third-party
-  notices still need review before a public image release. The CI inventory
-  is evidence collection, not legal clearance.
+- Review DeepSeek Harness `0.2.2-rc.1`, the Node/Debian base image, and
+  third-party notices before publishing an image. See the repository
+  [licensing documentation](../../docs/LICENSING.md).
 - Management can inject a validated Bot Social server URL at instance start
   (`docs/BOT_SOCIAL.md`); operators can also set a file or env (see below)
   or use Settings → Bot Social. This is not live third-party proof.

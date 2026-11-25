@@ -53,7 +53,9 @@ class Store:
             if version == 0 and db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
                 raise ValueError('Unrecognized non-empty database; refusing initialization')
             db.execute('PRAGMA journal_mode=WAL')
-            db.executescript('BEGIN IMMEDIATE;\n' + SCHEMA + settings.SCHEMA + members.SCHEMA + automations.SCHEMA + invites.SCHEMA + model_api.SCHEMA + oidc.SCHEMA + skill_installs.SCHEMA + skill_secrets.SCHEMA + teams.SCHEMA + retired_task_schema.SCHEMA + bot_social.SCHEMA + artifacts.SCHEMA + memory.SCHEMA + agents.SCHEMA + conversations.SCHEMA + social.SCHEMA + notifications.SCHEMA + discover.SCHEMA + profiles.SCHEMA + onboarding.SCHEMA + personal.SCHEMA + meetings.SCHEMA + team_directory.SCHEMA + composio.SCHEMA + custom_mcp.SCHEMA + message_utilities.SCHEMA + skill_packages.SCHEMA + '\nPRAGMA user_version=1;\nCOMMIT;')
+            db.executescript('BEGIN IMMEDIATE;\n' + SCHEMA + settings.SCHEMA + members.SCHEMA + automations.SCHEMA + invites.SCHEMA + model_api.SCHEMA + oidc.SCHEMA + skill_installs.SCHEMA + skill_secrets.SCHEMA + teams.SCHEMA + retired_task_schema.SCHEMA + bot_social.SCHEMA + artifacts.SCHEMA + memory.SCHEMA + agents.SCHEMA + conversations.SCHEMA + social.SCHEMA + notifications.SCHEMA + discover.SCHEMA + profiles.SCHEMA + onboarding.SCHEMA + personal.SCHEMA + meetings.SCHEMA + team_directory.SCHEMA + composio.SCHEMA + custom_mcp.SCHEMA + message_utilities.SCHEMA + skill_packages.SCHEMA + '\nPRAGMA user_version=1;')
+            personal.rebrand_builtin_assistant(db)
+            db.commit()
 
     @contextmanager
     def connect(self):

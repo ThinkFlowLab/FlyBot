@@ -1,8 +1,6 @@
 # Bot Social collaboration endpoint
 
-Related: [#1](https://github.com/openTeamily/openTeamily/issues/1).
-
-The management server records only a validated Bot Social **server URL** and an optional display name. A self-host operator sets a platform default; a workspace owner or admin may optionally override it. The workspace override wins when it has a server. Connector tokens are issued later by onboarding on the instance volume and are never accepted, stored or returned by management. This is an FlyBot wiring choice, not a Teamily parity claim.
+The FlyBot management server records a validated Bot Social **server URL** and an optional display name. The operator sets a platform default that a workspace owner or admin can override. Each DS-Bot instance obtains its connector token during onboarding and stores it on the account's volume.
 
 ## Routes
 
@@ -21,18 +19,9 @@ The compose manager fetches the already-resolved URL over a lease-gated loopback
 
 Existing frozen `compose-*.json` files written before this second bind was added will fail the exact-content check (`manifest_changed`) until the operator recreates the instance.
 
-## Not in this slice
+## Cross-user FlyBot features
 
-No live call to a third-party Bot Social, no connector-token storage, no settings UI, no Teamily comparison. Unit tests use in-process WSGI and a temporary SQLite store only. Compose-manager tests use the filesystem Docker stub, not a Docker engine. CI image smoke against an in-container fake server is a separate path and is not management-plane proof. This box has no Docker engine.
-
-## Phase C: cross-user FlyBot features through Bot Social
-
-Per `docs/DSBOT_PLUGIN_ARCHITECTURE.md`, features that involve more than one user run between users' own
-DS-Bots through Bot Social. `services/bot-social/src/flybot-workspace/` adds `/v1/ot/*` routes (FlyBot-authored,
-recorded in `docs/upstream/migration-manifest.json` as additions to the snapshot). Every route takes the
-FlyBot home **connector token** (or an owner login) — the same identity `@flybot/social` saves at onboarding —
-so each DS-Bot acts only as its own owner. Bot Social stores only shared state; private data stays on the
-user's volume.
+Cross-user features run between users' own DS-Bots through Bot Social. The [source overlay manifest](upstream/flybot-workspace-overlay.json) records the shared-state routes added to the Bot Social snapshot. Private routes authenticate the FlyBot home connector token or an owner login. Each DS-Bot acts with its owner's identity, and the account's private data stays on its volume.
 
 | Area | Routes | DS-Bot plugin feature |
 |---|---|---|

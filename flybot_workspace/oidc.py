@@ -3,7 +3,6 @@
 Authorization Code + PKCE, state and nonce checks, verified-email only.
 Operator-configured client secrets stay in a private file, never in the
 repository, JSON responses or logs. Disabled providers are omitted.
-Self-written; no upstream or Teamily source. Not identity-provider parity.
 """
 import base64
 import hashlib

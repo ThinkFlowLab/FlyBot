@@ -1,6 +1,6 @@
 // Work thumbnails drawn from the server's text-only preview model.
 // Text goes through textContent and shapes through SVG attributes, so stored
-// HTML is never interpreted. Self-written; no Teamily assets.
+// HTML is never interpreted.
 const SVG = 'http://www.w3.org/2000/svg';
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 

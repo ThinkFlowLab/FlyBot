@@ -1,7 +1,7 @@
 """Same-origin management pages for the /v1 APIs (settings and automations).
 
 Serves only an exact asset allowlist. API security stays in App; this wrapper
-does not interpret /v1 routes. Self-written; no upstream or Teamily source.
+serves the settings and automations pages.
 """
 from hashlib import sha256
 import os

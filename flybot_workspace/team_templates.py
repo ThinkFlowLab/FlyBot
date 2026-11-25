@@ -1,10 +1,7 @@
-"""AI agent team templates (issues #7 #89).
+"""Built-in agent team templates.
 
-Self-written for FlyBot; no upstream or Teamily source, names or prompts.
-Applying a template creates (or reuses same-name) workspace agents and one group
-conversation with the requesting member plus those agents. Agents speak only on
-the selected #124 single-explicit-request protocol; nothing runs automatically.
-Public team directory/search and multi-agent orchestration remain pending.
+Applying a template creates or reuses workspace agents and creates a group
+with the requesting member.
 """
 
 TEMPLATES = (

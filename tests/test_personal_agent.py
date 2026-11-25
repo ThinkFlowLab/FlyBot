@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 
+from flybot_workspace.agents import name_hash
 from flybot_workspace.app import App, Config
 from flybot_workspace.store import Store
 from tests.test_management import Client, ORIGIN, seed_legacy_workspace
@@ -35,7 +36,7 @@ class PersonalAgentTests(unittest.TestCase):
         self.assertEqual(personal['agent']['summary'], 'Your Cross-context Super AI Agent.')
         self.assertEqual(len(created['body']['builtin_agents']), 10)
         names = [item['agent']['name'] for item in created['body']['builtin_agents']]
-        self.assertIn('Teamily Agent', names)
+        self.assertIn('FlyBot Assistant', names)
         self.assertIn('Travel Planner', names)
         self.assertIn('Webpage Developer', names)
         again = self.alice.call('POST', '/v1/personal-agent')
@@ -70,6 +71,27 @@ class PersonalAgentTests(unittest.TestCase):
             'GET', f'/v1/workspaces/{workspace_id}/agents/{agent_id}/conversations/{conversation_id}')
         self.assertEqual(history['status'], 410)
         self.assertEqual(history['body']['error']['code'], 'moved_to_dsbot')
+
+    def test_existing_builtin_assistant_is_rebranded_without_recreating_it(self):
+        created = self.alice.call('POST', '/v1/personal-agent')['body']
+        builtin = next(item for item in created['builtin_agents'] if item['key'] == 'flybot-assistant')
+        old = builtin['agent']
+        with self.app.store.transaction() as db:
+            db.execute('UPDATE builtin_agents SET builtin_key=? WHERE agent_id=?',
+                       ('teamily-agent', old['id']))
+            db.execute('UPDATE workspace_agents SET name=?, name_hash=?, summary=?, instructions=? WHERE id=?',
+                       ('Teamily Agent', name_hash('Teamily Agent'), 'Teamily 平台助手',
+                        'Personalized instructions', old['id']))
+        self.app.store = Store(self.path)
+        restored = self.alice.call('GET', '/v1/personal-agent')['body']
+        updated = next(item for item in restored['builtin_agents'] if item['key'] == 'flybot-assistant')
+        self.assertEqual(updated['agent']['id'], old['id'])
+        self.assertEqual(updated['agent']['name'], 'FlyBot Assistant')
+        self.assertEqual(updated['agent']['summary'], 'FlyBot 平台助手')
+        self.assertEqual(updated['agent']['instructions'], 'Personalized instructions')
+        self.assertEqual(len(restored['builtin_agents']), 10)
+        self.app.store = Store(self.path)
+        self.assertEqual(self.alice.call('GET', '/v1/personal-agent')['body'], restored)
 
     def test_personal_look_is_exposed_only_to_its_owner(self):
         look = {'color': '天空蓝', 'expression': '微笑', 'headwear': '耳机',
