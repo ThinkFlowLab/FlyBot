@@ -79,7 +79,8 @@ const teamTools = new Set(steps.map(([name]) => name))
 
 function teamResponse(body) {
   const messages = body.messages ?? []
-  const request = messages.findLastIndex(message => message.role === 'user')
+  const request = messages.findLastIndex(message => message.role === 'user' &&
+    [teamRequest, teamRefusalRequest].some(marker => JSON.stringify(message.content)?.includes(marker)))
   if (request < 0) return {}
   const content = JSON.stringify(messages[request].content)
   if (content?.includes(teamRefusalRequest)) return { text: teamRefusalReply }
@@ -105,6 +106,7 @@ function teamResponse(body) {
 
 require('node:http').createServer((req, res) => {
   let raw = ''
+  req.setEncoding('utf8')
   req.on('data', (c) => { raw += c })
   req.on('end', () => {
     if (req.method !== 'POST' || !req.url.startsWith('/v1/chat/completions')) { res.writeHead(404); res.end(); return }
