@@ -1,0 +1,80 @@
+{
+  "version": 2,
+  "note": "Report only: these rules give a pull request a tier (issue #3393). Nothing reads them yet to block, label or merge; T3 needs a human, and the final merge policy is decided in stage 5 of #3393. Editing this file is itself T3 (`.github/**`). Paths are matched in the fixed order T3 -> T2 -> T1 -> T0, first match wins, so a broader lower tier never shadows a narrower higher one: keep the lists non-overlapping when they cover the same directory.",
+  "tiers": {
+    "T3": {
+      "meaning": "high risk: the automation itself, the vendored upstream, dependency and deploy manifests, secrets and auth code. Green CI is not enough; a human approves.",
+      "paths": [
+        ".github/**",
+        "scripts/**",
+        "deploy/**",
+        "runtime/ds-bot-upstream/**",
+        "runtime/third_party/**",
+        "**/package.json",
+        "**/package-lock.json",
+        "**/Dockerfile",
+        "**/Dockerfile.*",
+        "**/docker-compose*.yml",
+        "**/*.compose.yml",
+        "**/*.env.example",
+        "LICENSE",
+        "NOTICE",
+        "SECURITY.md",
+        "flybot_workspace/{oidc,security,skill_secrets,invites,members,model_http_policy,fake_oidc}.py",
+        "services/bot-social/src/{oauth,crypto,custody,owner-mcp,auth-limit,load-env,local-room-invites}.ts"
+      ],
+      "codeExt": "\\.(js|mjs|cjs|ts|jsx|tsx|py|sh|yml|yaml|json|html|css)$",
+      "diffPatterns": [
+        "\\bchild_process\\b",
+        "\\beval\\(",
+        "new Function\\(",
+        "\\bexec(Sync)?\\(['\"]",
+        "\\bos\\.system\\(|\\bsubprocess\\.(run|call|Popen|check_output)",
+        "process\\.env\\.[A-Za-z_]*(TOKEN|KEY|SECRET)",
+        "os\\.environ(\\.get)?[\\[(][^\\n]{0,60}(TOKEN|KEY|SECRET)",
+        "\\.dsh(?![-\\w])|DSH_HOME",
+        "\\.(only|skip)\\(",
+        "@unittest\\.skip|pytest\\.mark\\.(skip|xfail)",
+        "(eslint|oxlint)-disable|#\\s*noqa\\b"
+      ],
+      "diffPatternsNotInTests": [
+        "https?://(?!(localhost|127\\.0\\.0\\.1|example\\.(com|org)|github\\.com/(ThinkFlowLab|Birfy)|raw\\.githubusercontent\\.com/(ThinkFlowLab|Birfy)|registry\\.npmjs\\.org))",
+        "untrusted-(message|file)|\\bfence|sanitiz|displayName|display name"
+      ],
+      "testPaths": ["tests/**", "**/test/**", "**/tests/**", "**/*.test.{js,mjs,cjs,ts,jsx,tsx}", "**/test_*.py", "**/*_test.py"],
+      "topics": []
+    },
+    "T2": {
+      "meaning": "medium risk: service, runtime and manager code, and any path no rule names (never silently T0/T1).",
+      "paths": [
+        "services/**",
+        "manager/**",
+        "runtime/flybot/**",
+        "runtime/flybot-image/**",
+        "runtime/flybot-web-slots/**",
+        "runtime/flybot-social-host/**",
+        "flybot_workspace/*.py",
+        "flybot_workspace/manager/**",
+        "flybot_workspace/dsbot_routes.json"
+      ]
+    },
+    "T1": {
+      "meaning": "low risk: client code, tests and the checked-in static pages.",
+      "paths": [
+        "runtime/flybot-workspace-web/**",
+        "flybot_workspace/static/**",
+        "tests/**",
+        "**/*.test.{js,mjs,cjs,ts,jsx,tsx,py}"
+      ]
+    },
+    "T0": {
+      "meaning": "lowest risk: documentation.",
+      "paths": ["docs/**", "**/*.md"]
+    }
+  },
+  "unknownPathTier": "T2",
+  "generatedPaths": ["runtime/ds-bot-upstream/ds-bot/client.js"],
+  "generatedPathsNote": "The built browser half of the vendored ds-bot (3.2 MB, `Generated from src/client ... Do not edit by hand`); it is inside the vendor tree and so T3 by path anyway, this only keeps the size count honest. In the old layout the same file was `core/client.js`.",
+  "limitsNote": "Recomputed for the 0.3.0 tree. Sample of six changes in the new layout (five merged, one open): #3390 5L/1F, #3389 54L/5F, #3386 280L/11F, #3391 386L/13F, #3382 633L/7F, #3388 1128L/14F. The old caps (T0 300/15, T1 400/20, T2 250/12) were sized for the pre-0.3.0 layout, where the largest such change was under 400 lines; here the largest real UI change is #3388 at 1128L/14F, which the old T1 cap would have called T3. So: T2 keeps #3382 (633L/7F) and #3391 (386L/13F) at T2 with margin; T1 keeps #3388 at T1; T0 doubles the docs budget for a full doc rewrite. Going over a cap still means T3 (a human looks), which is the safe direction; T3 has no cap of its own.",
+  "limits": {"T0": {"lines": 600, "files": 20}, "T1": {"lines": 1200, "files": 20}, "T2": {"lines": 800, "files": 15}}
+}
