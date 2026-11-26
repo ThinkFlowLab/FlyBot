@@ -330,8 +330,8 @@
       </section>
       <section class="group-info-card group-info-list" aria-label="群设置" data-ui-label="chat.group.settings">
         <section class="group-info-toggle-row" id="group-reply-policy" aria-labelledby="group-reply-policy-title" tabindex="-1" hidden>
-          <span><strong id="group-reply-policy-title" data-ui-text="chat.group.reply_policy">谁来回复</strong><small id="group-reply-policy-summary"></small></span>
-          <button type="button" id="group-management-reply-policy" class="group-info-link" aria-haspopup="dialog" aria-controls="group-management-dialog" data-ui-text="chat.group.edit_reply_policy" hidden>调整规则</button>
+          <span><strong id="group-reply-policy-title" data-ui-text="chat.group.admin_and_replies">管理员与回复</strong><small id="group-reply-policy-summary"></small></span>
+          <button type="button" id="group-management-reply-policy" class="group-info-link" aria-haspopup="dialog" aria-controls="group-management-dialog" data-ui-text="chat.group.edit_reply_policy" aria-label="编辑管理员与回复" data-ui-label="chat.group.edit_admin_and_replies" hidden>编辑</button>
         </section>
         <div class="group-info-toggle-row">
           <span><strong data-ui-text="chat.translate.auto">自动翻译</strong><small data-ui-text="chat.translate.private">使用你配置的模型，译文仅自己可见。</small></span>
@@ -362,10 +362,10 @@
               <option value="default" data-ui-text="chat.group.reply_default">跟随群组默认</option>
               <option value="mentions" data-ui-text="chat.group.reply_mentions">仅在被 @ 时回复</option>
               <option value="everyone" data-ui-text="chat.group.reply_everyone">由所有群内智能体判断</option>
-              <option value="lead" data-ui-text="chat.group.reply_lead">指定智能体优先</option>
+              <option value="lead" data-ui-text="chat.group.reply_lead">由管理员先回复</option>
             </select>
           </label>
-          <label id="group-management-reply-lead-row" hidden><span data-ui-text="chat.group.reply_lead_agent">优先智能体</span>
+          <label id="group-management-reply-lead-row" hidden><span data-ui-text="chat.group.reply_lead_agent">Bot 管理员</span>
             <select id="group-management-reply-lead" aria-describedby="group-management-reply-lead-note"></select>
           </label>
           <p id="group-management-reply-lead-note" class="note" hidden></p>
@@ -736,6 +736,7 @@
         <svg class="group-roster-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/></svg>
         <span id="conversation-agents-text" data-ui-text="chat.group.agents">群内智能体</span>
         <span id="conversation-agents-count" hidden></span>
+        <span id="conversation-agent-admin" hidden></span>
         <span id="conversation-agents-preview" aria-hidden="true" hidden></span>
         <svg class="group-roster-chevron" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </summary>
@@ -743,6 +744,7 @@
       <h2 id="conversation-agents-heading" class="visually-hidden" data-ui-text="chat.group.agents">群内智能体</h2>
       <div class="group-roster-head">
         <p id="social-agent-members" class="group-agent-note" hidden></p>
+        <button type="button" id="group-agent-set-admin" aria-haspopup="dialog" aria-controls="group-management-dialog" data-ui-text="chat.group.set_admin" hidden>设置管理员</button>
         <button type="button" id="group-agent-manage" data-ui-text="chat.group.manage_agents" hidden>管理群智能体</button>
       </div>
       <p id="direct-agent-help" class="note" hidden data-ui-text="chat.direct.agents_help">双方都可以添加自己的个人智能体。在输入框用 @ 选择智能体，它只会收到这条文字和你明确引用的一条消息。</p>

@@ -19,6 +19,15 @@ const ownerId = async (actor: Actor) => (await actor.ok("GET", "/v1/ot/me")).own
 const roomPath = (group: {id: string}) => "/v1/ot/conversations/" + group.id;
 const targets = (message: {reply_jobs: Job[]}) => message.reply_jobs.map(job => job.agent_id);
 
+async function chooseReplyMode(owner: Actor, group: {id:string; team_id:string|null; group_management:{revision:number}},
+  mode: "default" | "everyone") {
+  const {workspaces} = group.team_id ? await owner.ok("GET","/v1/ot/workspaces") : {workspaces:[]};
+  const workspace = workspaces.find((row: any) => row.id === group.team_id)?.workspace_id;
+  return (await owner.ok("POST",roomPath(group)+"/management",{
+    ...(group.team_id ? {workspace} : {direct:true}),action:"reply_policy",revision:group.group_management.revision,mode,
+  })).conversation;
+}
+
 async function answer(actor: Actor, room: string, request: any, job: Job, isolated = false) {
   const claim_id = randomUUID();
   const attempt = 1;
@@ -84,15 +93,16 @@ test("uploaded captions route only explicit mentions, and every caption reply us
   }
 });
 
-test("an existing single-member agent group answers naturally without creating fake mentions", async () => {
+test("a single-member group with an explicit default policy answers naturally without creating fake mentions", async () => {
   const owner = await home(service.base, "natural-owner");
   const group = await owner.ok("POST", "/v1/ot/conversations", {
     kind: "group", account_group: true, title: "产品研发小队", agents: [lead, engineer, reviewer],
   });
   const room = roomPath(group);
   const native_group_host = await ownerId(owner);
-  assert.deepEqual(group.group_agent_routing, {mode: "personal", default: "all", policy: {mode: "default"}, can_edit: true,
-    native_group_host,native_group_coordinator:true});
+  const legacy = await chooseReplyMode(owner,group,"default");
+  assert.deepEqual(legacy.group_agent_routing, {mode: "personal", default: "all", policy: {mode: "default"}, can_edit: true,
+    native_group_host,native_group_coordinator:true,native_group_images:true});
   const send = (body: string, extras = {}) => owner.ok("POST", room + "/messages", {body, direct: true, ...extras});
   const ordinary = await send("帮我整理一下验收计划");
   assert.deepEqual(targets(ordinary), [lead.agent_ref, engineer.agent_ref, reviewer.agent_ref]);
@@ -121,7 +131,7 @@ test("an existing single-member agent group answers naturally without creating f
 
   await owner.ok("PATCH", room + "/agents/" + reviewer.agent_ref, {auto_reply: true});
   assert.deepEqual((await owner.ok("GET", room)).group_agent_routing,
-    {mode: "personal", default: "auto", policy: {mode: "default"}, can_edit: true,native_group_host,native_group_coordinator:true});
+    {mode: "personal", default: "auto", policy: {mode: "default"}, can_edit: true,native_group_host,native_group_coordinator:true,native_group_images:true});
   const autos = await send("现在总结一下");
   assert.deepEqual(targets(autos), []);
   const addressed = await send("@研发工程师助理 你好");
@@ -153,6 +163,7 @@ test("ordinary agents can remain silent using a scoped claim and see only visibl
     kind: "group", account_group: true, title: "Native judgment", agents: [lead, engineer, reviewer],
   });
   const room = roomPath(group);
+  await chooseReplyMode(owner,group,"everyone");
   const send = (body: string) => owner.ok("POST", room + "/messages", {body});
   const source = await send("hello everyone");
   const [first, second, third] = source.reply_jobs;
@@ -232,6 +243,7 @@ test("shared group workers judge ordinary text while explicit mentions preserve 
     kind: "group", team_id: team.id, title: "共享产品讨论", members: [colleague.handle], agents: [lead],
   });
   const room = roomPath(group);
+  await chooseReplyMode(author,group,"default");
   await colleague.ok("PUT", room + "/agents/" + engineer.agent_ref, {name: engineer.name});
   assert.deepEqual((await author.ok("GET", room)).group_agent_routing, {mode: "shared", policy: {mode: "default"}, can_edit: true,
     native_group_host:await ownerId(author),native_group_coordinator:true});
@@ -317,10 +329,10 @@ test("typed shared group mentions resolve the longest eligible name without gues
   assert.deepEqual(targets(await send("@Product/guide.md is a file reference.")), []);
   const literal = await send("Read [the @Product Manager example](/guide) and `@Product Manager`.");
   assert.deepEqual(literal.mentions, []);
-  assert.deepEqual(targets(literal), ["product", "manager"]);
+  assert.deepEqual(targets(literal), ["product"]);
   const inbox = await teammate.ok("GET", queue);
   assert.ok(inbox.jobs.some((job: any) => job.message.id === sent.id && job.discretionary === undefined && job.group_text_only));
-  assert.ok(inbox.jobs.some((job: any) => job.message.id === literal.id && job.discretionary === true));
+  assert.ok(!inbox.jobs.some((job: any) => job.message.id === literal.id));
 
   await sender.ok("PUT", room + "/agents/manager", {name: "PRODUCT MANAGER"});
   const ambiguous = await send("@Product Manager, please review this.");
@@ -346,6 +358,7 @@ test("an active owner gets a bounded head start on shared ordinary text while ex
     kind: "group", team_id: team.id, title: "Group round", members: [colleague.handle], agents: [lead],
   });
   const room = roomPath(group);
+  await chooseReplyMode(author,group,"everyone");
   const peerSeat = `${room}/agents/${engineer.agent_ref}`;
   await colleague.ok("PUT", peerSeat, {name: engineer.name});
   const outsiderGroup = await outsider.ok("POST", "/v1/ot/conversations", {
@@ -424,6 +437,7 @@ test("large groups bound ordinary judgment and explicitly reach the whole roster
   const owner = await home(service.base, "natural-cap");
   const group = await owner.ok("POST", "/v1/ot/conversations", {kind: "group", account_group: true, title: "Roster", agents: [lead]});
   const room = roomPath(group);
+  await chooseReplyMode(owner,group,"everyone");
   for (let index = 0; index < 21; index++) {
     await owner.ok("PUT", room + "/agents/number-" + index, {name: "Agent " + index});
   }

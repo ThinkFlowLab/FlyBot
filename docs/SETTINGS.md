@@ -24,8 +24,8 @@ Unknown keys, wrong types, unsupported values or an empty `changes` object are r
 | `chat_language` | `auto` or the 17 recaptured chat languages | `auto` |
 | `auto_translate` | boolean | `false` |
 | `send_shortcut` | `enter`, `mod_enter` | `enter` |
-| `message_folding` | `compact`, `standard`, `none` | `standard` |
-| `document_cards` | boolean | `false` |
+| `message_folding` (legacy client compatibility) | `compact`, `standard`, `none` | `standard` |
+| `document_cards` | boolean. Show document attachments as cards. | `false` |
 | `link_previews` | boolean | `true` |
 | `task_completion_reminders` | boolean | `true` |
 | `likes_visible` / `favorites_visible` | boolean | `true` |

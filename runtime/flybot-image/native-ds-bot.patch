@@ -1553,7 +1553,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +  function sharedRoomPrompt(room, member, round, slot) {
 +    const names = groupBots(room, true).filter(bot => bot.id !== member.id)
 +      .map(bot => groupAdminOf(room, bot.id, true) ? bot.name + ' (admin)' : bot.name)
-+    const lines = room.log.filter(line => line.kind === undefined
++    const lines = room.log.filter(line => line.kind === undefined && !line.images?.length
 +      && (line.flybotWorkspaceMessageId !== undefined || line.flybotWorkspaceSharedRoundId === round.sharedSourceId))
 +    const earlier = lines.filter(line => line.seq < round.startSeq).slice(-ROOM_EARLIER_MAX)
 +    const current = lines.filter(line => line.seq >= round.startSeq).slice(-ROOM_DELTA_MAX)
@@ -1902,7 +1902,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    ensureRoomLog(room)
 +    return room.seq
 +  }
-+  rt.beginSharedRoomRound = async (roomId, { text, sourceId, mentions, author, textOnly = false, all = false }) => {
++  rt.beginSharedRoomRound = async (roomId, { text, sourceId, mentions, author, images, textOnly = false, all = false }) => {
 +    const room = rt.roomOf(roomId)
 +    const matches = () => room?.flybotWorkspace?.native_exchange?.id === sourceId && room.flybotWorkspace.native_exchange.dispatched === true
 +    if (!sourceId || !matches() || !writes()) throw new Error('Not an active shared room')
@@ -1914,7 +1914,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
 +    const eligible = new Set(groupBots(room, textOnly).map(bot => bot.id))
 +    if (mentions?.some(id => !eligible.has(id))) throw new Error('A selected Bot left the shared room')
 +    const addressed = mentions === undefined && !all ? undefined : { ids: mentions ?? [], all }
-+    startRound(room, [{ text, flybotWorkspaceMessageId: sourceId, author, ...(addressed === undefined ? {} : { mentions: addressed }) }],
++    startRound(room, [{ text, flybotWorkspaceMessageId: sourceId, author, ...(images === undefined ? {} : { images }), ...(addressed === undefined ? {} : { mentions: addressed }) }],
 +      agent, undefined, textOnly ? sourceId : undefined)
 +  }
 +

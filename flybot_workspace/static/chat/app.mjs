@@ -3,7 +3,7 @@ import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mou
 import { createGroupBotIdentities, groupBotIdentity, createGroupBotAvatar } from './group-identity.mjs';
 import { groupMentionPainter } from './group-mentions-display.mjs';
 import { AGENT_FILE_ACCEPT, chatFileDownload, chatUploadProgress, deferModule, localChatFile, mountChatFiles,
-  ownSocialMessage, ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
+  isChatImage, ownSocialMessage, ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
 import { mountGroupTranslation } from './translation.mjs';
 import { mountChatActivity, mountChatApprovalNotice } from './activity.mjs';
 import { meetingCodeFromHash, meetingDraftFromCallHref, stageMeetingFromChat } from '../shell/meeting-link.mjs';
@@ -355,7 +355,7 @@ function mayContainChatMarkdown(text, assistantReply) {
     /^(?:#{1,6}\s|[ \t]*(?:>|[-+]\s|\d+[.)]\s|-{3,}$))/m.test(text));
 }
 
-function appendMessageMarkdown(doc, parent, source, assistantReply, updatePreview, paintMentions) {
+function appendMessageMarkdown(doc, parent, source, assistantReply, paintMentions) {
   const node = doc.createElement('div');
   node.textContent = source;
   parent.append(node);
@@ -363,7 +363,6 @@ function appendMessageMarkdown(doc, parent, source, assistantReply, updatePrevie
     if (!assistantReply && !module.hasExplicitRichContent(source)) return;
     module.renderChatMarkdown(doc, node, source);
     paintMentions?.(node);
-    updatePreview?.();
   };
   if (richContent) {
     format(richContent);
@@ -430,18 +429,17 @@ function renderMessageBody(doc, node, text, prefs, assistantReply = false, previ
   const rich = mayContainChatMarkdown(source, assistantReply) &&
     (!richContent || assistantReply || richContent.hasExplicitRichContent(source));
   if (rich) {
-    renderMessageText(doc, node, source, prefs.message_folding, prefs.link_previews, (parent, value, updatePreview) => {
+    renderMessageText(doc, node, source, prefs.link_previews, (parent, value) => {
       const streamed = assistantReply && streamingReplies.get(preview);
       if (!streamed?.markdown || !value.startsWith(streamed.source.trimEnd())) {
-        appendMessageMarkdown(doc, parent, value, assistantReply, updatePreview, paintMentions);
+        appendMessageMarkdown(doc, parent, value, assistantReply, paintMentions);
         return;
       }
       richContent.renderStreamingMarkdown(doc, streamed.markdown, value, {complete:true});
       parent.append(streamed.markdown);
-      if (parent.tagName === 'DETAILS') parent.open = true;
     });
   } else if (inlineBold(source).some(part => part.bold)) fillBold(doc, node, source);
-  else renderMessageText(doc, node, source, prefs.message_folding, prefs.link_previews);
+  else renderMessageText(doc, node, source, prefs.link_previews);
   const origin = doc.defaultView?.location?.origin;
   const references = [
     [meetingCallHrefInMessage, '整理会议纪要'],
@@ -461,7 +459,7 @@ function renderMessageBody(doc, node, text, prefs, assistantReply = false, previ
     if (!existing) node.append(link);
   }
   paintMentions?.(node);
-  return rich || node.children[0]?.tagName === 'DETAILS';
+  return rich;
 }
 
 export function highlightParts(text, query) {
@@ -1227,7 +1225,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let resourceItems = [];
   let sendShortcut = 'enter';
   let chatLanguage = 'auto';
-  const defaultChatPreferences = {message_folding:'standard', document_cards:false, link_previews:true};
+  const defaultChatPreferences = {document_cards:false, link_previews:true};
   let chatPreferences = defaultChatPreferences;
   let chatSettings = null;
   let attachmentSender;
@@ -1326,7 +1324,10 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     node.hidden = !conversation || quoteBlocksSend(scope);
     if (node.hidden) return;
     const people = countMentionedGroupMembers(body, {members:conversation.members, viewerId:currentUser?.id});
-    const hasFiles = Boolean(attachmentSender?.draftFiles(scope).length);
+    const files = attachmentSender?.draftFiles(scope) ?? [];
+    const hasFiles = files.length > 0;
+    const nativeImage = routing?.native_group_images === true && !replyDrafts.has(scope) &&
+      body.trim() && isChatImage(files[0]);
     const quote = routing && activeGroupAgent(conversation, replyDrafts.get(scope)?.agentTarget);
     const auto = groupUsesLegacyAutoReplies(conversation) && agents.some(agent => agent.auto_reply);
     let text, kind = 'default';
@@ -1355,7 +1356,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     } else if (people) {
       kind = 'targeted';
       text = uiLabel(`将提及 ${people} 位群成员`, `${people} group ${people === 1 ? 'member' : 'members'} will be mentioned`);
-    } else if (hasFiles) {
+    } else if (hasFiles && !nativeImage) {
       text = agents.length
         ? uiLabel('用 @ 请智能体根据附言回复', 'Use @ to ask agents to reply to the caption')
         : uiLabel('附件将发送给群成员', 'The files will be shared with the group');
@@ -1384,7 +1385,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
         kind = 'attention';
         text = uiLabel('写一段附言，让选中的智能体知道要回复什么。', 'Add a caption for the selected agents to answer.');
       } else {
-        text += uiLabel(' · 按附言回复', ' · Replies use the caption');
+        text += nativeImage ? uiLabel(' · 可查看图片', ' · Agents can see the image')
+          : uiLabel(' · 按附言回复', ' · Replies use the caption');
       }
     }
     const label = document.getElementById('group-composer-routing-text');
@@ -6126,27 +6128,53 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     return groupManagement;
   }
 
+  async function openGroupSettings(method) {
+    const target = groupManagementContext();
+    if (!target) return;
+    const scope = {...target, conversationId:target.conversation.id};
+    try {
+      const controls = await initializeGroupManagement({fromShortcut:true});
+      if (groupMatches(scope)) controls?.[method]();
+    } catch {
+      if (groupMatches(scope)) show('error', uiLabel('无法打开群设置，请重试。', 'Could not open group settings. Try again.'));
+    }
+  }
+
   function renderGroupReplyPolicy(conversation) {
     const section = document.getElementById('group-reply-policy');
     const summary = document.getElementById('group-reply-policy-summary');
     const shortcut = document.getElementById('group-reply-shortcut');
     const routing = conversation?.group_agent_routing;
     const policy = routing?.policy;
+    const agents = (conversation?.agent_members || []).filter(agent => !agent.archived && !agent.native_deleted);
+    const admin = policy?.mode === 'lead' && !policy.lead_unavailable ? activeGroupAgent(conversation, policy.lead) : null;
     section.hidden = conversation?.kind !== 'group' || Boolean(conversation.public_agent);
     if (shortcut) shortcut.hidden = section.hidden || !servedByDsbot || !routing;
+    const badge = document.getElementById('conversation-agent-admin');
+    if (badge) {
+      badge.hidden = section.hidden || !routing || !agents.length;
+      badge.className = admin ? 'has-admin' : '';
+      const sameName = admin && agents.some(agent => agent !== admin && agent.name === admin.name);
+      const name = sameName
+        ? groupAgentName(admin.name, groupAgentOwnerLabel(admin), admin.owner_id, admin.mine === false ? admin.owner_handle : '')
+        : admin?.name;
+      badge.textContent = admin ? uiLabel(`管理员 · ${name}`, `Admin · ${name}`) : uiLabel('未设置管理员', 'No admin assigned');
+      badge.title = badge.textContent;
+    }
+    const editAdmin = document.getElementById('group-agent-set-admin');
+    if (editAdmin) editAdmin.hidden = section.hidden || !servedByDsbot || routing?.can_edit !== true || !agents.length;
     if (section.hidden) return;
     if (policy?.mode === 'mentions') summary.textContent = uiLabel('仅在被 @ 时回复', 'Only when mentioned');
-    else if (!conversation.agent_members?.some(agent => !agent.archived && !agent.native_deleted)) {
+    else if (!agents.length) {
       summary.textContent = uiLabel('群里暂无可回复的智能体', 'There are no group agents available to reply');
     } else if (policy?.mode === 'everyone') summary.textContent = uiLabel('由所有群内智能体判断是否回复', 'All group agents decide whether to reply');
     else if (policy?.mode === 'lead') {
-      const lead = !policy.lead_unavailable && activeGroupAgent(conversation, policy.lead);
-      if (lead) {
-        const name = groupAgentName(lead.name, groupAgentOwnerLabel(lead), lead.owner_id, lead.mine === false ? lead.owner_handle : '');
-        summary.textContent = uiLabel(`指定智能体优先 · ${name}`, `Preferred agent · ${name}`);
+      if (admin) {
+        const name = groupAgentName(admin.name, groupAgentOwnerLabel(admin), admin.owner_id, admin.mine === false ? admin.owner_handle : '');
+        summary.textContent = uiLabel(`管理员 · ${name}`, `Admin · ${name}`);
       } else {
-        summary.textContent = uiLabel('优先智能体不可用，由其他群内智能体判断是否回复。',
-          'The preferred agent is unavailable. Other group agents decide whether to reply.');
+        summary.textContent = uiLabel('管理员暂不可用，由其他群内智能体判断是否回复。',
+          'The admin is unavailable. Other group agents decide whether to reply.');
       }
     } else if (groupUsesLegacyAutoReplies(conversation) && conversation.agent_members?.some(
       agent => !agent.archived && !agent.native_deleted && agent.auto_reply)) {
@@ -8961,7 +8989,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       (groupInfoOpener || groupInfoToggle).focus();
     });
     const replyShortcut = document.getElementById('group-reply-shortcut');
-    replyShortcut?.addEventListener('click', async () => {
+    replyShortcut?.addEventListener('click', () => {
       if (replyShortcut.hidden) return;
       if (currentConversation?.group_agent_routing?.can_edit !== true) {
         closeInChatSearch({restoreScroll:false, focus:false});
@@ -8969,14 +8997,12 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
         document.getElementById('group-reply-policy').focus();
         return;
       }
-      const target = groupManagementContext();
-      if (!target) return;
-      const scope = {...target, conversationId:target.conversation.id};
-      try {
-        const controls = await initializeGroupManagement({fromShortcut:true});
-        if (groupMatches(scope)) controls?.openReplyPolicy();
-      } catch {
-        if (groupMatches(scope)) show('error', uiLabel('无法打开群回复规则，请重试。', 'Could not open the group reply policy. Try again.'));
+      return openGroupSettings('openReplyPolicy');
+    });
+    const adminButton = document.getElementById('group-agent-set-admin');
+    adminButton?.addEventListener('click', () => {
+      if (!adminButton.hidden && agentRosterCurrent(agentRosterView) && !agentRosterView.direct) {
+        return openGroupSettings('openAdministrator');
       }
     });
     document.getElementById('group-agent-manage').addEventListener('click', () => {

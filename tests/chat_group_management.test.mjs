@@ -31,22 +31,24 @@ class Element {
   append(child) { this.children.push(child); }
   replaceChildren(...children) { this.children = children; }
   querySelector() { return this.note; }
+  closest(selector) { return selector === 'label' ? this.label : null; }
   setAttribute() {}
   showModal() { this.open = true; }
   close() { this.open = false; this.fire('close'); }
-  focus() {}
+  focus() { this.focusCalls = (this.focusCalls || 0) + 1; }
   select() {}
 }
 
-function ui(context, {request, onChanged, onLeft, onRefresh} = {}) {
+function ui(context, {request, onChanged, onLeft, onRefresh, notify, lang = 'en'} = {}) {
   const nodes = new Map();
   const getElementById = id => {
     if (!nodes.has(id)) nodes.set(id, new Element());
     return nodes.get(id);
   };
   const control = name => getElementById(`group-management-${name}`);
-  const controller = mountGroupManagement({getElementById, createElement: () => new Element(), documentElement: {lang: 'en'}},
-    {context, request, onChanged, onLeft, onRefresh});
+  control('reply-mode').label = control('reply-mode-label');
+  const controller = mountGroupManagement({getElementById, createElement: () => new Element(), documentElement: {lang}},
+    {context, request, onChanged, onLeft, onRefresh, notify});
   const memberButton = person => controller.decorateMember(new Element(), person).children[0];
   return {control, controller, memberButton};
 }
@@ -205,4 +207,68 @@ test('a stale preferred agent is never replaced by a matching agent from another
   assert.equal(control('confirm').disabled, true);
   await control('form').fire('submit');
   assert.equal(writes.length, 1);
+});
+
+test('the dedicated administrator action starts with the Bot picker and saves the exact selection', async () => {
+  const routing = {mode:'shared', can_edit:true, policy:{mode:'default'}};
+  const current = viewOf();
+  Object.assign(current.conversation, {
+    agent_members:[
+      {owner_id:'mine', id:'writer', name:'Writer', mine:true},
+      {owner_id:'peer', id:'writer', name:'Writer', owner_name:'Peer'},
+      {owner_id:'peer', id:'dead', name:'Deleted', native_deleted:true},
+    ],
+    group_agent_routing:routing,
+  });
+  const writes = [];
+  const announcements = [];
+  const {control,controller} = ui(() => current, {
+    lang:'zh-CN',
+    request:async (method,path,body) => {
+      writes.push({method,path,body});
+      if (writes.length === 1) return {status:409,body:{error:{code:'group_management_conflict'}}};
+      return {status:200,body:{conversation:{...current.conversation,
+        group_management:{...current.conversation.group_management,revision:6},
+        group_agent_routing:{...routing,policy:{mode:'lead',lead:body.lead}},
+      }}};
+    },
+    onRefresh:async () => {
+      current.conversation.group_management.revision = 5;
+      return true;
+    },
+    onChanged:conversation => { current.conversation = conversation; },
+    notify:(...args) => announcements.push(args),
+  });
+  controller.openAdministrator();
+  assert.equal(control('heading').textContent,'设置管理员');
+  assert.equal(control('reply-mode').value,'lead');
+  assert.equal(control('reply-mode-label').hidden,true);
+  assert.equal(control('reply-mode').disabled,true);
+  assert.equal(control('reply-lead-row').hidden,false);
+  assert.equal(control('reply-lead').focusCalls,1);
+  assert.equal(control('confirm').disabled,true);
+  assert.deepEqual(control('reply-lead').children.map(option => option.value),['','["mine","writer"]','["peer","writer"]']);
+  control('reply-mode').value = 'everyone';
+  control('reply-mode').fire('change');
+  control('reply-lead').value = '["peer","writer"]';
+  control('reply-lead').fire('change');
+  await control('form').fire('submit');
+  await control('refresh').click();
+  assert.equal(control('reply-mode-label').hidden,true);
+  assert.equal(control('reply-lead').focusCalls,2);
+  assert.equal(control('reply-lead').value,'["peer","writer"]');
+  await control('form').fire('submit');
+  assert.deepEqual(writes,[4,5].map(revision => ({method:'POST',
+    path:`/v1/workspaces/${workspace}/social/conversations/${group}/management`,
+    body:{action:'reply_policy',revision,mode:'lead',lead:{owner_id:'peer',agent_id:'writer'}},
+  })));
+  assert.deepEqual(announcements,[['ok','群聊管理员已更新。']]);
+  controller.openReplyPolicy();
+  assert.equal(control('heading').textContent,'谁来回复');
+  assert.equal(control('reply-mode-label').hidden,false);
+  assert.equal(control('reply-mode').disabled,false);
+  control('dialog').close();
+  current.conversation.group_agent_routing.can_edit = false;
+  controller.openAdministrator();
+  assert.equal(control('dialog').open,false);
 });

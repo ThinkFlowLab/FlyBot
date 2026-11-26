@@ -27,7 +27,7 @@ async function eventually(check) {
 
 function fixture(t, {exchange, initialState, roster = seats, mode = 'default', people = [{owner_id:owner}], lines = [],
   history, seq = 2, page = [{id:old,seq:1,body:'此前的讨论',created_at:1_700_000_000_000,author:{kind:'member',name:'Member'}}],
-  author, nativeHost = owner, coordinator = true, working = [],
+  author, nativeHost = owner, coordinator = true, working = [], image,
 } = {}) {
   let lineListener
   let dispose
@@ -44,17 +44,23 @@ function fixture(t, {exchange, initialState, roster = seats, mode = 'default', p
   }}
   const conversation = {id:cid,kind:'group',account_group:true,agents:roster,members:people,
     group_management:{owner_id:owner},group_agent_routing:{can_edit:coordinator,policy:{mode},
-      native_group_host:nativeHost,native_group_coordinator:coordinator},
+      native_group_host:nativeHost,native_group_coordinator:coordinator,native_group_images:Boolean(image) && people.length === 1},
   }
   const item = {message_id:mid,conversation_id:cid,seq,body:'评审文档',agent_mentions:[{owner_id:owner,agent_id:'writer'}],
-    author,text_only:people.length > 1}
+    author,text_only:people.length > 1,...(image && {has_image:true})}
   function addLine(line) {
     logged.push({...line,seq:(logged.at(-1)?.seq ?? 0) + 1})
     lineListener?.(room)
   }
   const rt = {
     state:{rooms:{[room.id]:room}},
-    ctx:{on:(_event, cb) => {dispose = cb}},
+    ctx:{on:(_event, cb) => {dispose = cb}, get:key => {
+      assert.equal(key,'attachments')
+      return {saveImage:async ({mediaType,data,name}) => {
+        assert.deepEqual({mediaType,data,name}, {mediaType:image.mime,data:Buffer.from(image.data,'base64'),name:image.title})
+        return {attachmentId:'stored-image',mediaType}
+      }}
+    }},
     botOf:id => ({name:id,flybotWorkspace:{agent_id:id}}),
     sharedRoomCursor:() => logged.at(-1)?.seq ?? 0,
     workingInRoom:() => working,
@@ -73,6 +79,7 @@ function fixture(t, {exchange, initialState, roster = seats, mode = 'default', p
     get:async path => {
       if (path.startsWith('/v1/ot/native-group-inbox')) return {items:state && state !== 'finished' && coordinator ? [{...item,state}] : []}
       if (path === conversationPath) return conversation
+      if (path === `${messagesPath}/${mid}/file`) return image
       assert.equal(path, messagesPath + '?limit=40&before=' + seq)
       return {messages:page}
     },
@@ -120,6 +127,24 @@ test('a plain shared group send starts the corresponding native room, then mirro
   assert.equal(new Set(published.map(line => line.client_key)).size, 2)
   assert.deepEqual(h.room.flybotWorkspace.native_history.mirrored, [mirrored])
   assert.deepEqual(h.writes.map(item => item.body.action ?? 'line'), ['start','line','line','finish'])
+})
+
+test('a supported group image and its caption follow the native room', async t => {
+  const image = {mime:'image/png',title:'screenshot.png',data:'iVBORw0KGgo='}
+  const h = fixture(t,{image})
+  await h.send({attachment:image})
+  await eventually(() => h.opened.length === 1)
+  assert.deepEqual(h.received.map(message => message.native_round), [true])
+  assert.deepEqual(h.opened[0].input.images, [{attachmentId:'stored-image',mediaType:'image/png'}])
+  assert.equal(h.opened[0].input.text, '评审文档')
+})
+
+test('a multi-owner group upload keeps the existing attachment route', async t => {
+  const image = {mime:'image/png',title:'screenshot.png',data:'iVBORw0KGgo='}
+  const h = fixture(t,{image,people:[{owner_id:owner},{owner_id:'another'}]})
+  await h.send({attachment:image})
+  assert.equal(h.received[0].native_round, undefined)
+  assert.deepEqual(h.opened, [])
 })
 
 test('restart publishes durable lines without opening a second round', async t => {

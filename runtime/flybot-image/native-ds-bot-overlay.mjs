@@ -51,7 +51,7 @@ const files = {
   ],
   'src/host/groups.js': [
     '06c261868b55ee7cdc53dc3b98759779c1d0e5cd60ad6f39beeca24458e7a91c',
-    'a5efc51b8918346177a3058dc7613b99198ebdc99fed1b72036b7de36d2e1032',
+    '70dd905156686d55ba233643364c27cbeb0e9cbad24540757b76cb144de3fb04',
   ],
   'src/host/capabilities.js': [
     '656fcc0b0fb7fd597dfd0f62bd49522d92becd4ed1c77dd53ba016f045614c89',

@@ -148,12 +148,11 @@
           <span data-ui-text="settings.reminders" class="settings-row-label">任务完成提醒</span>
           <input type="checkbox" name="task_completion_reminders" form="settings-form" role="switch">
         </label>
-        <a class="settings-row" href="/settings/message-folding">
+        <label class="settings-row settings-toggle">
           <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 5h14v2H5V5zm0 4h10v2H5V9zm0 4h14v2H5v-2zm0 4h10v2H5v-2z"/></svg></span>
-          <span data-ui-text="settings.folding" class="settings-row-label">消息折叠</span>
-          <span id="folding-current" class="settings-row-meta"></span>
-          <span class="settings-row-chevron" aria-hidden="true">›</span>
-        </a>
+          <span data-ui-text="settings.document-cards" class="settings-row-label">文档附件显示为卡片</span>
+          <input type="checkbox" name="document_cards" form="settings-form" role="switch">
+        </label>
         <a class="settings-row" href="/settings/appearance">
           <span class="settings-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3a9 9 0 0 1 0 18H9a3 3 0 0 1 0-6h1.5A1.5 1.5 0 0 0 12 13.5 4.5 4.5 0 1 0 7.5 9H9A3 3 0 0 1 12 3zm-4 5a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 8 8zm3-2.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4zM16 8a1.2 1.2 0 1 0 0-2.4A1.2 1.2 0 0 0 16 8zm1.5 3.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z"/></svg></span>
           <span data-ui-text="settings.appearance" class="settings-row-label">外观</span>
@@ -342,25 +341,6 @@
             </span>
           </div>
         </section>
-      </div>
-      <div lang="zh-CN" data-settings-page="message-folding" hidden>
-        <header class="settings-subhead">
-          <a href="/settings" class="settings-back" aria-label="返回设置">‹ 设置</a>
-        </header>
-        <p class="settings-lead">选择长消息在对话里最先展示多少内容。</p>
-        <fieldset id="message-display" class="settings-card">
-          <legend class="visually-hidden">消息折叠</legend>
-          <label class="choice"><input type="radio" name="message_folding" value="compact"> <span>紧凑<span class="hint">只展示很短的预览。适合以扫读为主的场景。</span></span></label>
-          <label class="choice"><input type="radio" name="message_folding" value="standard"> <span>标准<span class="hint">展示适中的预览。推荐。</span></span></label>
-          <label class="choice"><input type="radio" name="message_folding" value="none"> <span>不折叠<span class="hint">完整展示每条消息。长消息会把对话推得很高。</span></span></label>
-          <label class="settings-row settings-toggle">
-            <span class="settings-row-copy">
-              <span class="settings-row-title">长文档收成卡片</span>
-              <span class="hint">含多个章节的消息会显示为卡片，可在对话旁边打开阅读，不再铺满消息流。</span>
-            </span>
-            <input type="checkbox" name="document_cards" role="switch">
-          </label>
-        </fieldset>
       </div>
       <div lang="zh-CN" data-settings-page="privacy" hidden>
         <header class="settings-subhead">

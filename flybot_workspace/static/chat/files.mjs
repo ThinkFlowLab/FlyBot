@@ -26,6 +26,8 @@ function fileType(file) {
   const extension = file.name.toLowerCase().split('.').at(-1);
   return Object.hasOwn(MEDIA_TYPES, extension) ? MEDIA_TYPES[extension] : file.type;
 }
+export const isChatImage = file => Boolean(file && /^image\/(png|jpeg|gif|webp)$/i.test(file.type));
+
 const formatBytes = bytes => bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB'
   : bytes >= 1024 ? Math.round(bytes / 1024) + ' KB' : bytes + ' B';
 

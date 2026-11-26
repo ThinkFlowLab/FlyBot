@@ -167,6 +167,9 @@ test("managed reply claims replay without renewing the lease and fence each atte
   const group = await owner.ok("POST", root, {kind: "group", account_group: true,
     title: "Managed claims", members: [sender.handle], agents: [{agent_ref: "helper", name: "Helper"}]});
   const room = root + "/" + group.id;
+  await owner.ok("POST",room+"/management",{
+    direct:true,action:"reply_policy",revision:group.group_management.revision,mode:"default",
+  });
   await owner.ok("PUT", room + "/agents/helper", {name: "Helper", auto_reply: true});
   const source = await sender.ok("POST", room + "/messages", {body: "@helper Can you check?"});
   const id = source.reply_jobs[0].id;

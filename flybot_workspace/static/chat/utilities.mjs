@@ -304,35 +304,10 @@ export function mountMessageUtilities(document, {request, context, composerConte
   };
 }
 
-// Account settings alter rendering, not stored message bytes or copy/forward payloads.
-export function renderMessageText(document, root, text, folding = 'standard', linkPreviews = false, renderBody) {
+export function renderMessageText(document, root, text, linkPreviews = false, renderBody) {
   root.replaceChildren();
-  const limit = folding === 'compact' ? 240 : folding === 'none' ? Infinity : 800;
-  if (String(text || '').length <= limit) {
-    if (renderBody) renderBody(root, text);
-    else root.textContent = text || '';
-  } else {
-    const details = document.createElement('details');
-    const summary = document.createElement('summary');
-    details.append(summary);
-    const updatePreview = () => {
-      const body = renderBody && details.children[1];
-      const preview = body?.children.length ? Array.from(body.children, block => {
-        if (block.dataset?.summary) return block.dataset.summary;
-        if (['OL', 'UL'].includes(block.tagName)) return Array.from(block.children, item => item.textContent).join(' · ');
-        const headings = block.querySelectorAll?.('thead th');
-        return headings?.length ? Array.from(headings, cell => cell.textContent).join(' · ') : block.textContent;
-      }).join(' ').trim() : '';
-      summary.textContent = (preview || String(text)).slice(0, limit) + '… 展开全文';
-    };
-    if (renderBody) renderBody(details, text, updatePreview);
-    else {
-      const content = document.createElement('span'); content.setAttribute('style','white-space:pre-wrap'); content.textContent = text;
-      details.append(content);
-    }
-    updatePreview();
-    root.append(details);
-  }
+  if (renderBody) renderBody(root, text);
+  else root.textContent = text || '';
   if (!linkPreviews) return;
   const seen = new Set();
   for (const match of String(text || '').matchAll(/https?:\/\/[^\s<>"']+/gu)) {

@@ -2,7 +2,7 @@ import { NIGHT_WINDOW, resolveTheme, syncAppearanceButton } from '../shell/app.m
 import {applySystemLocale, supportsSystemLocale, systemLocale, uiText} from '../shell/system-locale.mjs';
 
 const KEYS = ['appearance', 'appearance_schedule', 'appearance_start', 'appearance_end', 'language',
-              'chat_language', 'auto_translate', 'send_shortcut', 'message_folding', 'document_cards',
+              'chat_language', 'auto_translate', 'send_shortcut', 'document_cards',
               'link_previews', 'task_completion_reminders', 'likes_visible', 'favorites_visible'];
 
 export function csrfCookie(source) {
@@ -21,7 +21,6 @@ export function readForm(form) {
     chat_language: data.get('chat_language'),
     auto_translate: data.has('auto_translate'),
     send_shortcut: data.get('send_shortcut'),
-    message_folding: data.get('message_folding'),
     document_cards: data.has('document_cards'),
     link_previews: data.has('link_previews'),
     task_completion_reminders: data.has('task_completion_reminders'),
@@ -89,31 +88,23 @@ const OVERVIEW_CHOICES = {
   'appearance.dark': ['深色', 'Dark'],
   'appearance.auto': ['自动', 'Automatic'],
   'appearance.system': ['跟随系统', 'System'],
-  'message_folding.compact': ['紧凑', 'Compact'],
-  'message_folding.standard': ['标准', 'Standard'],
-  'message_folding.none': ['不折叠', 'Do not fold'],
 };
 
 export function syncOverviewCurrentValues(document, values) {
   const appearance = document.getElementById('appearance-current');
-  const folding = document.getElementById('folding-current');
   if (appearance) {
     appearance.textContent = uiText(document, `appearance.${values.appearance}`, undefined, OVERVIEW_CHOICES) || '';
-  }
-  if (folding) {
-    folding.textContent = uiText(document, `message_folding.${values.message_folding}`, undefined, OVERVIEW_CHOICES) || '';
   }
 }
 
 const AUTOSAVE_KEYS = ['appearance', 'appearance_schedule', 'appearance_start', 'appearance_end',
                        'language', 'chat_language', 'auto_translate', 'send_shortcut',
-                       'message_folding', 'document_cards', 'link_previews',
+                       'document_cards', 'link_previews',
                        'task_completion_reminders'];
 
 const PATH_VIEWS = {
   '/settings/appearance': 'appearance',
   '/settings/language': 'language',
-  '/settings/message-folding': 'message-folding',
   '/settings/privacy': 'privacy',
   '/settings/shortcuts': 'shortcuts',
   '/settings/channels': 'channels',
@@ -127,8 +118,6 @@ const HASH_VIEWS = {
   appearance: 'appearance',
   'language-section': 'language',
   language: 'language',
-  'message-display': 'message-folding',
-  'message-folding': 'message-folding',
   privacy: 'privacy',
   'send-shortcut': 'shortcuts',
   shortcuts: 'shortcuts',
@@ -445,7 +434,7 @@ export function fillForm(form, values) {
     option.checked = option.value === values[option.name];
   }
   for (const name of ['appearance_start', 'appearance_end', 'language',
-                      'chat_language', 'message_folding', 'send_shortcut']) {
+                      'chat_language', 'send_shortcut']) {
     const field = form.elements[name];
     if (field) field.value = values[name];
   }

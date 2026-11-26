@@ -244,9 +244,10 @@ class SettingsPageTests(unittest.TestCase):
     def test_html_lists_only_documented_setting_keys(self):
         html = self.raw.call('GET', '/settings')['body'].decode()
         for name in ('appearance', 'appearance_schedule', 'language', 'chat_language', 'auto_translate',
-                     'send_shortcut', 'message_folding', 'document_cards', 'link_previews',
+                     'send_shortcut', 'document_cards', 'link_previews',
                      'task_completion_reminders', 'likes_visible', 'favorites_visible'):
             self.assertIn(f'name="{name}"', html)
+        self.assertNotIn('name="message_folding"', html)
         self.assertIn('sunset_sunrise', html)
         self.assertIn('id="appearance"', html)
         light, dark, auto, system = (html.find(f'value="{name}"') for name in ('light', 'dark', 'auto', 'system'))
@@ -299,15 +300,14 @@ class SettingsPageTests(unittest.TestCase):
         self.assertTrue(-1 < language < channels < agent_api < model_api < skills < connectors)
         self.assertIn('href="/settings/appearance"', html)
         self.assertIn('href="/settings/shortcuts"', html)
-        self.assertIn('href="/settings/message-folding"', html)
+        self.assertNotIn('href="/settings/message-folding"', html)
         self.assertIn('href="/settings/privacy"', html)
         prefs = html[html.find('id="group-prefs"'):html.find('id="group-notification-prefs"')]
-        folding = prefs.find('href="/settings/message-folding"')
         appearance = prefs.find('href="/settings/appearance"')
         privacy = prefs.find('href="/settings/privacy"')
         shortcuts = prefs.find('href="/settings/shortcuts"')
-        self.assertTrue(-1 < folding < appearance < privacy < shortcuts)
-        self.assertIn('id="folding-current"', prefs)
+        self.assertTrue(-1 < appearance < privacy < shortcuts)
+        self.assertIn('name="document_cards" form="settings-form"', prefs)
         self.assertIn('id="appearance-current"', prefs)
         self.assertIn('隐私设置', prefs)
         support = html[html.find('id="group-support"'):html.find('id="settings-form"')]
@@ -321,7 +321,7 @@ class SettingsPageTests(unittest.TestCase):
         self.assertNotIn('退款政策', support)
         self.assertIn('系统语言', html)
         self.assertIn('始终使用浅色主题。', html)
-        self.assertIn('选择长消息在对话里最先展示多少内容。', html)
+        self.assertNotIn('data-settings-page="message-folding"', html)
         self.assertIn('保存更改', html)
         self.assertIn('name="link_previews"', html)
         self.assertIn('role="switch"', html)
@@ -346,7 +346,7 @@ class SettingsPageTests(unittest.TestCase):
 
     def test_recorded_subpages_serve_the_same_settings_shell(self):
         for path in ('/settings/appearance', '/settings/language',
-                     '/settings/message-folding', '/settings/privacy',
+                     '/settings/privacy',
                      '/settings/shortcuts', '/settings/channels',
                      '/settings/agent-access', '/settings/connectors',
                      '/settings/skill-configuration'):
@@ -358,6 +358,10 @@ class SettingsPageTests(unittest.TestCase):
             self.assertEqual(page['headers']['Cache-Control'], 'no-store')
         self.assertEqual(self.raw.call('GET', '/settings/missing')['status'], 404)
         self.assertEqual(self.raw.call('GET', '/settings/appearance', query='q=1')['status'], 400)
+        old_folding = self.raw.call('GET', '/settings/message-folding')
+        self.assertEqual(old_folding['status'], 200)
+        self.assertIn('data-settings-hub', old_folding['body'].decode())
+        self.assertNotIn('data-settings-page="message-folding"', old_folding['body'].decode())
 
     def test_support_rows_link_the_pages_the_server_serves(self):
         html = self.raw.call('GET', '/settings')['body'].decode()
@@ -461,15 +465,6 @@ class SettingsPageTests(unittest.TestCase):
         self.assertIn('自动翻译消息', language)
         self.assertIn('根据消息语言回复', language)
         self.assertIn('class="settings-field"', language)
-
-        folding = self.raw.call('GET', '/settings/message-folding')['body'].decode()
-        self.assertIn('‹ 设置', folding)
-        self.assertIn('选择长消息在对话里最先展示多少内容。', folding)
-        self.assertIn('长消息会把对话推得很高。', folding)
-        self.assertIn('长文档收成卡片', folding)
-        self.assertIn('含多个章节的消息会显示为卡片', folding)
-        self.assertNotIn('折叠前展示多少内容', folding)
-        self.assertNotIn('长消息会拉开推动聊天窗', folding)
 
         privacy = self.raw.call('GET', '/settings/privacy')['body'].decode()
         self.assertIn('‹ 隐私设置', privacy)
