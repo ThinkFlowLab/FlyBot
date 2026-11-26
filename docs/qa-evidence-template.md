@@ -46,6 +46,6 @@ $ sha256sum .github/workflows/tests.yml
 - {{gap3}}
 
 ### 5. 本证据不构成验收通过
-这是我核到的「这个 head 上发生了什么」，不是「这个 PR 可以合并」：没有做产品验收，没有做 T3 人工批准，没有声明与 0.3.0 parity。是否合并、是否验收由 Lead 判。合并后若 rebase 或补提交，本证据作废。
+这是我核到的「这个 head 上发生了什么」，不是「这个 PR 可以合并」：没有做产品验收，没有声明与 0.3.0 parity；合并由 Lead 决定。合并后若 rebase 或补提交，本证据作废。
 
 Related #{{issue}}

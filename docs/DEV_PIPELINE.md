@@ -15,7 +15,7 @@ Related #3393.
 | `audit-merges`（main 上查未走队列的提交） | workflow | 只在默认分支按 `schedule` 跑，PR 里不出现 check |
 | 同一 (对象, 标记) 只留一条评论 | `comment-guard.mjs` | 脚本在，人工/脚本调用；没有 CI 门 |
 | 认领标记 | 约定 | 没有机器校验 |
-| T3 人工批准 | 约定 | 没有机器校验 |
+| 合并决定 | FlyBot Lead | 由 Lead 明示并记录 head 与理由；Tier 只作提示，不是否决项 |
 
 结论：**只有 `FlyBot required checks` 会替你挡住合并**。其余全部是证据与提醒，靠人看。
 文档里任何「会拦住」的说法，只有这一条成立。
@@ -35,9 +35,10 @@ Related #3393.
    新提交即作废旧证据。
 6. **评审.** 看四件事：`Related #N`/`Refs #N` 且无 `Fixes`/`Closes`/`Resolves`；结论绑 head SHA；
    一个切片；本地绿与 CI 绿分开报。评审意见落 PR 评论。
-7. **风险确认.** `risk-gate.mjs` 的 tier 由脚本输出后以 `risk:T*` 标签落到 PR（不手打）。
-   目前 T3 只要求人工看一眼再往下走，没有机器拦截。
-8. **合.** 只有在 `FlyBot required checks` 全绿、且上述证据都在 PR 上时才谈合并。
+7. **风险标注.** `risk-gate.mjs` 的 tier 由脚本输出后以 `risk:T*` 标签落到 PR（不手打）。
+   Tier 只作提示，不构成合并闸口：T3 也照常往下走，没有人工批准这一步（2026-11-26 起）。
+8. **合.** 由 FlyBot Lead 决定并执行合并：`FlyBot required checks` 全绿、上述证据都在 PR 上，
+   合并时写明 head 与理由。Tier 是提示，不是否决项。
    不声称 parity，不声称验收通过。
 
 任一步发现记录与实际不一致（注释说 A、代码做 B），打回重做——这一类是本流水线最常见的打回理由。
@@ -89,6 +90,6 @@ Issue: #<n>  标题：<…>
 Related/Refs：<有 / 无 Fixes|Closes|Resolves>
 切片：<单一切片 / 混了 X>
 绑定：结论绑 head <head40>；本地绿 <命令与数字>；CI 绿 <截至 UTC，哪些 success，哪些未跑完>
-风险：脚本输出 <T*>，与标签 <risk:T*> 一致
+风险：脚本输出 <T*>，与标签 <risk:T*> 一致（Tier 只作提示，不否决）
 打回/放行：<缺什么，需要谁补>
 ```
