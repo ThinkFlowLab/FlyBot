@@ -1,14 +1,12 @@
-// Label hygiene: which agent-* labels no longer describe anything. `agent-working` claims work is
-// live, `agent-pr` an open PR; the payload has neither fact, so both come from what we wrote plus the
-// listings the caller passes in. Writes nothing.
+// Which agent-* labels no longer describe anything. Neither fact is in the payload, so both come from
+// what we wrote and what the caller passes in. Writes nothing.
 import { readFileSync } from 'node:fs'
 
 export const GUARDED = ['agent-working', 'agent-pr']
 const names = (i) => (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l?.name)).filter(Boolean)
 const kindOf = (i) => i.kind ?? (i.pull_request ? 'pr' : 'issue')
 
-// --prs takes a saved /pulls list (any state) or a {number: fact} map. The list also says which
-// branch each PR came from, so an issue that only names a branch still reaches its PR.
+// --prs: a saved /pulls list (any state) or a {number: fact} map; the list also says each PR's branch.
 const asList = (prs) => (Array.isArray(prs) ? prs.map((p) => ({
   number: p.number, state: p.state ?? 'open', merged: !!p.merged,
   branch: p.branch ?? p.head?.ref ?? null, branch_exists: p.branch_exists,
@@ -43,7 +41,7 @@ const work = (item, kind, { branches }) => {
   const state = item.state ?? 'open'
   const branch = claimedBranch(item)
   if (state === 'closed') return ['orphan', `the ${kind} is closed`]
-  if (!branch) return ['unknown', 'open, with no Branch: line and no work_live fact: liveness is not in the payload']
+  if (!branch) return ['unknown', 'open, with no Branch: line: nothing in the payload says the work is live']
   if (!branches) return ['unknown', `claims branch ${branch}; pass --refs to check whether it still exists`]
   return branches.has(branch) ? ['keep', `branch ${branch} exists`] : ['orphan', `branch ${branch} is gone`]
 }
@@ -72,7 +70,11 @@ const carrier = (item, kind, { prs, branches }) => {
 // Every verdict names the fact it rests on. `unknown` is not a pass: the caller did not supply the
 // fact, so the run reports it instead of calling the board clean.
 export function auditLabels(items, { prs = null, refs = null } = {}) {
-  const branches = refs == null ? null : new Set(Array.isArray(refs) ? refs : refs.refs ?? [])
+  // An empty listing is not a fact: a flaked `git ls-remote` gives exactly that, and reading it as
+  // gone strips a live label. Only a non-empty list may decide anything.
+  const refList = Array.isArray(refs) ? refs : refs?.refs ?? []
+  const branches = refList.length ? new Set(refList) : null
+  prs = (Array.isArray(prs) ? prs : Object.keys(prs ?? {})).length ? prs : null
   const rows = []
   for (const item of items ?? []) {
     const labels = names(item)
@@ -98,24 +100,30 @@ export function untouched(items) {
 
 const arg = (name, fallback = null) => {
   const i = process.argv.indexOf(name)
-  return i === -1 ? fallback : process.argv[i + 1]
+  return i === -1 ? fallback : process.argv[i + 1] ?? null
+}
+
+// `git ls-remote` prints `<sha>\trefs/heads/<name>` and that is the normal input; JSON is the exception.
+const readRefs = (file) => {
+  const text = readFileSync(file, 'utf8')
+  if (/^\s*[\[{]/.test(text)) { const j = JSON.parse(text); return Array.isArray(j) ? j : j.refs ?? [] }
+  const heads = text.split('\n').map((l) => l.split(/\s+/).filter(Boolean).pop())
+    .filter((n) => n?.startsWith('refs/heads/'))
+  return heads.map((n) => n.slice('refs/heads/'.length))
 }
 
 function main() {
   const issuesFile = arg('--issues')
   if (!issuesFile) {
-    console.error('report only, nothing is written. Usage:')
-    console.error('  label-hygiene.mjs --issues <saved /issues?state=open> [--prs <saved /pulls>] [--refs <branches>]')
-    console.error('  prs: [{"number": 3067, "state": "closed", "merged": false, "head": {"ref": "dev/x"}}] or {number: fact}')
-    console.error('  refs: ["dev/x", "main"] - every branch that exists (git ls-remote)')
-    process.exit(1)
+    console.error('report only, nothing is written. Usage: label-hygiene.mjs --issues <saved /issues?state=open> [--prs <saved /pulls>] [--refs <ls-remote lines or JSON array>]')
+    return 3
   }
   const raw = JSON.parse(readFileSync(issuesFile, 'utf8'))
   const items = Array.isArray(raw) ? raw : raw.items ?? []
   const prsFile = arg('--prs')
   const refsFile = arg('--refs')
   const prs = prsFile ? JSON.parse(readFileSync(prsFile, 'utf8')) : null
-  const refs = refsFile ? JSON.parse(readFileSync(refsFile, 'utf8')) : null
+  const refs = refsFile ? readRefs(refsFile) : null
   const rows = auditLabels(items, { prs, refs })
   const orphans = rows.filter((r) => r.verdict === 'orphan')
   const unknown = rows.filter((r) => r.verdict === 'unknown')
@@ -124,9 +132,16 @@ function main() {
   console.log(`\nScanned ${items.length} objects; ${orphans.length} orphan(s) to strip, ${rows.length - orphans.length - unknown.length} live, ${unknown.length} unjudged.`)
   console.log(`Not touched: ${untouched(items).map((u) => `${u.label}\u00d7${u.count}`).join(' ') || 'nothing else is labelled'}`)
   if (unknown.length) console.error(`\n${unknown.length} label(s) need a fact this run did not have: pass --prs and --refs.`)
-  // 1 = strip, 2 = could not judge, 0 = clean. An unknown is never 0: a scheduled run that cannot
-  // see the fact must be red, not quiet.
-  process.exit(orphans.length ? 1 : unknown.length ? 2 : 0)
+  // 0 clean / 1 orphan / 2 unjudged / 3 input error: whoever wires this up reads 1 as "strip", so a
+  // mistyped path must never land there.
+  return orphans.length ? 1 : unknown.length ? 2 : 0
 }
 
-if (process.argv[1] && process.argv[1].endsWith('label-hygiene.mjs')) main()
+if (process.argv[1] && process.argv[1].endsWith('label-hygiene.mjs')) {
+  try {
+    process.exit(main())
+  } catch (e) {
+    console.error(`label-hygiene: input error: ${e.code === 'ENOENT' ? `no such file: ${e.path}` : e.message}`)
+    process.exit(3)
+  }
+}
