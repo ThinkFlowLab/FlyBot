@@ -3,7 +3,8 @@
 Related: #3393. The process is `docs/DEV_PIPELINE.md`; this page answers only "which side owns this
 change". Measured on `34a80ca5a1`.
 
-- Page → feature map and the change → what to run table: [UI_SURFACES_MAP.md](UI_SURFACES_MAP.md)
+- Page → feature map: [UI_SURFACES_MAP.md](UI_SURFACES_MAP.md)
+- Change → what to run, and which CI check judges it: [UI_SURFACES_DISPATCH.md](UI_SURFACES_DISPATCH.md)
 - Cross-side couplings, screenshot duty, what is runnable here: [UI_SURFACES_OPS.md](UI_SURFACES_OPS.md)
 
 ## 1. Boundary
