@@ -5,7 +5,12 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { auditLabels, untouched, GUARDED, announcedPr, claimedBranch } from './label-hygiene.mjs'
+
+// Spawn by absolute path: a relative one only works when cwd is the repo root, and elsewhere node
+// exits 1 on every case, which reads as "strip" for the closed-object assertion below.
+const SCRIPT = fileURLToPath(new URL('./label-hygiene.mjs', import.meta.url))
 
 const obj = (over = {}) => ({ number: 1, kind: 'issue', state: 'open', labels: [], ...over })
 // #3066: no PR number anywhere, only the branch the pickup wrote.
@@ -82,7 +87,7 @@ test('exit status separates strip / cannot judge / clean', () => {
     return path
   }
   const status = (items, extra = []) => spawnSync(process.execPath,
-    ['.github/scripts/label-hygiene.mjs', '--issues', save(Math.random().toString(36).slice(2), { items }), ...extra],
+    [SCRIPT, '--issues', save(Math.random().toString(36).slice(2), { items }), ...extra],
     { encoding: 'utf8' }).status
   const refs = ['--refs', save('refs', ['dev/5-missing-changelog-fragment'])]
   assert.equal(status([obj({ number: 1, state: 'closed', labels: ['agent-pr'] })]), 1, 'a closed object is a strip')
