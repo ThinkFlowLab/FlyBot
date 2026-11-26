@@ -19,10 +19,11 @@
 // never saw. `#910` replaced 18 lines of the inbound trust path with its own and its `A` was empty
 // at its base, so it reports nothing — that is the negative control, and it must stay zero.
 //
-// Report only. Read-only token, `continue-on-error`, `$GITHUB_STEP_SUMMARY` and one `::warning` per
-// file: never a comment, a label, a review or a merge, and nothing reads it to block. A legitimate
-// revert simply carries the report and a Reviewer decides. The script and this file are taken from
-// the base commit by the workflow, so a pull request cannot weaken the check that judges it.
+// Report only. Read-only token, `$GITHUB_STEP_SUMMARY` and one `::warning` per file: never a
+// comment, a label, a review or a merge, and nothing reads it to block. A finding exits 0, so the
+// job stays green; a script that cannot run exits 1. A legitimate revert simply carries the report
+// and a Reviewer decides. The script and this file are taken from the base commit by the workflow,
+// so a pull request cannot weaken the check that judges it.
 import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
