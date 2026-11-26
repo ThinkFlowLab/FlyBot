@@ -2,7 +2,8 @@ name: Silent revert
 # Report only: a pull request built on a stale copy of main deletes work main merged
 # after the branch was cut, and CI stays green because the deletion *is* the pull
 # request. This prints the file, the number of lines and the commit that added them,
-# and never labels, comments, reviews or blocks.
+# and never labels, comments, reviews or blocks. A finding leaves the run green (the script
+# exits 0); a run that could not do its job exits 1, so that one is red.
 
 on:
   pull_request:
@@ -11,7 +12,7 @@ on:
     inputs:
       pr:
         description: Pull request number to audit by hand
-        required: false
+        required: true
 
 permissions:
   contents: read
@@ -43,7 +44,6 @@ jobs:
       # token. Once main has the file, main always wins.
       - name: Report where this pull request deletes work main merged after its base
         if: github.event_name == 'pull_request' || inputs.pr != ''
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
         env:
           PR: ${{ github.event.pull_request.number || inputs.pr }}
         run: |
