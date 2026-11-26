@@ -1,7 +1,11 @@
 // The text side of the comment guard: markers, fingerprints, similarity. No network, no writes.
 import { createHash } from 'node:crypto'
 
-export const FUZZY_THRESHOLD = 0.85
+// 0.80, not 0.85: on the replay fixture the weakest real duplicate (B class, the same event said
+// twice with one more number) is 0.861, while the highest pair that is genuinely different is 0.233.
+// 0.85 left 0.011 of margin - deleting three sentences from a real duplicate dropped it to 0.771 and
+// the guard went quiet. 0.80 misses neither and still cannot reach the negative pairs.
+export const FUZZY_THRESHOLD = 0.8
 const MARKERS = /<!--[^>]*-->/g
 const EVENT_MARKER = /<!--\s*flybot:([^>\s]+)\s*-->/g
 
