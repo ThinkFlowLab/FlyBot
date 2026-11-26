@@ -31,6 +31,17 @@ test('agent-working is decided by the branch it claims, once the branch list is 
   assert.deepEqual(only(rows([open])), ['unknown', 'claims branch dev/5-missing-changelog-fragment; pass --refs to check whether it still exists'])
 })
 
+// An empty list is what a flaked `git ls-remote` returns. Read as "gone" it strips a live label.
+test('no listing, or an empty one, cannot call a live branch gone', () => {
+  const open = obj({ labels: ['agent-working'], body: CLAIM })
+  for (const refs of [undefined, null, [], { refs: [] }]) {
+    assert.deepEqual(only(rows([open], { refs })),
+      ['unknown', 'claims branch dev/5-missing-changelog-fragment; pass --refs to check whether it still exists'])
+  }
+  assert.deepEqual(only(rows([obj({ labels: ['agent-pr'], body: CLAIM })], { refs: [] })),
+    ['unknown', 'open, but the body names no PR and no PR list was given'])
+})
+
 test('agent-pr: on a PR its own state decides; on an issue it dies with the PR the body names', () => {
   assert.deepEqual(only(rows([{ number: 7, state: 'open', pull_request: {}, labels: ['agent-pr'] }])), ['keep', 'PR #7 is open'])
   assert.deepEqual(only(rows([{ number: 7, state: 'closed', pull_request: {}, labels: ['agent-pr'] }])), ['orphan', 'PR #7 is closed'])
@@ -38,7 +49,7 @@ test('agent-pr: on a PR its own state decides; on an issue it dies with the PR t
   assert.deepEqual(only(rows([issue()], { prs: { 3067: { state: 'open' } } })), ['keep', 'PR #3067 is open'])
   assert.deepEqual(only(rows([issue()], { prs: { 3067: { state: 'closed', merged: false } } })), ['orphan', 'PR #3067 is closed unmerged'])
   assert.deepEqual(only(rows([issue()], { prs: { 3067: { state: 'open', branch_exists: false } } })), ['orphan', 'PR #3067 is open but its branch is gone'])
-  assert.deepEqual(only(rows([issue()], { prs: {} })), ['orphan', 'PR #3067 is not in the list given, so it is not open'])
+  assert.deepEqual(only(rows([issue()], { prs: {} })), ['unknown', 'announces PR #3067; pass --prs with the saved PR list to check it'], 'an empty list is no fact')
 })
 
 // One saved /pulls list decides #3066, because each PR says which branch it came from.
@@ -55,7 +66,7 @@ test('a branch the body claims finds its PR in a saved /pulls list', () => {
 // The v1 bug: on a raw payload it printed "0 orphan" and exited 0 - a gate that can never fail.
 test('a label the payload cannot decide is reported, never counted as clean', () => {
   assert.deepEqual(only(rows([obj({ labels: ['agent-pr'], body: CLAIM })])), ['unknown', 'open, but the body names no PR and no PR list was given'])
-  assert.deepEqual(only(rows([obj({ labels: ['agent-working'] })])), ['unknown', 'open, with no Branch: line and no work_live fact: liveness is not in the payload'])
+  assert.deepEqual(only(rows([obj({ labels: ['agent-working'] })])), ['unknown', 'open, with no Branch: line: nothing in the payload says the work is live'])
 })
 
 test('only the two agent labels are in scope, and the rest is listed instead of ignored', () => {
@@ -68,7 +79,8 @@ test('only the two agent labels are in scope, and the rest is listed instead of 
 })
 
 // QA payload only; the cases above cover CI.
-const snapshot = '/data/workspace/.qa-triage/raw/open.json'
+const QA = process.env.FLYBOT_QA_FIXTURES ?? '/data/workspace/.qa-triage'
+const snapshot = `${QA}/raw/open.json`
 test('fixture: the raw open snapshot cannot come out clean while #3066 says a PR carries it',
   { skip: existsSync(snapshot) ? false : 'QA payload is not on this machine; CI covers the same cases above' }, () => {
     const raw = readFileSync(snapshot)
