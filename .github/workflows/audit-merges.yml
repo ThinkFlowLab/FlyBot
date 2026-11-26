@@ -1,12 +1,16 @@
+# The patrol for #697: once a day, on the default branch only, it lists what reached `main` without
+# passing the queue, so a bypass is found by a machine instead of by whoever happens to look.
+#
+# Both of its events require the file to be on the default branch already — `schedule` runs the
+# default branch's copy, and `workflow_dispatch` can only be asked for a workflow that exists there.
+# So this file has no check on a pull request at all: it is not pending there, it is absent. That is
+# also why it must never be a required check: on a pull request it would wait forever.
 name: Audit merges
-# Report only: walks the last merges on main and reports the ones that did not go
-# through the merge queue — a commit pushed straight to main, or a merge whose gate
-# did not pass on it. It reads commits, pull requests and workflow runs and writes
-# nothing: no comment, no label, no merge, no push.
 
 on:
   workflow_dispatch:
   schedule:
+    # 03:41 UTC, a slack hour after the nightly image builds.
     - cron: '41 3 * * *'
 
 concurrency:
@@ -19,12 +23,12 @@ permissions:
   pull-requests: read
 
 jobs:
-  audit-merges:
+  audit:
     name: audit-merges
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a45a0492352c231440313e0bb78992b9d4 # v6.0.1
         with:
           ref: main
           persist-credentials: false
@@ -40,6 +44,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # This filename can still resolve to a deleted workflow of the same name (id 392609103, 36
+          # runs, last success head bab1fe96 on 2026-11-24): then the first run here is not an empty
+          # watermark, and its log opens with `audit-merges: watermark … (from …)` rather than
+          # `audit-merges: baseline run`. Only the first line of the first scheduled run tells which.
           SINCE=$(gh api "repos/$GH_REPO/actions/workflows/audit-merges.yml/runs?status=success&per_page=1" \
             --jq '.workflow_runs[0].head_sha // ""')
           echo "since=$SINCE" >> "$GITHUB_OUTPUT"
@@ -57,3 +65,6 @@ jobs:
           else
             node .github/scripts/audit-merges.mjs --repo "$GH_REPO" --baseline
           fi
+      # Report, never block a merge: the pull request checks are the gate. A finding makes this run
+      # red so the watermark cannot move past it — the next run would otherwise sign it off as
+      # `earlier` and nobody would see it again.
