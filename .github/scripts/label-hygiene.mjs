@@ -55,7 +55,13 @@ const carrier = (item, kind, { prs, branches }) => {
     if (branch && branches && !branches.has(branch)) {
       return ['orphan', `claims branch ${branch}, which is gone, so no open PR carries it`]
     }
-    if (branch && (branches || prs)) return ['unknown', `names no PR; claims branch ${branch}: pass --prs (head.ref) or --refs`]
+    // Name only the fact that is missing: a caller who already passed --refs is not sent back for it.
+    if (branch && branches) {
+      return ['unknown', prs
+        ? `names no PR; branch ${branch} exists and no open PR in the list came from it: the body has to name its PR`
+        : `names no PR; branch ${branch} exists, but a live branch cannot show a PR still carries it: pass --prs`]
+    }
+    if (branch && prs) return ['unknown', `names no PR and no open PR in the list came from branch ${branch}: pass --refs to see whether the branch is gone`]
     return ['unknown', 'open, but the body names no PR and no PR list was given']
   }
   if (kind === 'pr' && n === item.number) return [state === 'open' ? 'keep' : 'orphan', `PR #${n} is ${state}`]
@@ -131,7 +137,16 @@ function main() {
   for (const r of rows) console.log(`#${String(r.number).padEnd(6)} ${r.label.padEnd(13)} ${r.verdict.padEnd(7)} ${r.reason}`)
   console.log(`\nScanned ${items.length} objects; ${orphans.length} orphan(s) to strip, ${rows.length - orphans.length - unknown.length} live, ${unknown.length} unjudged.`)
   console.log(`Not touched: ${untouched(items).map((u) => `${u.label}\u00d7${u.count}`).join(' ') || 'nothing else is labelled'}`)
-  if (unknown.length) console.error(`\n${unknown.length} label(s) need a fact this run did not have: pass --prs and --refs.`)
+  // Same rule as the per-row reasons: point only at what is missing, so nobody is sent to re-pass a
+  // flag that was already given. When both were given, the payload itself is what has to say it.
+  const prsGiven = (Array.isArray(prs) ? prs.length : Object.keys(prs ?? {}).length) > 0
+  const refsGiven = (refs ?? []).length > 0
+  const need = [!prsGiven && '--prs', !refsGiven && '--refs'].filter(Boolean)
+  if (unknown.length) {
+    console.error(need.length
+      ? `\n${unknown.length} label(s) need a fact this run did not have: pass ${need.join(' and ')}.`
+      : `\n${unknown.length} label(s) stayed unjudged: every fact a run can be given was given, so the payload has to name it.`)
+  }
   // 0 clean / 1 orphan / 2 unjudged / 3 input error: whoever wires this up reads 1 as "strip", so a
   // mistyped path must never land there.
   return orphans.length ? 1 : unknown.length ? 2 : 0
