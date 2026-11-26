@@ -45,6 +45,24 @@ test('raw git ls-remote output is the normal --refs input and equals the JSON ar
     'a tags-only listing says nothing about branches')
 })
 
+// The prompt fix: a caller who already passed --refs is not sent back for it, and a live branch is
+// still not a PR (agent-pr means a PR carries this, so the row stays unknown).
+test('a run that was given a fact never asks for that fact again', () => {
+  const AP = { items: [{ number: 3066, kind: 'issue', state: 'open', labels: ['agent-pr'], body: LIVE }] }
+  const prsFile = save([{ number: 9, state: 'open', head: { ref: 'dev/other' } }])
+  const onlyRefs = run(HYGIENE, ['--issues', save(AP), '--refs', save(['dev/3393-write-guards'])])
+  assert.equal(onlyRefs.status, 2, 'a live branch is not an open PR')
+  assert.doesNotMatch(onlyRefs.stdout + onlyRefs.stderr, /--refs/, 'it already was given')
+  assert.match(onlyRefs.stderr, /pass --prs/, 'name the one fact that is missing')
+  const onlyPrs = run(HYGIENE, ['--issues', save(AP), '--prs', prsFile])
+  assert.equal(onlyPrs.status, 2)
+  assert.match(onlyPrs.stderr, /pass --refs/, 'the branch list is what is missing here')
+  assert.doesNotMatch(onlyPrs.stdout, /--prs/, 'the row must not ask for what it was given')
+  const both = run(HYGIENE, ['--issues', save(AP), '--refs', save(['dev/3393-write-guards']), '--prs', prsFile])
+  assert.equal(both.status, 2)
+  assert.doesNotMatch(both.stdout + both.stderr, /--(prs|refs)/, 'nothing is missing, so no flag is named')
+})
+
 test('input errors exit 3, never 1, and print one line instead of a stack', () => {
   const cases = [run(HYGIENE, ['--issues', join(dir, 'missing.json')]),
     run(HYGIENE, ['--issues', save('{not json')]),
