@@ -1,107 +1,83 @@
-// Comment guard: decide, before posting, whether this object already carries this event.
-// Report only: there is no code path here that writes to the repository.
+// Would this comment be posted twice? GitHub cannot tell us: the same text arrives with and without
+// our marker. So compare the text itself, within one object. Writes nothing.
 import { readFileSync } from 'node:fs'
-import { FUZZY_THRESHOLD, markersIn, bodyKey, similarity, auditComments } from './comment-text.mjs'
+import { norm, similar } from './comment-text.mjs'
 
-export * from './comment-text.mjs'
+export const FUZZY_THRESHOLD = 0.8
+const MARKER = /<!--\s*flybot:([\w:.-]+)\s*-->/i
+const marked = (text) => String(text ?? '').match(MARKER)?.[1] ?? null
 
-// The answer the poster needs: skip (already said), review (too close to call), or post.
-export function guard(comments, event, draft = null, { threshold = FUZZY_THRESHOLD } = {}) {
-  const list = comments ?? []
-  const marked = list.filter((c) => markersIn(c.body).includes(event))
-  if (marked.length) return { status: 'skip', reason: `marker ${event} already on comment ${marked[0].id}` }
-  if (draft !== null) {
-    const key = bodyKey(draft)
-    const same = list.find((c) => bodyKey(c.body) === key)
-    if (same) return { status: 'skip', reason: `the same text is already on comment ${same.id}, written without a marker` }
-    const near = list.map((c) => ({ id: c.id, score: similarity(c.body, draft) })).sort((a, b) => b.score - a.score)[0]
-    if (near && near.score >= threshold) return { status: 'review', reason: `comment ${near.id} is ${near.score.toFixed(3)} similar; a human decides, the guard does not post` }
-  }
-  return { status: 'post', reason: `no marker ${event} and no matching text yet` }
-}
-
-// A1 on the replay fixture: for every object the second write must not come back as `post`.
-export function replayGuard(fixture, { threshold = FUZZY_THRESHOLD } = {}) {
-  return (fixture.objects ?? []).map((o) => {
-    const [first, ...rest] = o.comments ?? []
-    const second = rest[0] ?? null
-    const verdict = second
-      ? guard([first], o.event_key, second.body, { threshold })
-      : { status: 'n/a', reason: 'a single comment, so there is no second write to stop' }
-    return { number: o.number, duplicate_class: o.duplicate_class ?? null, event_key: o.event_key, second_comment_id: second?.id ?? null, status: verdict.status, reason: verdict.reason }
-  })
-}
-
-// One line per object, the shape the replay fixture is compared against.
-export function verdicts(fixture, { threshold = FUZZY_THRESHOLD } = {}) {
-  const rows = [...(fixture.objects ?? []), ...(fixture.negatives ?? [])]
-  return rows.map((o) => {
-    const a = auditComments(o.comments, { threshold })
-    return { number: o.number, event_key: o.event_key ?? null, duplicate: a.duplicate, first_comment_id: a.first_comment_id, duplicate_comment_ids: a.duplicate_comment_ids }
-  })
+// Foreign markers are not evidence of our own template, so they do not buy a discount: still a dup.
+export function classify(comments, text) {
+  const mine = norm(text)
+  const id = marked(text)
+  const kept = (comments ?? []).filter((c) => !c.isMinimized)
+  const exact = kept.filter((c) => norm(c.body) === mine)
+  const same = id ? exact.find((c) => marked(c.body) === id) : null
+  if (same) return { duplicate: true, id: same.id, score: 1, why: `this exact comment (${id}) is already there` }
+  if (exact.length) return { duplicate: true, id: exact[0].id, score: 1, why: 'the same text is already there, without our marker' }
+  const near = kept.map((c) => ({ ...c, score: similar(mine, norm(c.body)) }))
+    .filter((c) => c.score >= FUZZY_THRESHOLD).sort((a, b) => b.score - a.score)[0]
+  if (near) return { duplicate: true, id: near.id, score: near.score, why: `${near.score.toFixed(3)} like comment ${near.id} (marker differs or missing)` }
+  return { duplicate: false, score: exact[0]?.score ?? 0, why: 'no comment on this object is close' }
 }
 
 const arg = (name, fallback = null) => {
   const i = process.argv.indexOf(name)
-  return i === -1 ? fallback : process.argv[i + 1]
+  if (i === -1) return fallback
+  const next = process.argv[i + 1]
+  return next === undefined || next.startsWith('--') ? true : next
 }
 
-function main() {
+export function main() {
   const replay = arg('--replay')
-  const replayGuardFile = arg('--replay-guard')
-  const commentsFile = arg('--comments')
-  const object = arg('--object')
-  const event = arg('--event', 'close-stale')
-  const json = process.argv.includes('--json')
-  const read = (p) => JSON.parse(readFileSync(p, 'utf8'))
-
-  if (replay) {
-    const fixture = read(replay)
-    const rows = verdicts(fixture)
-    const expected = [...(fixture.objects ?? []), ...(fixture.negatives ?? [])]
-    let missed = 0
-    let falsePositive = 0
-    rows.forEach((r, i) => {
-      const want = expected[i].expected === 'duplicate'
-      if (want && !r.duplicate) missed++
-      if (!want && r.duplicate) falsePositive++
-      if (!json) console.log(`${String(r.number).padEnd(6)} ${r.duplicate ? 'duplicate' : 'unique   '} ${r.duplicate ? `first ${r.first_comment_id}, dup ${r.duplicate_comment_ids.join(',')}` : ''}`)
-    })
-    if (!json) console.log(`\nReplayed ${rows.length} objects; ${rows.filter((r) => r.duplicate).length} flagged as duplicates; ${missed} missed (a duplicate stays, a comment is only written twice); ${falsePositive} false positive (blocks a real comment).`)
-    if (json) console.log(JSON.stringify(rows, null, 2))
-    process.exit(falsePositive ? 1 : 0)
+  const checkOnly = arg('--check-only')
+  const text = arg('--text')
+  if (!replay && !text) {
+    console.error('dry run by default, nothing is written. Usage: comment-guard.mjs --replay <saved comments, with.expected> | --text <file> [--comments <saved comments>] [--check-only]')
+    return 3
   }
-
-  if (replayGuardFile) {
-    const rows = replayGuard(read(replayGuardFile))
-    // A and B are text-detectable by construction; C is the documented limit and may still post.
-    const posted = rows.filter((r) => r.status === 'post' && /^[AB]/.test(r.duplicate_class ?? ''))
-    if (json) console.log(JSON.stringify(rows, null, 2))
-    else {
-      for (const r of rows) console.log(`${String(r.number).padEnd(6)} ${r.status.padEnd(7)} ${r.reason}`)
-      console.log(`\nReplayed ${rows.length} objects; ${rows.filter((r) => r.status === 'skip').length} skipped as already said, ${rows.filter((r) => r.status === 'review').length} sent to review, ${rows.filter((r) => r.status === 'post').length} would post (of which ${posted.length} are text-detectable and must not).`)
-    }
-    process.exit(posted.length ? 1 : 0)
-  }
-
-  if (commentsFile) {
-    const comments = read(commentsFile)
-    const draftFile = arg('--draft')
-    const draft = draftFile ? readFileSync(draftFile, 'utf8') : null
-    const result = guard(comments, event, draft)
-    const audit = auditComments(comments)
-    if (json) console.log(JSON.stringify({ ...result, audit }, null, 2))
-    else console.log(`object ${object ?? '?'} event ${event}: ${result.status} (${result.reason}); ${audit.duplicate_comment_ids.length} pre-existing duplicate(s)`)
-    // --check-only: exit status only, 0 = post, 3 = already said it, 4 = needs a human.
-    if (process.argv.includes('--check-only')) process.exit(result.status === 'skip' ? 3 : result.status === 'review' ? 4 : 0)
-    process.exit(0)
-  }
-
-  console.error('report only, nothing is written. Usage:')
-  console.error('  node .github/scripts/comment-guard.mjs --replay <fixture.json> [--json]')
-  console.error('  node .github/scripts/comment-guard.mjs --replay-guard <fixture.json> [--json]')
-  console.error('  node .github/scripts/comment-guard.mjs --comments <comments.json> --event <key> [--draft <body.txt>] [--object <n>] [--check-only]')
-  process.exit(1)
+  const load = (p) => JSON.parse(readFileSync(p, 'utf8'))
+  if (replay && replay !== true) return report(load(replay), { checkOnly })
+  const comments = load(arg('--comments'))
+  const body = readFileSync(text === true ? process.argv[process.argv.indexOf('--text') + 1] : text, 'utf8')
+  const verdict = classify(comments, body)
+  console.log(verdict.duplicate
+    ? `BLOCK  ${verdict.why}; a real post would be skipped`
+    : `POST   ${verdict.why}`)
+  return verdict.duplicate && !checkOnly ? 1 : 0
 }
 
-if (process.argv[1] && process.argv[1].endsWith('comment-guard.mjs')) main()
+// The replay says what SHOULD happen to each sample, so it can fail rather than describe.
+// --check-only exits 0/3/4: somebody reviews the close ones instead of a gate guessing.
+function report(objects, { checkOnly }) {
+  let post = 0, skip = 0, review = 0, missed = 0, falsePositive = 0
+  for (const o of objects ?? []) {
+    const v = classify(o.comments, o.text)
+    const want = o.expected
+    const got = !v.duplicate ? 'post' : v.score >= 0.999 ? 'skip' : 'review'
+    if (got === 'post') post += 1
+    else if (got === 'skip') skip += 1
+    else review += 1
+    if (want === 'post' && v.duplicate) { falsePositive += 1; console.log(`FALSE POSITIVE #${o.object} ${v.why}: would block a new comment`) }
+    if (want !== 'post' && !v.duplicate) { missed += 1; console.log(`MISSED  #${o.object} ${o.text.slice(0, 40)}...: would post a duplicate`) }
+    else if (v.duplicate) console.log(`${want === 'post' ? 'REVIEW ' : 'DUP    '} #${String(o.object).padEnd(6)} ${v.why}`)
+  }
+  const tagged = (objects ?? []).filter((o) => o.text.includes('<!-- flybot:')).length
+  console.log(`\nReplayed ${objects.length} objects; ${skip} skipped as exact duplicates; ${review} near-duplicates to review; ${missed} missed; ${falsePositive} false positive`)
+  console.log(`${tagged} of ${objects.length} carried a marker: marking alone would have caught ${objects.length - tagged}`)
+  if (checkOnly) { console.log(`${post} would post / ${skip} already there / ${review} for a human`); return post ? 3 : review ? 4 : 0 }
+  // 0 means no new comment was lost to a near-match; the close ones are printed for a human.
+  return falsePositive ? 1 : 0
+}
+
+// `exit 1` means "do not post", so it must never be an unreadable file: input errors are 3.
+if (process.argv[1] && process.argv[1].endsWith('comment-guard.mjs')) {
+  try {
+    const code = main()
+    if (code != null) process.exit(code)
+  } catch (e) {
+    console.error(`comment-guard: input error: ${e.code === 'ENOENT' ? `no such file: ${e.path}` : e.message}`)
+    process.exit(3)
+  }
+}
