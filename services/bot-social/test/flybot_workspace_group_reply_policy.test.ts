@@ -35,7 +35,8 @@ test("named group reply policy is owner-only and revisioned, with authoritative 
   await teammate.ok("PUT", room + "/agents/shared", {name:"Teammate helper"});
   await teammate.ok("PUT", room + "/agents/other:helper", {name:"Second teammate helper"});
   const selected = pair(teammateId, "shared");
-  assert.deepEqual(group.group_agent_routing, {mode:"shared",policy:{mode:"default"},can_edit:true,native_group_host:ownerId,native_group_coordinator:true});
+  assert.deepEqual(group.group_agent_routing, {mode:"shared",policy:{mode:"lead",lead:pair(ownerId,"shared")},
+    can_edit:true,native_group_host:ownerId,native_group_coordinator:true});
   const initial = await owner.ok("GET", room);
   const revision = initial.group_management.revision;
   const chooseLead = {revision,mode:"lead",lead:selected};
@@ -185,6 +186,7 @@ test("native group routing ignores old automatic Chief bindings and keeps delibe
 
   await owner.ok("PUT",room+"/agents/"+chief,{name:"个人智能体"});
   // Simulate a database upgraded from the release that inferred a group Chief.
+  service.platform.db.prepare("UPDATE ot_conversations SET group_auto_lead=0,group_reply_policy=NULL WHERE id=?").run(group.id);
   service.platform.db.exec(`CREATE TABLE IF NOT EXISTS ot_group_native_chiefs (
     conversation_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, agent_ref TEXT NOT NULL)`);
   service.platform.db.prepare("INSERT INTO ot_group_native_chiefs VALUES (?,?,?)").run(group.id,ownerId,chief);
@@ -206,9 +208,72 @@ test("native group routing ignores old automatic Chief bindings and keeps delibe
 
   const contact = await owner.ok("POST","/v1/ot/contacts",{handle:peer.handle});
   await peer.ok("POST",`/v1/ot/contacts/${contact.id}`,{action:"accept"});
-  const shared = await create("Shared group without admin", [peer.handle]);
+  const shared = await create("Shared group with an automatic lead", [peer.handle]);
   const sharedPath = "/v1/ot/conversations/" + shared.id;
   await peer.ok("PUT",sharedPath+"/agents/peer",{name:"伙伴助手"});
   assert.deepEqual(targets(await peer.ok("POST",sharedPath+"/messages",{body:"普通群消息"})),
-    [[ownerId,helper],[peerId,"peer"]]);
+    [[ownerId,helper]]);
+  assert.deepEqual(targets(await peer.ok("POST",sharedPath+"/messages",{body:"请确认",
+    agent_mentions:[pair(peerId,"peer")]})), [[peerId,"peer"]]);
+});
+
+test("new team groups keep one owner-qualified automatic lead as different owners add eligible Bots", async () => {
+  const [owner, peer] = await Promise.all([home(service.base,"automatic-lead-owner"),home(service.base,"automatic-lead-peer")]);
+  const ownerId = await idOf(owner), peerId = await idOf(peer);
+  const team = await owner.ok("POST","/v1/ot/teams",{name:"Automatic lead team"});
+  const {code} = await owner.ok("POST",`/v1/ot/teams/${team.id}/invites`,{});
+  await peer.ok("POST","/v1/ot/invites/accept",{code});
+  const {workspaces} = await owner.ok("GET","/v1/ot/workspaces");
+  const workspace = workspaces.find((row: any) => row.id === team.id).workspace_id;
+  const create = (title: string, agents: {agent_ref:string;name:string}[] = [], idempotency_key?:string) =>
+    owner.ok("POST","/v1/ot/conversations",{kind:"group",title,team_id:team.id,members:[peer.handle],agents,idempotency_key});
+  const send = (id: string, body: string, extra = {}) =>
+    owner.ok("POST",`/v1/ot/conversations/${id}/messages`,{body,...extra});
+  const sharedRef = "z-same-ref";
+  const original = [{agent_ref:sharedRef,name:"First selected"},{agent_ref:"a-backup",name:"Second selected"}];
+  const key = randomUUID();
+  const created = await create("Existing Bot seats",original,key);
+  const room = "/v1/ot/conversations/" + created.id;
+  const policy = {mode:"lead",lead:pair(ownerId,sharedRef)};
+  assert.deepEqual(created.group_agent_routing.policy,policy);
+  const replay = await create("Existing Bot seats",original.slice().reverse(),key);
+  assert.equal(replay.id,created.id);
+  assert.deepEqual(replay.group_agent_routing.policy,policy);
+  await peer.ok("PUT",room+"/agents/"+sharedRef,{name:"Other owner's same reference"});
+  assert.deepEqual((await peer.ok("GET",room)).group_agent_routing.policy,policy);
+  assert.deepEqual(targets(await send(created.id,"Plain team message")),[[ownerId,sharedRef]]);
+  assert.deepEqual(targets(await send(created.id,"Ask the peer specifically",{agent_mentions:[pair(peerId,sharedRef)]})),
+    [[peerId,sharedRef]]);
+  assert.equal(targets(await send(created.id,"@all Please review")).length,3);
+  await owner.ok("DELETE",room+"/agents/"+sharedRef);
+  assert.deepEqual((await peer.ok("GET",room)).group_agent_routing.policy,{mode:"lead",lead:pair(ownerId,"a-backup")});
+  assert.deepEqual(targets(await send(created.id,"A single backup now replies")),[[ownerId,"a-backup"]]);
+  await owner.ok("DELETE",room+"/agents/a-backup");
+  assert.deepEqual((await owner.ok("GET",room)).group_agent_routing.policy,{mode:"lead",lead:pair(peerId,sharedRef)});
+  assert.deepEqual(targets(await send(created.id,"The remaining peer now replies")),[[peerId,sharedRef]]);
+
+  const empty = await create("First Bot joins later");
+  const emptyRoom = "/v1/ot/conversations/" + empty.id;
+  assert.deepEqual(empty.group_agent_routing.policy,{mode:"default"});
+  await peer.ok("PUT",emptyRoom+"/agents/"+sharedRef,{name:"Peer added first"});
+  const assigned = await owner.ok("GET",emptyRoom);
+  assert.equal(assigned.group_management.revision,empty.group_management.revision + 1);
+  assert.notEqual(assigned.activity_version,empty.activity_version);
+  assert.deepEqual(assigned.group_agent_routing.policy,{mode:"lead",lead:pair(peerId,sharedRef)});
+  await owner.ok("PUT",emptyRoom+"/agents/"+sharedRef,{name:"Owner added later"});
+  await owner.ok("PUT",emptyRoom+"/agents/second",{name:"Owner's second Bot"});
+  assert.deepEqual(targets(await send(empty.id,"The incumbent still replies")),[[peerId,sharedRef]]);
+
+  for (const mode of ["default","everyone","mentions"]) {
+    const manual = await create("Explicit policy " + mode);
+    const url = "/v1/ot/conversations/" + manual.id;
+    await owner.ok("POST",url+"/management",{workspace,revision:manual.group_management.revision,action:"reply_policy",mode});
+    await peer.ok("PUT",url+"/agents/"+sharedRef,{name:"Peer's Bot"});
+    await owner.ok("PUT",url+"/agents/"+sharedRef,{name:"Owner's Bot"});
+    assert.deepEqual((await owner.ok("GET",url)).group_agent_routing.policy,{mode});
+    assert.equal(targets(await send(manual.id,"Ordinary policy test")).length,mode==="mentions"?0:2);
+  }
+  await owner.ok("PATCH",`/v1/ot/teams/${team.id}/members/${peer.handle}`,{suspended:true});
+  assert.deepEqual((await owner.ok("GET",emptyRoom)).group_agent_routing.policy,{mode:"lead",lead:pair(ownerId,sharedRef)});
+  assert.deepEqual(targets(await send(empty.id,"Only one eligible owner Bot after suspension")),[[ownerId,sharedRef]]);
 });

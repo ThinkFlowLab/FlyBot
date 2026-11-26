@@ -21,6 +21,7 @@ test('diff emits only changed settings keys', () => {
   assert.deepEqual(diff(current, current), {});
   assert.deepEqual(diff(current, {...current, appearance: 'dark', document_cards: true}),
                    {appearance: 'dark', document_cards: true});
+  assert.deepEqual(diff(current, {...current, message_folding: 'compact'}), {});
 });
 
 test('readForm maps radios, select and checkboxes', () => {
@@ -39,7 +40,7 @@ test('readForm maps radios, select and checkboxes', () => {
     assert.deepEqual(readForm({}), {
       appearance: 'light', appearance_schedule: 'custom', appearance_start: '21:00',
       appearance_end: '06:00', language: 'en', chat_language: 'ja', auto_translate: false,
-      send_shortcut: 'mod_enter', message_folding: 'compact', document_cards: true,
+      send_shortcut: 'mod_enter', document_cards: true,
       link_previews: true, task_completion_reminders: false,
       likes_visible: false, favorites_visible: false,
     });
@@ -84,21 +85,17 @@ test('describeAppearance names the current look and next switch without inventin
 });
 
 
-test('syncOverviewCurrentValues shows saved choices in the current language', () => {
+test('syncOverviewCurrentValues shows the saved appearance in the current language', () => {
   const appearance = {textContent: ''};
-  const folding = {textContent: ''};
-  const nodes = {'appearance-current': appearance, 'folding-current': folding};
-  const document = {documentElement: {lang: 'zh-CN'}, getElementById: (id) => nodes[id]};
-  syncOverviewCurrentValues(document, {appearance: 'auto', message_folding: 'standard'});
+  const document = {documentElement: {lang: 'zh-CN'},
+    getElementById: id => id === 'appearance-current' ? appearance : null};
+  syncOverviewCurrentValues(document, {appearance: 'auto'});
   assert.equal(appearance.textContent, '自动');
-  assert.equal(folding.textContent, '标准');
   document.documentElement.lang = 'en';
-  syncOverviewCurrentValues(document, {appearance: 'light', message_folding: 'compact'});
+  syncOverviewCurrentValues(document, {appearance: 'light'});
   assert.equal(appearance.textContent, 'Light');
-  assert.equal(folding.textContent, 'Compact');
-  syncOverviewCurrentValues(document, {appearance: 'unknown', message_folding: ''});
+  syncOverviewCurrentValues(document, {appearance: 'unknown'});
   assert.equal(appearance.textContent, '');
-  assert.equal(folding.textContent, '');
 });
 
 test('the settings overview lists preference and support rows in order', () => {
@@ -106,12 +103,12 @@ test('the settings overview lists preference and support rows in order', () => {
   const prefs = html.slice(html.indexOf('id="group-prefs"'), html.indexOf('id="group-notification-prefs"'));
   const prefHrefs = [...prefs.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(prefHrefs, [
-    '/settings/message-folding',
     '/settings/appearance',
     '/settings/privacy',
     '/settings/shortcuts',
   ]);
-  assert.match(prefs, /id="folding-current"/);
+  assert.match(prefs, /name="document_cards" form="settings-form" role="switch"/);
+  assert.doesNotMatch(html, /message_folding|data-settings-page="message-folding"/);
   assert.match(prefs, /id="appearance-current"/);
   assert.match(prefs, /settings-row-label">隐私设置</);
   const support = html.slice(html.indexOf('id="group-support"'), html.indexOf('id="settings-form"'));
@@ -132,7 +129,7 @@ test('settingsViewFromLocation maps recorded paths and leftover hashes', () => {
   assert.equal(settingsViewFromLocation('/settings/', ''), 'hub');
   assert.equal(settingsViewFromLocation('/settings/appearance', ''), 'appearance');
   assert.equal(settingsViewFromLocation('/settings/language', ''), 'language');
-  assert.equal(settingsViewFromLocation('/settings/message-folding', ''), 'message-folding');
+  assert.equal(settingsViewFromLocation('/settings/message-folding', ''), 'hub');
   assert.equal(settingsViewFromLocation('/settings/privacy', ''), 'privacy');
   assert.equal(settingsViewFromLocation('/settings/shortcuts', ''), 'shortcuts');
   assert.equal(settingsViewFromLocation('/settings/channels', ''), 'channels');
@@ -143,7 +140,8 @@ test('settingsViewFromLocation maps recorded paths and leftover hashes', () => {
   assert.equal(settingsViewFromLocation('/settings', '#appearance'), 'appearance');
   assert.equal(settingsViewFromLocation('/settings', '#language-section'), 'language');
   assert.equal(settingsViewFromLocation('/settings', '#send-shortcut'), 'shortcuts');
-  assert.equal(settingsViewFromLocation('/settings', '#message-display'), 'message-folding');
+  assert.equal(settingsViewFromLocation('/settings', '#message-display'), 'hub');
+  assert.equal(settingsViewFromLocation('/settings', '#message-folding'), 'hub');
   assert.equal(settingsViewFromLocation('/settings', '#model-api'), 'model-api');
   assert.equal(settingsViewFromLocation('/settings', '#video-api'), 'model-api');
   assert.equal(settingsViewFromLocation('/settings/model-api', '#video-api'), 'model-api');

@@ -4185,46 +4185,38 @@ test('the inbox entry leaves Markdown modules outside its static dependency grap
   assert.doesNotMatch(source, /from\s+['"][^'"]*(?:rich-content|markdown(?:-table)?|\/rich|code-block)\.mjs['"]/);
 });
 
-test('a later rich renderer updates a folded message preview without closing or replacing its details', async () => {
+test('a long rich message starts fully readable and gets one rendered body', async () => {
   const {renderMessageText} = await import('../flybot_workspace/static/chat/utilities.mjs');
   const {doc} = fakeChatDocument(chatHtml());
   const root = doc.createElement('div');
   const source = `### 后续检查\n\n${'保留完整内容。'.repeat(145)}`;
-  let body;
-  let updatePreview;
-  renderMessageText(doc, root, source, 'standard', false, (parent, text, afterRender) => {
-    body = doc.createElement('div');
+  const body = doc.createElement('div');
+  renderMessageText(doc, root, source, false, (parent, text) => {
     body.textContent = text;
     parent.append(body);
-    updatePreview = afterRender;
   });
-  const [details] = root.children;
-  const [summary] = details.children;
-  details.open = true;
-  assert.match(summary.textContent, /^### 后续检查/);
+  assert.deepEqual(root.children,[body]);
+  assert.equal(root.textContent,source);
   const heading = doc.createElement('h3');
   heading.textContent = '后续检查';
-  body.replaceChildren(heading);
-  updatePreview();
-  assert.equal(root.children[0], details);
-  assert.equal(details.open, true);
-  assert.equal(summary.textContent, '后续检查… 展开全文');
+  const content = doc.createElement('p');
+  content.textContent = source.split('\n\n')[1];
+  body.replaceChildren(heading,content);
+  assert.deepEqual(root.children,[body]);
+  assert.equal(root.textContent,heading.textContent + content.textContent);
 });
 
-test('folding preserves complete message and link preview preference never fetches or executes markup', async () => {
+test('long plain messages stay complete and link previews never fetch or execute markup', async () => {
   const {renderMessageText}=await import('../flybot_workspace/static/chat/utilities.mjs');
   const document={createElement:tag=>new FakeElement(tag)}, root=new FakeElement('div');
   const full='A'.repeat(900)+' <script>untrusted</script>';
-  renderMessageText(document,root,full,'compact');
-  assert.equal(root.children[0].tagName,'DETAILS');
-  assert.equal(root.children[0].children[1].textContent,full);
-  renderMessageText(document,root,full,'none');
+  renderMessageText(document,root,full);
   assert.equal(root.children.length,0);
   assert.equal(root.textContent,full);
   const links='https://example.invalid/path?x=1 https://user:password@example.invalid/ javascript:alert(1)';
-  renderMessageText(document,root,links,'none',false);
+  renderMessageText(document,root,links,false);
   assert.equal(root.children.length,0);
-  renderMessageText(document,root,links,'none',true);
+  renderMessageText(document,root,links,true);
   assert.equal(root.children.length,1);
   assert.equal(root.children[0].href,'https://example.invalid/path?x=1');
   assert.equal(root.children[0].rel,'noopener noreferrer');
@@ -4673,6 +4665,43 @@ function linkedChatSnapshot(fixture, owner = alice, conversations = [fixture.nat
     chat: {items: [fixture.agent], conversations},
   });
 }
+
+test('long private and group replies render once even with a saved folding setting', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const title = '独立标题';
+  const end = '完整回复末尾';
+  const text = `### ${title}\n\n${'需要直接显示的详细内容。'.repeat(90)}\n\n${end}`;
+  for (const group of [false,true]) {
+    const workspace = group ? linkTeam : linkWork;
+    const fixture = linkedChatFixture(`#workspace=${workspace}&${group ? 'social=' + linkSocial
+      : 'agent=' + linkAgent + '&conversation=' + linkThread}`);
+    const createElement = fixture.doc.createElement;
+    fixture.doc.createElement = tag => {
+      const node = createElement(tag);
+      Object.defineProperty(node,'firstChild',{get:() => node.text ? {remove:() => { node.text = ''; }} : node.children[0]});
+      node.removeChild = child => child.remove();
+      return node;
+    };
+    fixture.routes.set('/v1/settings', () => json(200, {settings:{values:{message_folding:'compact',link_previews:false}}}));
+    if (group) {
+      const conversation = {id:linkSocial,workspace_id:workspace,kind:'group',title:'审核群',members:[linkMember]};
+      fixture.routes.set(linkBase(workspace) + linkSocialPath, () => json(200, {conversation,items:[
+        {id:linkSocialLatest,conversation_id:linkSocial,user_id:bob,role:'agent',
+          agent_id:linkAgent,agent_name:'群内 Bot',body:text,seq:8,created:10},
+      ]}));
+    } else fixture.nativeRows[1].body = text;
+    try {
+      await mount(fixture.doc,{fetcher:fixture.fetcher});
+      await settle();
+      const row = fixture.el('message-list').children.find(item => item.dataset.messageId === (group ? linkSocialLatest : linkAgentLatest));
+      const body = row.children.find(node => node.className === 'body');
+      assert.match(body.textContent,new RegExp(end + '$'));
+      assert.equal(body.textContent.split(title).length,2);
+      assert.equal(descendants(body).some(node => node.tagName === 'DETAILS'),false);
+      assert.ok(descendants(body).some(node => node.tagName === 'H3' && node.textContent === title));
+    } finally { fixture.restore(); }
+  }
+});
 
 for (const removed of [false, true]) {
   test(`global message search ${removed ? 'opens the latest window if the target disappeared' : 'opens the exact group window on the first read'}`, async t => {
@@ -5670,6 +5699,8 @@ test('group reply policy opens from the header and updates settings and composer
     assert.equal(el('group-info-panel').hidden, true);
     assert.equal(el('group-reply-shortcut').hidden, false);
     assert.equal(el('group-reply-shortcut').getAttribute('aria-description'), '跟随群组默认 · 由群内智能体判断');
+    assert.equal(el('conversation-agent-admin').textContent, '未设置管理员');
+    assert.equal(el('group-agent-set-admin').hidden, false);
     assert.match(el('group-composer-routing-text').textContent, /由群内智能体按内容决定是否回复/);
     await fire(el('group-info-toggle'),'click');
     await fire(el('group-info-tab-agents'),'click');
@@ -5680,14 +5711,20 @@ test('group reply policy opens from the header and updates settings and composer
     await fire(el('group-reply-shortcut'),'click');
     assert.equal(dialog.open, true);
     assert.equal(el('group-info-panel').hidden, true);
-    control('reply-mode').value = 'lead';
-    await fire(control('reply-mode'),'change');
+    assert.equal(control('reply-mode').value, 'default');
+    await fire(control('cancel'),'click');
+    el('conversation-agents-sheet').open = true;
+    await fire(el('group-agent-set-admin'),'click');
+    assert.equal(dialog.open, true);
+    assert.equal(control('heading').textContent, '设置管理员');
+    assert.equal(control('reply-mode').value, 'lead');
     control('reply-lead').value = JSON.stringify([bob, linkAgent]);
     await fire(control('reply-lead'),'change');
     await fire(control('form'),'submit',{preventDefault() {}});
     assert.deepEqual(writes,[{action:'reply_policy',revision:4,mode:'lead',lead:{owner_id:bob,agent_id:linkAgent}}]);
     assert.equal(dialog.open, false);
-    assert.match(el('group-reply-policy-summary').textContent, /优先.*文案助手.*小周/);
+    assert.match(el('group-reply-policy-summary').textContent, /管理员.*文案助手.*小周/);
+    assert.match(el('conversation-agent-admin').textContent, /管理员.*文案助手.*小周/);
     assert.match(el('group-composer-routing-text').textContent, /文案助手.*优先判断是否回复/);
 
     await fire(el('group-info-toggle'),'click');
@@ -5702,6 +5739,7 @@ test('group reply policy opens from the header and updates settings and composer
     await fire(control('form'),'submit',{preventDefault() {}});
     assert.deepEqual(writes[1],{action:'reply_policy',revision:5,mode:'mentions'});
     assert.equal(el('group-reply-policy-summary').textContent, '仅在被 @ 时回复');
+    assert.equal(el('conversation-agent-admin').textContent, '未设置管理员');
     assert.match(el('group-composer-routing-text').textContent, /仅在被 @ 时回复/);
     el('chat-body').value = '@所有人 请确认';
     await fire(el('chat-body'),'input');
@@ -6768,7 +6806,7 @@ test('a pending native older page cannot replace the latest view after the user 
   }
 });
 
-test('private pagination keeps an open rich message and replaces it if its source changes', async () => {
+test('private pagination keeps the full rich message and replaces it if its source changes', async () => {
   const path = linkBase(linkWork) + linkNativePath;
   const fixture = linkedChatFixture(`#workspace=${linkWork}&agent=${linkAgent}&conversation=${linkThread}`);
   const {doc, el, fetcher, nativeRows, routes, restore} = fixture;
@@ -6781,15 +6819,18 @@ test('private pagination keeps an open rich message and replaces it if its sourc
     ?.children.find(node => node.className === 'body');
   try {
     await mount(doc, {fetcher});
+    await settle();
     const oldBody = body();
-    const fold = oldBody.children.find(node => node.tagName === 'DETAILS');
-    assert.ok(fold);
-    fold.open = true;
+    const markdown = oldBody.querySelector('.chat-markdown');
+    const table = markdown.querySelector('.chat-markdown-table-scroll');
+    table.scrollLeft = 28;
+    assert.equal(oldBody.children.length,1);
     await fire(el('chat-load-older'), 'click');
     await settle();
     assert.deepEqual(fixture.messages(), [linkAgentOlder, linkAgentLatest]);
     assert.equal(body(), oldBody);
-    assert.equal(fold.open, true);
+    assert.equal(body().querySelector('.chat-markdown-table-scroll'),table);
+    assert.equal(table.scrollLeft,28);
 
     latest = {...reply, body: '修改后的回复'};
     await fire(el('chat-back-to-latest'), 'click');

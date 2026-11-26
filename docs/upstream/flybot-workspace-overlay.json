@@ -62,7 +62,7 @@
     },
     "services/bot-social/src/openteamily/group-management.ts": {
       "path": "src/flybot-workspace/group-management.ts",
-      "sha256": "04486a2062c7b0c350e52ff464c5410c48912f4f28a1f578752ba917b0bd8b47",
+      "sha256": "b39f70d08b331fa1cfe8d1f0aedd82eac050c5275f66ecaef4c73db8d4a579fe",
       "source_sha256": "04486a2062c7b0c350e52ff464c5410c48912f4f28a1f578752ba917b0bd8b47"
     },
     "services/bot-social/src/openteamily/index.ts": {
@@ -82,7 +82,7 @@
     },
     "services/bot-social/src/openteamily/messenger.ts": {
       "path": "src/flybot-workspace/messenger.ts",
-      "sha256": "8151f14d35d1fcf2ee122ee25496d9efdb4eb120c86e2558cc17f5cf8e9247f4",
+      "sha256": "e712e23ddef967ca42b8d97177aec978a78af0342c12ed16c3d323e8e94bd5f9",
       "source_sha256": "3cbcec62487ace92625a18cbb70efacc89f8068e9a7b07b95c09fae26009a9db"
     },
     "services/bot-social/src/openteamily/migrate.ts": {
@@ -137,7 +137,7 @@
     },
     "services/bot-social/test/openteamily_agent_inbox.test.ts": {
       "path": "test/flybot_workspace_agent_inbox.test.ts",
-      "sha256": "0a247a8bc79f21a82773722ef0d00b403ab6158cd1a3dfc9fa448f33429c4300",
+      "sha256": "6d89c4f6e007a99db721ef491a7f7df203141f59db6099c6d148b4fdc69e88e2",
       "source_sha256": "705789714d7838f5bc2945781a9ce26eacf0a7bdb989f9ead3fd779df48d8211"
     },
     "services/bot-social/test/openteamily_agent_reply_lease.test.ts": {
@@ -167,7 +167,7 @@
     },
     "services/bot-social/test/openteamily_group_reply_policy.test.ts": {
       "path": "test/flybot_workspace_group_reply_policy.test.ts",
-      "sha256": "e1c756ff62ac308f65afc32debf57c1ed77190173d66cf0ea354af3ad4e59299",
+      "sha256": "fb8e3a01457005b367192a0daecbcde3d813d05417c28af1bedda27d34b6fd05",
       "source_sha256": "00c5a82f962f2c83915a81278b9081ea38ce51bff898347018c805474427a8cf"
     },
     "services/bot-social/test/openteamily_helpers.ts": {
@@ -187,22 +187,22 @@
     },
     "services/bot-social/test/openteamily_messenger.test.ts": {
       "path": "test/flybot_workspace_messenger.test.ts",
-      "sha256": "6e0e38b3649650345f3fe5bf3c0dc207785fd4467ca18f5f780c72e5e3aa0bce",
+      "sha256": "b9e30e8e174b0a99f65ddd4066f9e0cc9f3ad8c10feb3299bbbc08041f0c2024",
       "source_sha256": "89be3d344b5d01b59c8ccd989bcfc47546cd0aa093e6a798018947ead5f7e223"
     },
     "services/bot-social/test/openteamily_native_group_rounds.test.ts": {
       "path": "test/flybot_workspace_native_group_rounds.test.ts",
-      "sha256": "bb624d1205f551a7bef4771aeda9c8b2053216321470452a72ad8b927700328b",
+      "sha256": "3a6b819953224852157c694ff1fb491c5f8b2ee014fe21521b8f280622b24e81",
       "source_sha256": "2a477b7e35cdf1d1245486e6980aeb4769d85fc05c82dac774b32814f6325785"
     },
     "services/bot-social/test/openteamily_natural_group_chat.test.ts": {
       "path": "test/flybot_workspace_natural_group_chat.test.ts",
-      "sha256": "0911ed727cd68a8122c13ec200ea99b461d858f9857f6d4da40ac18944ae5871",
+      "sha256": "00b158f6a7363b6cab1d5304bbea77ff24c386fbbde3b0a0dfb81857ccb17593",
       "source_sha256": "adcb17b9b66f274c25ee55fe397ebae1d4ae3f66ce9c90d554a977c07364f6c9"
     },
     "services/bot-social/test/openteamily_personal_groups.test.ts": {
       "path": "test/flybot_workspace_personal_groups.test.ts",
-      "sha256": "90956ecccc157ba195a60ca4cdd608d37e369c4b44fd77a8e07209e7b1f52947",
+      "sha256": "21e1a724428cb7465b340c67ffc58f1713ca433e95bd1720dc86ffc5b008bd66",
       "source_sha256": "065985214d0dff989f46fc44b7b0a8263db10edcf878cfb78bd4f2fb7f51218a"
     },
     "services/bot-social/test/openteamily_profile_social.test.ts": {

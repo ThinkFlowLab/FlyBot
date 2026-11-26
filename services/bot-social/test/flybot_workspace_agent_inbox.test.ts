@@ -98,6 +98,9 @@ test("managed waiting keeps direct, automatic and public work available without 
     kind: "group", account_group: true, title: "Auto bounds", members: [requester.handle],
   });
   const room = roomPath(group.id);
+  await worker.ok("POST",room+"/management",{
+    direct:true,action:"reply_policy",revision:group.group_management.revision,mode:"default",
+  });
   await worker.ok("PUT", room + "/agents/helper", {name: "Helper", auto_reply: true});
   const watchingAuto = await watch(service, longInbox, () => worker.ok("GET", longInbox));
   const automatic = await requester.ok("POST", room + "/messages", {body: "New group text"});

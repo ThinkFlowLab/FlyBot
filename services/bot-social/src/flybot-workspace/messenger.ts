@@ -17,7 +17,7 @@ import {
   saveAttachment, type ChatFileMetadata,
 } from "./chat-files.js";
 import {
-  GROUP_MANAGEMENT_SCHEMA, changeGroup, groupManagementRequest, groupManagementView, groupOwner, managedGroup, readGroupReplyPolicy,
+  GROUP_MANAGEMENT_SCHEMA, refreshAutomaticGroupLead, changeGroup, groupManagementRequest, groupManagementView, groupOwner, groupReplyPolicyForRoster, managedGroup, readGroupReplyPolicy,
   registerGroupManagement, type Group,
 } from "./group-management.js";
 
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS ot_conversations (
   team_id TEXT, dm_key TEXT UNIQUE, created_by TEXT NOT NULL, last_seq INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, account_group INTEGER NOT NULL DEFAULT 0,
   activity_revision INTEGER NOT NULL DEFAULT 0, group_owner_id TEXT, group_revision INTEGER NOT NULL DEFAULT 0,
-  group_archived_at INTEGER
+  group_archived_at INTEGER, group_auto_lead INTEGER NOT NULL DEFAULT 0
 );
 ${GROUP_MANAGEMENT_SCHEMA}
 ${GROUP_INVITES_SCHEMA}
@@ -783,12 +783,18 @@ function groupHasOtherMember(ot: OtContext, conv: Group, viewer: string) {
   conv.id, viewer, conv.team_id, conv.team_id));
 }
 
+function nativeGroupImages(ot: OtContext, conv: Group, owner: string, agents: ConversationAgent[]) {
+  return conv.account_group === 1 && !conv.team_id && agents.every(agent => agent.owner_id === owner) &&
+    !groupHasOtherMember(ot, conv, owner);
+}
+
 function groupAgentRouting(ot: OtContext, conv: Group, viewer: string, agents: ConversationAgent[]) {
-  const policy = readGroupReplyPolicy(conv);
+  const policy = groupReplyPolicyForRoster(conv, agents);
   const current = policy.mode === "lead" && !selectedLead(policy, agents) ? {...policy, lead_unavailable: true} : policy;
   const host = nativeGroupHost(ot, conv, agents);
   const access = {policy: current, can_edit: managedGroup(conv) && groupOwner(conv) === viewer,
-    ...(host ? {native_group_host:host,...(host === viewer ? {native_group_coordinator:true} : {})} : {})};
+    ...(host ? {native_group_host:host,...(host === viewer ? {native_group_coordinator:true} : {}),
+      ...(host === viewer && nativeGroupImages(ot, conv, host, agents) ? {native_group_images:true} : {})} : {})};
   if (groupHasOtherMember(ot, conv, viewer)) return {mode: "shared" as const, ...access};
   return {mode: "personal" as const, default: agents.some(agent => agent.auto_reply) ? "auto" as const : "all" as const, ...access};
 }
@@ -1123,10 +1129,12 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       }
       for (const o of others) assertReachable(ot, me.ownerId, o, teamId, accountGroup);
       const id = newId("otc"); const now = ot.now();
-      ot.run("INSERT INTO ot_conversations(id,kind,title,team_id,created_by,created_at,updated_at,account_group) VALUES (?,'group',?,?,?,?,?,?)",
-        id, title, teamId, me.ownerId, now, now, Number(accountGroup));
+      const chooseLead = accountGroup || Boolean(teamId);
+      ot.run(`INSERT INTO ot_conversations(id,kind,title,team_id,created_by,created_at,updated_at,account_group,group_auto_lead)
+        VALUES (?,'group',?,?,?,?,?,?,?)`, id,title,teamId,me.ownerId,now,now,Number(accountGroup),Number(chooseLead));
       for (const o of [me.ownerId, ...others]) ot.run("INSERT INTO ot_conversation_members(conversation_id, owner_id, created_at) VALUES (?,?,?)", id, o, now);
       for (const [ref, name] of agents) ot.run("INSERT INTO ot_conversation_agents(conversation_id,agent_ref,owner_id,name,created_at) VALUES (?,?,?,?,?)", id, ref, me.ownerId, name, now);
+      if (chooseLead && agents.size) refreshAutomaticGroupLead(ot,memberOf(ot,id,me.ownerId),conversationAgents(ot,id));
       for (const o of others) ot.notify(o, "messenger.added", {conversation_id:id, title, by:ot.profileView(me.ownerId), ...(teamId ? {team_id:teamId} : {})});
       if (key) ot.run("INSERT INTO ot_group_requests VALUES (?,?,?,?)", me.ownerId, key, fingerprint, id);
       return {conv:memberOf(ot, id, me.ownerId), created:true};
@@ -1500,8 +1508,8 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
     const directRequest = agentMessageRequest(b, clientKey, replyTo, "direct");
     const studio = studioMessageRequest(b, clientKey, replyTo);
     if (nativeRound) assert(clientKey && !replyTo && !sourceConversation && b.voice === undefined &&
-      b.attachment === undefined && !studio && !directRequest && typeof b.body === "string",
-    400, "invalid_request", "A native group round requires a plain text message with a request key");
+      !studio && !directRequest && typeof b.body === "string" && b.body.trim().length > 0,
+    400, "invalid_request", "A native group round requires text and a request key");
     const wakeOwners = new Set<string>();
     const msg = ot.tx(() => {
       const direct = b.direct === true;
@@ -1575,9 +1583,12 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       const parsed = parseMentions(ot, conv, b.mentions, bodyText, addressText, selected, roster, scope, Boolean(studio));
       const nativeHost = nativeRound ? nativeGroupHost(ot, conv, roster) : undefined;
       assert(!nativeRound || nativeHost, 409, "native_round_unavailable", "This conversation is unavailable for a native group round");
+      if (nativeHost && file) assert(captionCanMentionAgents && file.mime.startsWith("image/") &&
+        nativeGroupImages(ot, conv, nativeHost, roster),
+        409, "native_round_unavailable", "This group does not support native image rounds");
       const canQueueGroup = group && !voice && !sourceConversation && (!file || captionCanMentionAgents);
       const allPeople = group && !sourceConversation && ALL_PEOPLE_ADDRESS.test(addressText);
-      const policy = readGroupReplyPolicy(conv);
+      const policy = groupReplyPolicyForRoster(conv, roster);
       const addressed = selected !== undefined || parsed.agents.length > 0 ||
         parsed.mentions.length > 0 || parsed.named || TYPED_ADDRESS.test(addressText);
       const explicitlyAll = canQueueGroup && !studio && (allPeople || ALL_AGENT_ADDRESS.test(addressText));
@@ -1860,13 +1871,16 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       });
     }
     assert(conv.kind === "group", 400, "invalid_request", "agents join groups only");
-    ot.run(`INSERT INTO ot_conversation_agents(conversation_id, agent_ref, owner_id, name, auto_reply, auto_reply_after_seq, created_at)
-      VALUES (?,?,?,?,?,?,?) ON CONFLICT(conversation_id, agent_ref, owner_id) DO UPDATE SET
-        name=excluded.name, auto_reply=excluded.auto_reply,
-        auto_reply_after_seq=CASE WHEN ot_conversation_agents.auto_reply=0 AND excluded.auto_reply=1
-          THEN excluded.auto_reply_after_seq ELSE ot_conversation_agents.auto_reply_after_seq END`,
-    conv.id, ref, me.ownerId, name, b.auto_reply === true ? 1 : 0, conv.last_seq, ot.now());
-    return conversationView(ot, memberOf(ot,conv.id,me.ownerId), me.ownerId);
+    return ot.tx(() => {
+      ot.run(`INSERT INTO ot_conversation_agents(conversation_id, agent_ref, owner_id, name, auto_reply, auto_reply_after_seq, created_at)
+        VALUES (?,?,?,?,?,?,?) ON CONFLICT(conversation_id, agent_ref, owner_id) DO UPDATE SET
+          name=excluded.name, auto_reply=excluded.auto_reply,
+          auto_reply_after_seq=CASE WHEN ot_conversation_agents.auto_reply=0 AND excluded.auto_reply=1
+            THEN excluded.auto_reply_after_seq ELSE ot_conversation_agents.auto_reply_after_seq END`,
+      conv.id, ref, me.ownerId, name, b.auto_reply === true ? 1 : 0, conv.last_seq, ot.now());
+      if (conv.group_auto_lead === 1) refreshAutomaticGroupLead(ot,conv,conversationAgents(ot,conv.id));
+      return conversationView(ot, memberOf(ot,conv.id,me.ownerId), me.ownerId);
+    });
   });
   app.patch("/v1/ot/conversations/:id/agents/:agent", async (req) => {
     const me = ot.me(req);
@@ -1899,8 +1913,11 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
         return conversationView(ot, memberOf(ot,conv.id,me.ownerId), me.ownerId);
       });
     }
-    ot.run("DELETE FROM ot_conversation_agents WHERE conversation_id = ? AND agent_ref = ? AND owner_id = ?", conv.id, params(req).agent, me.ownerId);
-    return conversationView(ot, memberOf(ot,conv.id,me.ownerId), me.ownerId);
+    return ot.tx(() => {
+      ot.run("DELETE FROM ot_conversation_agents WHERE conversation_id = ? AND agent_ref = ? AND owner_id = ?", conv.id, params(req).agent, me.ownerId);
+      if (conv.group_auto_lead === 1) refreshAutomaticGroupLead(ot,conv,conversationAgents(ot,conv.id));
+      return conversationView(ot, memberOf(ot,conv.id,me.ownerId), me.ownerId);
+    });
   });
   app.post("/v1/ot/conversations/:id/messages/:message/agent-retry", async req => {
     const me = ot.me(req);
@@ -2371,7 +2388,9 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
     });
   }
   function readNativeGroupInbox(ownerId: string) {
-    const pending = (state:"running"|"queued") => ot.all<Omit<NativeRound,"source_valid">>(`SELECT r.*,m.seq,m.author_id,
+    const pending = (state:"running"|"queued") => ot.all<Omit<NativeRound,"source_valid"> & {has_image:number}>(`SELECT r.*,m.seq,m.author_id,
+      EXISTS (SELECT 1 FROM ot_message_attachments attachment WHERE attachment.message_id=r.message_id
+        AND attachment.mime LIKE 'image/%' AND attachment.resource IS NULL AND attachment.sticker=0) AS has_image,
       ${REQUIRES_NATIVE_TEXT_ONLY("r", "c")} AS requires_text_only FROM ot_native_group_rounds r
       JOIN ot_messages m ON m.id=r.message_id JOIN ot_conversations c ON c.id=r.conversation_id
       JOIN ot_conversation_members member ON member.conversation_id=c.id AND member.owner_id=r.owner_id
@@ -2380,10 +2399,13 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
         AND COALESCE(c.group_owner_id,c.created_by)=r.owner_id AND (c.team_id IS NULL OR EXISTS (
           SELECT 1 FROM ot_team_members active WHERE active.team_id=c.team_id AND active.owner_id=r.owner_id AND active.suspended=0))
       ORDER BY m.rowseq ${state === "queued" ? "LIMIT 60" : ""}`, ownerId, state);
-    return {turns:readNativeGroupTurns(ownerId),items:[...pending("running"), ...pending("queued")].map(({message_id,conversation_id,body,state,seq,agent_mentions,author_id,requires_text_only}) => {
+    return {turns:readNativeGroupTurns(ownerId),items:[...pending("running"), ...pending("queued")].map(({message_id,conversation_id,body,state,seq,agent_mentions,author_id,requires_text_only,has_image}) => {
       const {display_name} = ot.profileView(author_id);
+      const address = mentionText(body);
+      const all = ALL_PEOPLE_ADDRESS.test(address) || ALL_AGENT_ADDRESS.test(address);
       return {message_id,conversation_id,body,state,seq,agent_mentions:JSON.parse(agent_mentions),
-        author:{owner_id:author_id,display_name},text_only:requires_text_only === 1};
+        author:{owner_id:author_id,display_name},text_only:requires_text_only === 1,
+        ...(has_image === 1 ? {has_image:true} : {}), ...(all ? {all:true} : {})};
     })};
   }
 

@@ -61,6 +61,31 @@ test("a solo native group queues one real round and mirrors its Bot handoffs exa
   assert.deepEqual(await owner.ok("POST", secondPath, {action:"start"}), {state:"running",started:true});
 });
 
+test("a solo native image caption queues once and keeps the original image accessible to its owner", async () => {
+  const owner = await home(service.base, "native-image-owner");
+  const outsider = await home(service.base, "native-image-outsider");
+  const group = await owner.ok("POST", rooms, {kind:"group",account_group:true,title:"Image group",agents});
+  const room = rooms + "/" + group.id;
+  assert.equal(group.group_agent_routing.native_group_images, true);
+  const attachment = {title:"test.png",mime:"image/png",
+    data:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jh9sAAAAASUVORK5CYII="};
+  const payload = {direct:true,body:"Describe this image",attachment,native_round:true,client_key:randomUUID()};
+  const sent = await owner.ok("POST", room + "/messages", payload);
+  assert.equal((await owner.ok("POST", room + "/messages", payload)).id, sent.id);
+  assert.deepEqual(sent.reply_jobs, []);
+  const [{message_id,body,text_only,has_image}] = (await owner.ok("GET", inbox)).items;
+  assert.equal(message_id, sent.id);
+  assert.equal(body, payload.body);
+  assert.equal(text_only, false);
+  assert.equal(has_image, true);
+  const file = room + "/messages/" + sent.id + "/file";
+  assert.deepEqual(await owner.ok("GET", file), attachment);
+  assert.equal((await outsider.call("GET", file)).status, 404);
+  const all = await owner.ok("POST", room + "/messages", {...payload,body:"＠全体 看这张图",client_key:randomUUID()});
+  const broadcast = (await owner.ok("GET", inbox)).items.find((item: {message_id:string}) => item.message_id === all.id);
+  assert.equal(broadcast.all, true);
+});
+
 type Actor = Awaited<ReturnType<typeof home>>;
 async function connect(owner: Actor, member: Actor) {
   const invite = await owner.ok("POST", "/v1/ot/contacts", {handle:member.handle});

@@ -7,7 +7,8 @@ const POLL_INTERVAL = 1500
 const PROGRESS_HEARTBEAT = 5000
 const MAX_HISTORY = 40
 const MAX_LINE = 4000
-const revoked = new Set(['social/native_round_not_found', 'social/native_round_unavailable', 'social/conversation_not_found', 'social/agent_not_found'])
+const IMAGE_MIME = /^image\/(?:png|jpeg|gif|webp)$/i
+const revoked = new Set(['social/native_round_not_found', 'social/native_round_unavailable', 'social/conversation_not_found', 'social/agent_not_found', 'social/message_not_found'])
 const messageRoute = /^\/v1\/ot\/conversations\/(otc_[0-9A-HJKMNP-TV-Z]{26})\/messages$/
 
 function isNativeGroup(conversation) {
@@ -38,7 +39,7 @@ function agentByPair(rt, room) {
 function eligibleMessage(method, path, body) {
   if (method !== 'POST' || !body || typeof body.body !== 'string' || !body.body.trim() || !body.client_key) return undefined
   const room = messageRoute.exec(path)?.[1]
-  const permitted = ['body', 'mentions', 'agent_mentions', 'client_key', 'workspace', 'direct', 'group_agent_request']
+  const permitted = ['body', 'mentions', 'agent_mentions', 'client_key', 'workspace', 'direct', 'group_agent_request', 'attachment']
   return room && Object.entries(body).every(([key, value]) => value == null || permitted.includes(key)) ? room : undefined
 }
 
@@ -69,6 +70,10 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
     if (!id || rt.readOnly?.() !== undefined) return post(body)
     const conversation = await raw.get('/v1/ot/conversations/' + id)
     if (!isNativeGroup(conversation)) return post(body)
+    const file = body.attachment
+    if (file && (conversation.group_agent_routing.native_group_images !== true ||
+        !IMAGE_MIME.test(file.mime) || file.sticker || file.resource ||
+        typeof rt.ctx.get?.('attachments')?.saveImage !== 'function')) return post(body)
     try {
       const result = await post({...body, native_round:true})
       wake()
@@ -182,22 +187,39 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
         return
       }
     }
-    // Commit before calling tools. A restart after this point can flush
-    // durable native lines, but cannot start the same round a second time.
-    exchange.dispatched = true
-    exchange.text_only = item.text_only === true
-    await save()
     const conversation = await sync(await raw.get('/v1/ot/conversations/' + item.conversation_id))
+    const textOnly = item.text_only === true
     const nowShared = conversation?.team_id || (conversation?.members?.length ?? 0) > 1
-    if (rt.state.rooms[room.id] !== room || !localRoom(rt, conversation, room) || (nowShared && !exchange.text_only)) {
+    if (rt.state.rooms[room.id] !== room || !localRoom(rt, conversation, room) || (nowShared && !textOnly) ||
+        (item.has_image && (textOnly || conversation.group_agent_routing.native_group_images !== true))) {
       await abandon(room, exchange, true)
       return
     }
+    let images
+    if (item.has_image) {
+      const file = await raw.get(`/v1/ot/conversations/${item.conversation_id}/messages/${item.message_id}/file`, {signal:polling.signal})
+      try {
+        images = [await rt.ctx.get('attachments').saveImage({
+          mediaType:file.mime, data:Buffer.from(file.data, 'base64'), name:file.title,
+        })]
+      } catch (error) {
+        log('Could not store native group image: ' + String(error?.code ?? 'error'))
+        await abandon(room, exchange, true)
+        return
+      }
+    }
+    // Commit before calling tools. A restart after this point can flush
+    // durable native lines, but cannot start the same round a second time.
+    exchange.dispatched = true
+    exchange.text_only = textOnly
+    await save()
     activeLaunches.add(room.id)
     try {
-      if (!item.agent_mentions?.length || selected.length) {
+      if (item.all === true || !item.agent_mentions?.length || selected.length) {
         await rt.beginSharedRoomRound(room.id, {text:item.body, sourceId:item.message_id, mentions:selected.length ? selected : undefined,
-          ...(exchange.text_only ? {textOnly:true} : {}),
+          ...(textOnly ? {textOnly:true} : {}),
+          ...(images ? {images} : {}),
+          ...(item.all === true ? {all:true} : {}),
           ...(item.author?.display_name ? {author:item.author.display_name.slice(0, 80).toWellFormed()} : {})})
       }
     } finally {

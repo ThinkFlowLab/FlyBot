@@ -294,7 +294,10 @@ test("team group recovery and removal respect active scope, revoke call peers an
   await reader.ok("POST",call+"/join",{kind:"video",peer_id:secondPeer});
   await admin.ok("POST",call+"/signal",{call_id:live.call.id,peer_id:firstPeer,to:secondPeer,client_key:"management-signal-key",
     description:{type:"offer",sdp:"v=0\r\n"}});
-  const removal = {action:"remove",workspace,member_id:readerId,revision:restored.group_management.revision};
+  const staleRemoval = {action:"remove",workspace,member_id:readerId,revision:restored.group_management.revision};
+  assert.equal((await admin.call("POST",management,staleRemoval)).data.error.code,"group_management_conflict");
+  const current = await admin.ok("GET",path);
+  const removal = {...staleRemoval,revision:current.group_management.revision};
   const removed = (await admin.ok("POST",management,removal)).conversation;
   assert.ok(!removed.members.some((member: any) => member.owner_id === readerId));
   assert.equal(removed.agents.length,0);
@@ -973,6 +976,9 @@ test("team reply progress uses both memberships and drops work when access is re
   const scoped = `/v1/ot/workspaces/${workspace}/conversations/${group.id}/reply-progress`;
   const jobRoute = (id: string) => `/v1/ot/agent-reply-jobs/${id}`;
   const helper = room + "/agents/helper";
+  await sender.ok("POST",room+"/management",{
+    workspace,action:"reply_policy",revision:group.group_management.revision,mode:"default",
+  });
   const createJob = async (body: string) => {
     const source = await sender.ok("POST", room + "/messages", {body});
     const id = source.reply_jobs[0].id;

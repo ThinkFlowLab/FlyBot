@@ -1961,12 +1961,29 @@ html[data-theme-resolved="dark"] .plus-create [data-tone="doc"] .plus-ico { colo
 .group-roster-chevron { margin-inline-start: auto; }
 #conversation-agents-text { flex: none; }
 #conversation-agents-count { flex: none; min-width: 1.15rem; padding: .0625rem .25rem; border-radius: 999px; background: var(--ot-accent-soft); color: var(--ot-ink); text-align: center; font-size: .6875rem; }
+#conversation-agent-admin {
+  flex: 0 0 auto;
+  max-width: min(15rem, 45%);
+  box-sizing: border-box;
+  padding: .125rem .45rem;
+  border-radius: .45rem;
+  background: var(--ot-accent-soft);
+  color: var(--ot-accent-hover);
+  font-size: .75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#conversation-agent-admin:not(.has-admin) {
+  background: var(--ot-surface-2);
+  color: var(--ot-muted);
+}
 #conversation-agents-preview { display: flex; min-width: 0; align-items: center; gap: .3rem; margin-inline-start: .25rem; overflow: hidden; }
 .group-roster-preview-chip { min-width: 0; max-width: 9.5rem; padding: .15rem .4rem; border: 1px solid var(--ot-line); border-radius: .4rem; color: var(--ot-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; font-weight: 500; }
 .group-roster-preview-more { flex: none; color: var(--ot-muted); font-size: .75rem; }
 .group-agent-sheet-body { box-sizing: border-box; max-height: min(44dvh, 25rem); overflow: auto; overscroll-behavior: contain; padding: .6rem clamp(.875rem, 2.3vw, 1.5rem) .8rem; border-bottom: 1px solid var(--ot-line); }
-.group-roster-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .5rem; }
-#group-agent-manage { flex: none; min-height: 2.375rem; padding: .3rem .65rem; color: var(--ot-accent-hover); font-size: .75rem; }
+.group-roster-head { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; justify-content: space-between; gap: .5rem; }
+.group-roster-head :is(#group-agent-manage, #group-agent-set-admin) { flex: none; min-height: 2.375rem; padding: .3rem .65rem; color: var(--ot-accent-hover); font-size: .75rem; }
 #group-agent-chips .agent-chip { min-height: 1.8rem; gap: .4rem; border-radius: .55rem; padding: .2rem .375rem; }
 .group-roster-glyph { display: grid; flex: none; place-items: center; width: 1.375rem; height: 1.375rem; border-radius: .375rem; background: var(--ot-accent-soft); color: var(--ot-accent-hover); font-size: .75rem; font-weight: 650; }
 .group-roster-name { min-width: 0; overflow-wrap: anywhere; }
@@ -2951,7 +2968,7 @@ html[data-chat-keyboard] body.app-workspace.chat-open {
 .empty-group strong { color: var(--ot-ink); font-size: 1rem; }
 @media (max-width: 700px) {
   #main-panel[data-chat-kind="group"] .chat-top { gap: .25rem; padding-inline: .25rem .375rem; }
-  #conversation-agents-label, #group-agent-manage { min-height: 2.75rem; }
+  #conversation-agents-label, .group-roster-head :is(#group-agent-manage, #group-agent-set-admin) { min-height: 2.75rem; }
   #conversation-agents-preview { gap: .2rem; }
   .group-roster-preview-chip { max-width: 7rem; padding-inline: .3rem; }
   #group-agent-action .group-agent-sheet-body { max-height: min(39dvh, 21rem); }

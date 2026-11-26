@@ -209,6 +209,45 @@ test('a new shared group with local members uses native room creation without an
   assert.equal(rt.roomOf('native1').flybotWorkspace.conversation_id,room)
 })
 
+test('a multi-owner group projects one native admin even when the Bots share an agent ID', async () => {
+  const owner = {owner_id:'room-owner',handle:'owner.home'}
+  const peer = {owner_id:'room-peer',handle:'peer.home'}
+  const sharedAgentId = 'a'.repeat(32)
+  const lead = {owner_id:peer.owner_id,agent_id:sharedAgentId}
+  const path = `/v1/ot/conversations/${room}`
+
+  async function open(viewer) {
+    const coordinator = viewer === owner
+    const conversation = {...group('Shared project',1),members:[owner,peer],
+      agents:[owner,peer].map(holder => ({agent_ref:sharedAgentId,name:'Reviewer',owner:holder,mine:viewer === holder})),
+      group_agent_routing:{mode:'shared',policy:{mode:'lead',lead},native_group_host:owner.owner_id,
+        native_group_coordinator:coordinator,can_edit:coordinator}}
+    const rt = {
+      state:{rooms:{}}, roomOf(id) { return this.state.rooms[id] },
+      async createSession() { return 'admin-room' },
+      async save() {}, mobileEndpoint() {}, updateRoom() {}, deleteRoom() {}, sendUser() {},
+    }
+    const raw = {request:async () => conversation, get:async () => ({announcement:{body:''}})}
+    const host = {currentRuntime:() => ({rt}), async call(name,{id}) {
+      assert.equal(name,'agents/byId')
+      assert.equal(id,sharedAgentId)
+      return {agent:{native_bot_id:viewer.owner_id+'-bot'}}
+    }}
+    const opened = await nativeGroupClient(host,raw).get(path)
+    return rt.roomOf(opened.native_room_id)
+  }
+
+  const hostRoom = await open(owner)
+  const peerRoom = await open(peer)
+  assert.equal(hostRoom.mode,'admin')
+  assert.equal(hostRoom.admin,null)
+  const remoteAdmin = hostRoom.flybotWorkspace.native_bot_seats.find(seat => seat.id === hostRoom.flybotWorkspace.native_group_admin)
+  assert.equal(remoteAdmin.owner_id,peer.owner_id)
+  assert.equal(remoteAdmin.agent_ref,sharedAgentId)
+  assert.equal(peerRoom.admin,peer.owner_id+'-bot')
+  assert.deepEqual(hostRoom.flybotWorkspace.reply_policy.lead,peerRoom.flybotWorkspace.reply_policy.lead)
+})
+
 test('sending plain text from the native room uses the same shared group and reply receipt', async () => {
   const conversation = group('Product team', 1)
   const path = `/v1/ot/conversations/${room}`

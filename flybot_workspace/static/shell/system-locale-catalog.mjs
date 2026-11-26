@@ -102,7 +102,7 @@ export const SETTINGS_MESSAGES = {
   'settings.notify.disabled': ['这类通知已从收件箱和未读数中隐藏。', 'This category is hidden from the inbox and unread count.'],
   'settings.appearance': ['外观', 'Appearance'],
   'settings.send-shortcuts': ['发送快捷键', 'Send shortcuts'],
-  'settings.folding': ['消息折叠', 'Message folding'],
+  'settings.document-cards': ['文档附件显示为卡片', 'Show document attachments as cards'],
   'settings.privacy': ['隐私设置', 'Privacy settings'],
   'settings.support': ['支持与法律', 'Support and legal'],
   'settings.back': ['返回设置', 'Back to settings'],

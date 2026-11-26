@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS ot_group_management_receipts (
 
 export type Group = {id: string; kind: string; dm_key: string | null; title: string; created_by: string;
   team_id: string | null; account_group: number; group_owner_id: string | null; group_revision: number; group_archived_at: number | null;
-  group_reply_policy?: string | null};
+  group_reply_policy?: string | null; group_auto_lead: number};
 type Lead = {owner_id: string; agent_id: string};
 type ReplyPolicy = {mode: "default" | "everyone" | "mentions"} | {mode: "lead"; lead: Lead};
 type GroupAction = {action: "rename"; title: string} | {action: "remove" | "transfer"; member_id: string} |
@@ -45,11 +45,41 @@ export const groupOwner = (group: Group) => group.group_owner_id ?? group.create
 export const ordinaryGroup = (group: Group) => group.kind === "group" && group.dm_key === null;
 export const managedGroup = (group: Group) => ordinaryGroup(group) && (group.account_group === 1 || Boolean(group.team_id));
 
+type BotSeat = {owner_id:string; agent_ref:string; direct_grant_id:string | null};
+
+export function groupReplyPolicyForRoster(group: Group, seats: readonly BotSeat[]): ReplyPolicy {
+  const saved = readGroupReplyPolicy(group);
+  if (group.group_auto_lead !== 1 || !managedGroup(group) || group.group_archived_at !== null) return saved;
+  const eligible = seats.filter(seat => !seat.direct_grant_id);
+  if (saved.mode === "lead" && eligible.some(seat => seat.owner_id === saved.lead.owner_id &&
+      seat.agent_ref === saved.lead.agent_id)) return saved;
+  // The caller passes the active roster in its saved order.
+  const first = eligible.find(seat => seat.owner_id === groupOwner(group)) ?? eligible[0];
+  const lead = first && {owner_id:first.owner_id,agent_id:first.agent_ref};
+  return validLead(lead) ? {mode:"lead",lead} : saved;
+}
+
+function writeGroupReplyPolicy(ot: OtContext, id: string, policy: ReplyPolicy, automatic = false) {
+  const encoded = policy.mode === "default" ? null : JSON.stringify(policy);
+  ot.run(`UPDATE ot_conversations SET group_reply_policy=?,group_auto_lead=?,
+    group_revision=group_revision+1,activity_revision=activity_revision+1 WHERE id=?`, encoded,Number(automatic),id);
+}
+
+export function refreshAutomaticGroupLead(ot: OtContext, group: Group, seats: readonly BotSeat[]) {
+  if (group.group_auto_lead !== 1) return;
+  const selected = groupReplyPolicyForRoster(group,seats);
+  if (selected.mode === "lead" && JSON.stringify(selected) !== group.group_reply_policy) {
+    writeGroupReplyPolicy(ot,group.id,selected,true);
+  }
+}
+
 export function registerGroupManagement(ot: OtContext, columns: Set<string>) {
   if (!columns.has("group_owner_id")) ot.run("ALTER TABLE ot_conversations ADD COLUMN group_owner_id TEXT");
   if (!columns.has("group_revision")) ot.run("ALTER TABLE ot_conversations ADD COLUMN group_revision INTEGER NOT NULL DEFAULT 0");
   if (!columns.has("group_archived_at")) ot.run("ALTER TABLE ot_conversations ADD COLUMN group_archived_at INTEGER");
   if (!columns.has("group_reply_policy")) ot.run("ALTER TABLE ot_conversations ADD COLUMN group_reply_policy TEXT");
+  if (!columns.has("group_auto_lead")) ot.run(
+    "ALTER TABLE ot_conversations ADD COLUMN group_auto_lead INTEGER NOT NULL DEFAULT 0");
   ot.db.exec(`
     CREATE TRIGGER IF NOT EXISTS ot_group_revision_title AFTER UPDATE OF title ON ot_conversations
     WHEN NEW.kind='group' AND NEW.dm_key IS NULL AND NEW.title IS NOT OLD.title
@@ -158,10 +188,9 @@ export function changeGroup(ot: OtContext, group: Group, actor: string, change: 
       }
       const {action: _,...policy} = change;
       const saved = readGroupReplyPolicy(group);
-      if (JSON.stringify(saved) === JSON.stringify(policy)) return false;
-      const encoded = change.mode === "default" ? null : JSON.stringify(policy);
-      ot.run(`UPDATE ot_conversations SET group_reply_policy=?,group_revision=group_revision+1,activity_revision=activity_revision+1
-        WHERE id=?`, encoded,group.id);
+      if (group.group_auto_lead !== 1 && JSON.stringify(saved) === JSON.stringify(policy)) return false;
+      // Explicitly choosing default in a new empty group opts out of auto-assignment as well.
+      writeGroupReplyPolicy(ot,group.id,policy);
       break;
     }
     case "rename":
