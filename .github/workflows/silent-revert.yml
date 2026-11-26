@@ -1,0 +1,59 @@
+name: Silent revert
+# Report only: a pull request built on a stale copy of main deletes work main merged
+# after the branch was cut, and CI stays green because the deletion *is* the pull
+# request. This prints the file, the number of lines and the commit that added them,
+# and never labels, comments, reviews or blocks.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to audit by hand
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: silent-revert-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  silent-revert:
+    name: silent-revert
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the pull request head with its full history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number || inputs.pr }}/head
+          path: head
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      # The script is taken from the base commit, so a pull request cannot weaken the
+      # check that judges it. The one exception is the pull request that ADDS the file:
+      # it has no base copy yet, so that single run uses its own under the same read-only
+      # token. Once main has the file, main always wins.
+      - name: Report where this pull request deletes work main merged after its base
+        if: github.event_name == 'pull_request' || inputs.pr != ''
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          set -euo pipefail
+          if [ -z "${{ github.event.pull_request.number || inputs.pr }}" ]; then
+            echo "::error::workflow_dispatch needs the pr input"
+            exit 1
+          fi
+          git -C head fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          git -C head show origin/main:.github/scripts/silent-revert.mjs > base.mjs 2>/dev/null || true
+          script=base.mjs
+          [ -s "$script" ] || script=head/.github/scripts/silent-revert.mjs
+          node "$script" --repo-dir head

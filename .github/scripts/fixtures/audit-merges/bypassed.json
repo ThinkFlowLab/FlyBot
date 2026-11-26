@@ -1,0 +1,9 @@
+{
+  "note": "The bypass: #680 landed as 6b9820bb, its Merge gate run on that commit failed (39730969259) and the Test run of the same entry is green (39730969253) — a green Test run must not be read as the gate passing.",
+  "sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41",
+  "pulls": [{ "number": 680, "merge_commit_sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41" }],
+  "runs": [
+    { "id": 39730969259, "name": "Merge gate", "path": ".github/workflows/merge-gate.yml", "event": "merge_group", "head_sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41", "conclusion": "failure" },
+    { "id": 39730969253, "name": "Test", "path": ".github/workflows/test.yml", "event": "merge_group", "head_sha": "6b9820bbd75304a6eb41e90e045fc58596dd1a41", "conclusion": "success" }
+  ]
+}
