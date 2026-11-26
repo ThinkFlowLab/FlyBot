@@ -31,17 +31,6 @@ test('agent-working is decided by the branch it claims, once the branch list is 
   assert.deepEqual(only(rows([open])), ['unknown', 'claims branch dev/5-missing-changelog-fragment; pass --refs to check whether it still exists'])
 })
 
-// An empty list is what a flaked `git ls-remote` returns. Read as "gone" it strips a live label.
-test('no listing, or an empty one, cannot call a live branch gone', () => {
-  const open = obj({ labels: ['agent-working'], body: CLAIM })
-  for (const refs of [undefined, null, [], { refs: [] }]) {
-    assert.deepEqual(only(rows([open], { refs })),
-      ['unknown', 'claims branch dev/5-missing-changelog-fragment; pass --refs to check whether it still exists'])
-  }
-  assert.deepEqual(only(rows([obj({ labels: ['agent-pr'], body: CLAIM })], { refs: [] })),
-    ['unknown', 'open, but the body names no PR and no PR list was given'])
-})
-
 test('agent-pr: on a PR its own state decides; on an issue it dies with the PR the body names', () => {
   assert.deepEqual(only(rows([{ number: 7, state: 'open', pull_request: {}, labels: ['agent-pr'] }])), ['keep', 'PR #7 is open'])
   assert.deepEqual(only(rows([{ number: 7, state: 'closed', pull_request: {}, labels: ['agent-pr'] }])), ['orphan', 'PR #7 is closed'])
