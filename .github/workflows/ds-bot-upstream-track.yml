@@ -151,16 +151,23 @@ jobs:
           TRACK_REF: ${{ steps.target.outputs.ref }}
         run: |
           set -euo pipefail
+          # skipped only happens when an earlier step already failed, so it is not a red of its own
           failed=0
-          if [ "$SUITE" != success ]; then
+          if [ "$SUITE" = success ]; then :
+          elif [ "$SUITE" = skipped ]; then
+            echo "Upstream suite was skipped (an earlier step failed first; this run is already red)."
+          else
             echo "::error::Upstream suite did not pass on $TRACK_REF (outcome: ${SUITE:-empty}), so this run is red. Run log: $RUN_URL"
             failed=1
           fi
-          if [ "$SMOKE" != success ]; then
+          if [ "$SMOKE" = success ]; then :
+          elif [ "$SMOKE" = skipped ]; then
+            echo "Container startup smoke was skipped (an earlier step failed first; this run is already red)."
+          else
             echo "::error::Container startup smoke did not pass on $TRACK_REF (outcome: ${SMOKE:-empty}), so this run is red. Run log: $RUN_URL"
             failed=1
           fi
-          if [ "$failed" -eq 0 ]; then
+          if [ "$SUITE" = success ] && [ "$SMOKE" = success ]; then
             echo "Upstream suite and container startup smoke both passed on $TRACK_REF."
           fi
           exit "$failed"
