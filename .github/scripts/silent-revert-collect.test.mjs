@@ -68,7 +68,7 @@ test('a file main touched but the pull request did not is never scanned', () => 
   assert.equal(report.scanned, 2)
 })
 
-test('workflow: report only, base copy of the script, full history, and it cannot turn the run red', () => {
+test('workflow: report only, base copy of the script, full history, and only a real failure turns it red', () => {
   const wf = readFileSync(new URL('../workflows/silent-revert.yml', import.meta.url), 'utf8')
   assert.match(
     wf,
@@ -88,11 +88,13 @@ test('workflow: report only, base copy of the script, full history, and it canno
   assert.match(wf, /^ {10}\[ -s "\$script" \] \|\| script=head\/\.github\/scripts\/silent-revert\.mjs$/m)
   assert.match(wf, /^\s+node "\$script" --repo-dir head$/m)
   // A required check that never reports leaves every pull request waiting; this one only reports, on
-  // the pull_request event, and its findings never fail the job.
+  // the pull_request event. A finding leaves the job green (the script exits 0), so the report alone
+  // never blocks anything. A broken run — no origin/main, shallow history, no git — must be red: the
+  // script sets exitCode 1, so the step may not swallow it with continue-on-error.
   const marker = wf.indexOf('script=base.mjs')
   const step = wf.slice(marker - 2000, marker)
   assert.match(step, /if: github\.event_name == 'pull_request'/)
-  assert.match(step, /continue-on-error: \$\{\{ github\.event_name == 'pull_request' \}\}/)
+  assert.doesNotMatch(step, /continue-on-error/, 'a finding stays green by exit 0; a broken run must not be painted green')
   assert.doesNotMatch(step, /: write/, 'read-only')
   assert.doesNotMatch(wf, /silent-revert.*(gh pr merge|--approve|labels)/, 'it never comments, labels or merges')
 })
