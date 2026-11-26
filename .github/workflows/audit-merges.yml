@@ -44,7 +44,6 @@ jobs:
             --jq '.workflow_runs[0].head_sha // ""')
           echo "since=$SINCE" >> "$GITHUB_OUTPUT"
       - name: Audit the last merges on main
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
