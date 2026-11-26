@@ -1,0 +1,40 @@
+name: Risk tier
+# Report only: classifies the pull request diff and prints the tier with the
+# rules that fired. It never labels, comments, or blocks a merge, so a T3
+# verdict is a green check whose summary says "a human has to approve this",
+# not a failing build. The gate that requires anything is a later stage.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: risk-tier-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  risk-tier:
+    name: risk-tier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      # risk-gate.mjs exits 0 whenever it could compute a tier (T3 included) and
+      # 1 only when it could not compute one, which is the case worth reporting.
+      # The runner sets GITHUB_STEP_SUMMARY, so the script writes the readable
+      # reason table there and the console line carries the one-line verdict.
+      - name: Classify the pull request diff
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/risk-gate.mjs
