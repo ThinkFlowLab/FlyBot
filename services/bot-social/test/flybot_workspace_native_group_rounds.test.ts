@@ -94,6 +94,46 @@ async function connect(owner: Actor, member: Actor) {
 const sendNative = (actor: Actor, path: string, body: string, extra = {}) =>
   actor.ok("POST", path + "/messages", {body,native_round:true,client_key:randomUUID(),...extra});
 
+test("late local Bot lines use a finished receipt and match the same native line key", async () => {
+  const [owner,outsider] = await Promise.all([home(service.base,"native-late-owner"),home(service.base,"native-late-outsider")]);
+  const group = await owner.ok("POST",rooms,{kind:"group",account_group:true,title:"Late native replies",
+    agents:[...agents,{agent_ref:"native-backup",name:"Backup"}]});
+  const room = `${rooms}/${group.id}`;
+  const source = await sendNative(owner,room,"The first task");
+  const round = `${room}/native-rounds/${source.id}`;
+  const endpoint = round + "/lines";
+  const line = {agent_ref:agents[0].agent_ref,body:"Work continued after the round",client_key:randomUUID()};
+  const late = {...line,late:true};
+  assert.equal((await owner.call("POST",endpoint,late)).status,409);
+  await owner.ok("POST",round,{action:"start"});
+  assert.equal((await owner.call("POST",endpoint,late)).status,409);
+  assert.equal((await owner.call("POST",endpoint,{...line,late:false})).status,400);
+  const regular = {...line,body:"Already mirrored before finish",client_key:randomUUID()};
+  const early = await owner.ok("POST",endpoint,regular);
+  await owner.ok("POST",round,{action:"finish"});
+  const next = await sendNative(owner,room,"The next task");
+  await owner.ok("POST",`${room}/native-rounds/${next.id}`,{action:"start"});
+  assert.equal((await outsider.call("POST",endpoint,late)).status,404);
+  assert.equal((await owner.call("POST",endpoint,line)).status,409);
+  assert.equal((await owner.ok("POST",endpoint,{...regular,late:true})).id,early.id);
+  const [posted,retried] = await Promise.all([owner.ok("POST",endpoint,late),owner.ok("POST",endpoint,late)]);
+  assert.equal(retried.id,posted.id);
+  assert.equal(posted.reply_to ?? null,null);
+  assert.equal(posted.body,line.body);
+  assert.equal(posted.author.kind,"agent");
+  assert.deepEqual(posted.reply_jobs,[]);
+  assert.equal((await owner.call("POST",endpoint,{...late,body:"Different content"})).data.error.code,"native_line_conflict");
+  const {messages} = await owner.ok("GET",room+"/messages");
+  assert.equal(messages.filter((message: {body:string}) => message.body === line.body).length,1);
+  await owner.ok("DELETE",`${room}/agents/${line.agent_ref}`);
+  assert.equal((await owner.call("POST",endpoint,late)).status,404);
+  const alternateBot = {...late,agent_ref:agents[1].agent_ref,client_key:randomUUID()};
+  await owner.ok("PATCH",`/v1/ot/messages/${source.id}`,{body:"The task was edited"});
+  assert.equal((await owner.call("POST",endpoint,alternateBot)).status,409);
+  await owner.ok("DELETE",`/v1/ot/messages/${source.id}`);
+  assert.equal((await owner.call("POST",endpoint,alternateBot)).status,404);
+});
+
 async function sharedGroup(label: string) {
   const [owner,peer,other] = await Promise.all([
     home(service.base,"owner-"+label), home(service.base,"peer-"+label), home(service.base,"other-"+label),
@@ -247,6 +287,7 @@ test("a private turn cannot continue mirroring after a guest joins and shared qu
   assert.equal((await owner.call("POST",original+"/lines",line)).status,409);
   assert.equal((await owner.call("POST",original+"/progress",work)).status,409);
   await owner.ok("POST",original,{action:"finish"});
+  assert.equal((await owner.call("POST",original+"/lines",{...line,late:true})).status,409);
   const sentWhileShared = await sendNative(owner,room,"A shared request");
   const queued = room + "/native-rounds/" + sentWhileShared.id;
   const {revision} = (await owner.ok("GET",room)).group_management;
@@ -254,6 +295,8 @@ test("a private turn cannot continue mirroring after a guest joins and shared qu
   assert.equal((await owner.ok("GET",inbox)).items[0].text_only,true);
   assert.equal((await owner.call("POST",queued,{action:"start"})).data.error.code,"native_round_text_only");
   assert.deepEqual(await owner.ok("POST",queued,{action:"start",text_only:true}),{started:true,state:"running",text_only:true});
+  await owner.ok("POST",queued,{action:"finish"});
+  assert.equal((await owner.call("POST",queued+"/lines",{...line,late:true})).status,409);
 });
 
 
@@ -281,6 +324,7 @@ test("cross-owner Bot work is claimed once and only receipt-backed remote replie
   assert.deepEqual(await other.ok("GET",room+"/reply-progress"),{items:[]});
   const guestPath = "/v1/ot/native-group-turns/"+turn.id;
   const mirrored = {agent_ref:request.agent_ref,agent_owner_id:peerProfile.owner_id,turn_id:turn.id,body:"Forged text",client_key:"remote:1"};
+  assert.equal((await owner.call("POST",round+"/lines",{...mirrored,late:true})).status,400);
   assert.equal((await owner.call("POST",round+"/lines",mirrored)).status,404);
   assert.equal((await other.call("POST",guestPath,{action:"start"})).status,404);
   assert.equal((await owner.call("POST",guestPath,{action:"start"})).status,404);

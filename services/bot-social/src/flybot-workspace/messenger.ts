@@ -2576,11 +2576,13 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
     const {ownerId} = ot.me(req);
     const {id,messageId} = params(req);
     const data = body(req);
-    assert(Object.keys(data).every(key => ["agent_ref","body","client_key","agent_owner_id","turn_id"].includes(key)) &&
+    assert(Object.keys(data).every(key => ["agent_ref","body","client_key","agent_owner_id","turn_id","late"].includes(key)) &&
       ["agent_ref","body","client_key"].every(key => Object.hasOwn(data,key)), 400, "invalid_request", "Invalid native group line");
     const agentRef = text(data.agent_ref, "agent_ref", {min:1,max:80});
     const author = data.agent_owner_id === undefined ? ownerId : text(data.agent_owner_id, "agent_owner_id", {min:1,max:80});
     const guest = author !== ownerId;
+    const late = data.late === true;
+    assert(data.late === undefined || (late && !guest), 400, "invalid_request", "Only a local Bot line may be published late");
     const turnId = data.turn_id;
     assert(guest ? typeof turnId === "string" && nativeTurnId.test(turnId) : turnId === undefined,
       400, "invalid_request", "Remote Bot lines require a native turn receipt");
@@ -2602,20 +2604,27 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       } else {
         prior = ot.get("SELECT * FROM ot_messages WHERE conversation_id=? AND author_id=? AND client_key=?", conv.id, author, clientKey);
       }
-      if (prior) {
-        assert(prior.author_kind === "agent" && prior.agent_ref === agentRef && prior.reply_to === round.message_id && prior.body === output,
-          409, "native_line_conflict", "This native line key was already used");
-        return prior;
+      if (!prior || late) {
+        assert(round.state === (late ? "finished" : "running"), 409, "native_round_unavailable",
+          late ? "A late Bot line requires a finished native group round" : "The native group round is no longer active");
+        const roster = conversationAgents(ot, conv.id);
+        requireNativeRound(conv, round, ownerId, roster);
+        assert(!late || (round.requires_text_only === 0 && nativeGroupImages(ot, conv, ownerId, roster)),
+          409, "native_round_unavailable", "Only a private native group can receive a late Bot line");
+        const agent = roster.find(item => item.agent_ref === agentRef && item.owner_id === author);
+        assert(agent, 404, "agent_not_found", "This Bot is no longer in the native group");
+        if (!prior) {
+          const posted = insertMessage(ot, conv, {author,kind:"agent",agentRef,agentName:agent.name,
+            body:output,mentions:[],replyTo:late ? null : round.message_id,clientKey});
+          if (guest) ot.run("UPDATE ot_native_group_turns SET published_message_id=? WHERE id=?", posted.id,turnId);
+          return posted;
+        }
       }
-      assert(round.state === "running", 409, "native_round_unavailable", "The native group round is no longer active");
-      const roster = conversationAgents(ot, conv.id);
-      requireNativeRound(conv, round, ownerId, roster);
-      const agent = roster.find(item => item.agent_ref === agentRef && item.owner_id === author);
-      assert(agent, 404, "agent_not_found", "This Bot is no longer in the native group");
-      const posted = insertMessage(ot, conv, {author,kind:"agent",agentRef,agentName:agent.name,
-        body:output,mentions:[],replyTo:round.message_id,clientKey});
-      if (guest) ot.run("UPDATE ot_native_group_turns SET published_message_id=? WHERE id=?", posted.id,turnId);
-      return posted;
+      // Detached native output belongs in the room without guessing which prompt it answers.
+      const sameSource = prior.reply_to === round.message_id || (!guest && (late || prior.reply_to === null));
+      assert(prior.author_kind === "agent" && prior.agent_ref === agentRef && sameSource && prior.body === output,
+        409, "native_line_conflict", "This native line key was already used");
+      return prior;
     });
     return reply.status(201).send(messageView(ot, result, ownerId));
   });
