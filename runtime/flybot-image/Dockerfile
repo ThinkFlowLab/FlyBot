@@ -45,6 +45,8 @@ ARG DSH_VERSION=0.2.2-rc.1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates git curl \
+        dbus-x11 xfce4-session xfwm4 xfdesktop4 xfce4-panel xfce4-terminal thunar mousepad \
+        novnc tigervnc-standalone-server xauth x11-utils xdotool imagemagick firefox-esr fonts-noto-cjk at-spi2-core \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable \
     && npm config set registry "$NPM_REGISTRY" --global \
@@ -64,9 +66,11 @@ COPY third_party/libreoffice-kit /opt/licenses/libreoffice-kit
 COPY third_party/font-notices /opt/licenses/font-notices
 COPY third_party/sharp-libvips /opt/licenses/sharp-libvips
 COPY third_party/anthropic-sdk /opt/licenses/anthropic-sdk
+COPY third_party/cua-driver /opt/licenses/cua-driver
 COPY flybot-social-host /opt/flybot-workspace/runtime/flybot-social-host
 COPY flybot-web-slots /opt/flybot-workspace/runtime/flybot-web-slots
 COPY flybot-image /opt/flybot-workspace/runtime/flybot-image
+RUN sh /opt/flybot-workspace/runtime/flybot-image/install-cua-driver.sh
 RUN node /opt/flybot-workspace/runtime/flybot-image/native-ds-bot-overlay.mjs /opt/flybot-workspace/runtime/ds-bot-upstream/ds-bot \
     && node /opt/flybot-workspace/runtime/flybot-image/native-dsh-turn-overlay.mjs
 COPY flybot-workspace-web /opt/flybot-workspace/runtime/flybot-workspace-web

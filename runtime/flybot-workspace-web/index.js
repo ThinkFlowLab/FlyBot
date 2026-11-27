@@ -13,6 +13,8 @@ import {
   createDispatch, API_PATH, createGatewayDispatch, GATEWAY_PATH, createLegacyDispatch, LEGACY_PATH,
   createReplyStreamDispatch, REPLY_STREAM_PATH,
 } from './src/dispatch.js'
+import { COMPUTER_PATH } from './src/computer.js'
+import { runtime } from './src/host.js'
 import { loadIdentity } from './src/identity.js'
 import { CHAT_DIRECTORY_FEATURES, loadFeatures } from './src/features.js'
 
@@ -74,6 +76,19 @@ export function apply(ctx, config = {}) {
     requestBody: 'buffered',
     fetch: createReplyStreamDispatch({ endpoints: async () => (await features).table }),
   }), 'flybot-workspace-web: private reply streams')
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: COMPUTER_PATH,
+    methods: ['GET', 'POST', 'DELETE'],
+    requestBody: 'buffered',
+    fetch: async request => {
+      const { computers } = await runtime()
+      if (!computers) return new Response(null, {status:404})
+      return computers.handler(async (workspace_id, id) => {
+        const {table} = await features
+        return table['agents/computerTarget']?.({workspace_id,id},{internal:true}).catch(() => null)
+      })(request)
+    },
+  }), 'flybot-workspace-web: Bot computer')
   // External Agent API: the platform forwards /v1/gateway/* here (cookie = this
   // DS-Bot's launch session; token = X-OT-Gateway-Token, already bound to this instance).
   ctx.effect(() => ctx.connection.fetch.register({

@@ -77,6 +77,17 @@ const steps = [
 ]
 const teamTools = new Set(steps.map(([name]) => name))
 
+function computerResponse(body) {
+  const messages = body.messages ?? []
+  const request = messages.findLastIndex(message => message.role === 'user' &&
+    JSON.stringify(message.content)?.includes('CI-PRIVATE-COMPUTER-PROBE'))
+  if (request < 0) return null
+  const results = messages.slice(request + 1).filter(message => message.role === 'tool')
+  if (results.length) return {text: JSON.stringify(results).includes('Opened editor') ? 'CI-COMPUTER-OK' : 'CI-COMPUTER-FAILED'}
+  if (!body.tools?.some(tool => tool.function?.name === 'bot_computer')) return {text:'CI-COMPUTER-UNAVAILABLE'}
+  return {call:{name:'bot_computer',arguments:JSON.stringify({action:'open',app:'editor'})},step:'desktop'}
+}
+
 function teamResponse(body) {
   const messages = body.messages ?? []
   const request = messages.findLastIndex(message => message.role === 'user' &&
@@ -113,7 +124,7 @@ require('node:http').createServer((req, res) => {
     if (req.headers.authorization !== 'Bearer ci-fake-model-key') { res.writeHead(401); res.end('{}'); return }
     let body = {}
     try { body = JSON.parse(raw) } catch {}
-    const team = teamResponse(body)
+    const team = computerResponse(body) ?? teamResponse(body)
     const text = team.text ?? 'CI-DSBOT-REPLY profile=' + (raw.includes('CI-PROFILE-MARK') ? 'yes' : 'no')
     const call = team.call && { id: 'ci-team-call-' + team.step, type: 'function', function: team.call }
     const finish = call ? 'tool_calls' : 'stop'
@@ -395,6 +406,30 @@ def main():
         assert status == 200 and body == b'platform'
         assert pages[a['id']] != pages[b['id']]
 
+        # An owner can control only their Bot's Linux desktop. Exercise the RFB
+        # handshake through the same authenticated HTTPS proxy the canvas uses.
+        computer = (f'/b/api/flybot-workspace/computer?workspace={a["workspace_id"]}'
+                    f'&agent={a["personal_agent_id"]}&op=')
+        assert wait_for(lambda: browse(token_a, 'GET', computer + 'status')[0] == 200, 'owned Bot computer')
+        assert browse(token_b, 'GET', computer + 'status')[0] == 404
+        assert browse(None, 'GET', computer + 'status')[0] == 302
+        assert browse(token_a, 'POST', computer + 'start', Origin='https://evil.example')[0] == 403
+        assert browse(token_a, 'POST', computer + 'start')[0] == 200
+        preview = browse(token_a, 'GET', computer + 'preview')
+        assert preview[0] == 200 and preview[2].startswith(b'\x89PNG\r\n\x1a\n')
+        assert len(preview[2]) > 1000, 'The first preview must contain the Linux desktop and taskbar'
+        taken = browse(token_a, 'POST', computer + 'take')
+        assert taken[0] == 200
+        control = computer + 'control&lease=' + json.loads(taken[2])['lease']
+        assert browse(token_a, 'POST', computer + 'take')[0] == 409
+        hello = browse(token_a, 'GET', control)
+        assert hello[0] == 200 and hello[2] == b'RFB 003.008\n'
+        assert browse(token_b, 'GET', control)[0] == 404
+        assert browse(token_a, 'POST', control, hello[2], **{'Content-Type':'application/octet-stream'})[0] == 200
+        assert browse(token_a, 'GET', control)[2] == b'\x01\x01'
+        assert browse(token_a, 'DELETE', control)[0] == 200
+        assert browse(token_a, 'GET', control)[0] == 410
+
         # B1: private chat executes as a native DS-Bot turn inside A's own runtime.
         # A labeled fake OpenAI-compatible model runs on A's loopback; the operator
         # model file is the one the manager would install (fake key, CI only).
@@ -507,6 +542,9 @@ def main():
         native = plugin(token_a, 'flybot-workspace-group-open', {'conversation_id': group['id']}, kind='bot')
         assert native['conversation_id'] == group['id'] and native['room']['id'] == group['native_room_id']
         assert set(native['room']['members']) == {row['native_bot_id'] for row in created}
+        probe = api(token_a, 'POST', f'{chief_chat}/messages', {'body': 'CI-PRIVATE-COMPUTER-PROBE'},
+                    expected=201, timeout=150)['reply']
+        assert probe['status'] == 'succeeded' and probe['body'] == 'CI-COMPUTER-OK', redact(probe.get('body'))
         assert api(token_b, 'GET', agents)['items'] == [], "B never sees the Bots created by A's Personal Agent"
         # An old volume can retain its native identity while using its
         # canonical manager-issued ID in external Agent API keys.
