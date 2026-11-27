@@ -111,11 +111,13 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
     await save()
   }
 
-  async function mirror(room, exchange) {
+  async function mirror(room, exchange, {late = false} = {}) {
     const lines = await rt.groupLinesAfter(room.id, exchange.cursor)
     for (const line of lines) {
       const remote = line.nativeTurnId && room.flybotWorkspace.native_bot_seats?.find(seat => seat?.id === line.botId)
-      if (line.kind === undefined && line.botId && (room.members.includes(line.botId) || remote) && line.text?.trim() &&
+      if (line.kind === undefined && !line.flybotWorkspaceMessageId && line.botId && line.text?.trim() &&
+          (room.members.includes(line.botId) || (!late && remote)) &&
+          (!late || (!line.flybotWorkspaceSharedRoundId && !line.nativeTurnId)) &&
           (!exchange.text_only || line.flybotWorkspaceSharedRoundId === exchange.id)) {
         const ref = remote?.agent_ref ?? rt.botOf(line.botId)?.flybotWorkspace?.agent_id
         if (ref) {
@@ -123,6 +125,7 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
           const posted = await raw.post(exchangePath(room, exchange.id) + '/lines', {
             agent_ref:ref, body:line.text.trim().slice(0, MAX_LINE).toWellFormed(), client_key:'native:' + key,
             ...(remote ? {agent_owner_id:remote.owner_id,turn_id:line.nativeTurnId} : {}),
+            ...(late ? {late:true} : {}),
           })
           const {mirrored} = historyOf(room)
           if (MESSAGE_ID.test(posted?.id || '') && !mirrored.includes(posted.id)) {
@@ -134,6 +137,34 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
       exchange.cursor = Math.max(exchange.cursor, line.seq)
     }
     if (lines.length) await save()
+  }
+
+  // A native Bot can post after its group round yields to background work.
+  // Keep the local room's ledger cursor after acknowledging that round.
+  async function flushLate(room) {
+    const workspace = room.flybotWorkspace
+    const exchange = workspace?.native_late_exchange
+    if (!exchange || workspace.native_exchange || rt.sharedRoomCursor(room.id) <= exchange.cursor) return
+    try {
+      await mirror(room, exchange, {late:true})
+    } catch (error) {
+      if (!revoked.has(error?.code)) throw error
+      delete workspace.native_late_exchange
+      await save()
+    }
+  }
+
+  async function finish(room, exchange) {
+    const workspace = room.flybotWorkspace
+    if (exchange.text_only === false && workspace.account_group === true) {
+      workspace.native_late_exchange = {id:exchange.id, cursor:exchange.cursor}
+      await save()
+    } else if (workspace.native_late_exchange) {
+      delete workspace.native_late_exchange
+      await save()
+    }
+    await raw.post(exchangePath(room, exchange.id), {action:'finish'})
+    await clear(room, exchange)
   }
 
   async function publishProgress(room, exchange) {
@@ -176,8 +207,10 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
     }
     const selected = Array.isArray(item.agent_mentions)
       ? item.agent_mentions.map(target => bots.get(targetKey(target.owner_id, target.agent_id))).filter(Boolean) : []
+    if (!prior) await flushLate(room)
     await seedHistory(room, item, bots)
-    const exchange = prior ?? {id:item.message_id, cursor:rt.sharedRoomCursor(room.id), dispatched:false}
+    const cursor = room.flybotWorkspace.native_late_exchange?.cursor ?? rt.sharedRoomCursor(room.id)
+    const exchange = prior ?? {id:item.message_id, cursor, dispatched:false}
     room.flybotWorkspace.native_exchange = exchange
     await save()
     if (item.state === 'queued') {
@@ -233,6 +266,14 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
     if (polling.signal.aborted || rt.readOnly?.() !== undefined) return
     running = true
     try {
+      const blockedByLate = new Set()
+      for (const room of Object.values(rt.state.rooms)) {
+        try { await flushLate(room) }
+        catch (error) {
+          blockedByLate.add(room.id)
+          report(error)
+        }
+      }
       const query = inboxPending ? '' : '?wait_ms=10000'
       const inbox = await raw.get('/v1/ot/native-group-inbox' + query, {signal:polling.signal})
       if (!Array.isArray(inbox?.items)) return
@@ -248,7 +289,8 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
         if (!item) {
           // Only running items are guaranteed to be included without a page
           // limit. A pre-claim marker can still be waiting for its queued item.
-          if (exchange.dispatched) await abandon(room, exchange, true)
+          const settling = room.flybotWorkspace.native_late_exchange?.id === exchange.id
+          if (exchange.dispatched && !settling) await abandon(room, exchange, true)
           else await clear(room, exchange)
           continue
         }
@@ -261,9 +303,8 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
           await distributed.poll(room, exchange)
           await mirror(room, exchange)
           if (!busy(room)) {
-            await raw.post(exchangePath(room, exchange.id), {action:'finish'})
+            await finish(room, exchange)
             byId.delete(exchange.id)
-            await clear(room, exchange)
           } else await publishProgress(room, exchange)
         } catch (error) {
           if (!revoked.has(error?.code)) { report(error); continue }
@@ -280,6 +321,7 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
         try {
           const conversation = await sync(await raw.get('/v1/ot/conversations/' + item.conversation_id))
           room = findRoom(item.conversation_id)
+          if (room && blockedByLate.has(room.id)) continue
           if (!localRoom(rt, conversation, room)) {
             if (room) await raw.post(exchangePath(room, item.message_id), {action:'finish'})
             continue
@@ -318,7 +360,7 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
     }
   }
   const removeListener = rt.onRoomLine?.(room => {
-    if (room.flybotWorkspace?.native_exchange?.dispatched) wake()
+    if (room.flybotWorkspace?.native_exchange?.dispatched || room.flybotWorkspace?.native_late_exchange) wake()
   })
   const interval = setInterval(() => {
     if (inboxPending || Object.values(rt.state.rooms).some(room => room.flybotWorkspace?.native_exchange)) wake()

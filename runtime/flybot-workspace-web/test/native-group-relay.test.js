@@ -27,7 +27,7 @@ async function eventually(check) {
 
 function fixture(t, {exchange, initialState, roster = seats, mode = 'default', people = [{owner_id:owner}], lines = [],
   history, seq = 2, page = [{id:old,seq:1,body:'此前的讨论',created_at:1_700_000_000_000,author:{kind:'member',name:'Member'}}],
-  author, nativeHost = owner, coordinator = true, working = [], image,
+  author, nativeHost = owner, coordinator = true, working = [], image, lateExchange,
 } = {}) {
   let lineListener
   let dispose
@@ -38,7 +38,8 @@ function fixture(t, {exchange, initialState, roster = seats, mode = 'default', p
   const opened = []
   const logged = [...lines]
   const members = ['writer', 'reviewer']
-  const room = {id:'native-room', members, flybotWorkspace:{conversation_id:cid, native_group_host:nativeHost,
+  const room = {id:'native-room', members, flybotWorkspace:{conversation_id:cid, native_group_host:nativeHost, account_group:true,
+    ...(lateExchange ? {native_late_exchange:lateExchange} : {}),
     ...(exchange ? {native_exchange:exchange} : {}),
     ...(history ? {native_history:history} : {}),
   }}
@@ -127,6 +128,32 @@ test('a plain shared group send starts the corresponding native room, then mirro
   assert.equal(new Set(published.map(line => line.client_key)).size, 2)
   assert.deepEqual(h.room.flybotWorkspace.native_history.mirrored, [mirrored])
   assert.deepEqual(h.writes.map(item => item.body.action ?? 'line'), ['start','line','line','finish'])
+})
+
+test('a local Bot result is delivered once even after its native round finishes', async t => {
+  const h = fixture(t)
+  await h.send({})
+  await eventually(() => h.opened.length === 1)
+  h.setBusy(false)
+  h.addLine({botId:'writer',kind:'working'})
+  await eventually(() => h.state() === 'finished' && !h.room.flybotWorkspace.native_exchange)
+  assert.equal(h.room.flybotWorkspace.native_late_exchange.id, mid)
+  h.addLine({botId:'writer',text:'Already imported',flybotWorkspaceMessageId:old})
+  h.addLine({botId:'writer',text:'Completed in the background'})
+  await eventually(() => h.room.flybotWorkspace.native_late_exchange.cursor === h.logged.at(-1).seq)
+  const lines = h.writes.filter(item => item.path.endsWith('/lines'))
+  assert.deepEqual(lines.map(({path,body}) => [path,body.agent_ref,body.body,body.late]),
+    [[roundPath + '/lines','writer','Completed in the background',true]])
+  assert.equal(h.opened.length, 1)
+})
+
+test('restart publishes a late local result using the saved cursor without claiming a turn', async t => {
+  const h = fixture(t,{initialState:'finished',lateExchange:{id:mid,cursor:4},
+    lines:[{seq:4,botId:'writer',text:'Already published'},
+      {seq:5,botId:'writer',text:'Result saved before restart'}]})
+  await eventually(() => h.room.flybotWorkspace.native_late_exchange.cursor === 5)
+  assert.equal(h.opened.length,0)
+  assert.deepEqual(h.writes.map(({body}) => [body.late,body.body]), [[true,'Result saved before restart']])
 })
 
 test('a supported group image and its caption follow the native room', async t => {
