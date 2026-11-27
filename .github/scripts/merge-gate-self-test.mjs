@@ -1,7 +1,7 @@
 // The fixtures behind `--self-test`: five cases, no network. Kept apart from the gate itself so the
 // gate file stays small enough to write through the connector, and so the fixtures can be read
 // without the REST half in the way. Issue #3401.
-import { QA_MARKER, REQUIRED_CHECKS, ROLLUP_CHECK, evaluate, render } from './merge-gate-core.mjs'
+import { QA_MARKER, REQUIRED_CHECKS, REVIEW_MARKER, ROLLUP_CHECK, evaluate, render } from './merge-gate-core.mjs'
 
 const HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 const OLD = '0000000000000000000000000000000000000000'
@@ -22,8 +22,8 @@ const basePr = (over = {}) => ({
 })
 
 const goodComments = () => [
-  { id: 11, body: `## QA 证据（exact head）\n\n**Head** \`${HEAD}\`\n\n${QA_MARKER}\n` },
-  { id: 12, body: `## Lead 评审记录\n\nhead \`${HEAD}\`\n` },
+  { id: 11, body: `## QA evidence (exact head)\n\n**Head** \`${HEAD}\`\n\n${QA_MARKER}\n` },
+  { id: 12, body: `## ${REVIEW_MARKER}\n\nhead \`${HEAD}\`\n` },
 ]
 
 export const SELF_TEST_CASES = [
@@ -48,7 +48,7 @@ export const SELF_TEST_CASES = [
       checkRuns: greenRuns(),
       comments: [
         { id: 21, body: `**Head** \`${OLD}\`\n\n${QA_MARKER}\n` },
-        { id: 22, body: `## Lead 评审记录\n\nhead \`${HEAD}\`\n` },
+        { id: 22, body: `## ${REVIEW_MARKER}\n\nhead \`${HEAD}\`\n` },
       ],
     },
   },

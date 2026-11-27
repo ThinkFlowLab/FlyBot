@@ -26,8 +26,23 @@ export const REQUIRED_CHECKS = [
 
 // The two literals the evidence comments must carry, next to the head sha. They are the wording the
 // group agreed on, so the check does not depend on anyone's phrasing of anything else.
-export const QA_MARKER = '本证据不构成验收通过'
-export const REVIEW_MARKER = 'Lead 评审记录'
+//
+// English since 2026-11-27: everything the repository writes is English, PR comments included. Until
+// then the markers were Chinese, and those comments are still on real pull requests - so the old
+// sentences stay as legacy aliases rather than becoming evidence that cannot be read any more. A
+// comment counts when it carries the head and any one of the markers for its kind.
+//
+// The legacy sentences are written as \u escapes on purpose: the file stays ASCII (the repository
+// has no Chinese in its own sources any more), while the string it produces is exactly the old
+// sentence. The code points are pinned by the unit tests, so a typo cannot quietly stop matching.
+export const QA_MARKER = 'This evidence is not an acceptance sign-off'
+export const REVIEW_MARKER = 'Lead review record'
+
+export const LEGACY_QA_MARKER = '\u672c\u8bc1\u636e\u4e0d\u6784\u6210\u9a8c\u6536\u901a\u8fc7'
+export const LEGACY_REVIEW_MARKER = 'Lead \u8bc4\u5ba1\u8bb0\u5f55'
+
+export const QA_MARKERS = [QA_MARKER, LEGACY_QA_MARKER]
+export const REVIEW_MARKERS = [REVIEW_MARKER, LEGACY_REVIEW_MARKER]
 
 export const RISK_LABEL = /^risk:T[0-3]$/
 
@@ -51,9 +66,17 @@ function latestByName(runs) {
 
 const bodies = (comments) => comments.map((c) => ({ id: c.id, body: String(c.body || ''), url: c.html_url || '' }))
 
-function evidence(comments, head, marker) {
-  return bodies(comments).filter((c) => c.body.includes(head) && c.body.includes(marker))
+// One comment that carries the head and any one of the markers for its kind. Markers arrive as an
+// array so the legacy sentence counts exactly like the current one; a bare string is still accepted,
+// so a caller that wants a single literal keeps working.
+function evidence(comments, head, markers) {
+  const list = Array.isArray(markers) ? markers : [markers]
+  return bodies(comments).filter((c) => c.body.includes(head) && list.some((m) => c.body.includes(m)))
 }
+
+// A failure line has to name every accepted literal: the author reads it to learn what to paste, and
+// naming only the current one would hide that an older comment of theirs already counts.
+const quoted = (markers) => markers.map((m) => `"${m}"`).join(' or ')
 
 // Pure: everything it needs is passed in, so --self-test and the unit tests need no network.
 export function evaluate({ number, pr, checkRuns, comments }) {
@@ -97,12 +120,12 @@ export function evaluate({ number, pr, checkRuns, comments }) {
   // 3. both pieces of evidence, both on this head
   {
     const detail = []
-    const qa = evidence(comments, head, QA_MARKER)
-    const review = evidence(comments, head, REVIEW_MARKER)
+    const qa = evidence(comments, head, QA_MARKERS)
+    const review = evidence(comments, head, REVIEW_MARKERS)
     const pass = qa.length > 0 && review.length > 0
     if (pass) detail.push(`QA ${qa.map((c) => `#${c.id}`).join(' ')}; review ${review.map((c) => `#${c.id}`).join(' ')} - both name ${short(head)}`)
-    if (!qa.length) detail.push(`no comment carries ${short(head)} and "${QA_MARKER}"`)
-    if (!review.length) detail.push(`no comment carries ${short(head)} and "${REVIEW_MARKER}"`)
+    if (!qa.length) detail.push(`no comment carries ${short(head)} and ${quoted(QA_MARKERS)}`)
+    if (!review.length) detail.push(`no comment carries ${short(head)} and ${quoted(REVIEW_MARKERS)}`)
     gates.push({ n: 3, name: 'evidence on this head', pass, detail })
   }
 
