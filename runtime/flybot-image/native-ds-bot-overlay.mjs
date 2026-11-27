@@ -67,7 +67,7 @@ const files = {
   ],
   'src/host/parts.js': [
     'd0c762e46a00d053220eda242efaf503d24e15dbcff65ea6ac39c42f3d5234a6',
-    'ea7ca0a5bd1b60db291c4a555dc0694d089b4a3a4fb04a916b63ee0c480af924',
+    'ff76cb2c1d32fd7e0f8109014b1122b4746ac9888ea6efc2bdf135eb7c97f9ec',
   ],
   'src/host/store.js': [
     '6494f21fe71c208d246d56947680fdcbe55b77546c12bdf1da240854e0d5a504',

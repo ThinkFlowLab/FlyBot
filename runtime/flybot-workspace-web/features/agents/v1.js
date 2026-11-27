@@ -43,6 +43,7 @@ const publicMessage = (row, workspaceId, agentId) => {
   return {
     ...(attachments.length ? {attachments} : {}),
     ...(row.saved_work ? {saved_work:row.saved_work} : {}),
+    ...(row.reply_phase === 'queued' ? {reply_phase:'queued'} : {}),
     ...(meta?.clientKey ? {client_key:meta.clientKey} : {}),
     ...(meta?.memory_refs?.length ? {memory_refs: meta.memory_refs} : {}),
     ...(meta?.memory_profile_workspace === workspaceId ? {memory_profile_workspace: workspaceId} : {}),

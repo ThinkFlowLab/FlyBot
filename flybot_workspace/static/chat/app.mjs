@@ -3390,7 +3390,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       const heading = document.createElement('p');
       heading.className = 'reply-state';
       heading.setAttribute('role', 'status');
-      heading.textContent = partial ? privateReplyLabel(item.status, 'preparing', '')
+      heading.textContent = partial ? privateReplyLabel(item.status, item.reply_phase || 'preparing', '')
         : item.status === 'running' ? uiLabel('正在生成回复', 'Writing a reply')
         : uiLabel('正在准备回复', 'Preparing a reply');
       bubble.append(heading);
@@ -3462,6 +3462,9 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
         const view = replyWatch.view;
         view.bubble.dataset.messageId = item.id;
         delete view.bubble.dataset.sendPending;
+        if (!replyWatch.snapshot && item.reply_phase === 'queued') {
+          paintReplyProgress(view, {state:item.status, phase:item.reply_phase});
+        }
         agentReplyViews.set(item.client_key, view);
         rows.push(view.bubble);
         continue;
@@ -3525,6 +3528,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
 
   function privateReplyLabel(state, phase, text, reconnecting = false) {
     if (reconnecting) return uiLabel('正在重新连接回复…', 'Reconnecting to the reply…');
+    if (phase === 'queued') return uiLabel('已排队，等待上一条回复完成…', 'Queued until the previous reply finishes…');
     const thinking = phase === 'thinking' || (state === 'running' && phase !== 'preparing' && !text);
     if (text) return thinking ? uiLabel('正在思考', 'Thinking') : uiLabel('正在生成回复', 'Writing a reply');
     const name = currentAgent?.name || uiLabel('智能体', 'Agent');

@@ -181,7 +181,7 @@ test('cancellation stays bound to the selected live Session and a later turn can
   assert.equal(bot.sessionId, 'foreground')
 })
 
-function bridgedTurn(options = {}) {
+function bridgedTurn({sendAcknowledgment, ...options} = {}) {
   const {rt, bot} = fixture()
   const events = new EventEmitter()
   const ctx = {on(name, fn) { events.on(name, fn); return () => events.off(name, fn) }}
@@ -192,6 +192,7 @@ function bridgedTurn(options = {}) {
   rt.sendUser = async () => {
     rt.live.set(session.id, {turn:1})
     sessionEvent('turn/start', {turn:1})
+    await sendAcknowledgment
   }
   const reply = runTurn(rt, ctx, bot.id, 'first', 'my-request', 100, [], {sessionId:session.id, ...options})
   return {rt, events, session, sessionEvent, echo, reply}
@@ -209,14 +210,14 @@ test('an interactive reply can stream and finish after the admission deadline', 
   t.mock.timers.tick(200)
   sessionEvent('assistant/message', {turn:1, text:'completed reply'})
   sessionEvent('turn/end', {turn:1, turnId:'finished'})
-  assert.deepEqual(phases, ['writing'])
+  assert.deepEqual(phases, ['thinking', 'writing'])
   assert.deepEqual(await reply, {text:'completed reply', sessionId:session.id, turnId:'finished'})
   assert.equal(events.eventNames().length, 0)
 })
 
-test('only an exact native echo can clear the interactive admission deadline', async t => {
+test('an unacknowledged send requires an exact native echo before the deadline', async t => {
   t.mock.timers.enable({apis:['setTimeout']})
-  const {echo, session, reply} = bridgedTurn({interactive:true})
+  const {echo, session, reply} = bridgedTurn({interactive:true,sendAcknowledgment:new Promise(() => {})})
   const timedOut = assert.rejects(reply, /turn timed out/)
   echo('other-request')
   echo('my-request', {id:'other-session'})

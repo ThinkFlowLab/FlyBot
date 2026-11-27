@@ -548,6 +548,11 @@ test('private text accepts stable receipts before generation and keeps turn orde
     assert.deepEqual(await (await read(request,original[0])).json(),{state:'running',text:'',...pair})
   }
 
+  assert.equal(a.reply.reply_phase,undefined)
+  assert.equal(b.reply.reply_phase,'queued')
+  const history = await (await request(path,{},'limit=50')).json()
+  assert.equal(history.items.find(item => item.id === b.reply.id).reply_phase,'queued')
+
   // Open a persisted copy exactly as a fresh DS-Bot would after an interruption.
   db.prepare('VACUUM INTO ?').run(restartedFile)
   restartedDb = new DatabaseSync(restartedFile)
@@ -564,7 +569,12 @@ test('private text accepts stable receipts before generation and keeps turn orde
   }
   assert.deepEqual(turns,[`ot-agent:${a.message.id}`])
 
+  const progressQuery = 'key='+second[0]+'&after='
+  assert.deepEqual(await (await request(path+'/reply-progress',{},progressQuery+'1')).json(),
+    {state:'running',text:'',revision:0,phase:'queued'})
+  const progress = request(path+'/reply-progress',{},progressQuery+'0')
   finish[0].resolve('first reply')
+  assert.deepEqual(await (await progress).json(),{state:'running',text:'',revision:1,phase:'preparing'})
   await started[1].promise
   assert.deepEqual(turns,[`ot-agent:${a.message.id}`,`ot-agent:${b.message.id}`])
   finish[1].resolve('second reply')
