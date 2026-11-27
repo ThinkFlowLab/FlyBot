@@ -76,6 +76,18 @@ test('judge: content hits in added lines of code raise to T3', () => {
   }
 })
 
+test('judge: exec-family hits in a test file stay out of the tier, in product code they still count', () => {
+  // These two patterns used to hit fixtures: #3382 was called T3 for `new Function(` inside
+  // runtime/flybot/plugins/social/test/. A test that evaluates or spawns is ordinary test
+  // machinery, so those patterns are read on product code only. `.only(` and the lint
+  // suppressions stay in `diffPatterns`, because in a test file they still mean something.
+  const spawned = ["+import { exec } from 'node:child_process'"]
+  assert.notEqual(gate.judge([file('tests/harness.mjs', spawned)]).tier, 'T3', 'test helper')
+  assert.notEqual(gate.judge([file('runtime/flybot/plugins/social/test/poll-visibility.test.js', ['+new Function(source)'])]).tier, 'T3', 'test fixture')
+  assert.equal(gate.judge([file('runtime/flybot/plugins/social/src/a.js', spawned)]).tier, 'T3', 'product code still counts')
+  assert.equal(gate.judge([file('tests/test_a.py', ['+test.only("x")'])]).tier, 'T3', '.only still counts in a test')
+})
+
 test('#679: a topic counts on the registration line, not on a line that names the tool', () => {
   // The rule survives the port even though no tool in this tree registers a topic yet (`topics` is
   // empty): a plain substring match made any mention of a tool a T3 PR, so the narrow form is kept
