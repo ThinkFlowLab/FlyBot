@@ -1,0 +1,57 @@
+# The risk tier of a pull request, written as its one risk:T* label (issue #3393).
+#
+# The label is information, not a gate: merge-gate reads it, and the merge decision stays with the
+# FlyBot Lead (user decision, 2026-11-26). This workflow is the only producer of that label - it is
+# never hand-written - so the label always matches the rules table in .github/agent/risk-rules.json.
+#
+# The script and the rules are taken from the base commit, never from the pull request's own head: a
+# pull request must not be able to judge its own diff. The same run also removes a label that belongs
+# to an older verdict, so a pull request ends up with exactly one risk:T0..T3.
+name: Risk tier label
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: risk-gate-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  label:
+    name: Risk tier label
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      # Without --apply the script prints what it would do and writes nothing; the workflow is the one
+      # caller that passes --apply, so a local run can never change a pull request.
+      - name: Read the diff and make risk:T* the only risk label
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: node .github/scripts/risk-gate-label.mjs --pr "$PR" --apply
+      - name: Say that no label was applied
+        if: failure()
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        # The gates in tests.yml are separate workflows and are not affected by this job. What a
+        # failure means is only this: this pull request has no risk label from this run, and
+        # merge-gate will refuse it until one arrives.
+        #
+        # The two causes this job cannot work around itself: the label risk:T0..T3 must already
+        # exist in the repository (creating a repository label needs issues: write, which this job
+        # does not have), and on a pull request from a fork GITHUB_TOKEN is read-only.
+        run: |
+          echo "::error::No risk:T* label was applied to PR #${PR}; the label comes only from this job."
+          {
+            echo "No risk:T* label was applied to PR #${PR}."
+            echo "If the write was rejected, check that the labels risk:T0..risk:T3 exist in the repository (this job cannot create them) and that the pull request is not from a fork."
+          } >> "$GITHUB_STEP_SUMMARY"
