@@ -48,6 +48,20 @@ export function createGate(rules) {
   const tests = (t3.testPaths || []).map(globToRe)
   const unknown = rules.unknownPathTier || 'T2'
   const isGenerated = (name) => generated.some((r) => r.test(name))
+  const shebangTrees = (rules.shebangPaths || []).map(globToRe)
+
+  // A script with no extension (`docs/deploy`) is invisible to the path lists, so the patch is what
+  // says it is code: a file added under a prose tree whose added lines start with a shebang is T2,
+  // not the T0 of the prose next to it. Only an added file is read (a shebang that was already
+  // there is not in the patch), and a name with an extension is left to the path lists, so a .md
+  // that quotes a shebang inside a fence stays documentation (issue #3393).
+  function addsShebang(f) {
+    if (f.status !== 'added') return false
+    const base = f.filename.split('/').pop() || ''
+    if (base.includes('.')) return false
+    if (!shebangTrees.some((r) => r.test(f.filename))) return false
+    return (f.patch || '').split('\n').some((l) => l.startsWith('+#!/'))
+  }
 
   function tierOf(file) {
     for (const t of ['T3', 'T2', 'T1', 'T0']) if (paths[t].some((r) => r.test(file))) return t
@@ -67,11 +81,16 @@ export function createGate(rules) {
     const basis = []
     if (truncated || files.length >= MAX_FILES) bump('T3', `file list may be incomplete (${files.length} files)`)
     for (const f of files) {
+      // Read before the path list is recorded: a file with no extension is exactly the one this
+      // looks for, and the report must name this file at the tier its patch raised, not at the T0
+      // of the prose path it sits in.
+      const shebang = addsShebang(f)
       for (const name of [f.filename, f.previous_filename].filter(Boolean)) {
         const t = tierOf(name)
-        basis.push([name, t])
+        basis.push([name, shebang && ORDER.indexOf(t) < ORDER.indexOf('T2') ? 'T2' : t])
         bump(t, t === 'T3' ? `path ${name}` : null)
       }
+      if (shebang) bump('T2', `${f.filename}: shebang on an added line`)
       if (isGenerated(f.filename)) continue // generated files are verified by `patches check`, not read here
       if (f.changes > 0 && f.patch === undefined) { bump('T3', `diff not inspectable: ${f.filename}`); continue }
       if (!codeExt.test(f.filename)) continue // patterns look at code, not prose
