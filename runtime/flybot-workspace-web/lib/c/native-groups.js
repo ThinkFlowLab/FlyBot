@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { nativeGroupCreation } from './native-group-create.js'
 import { nativeGroupDirectory } from './native-group-directory.js'
-import { nativeGroupRelay } from './native-group-relay.js'
+import { nativeGroupRelay, prepareNativeRoomStream } from './native-group-relay.js'
 const installed = new WeakMap()
 const replyModes = new Set(['default', 'everyone', 'lead', 'mentions'])
 const groupAgentId = /^[A-Za-z0-9._:-]{1,80}$/
@@ -166,6 +166,7 @@ export function nativeGroupClient(host, raw) {
         else delete room.flybotWorkspace.reply_policy
         pendingSave.add(conversation.id)
       }
+      if (prepareNativeRoomStream(rt, room, created ? 0 : undefined)) pendingSave.add(conversation.id)
       if (pendingSave.has(conversation.id)) {
         await rt.save({required:true})
         pendingSave.delete(conversation.id)

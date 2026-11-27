@@ -11,6 +11,8 @@ const mirrored = 'otm_' + '5'.repeat(26)
 const conversationPath = '/v1/ot/conversations/' + cid
 const messagesPath = conversationPath + '/messages'
 const roundPath = conversationPath + '/native-rounds/' + mid
+const roomLinesPath = conversationPath + '/native-room-lines'
+const roomProgressPath = conversationPath + '/native-room-progress'
 const owner = 'owner'
 const seats = [
   {mine:true, agent_ref:'writer', owner:{owner_id:owner}},
@@ -38,7 +40,9 @@ function fixture(t, {exchange, initialState, roster = seats, mode = 'default', p
   const opened = []
   const logged = [...lines]
   const members = ['writer', 'reviewer']
-  const room = {id:'native-room', members, flybotWorkspace:{conversation_id:cid, native_group_host:nativeHost, account_group:true,
+  const room = {id:'native-room', members, remoteParticipants:people.map(person => ({id:person.owner_id})),
+    flybotWorkspace:{conversation_id:cid, native_group_host:nativeHost, account_group:true,
+    ...(coordinator ? {native_bot_seats:members} : {}),
     ...(lateExchange ? {native_late_exchange:lateExchange} : {}),
     ...(exchange ? {native_exchange:exchange} : {}),
     ...(history ? {native_history:history} : {}),
@@ -91,8 +95,8 @@ function fixture(t, {exchange, initialState, roster = seats, mode = 'default', p
         return {id:mid}
       }
       writes.push({path,body})
-      if (path === roundPath + '/lines') return {id:mirrored}
-      if (path === roundPath + '/progress') return {ok:true}
+      if (path === roundPath + '/lines' || path === roomLinesPath) return {id:mirrored}
+      if (path === roundPath + '/progress' || path === roomProgressPath) return {ok:true}
       assert.equal(path, roundPath)
       if (body.action === 'start') {
         assert.equal(state, 'queued')
@@ -137,13 +141,13 @@ test('a local Bot result is delivered once even after its native round finishes'
   h.setBusy(false)
   h.addLine({botId:'writer',kind:'working'})
   await eventually(() => h.state() === 'finished' && !h.room.flybotWorkspace.native_exchange)
-  assert.equal(h.room.flybotWorkspace.native_late_exchange.id, mid)
+  assert.equal(h.room.flybotWorkspace.native_room_stream.cursor, h.logged.at(-1).seq)
   h.addLine({botId:'writer',text:'Already imported',flybotWorkspaceMessageId:old})
   h.addLine({botId:'writer',text:'Completed in the background'})
-  await eventually(() => h.room.flybotWorkspace.native_late_exchange.cursor === h.logged.at(-1).seq)
-  const lines = h.writes.filter(item => item.path.endsWith('/lines'))
-  assert.deepEqual(lines.map(({path,body}) => [path,body.agent_ref,body.body,body.late]),
-    [[roundPath + '/lines','writer','Completed in the background',true]])
+  await eventually(() => h.room.flybotWorkspace.native_room_stream?.cursor === h.logged.at(-1).seq)
+  const lines = h.writes.filter(item => item.path === roomLinesPath)
+  assert.deepEqual(lines.map(({body}) => [body.agent_ref,body.body]),
+    [['writer','Completed in the background']])
   assert.equal(h.opened.length, 1)
 })
 
@@ -151,9 +155,34 @@ test('restart publishes a late local result using the saved cursor without claim
   const h = fixture(t,{initialState:'finished',lateExchange:{id:mid,cursor:4},
     lines:[{seq:4,botId:'writer',text:'Already published'},
       {seq:5,botId:'writer',text:'Result saved before restart'}]})
-  await eventually(() => h.room.flybotWorkspace.native_late_exchange.cursor === 5)
+  await eventually(() => h.room.flybotWorkspace.native_room_stream?.cursor === 5)
   assert.equal(h.opened.length,0)
-  assert.deepEqual(h.writes.map(({body}) => [body.late,body.body]), [[true,'Result saved before restart']])
+  assert.deepEqual(h.writes.map(({path,body}) => [path,body.body]), [[roomLinesPath,'Result saved before restart']])
+})
+
+test('an autonomous local room publishes long Bot output and actual working status without a human round', async t => {
+  const working = []
+  const h = fixture(t,{working,lines:[{seq:2,botId:'writer',text:'Predates the room stream'}]})
+  await eventually(() => h.room.flybotWorkspace.native_room_stream?.cursor === 2)
+  working.push({bot:{flybotWorkspace:{agent_id:'writer'}}}, {bot:{flybotWorkspace:{agent_id:'reviewer'}}})
+  const full = '审查报告。'.repeat(1600)
+  h.addLine({botId:'writer',text:full})
+  await eventually(() => h.writes.some(item => item.path === roomLinesPath))
+  assert.equal(h.writes.find(item => item.path === roomLinesPath).body.body, full)
+  assert.deepEqual(h.writes.find(item => item.path === roomProgressPath).body.working_agent_refs,['reviewer','writer'])
+  working.splice(0)
+  h.addLine({botId:'reviewer',kind:'done'})
+  await eventually(() => h.writes.some(item => item.path === roomProgressPath && !item.body.working_agent_refs.length))
+  assert.equal(h.writes.filter(item => item.path === roomLinesPath).length,1)
+  assert.deepEqual(h.opened,[])
+})
+
+test('a shared room cannot bootstrap the owner-only ledger stream', async t => {
+  const h = fixture(t,{people:[{owner_id:owner},{owner_id:'another'}],working:[{bot:{flybotWorkspace:{agent_id:'writer'}}}]})
+  h.addLine({botId:'writer',text:'A local-only output'})
+  await delay(30)
+  assert.equal(h.room.flybotWorkspace.native_room_stream,undefined)
+  assert.deepEqual(h.writes,[])
 })
 
 test('a supported group image and its caption follow the native room', async t => {

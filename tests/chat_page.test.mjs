@@ -1536,6 +1536,22 @@ test('native group activity follows local and remote Bot handoffs without reply 
   } finally { restore(); }
 });
 
+test('native group activity follows Bot handoffs before local room projection', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const {doc, el, restore, fetcher} = groupReplyChat((path, opts, conversation) => {
+    if (!path) return json(200,{conversation:{...conversation,native_room_id:null,
+      group_agent_routing:{mode:'shared',policy:{mode:'default'},native_group_host:alice}},items:[]});
+    assert.equal(path,'/reply-progress');
+    return json(200,{items:[],working_bots:[{id:'guest/native-b',name:'接力 Bot'}]});
+  });
+  try {
+    await mount(doc,{fetcher});
+    t.mock.timers.tick(500);
+    await settle();
+    assert.equal(el('group-bot-activity').textContent,'接力 Bot 正在工作…');
+  } finally { restore(); }
+});
+
 test('group progress updates only the original job and attempt and clears stale text', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const source = {id: 'source', user_id: alice, body: '请两位协助', created: 1, seq: 1, reply_jobs: [
