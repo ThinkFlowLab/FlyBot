@@ -121,3 +121,26 @@ test('#679: a topic counts on the registration line, not on a line that names th
   assert.equal(registered.tier, 'T3')
   assert.match(registered.why.join('\n'), /runtime\/flybot\/plugins\/social\/src\/tools\.js: topic create_child_bot/)
 })
+
+test('judge: an added file under docs/ or changelog.d/ that starts with a shebang is T2', () => {
+  const added = (name, lines) => file(name, lines, { status: 'added' })
+  // No extension, so no path list matches it: the patch is what makes it code (#3393).
+  const sh = gate.judge([added('docs/deploy', ['+#!/bin/sh', '+rm -rf /srv/flybot'])])
+  assert.equal(sh.tier, 'T2', 'a shell script with no extension is not the T0 of the prose next to it')
+  assert.deepEqual(sh.basis.filter((b) => b.tier === 'T2'), [{ path: 'docs/deploy', tier: 'T2' }], 'the report names this file as the reason')
+  assert.match(sh.why.join('\n'), /docs\/deploy: shebang on an added line/)
+  assert.equal(gate.judge([added('changelog.d/release', ['+#!/usr/bin/env python3', '+print(1)'])]).tier, 'T2')
+})
+
+test('judge: the shebang rule reads only a new file, and only one with no extension', () => {
+  const added = (name, lines) => file(name, lines, { status: 'added' })
+  // Without a shebang the file is still prose by path: that is the limit this slice leaves open.
+  assert.equal(gate.judge([added('docs/deploy', ['+echo hi'])]).tier, 'T0')
+  // A shebang that was already there is not in the patch, so a modified file adds nothing.
+  assert.equal(gate.judge([file('docs/deploy', ['+#!/bin/sh'])]).tier, 'T0', 'status modified is not an added file')
+  // A name with an extension is left to the path lists: a .md quoting a shebang in a fence stays prose.
+  assert.equal(gate.judge([added('docs/notes.md', ['+prose', '+```sh', '+#!/bin/sh', '+```'])]).tier, 'T0')
+  // A path that is already higher keeps its tier, and the rest of the tree is not touched.
+  assert.equal(gate.judge([added('scripts/deploy', ['+#!/bin/sh'])]).tier, 'T3')
+  assert.equal(gate.judge([added('services/bot-social/src/run', ['+#!/bin/sh'])]).tier, 'T2', 'outside the prose trees the path rules decide')
+})
