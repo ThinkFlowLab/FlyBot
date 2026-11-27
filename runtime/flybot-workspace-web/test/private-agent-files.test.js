@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -62,6 +63,95 @@ const createRuntime = () => {
     get count() { return count },
   }
 }
+
+test('private chat cards are scoped to the mapped live part and answered through the native Bot', async t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  const runtime = createRuntime()
+  const {rt} = runtime
+  const {endpoints} = createAgents({db,host:{
+    currentRuntime:() => runtime,
+    runtime:async () => runtime,
+    call:async () => ({}),
+  }})
+  const {agent} = await endpoints.create({workspace_id:workspace,name:'Card fixture',idempotency_key:'create-card-test-agent'})
+  const newConversation = () => endpoints['conversation-create']({workspace_id:workspace,id:agent.id})
+  const {conversation} = await newConversation()
+  const {conversation:other} = await newConversation()
+  const live = 'native-successor'
+  const anchor = conversation.native_session_id
+  const bot = rt.botOf(conversation.native_bot_id)
+  const part = bot.openParts.find(part => part.sessionId === anchor)
+  part.sessionId = live
+  part.segments = [{sessionId:anchor}]
+  rt.chatOwners.delete(anchor)
+  rt.chatOwners.set(live,bot.id)
+  rt.pastOwners = new Map([[anchor,{botId:bot.id}]])
+  const question = {id:randomUUID(),question:'Pick a color',detail:'For fixture-secret',multiSelect:true,
+    allowCustom:true,options:[{label:'Blue'},{label:'Green'}]}
+  const stale = {...question,id:randomUUID()}
+  const sibling = {...question,id:randomUUID()}
+  rt.state.questions = {[live]:question,[anchor]:stale,[other.native_session_id]:sibling}
+  const approval = {id:randomUUID(),answerable:true,botId:bot.id,sessionId:live,tool:'preview',reason:'Please confirm',
+    detail:{code:'fixture-secret'}}
+  const pending = [approval,{...approval,id:randomUUID(),sessionId:anchor},
+    {...approval,id:randomUUID(),botId:'other-bot'},{...approval,id:randomUUID(),roomId:'a-group'},
+    {...approval,id:randomUUID(),taskId:'a-task'},{...approval,id:randomUUID(),answerable:false}]
+  const acted = []
+  rt.redactSecrets = text => text.replace('fixture-secret','[hidden]')
+  rt.approvalsView = () => pending
+  rt.answerApproval = (id,choice) => {
+    acted.push({id,choice})
+    pending.splice(pending.findIndex(entry => entry.id === id),1)
+  }
+  rt.answerQuestion = async (sessionId,id,answer,requestId) => {
+    acted.push({sessionId,id,answer,requestId})
+    delete rt.state.questions[sessionId]
+  }
+  const request = legacyRequest(endpoints)
+  const path = id => `${root}/${agent.id}/conversations/${id}/action-cards`
+  const respond = (id, body, scope = conversation.id) =>
+    request(path(scope) + `/${id}/answer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  const listing = await request(path(conversation.id))
+  assert.equal(listing.status,200)
+  assert.deepEqual((await listing.json()).cards,[
+    {id:question.id,type:'choice',bot_name:'Card fixture',question:'Pick a color',detail:'For [hidden]',
+      multiple:true,allow_custom:true,options:question.options},
+    {id:approval.id,type:'approval',bot_name:'Card fixture',tool:'preview',reason:'Please confirm',code:'[hidden]'},
+  ])
+  assert.deepEqual((await (await request(path(other.id))).json()).cards.map(x => x.id),[sibling.id])
+  assert.equal((await request(path(conversation.id).replace(workspace,'b'.repeat(32)))).status,404)
+  assert.equal((await request(path('c'.repeat(32)))).status,404)
+  assert.equal((await request(path(conversation.id),{},'unknown=1')).status,400)
+  assert.equal((await respond(stale.id,{choice:'allow'})).status,409)
+  assert.equal((await respond(question.id,{selected:[0]},other.id)).status,409)
+  assert.equal((await respond(approval.id,{choice:'always-allow'})).status,400)
+  assert.equal((await respond(question.id,{selected:[0,0]})).status,400)
+  assert.equal((await respond(question.id,{selected:[5]})).status,400)
+  assert.equal((await respond(question.id,{selected:[0],sessionId:other.native_session_id})).status,400)
+  assert.equal((await respond(question.id,{custom:'x'.repeat(1001)})).status,400)
+  assert.equal((await respond(question.id,{custom:'\u0001'})).status,400)
+  question.allowCustom = false
+  assert.equal((await respond(question.id,{custom:'Red'})).status,400)
+  rt.readOnly = () => 'read-only'
+  assert.equal((await respond(approval.id,{choice:'allow'})).status,409)
+  assert.deepEqual((await (await request(path(conversation.id))).json()).cards,[])
+  rt.readOnly = () => undefined
+  assert.deepEqual(acted,[])
+  assert.equal((await respond(question.id,{selected:[1,0]})).status,200)
+  assert.equal((await respond(question.id,{selected:[1]})).status,409)
+  const custom = {...question,id:randomUUID(),allowCustom:true}
+  rt.state.questions[live] = custom
+  assert.equal((await respond(custom.id,{custom:'  Red  '})).status,200)
+  assert.equal((await respond(approval.id,{choice:'allow'})).status,200)
+  assert.equal((await respond(approval.id,{choice:'reject'})).status,409)
+  assert.deepEqual(acted,[
+    {sessionId:live,id:question.id,answer:{selected:['Green','Blue']},requestId:`flybot-private-card:${question.id}`},
+    {sessionId:live,id:custom.id,answer:{custom:'Red'},requestId:`flybot-private-card:${custom.id}`},
+    {id:approval.id,choice:'allow'},
+  ])
+  assert.deepEqual((await (await request(path(conversation.id))).json()).cards,[])
+})
 
 test('a private sticker appears as soon as staged and its message survives library removal', async t => {
   const db = new DatabaseSync(':memory:')

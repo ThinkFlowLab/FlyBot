@@ -7,6 +7,7 @@ import { PRIVATE_TEXT_LIMIT, textReplyKey, textReplyAttempt } from './private-re
 import { createV1Endpoint } from '../../featurekit/v1.js'
 import { CHAT_LANGUAGE_NAMES } from '../settings/settings.js'
 import { agentCopyRoutes } from './copy-grants.js'
+import { ACTION_CARD_ID, isActionCardId } from '../../lib/action-cards.js'
 
 const HEX = '([0-9a-f]{32})'
 
@@ -45,6 +46,7 @@ const publicMessage = (row, workspaceId, agentId) => {
     ...(row.saved_work ? {saved_work:row.saved_work} : {}),
     ...(row.reply_phase === 'queued' ? {reply_phase:'queued'} : {}),
     ...(meta?.clientKey ? {client_key:meta.clientKey} : {}),
+    ...(isActionCardId(meta?.private_card_id) ? {private_card_id:meta.private_card_id} : {}),
     ...(meta?.memory_refs?.length ? {memory_refs: meta.memory_refs} : {}),
     ...(meta?.memory_profile_workspace === workspaceId ? {memory_profile_workspace: workspaceId} : {}),
     ...(canRetryText ? {attempt: textReplyAttempt(meta), can_retry: status === 'failed', ...(status === 'running' ? {can_stop:true} : {})} : {}),
@@ -85,6 +87,18 @@ export function agentsV1({ endpoints, chatDirectory, host, log }) {
       const {prompt} = requireBodyKeys(await req.json(8192), ['prompt'])
       return {body:await call('draft', {workspace_id:workspaceId,prompt})}
     }) },
+    { pattern: new RegExp(`^/v1/workspaces/${HEX}/agents/${HEX}/conversations/${HEX}/action-cards$`),
+      handle: wrap(async (req, workspaceId, id, conversationId) => {
+        if (req.method !== 'GET') throw new FeatureError(405, 'method', 'Only GET is supported')
+        if (req.query.size) throw new FeatureError(400,'invalid','Invalid card list query')
+        return {body:await call('actionCards',{workspace_id:workspaceId,id,conversation_id:conversationId})}
+      }) },
+    { pattern: new RegExp(`^/v1/workspaces/${HEX}/agents/${HEX}/conversations/${HEX}/action-cards/(${ACTION_CARD_ID})/answer$`),
+      handle: wrap(async (req, workspaceId, id, conversationId, cardId) => {
+        if (req.method !== 'POST') throw new FeatureError(405, 'method', 'Only POST is supported')
+        if (req.query.size) throw new FeatureError(400,'invalid','Invalid card answer query')
+        return {body:await call('answerActionCard',{workspace_id:workspaceId,id,conversation_id:conversationId,card_id:cardId,answer:await req.json(8192)})}
+      }) },
     { pattern: new RegExp(`^/v1/workspaces/${HEX}/agents/${HEX}/conversations/${HEX}/reply-stop$`),
       handle: wrap(async (req, workspaceId, id, conversationId) => {
         if (req.method !== 'POST') throw new FeatureError(405, 'method', 'Only POST is supported')

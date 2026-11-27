@@ -4769,6 +4769,106 @@ function linkedChatSnapshot(fixture, owner = alice, conversations = [fixture.nat
   });
 }
 
+test('private cards remain available after a reply settles and successful choices refresh the same transcript', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const base = linkBase(linkWork) + linkNativePath;
+  const fixture = linkedChatFixture(`#workspace=${linkWork}&agent=${linkAgent}&conversation=${linkThread}`);
+  Object.assign(fixture.nativeThread, {archived:false, unread_count:0});
+  const choice = {id:'choice-card',type:'choice',bot_name:'Personal Agent',question:'确认采用哪种方案？',
+    allow_custom:true,options:[{label:'第一项'},{label:'第二项'}]};
+  const approval = {id:'approval-card',type:'approval',bot_name:'Personal Agent',tool:'发布',reason:'确认发布范围'};
+  const outcome = {id:'8'.repeat(32),role:'assistant',status:'succeeded',body:'已收到你的选择。',private_card_id:choice.id};
+  const response = Promise.withResolvers();
+  fixture.routes.set(base + '/action-cards', () => json(200,{cards:[choice,approval]}));
+  fixture.routes.set(base + '?limit=50', () => json(200,{agent:fixture.agent,conversation:fixture.nativeThread,items:fixture.nativeRows.slice()}));
+  fixture.routes.set(base + '/action-cards/choice-card/answer', () => response.promise);
+  fixture.routes.set(base + '/action-cards/approval-card/answer', () => json(200,{ok:true}));
+  try {
+    await mount(fixture.doc,{fetcher:fixture.fetcher});
+    const dock = fixture.el('private-action-cards');
+    assert.equal(dock.hidden,true);
+    assert.equal(fixture.el('message-list').children.at(-1).dataset.messageId,linkAgentLatest);
+    t.mock.timers.tick(250);
+    await settle();
+    const [question, operation] = dock.children;
+    assert.equal(dock.hidden,false);
+    assert.equal(fixture.el('group-action-cards').hidden,true);
+    const [first,, custom] = question.querySelectorAll('input');
+    const submit = question.querySelector('[data-card-action="submit"]');
+    assert.equal(submit.disabled,true);
+    assert.equal(custom.maxLength,1000);
+    first.checked = true;
+    await fire(first,'change');
+    custom.value = '  自己的答案  ';
+    await fire(custom,'input');
+    assert.equal(first.checked,false);
+    assert.equal(submit.disabled,false);
+    const event = {preventDefault() {}};
+    await fire(question,'submit',event);
+    await fire(question,'submit',event);
+    assert.equal(submit.disabled,true);
+    const answers = () => fixture.calls.filter(call => call.path.endsWith('/answer'));
+    assert.deepEqual(answers().map(call => call.body),[{custom:'自己的答案'}]);
+    fixture.nativeRows.push(outcome);
+    response.resolve(json(200,{ok:true}));
+    await settle();
+    assert.equal(fixture.el('message-list').children.at(-1).dataset.messageId,outcome.id);
+    assert.deepEqual(dock.children,[operation]);
+    await fire(operation.querySelector('[data-card-action="reject"]'),'click');
+    await settle();
+    assert.deepEqual(answers().map(call => [call.method,call.path,call.body]),[
+      ['POST',base + '/action-cards/choice-card/answer',{custom:'自己的答案'}],
+      ['POST',base + '/action-cards/approval-card/answer',{choice:'reject'}],
+    ]);
+    assert.equal(dock.hidden,true);
+    t.mock.timers.tick(3000);
+    await settle();
+    assert.equal(dock.hidden,true,'a stale snapshot cannot revive answered cards');
+  } finally {
+    response.resolve(json(503,{}));
+    fixture.restore();
+  }
+});
+
+test('private card reads are cancelled and old card controls are detached on conversation change', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const fixture = linkedChatFixture(`#workspace=${linkWork}&agent=${linkAgent}&conversation=${linkThread}`);
+  Object.assign(fixture.nativeThread,{archived:false,unread_count:0});
+  const cardPath = linkBase(linkWork) + linkNativePath + '/action-cards';
+  const card = {id:'pending-approval',type:'approval',bot_name:'Personal Agent',tool:'保存'};
+  const pending = Promise.withResolvers();
+  let reads = 0;
+  let signal;
+  fixture.routes.set(cardPath, (_call,options) => {
+    if (!reads++) return json(200,{cards:[card]});
+    signal = options.signal;
+    return pending.promise;
+  });
+  try {
+    await mount(fixture.doc,{fetcher:fixture.fetcher});
+    t.mock.timers.tick(250);
+    await settle();
+    const dock = fixture.el('private-action-cards');
+    const allow = dock.querySelector('[data-card-action="allow"]');
+    assert.ok(allow);
+    t.mock.timers.tick(3000);
+    await settle();
+    assert.equal(signal.aborted,false);
+    await fixture.navigate(`#workspace=${linkTeam}&social=${linkSocial}`);
+    await settle();
+    assert.equal(signal.aborted,true);
+    assert.equal(dock.hidden,true);
+    await fire(allow,'click');
+    pending.resolve(json(200,{cards:[card]}));
+    await settle();
+    assert.deepEqual(dock.children,[]);
+    assert.equal(fixture.calls.some(call => call.path.endsWith('/answer')),false);
+  } finally {
+    pending.resolve(json(503,{}));
+    fixture.restore();
+  }
+});
+
 test('long private and group replies render once even with a saved folding setting', async t => {
   t.mock.timers.enable({apis:['setTimeout']});
   const title = '独立标题';

@@ -1,6 +1,8 @@
 import { loadPersonalAgentBootstrap } from '../../../flybot-image/agent-bootstrap.mjs'
 import { nativeAgents } from './native.js'
 import { nativeHistoryProjection } from './native-history-projection.js'
+import { nativePrivateCards } from './action-cards.js'
+import { actionCardView, answerActionCard, parseActionCardAnswer } from '../../lib/action-cards.js'
 import { asksToSetUpTeam, attachPersonalTeamCreation } from './team-creation.js'
 import { importPending } from '../../src/pending-import.js'
 // Workspace agents inside the user's own DS-Bot (batch B2; moved from
@@ -449,6 +451,16 @@ export function createAgents({ db, host }) {
       WHERE conversation_id=? AND role='assistant' AND id IN (?,?) ORDER BY rowid DESC LIMIT 1`,
       id, textId, attachmentId)
     return {id, textId, find}
+  }
+
+  function privateCardScope(p) {
+    const agent = load(ws(p),p.id)
+    const row = conversation(agent,p.conversation_id)
+    const rt = host.currentRuntime?.()?.rt
+    // Read the existing binding without starting a new session or waiting
+    // for an approval-blocked model turn to release the bridge lock.
+    const mapping = rt && native.mappedSession(agent,`agent:${agent.id}:${row.id}`)
+    return {rt,cards:nativePrivateCards(rt,agent,row,mapping)}
   }
 
   async function trackSend(conversationId, userId, replyId, perform, onAccepted, stop) {
@@ -1136,6 +1148,20 @@ export function createAgents({ db, host }) {
         conversation: {...conversation(agent, row.id), ...mapping, ...memory},
         ...await withSavedChatWorks(agent, row, history ? conversationHistory(row.id, history) : {items: conversationMessages(row.id)}),
       }
+    },
+    actionCards(p) {
+      const {rt,cards} = privateCardScope(p)
+      return {cards:cards.map(card => actionCardView(rt,card))}
+    },
+    async answerActionCard(p) {
+      const {rt,cards} = privateCardScope(p)
+      const answer = parseActionCardAnswer(p.answer,true)
+      if (rt?.readOnly?.() !== undefined) fail('read_only','当前运行环境暂时无法提交。',409)
+      const matching = cards.filter(card => card.id === p.card_id)
+      if (matching.length !== 1) fail('stale','这张卡片已处理或不再可用。',409)
+      const [card] = matching
+      await answerActionCard(rt,card,answer,`flybot-private-card:${card.id}`)
+      return {ok:true}
     },
     async captureSource(p) {
       const agent = load(ws(p), p.agent_id)

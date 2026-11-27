@@ -37,6 +37,18 @@ test('private chat identifies the account DS-Bot and shares the agents transport
   });
 });
 
+test('private action cards use the scoped account transport for reads and answers', () => {
+  const origin = 'https://flybot-workspace.example';
+  const base = `/v1/workspaces/${'a'.repeat(32)}/agents/${'b'.repeat(32)}/conversations/${'c'.repeat(32)}/action-cards`;
+  const answer = `${base}/22222222-3333-4444-8555-666666666666/answer`;
+  for (const path of [base, answer]) assert.deepEqual(movedTarget(path,origin),{feature:'agents',path});
+  assert.equal(movedTarget(base + '/another/answer',origin),null);
+  const body = {selected:[1]};
+  assert.deepEqual(envelope(movedTarget(answer,origin),'POST',{},body),{
+    endpoint:'agents/v1',payload:{method:'POST',path:answer,body},
+  });
+});
+
 test('native Chat starts scoped reads without the browser transport or optional modules', async () => {
   const original = globalThis.window;
   const calls = [];

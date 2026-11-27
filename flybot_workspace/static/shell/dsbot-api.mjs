@@ -31,6 +31,7 @@ export const MOVED = [
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents\/[0-9a-f]{32}\/shares(?:\/otag_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}\/revoke)?$/, 'agents'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents\/[0-9a-f]{32}\/access(?:\/otc_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}\/revoke)?$/, 'agents'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents\/[0-9a-f]{32}\/conversations\/[0-9a-f]{32}\/memory\/capture$/, 'agents'],
+  [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents\/[0-9a-f]{32}\/conversations\/[0-9a-f]{32}\/action-cards(?:\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/answer)?$/, 'agents'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents\/draft$/, 'agents'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents(?:\/[0-9a-f]{32}(?:\/(?:archive|conversations(?:\/[0-9a-f]{32}(?:\/(?:attachments|reply-progress|reply-stop|messages(?:\/[0-9a-f]{32}\/(?:artifact|retry|files\/[0-3]))?))?)?))?)?$/, 'agents'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/meetings(?:\/(?:draft|speech|transcribe|share-recipients|shared(?:\/[0-9a-f]{32}(?:\/(?:revoke|action|discussion))?)?|[0-9a-f]{32}(?:\/(?:remove|export|shares|action|artifact|memory))?))?$/, 'meetings'],

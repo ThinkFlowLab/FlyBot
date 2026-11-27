@@ -8,6 +8,7 @@ const STORAGE_READ_MS = 1200
 const MAX_COLD_REVISIONS = 128
 const MAX_TEXT = 20_000
 const ID = /^[0-9a-f]{32}$/
+const PRIVATE_CARD_REQUEST = /^flybot-private-card:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/
 
 function textOf(content, allowReasoning = false) {
   if (!Array.isArray(content) || !content.length || content.some(block =>
@@ -16,10 +17,36 @@ function textOf(content, allowReasoning = false) {
   return text.trim() && text.length <= MAX_TEXT && !text.includes('\0') && text.isWellFormed() ? text : null
 }
 
+function cardInput(event, source) {
+  if (source.outcome !== 'answered' || typeof source.rpcId !== 'string') return null
+  const cardId = PRIVATE_CARD_REQUEST.exec(source.rpcId)?.[1]
+  if (!cardId) return null
+  const payload = textOf(event.data?.content)
+  if (!payload) return null
+  let reply
+  try { reply = JSON.parse(payload) } catch { return null }
+  if (reply?.kind !== 'answer_to_pending_question' || reply.tool !== 'ask_user' ||
+      typeof source.callId !== 'string' || reply.callId !== source.callId ||
+      !Array.isArray(reply.questions) || reply.questions.length !== 1 ||
+      !Array.isArray(reply.answers) || reply.answers.length !== 1) return null
+  const [asked] = reply.questions
+  const [answer] = reply.answers
+  if (asked?.id !== cardId || answer?.id !== cardId || !Array.isArray(answer.selected) ||
+      !Array.isArray(asked.options)) return null
+  const labels = new Set(asked.options.map(option => option?.label))
+  if (answer.selected.length > (asked.multiSelect === true ? 6 : 1) ||
+      answer.selected.some(label => typeof label !== 'string' || !label.trim() || !labels.has(label))) return null
+  const custom = typeof answer.custom === 'string' ? answer.custom.trim() : ''
+  const text = custom && !answer.selected.length ? custom : answer.selected.join('\n')
+  return text ? {text,request:source.rpcId,cardId} : null
+}
+
 function nativeInput(event) {
   const source = event.data?.source
-  if (event.surfaceOp !== 'append' || source?.kind !== 'user' || source.imported || source.flybotWorkspaceMessageId ||
-      source.handoff || source.resume || source.imOrigin ||
+  if (event.surfaceOp !== 'append' || source?.imported || source?.flybotWorkspaceMessageId ||
+      source?.handoff || source?.resume || source?.imOrigin) return null
+  if (source?.kind === 'user-question-reply') return cardInput(event,source)
+  if (source?.kind !== 'user' ||
       (typeof source.rpcId === 'string' && /^(?:ot-|otp:|ots:|im:)/.test(source.rpcId))) return null
   const text = textOf(event.data?.content)
   return text ? {text,request:typeof source.rpcId === 'string' && source.rpcId.length <= 128 ? source.rpcId : undefined} : null
@@ -39,15 +66,15 @@ function turnRows(session, end, floor = session.firstLiveSeq ?? 0) {
       if (event.type !== 'turn/start' || event.data?.turn !== turn || !users.length) return []
       const rows = users.reverse()
       if (!otherInput && answer && answer.event_seq > rows.at(-1).event_seq) {
-        const request = rows.length === 1 ? rows[0].request : undefined
-        rows.push({...answer,request})
+        const [{request,cardId}] = rows.length === 1 ? rows : [{}]
+        rows.push({...answer,request,cardId})
       }
       return rows
     }
     if (!Number.isSafeInteger(event.seq) || event.seq !== seq || !Number.isFinite(event.time) || event.time <= 0) continue
     if (event.type === 'user/message') {
       const input = nativeInput(event)
-      if (input) users.push({...rowOf(event,'user',input.text),request:input.request})
+      if (input) users.push({...rowOf(event,'user',input.text),request:input.request,cardId:input.cardId})
       else {
         const source = event.data?.source
         if (source?.kind === 'user' || !['instructions','catalog','snapshot','recall'].includes(source?.form)) otherInput = true
@@ -109,11 +136,11 @@ export function nativeHistoryProjection({host,db}) {
     db.exec('BEGIN IMMEDIATE')
     try {
       let updated = 0
-      for (const {event_seq,role,text,created,request} of rows) {
+      for (const {event_seq,role,text,created,request,cardId} of rows) {
         if (existing.get(sessionId,event_seq)) continue
         const receipt = request ? ['request',request] : ['event',sessionId,event_seq]
         const id = createHash('sha256').update(JSON.stringify([conversationId,role,receipt])).digest('hex').slice(0,32)
-        const meta = JSON.stringify({engine:'ds-bot',session_id:sessionId})
+        const meta = JSON.stringify({engine:'ds-bot',session_id:sessionId,...(cardId ? {private_card_id:cardId} : {})})
         if (!insert.run(id,conversationId,role,text,role === 'user' ? 'sent' : 'succeeded',created,meta).changes) continue
         record.run(id,sessionId,event_seq,'native')
         updated = Math.max(updated,created)
