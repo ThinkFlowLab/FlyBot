@@ -2,31 +2,31 @@
   "repo": "Fei2411/DS-Bot",
   "url": "https://github.com/Fei2411/DS-Bot",
   "license": "Apache-2.0",
-  "tag": "v0.3.10",
-  "commit": "d104d9ca18d69a35460f14e15dff4d553181433a",
-  "committed": "2026-11-22T18:25:36+08:00",
-  "version": "0.3.10",
-  "dsh": "0.2.2-rc.1",
+  "tag": "v0.4.0",
+  "commit": "7963e66a74f40d23daa288a76cdca72b34e39561",
+  "committed": "2026-11-27T01:11:34-08:00",
+  "version": "0.4.0",
+  "dsh": "0.2.2-rc.5",
   "note": "runtime/ds-bot-upstream/<path> is byte-identical to upstream <commit>:<path> (git object ids below). Never edit it; FlyBot changes live outside it (see runtime/ds-bot-upstream/UPSTREAM.md). Update with: node scripts/ds-bot-upstream.mjs sync <tag>",
   "paths": {
     "ds-bot": {
       "type": "tree",
-      "id": "ef97b8b191631f100cbfc2426dc97d19f1dc61e6",
+      "id": "4f634c52a972686389c118c4cf63a0e3f833e404",
       "mode": "040000"
     },
     "link": {
       "type": "tree",
-      "id": "2e8f3f56ce98c91d8a31cbb9088abefd03470ccd",
+      "id": "313b7904c0364483ed516fc34041a2f344ca2889",
       "mode": "040000"
     },
     "app/package.json": {
       "type": "blob",
-      "id": "38b90037c04eb7cb81f460fa60c96a78071c7023",
+      "id": "aba3c2123a0ee774a31e18daed067cfbcd62855a",
       "mode": "100644"
     },
     "app/ui/src": {
       "type": "tree",
-      "id": "f814feec0cfcb2b12c816f10897a036138817a89",
+      "id": "e4be56e19c2bdc32a221bcbc7e1378bb6a61c565",
       "mode": "040000"
     },
     "mobile/src/team/gated.ts": {
@@ -41,7 +41,7 @@
     },
     "docker/Dockerfile": {
       "type": "blob",
-      "id": "a9ae387faa21e080914619111c4005c3f22ef6bb",
+      "id": "dda4a5407e49082ca38f8ecb6a2aa4f1108a010b",
       "mode": "100644"
     },
     "docker/entrypoint.sh": {
@@ -66,7 +66,7 @@
     },
     "NOTICE": {
       "type": "blob",
-      "id": "d9618dc66b0ac5e0e15b2e29cc4bd9a86259b0b0",
+      "id": "1c22f91934acd786f883bb13bfbbd76069c0cdd7",
       "mode": "100644"
     }
   }
