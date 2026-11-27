@@ -2,7 +2,8 @@ name: Track upstream DS Bot
 # Daily and on demand: if Fei2411/DS-Bot has a newer vX.Y.Z release than the pin, sync it into
 # runtime/ds-bot-upstream on a branch, run the same checks as ds-bot-upstream.yml, and open a
 # pull request that reports the results. It never merges. A failing run still opens the pull
-# request, as a draft, so the breakage is visible.
+# request, as a draft, so the breakage is visible; the run itself then fails in a last step that
+# names which check did not pass, so a green run means both checks passed.
 #
 # Pull requests opened with the default GITHUB_TOKEN do not start other workflows, and the
 # repository must allow Actions to create pull requests. Set the secret DS_BOT_TRACK_TOKEN (a
@@ -141,3 +142,32 @@ jobs:
             echo "::error::Could not open the pull request. Allow GitHub Actions to create pull requests in the repository settings, or set the DS_BOT_TRACK_TOKEN secret. The branch $TRACK_BRANCH is pushed."
             exit 1
           fi
+      - name: Fail the run when either check did not pass
+        if: always() && steps.target.outputs.skip == 'false'
+        env:
+          SUITE: ${{ steps.suite.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRACK_REF: ${{ steps.target.outputs.ref }}
+        run: |
+          set -euo pipefail
+          # skipped only happens when an earlier step already failed, so it is not a red of its own
+          failed=0
+          if [ "$SUITE" = success ]; then :
+          elif [ "$SUITE" = skipped ]; then
+            echo "Upstream suite was skipped (an earlier step failed first; this run is already red)."
+          else
+            echo "::error::Upstream suite did not pass on $TRACK_REF (outcome: ${SUITE:-empty}), so this run is red. Run log: $RUN_URL"
+            failed=1
+          fi
+          if [ "$SMOKE" = success ]; then :
+          elif [ "$SMOKE" = skipped ]; then
+            echo "Container startup smoke was skipped (an earlier step failed first; this run is already red)."
+          else
+            echo "::error::Container startup smoke did not pass on $TRACK_REF (outcome: ${SMOKE:-empty}), so this run is red. Run log: $RUN_URL"
+            failed=1
+          fi
+          if [ "$SUITE" = success ] && [ "$SMOKE" = success ]; then
+            echo "Upstream suite and container startup smoke both passed on $TRACK_REF."
+          fi
+          exit "$failed"
