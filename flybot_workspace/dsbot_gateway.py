@@ -94,6 +94,7 @@ MOVED_APIS = (
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/[0-9a-f]{32}/shares(?:/otag_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}/revoke)?$'), 'agents'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/[0-9a-f]{32}/access(?:/otc_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}/revoke)?$'), 'agents'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/[0-9a-f]{32}/conversations/[0-9a-f]{32}/memory/capture$'), 'agents'),
+    (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/[0-9a-f]{32}/conversations/[0-9a-f]{32}/action-cards(?:/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/answer)?$'), 'agents'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/draft$'), 'agents'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents(?:/[0-9a-f]{32}(?:/(?:archive|conversations(?:/[0-9a-f]{32}(?:/(?:attachments|reply-progress|reply-stop|messages(?:/[0-9a-f]{32}/(?:artifact|retry|files/[0-3]))?))?)?))?)?$'), 'agents'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/meetings(?:/(?:from-call/otcav_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}|draft|speech|transcribe|share-recipients|shared(?:/[0-9a-f]{32}(?:/(?:revoke|action|discussion))?)?|[0-9a-f]{32}(?:/(?:remove|export|shares|action|artifact|memory))?))?$'), 'meetings'),

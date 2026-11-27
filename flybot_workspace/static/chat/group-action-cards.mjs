@@ -1,5 +1,5 @@
-export function mountGroupActionCards(document, {request, label}) {
-  const dock = document.getElementById('group-action-cards');
+export function mountActionCards(document, {dockId, request, label, pathForAnswer, onAnswer}) {
+  const dock = document.getElementById(dockId);
   let scope;
 
   function clear() {
@@ -42,6 +42,7 @@ export function mountGroupActionCards(document, {request, label}) {
     status.dataset.cardStatus = '';
     status.setAttribute('role', 'status');
     const controls = [];
+    let updateSubmit;
 
     function button(action, text, type = 'button') {
       const node = document.createElement('button');
@@ -59,21 +60,28 @@ export function mountGroupActionCards(document, {request, label}) {
       for (const control of controls) control.disabled = true;
       status.textContent = label('正在提交…', 'Submitting…');
       try {
-        const result = await request('POST', `${active.path}/group-cards/${encodeURIComponent(card.id)}/answer`,
+        const result = await request('POST', pathForAnswer(active.path, encodeURIComponent(card.id)),
           payload, undefined, AbortSignal.timeout(8000));
-        if (result.status !== 200 || result.body?.ok !== true) throw new Error('Group card answer was not confirmed');
         if (scope !== active) return;
+        if (result.status !== 200 || result.body?.ok !== true) {
+          status.textContent = result.status === 409
+            ? label('这张卡片已处理或不再可用。', 'This card was already handled or is no longer available.')
+            : label('未能确认提交，请重试。', 'Could not confirm submission. Try again.');
+          return;
+        }
         active.answered.add(card.id);
         active.entries.delete(card.id);
         const restoreFocus = form === document.activeElement || form.contains?.(document.activeElement);
         form.remove();
         dock.hidden = active.entries.size === 0;
         if (restoreFocus) document.getElementById('chat-body')?.focus({preventScroll:true});
+        onAnswer?.(card);
       } catch {
         if (scope === active) status.textContent = label('未能确认提交，请重试。', 'Could not confirm submission. Try again.');
       } finally {
         entry.busy = false;
         for (const control of controls) control.disabled = false;
+        updateSubmit?.();
       }
     }
 
@@ -98,13 +106,39 @@ export function mountGroupActionCards(document, {request, label}) {
         controls.push(input);
         return input;
       });
+      let custom;
+      if (card.allow_custom === true) {
+        const row = document.createElement('label');
+        row.className = 'group-action-card-custom';
+        const caption = document.createElement('span');
+        caption.textContent = label('自定义回答', 'Custom answer');
+        custom = document.createElement('input');
+        custom.type = 'text';
+        custom.maxLength = 1000;
+        row.append(caption, custom);
+        options.append(row);
+        controls.push(custom);
+      }
       const submit = button('submit', label('提交选择', 'Submit choice'), 'submit');
-      submit.disabled = true;
+      updateSubmit = () => {
+        submit.disabled = entry.busy || !(inputs.some(option => option.checked) || custom?.value.trim());
+      };
+      updateSubmit();
       for (const input of inputs) input.addEventListener('change', () => {
-        submit.disabled = !inputs.some(option => option.checked);
+        if (input.checked && custom) custom.value = '';
+        updateSubmit();
+      });
+      custom?.addEventListener('input', () => {
+        if (custom.value.trim()) for (const input of inputs) input.checked = false;
+        updateSubmit();
       });
       form.addEventListener('submit', event => {
         event.preventDefault();
+        const response = custom?.value.trim();
+        if (response) {
+          void answer({custom:response});
+          return;
+        }
         const selected = inputs.flatMap((input, index) => input.checked ? [index] : []);
         if (selected.length) void answer({selected});
       });
@@ -124,7 +158,7 @@ export function mountGroupActionCards(document, {request, label}) {
       if (scope?.path !== path) {
         clear();
         scope = {path, entries:new Map(), answered:new Set()};
-        dock.setAttribute('aria-label', label('群聊待处理卡片', 'Pending group cards'));
+        dock.setAttribute('aria-label', label('待处理卡片', 'Pending action cards'));
       }
       const visible = new Set();
       for (const card of Array.isArray(cards) ? cards : []) {

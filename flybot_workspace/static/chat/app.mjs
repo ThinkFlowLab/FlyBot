@@ -3,7 +3,7 @@ import { decodeVoice, mountVoiceRecorder } from './voice.mjs';
 import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mountAgentMentions } from './mentions.mjs';
 import { createGroupBotIdentities, groupBotIdentity, createGroupBotAvatar } from './group-identity.mjs';
 import { groupMentionPainter } from './group-mentions-display.mjs';
-import { mountGroupActionCards } from './group-action-cards.mjs';
+import { mountActionCards } from './group-action-cards.mjs';
 import { AGENT_FILE_ACCEPT, chatFileDownload, chatUploadProgress, deferModule, localChatFile, mountChatFiles,
   isChatImage, ownSocialMessage, ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
 import { mountGroupTranslation } from './translation.mjs';
@@ -1675,6 +1675,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const queue = pendingSends.get(scope);
     const closed = sendClosed();
     document.getElementById('chat-form').hidden = currentSource === 'agent' && currentConversation?.archived === true;
+    syncPrivateActionCards();
     document.getElementById('chat-body').disabled = closed;
     syncComposerSend(scope);
     syncPrivateReplyStop();
@@ -2470,6 +2471,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       document.body.classList.add('sessions-open');
       if (narrowScreen()) stopGroupReplyProgress({preservePreview: true});
     } else document.body.classList.remove('sessions-open');
+    syncPrivateActionCards();
   }
 
   function narrowScreen() {
@@ -4366,7 +4368,11 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let groupReplyWatch = null;
   const groupReplyViews = new Map();
   const groupBotActivity = document.getElementById('group-bot-activity');
-  const groupActionCards = mountGroupActionCards(document, {request, label:uiLabel});
+  const groupActionCards = mountActionCards(document, {dockId:'group-action-cards', request, label:uiLabel,
+    pathForAnswer:(path, id) => `${path}/group-cards/${id}/answer`});
+  const privateActionCards = mountActionCards(document, {dockId:'private-action-cards', request, label:uiLabel,
+    pathForAnswer:(path, id) => `${path}/${id}/answer`, onAnswer:followPrivateActionAnswer});
+  let privateActionWatch = null;
   const groupReplyRetries = new Map();
   let groupReplyScope = null;
   const olderMessages = document.getElementById('chat-load-older');
@@ -4398,8 +4404,75 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     return `/v1/workspaces/${wid}/agents/${aid}/conversations/${cid}`;
   }
 
+  function privateActionTarget() {
+    const thread = currentPrivateThread();
+    if (!thread || privateHistory?.cid !== thread.cid || sendClosed() || mainPanel.hidden ||
+        document.visibilityState !== 'visible' || !canWatchReply()) return null;
+    return thread;
+  }
+
+  function stopPrivateActionCards() {
+    if (privateActionWatch) {
+      globalThis.clearTimeout(privateActionWatch.timer);
+      privateActionWatch.controller.abort();
+      privateActionWatch = null;
+    }
+    privateActionCards.clear();
+  }
+
+  function syncPrivateActionCards() {
+    const target = privateActionTarget();
+    const scope = target && sendScope();
+    if (privateActionWatch?.scope === scope) return;
+    stopPrivateActionCards();
+    if (!target) return;
+    const watch = privateActionWatch = {scope, controller:new AbortController(), followups:new Map(),
+      path:agentConversationPath(target.wid, target.aid, target.cid) + '/action-cards'};
+    schedulePrivateActionCards(watch, 250);
+  }
+
+  function schedulePrivateActionCards(watch, delay) {
+    watch.timer = globalThis.setTimeout(() => void pollPrivateActionCards(watch), delay);
+    watch.timer?.unref?.();
+  }
+
+  function followingPrivateActionCards(watch) {
+    return watch === privateActionWatch && privateActionTarget() && sendScope() === watch.scope;
+  }
+
+  function followPrivateActionAnswer(card) {
+    const watch = privateActionWatch;
+    if (!watch || !followingPrivateActionCards(watch) || card.type !== 'choice') return;
+    watch.followups.set(card.id, Date.now() + 60000);
+    refreshForegroundPrivate();
+  }
+
+  async function pollPrivateActionCards(watch) {
+    if (!followingPrivateActionCards(watch)) {
+      if (watch === privateActionWatch) stopPrivateActionCards();
+      return;
+    }
+    const signal = AbortSignal.any([watch.controller.signal, AbortSignal.timeout(5000)]);
+    const result = await request('GET', watch.path, undefined, undefined, signal).catch(() => null);
+    if (!followingPrivateActionCards(watch)) return;
+    if (result?.status === 200 && Array.isArray(result.body?.cards)) privateActionCards.update(watch.path, result.body.cards);
+    else if ([401, 403, 404, 410].includes(result?.status)) {
+      privateActionCards.clear();
+      return;
+    }
+    const now = Date.now();
+    for (const [id, expires] of watch.followups) {
+      if (now >= expires || lastAgentItems.some(item => item.role === 'assistant' && item.private_card_id === id)) {
+        watch.followups.delete(id);
+      }
+    }
+    if (watch.followups.size) refreshForegroundPrivate();
+    schedulePrivateActionCards(watch, watch.followups.size || replyWatch ? 1500 : 3000);
+  }
+
   function setPrivateHistory(state) {
     privateHistory = state;
+    if (!state) stopPrivateActionCards();
     if (state?.readingHistory) stopReplyProgress();
     if (historyNotice) historyNotice.textContent = '';
     updateHistoryControls();
@@ -6806,6 +6879,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       if (!link) cancelStartupLink();
       renderAgentQuickStarts();
       stopReplyProgress();
+      stopPrivateActionCards();
       stopGroupReplyProgress();
       stopPolling();
     }
@@ -6844,6 +6918,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       if (!refresh) {
         show('error', messageFor(result.body.error, '无法打开对话。'));
         syncReplyProgress();
+        syncPrivateActionCards();
         syncGroupReplyProgress();
       }
       return false;
@@ -6942,7 +7017,10 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     if (sessionTransition?.pending && transition !== sessionTransition) return false;
     if (refresh && (openingStartupLink() || currentSource !== 'social'
       || currentConversation?.id !== conversationId)) return false;
-    if (!refresh && !link) cancelStartupLink();
+    if (!refresh) {
+      if (!link) cancelStartupLink();
+      stopPrivateActionCards();
+    }
     stopReplyProgress();
     renderAgentQuickStarts();
     const open = ++socialOpen;
@@ -6979,6 +7057,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       }
       if (!quiet) show('error', [403,404].includes(result.status) ? uiLabel('无法打开此会话。','This conversation could not be opened.')
         : messageFor(result.body?.error, '无法打开会话。'));
+      syncPrivateActionCards();
       if (currentSource === 'agent' && !syncReplyProgress() && lastAgentItems.some(waitingAgentReply)) schedulePoll();
       if (currentSource === 'social') { syncGroupReplyProgress(); scheduleSocialPoll(currentConversation); }
       return false;
@@ -7228,6 +7307,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   globalThis.addEventListener('blur', () => { foregroundPrivateRead = null; });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') foregroundPrivateRead = null;
+    syncPrivateActionCards();
     if (currentSource === 'agent') {
       if (document.visibilityState === 'visible' && !refreshForegroundPrivate()) void refreshAgentQuickStarts();
       if (!canWatchReply()) stopPolling();

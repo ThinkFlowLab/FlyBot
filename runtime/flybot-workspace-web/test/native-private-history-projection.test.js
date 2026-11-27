@@ -134,6 +134,30 @@ test('the native projection excludes Web sends, history import, tools, unrelated
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM agent_messages WHERE conversation_id=?').get(foreignConversation).n,0)
 })
 
+test('a private Web card answer and its native continuation appear once in the same conversation', async t => {
+  const f = fixture(t)
+  await f.seed()
+  const session = f.session('part-1')
+  const card = '7407e3b5-6d6b-4736-9571-99ace9bd5481'
+  const custom = '1a013c76-f4ba-4f7e-b07b-ce803e23da8f'
+  const response = (id, answer, rpcId = 'flybot-private-card:' + id) => input(JSON.stringify({
+    kind:'answer_to_pending_question',tool:'ask_user',callId:'question-'+id,
+    questions:[{id,question:'What color?',options:[{label:'Blue'},{label:'Green'}],multiSelect:true}],
+    answers:[{id,...answer}],
+  }),{kind:'user-question-reply',outcome:'answered',callId:'question-'+id,rpcId})
+  session.turn([response(card,{selected:['Blue']},'unrelated-native-id'),output('No Web card submission')])
+  session.turn([response(card,{selected:['Unlisted color']}),output('Unexpected option')])
+  session.turn([response(card,{selected:['Blue']},'flybot-private-card:'+custom),output('Mismatched card')])
+  const replay = session.turn([response(card,{selected:['Blue','Green']}),output('Both selected colors recorded')])
+  replay()
+  session.turn([response(custom,{selected:[],custom:'A custom option'}),output('Custom option recorded')])
+  const opened = await f.endpoints.openConversation(args)
+  assert.deepEqual(opened.items.map(row=>[row.role,row.text,row.meta.private_card_id]),[
+    ['user','Blue\nGreen',card],['assistant','Both selected colors recorded',card],
+    ['user','A custom option',custom],['assistant','Custom option recorded',custom],
+  ])
+})
+
 test('an owned moved part continues the same Web conversation and replays the exact request only once', async t => {
   const f = fixture(t)
   await f.seed()

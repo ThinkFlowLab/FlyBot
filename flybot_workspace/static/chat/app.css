@@ -3623,7 +3623,7 @@ body.app-workspace .mobile-inbox-heading h1 {
   border-radius: 50%;
   background: var(--ot-accent);
 }
-#group-action-cards:not([hidden]) {
+.chat-action-cards:not([hidden]) {
   order: 59;
   display: grid;
   gap: .45rem;
@@ -3685,6 +3685,21 @@ body.app-workspace .mobile-inbox-heading h1 {
   background: var(--ot-accent-soft);
 }
 .chat-group-action-card input { flex: 0 0 auto; margin: 0; accent-color: var(--ot-accent); }
+.chat-group-action-card .group-action-card-custom {
+  flex-wrap: wrap;
+  align-items: center;
+  cursor: text;
+}
+.group-action-card-custom input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: .2rem .4rem;
+  border: 1px solid var(--ot-line);
+  border-radius: .35rem;
+  background: var(--ot-surface);
+  color: var(--ot-ink);
+  font: inherit;
+}
 .chat-group-action-card small { display: block; }
 .group-action-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 .group-action-card-actions button { min-height: 2rem; padding: .27rem .7rem; font-size: .8125rem; }
