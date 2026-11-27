@@ -1,6 +1,8 @@
 {
   "policies": {
     "DontCheckDefaultBrowser": true,
+    "Homepage": {"URL": "about:blank", "StartPage": "none"},
+    "NewTabPage": false,
     "OverrideFirstRunPage": "",
     "OverridePostUpdatePage": "",
     "Preferences": {

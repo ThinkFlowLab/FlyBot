@@ -46,12 +46,17 @@ async function testBrowser() {
       if (!browser) return
       const {window_id} = browser
       const {elements} = JSON.parse(await act('inspect', {window_id}))
-      const field = elements.find(item => item.label === 'Search fixture')
+      const field = elements.find(item => item.role === 'entry' && item.label === 'Search fixture' && item.frame)
       if (field) return {window_id, field}
     })
-    await act('click', {window_id, element_token:field.element_token})
+    const {x, y, w, h} = field.frame
+    await act('click', {x:Math.floor(x + w / 2), y:Math.floor(y + h / 2)})
     const query = 'flybot-browser-fixture'
     await act('type', {window_id, text:query})
+    await eventually(async () => {
+      const {elements} = JSON.parse(await act('inspect', {window_id}))
+      return elements.some(item => item.label === 'Search fixture' && item.value === query)
+    })
     await act('key', {key:'Return'})
     await eventually(() => submitted === query)
     console.log('PASS: Firefox submitted text entered through the Bot desktop tool')
