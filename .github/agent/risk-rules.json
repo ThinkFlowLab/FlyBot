@@ -28,11 +28,6 @@
       ],
       "codeExt": "\\.(js|mjs|cjs|ts|jsx|tsx|py|sh|yml|yaml|json|html|css)$",
       "diffPatterns": [
-        "\\bchild_process\\b",
-        "\\beval\\(",
-        "new Function\\(",
-        "\\bexec(Sync)?\\(['\"]",
-        "\\bos\\.system\\(|\\bsubprocess\\.(run|call|Popen|check_output)",
         "process\\.env\\.[A-Za-z_]*(TOKEN|KEY|SECRET)",
         "os\\.environ(\\.get)?[\\[(][^\\n]{0,60}(TOKEN|KEY|SECRET)",
         "\\.dsh(?![-\\w])|DSH_HOME",
@@ -42,7 +37,12 @@
       ],
       "diffPatternsNotInTests": [
         "https?://(?!(localhost|127\\.0\\.0\\.1|example\\.(com|org)|github\\.com/(ThinkFlowLab|Birfy)|raw\\.githubusercontent\\.com/(ThinkFlowLab|Birfy)|registry\\.npmjs\\.org))",
-        "untrusted-(message|file)|\\bfence|sanitiz|displayName|display name"
+        "untrusted-(message|file)|\\bfence|sanitiz|displayName|display name",
+        "\\bchild_process\\b",
+        "\\beval\\(",
+        "new Function\\(",
+        "\\bexec(Sync)?\\(['\"]",
+        "\\bos\\.system\\(|\\bsubprocess\\.(run|call|Popen|check_output)"
       ],
       "testPaths": ["tests/**", "**/test/**", "**/tests/**", "**/*.test.{js,mjs,cjs,ts,jsx,tsx}", "**/test_*.py", "**/*_test.py"],
       "topics": []
