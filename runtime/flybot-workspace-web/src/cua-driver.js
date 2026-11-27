@@ -102,10 +102,15 @@ export function createCuaDriver(desktop) {
         throw desktopError(400, 'Use a fresh element_token from inspect on this window')
       }
       inspected = undefined
+      // Firefox's AT-SPI controls can require focus. Activate the validated
+      // window on this Bot's own X server before asking Cua to send input.
+      await run('/usr/bin/xdotool', ['windowactivate', '--sync', String(window_id)], {
+        env:desktop.env, timeout:3500, signal,
+      })
       const result = await call(action === 'click' ? 'click' : 'type_text', {
-        ...target,
+        ...target, delivery_mode:'foreground',
         ...(element_token === undefined ? {} : {element_token}),
-        ...(action === 'type' ? {text, delivery_mode:'foreground'} : {}),
+        ...(action === 'type' ? {text} : {}),
       }, signal)
       return JSON.stringify({
         effect:short(result.effect, 60), summary:short(result.summary),

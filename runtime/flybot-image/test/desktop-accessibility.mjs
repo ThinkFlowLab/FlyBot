@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { setTimeout as delay } from 'node:timers/promises'
 import { COMPUTER_PATH, createComputers } from '../../flybot-workspace-web/src/computer.js'
 
@@ -17,14 +19,48 @@ const windows = async target => JSON.parse(await act('windows', {}, target))
 
 async function eventually(read) {
   for (let attempt = 0; attempt < 35; attempt++) {
-    const result = await read()
+    const result = await Promise.resolve().then(read).catch(error => {
+      if (error.status !== 404) throw error
+    })
     if (result) return result
     await delay(200)
   }
   assert.fail('The expected desktop update did not appear')
 }
 
-try {
+async function testBrowser() {
+  let submitted
+  const fixture = createServer((request, response) => {
+    const query = new URL(request.url, 'http://localhost').searchParams.get('q')
+    if (query !== null) submitted = query
+    response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'})
+    response.end('<!doctype html><title>FlyBot Browser Fixture</title>' +
+      '<form><label>Search fixture <input name="q"></label><button>Run search</button></form>')
+  })
+  fixture.listen(0, '127.0.0.1')
+  await once(fixture,'listening')
+  try {
+    await act('open', {app:'browser', url:'http://127.0.0.1:' + fixture.address().port})
+    const {window_id, field} = await eventually(async () => {
+      const browser = (await windows()).find(item => item.title?.includes('FlyBot Browser Fixture'))
+      if (!browser) return
+      const {window_id} = browser
+      const {elements} = JSON.parse(await act('inspect', {window_id}))
+      const field = elements.find(item => item.label === 'Search fixture')
+      if (field) return {window_id, field}
+    })
+    await act('click', {window_id, element_token:field.element_token})
+    const query = 'flybot-browser-fixture'
+    await act('type', {window_id, text:query})
+    await act('key', {key:'Return'})
+    await eventually(() => submitted === query)
+    console.log('PASS: Firefox submitted text entered through the Bot desktop tool')
+  } finally {
+    fixture.close()
+  }
+}
+
+async function testDesktop() {
   await act('open', {app:'editor'})
   const editor = await eventually(async () => (await windows()).find(item => item.title?.includes('Mousepad')))
   const window_id = editor.window_id
@@ -50,6 +86,11 @@ try {
   const image = await act('screenshot')
   assert.equal(image.subarray(0, 8).toString('hex'), '89504e470d0a1a0a')
   console.log('PASS: Linux AX list, inspect, click, type, screenshot, owner takeover, and Bot isolation')
+}
+
+try {
+  if (process.argv[2] === 'browser') await testBrowser()
+  else await testDesktop()
 } finally {
   computers.close()
 }

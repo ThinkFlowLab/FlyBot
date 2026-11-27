@@ -70,6 +70,7 @@ COPY third_party/cua-driver /opt/licenses/cua-driver
 COPY flybot-social-host /opt/flybot-workspace/runtime/flybot-social-host
 COPY flybot-web-slots /opt/flybot-workspace/runtime/flybot-web-slots
 COPY flybot-image /opt/flybot-workspace/runtime/flybot-image
+COPY flybot-image/firefox-policies.json /usr/lib/firefox-esr/distribution/policies.json
 RUN sh /opt/flybot-workspace/runtime/flybot-image/install-cua-driver.sh
 RUN node /opt/flybot-workspace/runtime/flybot-image/native-ds-bot-overlay.mjs /opt/flybot-workspace/runtime/ds-bot-upstream/ds-bot \
     && node /opt/flybot-workspace/runtime/flybot-image/native-dsh-turn-overlay.mjs
