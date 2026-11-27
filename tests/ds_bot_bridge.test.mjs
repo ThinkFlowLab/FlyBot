@@ -402,6 +402,70 @@ test('the managed group turn hands off promptly when its exact native agent is d
   }
 })
 
+test('a queued private request binds on its live successor after the admission window', async () => {
+  const {rt, ctx, log} = fakeRuntime()
+  const bot = rt.botOf('bot1')
+  const successor = {id:'successor'}
+  bot.sessionId = 'chat1'
+  rt.chatOwners = new Map([['chat1',bot.id]])
+  rt.pastOwners = new Map()
+  rt.sendUser = async request => log.push(request)
+  const reply = runTurn(rt,ctx,bot.id,'queued input','own-request',12,[],{sessionId:'chat1',interactive:true})
+  await delay(35)
+  bot.segments = [{sessionId:'chat1'}]
+  bot.sessionId = successor.id
+  rt.chatOwners.delete('chat1')
+  rt.pastOwners.set('chat1',{botId:bot.id})
+  rt.chatOwners.set(successor.id,bot.id)
+  ctx.emit('session/event',successor,{type:'turn/start',data:{turn:5}})
+  ctx.emit('session/event',successor,{type:'user/message',data:{source:{rpcId:'own-request'}}})
+  ctx.emit('session/event',successor,{type:'assistant/message',data:{turn:5,text:'queued answer'}})
+  ctx.emit('session/event',successor,{type:'turn/end',data:{turn:5}})
+  assert.equal((await reply).sessionId,successor.id)
+  assert.equal(log.length,1)
+})
+
+test('a private reply follows only its native continuation across a part switch', async () => {
+  const {rt, ctx, log} = fakeRuntime()
+  const bot = rt.botOf('bot1')
+  const first = {id:'chat1'}, successor = {id:'successor'}, other = {id:'other'}
+  bot.sessionId = first.id
+  bot.openParts = [{sessionId:other.id}]
+  rt.chatOwners = new Map([[first.id,bot.id],[other.id,bot.id]])
+  rt.pastOwners = new Map()
+  rt.sendUser = async request => log.push(request)
+  const event = (session,type,data) => ctx.emit('session/event',session,{type,data})
+  const reply = runTurn(rt,ctx,bot.id,'continue once','own-request',1000,[],{sessionId:first.id,interactive:true})
+  event(first,'turn/start',{turn:9})
+  event(first,'user/message',{source:{rpcId:'own-request'}})
+  event(first,'assistant/message',{turn:9,text:'Opening'})
+  const handoffId = rt.flybotPrivateReplyForTurn(first.id,9)
+  assert.equal(handoffId,'own-request')
+  assert.equal(rt.flybotPrivateReplyForTurn(first.id,10),undefined)
+  rt.isSwitchingPart = id => id === first.id
+  event(first,'turn/end',{turn:9,reason:{kind:'error'}})
+  assert.equal(rt.flybotPrivateReplyForTurn(first.id,9),undefined)
+  bot.segments = [{sessionId:first.id}]
+  bot.sessionId = successor.id
+  rt.chatOwners.delete(first.id)
+  rt.pastOwners.set(first.id,{botId:bot.id})
+  rt.chatOwners.set(successor.id,bot.id)
+  event(other,'turn/start',{turn:1})
+  event(other,'user/message',{source:{resume:true,flybotPrivateReply:handoffId}})
+  event(other,'assistant/message',{turn:1,text:'unrelated private chat'})
+  event(other,'turn/end',{turn:1})
+  event(successor,'turn/start',{turn:1})
+  event(successor,'user/message',{source:{resume:true,flybotPrivateReply:'another-request'}})
+  event(successor,'assistant/message',{turn:1,text:'unrelated native handoff'})
+  event(successor,'turn/end',{turn:1})
+  event(successor,'turn/start',{turn:2})
+  event(successor,'user/message',{source:{resume:true,flybotPrivateReply:handoffId}})
+  event(successor,'assistant/message',{turn:2,text:'Final answer'})
+  event(successor,'turn/end',{turn:2,turnId:'native-final'})
+  assert.deepEqual(await reply,{text:'Opening\n\nFinal answer',sessionId:successor.id,turnId:'native-final'})
+  assert.equal(log.length,1)
+})
+
 test('native reply progress matches the admitted request, session, turn and attempt', async () => {
   const {rt, ctx, log} = fakeRuntime()
   const session = {id:'chat1'}

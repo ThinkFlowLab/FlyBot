@@ -36,7 +36,13 @@ export async function importHistory({ db, rt, ctx, bot, conversationId, sessionI
   const rows = db.prepare(`SELECT m.* FROM agent_messages m WHERE m.conversation_id=? AND m.status<>'cancelled'
     AND NOT EXISTS (SELECT 1 FROM native_agent_events e WHERE e.message_id=m.id)
     ORDER BY m.created,m.rowid`).all(conversationId)
-    .filter(row => !JSON.parse(row.meta || '{}').nativePending)
+    .filter(row => {
+      const meta = JSON.parse(row.meta || '{}')
+      // A live FlyBot failure is already in the Web transcript. Inserting
+      // its empty placeholder would wait for native work to become idle.
+      return !meta.nativePending &&
+        !(row.role === 'assistant' && row.status === 'failed' && row.text === '' && meta.clientKey && meta.error)
+    })
   if (!rows.length) return { imported:0, matched:0 }
   const scan = new Set()
   for (const sid of [sessionId, ...secondarySessionIds].filter(Boolean)) {

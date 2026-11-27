@@ -199,7 +199,8 @@ export function createAgents({ db, host }) {
   const requireOpenConversation = (agent, id) => {
     if (conversation(agent, id).archived_at !== null) fail('conversation_archived', '请恢复此对话后再发送消息。', 409)
   }
-  const readMessage = message => ({ ...message, meta: JSON.parse(message.meta) })
+  const readMessage = message => ({...message, meta:JSON.parse(message.meta),
+    ...(message.status === 'running' && liveReplies.get(message.id)?.phase === 'queued' ? {reply_phase:'queued'} : {})})
   const receiptScope = (agent, convo) => ({
     workspace_id: agent.workspace_id, agent_id: agent.id, conversation_id: convo.id,
   })
@@ -429,10 +430,7 @@ export function createAgents({ db, host }) {
     return { text: out, agent_id: agent.id, agent_name: agent.name, engine: 'ds-bot', session_key: sessionKey, session_id: reply.sessionId ?? null, turn_id: reply.turnId ?? null }
   }
 
-  const messageRow = id => {
-    const row = one('SELECT * FROM agent_messages WHERE id=?', id)
-    return {...row, meta:JSON.parse(row.meta)}
-  }
+  const messageRow = id => readMessage(one('SELECT * FROM agent_messages WHERE id=?', id))
   const sentPair = (userId, replyId) => ({message:messageRow(userId),reply:messageRow(replyId)})
   function verifySendMode(kind, conversationId, key) {
     const other = kind === 'text' ? 'attachment' : 'text'
@@ -454,26 +452,30 @@ export function createAgents({ db, host }) {
   }
 
   async function trackSend(conversationId, userId, replyId, perform, onAccepted, stop) {
-    const progress = {text:'', phase:'preparing', revision:0, waiters:new Set(), stop,
+    const previous = conversationTurns.get(conversationId)
+    const progress = {text:'', phase:previous ? 'queued' : 'preparing', revision:0, waiters:new Set(), stop,
       ...(onAccepted ? {onAccepted:new Set([onAccepted])} : {})}
     const wake = () => { for (const waiter of progress.waiters) waiter() }
     liveReplies.set(replyId, progress)
-    const runTurn = () => perform(text => {
-      if (stop?.signal.aborted || typeof text !== 'string') return
-      const snapshot = text.slice(0, LIMITS.text)
-      if (snapshot === progress.text) return
-      progress.text = snapshot
-      progress.revision += 1
-      wake()
-    }, phase => {
+    const setPhase = phase => {
       if (stop?.signal.aborted || !['preparing','thinking','writing'].includes(phase) || phase === progress.phase) return
       progress.phase = phase
       progress.revision += 1
       wake()
-    })
+    }
+    const runTurn = () => {
+      setPhase('preparing')
+      return perform(text => {
+        if (stop?.signal.aborted || typeof text !== 'string') return
+        const snapshot = text.slice(0, LIMITS.text)
+        if (snapshot === progress.text) return
+        progress.text = snapshot
+        progress.revision += 1
+        wake()
+      }, setPhase)
+    }
     // A stored follow-up can be acknowledged before its turn. Wait here,
     // ahead of context assembly, so a slower lookup cannot reorder turns.
-    const previous = conversationTurns.get(conversationId)
     const promise = previous ? previous.then(runTurn, runTurn) : runTurn()
     conversationTurns.set(conversationId, promise)
     activeTurns.set(userId, promise)

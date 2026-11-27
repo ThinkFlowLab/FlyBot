@@ -233,6 +233,20 @@ function ownsLiveChat(rt, botId, sessionId) {
   return livePrivateChat(rt, botId, sessionId) === sessionId
 }
 
+const privateReplyBindings = new WeakMap()
+function privateBindings(rt) {
+  let bindings = privateReplyBindings.get(rt)
+  if (!bindings) {
+    bindings = new Map()
+    privateReplyBindings.set(rt, bindings)
+    rt.flybotPrivateReplyForTurn = (sessionId, turn) => {
+      const current = bindings.get(sessionId)
+      return current?.turn === turn ? current?.requestId : undefined
+    }
+  }
+  return bindings
+}
+
 export async function prepareNativeChat(rt, botId, savedSessionId) {
   const bot = rt.botOf(botId)
   const sessionId = livePrivateChat(rt, botId, savedSessionId)
@@ -261,10 +275,12 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
   if (sessionId !== undefined && !ownsLiveChat(rt, botId, sessionId)) return Promise.reject(new Error('Mapped native chat is no longer active'))
   sessionId ??= rt.chatOf(botId)
   const admissionOnly = interactive && !managedGroup
+  const bindings = admissionOnly ? privateBindings(rt) : undefined
+  const activeSessionId = () => admissionOnly ? livePrivateChat(rt, botId, sessionId) : sessionId
   return new Promise((resolve, reject) => {
     const progress = turnProgress(onProgress)
     let observedTurn, observedSession, boundTurn, boundSession, attempt, lastAgent
-    let stopping, stopDeadline, stopTimer
+    let stopping, stopDeadline, stopTimer, binding, awaitingHandoff
     let revision = 0
     let phase = 'preparing'
     function emitPhase(next) {
@@ -281,6 +297,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       clearTimeout(timer)
       progress?.dispose()
       signal?.removeEventListener('abort', cancelNative)
+      releaseBinding()
       for (const listener of listeners) {
         try {
           if (typeof listener === 'function') listener()
@@ -297,8 +314,31 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
     }
     const timer = setTimeout(() => finish(admissionOnly && signal?.aborted ? signal.reason : new Error('DS-Bot turn timed out')), timeoutMs)
     const emptyReply = () => Object.assign(new Error('DS-Bot turn ended without a reply'), {code:'agents/empty-reply'})
+    function releaseBinding() {
+      if (binding && bindings.get(binding.sessionId) === binding) bindings.delete(binding.sessionId)
+      binding = undefined
+    }
+    function switching(session) {
+      if (!admissionOnly) return false
+      const head = activeSessionId()
+      return rt.isSwitchingPart?.(session.id) === true || (head !== undefined && head !== session.id)
+    }
+    function cancelQueued() {
+      const head = activeSessionId()
+      if (!admissionOnly || head === undefined || rt.isSwitchingPart?.(head)) return
+      void Promise.resolve().then(() => rt.resolveAgent(head)).then(agent => {
+        if (settled || boundSession || activeSessionId() !== head || rt.isSwitchingPart?.(head)) return
+        const message = [...(agent?.inbox?.nextStep ?? []), ...(agent?.inbox?.nextTurn ?? [])]
+          .find(item => item.source?.rpcId === requestId)
+        if (!message) return
+        agent.inbox.remove(message.id)
+        finish(signal.reason)
+      }).catch(() => {})
+    }
     function cancelNative() {
-      if (settled || stopping || !boundSession || boundTurn === undefined) return
+      if (settled || stopping) return
+      if (!boundSession) { cancelQueued(); return }
+      if (boundTurn === undefined) return
       const session = boundSession, turn = boundTurn
       if (admissionOnly) {
         // Native cancellation should emit its terminal event. Bound cleanup if the
@@ -306,14 +346,14 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
         stopDeadline = new Promise(done => { stopTimer = setTimeout(done, 30_000) })
         void stopDeadline.then(() => finish(signal.reason))
       }
-      stopping = Promise.resolve().then(() => rt.resolveAgent(sessionId)).then(agent => {
+      stopping = Promise.resolve().then(() => rt.resolveAgent(session.id)).then(agent => {
         // Do not stop another turn even if it now owns the same Bot or Session.
         if (settled || boundSession !== session || agent?.session !== session || boundTurn !== turn ||
-            rt.live?.get(sessionId)?.turn !== turn || !ownsLiveChat(rt, botId, sessionId)) {
+            rt.live?.get(session.id)?.turn !== turn || !ownsLiveChat(rt, botId, session.id)) {
           if (admissionOnly) finish(signal.reason)
           return
         }
-        const children = rt.stopSubagents?.(sessionId)
+        const children = rt.stopSubagents?.(session.id)
         agent.cancel({kind:'user'})
         return children
       }).catch(() => { if (admissionOnly) finish(signal.reason) })
@@ -324,17 +364,25 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       progress?.discard()
       emitPhase('preparing')
     }
-    function resetTurn() {
+    function resetTurn(handoff = false) {
+      releaseBinding()
       boundSession = undefined
       boundTurn = undefined
+      observedTurn = undefined
+      observedSession = undefined
       attempt = undefined
-      parts.length = 0
-      progress?.reset()
+      if (handoff) progress?.discard()
+      else {
+        parts.length = 0
+        progress?.reset()
+      }
+      awaitingHandoff = handoff
       emitPhase('preparing')
     }
     try {
       listeners.push(ctx.on('session/event', (session, event) => {
-        if (settled || session?.id !== sessionId || !event || (boundSession && session !== boundSession)) return
+        if (settled || !event || !session?.id || (boundSession ? session !== boundSession
+          : session.id !== (activeSessionId() ?? sessionId))) return
         const turn = event.data?.turn
         if (event.type === 'turn/start' && Number.isSafeInteger(turn)) {
           if (session === observedSession && turn <= observedTurn) return
@@ -346,10 +394,18 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
           observedSession = session
           return
         }
-        if (event.type === 'user/message' && event.data?.source?.rpcId === requestId) {
+        const source = event.type === 'user/message' ? event.data?.source : undefined
+        const handoff = awaitingHandoff && source?.resume === true && source.flybotPrivateReply === requestId
+        if (source?.rpcId === requestId || handoff) {
           boundSession = session
           boundTurn = session === observedSession ? observedTurn : undefined
-          if (admissionOnly && boundTurn !== undefined) clearTimeout(timer)
+          if (admissionOnly && boundTurn !== undefined) {
+            clearTimeout(timer)
+            binding = {sessionId:session.id, turn:boundTurn, requestId}
+            bindings.set(session.id,binding)
+            awaitingHandoff = false
+            emitPhase('thinking')
+          }
           if (signal?.aborted) cancelNative()
           return
         }
@@ -365,7 +421,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
           discardAttempt()
         }
         const start = parts.length
-        for (const item of rt.displayItems(sessionId, [event]) ?? []) {
+        for (const item of rt.displayItems(session.id, [event]) ?? []) {
           if (item?.kind === 'bot' && typeof item.text === 'string' && item.text.trim()) parts.push(item.text)
         }
         if (event.type === 'assistant/message') {
@@ -375,21 +431,25 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
         if (event.type === 'turn/end') {
           if (signal?.aborted) { finish(signal.reason); return }
           const reason = event.data?.reason
+          if ((reason?.kind !== 'completed' || !parts.length) && switching(session)) {
+            resetTurn(true)
+            return
+          }
           const disposed = reason?.kind === 'aborted' && reason.reason?.kind === 'disposed'
           if ((managedGroup || admissionOnly) && disposed) { finish(emptyReply()); return }
           const reply = parts.join('\n\n').trim()
-          if (reply) finish(null, { text: reply, sessionId, turnId: event.data?.turnId ?? event.turnId ?? null })
+          if (reply) finish(null, { text: reply, sessionId:session.id, turnId: event.data?.turnId ?? event.turnId ?? null })
           else if (event.data?.error || (managedGroup && reason && reason.kind !== 'completed')) finish(new Error('DS-Bot turn failed'))
           else finish(emptyReply())
         }
       }))
       if (progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-          if (settled || !boundSession || boundTurn === undefined || agent?.id !== sessionId || agent?.session !== boundSession
+          if (settled || !boundSession || boundTurn === undefined || agent?.id !== boundSession.id || agent?.session !== boundSession
               || !Number.isSafeInteger(frame?.revision)) return
           if (frame.type === 'start') {
             if (frame.turn !== boundTurn || typeof frame.attemptId !== 'string' || !frame.attemptId || !Number.isSafeInteger(frame.step)
-                || rt.state?.exchangeTurns?.[sessionId]?.includes(boundTurn)) return
+                || rt.state?.exchangeTurns?.[boundSession.id]?.includes(boundTurn)) return
             if (lastAgent === agent && (frame.revision <= revision || frame.attemptId === attempt?.id)) return
             if (attempt) discardAttempt()
             lastAgent = agent
@@ -411,17 +471,24 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       }
       if (admissionOnly || progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/disposed', ({ agent }) => {
-          if ((managedGroup || admissionOnly) && boundSession && agent?.id === sessionId && agent.session === boundSession && !settled) {
+          if ((managedGroup || admissionOnly) && boundSession && agent?.session === boundSession && !settled) {
+            if (switching(boundSession)) { resetTurn(true); return }
             finish(signal?.aborted ? signal.reason : emptyReply())
-          } else if (agent === lastAgent && !settled) {
+          } else if (agent === lastAgent && !settled && !awaitingHandoff) {
             resetTurn()
-            observedTurn = undefined
-            observedSession = undefined
             lastAgent = undefined
           }
         }, { global: true }))
       }
       Promise.resolve(rt.sendUser({ sessionId, content: [{ type: 'text', text }, ...files], requestId }))
+        .then(() => {
+          // The native queue already has the request, even when an earlier
+          // turn takes longer than the admission timeout to finish.
+          if (admissionOnly) {
+            clearTimeout(timer)
+            if (signal?.aborted && !boundSession && !settled) cancelQueued()
+          }
+        })
         .catch(error => finish(error instanceof Error ? error : new Error('DS-Bot rejected the message')))
     } catch (error) {
       finish(error instanceof Error ? error : new Error('DS-Bot rejected the message'))

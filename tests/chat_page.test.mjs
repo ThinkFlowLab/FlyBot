@@ -1253,7 +1253,7 @@ test('a running native reply preserves its partial text during reconnect and loa
   t.mock.timers.enable({apis: ['setTimeout']});
   const key = 'msg-reloaded-reply';
   const user = {id: 'saved-user', role: 'user', body: '等待中的问题', client_key: key};
-  const reply = {id: 'saved-reply', role: 'assistant', status: 'running', client_key: key};
+  const reply = {id: 'saved-reply', role: 'assistant', status: 'running', client_key: key, reply_phase:'queued'};
   let historyReads = 0;
   let polls = 0;
   const snapshots = [
@@ -1281,6 +1281,7 @@ test('a running native reply preserves its partial text during reconnect and loa
     const pending = list.children.at(-1);
     const heading = pending.children.find(node => node.className === 'reply-state');
     assert.equal(pending.dataset.messageId, reply.id);
+    assert.equal(heading.textContent, '已排队，等待上一条回复完成…');
     t.mock.timers.tick(400); await settle();
     assert.equal(list.children.at(-1), pending);
     assert.equal(heading.textContent, '助手 正在思考…');

@@ -1302,7 +1302,7 @@ index c911d2b..0d13f30 100644
            await rt.load()
            return ok(await rt.mobileEndpoint(endpoint, body))
 diff --git a/src/host/parts.js b/src/host/parts.js
-index 109ec22..7ca438b 100644
+index 109ec2241..69e58dc73 100644
 --- a/src/host/parts.js
 +++ b/src/host/parts.js
 @@ -405,6 +405,7 @@ export function install(rt) {
@@ -1313,7 +1313,18 @@ index 109ec22..7ca438b 100644
      if (thread.thread === 'task') {
        const task = bot.tasks[thread.index]
        // A foreground turn moved into a background task keeps read_own_chat access to the
-@@ -1021,6 +1022,7 @@ export function install(rt) {
+@@ -950,6 +951,10 @@ export function install(rt) {
+   function carryOriginSource(job, base) {
+     const source = { ...base }
+     delete source.rpcId
++    if (job.flybotPrivateReply !== undefined) {
++      source.flybotPrivateReply = job.flybotPrivateReply
++      source.resume = true
++    }
+     if (job.resumeOrigin === undefined) return source
+     job.originSent = true
+     return { ...source, imOrigin: job.resumeOrigin }
+@@ -1021,6 +1026,7 @@ export function install(rt) {
      if (owner.botId !== undefined) {
        const bot = rt.botOf(owner.botId)
        const thread = threadOfPart(bot, sessionId)
@@ -1321,6 +1332,17 @@ index 109ec22..7ca438b 100644
        if (thread?.thread === 'task') {
          const live = threadCurrentOfPart(bot, sessionId)
          if (live !== undefined) return live
+@@ -1153,7 +1159,9 @@ export function install(rt) {
+     const place = placeOf(agent.id)
+     if (place === undefined || switches.has(agent.id) || readOnly()) return
+     const resumeOrigin = resume || place.botId === undefined ? rt.holdImOrigin?.(agent.id) : undefined
+-    const job = { ...place, carry: [...carry], info, joined, resume, resumeOrigin, overflow, failed, bare, folder, engine, hard, cutoff, since: Date.now() }
++    const flybotPrivateReply = resume && place.roomId === undefined
++      ? rt.flybotPrivateReplyForTurn?.(agent.id, rt.live.get(agent.id)?.turn) : undefined
++    const job = { ...place, carry: [...carry], info, joined, resume, resumeOrigin, overflow, failed, bare, folder, engine, hard, cutoff, flybotPrivateReply, since: Date.now() }
+     switches.set(agent.id, job)
+     const done = runSwitch(agent, job)
+       .catch(error => {
 diff --git a/src/host/store.js b/src/host/store.js
 index 5839b17..7cd0dd0 100644
 --- a/src/host/store.js
