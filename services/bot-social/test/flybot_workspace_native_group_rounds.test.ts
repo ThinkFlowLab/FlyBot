@@ -94,6 +94,99 @@ async function connect(owner: Actor, member: Actor) {
 const sendNative = (actor: Actor, path: string, body: string, extra = {}) =>
   actor.ok("POST", path + "/messages", {body,native_round:true,client_key:randomUUID(),...extra});
 
+test("private native room lines sync without a round and share reply keys with anchored lines", async () => {
+  const [owner,peer] = await Promise.all([home(service.base,"native-room-owner"),home(service.base,"native-room-peer")]);
+  await connect(owner,peer);
+  const group = await owner.ok("POST",rooms,{kind:"group",account_group:true,title:"Native room lines",
+    agents:[...agents,{agent_ref:"native-backup",name:"Backup"}]});
+  const room = `${rooms}/${group.id}`;
+  const lines = room + "/native-room-lines";
+  const line = {agent_ref:agents[0].agent_ref,body:"Native Bot-to-Bot handoff",client_key:randomUUID()};
+  assert.equal((await peer.call("POST",lines,line)).status,404);
+  assert.equal((await owner.call("POST",lines,{...line,reply_to:"otm-not-a-source"})).status,400);
+  const [posted,retried] = await Promise.all([owner.ok("POST",lines,line),owner.ok("POST",lines,line)]);
+  assert.equal(retried.id,posted.id);
+  assert.equal(posted.reply_to,null);
+  assert.equal(posted.author.kind,"agent");
+  assert.equal(posted.author.name,agents[0].name);
+  assert.deepEqual(posted.reply_jobs,[]);
+  assert.deepEqual((await owner.ok("GET",inbox)).items,[]);
+  assert.equal((await owner.call("POST",lines,{...line,body:"Another line with the same key"})).data.error.code,"native_line_conflict");
+  assert.equal((await owner.call("POST",lines,{...line,agent_ref:agents[1].agent_ref})).data.error.code,"native_line_conflict");
+
+  const source = await sendNative(owner,room,"Ask a Bot to check this");
+  const round = `${room}/native-rounds/${source.id}`;
+  await owner.ok("POST",round,{action:"start"});
+  assert.equal((await owner.ok("POST",round+"/lines",line)).id,posted.id);
+  const answer = {...line,body:"An anchored result",client_key:randomUUID()};
+  const anchored = await owner.ok("POST",round+"/lines",answer);
+  assert.equal(anchored.reply_to,source.id);
+  assert.equal((await owner.ok("POST",lines,answer)).id,anchored.id);
+  const longLine = {...line,body:"文".repeat(3999)+"🦊"+"开发进度\t".repeat(600)+"全部完成",client_key:randomUUID()};
+  assert.ok(longLine.body.length >= 6584);
+  const publishedLong = await owner.ok("POST",lines,longLine);
+  assert.equal(publishedLong.body,longLine.body);
+  assert.equal((await owner.call("POST",round+"/lines",longLine)).status,400);
+  const shortened = {...longLine,body:longLine.body.slice(0,3999)+"\uFFFD"};
+  assert.equal((await owner.ok("POST",round+"/lines",shortened)).id,publishedLong.id);
+  const priorShort = {...shortened,client_key:randomUUID()};
+  const firstSeenShort = await owner.ok("POST",round+"/lines",priorShort);
+  assert.equal((await owner.ok("POST",lines,{...longLine,client_key:priorShort.client_key})).id,firstSeenShort.id);
+  assert.equal((await owner.call("POST",lines,{...line,body:"x".repeat(16001),client_key:randomUUID()})).status,400);
+  const {messages} = await owner.ok("GET",room+"/messages");
+  assert.deepEqual(messages.filter((message: {author:{kind:string}}) => message.author.kind === "agent")
+    .map((message: {id:string}) => message.id).sort(),[posted.id,anchored.id,publishedLong.id,firstSeenShort.id].sort());
+  assert.equal(messages.find((message: {id:string}) => message.id === publishedLong.id).body,longLine.body);
+
+  await owner.ok("DELETE",`${room}/agents/${line.agent_ref}`);
+  assert.equal((await owner.call("POST",lines,line)).status,404);
+  await owner.ok("POST",room+"/members",{handle:peer.handle});
+  const next = {...line,agent_ref:agents[1].agent_ref,client_key:randomUUID()};
+  assert.equal((await owner.call("POST",lines,next)).status,409);
+  assert.equal((await peer.call("POST",lines,next)).status,409);
+});
+
+test("private native room activity expires and survives existing round progress finishing", async t => {
+  let now = Date.now();
+  const platform = await startServer({...bulkAuth,now:() => now});
+  t.after(() => platform.stop());
+  const [owner,peer] = await Promise.all([home(platform.base,"native-activity-owner"),home(platform.base,"native-activity-peer")]);
+  await connect(owner,peer);
+  const {owner_id} = await owner.ok("GET","/v1/ot/me");
+  const group = await owner.ok("POST",rooms,{kind:"group",account_group:true,title:"Native room activity",agents});
+  const room = `${rooms}/${group.id}`;
+  const progress = room + "/native-room-progress";
+  const read = room + "/reply-progress";
+  const working = {working_agent_refs:[agents[0].agent_ref]};
+  assert.equal((await peer.call("POST",progress,working)).status,404);
+  assert.equal((await owner.call("POST",progress,{working_agent_refs:["not-a-seat"]})).status,404);
+  assert.deepEqual(await owner.ok("POST",progress,{working_agent_refs:[agents[0].agent_ref,agents[0].agent_ref]}),{ok:true});
+  const expected = (refs: string[]) => ({items:[],native_group_host:owner_id,working_bots:agents
+    .filter(agent => refs.includes(agent.agent_ref)).map(agent => ({id:agent.agent_ref,name:agent.name}))});
+  assert.deepEqual(await owner.ok("GET",read),expected(working.working_agent_refs));
+  assert.deepEqual((await owner.ok("GET",inbox)).items,[]);
+
+  const source = await sendNative(owner,room,"A request with its own progress");
+  const round = `${room}/native-rounds/${source.id}`;
+  await owner.ok("POST",round,{action:"start"});
+  await owner.ok("POST",round+"/progress",{working_agent_refs:agents.map(agent => agent.agent_ref)});
+  assert.deepEqual(await owner.ok("GET",read),expected(agents.map(agent => agent.agent_ref)));
+  await owner.ok("POST",round,{action:"finish"});
+  assert.deepEqual(await owner.ok("GET",read),expected(working.working_agent_refs));
+
+  now += 6001;
+  assert.deepEqual(await owner.ok("GET",read),{items:[]});
+  await owner.ok("POST",progress,working);
+  await owner.ok("POST",progress,{working_agent_refs:[]});
+  assert.deepEqual(await owner.ok("GET",read),{items:[]});
+  await owner.ok("POST",progress,working);
+  await owner.ok("POST",room+"/members",{handle:peer.handle});
+  assert.deepEqual(await peer.ok("GET",read),{items:[]});
+  assert.deepEqual(await owner.ok("GET",read),{items:[]});
+  assert.equal((await owner.call("POST",progress,working)).status,409);
+  assert.equal((await peer.call("POST",progress,working)).status,409);
+});
+
 test("late local Bot lines use a finished receipt and match the same native line key", async () => {
   const [owner,outsider] = await Promise.all([home(service.base,"native-late-owner"),home(service.base,"native-late-outsider")]);
   const group = await owner.ok("POST",rooms,{kind:"group",account_group:true,title:"Late native replies",
@@ -257,6 +350,9 @@ test("a single-owner team roster relays member messages and expires progress whe
   const scopedProgress = `/v1/ot/workspaces/${workspace}/conversations/${group.id}/reply-progress`;
   await owner.ok("POST",active,{action:"start",text_only:true});
   const working = {working_agent_refs:[agents[1].agent_ref]};
+  assert.equal((await owner.call("POST",room+"/native-room-progress",working)).status,409);
+  assert.equal((await owner.call("POST",room+"/native-room-lines",
+    {agent_ref:agents[1].agent_ref,body:"No unscoped team line",client_key:randomUUID()})).status,409);
   await owner.ok("POST",active+"/progress",working);
   assert.deepEqual((await peer.ok("GET",scopedProgress)).working_bots,[{id:agents[1].agent_ref,name:agents[1].name}]);
   assert.deepEqual(await peer.ok("GET",room+"/reply-progress"),await peer.ok("GET",scopedProgress));

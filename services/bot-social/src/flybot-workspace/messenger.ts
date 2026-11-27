@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS ot_reactions (
 
 export const REACTIONS = ["👍", "❤️", "😄", "🎉", "👀", "✅"];
 const BODY_MAX = 4000;
+const NATIVE_ROOM_BODY_MAX = 16_000;
 const REPLY_JOB_LEASE_MS = 180_000;
 const REPLY_JOB_QUEUE_MS = 600_000;
 const REPLY_JOB_ATTEMPTS = 3;
@@ -788,6 +789,10 @@ function nativeGroupImages(ot: OtContext, conv: Group, owner: string, agents: Co
     !groupHasOtherMember(ot, conv, owner);
 }
 
+const nativeLineClientKey = (key: string) => "native:" + createHash("sha256").update(key).digest("hex");
+// Match the native relay's UTF-16 prefix, including a surrogate cut at the limit.
+const legacyNativeLineBody = (body: string) => Buffer.from(body.trim().slice(0, BODY_MAX)).toString("utf8");
+
 function groupAgentRouting(ot: OtContext, conv: Group, viewer: string, agents: ConversationAgent[]) {
   const policy = groupReplyPolicyForRoster(conv, agents);
   const current = policy.mode === "lead" && !selectedLead(policy, agents) ? {...policy, lead_unavailable: true} : policy;
@@ -1068,7 +1073,9 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
   registerDirectAgentRevocation(ot);
   registerAgentAccess(app,ot);
   const replyProgress = new Map<string, {attempt: number; text: string; expires: number}>();
-  const nativeGroupProgress = new Map<string, {messageId:string; ownerId:string; refs:string[]; expires:number}>();
+  type NativeProgress = {ownerId:string; refs:string[]; expires:number};
+  const nativeGroupProgress = new Map<string, NativeProgress & {messageId:string}>();
+  const nativeRoomProgress = new Map<string, NativeProgress>();
   const inboxWake = agentInboxWake();
   app.addHook("preClose", async () => inboxWake.close());
 
@@ -2089,8 +2096,8 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       AND (j.source_revision IS NULL OR j.source_revision=src.revision)
       AND NOT EXISTS (SELECT 1 FROM ot_hidden_messages h WHERE h.owner_id=? AND h.message_id=src.id)
       ORDER BY src.seq DESC,j.rowid DESC LIMIT ?`, conv.id, now - REPLY_JOB_QUEUE_MS, now, me.ownerId, REPLY_PROGRESS_PAGE);
-    const native = nativeGroupProgress.get(conv.id);
-    if (native && native.expires <= now) nativeGroupProgress.delete(conv.id);
+    const native = readNativeProgress(nativeGroupProgress, conv.id, now);
+    const room = readNativeProgress(nativeRoomProgress, conv.id, now);
     const remote = ordinaryAgentGroup(conv) ? ot.all<{owner_id:string;agent_ref:string;host_id:string}>(`SELECT t.owner_id,t.agent_ref,r.owner_id AS host_id
       FROM ot_native_group_turns t JOIN ot_native_group_rounds r ON r.message_id=t.message_id
       JOIN ot_messages m ON m.id=r.message_id JOIN ot_conversations c ON c.id=r.conversation_id
@@ -2099,14 +2106,19 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
         AND ${ACTIVE_NATIVE_TURN_SEAT("t", "c")} AND NOT EXISTS (SELECT 1 FROM ot_hidden_messages h WHERE h.owner_id=? AND h.message_id=m.id)`, conv.id, now, me.ownerId) : [];
     let working: {id:string; name:string}[] = [];
     let host: string | undefined;
-    if ((native && native.expires > now) || remote.length) {
+    if (native || room || remote.length) {
       const roster = conversationAgents(ot, conv.id);
       host = nativeGroupHost(ot, conv, roster);
-      const localRefs = native && native.expires > now && native.ownerId === host && ot.get(`SELECT 1 FROM ot_native_group_rounds r
+      const localRefs = native && native.ownerId === host && ot.get(`SELECT 1 FROM ot_native_group_rounds r
         JOIN ot_messages m ON m.id=r.message_id JOIN ot_conversations c ON c.id=r.conversation_id
         WHERE r.message_id=? AND r.owner_id=? AND c.id=? AND r.state='running' AND ${ORIGINAL_NATIVE_SOURCE("m", "c")}
           AND (r.text_only=1 OR NOT ${REQUIRES_NATIVE_TEXT_ONLY("r", "c")}) AND NOT EXISTS (SELECT 1 FROM ot_hidden_messages h WHERE h.owner_id=? AND h.message_id=m.id)`,
       native.messageId, native.ownerId, conv.id, me.ownerId) ? new Set(native.refs) : new Set<string>();
+      if (room) {
+        if (room.ownerId === host && nativeGroupImages(ot, conv, room.ownerId, roster)) {
+          for (const ref of room.refs) localRefs.add(ref);
+        } else nativeRoomProgress.delete(conv.id);
+      }
       const remoteKeys = new Set(remote.filter(turn => turn.host_id === host).map(turn => agentMentionKey(turn.owner_id,turn.agent_ref)));
       working = roster.flatMap(agent => {
         if (agent.owner_id === host) return localRefs.has(agent.agent_ref) ? [{id:agent.agent_ref,name:agent.name}] : [];
@@ -2460,28 +2472,66 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
     });
   });
 
-  app.post("/v1/ot/conversations/:id/native-rounds/:messageId/progress", {bodyLimit:2048}, async req => {
-    const {ownerId} = ot.me(req);
-    const {id,messageId} = params(req);
-    const data = body(req);
+  function nativeWorkingRefs(data: Record<string, unknown>) {
     const requested: unknown = data.working_agent_refs;
     assert(Object.keys(data).length === 1 && Array.isArray(requested) && requested.length <= 12 &&
         requested.every(ref => typeof ref === "string" && AGENT_REF.test(ref)), 400, "invalid_request", "Invalid native group activity");
+    return [...new Set<string>(requested)];
+  }
+
+  function requireNativeWorkingSeats(roster: ConversationAgent[], ownerId: string, refs: string[]) {
+    const seats = new Set(roster.filter(agent => agent.owner_id === ownerId).map(agent => agent.agent_ref));
+    assert(refs.every(ref => seats.has(ref)), 404, "agent_not_found", "This Bot is no longer in the native group");
+  }
+
+  function readNativeProgress<T extends NativeProgress>(store: Map<string, T>, id: string, now: number) {
+    const snapshot = store.get(id);
+    if (snapshot && snapshot.expires <= now) {
+      store.delete(id);
+      return undefined;
+    }
+    return snapshot;
+  }
+
+  function writeNativeProgress<T extends NativeProgress>(store: Map<string, T>, id: string, snapshot: T) {
+    if (!store.has(id) && store.size >= REPLY_PROGRESS_CAPACITY) {
+      const now = ot.now();
+      for (const [room, state] of store) if (state.expires <= now) store.delete(room);
+      assert(store.size < REPLY_PROGRESS_CAPACITY, 429, "reply_progress_busy", "Native group activity is busy");
+    }
+    store.set(id, snapshot);
+  }
+
+  function requirePrivateNativeRoom(conv: Group, ownerId: string) {
+    const roster = conversationAgents(ot, conv.id);
+    assert(nativeGroupHost(ot, conv, roster) === ownerId && nativeGroupImages(ot, conv, ownerId, roster),
+      409, "native_round_unavailable", "Only the owner of a private native group can sync its room");
+    return roster;
+  }
+
+  app.post("/v1/ot/conversations/:id/native-room-progress", {bodyLimit:2048}, async req => {
+    const {ownerId} = ot.me(req);
+    const {id} = params(req);
+    const refs = nativeWorkingRefs(body(req));
+    const roster = requirePrivateNativeRoom(memberOf(ot, id, ownerId), ownerId);
+    requireNativeWorkingSeats(roster, ownerId, refs);
+    if (refs.length) writeNativeProgress(nativeRoomProgress, id, {ownerId,refs,expires:ot.now() + NATIVE_GROUP_PROGRESS_MS});
+    else nativeRoomProgress.delete(id);
+    return {ok:true};
+  });
+
+  app.post("/v1/ot/conversations/:id/native-rounds/:messageId/progress", {bodyLimit:2048}, async req => {
+    const {ownerId} = ot.me(req);
+    const {id,messageId} = params(req);
+    const refs = nativeWorkingRefs(body(req));
     const conv = memberOf(ot, id, ownerId);
     const round = findNativeRound(conv, messageId, ownerId);
     assert(round.state === "running", 409, "native_round_unavailable", "The native group round is no longer active");
     const roster = conversationAgents(ot, id);
     requireNativeRound(conv, round, ownerId, roster);
-    const refs = [...new Set<string>(requested)];
-    const seats = new Set(roster.filter(agent => agent.owner_id === ownerId).map(agent => agent.agent_ref));
-    assert(refs.every(ref => seats.has(ref)), 404, "agent_not_found", "This Bot is no longer in the native group");
+    requireNativeWorkingSeats(roster, ownerId, refs);
     if (refs.length) {
-      const now = ot.now();
-      if (!nativeGroupProgress.has(id) && nativeGroupProgress.size >= REPLY_PROGRESS_CAPACITY) {
-        for (const [room, state] of nativeGroupProgress) if (state.expires <= now) nativeGroupProgress.delete(room);
-        assert(nativeGroupProgress.size < REPLY_PROGRESS_CAPACITY, 429, "reply_progress_busy", "Native group activity is busy");
-      }
-      nativeGroupProgress.set(id, {messageId,ownerId,refs,expires:now + NATIVE_GROUP_PROGRESS_MS});
+      writeNativeProgress(nativeGroupProgress, id, {messageId,ownerId,refs,expires:ot.now() + NATIVE_GROUP_PROGRESS_MS});
     } else if (nativeGroupProgress.get(id)?.messageId === messageId) nativeGroupProgress.delete(id);
     return {ok:true};
   });
@@ -2572,6 +2622,33 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
     });
   });
 
+  app.post("/v1/ot/conversations/:id/native-room-lines", {bodyLimit:100 * 1024}, async (req, reply) => {
+    const {ownerId} = ot.me(req);
+    const {id} = params(req);
+    const data = body(req);
+    assert(Object.keys(data).length === 3 && ["agent_ref","body","client_key"].every(key => Object.hasOwn(data,key)),
+      400, "invalid_request", "Invalid native group line");
+    const agentRef = text(data.agent_ref, "agent_ref", {min:1,max:80});
+    const output = text(data.body, "body", {min:1,max:NATIVE_ROOM_BODY_MAX,multiline:true});
+    const clientKey = nativeLineClientKey(text(data.client_key, "client_key", {min:1,max:80}));
+    const result = ot.tx(() => {
+      const conv = memberOf(ot, id, ownerId);
+      const roster = requirePrivateNativeRoom(conv, ownerId);
+      const agent = roster.find(item => item.owner_id === ownerId && item.agent_ref === agentRef);
+      assert(agent, 404, "agent_not_found", "This Bot is no longer in the native group");
+      const prior = ot.get("SELECT * FROM ot_messages WHERE conversation_id=? AND author_id=? AND client_key=?", conv.id, ownerId, clientKey);
+      if (prior) {
+        const sameBody = prior.body === output || (output.length > BODY_MAX && prior.body === legacyNativeLineBody(output));
+        assert(prior.author_kind === "agent" && prior.agent_ref === agentRef && sameBody,
+          409, "native_line_conflict", "This native line key was already used");
+        return prior;
+      }
+      return insertMessage(ot, conv, {author:ownerId,kind:"agent",agentRef,agentName:agent.name,
+        body:output,mentions:[],clientKey});
+    });
+    return reply.status(201).send(messageView(ot, result, ownerId));
+  });
+
   app.post("/v1/ot/conversations/:id/native-rounds/:messageId/lines", {bodyLimit:32768}, async (req, reply) => {
     const {ownerId} = ot.me(req);
     const {id,messageId} = params(req);
@@ -2588,7 +2665,7 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       400, "invalid_request", "Remote Bot lines require a native turn receipt");
     const localText = text(data.body, "body", {min:1,max:BODY_MAX,multiline:true});
     const key = text(data.client_key, "client_key", {min:1,max:80});
-    const clientKey = guest ? null : "native:" + createHash("sha256").update(key).digest("hex");
+    const clientKey = guest ? null : nativeLineClientKey(key);
     const result = ot.tx(() => {
       const conv = memberOf(ot, id, ownerId);
       const round = findNativeRound(conv, messageId, ownerId);
@@ -2622,7 +2699,9 @@ export function registerMessenger(app: FastifyInstance, ot: OtContext) {
       }
       // Detached native output belongs in the room without guessing which prompt it answers.
       const sameSource = prior.reply_to === round.message_id || (!guest && (late || prior.reply_to === null));
-      assert(prior.author_kind === "agent" && prior.agent_ref === agentRef && sameSource && prior.body === output,
+      const sameBody = prior.body === output || (!guest && prior.reply_to === null && prior.body.length > BODY_MAX &&
+        legacyNativeLineBody(prior.body) === output);
+      assert(prior.author_kind === "agent" && prior.agent_ref === agentRef && sameSource && sameBody,
         409, "native_line_conflict", "This native line key was already used");
       return prior;
     });

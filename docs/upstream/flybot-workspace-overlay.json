@@ -82,7 +82,7 @@
     },
     "services/bot-social/src/openteamily/messenger.ts": {
       "path": "src/flybot-workspace/messenger.ts",
-      "sha256": "45f99ec59777098f26caf59629b7d0862e0fbe5976b076dae8bf904b5e2b0314",
+      "sha256": "3ea1536fa48fb7bc59892d19cf58b57e3f7b97febcdd4f41a192af109f468d28",
       "source_sha256": "3cbcec62487ace92625a18cbb70efacc89f8068e9a7b07b95c09fae26009a9db"
     },
     "services/bot-social/src/openteamily/migrate.ts": {
@@ -192,7 +192,7 @@
     },
     "services/bot-social/test/openteamily_native_group_rounds.test.ts": {
       "path": "test/flybot_workspace_native_group_rounds.test.ts",
-      "sha256": "b39ae0fb56d970a60a9e933190f3f696583b775e8f8039dc05cc602cce970f2d",
+      "sha256": "0bc9d776d9488ac564f7f7b49d3aa4334697532715623b8ed1ad9d8d07941905",
       "source_sha256": "2a477b7e35cdf1d1245486e6980aeb4769d85fc05c82dac774b32814f6325785"
     },
     "services/bot-social/test/openteamily_natural_group_chat.test.ts": {

@@ -4726,7 +4726,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     return servedByDsbot && currentSource === 'social' && (currentConversation?.kind === 'group' || directAgentRoom(currentConversation))
       && !currentConversation.public_agent && socialHistory?.cid === currentConversation.id
       && !socialHistory.readingHistory && !socialHistory.loading
-      && canWatchReply() && (groupReplyViews.size > 0 || Boolean(compactGroupReplies() && currentConversation.native_room_id));
+      && canWatchReply() && (groupReplyViews.size > 0 || (compactGroupReplies() && Boolean(
+        currentConversation.native_room_id || currentConversation.group_agent_routing?.native_group_host)));
   }
 
   function matchesGroupReply(snapshot, view) {
