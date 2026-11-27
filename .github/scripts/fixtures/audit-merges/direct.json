@@ -1,0 +1,8 @@
+{
+  "note": "A push to main that came from no pull request: reported as its own defect, not as a queue bypass.",
+  "sha": "0d1e2f3a4b5c6d7e8f9012345678abcdef012345",
+  "pulls": [],
+  "runs": [
+    { "id": 39700000002, "name": "Test", "path": ".github/workflows/test.yml", "event": "push", "head_sha": "0d1e2f3a4b5c6d7e8f9012345678abcdef012345", "conclusion": "success" }
+  ]
+}

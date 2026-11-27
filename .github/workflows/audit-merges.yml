@@ -1,0 +1,63 @@
+name: Audit merges
+# Report only: walks the last merges on main and reports the ones that did not go
+# through the merge queue — a commit pushed straight to main, or a merge whose gate
+# did not pass on it. It reads commits, pull requests and workflow runs and writes
+# nothing: no comment, no label, no merge, no push.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 3 * * *'
+
+concurrency:
+  group: audit-merges
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  audit-merges:
+    name: audit-merges
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      # The watermark is the last green run of this same workflow: a check that is red over
+      # the whole history is a check nobody reads, so only findings after it fail the run.
+      - name: Take the last green run of this workflow as the watermark
+        id: watermark
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # This filename can still resolve to a deleted workflow of the same name (id 392609103, 36
+          # runs, last success head bab1fe96 on 2026-11-24): then the first run here is not an empty
+          # watermark, and its log opens with `audit-merges: watermark … (from …)` rather than
+          # `audit-merges: baseline run`. Only the first line of the first scheduled run tells which.
+          SINCE=$(gh api "repos/$GH_REPO/actions/workflows/audit-merges.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // ""')
+          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
+      - name: Audit the last merges on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SINCE: ${{ steps.watermark.outputs.since }}
+          GATE_PATH: .github/workflows/tests.yml
+          GATE_NAME: FlyBot required checks
+        run: |
+          set -euo pipefail
+          if [ -n "$SINCE" ]; then
+            node .github/scripts/audit-merges.mjs --repo "$GH_REPO" --since "$SINCE"
+          else
+            node .github/scripts/audit-merges.mjs --repo "$GH_REPO" --baseline
+          fi

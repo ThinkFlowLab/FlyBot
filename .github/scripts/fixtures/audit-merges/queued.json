@@ -1,0 +1,9 @@
+{
+  "note": "A real queue merge: #674 landed as 9393d558 and its Merge gate run on that commit is green (run 39722858008).",
+  "sha": "9393d5586c2a06a806c04fb99cc09c4d71ebf161",
+  "pulls": [{ "number": 674, "merge_commit_sha": "9393d5586c2a06a806c04fb99cc09c4d71ebf161" }],
+  "runs": [
+    { "id": 39722858008, "name": "Merge gate", "path": ".github/workflows/merge-gate.yml", "event": "merge_group", "head_sha": "9393d5586c2a06a806c04fb99cc09c4d71ebf161", "conclusion": "success" },
+    { "id": 39722858269, "name": "Test", "path": ".github/workflows/test.yml", "event": "merge_group", "head_sha": "9393d5586c2a06a806c04fb99cc09c4d71ebf161", "conclusion": "success" }
+  ]
+}
