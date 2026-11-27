@@ -1,3 +1,4 @@
+import { mountBotComputer } from '../chat/computer.mjs';
 import { AGENT_PORTRAITS, agentPortraitLook, createLookAvatar } from '../look/app.mjs';
 import { AGENT_CATEGORIES, AGENT_CATEGORY_SLUGS, categoryFromSearch, categoryLabel } from '../shell/agent-categories.mjs';
 import { chatPathId, csrfCookie, canManage, idempotencyKey } from '../shell/chat-utils.mjs';
@@ -173,6 +174,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   const openSharing = document.getElementById('agent-share-open');
   const openAccess = document.getElementById('agent-access-open');
   const nativeSharing = servedByDsBot(document);
+  const botComputer = mountBotComputer(document, nativeSharing && document.getElementById('agent-computer-open'), {fetcher});
   let sharing;
   const directoryStatus = document.getElementById('agent-status');
   const directoryStatusControl = document.getElementById('agent-status-control');
@@ -255,6 +257,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   }
 
   function hideDrawer() {
+    botComputer.setTarget(null);
     clearDraftGeneration();
     sharing?.close();
     currentAgent = null;
@@ -1054,6 +1057,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       if (waitingDraft) restoreDraft?.focus?.();
       else editForm.elements.name.focus?.();
     }
+    botComputer.setTarget(active ? agent : null);
     const openChat = document.getElementById('open-in-chat');
     if (openChat) {
       openChat.href = '/chat#workspace=' + encodeURIComponent(workspaceId()) + '&agent=' + encodeURIComponent(agent.id);

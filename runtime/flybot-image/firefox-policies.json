@@ -1,0 +1,16 @@
+{
+  "policies": {
+    "DontCheckDefaultBrowser": true,
+    "Homepage": {"URL": "about:blank", "StartPage": "none"},
+    "NewTabPage": false,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "Preferences": {
+      "accessibility.force_disabled": {"Value": 0, "Status": "default", "Type": "number"},
+      "browser.aboutwelcome.enabled": {"Value": false, "Status": "default"},
+      "dom.ipc.processPrelaunch.enabled": {"Value": false, "Status": "default"},
+      "dom.ipc.processCount": {"Value": 1, "Status": "default"},
+      "dom.ipc.processCount.webIsolated": {"Value": 1, "Status": "default"}
+    }
+  }
+}

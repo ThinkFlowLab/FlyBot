@@ -785,6 +785,16 @@ export function createAgents({ db, host }) {
       return {items}
     },
     get: async (p) => ({ agent: view(await native.ensure(load(ws(p), p.id))) }),
+    async computerTarget(p, call) {
+      if (!call?.internal) fail('not-found', 'Internal endpoint', 404)
+      const row = load(ws(p), p.id)
+      if (row.archived) return null
+      const {rt} = await host.runtime()
+      const mapping = one('SELECT bot_id FROM native_agent_objects WHERE agent_id=?', row.id)
+      const bot = rt.botOf(mapping?.bot_id)
+      if (!bot || bot.hidden) return null
+      return {id:bot.id, name:bot.name, cwd:rt.workDirOf({botId:bot.id})}
+    },
     async createTemplateRoles(p, call) {
       if (!call?.internal) fail('not-found', 'Internal endpoint', 404)
       const workspaceId = ws(p)
@@ -1589,6 +1599,7 @@ export default async function agents(host) {
     if (!call?.internal || !call.request) fail('not-found', 'Internal endpoint', 404)
     return endpoints.replyStream(payload, call.request)
   }
+  wrapped.computerTarget = endpoints.computerTarget
   wrapped.startupEntry = endpoints.startupEntry
   wrapped.prepareMeetingDiscussion = endpoints.prepareMeetingDiscussion
   wrapped.createRemix = endpoints.createRemix

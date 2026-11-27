@@ -66,6 +66,16 @@ jobs:
       - name: Smoke the image as the compose manager would start it
         run: node runtime/flybot-image/test/smoke.mjs flybot-workspace-flybot:test
 
+      - name: Test Bot desktop accessibility and takeover
+        run: |
+          for mode in desktop browser; do
+            docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+              --read-only --cpus 1 --memory 4g --pids-limit 256 \
+              --tmpfs /tmp:rw,mode=1777 --tmpfs /data:rw,mode=1777 \
+              --workdir /data --entrypoint sh flybot-workspace-flybot:test -c \
+              'mkdir -p /data/workspace && node /opt/flybot-workspace/runtime/flybot-image/test/desktop-accessibility.mjs "$1"' sh "$mode"
+          done
+
       - name: Prove Compose lifecycle, personal bootstrap and retained volume
         run: python3 runtime/flybot-image/test/container-compose-lifecycle.py flybot-workspace-flybot:test
 

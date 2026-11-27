@@ -1,3 +1,4 @@
+import { mountBotComputer } from './computer.mjs';
 import { decodeVoice, mountVoiceRecorder } from './voice.mjs';
 import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mountAgentMentions } from './mentions.mjs';
 import { createGroupBotIdentities, groupBotIdentity, createGroupBotAvatar } from './group-identity.mjs';
@@ -1012,6 +1013,9 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let personalAgentId = '';
   let personalWorkspaceId = '';
   const servedByDsbot = dsbotServed(document);
+  const botComputer = mountBotComputer(document, servedByDsbot && document.getElementById('bot-computer-open'), {
+    fetcher, dock:document.getElementById('chat-bot-computer'),
+  });
   let personalLook = null;
   let currentConversation = null;
   const pinButton = document.getElementById('pin-conversation');
@@ -6671,6 +6675,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   }
 
   function setSocialHeaderTools(social) {
+    if (social || !currentAgent) botComputer.setTarget(null);
     renderStudioDiscussionSource(null);
     if (social && captureButton) captureButton.hidden = true;
     const publicChat = social ? currentConversation?.public_agent : null;
@@ -6724,6 +6729,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     document.getElementById('pin-conversation').hidden = true;
     setDirectoryLink({source:'agent'});
     applyChatIdentity(document, agent.name, null, agentPortraitLook(agent.id, agent.portrait, agent.id === personalAgentId ? personalLook : null));
+    botComputer.setTarget(agent);
     writeHash({workspace:workspaceId(), agent:agentId});
     setSessionsOpen(false);
     renderAgentMessages([]);
@@ -6881,6 +6887,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     setDirectoryLink({source: 'agent'});
     syncPlusState();
     applyChatIdentity(document, agent.name, null, agentPortraitLook(agent.id, agent.portrait, agent.id === personalAgentId ? personalLook : null));
+    botComputer.setTarget(agent);
     if (currentConversation?.id !== conversation.id) {
       const autoReplyNotice = document.getElementById('group-agent-auto-reply-status');
       if (autoReplyNotice) autoReplyNotice.hidden = true;

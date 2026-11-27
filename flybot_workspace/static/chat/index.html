@@ -9,6 +9,7 @@
   <script type="module" src="/chat/startup.mjs" async fetchpriority="high"></script>
   <link rel="stylesheet" href="/shell/app.css">
   <link rel="stylesheet" href="/chat/app.css">
+  <link rel="stylesheet" href="/chat/computer.css">
   <link rel="stylesheet" href="/look/app.css">
   <!-- Start the Chat module graph alongside its entry script. -->
   <link rel="modulepreload" href="/chat/voice.mjs">
@@ -267,6 +268,7 @@
         <span class="chat-identity-text"><h1 id="chat-title" tabindex="-1"><span data-ui-text="chat.nav.chat">聊天</span></h1><span id="chat-subtitle" class="chat-subtitle" hidden></span></span>
       </div>
       <div class="chat-actions">
+        <button type="button" id="bot-computer-open" class="icon-action" title="Bot 电脑" aria-label="Bot 电脑" aria-controls="chat-bot-computer" aria-expanded="false" hidden><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4m-4 0h8"/></svg></button>
         <button type="button" id="chat-call" hidden aria-label="通话" aria-haspopup="dialog" title="语音或视频通话" data-ui-title="chat.call.audio_or_video" data-ui-label="chat.call.call"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h3l2 5-3 2a14 14 0 0 0 6 6l2-3 5 2v3a3 3 0 0 1-3 3C9 20 4 15 3 6a3 3 0 0 1 3-3Z"/></svg><span class="sr-only" data-ui-text="chat.call.call">通话</span></button>
         <button type="button" id="group-reply-shortcut" class="icon-action" aria-label="谁来回复" data-ui-label="chat.group.reply_policy" hidden><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11h6m-6-3h4M20 12a7 7 0 0 1-7 7h-1l-4 2v-3a7 7 0 0 1 4-13h1a7 7 0 0 1 7 7Z"/><path d="M19 3v4m-2-2h4"/></svg></button>
         <button type="button" id="group-info-toggle" class="icon-action" hidden aria-expanded="false" aria-controls="group-info-panel" title="群信息" aria-label="群信息" data-ui-title="chat.group.info" data-ui-label="chat.group.info"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z M15 5v14"/></svg><span class="sr-only" data-ui-text="chat.group.info">群信息</span></button>
@@ -948,6 +950,7 @@
       <p id="chat-note" class="note" hidden></p>
     </section>
   </section>
+  <aside id="chat-bot-computer" class="bot-computer-dock" aria-label="Bot 电脑" hidden></aside>
   </main>
 
 <dialog id="chat-agent-picker" aria-labelledby="chat-agent-picker-title" aria-describedby="chat-agent-picker-help">
