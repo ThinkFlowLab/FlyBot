@@ -35,6 +35,23 @@ test('tierOf: highest matching tier wins; an unnamed path is T2, never T0/T1', (
   assert.equal(gate.tierOf('flybot_workspace/security.py'), 'T3')
   assert.equal(gate.tierOf('services/bot-social/package.json'), 'T3')
   assert.equal(gate.tierOf('brand-new-dir/file.txt'), 'T2')
+  // T0 is prose: code put under docs/ or changelog.d/ is not documentation (#3393).
+  assert.equal(gate.tierOf('docs/ui-surfaces-map.mjs'), 'T2')
+  assert.equal(gate.tierOf('docs/deploy.sh'), 'T2')
+  assert.equal(gate.tierOf('changelog.d/release.py'), 'T2')
+  assert.equal(gate.tierOf('docs/release.rb'), 'T2')
+  assert.equal(gate.tierOf('docs/notes/deploy.bash'), 'T2')
+  assert.equal(gate.tierOf('docs/x.zsh'), 'T2')
+  assert.equal(gate.tierOf('changelog.d/x.pl'), 'T2')
+  assert.equal(gate.tierOf('docs/data.json'), 'T0', 'data next to the prose stays documentation')
+  assert.equal(gate.tierOf('docs/page.html'), 'T0', 'a page is not a script')
+  assert.equal(gate.tierOf('docs/style.css'), 'T0', 'a stylesheet is not a script')
+})
+
+test('judge: a new script under docs/ is T2, not the T0 of the prose next to it', () => {
+  const r = gate.judge([file('docs/deploy.sh', ['+rm -rf /srv/flybot']), file('docs/ARCHITECTURE.md')])
+  assert.equal(r.tier, 'T2')
+  assert.deepEqual(r.basis.filter((b) => b.tier === 'T2'), [{ path: 'docs/deploy.sh', tier: 'T2' }])
 })
 
 test('judge: tier is the maximum over files', () => {
