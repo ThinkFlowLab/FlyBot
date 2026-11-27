@@ -1,0 +1,286 @@
+{
+ "head": "5072d22dbda12a31b15c4a50071fbcf1ee3fdad7",
+ "gate": {
+  "number": 3406,
+  "head": "5072d22dbda12a31b15c4a50071fbcf1ee3fdad7",
+  "pass": true,
+  "gates": [
+   {
+    "n": 1,
+    "name": "head and state",
+    "pass": true,
+    "detail": [
+     "open, not a draft, mergeable, base main, head 5072d22dbda12a31b15c4a50071fbcf1ee3fdad7"
+    ]
+   },
+   {
+    "n": 2,
+    "name": "required checks",
+    "pass": true,
+    "detail": [
+     "15 required checks and FlyBot required checks completed success on 5072d22d"
+    ]
+   },
+   {
+    "n": 3,
+    "name": "evidence on this head",
+    "pass": true,
+    "detail": [
+     "QA #7210114758; review #7210116921 - both name 5072d22d"
+    ]
+   },
+   {
+    "n": 4,
+    "name": "risk (advisory)",
+    "pass": true,
+    "detail": [
+     "risk:T3 - advisory only, merge is Lead's call"
+    ]
+   }
+  ]
+ },
+ "checks": [
+  {
+   "name": "Web and compose planner",
+   "attempts": [
+    {
+     "run": 140310751362,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:24Z"
+    },
+    {
+     "run": 140314992386,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:05Z"
+    }
+   ]
+  },
+  {
+   "name": "Management API · Python 3.11",
+   "attempts": [
+    {
+     "run": 140310751281,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992356,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "Management API · Python 3.13",
+   "attempts": [
+    {
+     "run": 140310751136,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:24Z"
+    },
+    {
+     "run": 140314992099,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "upstream / Pin and vendor tree",
+   "attempts": [
+    {
+     "run": 140310751490,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992492,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "upstream / Upstream suite · Node 22 · DSH from pin",
+   "attempts": [
+    {
+     "run": 140310856686,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:44Z"
+    },
+    {
+     "run": 140315115128,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:29Z"
+    }
+   ]
+  },
+  {
+   "name": "upstream / Upstream suite · Node 24 · DSH from pin",
+   "attempts": [
+    {
+     "run": 140310856705,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:44Z"
+    },
+    {
+     "run": 140315115142,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:29Z"
+    }
+   ]
+  },
+  {
+   "name": "upstream / Container startup smoke",
+   "attempts": [
+    {
+     "run": 140310856661,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:45Z"
+    },
+    {
+     "run": 140315115169,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:29Z"
+    }
+   ]
+  },
+  {
+   "name": "runtime-image / Image recipe contract tests",
+   "attempts": [
+    {
+     "run": 140310751359,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992438,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "runtime-image / Build and smoke under the manager contract",
+   "attempts": [
+    {
+     "run": 140310751457,
+     "conclusion": "failure",
+     "started_at": "2026-11-27T04:23:24Z"
+    },
+    {
+     "run": 140314992429,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "social-host / Social plugin on the pinned DS-Bot host",
+   "attempts": [
+    {
+     "run": 140310751294,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992324,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "social-host / Façade and ledger unit tests",
+   "attempts": [
+    {
+     "run": 140310751398,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992479,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:07Z"
+    }
+   ]
+  },
+  {
+   "name": "browser / screenshots",
+   "attempts": [
+    {
+     "run": 140310751237,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:24Z"
+    },
+    {
+     "run": 140314992347,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "provenance / provenance",
+   "attempts": [
+    {
+     "run": 140310751451,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992483,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "provenance / flybot-social-plugin-tests",
+   "attempts": [
+    {
+     "run": 140310751303,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:24Z"
+    },
+    {
+     "run": 140314992316,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:05Z"
+    }
+   ]
+  },
+  {
+   "name": "provenance / bot-social-source-tests",
+   "attempts": [
+    {
+     "run": 140310751437,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:23:25Z"
+    },
+    {
+     "run": 140314992526,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:37:06Z"
+    }
+   ]
+  },
+  {
+   "name": "FlyBot required checks",
+   "attempts": [
+    {
+     "run": 140312199514,
+     "conclusion": "failure",
+     "started_at": "2026-11-27T04:28:04Z"
+    },
+    {
+     "run": 140316751442,
+     "conclusion": "success",
+     "started_at": "2026-11-27T04:42:58Z"
+    }
+   ]
+  }
+ ],
+ "tier": "T3",
+ "note": "Replay snapshot of PR #3406 (merged 2026-11-27T04:49:03Z): the gate block is reconstructed from the record, the check-run attempts were re-read with filter=all at 05:06Z."
+}
