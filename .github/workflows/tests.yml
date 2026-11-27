@@ -24,7 +24,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-      - run: node --test tests/*.test.mjs manager/compose-planner/compose-command-planner.test.js
+      # The ls guard is not decoration: node --test treats a pattern that matches no file as zero
+      # tests and exits 0 (measured on Node 24.22), so without it this step would go green if the
+      # script tests ever disappeared.
+      - run: ls .github/scripts/*.test.mjs > /dev/null && node --test tests/*.test.mjs .github/scripts/*.test.mjs manager/compose-planner/compose-command-planner.test.js
 
   management:
     name: Management API · Python ${{ matrix.python }}

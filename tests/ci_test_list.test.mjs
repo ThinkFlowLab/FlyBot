@@ -4,10 +4,10 @@ import test from 'node:test';
 
 const workflow = readFileSync(new URL('../.github/workflows/tests.yml', import.meta.url), 'utf8');
 
-test('CI runs all web tests and the compose planner in one test invocation', () => {
+test('CI runs all web tests, the script tests and the compose planner in one test invocation', () => {
   assert.match(
     workflow,
-    /^ {6}- run: node --test tests\/\*\.test\.mjs manager\/compose-planner\/compose-command-planner\.test\.js$/m,
+    /^ {6}- run: ls \.github\/scripts\/\*\.test\.mjs > \/dev\/null && node --test tests\/\*\.test\.mjs \.github\/scripts\/\*\.test\.mjs manager\/compose-planner\/compose-command-planner\.test\.js$/m,
   );
 });
 
