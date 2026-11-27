@@ -1,7 +1,7 @@
 // Stream C messenger feature and group-agent replies from this user's own DS-Bot (fake Bot Social).
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -489,6 +489,99 @@ test('reply progress reads native working Bots only for the authorized linked gr
   delete room.flybotWorkspace.native_exchange
   assert.deepEqual((await v1(payload)).body,{items:[]})
   assert.equal(checked,1)
+})
+
+function groupCardFixture() {
+  const dir = fixture()
+  const workspace = 'a'.repeat(32)
+  const id = 'otc_cards'
+  const base = `/v1/workspaces/${workspace}/social/conversations/${id}`
+  const room = {id:'native-room',members:['native-helper','native-guest','native-removed'],sessions:{
+    'native-helper':'helper-current','native-guest':'guest-current','native-removed':'removed-current',
+  },flybotWorkspace:{conversation_id:id,management_revision:2}}
+  const seats = [
+    {agent_ref:'helper',name:'Helper',mine:true,owner:{owner_id:'owner-a'}},
+    {agent_ref:'guest',name:'Guest',mine:false,owner:{owner_id:'owner-b'}},
+    {agent_ref:'removed',name:'Removed',mine:true,owner:{owner_id:'owner-removed'}},
+  ]
+  const group = {id,kind:'group',account_group:true,group_management:{revision:1},agents:seats,
+    members:[{owner_id:'owner-a'},{owner_id:'owner-b'}]}
+  const invalid = randomUUID()
+  const question = {id:randomUUID(),question:'Pick a plan',detail:'Use the next available slot',options:[
+    {label:'Today',description:'Start the rollout'}, {label:'Tomorrow'},
+  ]}
+  const approval = {id:randomUUID(),roomId:room.id,sessionId:'helper-current',botId:'native-helper',answerable:true,
+    tool:'native_tool',reason:'Needs an owner decision',detail:{code:'operation fixture-secret'}}
+  const task = {...approval,id:randomUUID(),sessionId:'helper-task',taskId:'current-task'}
+  const groupOwners = new Map(Object.entries(room.sessions).map(([botId,sessionId]) => [sessionId,{botId,roomId:room.id}]))
+  const questions = {'helper-current':question,'helper-old':{...question,id:invalid},
+    'guest-current':{...question,id:randomUUID()},'removed-current':{...question,id:randomUUID()}}
+  groupOwners.set('helper-old',{botId:'native-helper',roomId:room.id})
+  const pending = [approval,task,{...task,id:invalid,sessionId:'wrong-task'},
+    {...approval,id:randomUUID(),roomId:'other-room'},{...approval,id:randomUUID(),sessionId:'helper-old'}]
+  const f = fake({'GET /v1/ot/conversations/otc_cards':() => group,
+    'GET /v1/ot/conversations/otc_cards/reply-progress':() => ({items:[]})})
+  setSharedBotSocial(createBotSocial({server:SERVER,credentialsPath:join(dir,'bot','flybot-social.json'),fetch:f.fetch}))
+  const answered = []
+  const rt = {state:{rooms:{room},questions},groupOwners,mobileEndpoint(){},sendUser(){},updateRoom(){},deleteRoom(){},
+    taskOwners:new Map([['helper-task',{roomId:room.id,botId:'native-helper',taskId:'current-task'}]]),
+    botOf:botId => ({id:botId,flybotWorkspace:{agent_id:botId.slice('native-'.length)}}),
+    redactSecrets:value => value.replace('fixture-secret','[hidden]'),
+    approvalsView:() => pending,
+    async answerQuestion(sessionId,cardId,answer) {
+      if (questions[sessionId]?.id !== cardId) throw Object.assign(new Error('no pending question'),{code:'bot/stale'})
+      answered.push({sessionId,cardId,answer})
+      delete questions[sessionId]
+      await delay(5)
+    },
+    answerApproval(cardId, choice) {
+      answered.push({cardId,choice})
+      pending.splice(pending.findIndex(item => item.id === cardId),1)
+    }}
+  const {v1} = messenger({dataDir:dir,currentRuntime:()=>({rt}),call:async()=>({workspace_id:workspace})}).endpoints
+  return {f,rt,group,question,approval,task,invalid,answered,
+    progress:() => v1({method:'GET',path:base+'/reply-progress'}),
+    respond:(cardId,body) => v1({method:'POST',path:base+`/group-cards/${cardId}/answer`,body})}
+}
+
+test('group reply progress lists owner-scoped native cards only for live group sessions and tasks', async () => {
+  const h = groupCardFixture()
+  const {status,body} = await h.progress()
+  assert.equal(status,200)
+  const cards = JSON.parse(JSON.stringify(body.cards))
+  assert.deepEqual(cards,[{id:h.question.id,type:'choice',bot_name:'Helper',question:'Pick a plan',detail:'Use the next available slot',
+    multiple:false,options:h.question.options},
+  ...[h.approval,h.task].map(card => ({id:card.id,type:'approval',bot_name:'Helper',tool:'native_tool',
+    reason:'Needs an owner decision',code:'operation [hidden]'}))])
+  assert.deepEqual(h.f.calls.map(call => call.path),['/v1/ot/conversations/otc_cards/reply-progress','/v1/ot/conversations/otc_cards'])
+  h.rt.readOnly = () => 'different runtime holds this state'
+  assert.deepEqual((await h.progress()).body,{items:[]})
+  assert.equal(h.f.calls.at(-1).path,'/v1/ot/conversations/otc_cards/reply-progress')
+  h.rt.readOnly = () => undefined
+  h.group.members = h.group.members.filter(member => member.owner_id !== 'owner-a')
+  assert.deepEqual((await h.progress()).body,{items:[]})
+})
+
+test('group card answers validate native choices, settle once, and recheck membership and read-only state', async () => {
+  const h = groupCardFixture()
+  for (const body of [{selected:[]},{selected:[1,1]},{selected:[-1]},{selected:[0,1]},{selected:[4]},
+    {choice:'allow'},{selected:[0],sessionId:'helper-current'},{selected:['Today']}]) {
+    assert.equal((await h.respond(h.question.id,body)).status,400)
+  }
+  assert.equal((await h.respond(h.invalid,{choice:'allow'})).status,409)
+  h.rt.readOnly = () => 'different runtime holds this state'
+  assert.equal((await h.respond(h.approval.id,{choice:'allow'})).body.error.code,'read_only')
+  h.rt.readOnly = () => undefined
+  assert.deepEqual(h.answered,[])
+  const duplicate = await Promise.all([h.respond(h.question.id,{selected:[1]}),h.respond(h.question.id,{selected:[1]})])
+  assert.deepEqual(duplicate.map(result => result.status).sort(),[200,409])
+  assert.deepEqual(duplicate.find(result => result.status === 200).body,{ok:true})
+  assert.deepEqual((await h.respond(h.task.id,{choice:'reject'})).body,{ok:true})
+  assert.deepEqual(h.answered,[{sessionId:'helper-current',cardId:h.question.id,answer:{selected:['Tomorrow']}},
+    {cardId:h.task.id,choice:'reject'}])
+  h.group.agents[0].mine = false
+  assert.equal((await h.respond(h.approval.id,{choice:'allow'})).status,409)
+  assert.deepEqual((await h.progress()).body,{items:[]})
 })
 
 test('the group settings route patches only the requested automatic-reply preference', async () => {

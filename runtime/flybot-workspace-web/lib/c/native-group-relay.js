@@ -141,7 +141,7 @@ export function nativeGroupRelay({ rt, raw, sync, turn, log }) {
     const lines = await rt.groupLinesAfter(room.id, checkpoint.cursor)
     for (const line of lines) {
       const remote = !standalone && line.nativeTurnId && room.flybotWorkspace.native_bot_seats?.find(seat => seat?.id === line.botId)
-      if (line.kind === undefined && !line.flybotWorkspaceMessageId && line.botId && line.text?.trim() &&
+      if (line.kind === undefined && !line.questionId && !line.flybotWorkspaceMessageId && line.botId && line.text?.trim() &&
           (room.members.includes(line.botId) || remote) &&
           (!standalone || (!line.flybotWorkspaceSharedRoundId && !line.nativeTurnId)) &&
           (!checkpoint.text_only || line.flybotWorkspaceSharedRoundId === checkpoint.id)) {

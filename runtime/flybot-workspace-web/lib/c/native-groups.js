@@ -180,6 +180,21 @@ export function nativeGroupClient(host, raw) {
     const turn = async (agent, text, signal) => (await host.call('agents/groupTextTurn', {
       agent_id:agent, text:text.slice(-42000).toWellFormed(), signal, onProgress:() => {},
     })).text
+    rt.flybotRoomCanAsk = async (roomId, botId, signal) => {
+      const room = rt.roomOf(roomId)
+      const conversationId = room?.flybotWorkspace?.conversation_id
+      const agentRef = rt.botOf(botId)?.flybotWorkspace?.agent_id
+      if (!conversationId || !agentRef || !room.members.includes(botId) ||
+          typeof rt.answerQuestion !== 'function' || rt.readOnly?.() !== undefined) return false
+      try {
+        const group = await raw.get('/v1/ot/conversations/' + encodeURIComponent(conversationId), {signal})
+        return !signal?.aborted && rt.roomOf(roomId) === room && room.members.includes(botId) &&
+          group?.kind === 'group' && !group.public_agent &&
+          group.agents?.some(agent => agent.mine === true && agent.agent_ref === agentRef)
+      } catch {
+        return false
+      }
+    }
     const relay = nativeGroupRelay({rt,raw,sync,turn,log:host.log ?? (() => {})})
     const create = nativeGroupCreation(host, raw, rt, sync)
     const directory = nativeGroupDirectory(host, raw)

@@ -14,6 +14,7 @@ import { ownerId } from '../../featurekit/v1.js'
 import { sharedBotSocial, seg, qs } from './bot-social.js'
 import { GLB_MIME } from '../glb.js'
 import { studioReference } from './studio-reference.js'
+import { GROUP_CARD_ID, answerGroupCard, groupCardAnswer, groupCardView, nativeGroupCards, ownedGroupCards } from './group-cards.js'
 
 const HEX = /^[0-9a-f]{32}$/
 const GROUP_AGENT_ID = /^[A-Za-z0-9._:-]{1,80}$/
@@ -1449,9 +1450,35 @@ function messengerExtraRoutes(host, wakeReplies) {
           const binding = await host.call('agents/personal-binding', {})
           const path = binding?.workspace_id === workspace ? conv(conversation)
             : `/v1/ot/workspaces/${workspace}/conversations/${seg(conversation)}`
-          const progress = await client(host).get(path + '/reply-progress')
+          const bs = client(host)
+          const progress = await bs.get(path + '/reply-progress')
           const working = progress.working_bots?.length ? progress.working_bots : nativeWorkingBots(host, conversation)
-          return [200, working.length ? {...progress, working_bots:working} : progress]
+          let cards = []
+          if (nativeGroupCards(host.currentRuntime?.()?.rt, conversation).length) {
+            const group = await requireSharedGroupScope(host,bs,workspace,conversation).catch(() => undefined)
+            if (group?.id === conversation) {
+              const rt = host.currentRuntime?.()?.rt
+              cards = ownedGroupCards(group, nativeGroupCards(rt, conversation)).map(card => groupCardView(rt, card))
+            }
+          }
+          return [200, {...progress, ...(working.length ? {working_bots:working} : {}), ...(cards.length ? {cards} : {})}]
+        })
+      },
+    },
+    {
+      method: 'POST', path: re('\\/group-cards\\/(' + GROUP_CARD_ID + ')\\/answer'),
+      async handle({ match, query, body }) {
+        return wrap(async () => {
+          if (query) throw new Fault(400,'invalid','无效的卡片操作。')
+          const answer = groupCardAnswer(body)
+          const [,workspace,conversation,id] = match
+          const group = await requireSharedGroupScope(host,client(host),workspace,conversation)
+          const rt = host.currentRuntime?.()?.rt
+          if (rt?.readOnly?.() !== undefined) throw new Fault(409,'read_only','当前运行环境暂时无法提交。')
+          const found = group.id === conversation ? ownedGroupCards(group, nativeGroupCards(rt, conversation)).filter(card => card.id === id) : []
+          if (found.length !== 1) throw new Fault(409,'stale','这张卡片已处理或不再可用。')
+          await answerGroupCard(rt, found[0], answer)
+          return [200, {ok:true}]
         })
       },
     },
