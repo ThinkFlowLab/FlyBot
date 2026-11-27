@@ -3623,6 +3623,77 @@ body.app-workspace .mobile-inbox-heading h1 {
   border-radius: 50%;
   background: var(--ot-accent);
 }
+#group-action-cards:not([hidden]) {
+  order: 59;
+  display: grid;
+  gap: .45rem;
+  max-height: 38vh;
+  padding: .25rem var(--chat-gutter, 1rem) .5rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.chat-group-action-card {
+  display: grid;
+  gap: .45rem;
+  box-sizing: border-box;
+  width: min(100%, var(--chat-reading-width, 50rem));
+  margin-inline: auto;
+  padding: .65rem .85rem;
+  border: 1px solid var(--ot-line);
+  border-radius: .875rem;
+  background: var(--ot-surface-2);
+  color: var(--ot-ink);
+  font-size: .875rem;
+  overflow-wrap: anywhere;
+}
+.chat-group-action-card :is(p, pre, fieldset) { margin: 0; }
+.group-action-card-bot {
+  color: var(--ot-accent);
+  font-size: .75rem;
+  font-weight: 650;
+}
+.group-action-card-prompt { font-weight: 650; }
+.group-action-card-detail, .chat-group-action-card small { color: var(--ot-muted); }
+.chat-group-action-card pre {
+  max-height: 9rem;
+  overflow: auto;
+  padding: .5rem .6rem;
+  border-radius: .5rem;
+  background: var(--ot-bg-accent);
+  font-size: .8125rem;
+  white-space: pre-wrap;
+}
+.chat-group-action-card fieldset {
+  display: grid;
+  gap: .3rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.chat-group-action-card label {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .4rem .55rem;
+  border: 1px solid var(--ot-line);
+  border-radius: .5rem;
+  background: var(--ot-surface);
+  cursor: pointer;
+}
+.chat-group-action-card label:has(input:checked) {
+  border-color: var(--ot-accent);
+  background: var(--ot-accent-soft);
+}
+.chat-group-action-card input { flex: 0 0 auto; margin: 0; accent-color: var(--ot-accent); }
+.chat-group-action-card small { display: block; }
+.group-action-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+.group-action-card-actions button { min-height: 2rem; padding: .27rem .7rem; font-size: .8125rem; }
+.group-action-card-actions button[data-card-action="reject"] { color: var(--ot-ink); background: var(--ot-surface); }
+.chat-group-action-card [data-card-status]:empty { display: none; }
+.chat-group-action-card [data-card-status] { color: var(--ot-muted); font-size: .8rem; }
+@media (pointer: coarse) {
+  .chat-group-action-card label, .group-action-card-actions button { min-height: 2.75rem; }
+}
 .chat-approval-notice:not([hidden]) {
   display: flex;
   flex-wrap: wrap;

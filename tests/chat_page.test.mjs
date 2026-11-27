@@ -1552,6 +1552,92 @@ test('native group activity follows Bot handoffs before local room projection', 
   } finally { restore(); }
 });
 
+test('native group action cards submit indexed choices and explicit approval decisions', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const posts = [];
+  let acceptChoice;
+  const cards = [{id:'card-choice',type:'choice',bot_name:'产品助手',question:'选择发布渠道',
+    multiple:true,options:[{label:'邮件',description:'仅项目成员'},{label:'群公告'},{label:'<img src=x>'}]},
+  {id:'card-approval',type:'approval',bot_name:'发布助手',tool:'发布',reason:'请确认渠道',
+    detail:'发布到项目成员可见的公告栏',code:'<script>sample</script>'}];
+  const {doc, el, restore, fetcher} = groupReplyChat((path, opts, conversation) => {
+    if (!path) return json(200,{conversation:{...conversation,native_room_id:'native-room'},items:[]});
+    if (path === '/reply-progress') return json(200,{items:[],cards});
+    const payload = JSON.parse(opts.body);
+    posts.push([path, payload]);
+    assert.equal(opts.method, 'POST');
+    if (path === '/group-cards/card-choice/answer') return new Promise(resolve => { acceptChoice = resolve; });
+    return payload.choice === 'reject' ? json(503,{}) : json(200,{ok:true});
+  });
+  try {
+    await mount(doc,{fetcher});
+    const dock = el('group-action-cards');
+    assert.equal(dock.hidden,true);
+    t.mock.timers.tick(500); await settle();
+    const [choice, approval] = dock.children;
+    assert.equal(dock.hidden,false);
+    assert.equal(choice.dataset.cardType,'choice');
+    assert.match(choice.textContent,/仅项目成员/);
+    assert.match(choice.textContent,/<img src=x>/);
+    assert.equal(choice.querySelector('img'),null);
+    assert.match(approval.textContent,/请确认渠道.*项目成员可见/);
+    assert.equal(approval.querySelector('pre').textContent,'<script>sample</script>');
+    const submit = choice.querySelector('[data-card-action="submit"]');
+    const [first,, third] = choice.querySelectorAll('input');
+    assert.equal(submit.disabled,true);
+    assert.equal(first.type,'checkbox');
+    first.checked = third.checked = true;
+    await fire(first,'change');
+    t.mock.timers.tick(1500); await settle();
+    assert.equal(dock.children[0],choice,'repeated snapshots keep selected inputs mounted');
+    assert.equal(submit.disabled,false);
+    const submitEvent = {preventDefault() {}};
+    await fire(choice,'submit',submitEvent);
+    await fire(choice,'submit',submitEvent);
+    assert.equal(submit.disabled,true);
+    assert.deepEqual(posts,[['/group-cards/card-choice/answer',{selected:[0,2]}]]);
+    acceptChoice(json(200,{ok:true}));
+    await settle();
+    assert.deepEqual(dock.children,[approval]);
+    const reject = approval.querySelector('[data-card-action="reject"]');
+    await fire(reject,'click'); await settle();
+    assert.equal(reject.disabled,false);
+    assert.match(approval.textContent,/未能确认提交/);
+    await fire(approval.querySelector('[data-card-action="allow"]'),'click'); await settle();
+    assert.deepEqual(posts.slice(1),[
+      ['/group-cards/card-approval/answer',{choice:'reject'}], ['/group-cards/card-approval/answer',{choice:'allow'}],
+    ]);
+    assert.equal(dock.hidden,true);
+    t.mock.timers.tick(1500); await settle();
+    assert.equal(dock.hidden,true,'a stale snapshot cannot revive answered cards');
+  } finally { restore(); }
+});
+
+test('native group action cards are detached immediately when the workspace changes', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let posts = 0;
+  const {doc, el, restore, fetcher} = groupReplyChat((path, opts, conversation) => {
+    if (!path) return json(200,{conversation:{...conversation,native_room_id:'native-room'},items:[]});
+    if (opts.method === 'POST') { posts++; return json(200,{ok:true}); }
+    assert.equal(path,'/reply-progress');
+    return json(200,{items:[],cards:[{id:'card-approval',type:'approval',bot_name:'助手',tool:'发布'}]});
+  });
+  try {
+    await mount(doc,{fetcher});
+    t.mock.timers.tick(500); await settle();
+    const dock = el('group-action-cards');
+    const allow = dock.querySelector('[data-card-action="allow"]');
+    assert.ok(allow);
+    const workspace = el('workspace');
+    workspace.value = 'other-workspace';
+    await fire(workspace,'change');
+    assert.equal(dock.hidden,true);
+    assert.deepEqual(dock.children,[]);
+    await fire(allow,'click');
+    assert.equal(posts,0);
+  } finally { restore(); }
+});
+
 test('group progress updates only the original job and attempt and clears stale text', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const source = {id: 'source', user_id: alice, body: '请两位协助', created: 1, seq: 1, reply_jobs: [

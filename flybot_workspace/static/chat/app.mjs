@@ -3,6 +3,7 @@ import { decodeVoice, mountVoiceRecorder } from './voice.mjs';
 import { countMentionedGroupMembers, hasEveryoneMention, hasGroupAllMention, mountAgentMentions } from './mentions.mjs';
 import { createGroupBotIdentities, groupBotIdentity, createGroupBotAvatar } from './group-identity.mjs';
 import { groupMentionPainter } from './group-mentions-display.mjs';
+import { mountGroupActionCards } from './group-action-cards.mjs';
 import { AGENT_FILE_ACCEPT, chatFileDownload, chatUploadProgress, deferModule, localChatFile, mountChatFiles,
   isChatImage, ownSocialMessage, ownSocialReceipt, renderChatFile, sendPrivateAttachmentMessage, sendSocialAttachmentMessage, unclearSocialDelivery } from './files.mjs';
 import { mountGroupTranslation } from './translation.mjs';
@@ -4361,6 +4362,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let groupReplyWatch = null;
   const groupReplyViews = new Map();
   const groupBotActivity = document.getElementById('group-bot-activity');
+  const groupActionCards = mountGroupActionCards(document, {request, label:uiLabel});
   const groupReplyRetries = new Map();
   let groupReplyScope = null;
   const olderMessages = document.getElementById('chat-load-older');
@@ -4828,6 +4830,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   function stopGroupReplyProgress({preservePreview = false} = {}) {
     const watch = groupReplyWatch;
     groupReplyWatch = null;
+    groupActionCards.clear();
     if (watch) {
       globalThis.clearTimeout(watch.timer);
       globalThis.clearTimeout(watch.timeout);
@@ -4874,6 +4877,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       if (watch.degraded) stopPolling();
       watch.degraded = false;
       paintGroupReplyProgress(items, {preserveMissing: true, workingBots:watch.workingBots});
+      if (compactGroupReplies()) groupActionCards.update(watch.base, result.body.cards);
       // Replies can settle before the first progress poll, between tab visits,
       // or while Social activity delivery is reconnecting. Reconcile from the
       // durable transcript even when this watch never saw an active snapshot.
@@ -4922,8 +4926,9 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       return;
     }
     if (groupReplyWatch) stopGroupReplyProgress();
+    const base = `${socialBase()}/${currentConversation.id}`;
     groupReplyWatch = {
-      scope, path: `${socialBase()}/${currentConversation.id}/reply-progress`, items: new Map(), nextReconcileAt: 0,
+      scope, base, path:`${base}/reply-progress`, items:new Map(), nextReconcileAt:0,
     };
     scheduleGroupReplyProgress(groupReplyWatch);
   }

@@ -2050,7 +2050,7 @@ diff --git a/src/host/groups.js b/src/host/groups.js
      if (running !== undefined) {
        if (extra.failed !== undefined) {
 diff --git a/src/host/tools.js b/src/host/tools.js
-index 0b9ee2b..b9e79a2 100644
+index 0b9ee2b..d11c479 100644
 --- a/src/host/tools.js
 +++ b/src/host/tools.js
 @@ -477,7 +477,13 @@ export function install(rt) {
@@ -2096,7 +2096,23 @@ index 0b9ee2b..b9e79a2 100644
        const admin = args.admin ? rt.findBot(args.admin) : rt.botOf(self)
        if (admin === undefined) return `No Bot named ${args.admin}. Team: ${teamNames()}`
        const members = [...new Set([self, ...bots.map(bot => bot.id), admin.id])]
-@@ -1189,12 +1204,20 @@ export function install(rt) {
+@@ -932,7 +947,14 @@ export function install(rt) {
+       const id = exec.agent?.id
+       if (rt.taskOwners?.has(id)) return 'Background tasks cannot show question cards directly. Put the question in your reply so it goes back to your own chat, where you can ask the user and start a follow-up task if needed.'
+       const owner = rt.groupOwners.get(id)
+-      if (owner !== undefined && !rt.roomHasImOrigin?.(owner.roomId)) return 'Question cards only work in your own chat. In a group, ask in your message instead.'
++      if (owner !== undefined && !rt.roomHasImOrigin?.(owner.roomId) &&
++          !await rt.flybotRoomCanAsk?.(owner.roomId, owner.botId, exec.signal)) {
++        return 'A question card is not available in this group. Ask in your group message instead.'
++      }
++      const currentOwner = rt.groupOwners.get(id)
++      if (owner !== undefined && (currentOwner?.roomId !== owner.roomId || currentOwner?.botId !== owner.botId)) {
++        return 'The group session changed. Ask again from the active session.'
++      }
+       if (owner !== undefined && args.allowCustom === true) return 'Group question cards accept listed choices only. Call ask_user with allowCustom: false, or ask for free text in your message instead.'
+       if (owner === undefined && !rt.chatOwners.has(id)) return `Only Bots on the team can use ask_user. Use ${BLOCKING_QUESTION_TOOL} if it is available in this session, or ask the user in your reply.`
+       const options = (Array.isArray(args.options) ? args.options : [])
+@@ -1189,12 +1211,20 @@ export function install(rt) {
    const filterBotAssembly = (agent, held) => {
      if (held.filtered === true || typeof agent.ctx?.on !== 'function') return
      const filterTools = agent.ctx.on('llm/stream', function filterBuiltinTools(options, next) {
@@ -2120,7 +2136,7 @@ index 0b9ee2b..b9e79a2 100644
        const assembled = await next()
        const hidden = new Set([...HIDDEN_TOOLS, ...rt.hiddenBuiltinTools(agent.session?.id)])
        // DSH 0.2.2 adds the tool list after this waterfall (#814), so only an
-@@ -1362,6 +1385,10 @@ export function install(rt) {
+@@ -1362,6 +1392,10 @@ export function install(rt) {
    // goal made there is blocked.
    ctx.tools.guard((exec) => {
      if (!rt.isBotSession(exec.agent?.id)) return undefined

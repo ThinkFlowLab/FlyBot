@@ -15,7 +15,7 @@ const files = {
   ],
   'src/host/tools.js': [
     'a5c743b7c75c96498775808f029a5f15c7e08dbe6eaf33089d29b3c2a9ffb382',
-    '73846995fff9590d7d059166c8c9de14b27dea5477cfd5b37099800a0e3b96b7',
+    '716fbaad4fb55a72ac3e52435de4fc66ee0dd50db23aa04145d7b3e3125b4d03',
   ],
   'src/host/roster.js': [
     '20461d2d4aeae6ca373e3431a5802317d1130468e1940d22032189134429f984',
