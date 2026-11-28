@@ -1021,6 +1021,15 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     if (starts) starts.value = (agent.quick_starts || []).join('\n');
     const active = !agent.archived && !agent.native_deleted;
     const writable = active && canManage(actor);
+    const skillLink = document.getElementById('agent-skills-link');
+    if (skillLink) {
+      const workspace = workspaceId();
+      skillLink.hidden = !writable || !directoryId.test(workspace || '') || !directoryId.test(agent.id);
+      if (!skillLink.hidden) {
+        skillLink.href = '/skills#' + new URLSearchParams({workspace, agent:agent.id});
+        skillLink.textContent = document.documentElement?.lang?.startsWith('en') ? 'Configure skills' : '配置技能';
+      }
+    }
     const scope = [currentUser?.id, workspaceId(), agent.id];
     draftKey = writable && scope.every(id => directoryId.test(id || '')) ? 'ot-agent-edit:' + scope.join(':') : '';
     originalEdits = currentEdits();

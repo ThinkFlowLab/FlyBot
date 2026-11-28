@@ -54,15 +54,17 @@ class SkillsPageTests(unittest.TestCase):
         self.assertIn('csrfCookie(document.cookie)', script)
         self.assertNotIn('innerHTML', script)
 
-    def test_every_shell_page_links_the_skills_entry(self):
+    def test_skills_are_linked_from_agent_details_instead_of_the_rail(self):
         pages = [path.parent.name for path in Path(__file__).absolute().parent.parent.joinpath(
             'flybot_workspace', 'static').glob('*/index.html')]
         self.assertIn('skills', pages)
         for name in pages:
             html = self.raw.call('GET', '/' + name)['body'].decode()
-            if 'href="/agents"' not in html:
+            if '<nav class="app-rail"' not in html:
                 continue
-            self.assertIn('href="/skills"', html, name)
+            rail = html.split('<nav class="app-rail"', 1)[1].split('</nav>', 1)[0]
+            self.assertNotIn('href="/skills"', rail, name)
+        self.assertIn(b'/skills#', self.raw.call('GET', '/agents/app.mjs')['body'])
 
     def test_the_install_allowlist_matches_the_authoritative_catalogue(self):
         from flybot_workspace import skill_installs, skill_packages

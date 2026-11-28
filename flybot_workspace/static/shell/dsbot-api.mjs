@@ -24,7 +24,7 @@ export const MOVED = [
   [/^\/v1\/contacts(?:\/(?:lookup|otcpt_[A-Za-z0-9_-]{1,80}))?$/, 'social'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/notifications(?:\/read)?$/, 'social'],
   [/^\/v1\/(?:automation-templates|onboarding\/automations)$/, 'automations'],
-  [/^\/v1\/workspaces\/[0-9a-f]{32}\/automations(?:\/(?:draft|schedule-preview|tick|[0-9a-f]{32}))?$/, 'automations'],
+  [/^\/v1\/workspaces\/[0-9a-f]{32}\/automations(?:\/(?:bot-schedules|draft|schedule-preview|tick|[0-9a-f]{32}))?$/, 'automations'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/automations\/[0-9a-f]{32}\/(?:run|remove|runs(?:\/[0-9a-f]{32}(?:\/(?:cancel|retry|artifact|studio))?)?)$/, 'automations'],
   [/^\/v1\/workspaces\/[0-9a-f]{32}\/agents\/[0-9a-f]{32}\/api-keys(?:\/[0-9a-f]{32}\/revoke)?$/, 'agent-api'],
   [/^\/v1\/agent-copy-grants(?:\/(?:recipients|otag_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}\/remix))?$/, 'agents'],

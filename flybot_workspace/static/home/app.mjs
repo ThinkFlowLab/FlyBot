@@ -427,11 +427,12 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis), no
     loading = true;
     try {
       const isLogin = view.location?.pathname === '/login';
+      const isLanding = view.location?.pathname === '/';
       const originalPage = workspacePageTarget(view.location);
       const hash = isLogin ? view.location.hash : '';
       const returnTo = originalPage || workspaceLoginTarget(hash);
       const loginLinks = hash && !returnTo ? readLoginLinks(hash).catch(() => null) : null;
-      const sessionPath = isLogin || originalPage ? '/v1/auth/session' : '/v1/auth/session?include=home';
+      const sessionPath = isLogin || isLanding || originalPage ? '/v1/auth/session' : '/v1/auth/session?include=home';
       const session = await request('GET', sessionPath).catch(() => ({status: 0, body: {}}));
       const unconfirmedSignup = [200, 401].includes(session.status) && !confirmSignupSession(view, session);
       if (session.status === 401 || unconfirmedSignup) {
@@ -474,6 +475,11 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis), no
         return;
       }
       try { view.sessionStorage.removeItem(pendingKey); } catch {}
+      if (isLanding) {
+        const workspace = hashWorkspace(view.location.hash);
+        view.location.replace(workspace ? '/chat#workspace=' + workspace : '/chat');
+        return;
+      }
       if (isLogin) {
         const links = await loginLinks;
         if (hash && !links) {
@@ -507,7 +513,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis), no
             loadingText: '正在返回发现…', errorText: '暂时无法打开你的发现页。', retryId: 'discover-login-retry',
           });
         } else {
-          view.location.replace('/');
+          view.location.replace('/chat');
         }
         return;
       }

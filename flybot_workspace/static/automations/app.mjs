@@ -193,6 +193,14 @@ export function automationTargetFromSearch(search) {
   return {workspace, automation, ...(run ? {run} : {})};
 }
 
+export function taskViewFromHash(hash) {
+  const params = new URLSearchParams((hash || '').replace(/^#/, ''));
+  const view = params.getAll('view').length === 1 ? params.get('view') : '';
+  const action = params.get('action');
+  if (view === 'checklist') return {view,action:params.getAll('action').length === 1 && EDITOR_ID.test(action || '') ? action : ''};
+  return {view:view === 'bot' ? 'bot' : 'scheduled',action:''};
+}
+
 const RECURRING_KINDS = new Set(['daily', 'weekdays', 'weekly', 'monthly']);
 const EDITOR_DRAFT_FIELDS = {
   title:80, prompt:4000, kind:12, date:10, time:8, weekday:2, day:2, time_zone:64,
@@ -710,6 +718,12 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   const linkRetry = document.getElementById('automation-link-retry');
   const sourcePanel = document.getElementById('meeting-action-source');
   const tabs = document.querySelectorAll('.tabs [data-category]');
+  const taskModes = [
+    ['scheduled',document.getElementById('scheduled-task-tab'),listPanel],
+    ['checklist',document.getElementById('checklist-task-tab'),document.getElementById('checklist-panel')],
+    ['bot',document.getElementById('bot-task-tab'),document.getElementById('bot-schedule-panel')],
+  ];
+  const newChecklist = document.getElementById('new-checklist-action');
   const workspaceStatus = document.getElementById('workspace-status');
   const templateRetry = document.getElementById('automation-template-retry');
   const editorOptions = document.getElementById('automation-editor-options');
@@ -741,6 +755,9 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   let listTimer = 0;
   let listFingerprint = '';
   let listReturn = null;
+  let taskMode = 'scheduled';
+  let checklist;
+  let botSchedules;
   let recentRuns = [];
   let selectedRun = null;
   let linkedRunRequest = null;
@@ -860,7 +877,10 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
 
   function catalogueAddress() {
     const workspace = workspaceId();
-    const fragment = /^[a-f0-9]{32}$/.test(workspace) ? '#workspace=' + workspace : '';
+    const params = new URLSearchParams();
+    if (EDITOR_ID.test(workspace)) params.set('workspace', workspace);
+    if (taskMode !== 'scheduled') params.set('view', taskMode);
+    const fragment = params.size ? '#' + params : '';
     return (view.location.pathname || '/automations') + runFilterSearchText(runFilter) + fragment;
   }
 
@@ -925,6 +945,55 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   }
 
   const viewerId = () => currentUser?.id || currentUser?.username;
+
+  async function selectTaskView(mode, {action = '', updateLink = false, startup} = {}) {
+    taskMode = mode;
+    for (const [name,tab,panel] of taskModes) {
+      const selected = name === mode;
+      if (panel) panel.hidden = !selected;
+      if (!tab) continue;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    newButton.hidden = mode !== 'scheduled';
+    if (newChecklist) {
+      newChecklist.hidden = mode !== 'checklist';
+      newChecklist.disabled = !workspaceId() || (mode === 'checklist' && !checklist);
+    }
+    if (updateLink) {
+      show('', '');
+      writeWorkspaceLink();
+    }
+    if (mode !== 'checklist') checklist?.close();
+    if (mode !== 'bot') botSchedules?.close();
+    if (mode === 'scheduled') return loadList({startup});
+    globalThis.clearTimeout(listTimer);
+    globalThis.clearTimeout(searchTimer);
+    listRead?.abort();
+    listRequest += 1;
+    const workspace = workspaceId(), owner = viewerId();
+    if (!workspace || !owner) return;
+    const belongs = () => taskMode === mode && workspaceId() === workspace && viewerId() === owner && form.hidden;
+    try {
+      if (mode === 'checklist') {
+        if (!checklist) {
+          const {mountChecklist} = await import('./checklist.mjs');
+          if (!belongs()) return;
+          checklist ??= mountChecklist(document, {request,newKey:idempotencyKey});
+        }
+        if (newChecklist) newChecklist.disabled = !checklist;
+        return checklist?.show(workspace,owner,action);
+      }
+      if (!botSchedules) {
+        const {mountBotSchedules} = await import('./bot-schedules.mjs');
+        if (!belongs()) return;
+        botSchedules ??= mountBotSchedules(document,{request});
+      }
+      return botSchedules?.show(workspace,owner);
+    } catch {
+      if (belongs()) show('error', '无法打开任务视图，请重试。');
+    }
+  }
 
   function scheduleSwitchKey(workspace, viewer, automation) {
     return JSON.stringify([workspace, viewer, automation]);
@@ -2269,7 +2338,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       tab.setAttribute('aria-selected', String(selected));
       tab.tabIndex = selected ? 0 : -1;
     }
-    const name = category === 'mine' ? '搜索我的自动化' : '搜索自动化模板';
+    const name = category === 'mine' ? '搜索我的定时任务' : '搜索定时任务模板';
     search.placeholder = name + '…';
     search.setAttribute('aria-label', name);
   }
@@ -2397,6 +2466,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   async function load() {
     resetTaskDraft();
     resetSchedulePreview();
+    checklist?.close();
+    botSchedules?.close();
     const seq = ++loadRequest;
     const target = editorTargetFromSearch(readSearch());
     const fragment = new URLSearchParams((view?.location?.hash || '').slice(1));
@@ -2405,6 +2476,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       ? fragment.get('workspace') : '';
     const wantedWorkspace = target?.workspace || requestedWorkspace;
     const wantedTemplate = !target && templateFromSearch(readSearch());
+    const taskTarget = target || wantedTemplate ? {view:'scheduled',action:''} : taskViewFromHash(view?.location?.hash);
     discardFollowupDraft();
     newButton.disabled = true;
     workspaceStatus.textContent = '';
@@ -2413,7 +2485,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const sharedPath = '/v1/workspaces?limit=100';
     const linkedDirectory = native && /^[0-9a-f]{32}$/.test(wantedWorkspace || '')
       ? readWorkspaceChoices(request, sharedPath) : null;
-    const initialCatalogue = native && !target && !hasWorkspace && !wantedTemplate && category === 'mine' && !search.value.trim()
+    const initialCatalogue = native && taskTarget.view === 'scheduled' && !target && !hasWorkspace && !wantedTemplate && category === 'mine' && !search.value.trim()
       ? request('GET', '/v1/workspaces?scope=personal&include=automations').catch(() => null) : null;
     const session = await sessionRequest;
     if (seq !== loadRequest) return;
@@ -2530,7 +2602,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const startup = personalRequest && space === await personalRequest && Array.isArray(projectedItems) &&
       projectedItems.every(item => item?.workspace_id === projectedWorkspace && /^[0-9a-f]{32}$/.test(item.id))
       ? {workspace: projectedWorkspace, items: projectedItems} : null;
-    if (seq === loadRequest) await loadList({startup});
+    if (seq === loadRequest) await selectTaskView(taskTarget.view,{startup,action:taskTarget.action});
   }
 
   document.getElementById('login-form').addEventListener('submit', async event => {
@@ -2563,7 +2635,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     mainPanel.classList.remove('is-editing');
     if (runPanel) runPanel.hidden = true;
     stopRunPoll();
-    loadList();
+    void selectTaskView(taskMode);
   });
   linkRetry?.addEventListener('click', () => load());
   templateRetry?.addEventListener('click', () => {
@@ -2664,6 +2736,13 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       const target = runScope();
       const inEditor = currentRunScope(target) && linked?.automation === target.automation && linked.workspace === target.workspace;
       const fragment = new URLSearchParams((view.location?.hash || '').slice(1));
+      const taskTarget = taskViewFromHash(view.location?.hash);
+      if (!linked && form.hidden && taskTarget.view !== taskMode) {
+        const requestedWorkspace = fragment.get('workspace');
+        if (requestedWorkspace && requestedWorkspace !== workspaceId()) void load();
+        else void selectTaskView(taskTarget.view,{action:taskTarget.action});
+        return;
+      }
       const catalogue = catalogueState(linked?.workspace || fragment.get('workspace') || workspaceId());
       if (catalogue && !linked) {
         runFilter = wanted;
@@ -2700,6 +2779,22 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       }
       if (!runPanel?.hidden) renderRuns(recentRuns, {filterPending:true});
       loadRuns();
+    });
+  }
+  for (const [mode,tab] of taskModes) {
+    tab?.addEventListener('click', () => {
+      if (form.hidden && mode !== taskMode) void selectTaskView(mode,{updateLink:true});
+    });
+    tab?.addEventListener('keydown', event => {
+      const ordered = taskModes.map(([,button]) => button);
+      const index = ordered.indexOf(tab);
+      const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? ordered.length - 1
+        : offset ? (index + offset + ordered.length) % ordered.length : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      ordered[next].focus();
+      ordered[next].click();
     });
   }
   for (const tab of tabs) {

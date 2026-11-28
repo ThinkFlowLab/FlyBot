@@ -9,9 +9,6 @@ import {
   CONNECTORS_MENU_HREF,
   CONNECTORS_MENU_LABEL,
   ensureChannelsAndConnectorsMenuItems,
-  ensureOnboardingMenuItem,
-  ONBOARDING_MENU_HREF,
-  ONBOARDING_MENU_LABEL,
   resolveTheme,
 } from '../flybot_workspace/static/shell/app.mjs';
 
@@ -153,51 +150,13 @@ function labels(menu) {
   return menu.children.map((node) => node.textContent || node.className);
 }
 
-test('ensureOnboardingMenuItem does nothing when the account menu is missing', () => {
-  assert.equal(ensureOnboardingMenuItem({getElementById() { return null; }}), null);
-});
-
-test('ensureOnboardingMenuItem inserts 新手引导 before help, after 创建团队', () => {
-  const {doc, menu} = accountMenu([
-    {href: '/profile', text: '查看我的资料'},
-    {href: '/team', text: '创建团队'},
-    {kind: 'sub'},
-    {href: '/settings', text: '所有设置'},
-  ]);
-  const link = ensureOnboardingMenuItem(doc);
-  assert.equal(link.getAttribute('href'), ONBOARDING_MENU_HREF);
-  assert.equal(link.getAttribute('role'), 'menuitem');
-  assert.equal(link.textContent, ONBOARDING_MENU_LABEL);
-  assert.match(link.getAttribute('title'), /新手引导/);
-  assert.deepEqual(labels(menu), ['查看我的资料', '创建团队', '新手引导', 'account-sub', '所有设置']);
-});
-
-test('ensureOnboardingMenuItem moves an existing link into the recorded slot and does not duplicate it', () => {
-  const {doc, menu} = accountMenu([
-    {href: '/profile', text: '查看我的资料'},
-    {href: '/onboarding', text: '新手引导'},
-    {href: '/team', text: '创建团队'},
-    {kind: 'sub'},
-    {href: '/settings', text: '所有设置'},
-  ]);
-  ensureOnboardingMenuItem(doc);
-  const again = ensureOnboardingMenuItem(doc);
-  const matches = menu.children.filter((node) => node.getAttribute && node.getAttribute('href') === '/onboarding');
-  assert.equal(matches.length, 1);
-  assert.equal(matches[0], again);
-  assert.equal(again.textContent, '新手引导');
-  assert.deepEqual(labels(menu), ['查看我的资料', '创建团队', '新手引导', 'account-sub', '所有设置']);
-});
-
 test('ensureChannelsAndConnectorsMenuItems does nothing when the account menu is missing', () => {
   assert.equal(ensureChannelsAndConnectorsMenuItems({getElementById() { return null; }}), null);
 });
 
-test('ensureChannelsAndConnectorsMenuItems inserts Agent 渠道 and 应用连接器 after 创建团队 and before 新手引导', () => {
+test('ensureChannelsAndConnectorsMenuItems inserts channels and connectors between the profile and the help menu', () => {
   const {doc, menu} = accountMenu([
     {href: '/profile', text: '查看我的资料'},
-    {href: '/team', text: '创建团队'},
-    {href: '/onboarding', text: '新手引导'},
     {kind: 'sub'},
     {href: '/settings', text: '所有设置'},
   ]);
@@ -210,19 +169,17 @@ test('ensureChannelsAndConnectorsMenuItems inserts Agent 渠道 and 应用连接
   assert.equal(items.connectors.getAttribute('role'), 'menuitem');
   assert.equal(items.connectors.textContent, CONNECTORS_MENU_LABEL);
   assert.equal(items.connectors.getAttribute('title'), '管理应用连接器');
-  assert.deepEqual(labels(menu), ['查看我的资料', '创建团队', 'Agent 渠道', '应用连接器', '新手引导', 'account-sub', '所有设置']);
+  assert.deepEqual(labels(menu), ['查看我的资料', 'Agent 渠道', '应用连接器', 'account-sub', '所有设置']);
 });
 
 test('ensureChannelsAndConnectorsMenuItems moves existing links into the recorded slot and does not duplicate them', () => {
   const {doc, menu} = accountMenu([
     {href: '/profile', text: '查看我的资料'},
     {href: '/settings/connectors', text: '应用连接器'},
-    {href: '/team', text: '创建团队'},
     {href: '/settings/channels', text: '渠道'},
     {kind: 'sub'},
     {href: '/settings', text: '所有设置'},
   ]);
-  ensureOnboardingMenuItem(doc);
   const first = ensureChannelsAndConnectorsMenuItems(doc);
   const again = ensureChannelsAndConnectorsMenuItems(doc);
   const channelLinks = menu.children.filter((node) => node.getAttribute && node.getAttribute('href') === CHANNELS_MENU_HREF);
@@ -232,21 +189,8 @@ test('ensureChannelsAndConnectorsMenuItems moves existing links into the recorde
   assert.equal(channelLinks[0], again.channels);
   assert.equal(connectorLinks[0], again.connectors);
   assert.equal(first.channels, again.channels);
-  assert.deepEqual(labels(menu), ['查看我的资料', '创建团队', 'Agent 渠道', '应用连接器', '新手引导', 'account-sub', '所有设置']);
+  assert.deepEqual(labels(menu), ['查看我的资料', 'Agent 渠道', '应用连接器', 'account-sub', '所有设置']);
 });
-
-test('calling both menu helpers without an existing 新手引导 link keeps the recorded order', () => {
-  const {doc, menu} = accountMenu([
-    {href: '/profile', text: '查看我的资料'},
-    {href: '/team', text: '创建团队'},
-    {kind: 'sub'},
-    {href: '/settings', text: '所有设置'},
-  ]);
-  ensureOnboardingMenuItem(doc);
-  ensureChannelsAndConnectorsMenuItems(doc);
-  assert.deepEqual(labels(menu), ['查看我的资料', '创建团队', 'Agent 渠道', '应用连接器', '新手引导', 'account-sub', '所有设置']);
-});
-
 
 test('workspace pages render the same navigation and one accessible account icon before shell startup', () => {
   const staticPages = new URL('../flybot_workspace/static/', import.meta.url);
@@ -257,18 +201,19 @@ test('workspace pages render the same navigation and one accessible account icon
     const actions = nav.match(/<div class="rail-actions">([\s\S]*?)<\/div>/)?.[1] || '';
     const globalActions = actions.replace(/<div id="login-panel" class="discover-guest-signin" hidden>[^]*$/, '');
     const routes = Array.from(globalActions.matchAll(/<a [^>]*?href="([^"]+)"/g), ([, href]) => href);
-    assert.deepEqual(routes, [
-      '/', '/chat', '/agents', '/skills', '/automations', '/memory',
-      '/space', '/meetings', '/discover', '/contacts', '/download',
-    ], page);
+    assert.deepEqual(routes, ['/chat', '/agents', '/automations', '/discover', '/space'], page);
+    assert.match(nav, /class="brand-mark" href="\/chat"/, page);
+    assert.match(nav, /class="rail-label"[^>]*>任务<\/span>/, page);
+    assert.match(nav, /class="rail-label"[^>]*>资料空间<\/span>/, page);
     assert.doesNotMatch(nav, /href="\/profile"|class="rail-spacer"/, page);
-    assert.match(nav, /href="\/chat"[^>]*aria-label="聊天">[\s\S]*?<svg/);
-    assert.match(nav, /class="rail-label">发现<\/span>/);
+    assert.match(nav, /href="\/chat"[^>]*aria-label="聊天"[^>]*>\s*<svg/);
+    assert.match(nav, /class="rail-label"[^>]*>发现<\/span>/);
     const trigger = menu.match(/<button[^>]*id="account-menu-button"[^>]*>[\s\S]*?<\/button>/g);
     assert.equal(trigger?.length, 1, page);
     assert.match(trigger[0], /aria-label="账户菜单"[^>]*>\s*<svg[^>]*aria-hidden="true"[^>]*>[^<]*<path[^>]*\/>\s*<\/svg>\s*<\/button>/, page);
     assert.doesNotMatch(menu, /class="rail-label"/);
     assert.match(menu, /所有设置<\/a>/);
+    assert.doesNotMatch(menu, /href="\/(?:team|onboarding|download|guide)"/, page);
   }
 });
 

@@ -82,10 +82,7 @@ class ShellPageTests(unittest.TestCase):
         self.assertIn(b'export function resolveTheme', script['body'])
         self.assertIn(b'export function startShell', script['body'])
         self.assertIn(b'export function accountNameFromLabel', script['body'])
-        self.assertIn(b'export function ensureOnboardingMenuItem', script['body'])
         self.assertIn(b'export function ensureChannelsAndConnectorsMenuItems', script['body'])
-        self.assertIn("ONBOARDING_MENU_LABEL = '新手引导'".encode(), script['body'])
-        self.assertIn(b'/onboarding', script['body'])
         self.assertIn('Agent 渠道'.encode(), script['body'])
         self.assertIn(b'/settings/channels', script['body'])
         self.assertIn('应用连接器'.encode(), script['body'])
@@ -160,9 +157,9 @@ class ShellPageTests(unittest.TestCase):
             self.assertIn('id="help-menu"', html, path)
             self.assertIn('查看我的资料', html, path)
             if path == '/onboarding':
-                self.assertIn('href="/onboarding"', html, path)
                 self.assertIn('工作背景', html, path)
-            self.assertIn('href="/download"', html, path)
+            rail = html.split('<nav class="app-rail"', 1)[1].split('</nav>', 1)[0]
+            self.assertNotIn('href="/download"', rail, path)
             self.assertIn('id="appearance-toggle"', html, path)
             self.assertIn('href="/discover"', html, path)
             self.assertNotIn('未实现：发现动态', html, path)

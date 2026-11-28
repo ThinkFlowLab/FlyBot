@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {renderRunMarkdown} from '../flybot_workspace/static/automations/result-markdown.mjs';
-import {upcomingAutomations} from '../flybot_workspace/static/automations/app.mjs';
+import {taskViewFromHash, upcomingAutomations} from '../flybot_workspace/static/automations/app.mjs';
+import {mountBotSchedules} from '../flybot_workspace/static/automations/bot-schedules.mjs';
 import { automationEditionDraft, automationTargetFromSearch, cancellationPrompt, catalogItems, csrfCookie, deletePrompt, draftFromTemplate, listQuery, matchesRunFilter, meetingTargetFromSearch, memoryActionTargetFromSearch, mount, namesFromList, readEditor, RUN_DETAIL_EMPTY, runDetailFields, runErrorReason, runFilterFromSearch, runFilterSearchText, runResultText, runStatusLabel, scheduleFromForm, scheduleSummary, tabCategory } from '../flybot_workspace/static/automations/app.mjs';
 
 test('csrfCookie reads host-bound and development cookie names only', () => {
@@ -81,6 +82,14 @@ test('memory action follow-up links accept exactly an opaque action and its revi
     search.replace(memoryAction, 'wrong-id'), search.replace('4', '9007199254740992')]) {
     assert.deepEqual(memoryActionTargetFromSearch(invalid), {invalid: true});
   }
+});
+
+test('the Tasks hash selects a real subview and only reveals an exact checklist action', () => {
+  const action = 'b'.repeat(32);
+  assert.deepEqual(taskViewFromHash('#view=checklist&action=' + action), {view:'checklist',action});
+  assert.deepEqual(taskViewFromHash('#view=checklist&action=' + action + '&action=' + action), {view:'checklist',action:''});
+  assert.deepEqual(taskViewFromHash('#view=bot&action=' + action), {view:'bot',action:''});
+  assert.deepEqual(taskViewFromHash('#view=checklist&view=bot'), {view:'scheduled',action:''});
 });
 
 test('scheduleFromForm and namesFromList map editor fields', () => {
@@ -239,6 +248,33 @@ function fakeDocument() {
   };
   return {doc, elements};
 }
+
+test('an earlier Bot schedule response cannot overwrite or act in the newly selected workspace', async () => {
+  const {doc, elements} = fakeDocument();
+  const earlier = 'a'.repeat(32), current = 'b'.repeat(32);
+  const waiting = Promise.withResolvers();
+  const calls = [];
+  const row = {id:'valid-schedule',title:'当前计划',bot_name:'Tester',state:'scheduled'};
+  const response = items => ({status:200,body:{available:true,can_pause:true,items}});
+  const request = async (method, path, body) => {
+    calls.push({method,path,body});
+    if (path.includes(earlier)) return waiting.promise;
+    return response([body ? {...row,state:'paused'} : row]);
+  };
+  const view = mountBotSchedules(doc,{request});
+  const stale = view.show(earlier,'alice');
+  await view.show(current,'alice');
+  waiting.resolve(response([{...row,title:'过期计划'}]));
+  await stale;
+  const list = elements.get('bot-schedule-list');
+  assert.match(list.textContent,/当前计划/);
+  assert.doesNotMatch(list.textContent,/过期计划/);
+  list.children[0].children.at(-1).handlers.click[0]();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls.find(({method}) => method === 'POST'),{
+    method:'POST',path:`/v1/workspaces/${current}/automations/bot-schedules`,body:{id:row.id,active:false},
+  });
+});
 
 async function mountList(items) {
   const {doc, elements} = fakeDocument();

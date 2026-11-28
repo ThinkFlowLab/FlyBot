@@ -7,6 +7,15 @@ import { csrfCookie } from '../home/runtime-readiness.mjs';
 // model context and never reaches a runtime on its own.
 
 const INSTALLED = '/v1/skills/installed';
+const ID = /^[a-f0-9]{32}$/;
+
+export function skillAgentTarget(hash) {
+  const params = new URLSearchParams((hash || '').replace(/^#/, ''));
+  const workspaces = params.getAll('workspace'), agents = params.getAll('agent');
+  if (workspaces.length !== 1 || agents.length !== 1 || params.size !== 2 ||
+      !ID.test(workspaces[0]) || !ID.test(agents[0])) return null;
+  return {scope:workspaces[0]+':'+agents[0], back:'/agents#'+params};
+}
 
 export function filterSkills(items = [], query = '') {
   const needle = String(query || '').trim().toLowerCase();
@@ -73,6 +82,13 @@ export function mountSkills(document, {fetcher = globalThis.fetch.bind(globalThi
   if (!list || !input) return null;
   const error = document.getElementById('skills-error');
   const scope = document.getElementById('skills-scope');
+  const agentTarget = skillAgentTarget(document.defaultView?.location?.hash);
+  const backToAgent = document.getElementById('skills-back-to-agent');
+  if (backToAgent && agentTarget) {
+    backToAgent.hidden = false;
+    backToAgent.href = agentTarget.back;
+    if (document.documentElement?.lang?.startsWith('en')) backToAgent.textContent = '‹ Back to agent';
+  }
   const review = document.getElementById('skills-review');
   const reviewTitle = document.getElementById('skills-review-title');
   const reviewVersion = document.getElementById('skills-review-version');
@@ -280,7 +296,7 @@ export function mountSkills(document, {fetcher = globalThis.fetch.bind(globalThi
       bindings = bindingResult.items || [];
       installedSet.clear();
       for (const value of saved) installedSet.add(value);
-      render();
+      if (!scope || !agentTarget) render();
       if (!scope) return;
       const options=new Map();
       for(const binding of bindings){
@@ -293,6 +309,14 @@ export function mountSkills(document, {fetcher = globalThis.fetch.bind(globalThi
         const option=options.get(entry.scope)||document.createElement('option');option.value=entry.scope;
         option.textContent=(entry.kind==='automation'?'自动化 · ':'智能体 · ')+entry.label;
         if(!options.has(entry.scope)){scope.append(option);options.set(entry.scope,option);}
+      }
+      if (agentTarget) {
+        if (scopes.some(entry => entry.kind==='agent' && entry.scope===agentTarget.scope)) scope.value = agentTarget.scope;
+        else {
+          error.textContent = '当前无法为这个智能体配置技能。';
+          return;
+        }
+        render();
       }
       await execution.refresh();
     } catch(e) {error.textContent=e.message || '技能读取失败，请刷新重试。';}

@@ -52,7 +52,7 @@ test('an expected signup needs a valid account ID before a ready state can be tr
   assert.equal(pendingSignupSession(view), null);
 });
 
-function homeFixture(pathname = '/', hash = '') {
+function homeFixture(pathname = '/home', hash = '') {
   const fixtureNode = () => ({hidden: true, dataset: {}, addEventListener() {}, replaceChildren() {}, append() {}});
   const nodes = new Map();
   const read = id => {
@@ -106,6 +106,24 @@ test('workspace login resumes the exact page, query and fragment', async () => {
     assert.equal(workspaceLoginTarget(workspaceLoginHash(invalid)), '');
   }
   assert.equal(workspaceLoginTarget(workspaceLoginHash(target) + '&resume=/team'), '');
+});
+
+test('the signed-in landing and a plain login open Chat without loading a dashboard', async () => {
+  for (const [pathname, hash, target] of [
+    ['/', '', '/chat'], ['/', '#workspace=' + bob, '/chat#workspace=' + bob], ['/login', '', '/chat'],
+  ]) {
+    const {document, view, read} = homeFixture(pathname, hash);
+    const paths = [], requests = [];
+    view.location.replace = path => paths.push(path);
+    mount(document, {fetcher: async url => {
+      requests.push(url);
+      return {status:200, json:async () => ({user:{id:alice, username:'alice'}})};
+    }});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(paths, [target]);
+    assert.deepEqual(requests, ['/v1/auth/session']);
+    assert.equal(read('main-panel').hidden, true);
+  }
 });
 
 test('a new tab can draft only for the exact authenticated personal chat', () => {

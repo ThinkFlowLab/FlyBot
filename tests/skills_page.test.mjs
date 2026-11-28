@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  accountButtonLabel, filterSkills, mountSkills, readInstalled, skillCountLabel, writeInstalled,
+  accountButtonLabel, filterSkills, mountSkills, readInstalled, skillAgentTarget, skillCountLabel, writeInstalled,
 } from '../flybot_workspace/static/skills/app.mjs';
 
 class Element {
@@ -75,6 +75,23 @@ test('filter searches actual server content and counts it', () => {
   assert.deepEqual(filterSkills(SKILLS,'会议').map(i=>i.id),['meeting-notes']);
   assert.equal(filterSkills(SKILLS,'找不到的技能').length,0);
   assert.equal(skillCountLabel(1,10),'显示 1 / 10 个技能');
+});
+
+test('skills opened from an Agent start in its verified scope and return to that Agent', async () => {
+  const workspace = 'a'.repeat(32), agent = 'b'.repeat(32);
+  const hash = '#workspace='+workspace+'&agent='+agent;
+  const scope = workspace+':'+agent;
+  const {doc,el} = fakeDocument();
+  doc.defaultView = {location:{hash}};
+  el('skills-scope').value = 'account';
+  const svc = service();
+  await mountSkills(doc,{fetcher:(path,opts) => path === '/v1/skills/scopes'
+    ? Promise.resolve({status:200,ok:true,json:async()=>({items:[{scope,kind:'agent',label:'Personal Agent'}]})})
+    : svc.fetcher(path,opts)}).ready;
+  assert.equal(el('skills-scope').value,scope);
+  assert.equal(el('skills-back-to-agent').href,'/agents'+hash);
+  assert.equal(el('skills-back-to-agent').hidden,false);
+  assert.equal(skillAgentTarget(hash+'&agent='+agent),null);
 });
 
 test('installation needs consent for the reviewed skill, persists through reload, and uninstall revokes', async () => {

@@ -425,8 +425,8 @@ class App:
     def oidc_signed_in(self, db, now, user_id):
         user = db.execute('SELECT id, username FROM users WHERE id=?', (user_id,)).fetchone()
         headers = self.new_session(db, user['id'], now)
-        headers.append(('Location', '/'))
-        return 302, {'redirect': '/', 'user': {'id': user['id'], 'username': user['username']}}, headers
+        headers.append(('Location', '/chat'))
+        return 302, {'redirect': '/chat', 'user': {'id': user['id'], 'username': user['username']}}, headers
 
     def credentials(self, body):
 

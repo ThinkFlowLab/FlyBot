@@ -1848,26 +1848,21 @@ html[data-theme-resolved="dark"] #message-list > li[data-state="failed"] > p.fai
   box-shadow: 0 12px 36px rgb(16 32 24 / 14%), 0 0 0 1px var(--ot-line);
   z-index: 8;
 }
-/* Creation grid laid out after the private reference 01d: bold section
-   titles, a three-up action row, a four-up icon grid, two-up automation
-   shortcuts and hairline dividers. Icons are original strokes. */
 .plus-section { padding: 0.7rem 1rem 0.6rem; }
 .plus-section + .plus-section { border-top: 1px solid var(--ot-line); }
 .plus-section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .plus-heading { margin: 0 0 0.45rem; font-size: 0.8125rem; font-weight: 650; color: var(--ot-ink); letter-spacing: 0; }
 .plus-more { display: inline-flex; align-items: center; gap: 0.15rem; margin-bottom: 0.45rem; font-size: 0.75rem; color: var(--ot-muted); text-decoration: none; }
 .plus-more:hover { color: var(--ot-accent); }
-.plus-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.15rem; }
-.plus-auto { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.15rem 0.5rem; }
+.plus-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); gap: 0.15rem; }
 .plus-create { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.25rem; }
-.composer-plus-sheet :is(.plus-row, .plus-auto) > :is(a, button) {
+.composer-plus-sheet .plus-row > button {
   width: auto; min-width: 0; box-shadow: none;
   display: flex; align-items: center; justify-content: flex-start; gap: 0.55rem;
   min-height: 2.25rem; padding: 0.3rem 0.5rem; border: 0; border-radius: 0.6rem;
   background: transparent; color: var(--ot-ink); text-decoration: none;
   font: inherit; font-size: 0.8125rem; text-align: left; cursor: pointer;
 }
-.plus-auto > a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plus-create > :is(a, button) {
   width: auto; min-width: 0; box-shadow: none;
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem;
@@ -2868,7 +2863,7 @@ html[data-theme-resolved="dark"] #announcement-save:hover { background: #5943b3;
     min-height: 2.75rem;
   }
   .composer-plus-sheet { left: 0; width: min(30rem, calc(100vw - 1.875rem)); }
-  .plus-auto > a { white-space: normal; }
+  .composer-plus-sheet .plus-row > button { min-height: 2.75rem; }
   .group-info, #conversation-search-panel { bottom: max(.5rem, env(safe-area-inset-bottom)); }
 }
 
@@ -4039,3 +4034,74 @@ body.app-workspace .mobile-inbox-heading h1 {
 #chat-prompt-dialog select, #chat-prompt-dialog input { width: 100%; min-width: 0; }
 #chat-prompt-values { display: grid; gap: .4rem; }
 #chat-prompt-values:empty, #chat-prompt-status:empty { display: none; }
+
+#chat-contacts-dialog {
+  box-sizing: border-box;
+  width: min(32rem, calc(100% - 1.5rem));
+  max-height: min(38rem, calc(100dvh - 1.5rem));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ot-line);
+  border-radius: 1.125rem;
+  background: var(--ot-surface);
+  color: var(--ot-ink);
+  box-shadow: var(--ot-shadow-lg);
+}
+#chat-contacts-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+#chat-contacts-dialog::backdrop { background: rgb(14 15 26 / 42%); }
+.chat-contacts-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .625rem 1.125rem;
+  border: 0;
+  border-bottom: 1px solid var(--ot-line);
+  border-radius: 0;
+  background: var(--ot-surface);
+  box-shadow: none;
+}
+.chat-contacts-heading h2 { margin: 0; font-size: 1.125rem; }
+#chat-contacts-close {
+  flex: 0 0 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border-color: transparent;
+  color: var(--ot-muted);
+  background: transparent;
+  box-shadow: none;
+  font-size: 1.375rem;
+}
+#chat-contacts-close:hover { background: var(--ot-bg-accent); color: var(--ot-ink); }
+.chat-contacts-body {
+  min-height: 0;
+  padding: 1rem 1.125rem;
+  overflow: auto;
+}
+.chat-contacts-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .625rem;
+}
+.chat-contacts-tools .contacts-search { flex: 1 1 8rem; min-width: 0; }
+#chat-contacts-status:empty { display: none; }
+#chat-contacts-status { margin: 0 0 .75rem; color: var(--ot-muted); }
+#chat-contacts-status[data-kind="error"] { color: var(--ot-danger, #a22947); }
+@media (max-width: 560px) {
+  .plus-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #chat-contacts-dialog {
+    inset: auto 0 0;
+    width: 100%;
+    max-width: none;
+    max-height: 85dvh;
+    margin: 0;
+    border-radius: 1rem 1rem 0 0;
+  }
+  .chat-contacts-body { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  #chat-contacts-dialog .contact-person { flex-wrap: wrap; }
+  #chat-contacts-dialog .contact-actions { margin-inline-start: auto; flex-wrap: wrap; }
+}

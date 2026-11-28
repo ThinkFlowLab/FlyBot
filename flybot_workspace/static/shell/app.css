@@ -772,11 +772,14 @@ body.app-workspace > .app-rail .account-trigger[aria-expanded="true"] {
 }
 
 body.app-workspace .account-menu {
-  position: absolute;
-  left: calc(100% + 0.55rem);
-  bottom: 0;
+  position: fixed;
+  left: calc(var(--ot-rail-width) + .375rem);
+  top: .625rem;
   z-index: 30;
-  width: 18rem;
+  width: min(18rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1.25rem);
+  overflow: auto;
+  box-sizing: border-box;
   padding: 0.65rem 0 0.4rem;
   background: var(--ot-surface);
   color: var(--ot-ink);
@@ -1404,8 +1407,8 @@ html[data-theme-resolved="dark"] Aurora Glass: a deeper visual layer over the ne
 .thumb-block-quote { padding: .25rem .35rem; background: #edf6f1; border-radius: .2rem; color: #40574b; }
 .artifact-bookmark[aria-pressed="true"] { color: var(--ot-accent); background: var(--ot-accent-soft); }
 
-body.app-workspace :is(.app-rail, .rail-actions) > a[aria-current="page"],
-html[data-theme-resolved="dark"] body.app-workspace :is(.app-rail, .rail-actions) > a[aria-current="page"] {
+body.app-workspace :is(.app-rail, .rail-actions) > a[aria-current],
+html[data-theme-resolved="dark"] body.app-workspace :is(.app-rail, .rail-actions) > a[aria-current] {
   background: var(--ot-accent-soft);
   color: var(--ot-accent-hover);
   box-shadow: none;
@@ -1418,7 +1421,32 @@ html[data-theme-resolved="dark"] body.app-workspace :is(.app-rail, .rail-actions
 /* Same field geometry for unauthenticated desktop/mobile entry points. */
 #login-panel{max-width:30rem;width:100%;box-sizing:border-box}#login-form{display:grid;gap:.8rem}#login-form label{display:grid;gap:.4rem;align-items:start}#login-form input[type="text"],#login-form input[type="password"]{box-sizing:border-box;width:100%;min-width:0;min-height:44px;font-size:16px}.login-register-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;box-sizing:border-box;padding:.55rem 1rem;margin:.25rem .5rem .25rem 0;border:1px solid var(--ot-accent);border-radius:.5rem;color:var(--ot-accent-hover);background:var(--ot-surface);font-weight:600;text-decoration:none}.login-register-button:hover{color:var(--ot-ink);background:var(--ot-bg-accent)}
 
-.mobile-primary-nav { display: none; }
+body.app-workspace > .app-rail { justify-content: flex-start; }
+body.app-workspace > .app-rail > .rail-actions { flex: 0 1 auto; }
+body.app-workspace > .app-rail > #appearance-toggle { margin-block-start: auto; }
+body.app-workspace > .app-rail > #appearance-toggle:hover,
+body.app-workspace > .app-rail .account-trigger[aria-current] {
+  background: var(--ot-accent-soft);
+  color: var(--ot-accent-hover);
+}
+
+.mobile-primary-nav,
+.mobile-account-label,
+.app-rail [data-appearance-label] { display: none; }
+
+#appearance-toggle svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.account-menu #appearance-toggle {
+  align-items: center;
+  gap: .625rem;
+}
+
 
 @media (max-width: 700px) {
   body.app-workspace.app-primary {
@@ -1446,15 +1474,6 @@ html[data-theme-resolved="dark"] body.app-workspace :is(.app-rail, .rail-actions
   body.app-workspace.app-primary > .app-rail > button,
   body.app-workspace.app-primary > .app-rail > .rail-actions > :is(a, button) { display: none; }
   body.app-workspace.app-primary > .app-rail .brand-mark { margin: 0; }
-  body.app-workspace.app-primary > .app-rail .account-trigger { min-width: 2.75rem; min-height: 2.75rem; }
-  body.app-workspace.app-primary .account-menu {
-    left: auto;
-    right: 0;
-    top: calc(100% + .375rem);
-    bottom: auto;
-    max-height: calc(100dvh - 5rem);
-  }
-
   body.app-workspace.app-primary > #status { grid-column: 1; grid-row: 2; }
   body.app-workspace.app-primary > #status:empty { display: none; }
   body.app-workspace.app-primary > #main {
@@ -1472,20 +1491,26 @@ html[data-theme-resolved="dark"] body.app-workspace :is(.app-rail, .rail-actions
     grid-row: 4;
     position: relative;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0;
-    padding: .25rem .5rem max(.25rem, env(safe-area-inset-bottom));
+    padding: .25rem .25rem max(.25rem, env(safe-area-inset-bottom));
     border-top: 1px solid var(--ot-grouped-line);
     background: var(--ot-grouped-surface);
   }
   body.app-workspace.chat-open.sessions-open > .mobile-primary-nav { grid-row: 3; }
 
-  body.app-workspace .mobile-primary-nav > :is(a, button) {
+  body.app-workspace > .mobile-primary-nav:has(.account-slot:not([hidden])) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  body.app-workspace .mobile-primary-nav > a,
+  body.app-workspace .mobile-primary-nav .account-trigger {
     display: grid;
     justify-items: center;
     align-content: center;
     gap: .1875rem;
     width: 100%;
+    min-width: 0;
     min-height: 3rem;
     box-sizing: border-box;
     padding: .125rem;
@@ -1495,61 +1520,50 @@ html[data-theme-resolved="dark"] body.app-workspace :is(.app-rail, .rail-actions
     box-shadow: none;
     color: var(--ot-muted);
     font-size: .6875rem;
-    font-weight: 500;
+    font-weight: 540;
     text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
   }
-  .mobile-primary-nav svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.65;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+
+  .mobile-primary-nav .rail-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
   }
-  .mobile-primary-nav > :is(a, button) > svg {
-    width: 1.375rem;
-    height: 1.375rem;
+
+  .mobile-primary-nav .mobile-account-label { display: block; }
+  .mobile-primary-nav > a > svg,
+  .mobile-primary-nav .account-trigger > svg {
+    width: 1.25rem;
+    height: 1.25rem;
   }
-  .mobile-nav-more { -webkit-tap-highlight-color: transparent; }
-  body.app-workspace .mobile-primary-nav > :is(a, button):hover,
-  body.app-workspace .mobile-primary-nav > button[aria-expanded="true"] { background: var(--ot-bg-accent); }
-  .mobile-nav-destinations {
+
+  .mobile-primary-nav > .account-slot { position: relative; min-width: 0; }
+  body.app-workspace .mobile-primary-nav .account-menu {
     position: absolute;
-    z-index: 30;
-    inset-inline-end: .5rem;
-    bottom: calc(100% + .375rem);
-    width: min(16rem, calc(100% - 1rem));
+    left: auto;
+    right: 0;
+    top: auto;
+    bottom: calc(100% + .5rem);
     max-height: calc(100dvh - 4.5rem);
-    overflow: auto;
-    box-sizing: border-box;
-    padding: .25rem;
-    border: 1px solid var(--ot-grouped-line);
-    border-radius: 1rem;
-    background: var(--ot-grouped-surface);
-    box-shadow: var(--ot-shadow-lg);
   }
-  .mobile-nav-destinations a {
-    display: flex;
-    align-items: center;
-    gap: .625rem;
-    min-height: 2.75rem;
-    box-sizing: border-box;
-    padding: .375rem .625rem;
-    border-radius: .5rem;
-    color: var(--ot-ink);
-    text-decoration: none;
+
+  body.app-workspace .mobile-primary-nav > a:hover,
+  body.app-workspace .mobile-primary-nav .account-trigger:hover,
+  body.app-workspace .mobile-primary-nav .account-trigger[aria-expanded="true"] {
+    background: var(--ot-bg-accent);
   }
-  body.app-workspace .mobile-primary-nav > :is(a, button)[aria-current] {
-    color: var(--ot-accent-hover);
-    font-weight: 650;
-  }
-  body.app-workspace .mobile-primary-nav > :is(a, button)[aria-current] > svg {
-    stroke-width: 2.05;
-  }
-  .mobile-primary-nav .mobile-nav-destinations > a[aria-current="page"] {
+
+  body.app-workspace .mobile-primary-nav > a[aria-current],
+  body.app-workspace .mobile-primary-nav .account-trigger[aria-current] {
     background: var(--ot-accent-soft);
     color: var(--ot-accent-hover);
     font-weight: 650;
   }
+
 }
 
 /* Continuous navigation, page surfaces and transient layers. */
@@ -1586,7 +1600,7 @@ body.app-workspace:not(.chat-open) :is(.page-top, .page-heading, .directory-top)
 }
 
 body.app-workspace dialog[open],
-body.app-workspace :is(.account-menu, .mobile-nav-destinations):not([hidden]) {
+body.app-workspace .account-menu:not([hidden]) {
   color: var(--ot-ink);
   background-color: var(--ot-grouped-surface);
   background-image: linear-gradient(145deg, var(--ot-accent-soft), transparent 48%);
@@ -1607,7 +1621,7 @@ body.app-workspace dialog[open] {
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   body.app-workspace dialog[open] { background-color: var(--ot-glass) !important; }
   body.app-workspace dialog[open],
-  body.app-workspace :is(.account-menu, .mobile-nav-destinations):not([hidden]) {
+  body.app-workspace .account-menu:not([hidden]) {
     background-color: var(--ot-glass);
     -webkit-backdrop-filter: blur(18px) saturate(125%);
     backdrop-filter: blur(18px) saturate(125%);
@@ -1621,11 +1635,11 @@ body.app-workspace dialog[open] > section > header :is(h1, h2) {
   line-height: 1.25;
 }
 
-body.app-workspace :is(.account-menu, .mobile-nav-destinations) :is(a, button):focus-visible {
+body.app-workspace .account-menu :is(a, button):focus-visible {
   outline-offset: -2px;
 }
 
-body.app-workspace :is(.account-menu, .mobile-nav-destinations) :is(a, button):hover {
+body.app-workspace .account-menu :is(a, button):hover {
   background: var(--ot-select-gradient);
 }
 
@@ -1635,7 +1649,8 @@ body.app-workspace :is(.account-menu, .mobile-nav-destinations) :is(a, button):h
     background-image: linear-gradient(155deg, var(--ot-grouped-surface), var(--ot-grouped-fill));
   }
   body.app-workspace > main { box-shadow: none; }
-  body.app-workspace .mobile-primary-nav > :is(a, button)[aria-current] {
+  body.app-workspace .mobile-primary-nav > a[aria-current],
+  body.app-workspace .mobile-primary-nav .account-trigger[aria-current] {
     background-image: var(--ot-select-gradient);
   }
 }

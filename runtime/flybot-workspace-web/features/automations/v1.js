@@ -16,7 +16,7 @@ function wrap(fn) {
   }
 }
 
-export function automationsV1({ endpoints, log, personalBinding, readSavedWorks }) {
+export function automationsV1({ endpoints, log, personalBinding, readSavedWorks, readBotSchedules }) {
   const call = (name, payload) => endpoints[name](payload)
 
   async function withSavedWorks(result, workspace, automation) {
@@ -50,6 +50,16 @@ export function automationsV1({ endpoints, log, personalBinding, readSavedWorks 
       return { status, body: { created, skipped } }
     }) },
     { pattern: /^\/v1\/automation-templates$/, handle: wrap(async () => ({ status: 200, body: await call('templates') })) },
+    { pattern: new RegExp(`^/v1/workspaces/${HEX}/automations/bot-schedules$`), handle: wrap(async (req, workspaceId) => {
+      if (req.method !== 'GET' && req.method !== 'POST') throw new FeatureError(405, 'method', 'Only GET and POST are supported')
+      if (req.query.size) throw new FeatureError(400, 'invalid', 'Invalid Bot schedule query')
+      if (!req.ownerUsername || !readBotSchedules) throw new FeatureError(403, 'forbidden', 'Bot schedules require an authenticated owner')
+      const target = {workspace_id:workspaceId}
+      if (req.method === 'GET') return {body:await readBotSchedules(target)}
+      const {id, active} = requireBodyKeys(await req.json(512), ['id', 'active'])
+      if (typeof id !== 'string' || typeof active !== 'boolean') throw new FeatureError(400, 'invalid', '请选择有效的定时任务。')
+      return {body:await readBotSchedules({...target,id,active})}
+    }) },
     { pattern: new RegExp(`^/v1/workspaces/${HEX}/automations/schedule-preview$`), handle: wrap(async (req, workspaceId) => {
       if (req.method !== 'POST' || req.query.size) throw new FeatureError(405, 'method', 'Only POST is supported')
       if (!req.ownerUsername) throw new FeatureError(403, 'forbidden', 'Schedule preview requires an authenticated owner')

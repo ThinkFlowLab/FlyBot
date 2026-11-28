@@ -12,97 +12,97 @@ function currentPath() {
 
 function markNavigation() {
   const here = currentPath();
+  const related = here === '/skills' ? '/agents'
+    : here === '/memory' && new URLSearchParams(location.search).get('page') === 'todos' ? '/automations' : null;
   for (const link of document.querySelectorAll('nav a[href]')) {
-    if (link.closest('.catalog-tabs, .memory-views')) continue;
+    if (link.closest('.brand-mark, .catalog-tabs, .memory-views')) continue;
     const href = link.getAttribute('href') || '';
     if (!href.startsWith('/')) continue;
     const target = href.split('?')[0].split('#')[0].replace(/\/+$/, '') || '/';
     const works = (value) => value === '/space' || value === '/artifacts';
     const inSubpage = ['/settings', '/profile'].includes(target) && here.startsWith(target + '/');
+    const relatedEntry = target === related && link.matches('.rail-actions > a, .mobile-primary-nav > a');
     if (target === here || inSubpage || (works(target) && works(here))) link.setAttribute('aria-current', 'page');
+    else if (relatedEntry) link.setAttribute('aria-current', 'location');
     else link.removeAttribute('aria-current');
   }
-  const more = document.querySelector('.mobile-nav-more');
-  if (more) {
-    if (document.querySelector('#mobile-nav-destinations [aria-current="page"]')) more.setAttribute('aria-current', 'location');
-    else more.removeAttribute('aria-current');
-  }
+  const account = document.getElementById('account-menu-button');
+  if (/^\/(profile|settings)(\/|$)/.test(here)) account?.setAttribute('aria-current', 'location');
+  else account?.removeAttribute('aria-current');
 }
 
-const mobileDestinations = [
-  ['/chat', 'chat', '聊天', 'Chats', 'M4 4h16v12H9l-5 4V4Z'],
-  ['/discover', 'discover', '发现', 'Discover', 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z m4 5-2 6-6 2 2-6 6-2Z'],
-  ['/space', 'space', '作品', 'Space', 'm12 3 9 5-9 5-9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5'],
-  ['/', 'home', '首页', 'Home', 'M4 11 12 4l8 7v9h-5v-6H9v6H4z'],
-  ['/agents', 'agents', '智能体', 'Agents', 'M5 7h14v12H5z M9 3h6 M12 3v4 M8 12h1 M15 12h1 M9 16h6'],
-  ['/contacts', 'contacts', '联系人', 'Contacts', 'M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-2a7 7 0 0 1 14 0v2 M17 4a3.5 3.5 0 0 1 0 7 M19 14a6 6 0 0 1 3 5v2'],
-  ['/automations', 'automations', '自动化', 'Automations', 'M4 5h3v3H4z M11 6h9 M4 11h3v3H4z M11 12h9 M4 17h3v3H4z M11 18h9'],
-  ['/meetings', 'meetings', '会议', 'Meetings', 'M4 6h16v14H4z M8 3v4 M16 3v4 M4 10h16'],
-  ['/memory', 'memory', '记忆', 'Memory', 'M8 4a4 4 0 0 0-4 4v8a4 4 0 0 0 4 4 M16 4a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4 M8 8h8 M8 12h8 M8 16h8 M12 4v16'],
-  ['/skills', 'skills', '技能', 'Skills', 'M12 3 4 7v10l8 4 8-4V7l-8-4Z M8.5 10.5h7 M8.5 14h4.5'],
-  ['/profile', 'profile', '我的资料', 'My profile', 'M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0 M4 21v-2a8 8 0 0 1 16 0v2'],
-  ['/settings', 'settings', '设置', 'Settings', 'M4 6h16 M4 12h16 M4 18h16 M9 4v4 M15 10v4 M9 16v4'],
-];
+const primaryNavigationLabels = {
+  '/chat': ['聊天', 'Chats'],
+  '/agents': ['智能体', 'Agents'],
+  '/automations': ['任务', 'Tasks'],
+  '/discover': ['发现', 'Discover'],
+  '/space': ['资料空间', 'Space'],
+};
 
-function updateMobileNavigationLanguage(doc, language) {
+function updateNavigationLanguage(doc, language) {
   const nav = doc.querySelector('.mobile-primary-nav');
-  if (!nav) return;
   const english = language === 'en';
   const locale = english ? 'en' : 'zh-CN';
-  if (doc.documentElement.lang === locale) nav.removeAttribute('lang');
-  else nav.setAttribute('lang', locale);
-  nav.setAttribute('aria-label', english ? 'Main navigation' : '主导航');
-  for (const [, key, zh, en] of mobileDestinations) {
-    nav.querySelector(`[data-ui-text="shell.${key}"]`).textContent = english ? en : zh;
+  if (nav) {
+    if (doc.documentElement.lang === locale) nav.removeAttribute('lang');
+    else nav.setAttribute('lang', locale);
+    nav.setAttribute('aria-label', english ? 'Main navigation' : '主导航');
   }
-  nav.querySelector('[data-ui-text="shell.more"]').textContent = english ? 'More' : '更多';
+  for (const link of doc.querySelectorAll('.app-rail .rail-actions > a, .mobile-primary-nav > a')) {
+    const labels = primaryNavigationLabels[link.getAttribute('href')];
+    if (!labels) continue;
+    const title = labels[english ? 1 : 0];
+    link.setAttribute('title', title);
+    link.setAttribute('aria-label', title);
+    const label = link.querySelector('.rail-label');
+    if (label) label.textContent = title;
+  }
+  const accountLabel = doc.querySelector('.mobile-account-label');
+  if (accountLabel) accountLabel.textContent = english ? 'Account' : '账户';
 }
 
 function bindMobileNavigation(doc) {
+  const rail = doc.querySelector('.app-rail');
+  if (!rail) return;
   let nav = doc.querySelector('.mobile-primary-nav');
   if (!nav && doc.body.classList.contains('app-primary')) {
     nav = doc.createElement('nav');
     nav.className = 'mobile-primary-nav';
     doc.body.appendChild(nav);
   }
-  if (!nav || nav.querySelector('.mobile-nav-more')) return;
-  const icon = path => `<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path d="${path}"/></svg>`;
-  const link = ([href, key, , , path]) => `<a href="${href}">${icon(path)}<span data-ui-text="shell.${key}"></span></a>`;
-  nav.innerHTML = mobileDestinations.slice(0, 3).map(link).join('')
-    + `<button type="button" class="mobile-nav-more" aria-expanded="false" aria-controls="mobile-nav-destinations">
-        ${icon('M4 12h2 M11 12h2 M18 12h2')}<span data-ui-text="shell.more"></span>
-      </button>
-      <div id="mobile-nav-destinations" class="mobile-nav-destinations" hidden>
-        ${mobileDestinations.slice(3).map(link).join('')}
-      </div>`;
-  updateMobileNavigationLanguage(doc, doc.documentElement.lang);
-
-  const button = nav.querySelector('.mobile-nav-more');
-  const panel = nav.querySelector('#mobile-nav-destinations');
-  const close = (returnFocus = false) => {
-    if (panel.hidden) return;
-    panel.hidden = true;
-    button.setAttribute('aria-expanded', 'false');
-    if (returnFocus) button.focus({preventScroll: true});
-  };
-  button.addEventListener('click', event => {
-    if (!panel.hidden) return close(true);
-    panel.hidden = false;
-    button.setAttribute('aria-expanded', 'true');
-    if (event.detail === 0) panel.querySelector('a').focus({preventScroll: true});
-  });
-  nav.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || panel.hidden) return;
-    event.preventDefault();
-    event.stopPropagation();
-    close(true);
-  });
-  nav.addEventListener('focusout', event => {
-    if (!nav.contains(event.relatedTarget)) close();
-  });
-  doc.addEventListener('pointerdown', event => {
-    if (!nav.contains(event.target)) close();
-  }, {capture: true});
+  if (!nav || nav.dataset.bound === '1') return;
+  nav.dataset.bound = '1';
+  const links = rail.querySelectorAll('.rail-actions > a[href]');
+  nav.append(...Array.from(links, link => link.cloneNode(true)));
+  const slot = rail.querySelector('.account-slot');
+  const account = doc.getElementById('account-menu-button');
+  const menu = doc.getElementById('account-menu');
+  const appearance = doc.getElementById('appearance-toggle');
+  if (account && slot && menu) {
+    const label = doc.createElement('span');
+    label.className = 'mobile-account-label';
+    account.appendChild(label);
+    const media = doc.defaultView?.matchMedia?.('(max-width: 700px)');
+    const arrange = () => {
+      closeAccountMenu(doc);
+      if (media?.matches) {
+        nav.appendChild(slot);
+        if (appearance) {
+          menu.insertBefore(appearance, menu.querySelector('#logout-form'));
+          appearance.setAttribute('role', 'menuitem');
+        }
+      } else {
+        rail.appendChild(slot);
+        if (appearance) {
+          rail.appendChild(appearance);
+          appearance.removeAttribute('role');
+        }
+      }
+    };
+    media?.addEventListener('change', arrange);
+    arrange();
+  }
+  updateNavigationLanguage(doc, doc.documentElement.lang);
 }
 
 /* The account stores no location, so「日落到日出」has no sunrise to read. Until one exists, the
@@ -226,10 +226,6 @@ function syncAccountSlot(doc) {
 }
 
 
-export const ONBOARDING_MENU_HREF = '/onboarding';
-export const ONBOARDING_MENU_LABEL = '新手引导';
-export const ONBOARDING_MENU_TITLE = '打开新手引导';
-
 export const CHANNELS_MENU_HREF = '/settings/channels';
 export const CHANNELS_MENU_LABEL = 'Agent 渠道';
 export const CHANNELS_MENU_TITLE = '打开智能体渠道设置';
@@ -274,23 +270,12 @@ function placeMenuLink(menu, link, reference) {
   return link;
 }
 
-export function ensureOnboardingMenuItem(doc) {
-  const menu = doc.getElementById('account-menu');
-  if (!menu) return null;
-  const link = ensureMenuLink(doc, menu, ONBOARDING_MENU_HREF, ONBOARDING_MENU_LABEL, ONBOARDING_MENU_TITLE);
-  const reference = menuChildByClass(menu, 'account-sub') || menuChildByHref(menu, '/settings');
-  return placeMenuLink(menu, link, reference);
-}
-
-/* Place channel and connector links above the guide and help links. */
 export function ensureChannelsAndConnectorsMenuItems(doc) {
   const menu = doc.getElementById('account-menu');
   if (!menu) return null;
   const channels = ensureMenuLink(doc, menu, CHANNELS_MENU_HREF, CHANNELS_MENU_LABEL, CHANNELS_MENU_TITLE);
   const connectors = ensureMenuLink(doc, menu, CONNECTORS_MENU_HREF, CONNECTORS_MENU_LABEL, CONNECTORS_MENU_TITLE);
-  const before = menuChildByHref(menu, ONBOARDING_MENU_HREF)
-    || menuChildByClass(menu, 'account-sub')
-    || menuChildByHref(menu, '/settings');
+  const before = menuChildByClass(menu, 'account-sub') || menuChildByHref(menu, '/settings');
   placeMenuLink(menu, connectors, before);
   placeMenuLink(menu, channels, connectors);
   return {channels, connectors};
@@ -355,7 +340,6 @@ function bindAccountMenu(doc) {
     if (who) new MutationObserver(sync).observe(who, { childList: true, characterData: true, subtree: true });
   }
   syncAccountSlot(doc);
-  ensureOnboardingMenuItem(doc);
   ensureChannelsAndConnectorsMenuItems(doc);
   bindHelpMenu(doc);
   bindAppearanceToggle(doc);
@@ -386,8 +370,12 @@ export function syncAppearanceButton(doc, values, now, media) {
   const theme = resolveTheme(values || { appearance: 'system' }, now, media);
   const english = doc.documentElement?.lang === 'en';
   const labels = english ? {light:'Light', dark:'Dark'} : {light:'浅色', dark:'深色'};
-  button.textContent = labels[theme];
-  button.setAttribute('title', english ? 'Switch appearance' : '切换浅色或深色外观');
+  const label = button.querySelector('[data-appearance-label]');
+  const title = english ? 'Switch appearance' : '切换外观';
+  if (label) label.textContent = title;
+  else button.textContent = labels[theme];
+  button.setAttribute('title', title);
+  button.setAttribute('aria-label', title);
   button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
 }
 
@@ -395,6 +383,7 @@ function bindAppearanceToggle(doc) {
   const button = doc.getElementById('appearance-toggle');
   if (!button || button.dataset.bound === '1') return;
   button.dataset.bound = '1';
+  button.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20.1 14.3a8 8 0 0 1-10.4-10.4 8.6 8.6 0 1 0 10.4 10.4Z"/></svg><span data-appearance-label></span>';
   button.addEventListener('click', async event => {
     event.preventDefault();
     if (button.dataset.busy === '1') return;
@@ -482,7 +471,7 @@ export function startShell(doc = document, options = {}) {
     const guest = signedInPanel(doc)?.hasAttribute('data-guest-access') && !csrfCookie(doc.cookie);
     const apply = values => {
       const language = values.language || doc.documentElement.lang;
-      updateMobileNavigationLanguage(doc, language);
+      updateNavigationLanguage(doc, language);
       const account = doc.getElementById('account-menu-button');
       const accountLabel = language === 'en' ? 'Account menu' : '账户菜单';
       account?.setAttribute('aria-label', accountLabel);

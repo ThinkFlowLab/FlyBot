@@ -1,15 +1,4 @@
-"""The account menu's Help submenu points at the pages we now serve.
-
-`#137` pointed its first item at `/guide` but kept the name 「帮助中心」, so the entry promised a
-billing/support FAQ while the landing page is a feature guide. `#306`/`#307` added the real
-`/help`, `/terms` and `/privacy` pages, so the placeholder with `title="未实现…"` became a broken
-promise in the other direction: the menu said a page was missing while the page was served.
-These tests read the static pages as markup, not through a browser: every shell page must carry
-exactly one 帮助中心 link to `/help`, one 功能指引 link to `/guide`, one 服务条款 link to `/terms`
-and one 隐私政策 link to `/privacy`, all as `role="menuitem"` anchors in that order, and no
-`未实现` placeholder may survive. A later shell page must carry the same entries or the count
-check fails. The standalone about and registration pages use their own navigation.
-"""
+"""The account Help submenu links to the current support and legal pages."""
 from html.parser import HTMLParser
 from pathlib import Path
 import unittest
@@ -22,7 +11,6 @@ PAGES = sorted(
 )
 MENU = (
     ('帮助中心', '/help'),
-    ('功能指引', '/guide'),
     ('服务条款', '/terms'),
     ('隐私政策', '/privacy'),
 )
@@ -72,23 +60,12 @@ def help_entries(page):
 
 
 class ShellHelpEntryTests(unittest.TestCase):
-    def test_every_shell_page_links_the_guide_under_its_own_name(self):
-        self.assertEqual(len(PAGES), 21, f'expected the 21 pages with the account menu, found {[str(p) for p in PAGES]}')
-        for page in PAGES:
-            with self.subTest(page=page):
-                entries = help_entries(page)
-                all_guide = [e for e in entries if e[0] == 'a' and e[1].get('href') == '/guide']
-                self.assertEqual(
-                    len(all_guide), 1,
-                    f'{page}: the help menu has {len(all_guide)} links to /guide: {all_guide}')
-                guides = [e for e in entries
-                          if e[0] == 'a' and e[1].get('href') == '/guide' and e[2] == '功能指引']
-                self.assertEqual(
-                    len(guides), 1,
-                    f'{page}: the help menu has no 「功能指引」 link to /guide: {entries}')
-                tag, attrs, text = guides[0]
-                self.assertEqual(text, '功能指引', f'{page}: the guide link is misnamed: {text!r}')
-                self.assertEqual(attrs.get('role'), 'menuitem', f'{page}: the guide link is not a menu item: {attrs}')
+    def test_feature_guide_is_linked_from_help_center(self):
+        page = ROOT / 'flybot_workspace/static/help/index.html'
+        self.assertIn('<a href="/guide">功能指引</a>', page.read_text(encoding='utf-8'))
+        for shell_page in PAGES:
+            with self.subTest(page=shell_page):
+                self.assertFalse(any(attrs.get('href') == '/guide' for _, attrs, _ in help_entries(shell_page)))
 
     def test_registration_footer_keeps_the_public_help_and_legal_links(self):
         page = ROOT / 'flybot_workspace/static/register/index.html'
@@ -96,8 +73,7 @@ class ShellHelpEntryTests(unittest.TestCase):
         _, footer = html.split('<footer class="auth-legal">', 1)
         footer = footer.split('</footer>', 1)[0]
         for name, href in MENU:
-            if href != '/guide':
-                self.assertIn(f'<a href="{href}">{name}</a>', footer)
+            self.assertIn(f'<a href="{href}">{name}</a>', footer)
 
     def test_the_served_pages_are_real_menu_links_in_the_target_order(self):
         menu_hrefs = {href for _, href in MENU}

@@ -84,7 +84,7 @@ class OidcTests(unittest.TestCase):
         result = self.complete()
         self.assertEqual(result['status'], 302, result)
         self.assertEqual(result['body']['user']['username'], 'alice')
-        self.assertTrue(any(key.lower() == 'location' and value == '/' for key, value in result['headers']))
+        self.assertTrue(any(key.lower() == 'location' and value == '/chat' for key, value in result['headers']))
         session = self.client.call('GET', '/v1/auth/session')
         self.assertEqual(session['status'], 200)
         self.assertEqual(session['body']['user']['id'], result['body']['user']['id'])

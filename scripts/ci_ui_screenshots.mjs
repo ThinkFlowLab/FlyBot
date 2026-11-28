@@ -230,13 +230,12 @@ async function main() {
       await loginPage.locator('#register-username').fill('ci-new-account');
       await loginPage.locator('#register-password').fill(password);
       await loginPage.locator('#register-submit').click();
-      await loginPage.waitForURL(origin+'/');
-      await waitForLocatorText(loginPage,'#home-greeting','ci-new-account');
-      await loginPage.waitForFunction(()=>document.querySelector('#home-workspace')?.options.length>0);
+      await loginPage.waitForURL(url => url.pathname === '/chat');
+      await loginPage.waitForFunction(()=>document.querySelector('#workspace')?.options.length>0);
       const session=await(await anonymous.request.get(origin+'/v1/auth/session')).json();
       const spaces=await(await anonymous.request.get(origin+'/v1/workspaces?limit=100')).json();
       record('registration_real_session_first_workspace',session.user?.username==='ci-new-account'&&spaces.items?.length===1,'Form registration verified cookie session before navigating; personal initialization completed before the first workspace listing. Not an operator-admin grant.');
-      screenshots.push(path.basename(await shot(loginPage,outDir,'110-new-account-first-home.png')));
+      screenshots.push(path.basename(await shot(loginPage,outDir,'110-new-account-first-chat.png')));
       // Keep the new mobile account at471px through normal agent use/reload.
       await loginPage.goto(origin+'/agents#workspace='+spaces.items[0].id,{waitUntil:'load'});
       await loginPage.locator('#open-create').click();
@@ -262,9 +261,8 @@ async function main() {
       await desktop.locator('#register-username').fill('ci-new-desktop');
       await desktop.locator('#register-password').fill(password);
       await desktop.locator('#register-submit').click();
-      await desktop.waitForURL(origin+'/');
-      await waitForLocatorText(desktop,'#home-greeting','ci-new-desktop');
-      await desktop.waitForFunction(()=>document.querySelector('#home-workspace')?.options.length>0);
+      await desktop.waitForURL(url => url.pathname === '/chat');
+      await desktop.waitForFunction(()=>document.querySelector('#workspace')?.options.length>0);
       const session=await(await desktopRegistration.request.get(origin+'/v1/auth/session')).json();
       const spaces=await(await desktopRegistration.request.get(origin+'/v1/workspaces?limit=100')).json();
       record('desktop_registration_real_session',session.user?.username==='ci-new-desktop'&&spaces.items?.length===1,'Desktop settings login entry -> real form -> cookie session -> initialized personal workspace.');
@@ -276,14 +274,15 @@ async function main() {
         const rail = button.closest('.app-rail').getBoundingClientRect();
         const trigger = button.getBoundingClientRect();
         const menu = document.getElementById('account-menu').getBoundingClientRect();
-        return button.querySelector('svg') && !button.textContent.trim() &&
+        return button.querySelector('svg') && !button.innerText.trim() &&
           trigger.left >= rail.left && trigger.right <= rail.right &&
-          trigger.bottom <= rail.bottom && rail.bottom - trigger.bottom <= 16 &&
+          trigger.top >= rail.top && trigger.bottom <= rail.bottom &&
+          button.closest('.account-slot').previousElementSibling?.matches('.rail-actions') &&
           menu.left >= 0 && menu.right <= innerWidth && menu.top >= 0 && menu.bottom <= innerHeight;
       });
       await desktop.keyboard.press('Escape');
       record('home_short_window_account_menu',accountInRail && await desktop.locator('#account-menu').isHidden(),
-        'The account icon stays at the bottom of the rail, and the expanded Help menu fits in the viewport.');
+        'Account follows the five destinations, and the expanded Help menu fits in the viewport.');
       await desktop.setViewportSize({width:1280,height:900});
       await desktop.goto(origin+'/agents#workspace='+spaces.items[0].id,{waitUntil:'load'});
       await desktop.locator('#open-create').click();
@@ -604,22 +603,46 @@ async function main() {
       await page.locator('#help-menu').waitFor({ state: 'visible', timeout: 8000 });
       const menuText = await visibleText(page.locator('#account-menu'));
       const settingsHref = await page.locator('#account-menu a[href="/settings"]').getAttribute('href');
-      const onboardingHref = await page.locator('#account-menu a[href="/onboarding"]').getAttribute('href');
       const channelsHref = await page.locator('#account-menu a[href="/settings/channels"]').getAttribute('href');
       const connectorsHref = await page.locator('#account-menu a[href="/settings/connectors"]').getAttribute('href');
       const settingsButton = await page.locator('#account-menu-button').evaluate(button =>
-        button.textContent.trim() === '' && !!button.querySelector('svg') &&
+        button.innerText.trim() === '' && !!button.querySelector('svg') &&
         button.getBoundingClientRect().right <= button.closest('.app-rail').getBoundingClientRect().right);
       const settingsProfileLinks = await page.locator('.app-rail a[href="/profile"]').count();
       record(
         'account_menu',
-        menuText.includes('所有设置') && menuText.includes('退出登录') && menuText.includes('创建团队') && menuText.includes('查看我的资料') && menuText.includes('帮助中心') && menuText.includes('下载') && menuText.includes('工作背景') && menuText.includes('Agent 渠道') && menuText.includes('应用连接器') && settingsHref === '/settings' && onboardingHref === '/onboarding' && channelsHref === '/settings/channels' && connectorsHref === '/settings/connectors' && settingsButton && settingsProfileLinks === 1 && !/积分|套餐|升级/.test(menuText) && !/contact@teamily\.ai/.test(menuText),
+        menuText.includes('所有设置') && menuText.includes('退出登录') && menuText.includes('查看我的资料') && menuText.includes('帮助中心') && menuText.includes('Agent 渠道') && menuText.includes('应用连接器') && settingsHref === '/settings' && !/创建团队|下载|新手引导/.test(menuText) && channelsHref === '/settings/channels' && connectorsHref === '/settings/connectors' && settingsButton && settingsProfileLinks === 1 && !/积分|套餐|升级/.test(menuText) && !/contact@teamily\.ai/.test(menuText),
         `button=${settingsButton}; ${menuText || 'account menu empty'}`,
       );
       screenshots.push(path.basename(await shot(page, outDir, '23-account-menu.png')));
       await page.keyboard.press('Escape');
     } catch (error) {
       record('account_menu', false, String(error));
+    }
+
+    const railViewport = page.viewportSize();
+    try {
+      await page.setViewportSize({width: 390, height: 844});
+      const rail = page.getByRole('navigation', {name: '主导航'});
+      await rail.waitFor({state: 'visible'});
+      const mobileRoutes = await rail.locator(':scope > a').evaluateAll(links => links.map(link => link.getAttribute('href')));
+      const mobileAccount = rail.getByRole('button', {name: '账户菜单'});
+      await mobileAccount.click();
+      const mobileMenu = rail.locator('#account-menu');
+      await mobileMenu.waitFor({state: 'visible'});
+      const fits = await mobileMenu.evaluate(menu => {
+        const box = menu.getBoundingClientRect();
+        return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+      });
+      record('mobile_six_destinations',
+        JSON.stringify(mobileRoutes) === JSON.stringify(['/chat', '/agents', '/automations', '/discover', '/space'])
+          && await mobileAccount.count() === 1 && await mobileMenu.locator('#appearance-toggle').isVisible() && fits,
+        'Five mobile destination links and Account are directly accessible, with theme controls in the account menu.');
+      await page.keyboard.press('Escape');
+    } catch (error) {
+      record('mobile_six_destinations', false, String(error));
+    } finally {
+      await page.setViewportSize(railViewport);
     }
 
     await page.goto(`${origin}/agents`, { waitUntil: 'load' });
@@ -1816,7 +1839,7 @@ async function main() {
       await page.locator('#account-menu-button').click();
       await page.locator('#account-menu').waitFor({ state: 'visible', timeout: 8000 });
       const memoryButton = await page.locator('#account-menu-button').evaluate(button =>
-        button.textContent.trim() === '' && !!button.querySelector('svg'));
+        button.innerText.trim() === '' && !!button.querySelector('svg'));
       const identity = (await visibleText(page.locator('#account-identity'))).trim();
       record(
         'memory_account_button',
