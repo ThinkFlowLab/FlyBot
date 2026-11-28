@@ -955,6 +955,130 @@ test('stopping an exact private reply preserves its partial text and waits befor
   assert.equal(items[1].body,'Already streamed text')
 })
 
+test('a new private text message interrupts the active and queued replies in its conversation', {timeout:3000}, async t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  const runtime = createRuntime()
+  const reached = Promise.withResolvers(), finish = Promise.withResolvers(), neighborReached = Promise.withResolvers()
+  const neighborFinish = Promise.withResolvers(), newestReached = Promise.withResolvers(), newestFinish = Promise.withResolvers()
+  const sent = []
+  runtime.nativeTurn = async (_bot, sessionId, prompt, requestId, {onProgress, signal}) => {
+    sent.push({prompt, requestId})
+    if (prompt === 'Initial request') {
+      onProgress('Already streamed text')
+      reached.resolve(signal)
+      await finish.promise
+      throw signal.reason
+    }
+    if (prompt === 'Other conversation') {
+      neighborReached.resolve(signal)
+      await neighborFinish.promise
+    }
+    if (prompt === 'Some newer instructions') {
+      newestReached.resolve(signal)
+      await newestFinish.promise
+    }
+    return {text:'Reply to ' + prompt,sessionId,turnId:2}
+  }
+  const {endpoints:e} = createAgents({db,host:{runtime:async () => runtime,call:async () => null}})
+  const {agent} = await e.create({workspace_id:workspace,name:'Interrupt fixture',idempotency_key:'interrupt-agent-key'})
+  const {conversation} = await e['conversation-create']({workspace_id:workspace,id:agent.id})
+  const {conversation:neighbor} = await e['conversation-create']({workspace_id:workspace,id:agent.id,title:'Other'})
+  const route = `${root}/${agent.id}/conversations/${conversation.id}`
+  const neighborRoute = `${root}/${agent.id}/conversations/${neighbor.id}`
+  const request = legacyRequest(e)
+  const send = (key, body, {path = route, accept_pending = true, interrupt_current} = {}) =>
+    request(path+'/messages',jsonPost(key,{body,accept_pending,interrupt_current}))
+
+  const first = await (await send('interrupt-initial-key','Initial request')).json()
+  const originalSignal = await reached.promise
+  const skipped = await (await send('interrupt-skipped-key','Never send this')).json()
+  assert.equal(skipped.reply.reply_phase,'queued')
+  const other = await (await send('interrupt-neighbor-key','Other conversation',{path:neighborRoute,interrupt_current:true})).json()
+  const neighborSignal = await neighborReached.promise
+
+  assert.equal((await send('interrupt-invalid-key',' ',{interrupt_current:true})).status,400)
+  assert.equal(originalSignal.aborted,false)
+  const replacement = await send('interrupt-replaced-key','Superseded instructions',{interrupt_current:true})
+  assert.equal(replacement.status,202)
+  const superseded = await replacement.json()
+  assert.equal(superseded.reply.reply_phase,'interrupting')
+  assert.deepEqual(superseded.interrupted_replies.map(row =>
+    [row.id,row.status,row.body,row.interrupted_by_message,row.cancelled_while_queued,row.can_stop]),[
+    [first.reply.id,'cancelled','Already streamed text',true,undefined,undefined],
+    [skipped.reply.id,'cancelled','',true,true,undefined],
+  ])
+  assert.equal(originalSignal.aborted,true)
+  assert.equal(neighborSignal.aborted,false)
+
+  const latest = await (await send('interrupt-latest-key','Some newer instructions',{interrupt_current:true})).json()
+  assert.equal(latest.reply.reply_phase,'interrupting')
+  assert.deepEqual(latest.interrupted_replies.map(row => [row.id,row.status,row.cancelled_while_queued,row.interrupted_by_message]),
+    [[superseded.reply.id,'cancelled',true,true]])
+  const oldProgress = await (await request(route+'/reply-progress',{},'key=interrupt-initial-key&receipt=1')).json()
+  assert.equal(oldProgress.reply.body,'Already streamed text')
+  assert.equal(oldProgress.reply.interrupted_by_message,true)
+  const nextProgress = await (await request(route+'/reply-progress',{},'key=interrupt-latest-key&after=1')).json()
+  assert.equal(nextProgress.phase,'interrupting')
+  assert.deepEqual(sent.map(turn => turn.requestId),[
+    `ot-agent:${first.message.id}`,`ot-agent:${other.message.id}`,
+  ])
+
+  finish.resolve()
+  const latestSignal = await newestReached.promise
+  const replay = await (await send('interrupt-replaced-key','Superseded instructions',{interrupt_current:true})).json()
+  assert.equal(replay.reply.status,'cancelled')
+  assert.deepEqual(replay.interrupted_replies,superseded.interrupted_replies)
+  assert.equal(latestSignal.aborted,false)
+  newestFinish.resolve()
+  neighborFinish.resolve()
+  const terminal = await (await send('interrupt-latest-key','Some newer instructions',{accept_pending:false})).json()
+  assert.equal(terminal.reply.body,'Reply to Some newer instructions',terminal.reply.error_code)
+  assert.deepEqual(sent.map(turn => turn.requestId),[
+    `ot-agent:${first.message.id}`,`ot-agent:${other.message.id}`,`ot-agent:${latest.message.id}`,
+  ])
+  const history = await (await request(route)).json()
+  assert.deepEqual(history.items.map(({id}) => id),[
+    first.message.id,first.reply.id,skipped.message.id,skipped.reply.id,
+    superseded.message.id,superseded.reply.id,latest.message.id,latest.reply.id,
+  ])
+})
+
+test('a new private text message can interrupt native work that uses an attachment', {timeout:3000}, async t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  const runtime = createRuntime()
+  const reached = Promise.withResolvers()
+  runtime.nativeTurn = async (_bot, sessionId, _prompt, _id, {files,onStaged,onProgress,signal,interactive}) => {
+    if (!files) return {text:'Answered the follow-up',sessionId}
+    assert.equal(interactive,true)
+    onStaged([{title:files[0].title,mime:files[0].mime,bytes:files[0].data.length,ref:{id:'file'}}])
+    onProgress('Partial file reply')
+    reached.resolve(signal)
+    await new Promise((_,reject) => signal.addEventListener('abort',() => reject(signal.reason),{once:true}))
+  }
+  const {endpoints:e} = createAgents({db,host:{runtime:async () => runtime,call:async () => null}})
+  const {agent} = await e.create({workspace_id:workspace,name:'File fixture',idempotency_key:'interrupt-file-agent'})
+  const {conversation} = await e['conversation-create']({workspace_id:workspace,id:agent.id})
+  const route = `${root}/${agent.id}/conversations/${conversation.id}`
+  const request = legacyRequest(e)
+  const file = request(route+'/messages',jsonPost('interrupted-file-key',{body:'Read the attachment',
+    attachments:[{title:'note.txt',data:Buffer.from('File contents').toString('base64')}]}))
+  const signal = await reached.promise
+  const next = await (await request(route+'/messages',jsonPost('file-follow-up-key',{
+    body:'New instructions',accept_pending:true,interrupt_current:true,
+  }))).json()
+  assert.equal(signal.aborted,true)
+  const stopped = await (await file).json()
+  assert.equal(stopped.message.attachments[0].title,'note.txt')
+  assert.equal(stopped.reply.body,'Partial file reply')
+  assert.equal(stopped.reply.status,'cancelled')
+  assert.equal(stopped.reply.interrupted_by_message,true)
+  assert.deepEqual(next.interrupted_replies,[stopped.reply])
+  const result = await (await request(route+'/messages',jsonPost('file-follow-up-key',{body:'New instructions'}))).json()
+  assert.equal(result.reply.body,'Answered the follow-up',result.reply.error_code)
+})
+
 test('startup settles accepted retry receipts and releases interrupted unkeyed user messages', async t => {
   const db = new DatabaseSync(':memory:')
   t.after(() => db.close())

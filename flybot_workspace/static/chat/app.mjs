@@ -1537,7 +1537,13 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   }
 
   function syncComposerSend(scope = sendScope()) {
-    document.getElementById('chat-send').disabled = sendClosed() || memoryWrites.has(scope) || quoteBlocksSend(scope);
+    const button = document.getElementById('chat-send');
+    button.disabled = sendClosed() || memoryWrites.has(scope) || quoteBlocksSend(scope);
+    const interrupts = !button.disabled && currentSource === 'agent' && servedByDsbot && currentConversation?.id &&
+      !attachmentSender?.draftFiles?.(scope)?.length && activeStoppableReply();
+    const label = interrupts ? uiLabel('打断并发送', 'Interrupt and send') : uiLabel('发送', 'Send');
+    button.title = label;
+    button.setAttribute('aria-label', label);
   }
 
   function stickerContext() {
@@ -1686,7 +1692,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     syncMemoryRecall(scope);
     const replying = queue?.replying;
     if (replying && !replying.replyView) {
-      replying.replyView = makeAgentMessage({role: 'assistant', status: 'queued', client_key: replying.key}).replyView;
+      replying.replyView = makeAgentMessage({role: 'assistant', status: 'queued', client_key: replying.key,
+        reply_phase: replying.interrupting ? 'interrupting' : undefined}).replyView;
       if (replying.replyView) replying.replyView.bubble.dataset.sendPending = 'reply';
     }
     const replyBubble = replying?.replyView?.bubble;
@@ -1851,8 +1858,22 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const scoped = item => item?.id && item.client_key === key &&
       (!item.workspace_id || item.workspace_id === target.wid) && (!item.agent_id || item.agent_id === target.agentId) &&
       (!item.conversation_id || item.conversation_id === target.conversationId);
-    return message?.role === 'user' && reply?.role === 'assistant' && scoped(message) && scoped(reply) && message.id !== reply.id
-      ? {message, reply} : null;
+    if (message?.role !== 'user' || reply?.role !== 'assistant' || !scoped(message) || !scoped(reply) || message.id === reply.id) return null;
+    const interrupted_replies = Array.isArray(body.interrupted_replies) ? body.interrupted_replies.filter(row =>
+      row?.role === 'assistant' && row.status === 'cancelled' && row.interrupted_by_message === true &&
+      /^[a-f0-9]{32}$/.test(row.id) && row.id !== reply.id && row.workspace_id === target.wid &&
+      row.agent_id === target.agentId && row.conversation_id === target.conversationId) : [];
+    return {message, reply, interrupted_replies};
+  }
+
+  function applyInterruptedPrivateReplies(items, replies) {
+    if (!replies?.length) return items;
+    const byId = new Map(replies.map(reply => [reply.id, reply]));
+    return items.map(item => {
+      const reply = byId.get(item.id);
+      return reply && waitingAgentReply(item) && item.client_key === reply.client_key && item.attempt === reply.attempt
+        ? reply : item;
+    });
   }
 
   function privateHistoryAfterSends(items, sends) {
@@ -1864,12 +1885,13 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       delivered.set(delivery.reply.id, delivery.reply);
     }
     if (!delivered.size) return items;
+    const interrupted = sends.flatMap(({delivery}) => delivery?.interrupted_replies || []);
     const reconciled = items.map(item => {
       const receipt = delivered.get(item.id);
       delivered.delete(item.id);
       return receipt && waitingAgentReply(item) && !waitingAgentReply(receipt) ? receipt : item;
     });
-    return [...reconciled, ...delivered.values()];
+    return applyInterruptedPrivateReplies([...reconciled, ...delivered.values()], interrupted);
   }
 
   async function privateSendReceipt(target, key, current, accept = () => true, delays = [0, 350, 800]) {
@@ -3446,14 +3468,14 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
         line.append(heading, cancelQueued);
         bubble.append(line);
       } else bubble.append(heading);
-      if (partial) replyView = {bubble, heading, body, cancelQueued};
+      if (partial) replyView = {bubble, heading, body, cancelQueued, phase:item.reply_phase};
     }
     bubble.append(body);
     if (cancelled) {
       const label = document.createElement('p');
       label.className = 'reply-stopped';
-      label.textContent = item.cancelled_while_queued ? uiLabel('已取消排队', 'Queued reply cancelled')
-        : uiLabel('已停止生成', 'Reply stopped');
+      label.textContent = item.interrupted_by_message === true ? uiLabel('已被新消息打断', 'Interrupted by a new message')
+        : item.cancelled_while_queued ? uiLabel('已取消排队', 'Queued reply cancelled') : uiLabel('已停止生成', 'Reply stopped');
       bubble.append(label);
     }
     for (const attachment of item.attachments || []) bubble.append(renderMessageFile(attachment));
@@ -3515,8 +3537,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
         const view = replyWatch.view;
         view.bubble.dataset.messageId = item.id;
         delete view.bubble.dataset.sendPending;
-        if (!replyWatch.snapshot && item.reply_phase === 'queued') {
-          paintReplyProgress(view, {state:item.status, phase:item.reply_phase});
+        if (!replyWatch.snapshot?.phase && item.reply_phase) {
+          paintReplyProgress(view, {state:item.status, phase:item.reply_phase, text:replyWatch.snapshot?.text});
         }
         agentReplyViews.set(item.client_key, view);
         rows.push(view.bubble);
@@ -3581,6 +3603,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
 
   function privateReplyLabel(state, phase, text, reconnecting = false) {
     if (reconnecting) return uiLabel('正在重新连接回复…', 'Reconnecting to the reply…');
+    if (phase === 'interrupting') return uiLabel('正在打断上一条回复…', 'Interrupting the previous reply…');
     if (phase === 'queued') return uiLabel('已排队，等待上一条回复完成…', 'Queued until the previous reply finishes…');
     const thinking = phase === 'thinking' || (state === 'running' && phase !== 'preparing' && !text);
     if (text) return thinking ? uiLabel('正在思考', 'Thinking') : uiLabel('正在生成回复', 'Writing a reply');
@@ -3594,9 +3617,10 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     if (view.bubble.dataset.state !== state) view.bubble.dataset.state = state;
     const previous = streamingReplySource(view.body);
     const text = typeof snapshot.text === 'string' ? snapshot.text : previous;
-    const label = privateReplyLabel(state, snapshot.phase, text.trim(), reconnecting);
+    if (snapshot.phase) view.phase = snapshot.phase;
+    const label = privateReplyLabel(state, view.phase, text.trim(), reconnecting);
     if (view.heading.textContent !== label) view.heading.textContent = label;
-    if (view.cancelQueued && snapshot.phase) view.cancelQueued.hidden = snapshot.phase !== 'queued';
+    if (view.cancelQueued && view.phase) view.cancelQueued.hidden = view.phase !== 'queued';
     if (previous === text) return;
     const scroller = document.getElementById('message-scroller');
     const follow = messageScrollerAtBottom(scroller);
@@ -9362,7 +9386,10 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     ownerId: () => currentUser?.id,
     csrfToken: () => csrfCookie(document.cookie),
     createKey: () => idempotencyKey('chat-file-'),
-    onDraftChange: renderGroupComposerRouting,
+    onDraftChange() {
+      syncComposerSend();
+      renderGroupComposerRouting();
+    },
     confirmDelivery: (target, key, current) =>
       socialSendReceipt(target, key, current, message => message.attachment || message.retracted),
     sent(destination, message) {
@@ -10098,10 +10125,13 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
           feedback(uiLabel('对话已归档，恢复后可以重试。', 'Conversation archived. Restore it to retry.'));
           continue;
         }
+        const nativePrivate = servedByDsbot && !queue.social;
+        const nativePrivateText = nativePrivate && !job.files.length && !job.sticker;
         const beginReply = () => {
           if (!servedByDsbot || queue.social || queue.replying === job) return;
           queue.replying = job;
           if (isCurrent()) {
+            job.interrupting = nativePrivateText && lastAgentItems.some(waitingAgentReply);
             const scroller = document.getElementById('message-scroller');
             const follow = messageScrollerAtBottom(scroller);
             stopPolling();
@@ -10111,7 +10141,6 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
           }
         };
         try {
-          const nativePrivate = servedByDsbot && !queue.social;
           let initialResult;
           if (job.preferences) {
             feedback(uiLabel('正在加载聊天偏好…', 'Loading chat preferences…'));
@@ -10182,7 +10211,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
           let result = initialResult;
           let anchor;
           if (!result) {
-            const payload = nativePrivate && !job.files.length && !job.sticker ? {...job.message, accept_pending: true} : job.message;
+            const payload = nativePrivateText ? {...job.message, accept_pending:true, interrupt_current:true} : job.message;
             const nativeSocial = servedByDsbot && queue.social;
             const receipt = nativePrivate || nativeSocial ? Promise.withResolvers() : null;
             job.acceptReceipt = receipt?.resolve;
@@ -10296,13 +10325,18 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
                 if (reply?.id) {
                   privateRefresh += 1;
                   const view = restored ? {followLatest: true} : {followLatest: false, anchor};
-                  let items = append(lastAgentItems, result.body.message, reply);
+                  const prior = applyInterruptedPrivateReplies(lastAgentItems, job.delivery?.interrupted_replies);
+                  let items = append(prior, result.body.message, reply);
                   if (privateHistory && (restored || anchor?.follow !== false) && items.length > Number(HISTORY_PAGE_SIZE)) {
                     items = items.slice(-Number(HISTORY_PAGE_SIZE));
                     privateHistory.cursor = items[0].id;
                     updateHistoryControls();
                   }
                   if (renderAgentMessages(items, view)) schedulePoll();
+                  // A recovered send receipt may contain only the newest message pair.
+                  if (nativePrivateText && prior.some(item => item.id !== reply.id && waitingAgentReply(item))) {
+                    void openAgentConversation(queue.agentId, queue.conversationId, {refresh:true});
+                  }
                 } else void openAgentConversation(queue.agentId, queue.conversationId, {refresh: true});
               }
               const notice = sendNotice(reply);

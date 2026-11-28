@@ -265,6 +265,36 @@ test('an exact tagged handoff still carries the reply into the next native part'
   assert.deepEqual(await reply,{text:'Before handoff\n\nAfter handoff',sessionId:next.id,turnId:null})
 })
 
+test('interrupting a private handoff removes the exact queued continuation', {timeout:2000}, async () => {
+  const controller = new AbortController()
+  const {rt, bot, echo, session, sessionEvent, reply} = bridgedTurn({interactive:true,signal:controller.signal})
+  echo()
+  rt.switchJobs = () => [{resume:true,flybotPrivateReply:'my-request'}]
+  rt.isSwitchingPart = id => id === session.id
+  const reason = new Error('A newer message interrupted this reply')
+  const stopped = assert.rejects(reply, error => error === reason)
+  controller.abort(reason)
+  const next = {id:'next-part'}
+  bot.sessionId = next.id
+  bot.segments.push({sessionId:session.id})
+  rt.chatOwners.delete(session.id)
+  rt.pastOwners.set(session.id,{botId:bot.id})
+  rt.chatOwners.set(next.id,bot.id)
+  const unrelated = {id:'other',source:{rpcId:'someone-else'}}
+  const continued = {id:'continuation',source:{resume:true,flybotPrivateReply:'my-request'}}
+  const queued = [unrelated,continued]
+  rt.resolveAgent = async id => {
+    assert.equal(id,next.id)
+    return {inbox:{nextTurn:queued,remove(key) {
+      const position = queued.findIndex(m => m.id === key)
+      return position >= 0 && queued.splice(position,1).length === 1
+    }}}
+  }
+  sessionEvent('turn/end',{turn:1,reason:{kind:'blocked'}})
+  await stopped
+  assert.deepEqual(queued,[unrelated])
+})
+
 test('a missed private terminal event can be recovered from the exact owned session turn', async t => {
   t.mock.timers.enable({apis:['setTimeout']})
   const {rt, echo, events, session, sessionEvent, reply} = bridgedTurn({interactive:true})
