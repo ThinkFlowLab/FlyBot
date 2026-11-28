@@ -3515,7 +3515,7 @@ body.app-workspace .mobile-inbox-heading h1 {
   box-shadow: none;
 }
 #message-list > li[data-reply-progress]:has(> .reply-preview[hidden]) > .role { display: none; }
-#message-list > li[data-reply-progress]:has(> .reply-preview[hidden]) > .reply-state {
+#message-list > li[data-reply-progress]:has(> .reply-preview[hidden]) .reply-state {
   display: block;
   margin: 0;
   overflow: hidden;
@@ -3526,6 +3526,19 @@ body.app-workspace .mobile-inbox-heading h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#message-list .reply-queue-line { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .375rem; }
+#message-list .reply-queue-line .reply-state { white-space: normal; }
+#message-list button.reply-queue-cancel {
+  min-height: 2.25rem;
+  padding: .15rem .45rem;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--ot-muted);
+  font-size: .8125rem;
+}
+#message-list button.reply-queue-cancel:hover:not(:disabled) { color: var(--ot-accent); background: var(--ot-accent-soft); }
+
 #message-list > li > .role:not(.visually-hidden) {
   margin: 0 0 .25rem;
   color: var(--ot-muted);

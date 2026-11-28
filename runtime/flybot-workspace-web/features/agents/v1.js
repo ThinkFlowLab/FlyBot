@@ -3,7 +3,7 @@
 // (cross-user / provision) and are not matched here.
 import { FeatureError, idempotencyKey, requireBodyKeys } from '../../featurekit/http.js'
 import { PRIVATE_FILE_BYTES, PRIVATE_FILE_COUNT } from './files.js'
-import { PRIVATE_TEXT_LIMIT, textReplyKey, textReplyAttempt } from './private-reply.js'
+import { PRIVATE_TEXT_LIMIT, textReplyKey, textReplyAttempt, unconfirmedNativeReply } from './private-reply.js'
 import { createV1Endpoint } from '../../featurekit/v1.js'
 import { CHAT_LANGUAGE_NAMES } from '../settings/settings.js'
 import { agentCopyRoutes } from './copy-grants.js'
@@ -45,11 +45,12 @@ const publicMessage = (row, workspaceId, agentId) => {
     ...(attachments.length ? {attachments} : {}),
     ...(row.saved_work ? {saved_work:row.saved_work} : {}),
     ...(row.reply_phase === 'queued' ? {reply_phase:'queued'} : {}),
+    ...(status === 'cancelled' && meta?.cancelledWhileQueued === true ? {cancelled_while_queued:true} : {}),
     ...(meta?.clientKey ? {client_key:meta.clientKey} : {}),
     ...(isActionCardId(meta?.private_card_id) ? {private_card_id:meta.private_card_id} : {}),
     ...(meta?.memory_refs?.length ? {memory_refs: meta.memory_refs} : {}),
     ...(meta?.memory_profile_workspace === workspaceId ? {memory_profile_workspace: workspaceId} : {}),
-    ...(canRetryText ? {attempt: textReplyAttempt(meta), can_retry: status === 'failed', ...(status === 'running' ? {can_stop:true} : {})} : {}),
+    ...(canRetryText ? {attempt: textReplyAttempt(meta), can_retry: status === 'failed' && !unconfirmedNativeReply(meta), ...(status === 'running' ? {can_stop:true} : {})} : {}),
     id: row.id, conversation_id: row.conversation_id, workspace_id: workspaceId, agent_id: agentId, role: row.role,
     body: row.text ?? row.body ?? '', status, created: row.created, updated: row.updated ?? row.created,
     task_id: null, error_code: meta?.error ? String(meta.error).replace(/^agents\//, '') : row.error_code ?? null, agent_revision: null,
@@ -103,8 +104,8 @@ export function agentsV1({ endpoints, chatDirectory, host, log }) {
       handle: wrap(async (req, workspaceId, id, conversationId) => {
         if (req.method !== 'POST') throw new FeatureError(405, 'method', 'Only POST is supported')
         if (req.query.size) throw new FeatureError(400, 'invalid', 'Invalid reply stop query')
-        const {key, attempt} = requireBodyKeys(await req.json(1024), ['key', 'attempt'])
-        const result = await call('stopReply', {workspace_id:workspaceId,id,conversation_id:conversationId,key,attempt})
+        const {key, attempt, only_queued} = requireBodyKeys(await req.json(1024), ['key', 'attempt', 'only_queued'])
+        const result = await call('stopReply', {workspace_id:workspaceId,id,conversation_id:conversationId,key,attempt,only_queued})
         return {body:publicPair(result, workspaceId, id)}
       }) },
     { pattern: new RegExp(`^/v1/workspaces/${HEX}/agents/${HEX}/conversations/${HEX}/reply-progress$`),

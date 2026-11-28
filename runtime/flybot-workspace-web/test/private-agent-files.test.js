@@ -824,6 +824,41 @@ test('private text replies retry the same durable pair, fence stale attempts and
   assert.deepEqual(await (await progress()).json(),{state:'succeeded',...complete})
 })
 
+test('an unconfirmed native reply releases the queue without making the request retryable', {timeout:3000}, async t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  const runtime = createRuntime()
+  const started = Promise.withResolvers(), release = Promise.withResolvers()
+  const calls = []
+  runtime.nativeTurn = async (_bot, sessionId, _prompt, requestId) => {
+    calls.push(requestId)
+    if (calls.length === 1) {
+      started.resolve()
+      await release.promise
+      throw Object.assign(new Error('Native handoff did not resume'), {code:'agents/reply-blocked'})
+    }
+    return {text:'Second message answered',sessionId}
+  }
+  const {endpoints} = createAgents({db,host:{runtime:async () => runtime,call:async () => null}})
+  const {agent} = await endpoints.create({workspace_id:workspace,name:'Queue reader',idempotency_key:'unconfirmed-native-agent'})
+  const {conversation} = await endpoints['conversation-create']({workspace_id:workspace,id:agent.id})
+  const route = `${root}/${agent.id}/conversations/${conversation.id}`
+  const request = legacyRequest(endpoints)
+  const firstKey = 'unconfirmed-native-reply', nextKey = 'unconfirmed-follow-up'
+  const send = (key,body) => request(route+'/messages',jsonPost(key,{body,accept_pending:true}))
+  const first = await (await send(firstKey,'First request')).json()
+  await started.promise
+  const second = await (await send(nextKey,'Second request')).json()
+  assert.equal(second.reply.reply_phase,'queued')
+  release.resolve()
+  assert.equal((await (await send(nextKey,'Second request')).json()).reply.body,'Second message answered')
+  const receipt = await (await request(route+'/reply-progress',{},'receipt=1&key='+firstKey)).json()
+  assert.deepEqual([receipt.state,receipt.reply.error_code,receipt.reply.can_retry],['failed','reply-blocked',false])
+  const retry = await request(route+'/messages/'+first.reply.id+'/retry',jsonPost('new-retry-attempt',{attempt:1}))
+  assert.equal(retry.status,409)
+  assert.deepEqual(calls,[`ot-agent:${first.message.id}`,`ot-agent:${second.message.id}`])
+})
+
 test('stopping an exact private reply preserves its partial text and waits before the next native send', {timeout:3000}, async t => {
   const db = new DatabaseSync(':memory:')
   t.after(() => db.close())
@@ -852,7 +887,7 @@ test('stopping an exact private reply preserves its partial text and waits befor
   const scope = {workspace_id:workspace,id:agent.id,conversation_id:conversation.id}
   const convo = `${root}/${agent.id}/conversations/${conversation.id}`
   const request = legacyRequest(e)
-  const key = 'stop-private-message-key', nextKey = 'next-private-message-key'
+  const key = 'stop-private-message-key', nextKey = 'next-private-message-key', skippedKey = 'skip-private-message-key'
   const send = (key, body, accept_pending = true) => request(convo + '/messages', jsonPost(key,{body,accept_pending}))
   const stop = (attempt = 1, path = convo, extra = {}) => request(path + '/reply-stop', jsonPost(key,{key,attempt,...extra}))
   const first = await (await send(key,'Long running request')).json()
@@ -864,7 +899,21 @@ test('stopping an exact private reply preserves its partial text and waits befor
   assert.match(decoder.decode((await reader.read()).value),/connected/)
   assert.match(decoder.decode((await reader.read()).value),/Already streamed text/)
   const second = await (await send(nextKey,'Next request')).json()
+  const skipped = await (await send(skippedKey,'Do not send this follow-up')).json()
   assert.equal(second.reply.status,'running')
+  assert.equal(skipped.reply.reply_phase,'queued')
+  const onlyQueued = await stop(1,convo,{only_queued:true})
+  assert.equal(onlyQueued.status,409)
+  assert.equal((await onlyQueued.json()).error.code,'reply_not_queued')
+  const skippedResponse = await stop(1,convo,{key:skippedKey,only_queued:true})
+  assert.equal(skippedResponse.status,200)
+  const cancellation = await skippedResponse.json()
+  assert.deepEqual(cancellation.message,skipped.message)
+  assert.equal(cancellation.reply.status,'cancelled')
+  assert.equal(cancellation.reply.cancelled_while_queued,true)
+  assert.deepEqual(await (await stop(1,convo,{key:skippedKey,only_queued:true})).json(),cancellation)
+  assert.equal((await (await request(convo+'/reply-progress',{},'receipt=1&key='+key)).json()).state,'running')
+  assert.equal(sent.length,1)
   assert.equal((await stop(2)).status,409)
   assert.equal((await stop(1,convo.replace(conversation.id,neighbor.id))).status,404)
   assert.equal((await stop(1,convo.replace(workspace,'b'.repeat(32)))).status,404)
@@ -900,7 +949,7 @@ test('stopping an exact private reply preserves its partial text and waits befor
   assert.deepEqual(sent.map(turn => turn.requestId),[`ot-agent:${first.message.id}`,`ot-agent:${second.message.id}`])
   assert.equal((await stop(1,convo,{key:nextKey})).status,409)
   const {items} = await (await request(convo)).json()
-  assert.deepEqual(items.map(item => item.id),[first.message.id,first.reply.id,second.message.id,second.reply.id])
+  assert.deepEqual(items.map(item => item.id),[first.message.id,first.reply.id,second.message.id,second.reply.id,skipped.message.id,skipped.reply.id])
   assert.equal(items[1].body,'Already streamed text')
 })
 
@@ -935,7 +984,7 @@ test('startup settles accepted retry receipts and releases interrupted unkeyed u
   assert.equal(retry.status,200)
   assert.equal((await retry.json()).reply.attempt,2)
   assert.equal(turns,1)
-  assert.equal(db.prepare('SELECT meta FROM agent_messages WHERE id=?').get(unkeyedUser).meta,'{}')
+  assert.deepEqual(JSON.parse(db.prepare('SELECT meta FROM agent_messages WHERE id=?').get(unkeyedUser).meta),{nativeInterrupted:true})
   const oldReply = db.prepare('SELECT status,meta FROM agent_messages WHERE id=?').get(unkeyedReply)
   assert.equal(oldReply.status,'failed')
   assert.equal(JSON.parse(oldReply.meta).error,'agents/interrupted')

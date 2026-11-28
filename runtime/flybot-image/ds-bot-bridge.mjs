@@ -233,6 +233,7 @@ function ownsLiveChat(rt, botId, sessionId) {
   return livePrivateChat(rt, botId, sessionId) === sessionId
 }
 
+const PRIVATE_TURN_SCAN_LIMIT = 2048
 const privateReplyBindings = new WeakMap()
 function privateBindings(rt) {
   let bindings = privateReplyBindings.get(rt)
@@ -281,6 +282,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
     const progress = turnProgress(onProgress)
     let observedTurn, observedSession, boundTurn, boundSession, attempt, lastAgent
     let stopping, stopDeadline, stopTimer, binding, awaitingHandoff
+    let timer, admitted = false, partOffset = 0
     let revision = 0
     let phase = 'preparing'
     function emitPhase(next) {
@@ -312,17 +314,94 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       if (stopping) void (stopDeadline ? Promise.race([stopping, stopDeadline]) : stopping).then(complete, complete)
       else complete()
     }
-    const timer = setTimeout(() => finish(admissionOnly && signal?.aborted ? signal.reason : new Error('DS-Bot turn timed out')), timeoutMs)
     const emptyReply = () => Object.assign(new Error('DS-Bot turn ended without a reply'), {code:'agents/empty-reply'})
     function releaseBinding() {
       if (binding && bindings.get(binding.sessionId) === binding) bindings.delete(binding.sessionId)
       binding = undefined
     }
-    function switching(session) {
+    function resuming() {
       if (!admissionOnly) return false
-      const head = activeSessionId()
-      return rt.isSwitchingPart?.(session.id) === true || (head !== undefined && head !== session.id)
+      for (const job of rt.switchJobs?.() ?? []) {
+        if (job.resume === true && job.flybotPrivateReply === requestId) return true
+      }
+      return false
     }
+    function sourceMatches(source) {
+      return source?.rpcId === requestId || (source?.resume === true && source.flybotPrivateReply === requestId)
+    }
+    function completeTurn(session, event) {
+      if (signal?.aborted) { finish(signal.reason); return }
+      const reason = event.data?.reason
+      if ((reason?.kind !== 'completed' || !parts.length) && resuming()) {
+        resetTurn(true)
+        return
+      }
+      if (admissionOnly && reason?.kind === 'blocked') {
+        finish(Object.assign(new Error('DS-Bot blocked the reply before it finished'), {code:'agents/reply-blocked'}))
+        return
+      }
+      const disposed = reason?.kind === 'aborted' && reason.reason?.kind === 'disposed'
+      if ((managedGroup || admissionOnly) && disposed) { finish(emptyReply()); return }
+      const reply = parts.join('\n\n').trim()
+      if (reply) finish(null, {text:reply, sessionId:session.id, turnId:event.data?.turnId ?? event.turnId ?? null})
+      else if (event.data?.error || (managedGroup && reason && reason.kind !== 'completed')) finish(new Error('DS-Bot turn failed'))
+      else finish(emptyReply())
+    }
+    function recoverPrivateTurn(sessionId) {
+      const head = activeSessionId()
+      if (!sessionId || !head || livePrivateChat(rt,botId,sessionId) !== head) return false
+      const session = ctx.sessions?.get?.(sessionId) ?? (boundSession?.id === sessionId ? boundSession : null)
+      if (session?.id !== sessionId || !Number.isSafeInteger(session.seq) || typeof session.eventAt !== 'function') return false
+      // Replay only the physical part and the exact request. A native fork can
+      // contain inherited events from an earlier Session or another turn.
+      const floor = Math.max(session.inheritedEventCount ?? 0,session.seq - PRIVATE_TURN_SCAN_LIMIT)
+      let turn, exact = false, recovered = []
+      for (let seq = floor; seq < session.seq; seq += 1) {
+        const event = session.eventAt(seq)
+        if (!event || event.seq !== seq) return false
+        if (event.type === 'turn/start') {
+          turn = event.data?.turn
+          exact = false
+          recovered = []
+        } else if (event.type === 'user/message' && Number.isSafeInteger(turn) &&
+            (boundSession?.id !== sessionId || boundTurn === undefined || turn === boundTurn) && sourceMatches(event.data?.source)) exact = true
+        else if (exact && (event.data?.turn === undefined || event.data.turn === turn)) {
+          if (event.type === 'turn/end' && event.data?.turn === turn) {
+            parts.length = partOffset
+            parts.push(...recovered)
+            completeTurn(session,event)
+            return true
+          }
+          for (const item of rt.displayItems(sessionId,[event]) ?? []) {
+            if (item?.kind === 'bot' && typeof item.text === 'string' && item.text.trim()) recovered.push(item.text)
+          }
+        }
+      }
+      return false
+    }
+    function armWatchdog() {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (signal?.aborted && admissionOnly) { finish(signal.reason); return }
+        if (!admissionOnly || !admitted) { finish(new Error('DS-Bot turn timed out')); return }
+        const sessionId = boundSession?.id ?? activeSessionId()
+        const live = rt.live?.get(sessionId)?.turn
+        // Native admission does not mean the model has started. Keep waiting
+        // while the native queue is behind an active turn, or our own exact
+        // turn/continuation still has a native owner.
+        if ((live !== undefined && (boundTurn === undefined || live === boundTurn)) || resuming()) {
+          armWatchdog()
+          return
+        }
+        try {
+          const head = activeSessionId()
+          if (head !== sessionId && recoverPrivateTurn(head)) return
+          if (recoverPrivateTurn(sessionId)) return
+        } catch {}
+        finish(Object.assign(new Error('DS-Bot reply stopped delivering events'), {code:'agents/reply-interrupted'}))
+      }, timeoutMs)
+    }
+    armWatchdog()
     function cancelQueued() {
       const head = activeSessionId()
       if (!admissionOnly || head === undefined || rt.isSwitchingPart?.(head)) return
@@ -337,15 +416,15 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
     }
     function cancelNative() {
       if (settled || stopping) return
-      if (!boundSession) { cancelQueued(); return }
-      if (boundTurn === undefined) return
-      const session = boundSession, turn = boundTurn
-      if (admissionOnly) {
-        // Native cancellation should emit its terminal event. Bound cleanup if the
-        // runtime can no longer resolve or settle a turn that the user has stopped.
+      if (admissionOnly && !stopDeadline) {
+        // Bound the wait for native cancellation even between parts, where
+        // neither the old active turn nor the next inbox entry may exist.
         stopDeadline = new Promise(done => { stopTimer = setTimeout(done, 30_000) })
         void stopDeadline.then(() => finish(signal.reason))
       }
+      if (!boundSession) { cancelQueued(); return }
+      if (boundTurn === undefined) return
+      const session = boundSession, turn = boundTurn
       stopping = Promise.resolve().then(() => rt.resolveAgent(session.id)).then(agent => {
         // Do not stop another turn even if it now owns the same Bot or Session.
         if (settled || boundSession !== session || agent?.session !== session || boundTurn !== turn ||
@@ -362,7 +441,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
     function discardAttempt() {
       attempt = undefined
       progress?.discard()
-      emitPhase('preparing')
+      emitPhase(boundSession ? 'thinking' : 'preparing')
     }
     function resetTurn(handoff = false) {
       releaseBinding()
@@ -371,13 +450,17 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       observedTurn = undefined
       observedSession = undefined
       attempt = undefined
-      if (handoff) progress?.discard()
-      else {
+      if (handoff) {
+        partOffset = parts.length
+        progress?.discard()
+        armWatchdog()
+      } else {
         parts.length = 0
+        partOffset = 0
         progress?.reset()
       }
       awaitingHandoff = handoff
-      emitPhase('preparing')
+      emitPhase(handoff ? 'thinking' : 'preparing')
     }
     try {
       listeners.push(ctx.on('session/event', (session, event) => {
@@ -400,7 +483,8 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
           boundSession = session
           boundTurn = session === observedSession ? observedTurn : undefined
           if (admissionOnly && boundTurn !== undefined) {
-            clearTimeout(timer)
+            admitted = true
+            armWatchdog()
             binding = {sessionId:session.id, turn:boundTurn, requestId}
             bindings.set(session.id,binding)
             awaitingHandoff = false
@@ -428,20 +512,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
           if (attempt?.step === event.data?.step) attempt = undefined
           progress?.commit(parts.slice(start))
         }
-        if (event.type === 'turn/end') {
-          if (signal?.aborted) { finish(signal.reason); return }
-          const reason = event.data?.reason
-          if ((reason?.kind !== 'completed' || !parts.length) && switching(session)) {
-            resetTurn(true)
-            return
-          }
-          const disposed = reason?.kind === 'aborted' && reason.reason?.kind === 'disposed'
-          if ((managedGroup || admissionOnly) && disposed) { finish(emptyReply()); return }
-          const reply = parts.join('\n\n').trim()
-          if (reply) finish(null, { text: reply, sessionId:session.id, turnId: event.data?.turnId ?? event.turnId ?? null })
-          else if (event.data?.error || (managedGroup && reason && reason.kind !== 'completed')) finish(new Error('DS-Bot turn failed'))
-          else finish(emptyReply())
-        }
+        if (event.type === 'turn/end') completeTurn(session,event)
       }))
       if (progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
@@ -472,7 +543,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       if (admissionOnly || progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/disposed', ({ agent }) => {
           if ((managedGroup || admissionOnly) && boundSession && agent?.session === boundSession && !settled) {
-            if (switching(boundSession)) { resetTurn(true); return }
+            if (resuming()) { resetTurn(true); return }
             finish(signal?.aborted ? signal.reason : emptyReply())
           } else if (agent === lastAgent && !settled && !awaitingHandoff) {
             resetTurn()
@@ -482,11 +553,10 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       }
       Promise.resolve(rt.sendUser({ sessionId, content: [{ type: 'text', text }, ...files], requestId }))
         .then(() => {
-          // The native queue already has the request, even when an earlier
-          // turn takes longer than the admission timeout to finish.
-          if (admissionOnly) {
-            clearTimeout(timer)
-            if (signal?.aborted && !boundSession && !settled) cancelQueued()
+          // Acknowledgment alone does not prove that the input started.
+          if (admissionOnly && !settled) {
+            admitted = true
+            if (signal?.aborted && !boundSession) cancelQueued()
           }
         })
         .catch(error => finish(error instanceof Error ? error : new Error('DS-Bot rejected the message')))

@@ -38,9 +38,9 @@ export async function importHistory({ db, rt, ctx, bot, conversationId, sessionI
     ORDER BY m.created,m.rowid`).all(conversationId)
     .filter(row => {
       const meta = JSON.parse(row.meta || '{}')
-      // A live FlyBot failure is already in the Web transcript. Inserting
-      // its empty placeholder would wait for native work to become idle.
-      return !meta.nativePending &&
+      // Keep undelivered and deliberately cancelled inputs in the Web transcript.
+      // The owned native log already has any input admitted before a reload.
+      return !meta.nativePending && !meta.nativeInterrupted && !meta.cancelledWhileQueued &&
         !(row.role === 'assistant' && row.status === 'failed' && row.text === '' && meta.clientKey && meta.error)
     })
   if (!rows.length) return { imported:0, matched:0 }

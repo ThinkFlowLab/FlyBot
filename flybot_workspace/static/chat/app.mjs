@@ -3174,18 +3174,26 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     return scroller.scrollHeight - scroller.scrollTop - viewportHeight < 48;
   }
 
-  function activeStoppableReply() {
+  function privateReplyStopTarget(item) {
     if (!servedByDsbot || currentSource !== 'agent' || !currentConversation?.id || !currentAgent?.id ||
         sendClosed() || readingPrivateContext()) return null;
     const wid = workspaceId(), agentId = currentAgent.id, conversationId = currentConversation.id;
-    const item = lastAgentItems.find(row => row.role === 'assistant' && row.status === 'running' &&
-      row.can_stop === true && typeof row.client_key === 'string' && /^[a-f0-9]{32}$/.test(row.id) &&
-      Number.isSafeInteger(row.attempt) && row.attempt > 0 &&
-      row.workspace_id === wid && row.agent_id === agentId && row.conversation_id === conversationId);
-    if (!item) return null;
+    if (item?.role !== 'assistant' || item.status !== 'running' || item.can_stop !== true ||
+        typeof item.client_key !== 'string' || !/^[a-f0-9]{32}$/.test(item.id) ||
+        !Number.isSafeInteger(item.attempt) || item.attempt < 1 || item.workspace_id !== wid ||
+        item.agent_id !== agentId || item.conversation_id !== conversationId) return null;
     const scope = sendScope(), key = item.client_key;
     return {wid, agentId, conversationId, replyId:item.id, attempt:item.attempt, key, scope,
-      base:`${agentBase()}/conversations`, operation:JSON.stringify([scope, key, item.attempt])};
+      queuedOnly:item.reply_phase === 'queued', base:`${agentBase()}/conversations`, operation:JSON.stringify([scope, key, item.attempt])};
+  }
+
+  function activeStoppableReply() {
+    for (const item of lastAgentItems) {
+      if (item.reply_phase === 'queued') continue;
+      const target = privateReplyStopTarget(item);
+      if (target) return target;
+    }
+    return null;
   }
 
   function syncPrivateReplyStop() {
@@ -3200,16 +3208,18 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     replyStopButton.title = label;
   }
 
-  replyStopButton?.addEventListener('click', async () => {
-    const target = activeStoppableReply();
-    if (!target || stoppingPrivateReplies.has(target.operation)) return;
+  async function stopPrivateReply(target, control) {
+    if (!target || target.scope !== sendScope() || stoppingPrivateReplies.has(target.operation)) return;
     stoppingPrivateReplies.add(target.operation);
+    if (control) control.disabled = true;
     syncPrivateReplyStop();
     const current = () => target.scope === sendScope() && stoppingPrivateReplies.has(target.operation);
-    const cancelled = reply => reply.id === target.replyId && reply.attempt === target.attempt && reply.status === 'cancelled';
+    const cancelled = reply => reply.id === target.replyId && reply.attempt === target.attempt && reply.status === 'cancelled' &&
+      (!target.queuedOnly || reply.cancelled_while_queued === true);
     try {
       const result = await request('POST', `${target.base}/${target.conversationId}/reply-stop`,
-        {key:target.key, attempt:target.attempt}, undefined, AbortSignal.timeout(10000)).catch(() => ({status:0}));
+        {key:target.key, attempt:target.attempt, ...(target.queuedOnly ? {only_queued:true} : {})},
+        undefined, AbortSignal.timeout(10000)).catch(() => ({status:0}));
       if (!current()) return;
       let pair = result.status === 200 && privateReplyPair(result.body, target, target.key);
       if (!pair || !cancelled(pair.reply)) {
@@ -3218,20 +3228,51 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       if (!current()) return;
       if (!pair) {
         await openAgentConversation(target.agentId, target.conversationId, {refresh:true});
-        if (current() && activeStoppableReply()?.operation === target.operation) {
+        if (current() && target.queuedOnly) {
+          show('error', result.body?.error?.code === 'reply_not_queued'
+            ? uiLabel('这条消息已不在排队。', 'This message is no longer queued.')
+            : uiLabel('暂时无法取消排队，请重试。', 'Couldn’t cancel the queued reply. Try again.'));
+        } else if (current() && activeStoppableReply()?.operation === target.operation) {
           show('error', uiLabel('暂时无法停止这条回复，请重试。', 'Couldn’t stop this reply. Try again.'));
         }
         return;
       }
+      const restoreFocus = control && document.activeElement === control;
       privateRefresh += 1;
       const items = lastAgentItems.map(row => row.id === pair.reply.id ? pair.reply : row.id === pair.message.id ? pair.message : row);
       if (renderAgentMessages(items, {followLatest:false})) schedulePoll();
-      show('ok', uiLabel('已停止生成。', 'Reply stopped.'), {announceOnly:true});
+      if (restoreFocus) document.getElementById('chat-body').focus({preventScroll:true});
+      show('ok', target.queuedOnly ? uiLabel('已取消排队。', 'Queued reply cancelled.')
+        : uiLabel('已停止生成。', 'Reply stopped.'), {announceOnly:true});
     } finally {
       stoppingPrivateReplies.delete(target.operation);
+      if (control) {
+        control.disabled = false;
+        const latest = target.scope === sendScope() && agentReplyViews.get(target.key)?.cancelQueued;
+        if (latest) latest.disabled = false;
+      }
       syncPrivateReplyStop();
     }
-  });
+  }
+
+  replyStopButton?.addEventListener('click', () => stopPrivateReply(activeStoppableReply()));
+
+  function cancelQueuedReplyControl(item) {
+    if (item.reply_phase !== 'queued') return null;
+    const target = privateReplyStopTarget(item);
+    if (!target) return null;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'reply-queue-cancel';
+    button.dataset.cancelQueuedReply = item.id;
+    button.textContent = uiLabel('取消排队', 'Cancel queued reply');
+    button.disabled = stoppingPrivateReplies.has(target.operation);
+    button.addEventListener('click', () => {
+      const current = privateReplyStopTarget(lastAgentItems.find(row => row.id === target.replyId));
+      if (!button.hidden && current?.queuedOnly && current.operation === target.operation) return stopPrivateReply(target, button);
+    });
+    return button;
+  }
 
   function addPrivateReplyRetry(bubble, item) {
     if (!servedByDsbot || item.status !== 'failed' || item.can_retry !== true ||
@@ -3382,6 +3423,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       configure.href = '/settings#model-api';
       configure.textContent = uiLabel('查看模型设置', 'View model settings');
       body.append(configure);
+    } else if (failed && ['reply-blocked','reply-interrupted'].includes(item.error_code)) {
+      body.textContent = uiLabel('这条回复已中断，执行结果未确认。', 'The reply was interrupted. Its outcome is unconfirmed.');
     } else if (item.role === 'assistant' && item.status === 'failed' && item.error_code !== 'session/attachment-invalid') {
       body.textContent = item.can_retry === true ? uiLabel('回复未完成，可以重试。', 'The reply didn’t finish. You can retry.')
         : uiLabel('回复未完成。', 'The reply didn’t finish.');
@@ -3396,14 +3439,21 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       heading.textContent = partial ? privateReplyLabel(item.status, item.reply_phase || 'preparing', '')
         : item.status === 'running' ? uiLabel('正在生成回复', 'Writing a reply')
         : uiLabel('正在准备回复', 'Preparing a reply');
-      bubble.append(heading);
-      if (partial) replyView = {bubble, heading, body};
+      const cancelQueued = partial && cancelQueuedReplyControl(item);
+      if (cancelQueued) {
+        const line = document.createElement('div');
+        line.className = 'reply-queue-line';
+        line.append(heading, cancelQueued);
+        bubble.append(line);
+      } else bubble.append(heading);
+      if (partial) replyView = {bubble, heading, body, cancelQueued};
     }
     bubble.append(body);
     if (cancelled) {
       const label = document.createElement('p');
       label.className = 'reply-stopped';
-      label.textContent = uiLabel('已停止生成', 'Reply stopped');
+      label.textContent = item.cancelled_while_queued ? uiLabel('已取消排队', 'Queued reply cancelled')
+        : uiLabel('已停止生成', 'Reply stopped');
       bubble.append(label);
     }
     for (const attachment of item.attachments || []) bubble.append(renderMessageFile(attachment));
@@ -3546,6 +3596,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const text = typeof snapshot.text === 'string' ? snapshot.text : previous;
     const label = privateReplyLabel(state, snapshot.phase, text.trim(), reconnecting);
     if (view.heading.textContent !== label) view.heading.textContent = label;
+    if (view.cancelQueued && snapshot.phase) view.cancelQueued.hidden = snapshot.phase !== 'queued';
     if (previous === text) return;
     const scroller = document.getElementById('message-scroller');
     const follow = messageScrollerAtBottom(scroller);
