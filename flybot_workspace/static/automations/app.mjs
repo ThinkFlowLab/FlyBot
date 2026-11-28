@@ -697,6 +697,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   const runNewer = document.getElementById('run-newer');
   const runOlder = document.getElementById('run-older');
   const newButton = document.getElementById('new-automation');
+  const emptyCreate = document.getElementById('list-empty-create');
   const saveButton = document.getElementById('save-automation');
   const sampleButton = document.getElementById('save-and-sample');
   const copyButton = document.getElementById('copy-automation');
@@ -2338,7 +2339,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       tab.setAttribute('aria-selected', String(selected));
       tab.tabIndex = selected ? 0 : -1;
     }
-    const name = category === 'mine' ? '搜索我的定时任务' : '搜索定时任务模板';
+    const name = category === 'mine' ? '搜索定时任务' : '搜索定时任务模板';
     search.placeholder = name + '…';
     search.setAttribute('aria-label', name);
   }
@@ -2348,6 +2349,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     globalThis.clearTimeout(searchTimer);
     listRead?.abort();
     if (listRetry && !retrying) listRetry.hidden = true;
+    if (emptyCreate && !quiet) emptyCreate.hidden = true;
     if (clearSearch) clearSearch.hidden = !search.value;
     const id = workspaceId();
     const supportsUpcoming = native && Boolean(id) && category === 'mine';
@@ -2371,7 +2373,8 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     };
     const renderItems = items => {
       const visible = showingUpcoming ? upcomingAutomations(items, id) : items;
-      if (showingUpcoming) empty.textContent = searchText.trim() ? '没有匹配的运行计划。' : '当前工作区没有即将运行的自动化。';
+      if (showingUpcoming) empty.textContent = searchText.trim() ? '没有匹配的运行计划。' : '暂时没有即将运行的任务。';
+      if (emptyCreate) emptyCreate.hidden = visible.length > 0 || showingUpcoming || Boolean(searchText.trim()) || newButton.disabled;
       const fingerprint = JSON.stringify(visible);
       if (!quiet || listFingerprint !== fingerprint) {
         const active = document.activeElement?.dataset;
@@ -2413,7 +2416,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     if (templateRetry) templateRetry.hidden = true;
     const projected = startup?.workspace === id && category === 'mine' && !search.value.trim() ? startup.items : null;
     if (projected) {
-      empty.textContent = '这个分类下还没有自动化。';
+      empty.textContent = '还没有定时任务。';
       setBusy(empty, false);
       renderItems(projected);
       return;
@@ -2423,7 +2426,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       list.textContent = '';
       empty.hidden = false;
       setBusy(empty, true);
-      empty.textContent = '正在加载自动化…';
+      empty.textContent = '正在加载定时任务…';
     }
     const controller = listRead = new AbortController();
     const listed = await request('GET', `/v1/workspaces/${id}/automations${listQuery(category, searchText)}`,
@@ -2440,12 +2443,13 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       }
       list.textContent = '';
       empty.hidden = false;
-      empty.textContent = messageFor(listed.body?.error, '无法读取自动化列表。');
+      if (emptyCreate) emptyCreate.hidden = true;
+      empty.textContent = messageFor(listed.body?.error, '无法读取定时任务。');
       if (listRetry) listRetry.hidden = !(listed.status === 0 || listed.status === 429 || listed.status >= 500);
       return;
     }
     if (listRetry) listRetry.hidden = true;
-    empty.textContent = search.value.trim() ? '没有匹配的自动化。' : '这个分类下还没有自动化。';
+    empty.textContent = search.value.trim() ? '没有匹配的定时任务。' : '还没有定时任务。';
     renderItems(listed.body?.items || []);
   }
 
@@ -2546,10 +2550,11 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       document.getElementById('automation-list').textContent = '';
       document.getElementById('list-empty').hidden = false;
       document.getElementById('list-empty').textContent = '还没有工作区。';
+      if (emptyCreate) emptyCreate.hidden = true;
       return;
     }
     newButton.disabled = false;
-    document.getElementById('list-empty').textContent = '这个分类下还没有自动化。';
+    document.getElementById('list-empty').textContent = '还没有定时任务。';
     form.hidden = true;
     watchEditorExit();
     listPanel.hidden = false;
@@ -2829,10 +2834,13 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     });
   }
 
-  newButton.addEventListener('click', () => {
+  const createAutomation = opener => {
+    if (newButton.disabled) return;
     clearEditorLink();
-    openEditor(null, null, newButton);
-  });
+    openEditor(null, null, opener);
+  };
+  newButton.addEventListener('click', () => createAutomation(newButton));
+  emptyCreate?.addEventListener('click', () => createAutomation(emptyCreate));
   form.elements.kind.addEventListener('change', () => syncScheduleFields(form));
   scheduleSettings?.addEventListener('input', renderEditorSchedule);
   scheduleSettings?.addEventListener('change', renderEditorSchedule);
