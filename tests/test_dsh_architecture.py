@@ -1,8 +1,10 @@
 """Drift guards for the accepted DS-Bot/DSH target architecture.
 
 These checks are static and dependency-free: they read the committed route table,
-feature directories and the platform fence. They never import or start the web app.
+the static asset allowlist, feature directories and the platform fence. They never
+import or start the web app.
 """
+import ast
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,7 @@ PLUGIN_CONTRACT = DOCS / 'DSBOT_PLUGIN_ARCHITECTURE.md'
 FEATURES = ROOT / 'runtime' / 'flybot-workspace-web' / 'features'
 LIB_C = ROOT / 'runtime' / 'flybot-workspace-web' / 'lib' / 'c'
 APP = ROOT / 'flybot_workspace' / 'app.py'
+SETTINGS_PAGE = ROOT / 'flybot_workspace' / 'settings_page.py'
 
 # Pages that are deliberate redirects instead of standalone assets. `/messenger`
 # resolves to `/chat` in both flybot_workspace/settings_page.py and
@@ -33,6 +36,19 @@ C_FEATURES = frozenset({
 PLATFORM_EXCEPTIONS = frozenset()
 
 
+def asset_allowlist():
+    """Read SettingsPage.ASSETS without importing the web app."""
+    tree = ast.parse(SETTINGS_PAGE.read_text('utf-8'))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != 'SettingsPage':
+            continue
+        for item in node.body:
+            if isinstance(item, ast.Assign) and any(
+                    getattr(target, 'id', None) == 'ASSETS' for target in item.targets):
+                return ast.literal_eval(item.value)
+    raise AssertionError('SettingsPage.ASSETS not found in settings_page.py')
+
+
 class DSHTargetArchitectureTest(unittest.TestCase):
     def test_architecture_links_the_plugin_contract(self):
         self.assertTrue(PLUGIN_CONTRACT.is_file(), 'missing docs/DSBOT_PLUGIN_ARCHITECTURE.md')
@@ -43,13 +59,17 @@ class DSHTargetArchitectureTest(unittest.TestCase):
 
     def test_every_moved_page_has_a_real_static_entrypoint(self):
         routes = dsbot_gateway.load_routes()
+        assets = asset_allowlist()
         missing = []
         for page in sorted(routes['moved_pages']):
             target = PAGE_ALIASES.get(page, page)
-            if not (ROOT / 'flybot_workspace' / 'static' / target / 'index.html').is_file():
+            entry = assets.get('/' + target)
+            if entry is None:
                 missing.append(page if target == page else f'{page}->{target}')
-        self.assertEqual(missing, [], 'moved_pages without a real static entrypoint: '
-                                      + ', '.join(missing))
+            elif entry[0] != target or entry[1] != 'index.html' or not entry[2].startswith('text/html'):
+                missing.append(f'{page} -> {entry}')
+        self.assertEqual(missing, [], 'moved_pages without a servable entry in '
+                                      'SettingsPage.ASSETS: ' + ', '.join(missing))
 
     def test_every_moved_api_feature_has_a_runtime_implementation(self):
         self.assertTrue(LIB_C.is_dir(), 'missing runtime/flybot-workspace-web/lib/c')

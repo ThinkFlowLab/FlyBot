@@ -61,6 +61,8 @@ class SettingsPage:
         '/new/team': ('team', 'index.html', 'text/html; charset=utf-8'),
         '/team/app.mjs': ('team', 'app.mjs', 'text/javascript; charset=utf-8'),
         '/team/app.css': ('team', 'app.css', 'text/css; charset=utf-8'),
+        '/team-runs': ('team-runs', 'index.html', 'text/html; charset=utf-8'),
+        '/team-runs/': ('team-runs', 'index.html', 'text/html; charset=utf-8'),
         '/team-runs/app.css': ('team-runs', 'app.css', 'text/css; charset=utf-8'),
         '/team-runs/app.mjs': ('team-runs', 'app.mjs', 'text/javascript; charset=utf-8'),
         '/team-runs/shares.css': ('team-runs', 'shares.css', 'text/css; charset=utf-8'),
@@ -215,7 +217,7 @@ class SettingsPage:
         '/home/app.css': ('home', 'app.css', 'text/css; charset=utf-8'),
         '/home/auth.css': ('home', 'auth.css', 'text/css; charset=utf-8'),
     }
-    PREFIXES = ('/register', '/settings', '/automations', '/team', '/new', '/contacts', '/members', '/artifacts', '/space', '/agents', '/memory', '/shell', '/chat', '/messenger', '/discover', '/onboarding', '/profile', '/meetings', '/download', '/guide', '/about', '/skills', '/home', '/help', '/terms', '/privacy', '/docs')
+    PREFIXES = ('/register', '/settings', '/automations', '/team', '/team-runs', '/new', '/contacts', '/members', '/artifacts', '/space', '/agents', '/memory', '/shell', '/chat', '/messenger', '/discover', '/onboarding', '/profile', '/meetings', '/download', '/guide', '/about', '/skills', '/home', '/help', '/terms', '/privacy', '/docs')
     CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
            "img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'; "
            "frame-ancestors 'none'; object-src 'none'")

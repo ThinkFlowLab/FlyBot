@@ -9,9 +9,7 @@ STATIC = Path(__file__).resolve().parent.parent / 'flybot_workspace' / 'static'
 # Files under flybot_workspace/static/ that stay in the tree without being served.
 # Keep this table short and give every entry a reason. A file a page loads belongs in
 # SettingsPage.ASSETS, and a file nothing loads should be deleted instead.
-UNSERVED = {
-    'team-runs/index.html': 'the /team-runs page route is not registered yet; tracked separately',
-}
+UNSERVED = {}
 
 # The closed set of extensions the allowlist may serve. A suffix outside this table fails
 # instead of falling back to the declared type: an untyped asset is a hole, not a pass.
