@@ -1453,6 +1453,55 @@ test('a long native reply keeps its partial text and Stop when the stream discon
   } finally { restore(); }
 });
 
+test('native private text interrupts the current reply without queuing the corrective message', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const fields = {workspace_id:'ws-1',agent_id:'agent-1',conversation_id:'private-1'};
+  const first = {...fields,id:'1'.repeat(32),role:'assistant',client_key:'head-private-reply-key',
+    status:'running',attempt:1,can_stop:true};
+  const queued = {...first,id:'2'.repeat(32),client_key:'queued-private-reply-key',reply_phase:'queued'};
+  const interrupted = {...first,status:'cancelled',can_stop:false,interrupted_by_message:true,body:'已经生成的内容'};
+  const discarded = {...queued,status:'cancelled',can_stop:false,interrupted_by_message:true,cancelled_while_queued:true};
+  const accepted = Promise.withResolvers();
+  let acknowledgment, sendPayload;
+  const {doc,el,restore,fetcher} = nativeReplyChat((path, opts, scope) => {
+    if (path === '?limit=50') return json(200,{...scope,items:[first,queued]});
+    if (path === '/messages' && opts.method === 'POST') {
+      sendPayload = JSON.parse(opts.body);
+      const client_key = opts.headers['Idempotency-Key'];
+      const message = {...fields,id:'3'.repeat(32),role:'user',status:'succeeded',client_key,body:sendPayload.body};
+      const reply = {...fields,id:'4'.repeat(32),role:'assistant',status:'running',reply_phase:'interrupting',
+        attempt:1,can_stop:true,client_key};
+      acknowledgment = {message,reply,interrupted_replies:[interrupted,discarded,
+        {...interrupted,conversation_id:'another-chat',body:'来自另一对话'}]};
+      return accepted.promise;
+    }
+    assert.fail('Unexpected request: ' + path);
+  });
+  try {
+    await mount(doc,{fetcher});
+    const list = el('message-list'), field = el('chat-body');
+    assert.equal(el('chat-send').getAttribute('aria-label'),'打断并发送');
+    field.value = '采用这个新指令';
+    await fire(el('chat-form'),'submit',{preventDefault() {}});
+    assert.equal(sendPayload.accept_pending,true);
+    assert.equal(sendPayload.interrupt_current,true);
+    assert.equal(field.value,'');
+    assert.ok(descendants(list.children.at(-1)).some(node => node.textContent === '正在打断上一条回复…'));
+    field.value = '尚未发送的草稿';
+    accepted.resolve(json(202,acknowledgment));
+    await settle();
+    assert.deepEqual(list.children.map(row => row.dataset.messageId),
+      [first.id,queued.id,acknowledgment.message.id,acknowledgment.reply.id]);
+    assert.equal(list.children[0].dataset.state,'cancelled');
+    assert.equal(list.children[1].dataset.state,'cancelled');
+    assert.ok(descendants(list.children[0]).some(node => node.textContent === '已经生成的内容'));
+    assert.ok(descendants(list.children[0]).some(node => node.textContent === '已被新消息打断'));
+    assert.ok(descendants(list.children.at(-1)).some(node => node.textContent === '正在打断上一条回复…'));
+    assert.equal(descendants(list).some(node => node.dataset.cancelQueuedReply),false);
+    assert.equal(field.value,'尚未发送的草稿');
+  } finally { restore(); }
+});
+
 test('the queued reply control cancels only its own accepted message and leaves the head active', async t => {
   t.mock.timers.enable({apis:['setTimeout']});
   const fields = {workspace_id:'ws-1',agent_id:'agent-1',conversation_id:'private-1'};
@@ -6950,7 +6999,7 @@ test('a quick native send clears the draft and applies the saved reply language 
     settings.resolve(json(200, {settings:{values:{chat_language:'es',send_shortcut:'mod_enter'}}}));
     await settle();
     assert.deepEqual(fixture.calls.filter(call => call.path === sendPath).map(call => call.body),
-      [{body:'hola',chat_language:'es',accept_pending:true}]);
+      [{body:'hola',chat_language:'es',accept_pending:true,interrupt_current:true}]);
     assert.equal(field.value, 'next draft');
     assert.equal(field.dataset.sendShortcut, 'mod_enter');
     assert.deepEqual(fixture.messages().slice(-2), ['sent','answer']);

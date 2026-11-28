@@ -201,8 +201,11 @@ export function createAgents({ db, host }) {
   const requireOpenConversation = (agent, id) => {
     if (conversation(agent, id).archived_at !== null) fail('conversation_archived', '请恢复此对话后再发送消息。', 409)
   }
-  const readMessage = message => ({...message, meta:JSON.parse(message.meta),
-    ...(message.status === 'running' && liveReplies.get(message.id)?.phase === 'queued' ? {reply_phase:'queued'} : {})})
+  const readMessage = message => {
+    const phase = message.status === 'running' && liveReplies.get(message.id)?.phase
+    return {...message, meta:JSON.parse(message.meta),
+      ...(['queued','interrupting'].includes(phase) ? {reply_phase:phase} : {})}
+  }
   const receiptScope = (agent, convo) => ({
     workspace_id: agent.workspace_id, agent_id: agent.id, conversation_id: convo.id,
   })
@@ -463,22 +466,64 @@ export function createAgents({ db, host }) {
     return {rt,cards:nativePrivateCards(rt,agent,row,mapping)}
   }
 
-  async function trackSend(conversationId, userId, replyId, perform, onAccepted, stop) {
+  // Called within the same transaction that accepts a replacement, or by
+  // the explicit Stop action. Abort the native work only after that commit.
+  function recordReplyStop(row, progress, replacementId) {
+    const meta = JSON.parse(row.meta)
+    const queued = !progress.started
+    const stopped = {...meta,
+      ...(queued ? {cancelledWhileQueued:true} : {}),
+      ...(replacementId ? {interruptedByReplyId:replacementId} : {}),
+    }
+    const changed = run(`UPDATE agent_messages SET status='cancelled',text=?,meta=json_remove(?,'$.nativePending')
+      WHERE id=? AND conversation_id=? AND role='assistant' AND status='running'
+        AND COALESCE(json_extract(meta,'$.replyAttempt'),1)=?`,
+      progress.text.toWellFormed(), JSON.stringify(stopped), row.id, progress.conversationId, textReplyAttempt(meta))
+    if (!changed.changes) return false
+    // The visible user message stays in FlyBot. DS-Bot already has any
+    // admitted input in its own transcript, and the rest was never sent.
+    run(`UPDATE agent_messages SET meta=json_remove(
+      CASE WHEN ? THEN json_set(meta,'$.cancelledWhileQueued',json('true'))
+        WHEN ? THEN json_set(meta,'$.nativeInterrupted',json('true')) ELSE meta END,'$.nativePending')
+      WHERE id=? AND conversation_id=? AND role='user'`,
+      Number(queued), Number(Boolean(replacementId)), progress.userId, progress.conversationId)
+    return true
+  }
+
+  function interruptReplies(conversationId, replacementId) {
+    const stopped = []
+    for (const [id, progress] of liveReplies) {
+      if (progress.conversationId !== conversationId || progress.stop.signal.aborted) continue
+      const row = one("SELECT id,meta FROM agent_messages WHERE id=? AND status='running'", id)
+      if (row && recordReplyStop(row, progress, replacementId)) stopped.push(progress)
+    }
+    return stopped
+  }
+
+  function abortReply(progress) {
+    progress.stop.abort()
+    for (const waiter of progress.waiters) waiter()
+  }
+
+  async function trackSend(conversationId, userId, replyId, perform, {onAccepted, stop, interrupt}) {
     const previous = conversationTurns.get(conversationId)
-    const progress = {text:'', phase:previous ? 'queued' : 'preparing', revision:0, waiters:new Set(), stop,
+    const progress = {text:'', phase:previous ? (interrupt ? 'interrupting' : 'queued') : 'preparing',
+      started:false, revision:0, waiters:new Set(), stop, conversationId, userId,
       ...(onAccepted ? {onAccepted:new Set([onAccepted])} : {})}
     const wake = () => { for (const waiter of progress.waiters) waiter() }
     liveReplies.set(replyId, progress)
     const setPhase = phase => {
-      if (stop?.signal.aborted || !['preparing','thinking','writing'].includes(phase) || phase === progress.phase) return
+      if (stop.signal.aborted || !['preparing','thinking','writing'].includes(phase) || phase === progress.phase) return
       progress.phase = phase
       progress.revision += 1
       wake()
     }
     const runTurn = () => {
+      if (stop.signal.aborted) return sentPair(userId, replyId)
+      progress.started = true
       setPhase('preparing')
       return perform(text => {
-        if (stop?.signal.aborted || typeof text !== 'string') return
+        if (stop.signal.aborted || typeof text !== 'string') return
         const snapshot = text.slice(0, LIMITS.text)
         if (snapshot === progress.text) return
         progress.text = snapshot
@@ -499,33 +544,32 @@ export function createAgents({ db, host }) {
     }
   }
 
-  function runTextReply({agent, convo, userId, replyId, text, userMeta, replyMeta, attempt, extra, returnFailed, interactive = false}) {
-    const stop = replyMeta.clientKey ? new AbortController() : undefined
-    const signal = stop?.signal
+  function runTextReply({agent, convo, userId, replyId, text, userMeta, replyMeta, attempt, extra, returnFailed, interactive = false, interrupt = false}) {
+    const stop = new AbortController()
+    const {signal} = stop
     return trackSend(convo.id, userId, replyId, async (onProgress, onPhase) => {
       try {
-        signal?.throwIfAborted()
         const {context, refs, personalWorkspace, remember} = await privateContext(agent, convo, text, extra)
         const requestId = attempt === 1 ? `ot-agent:${userId}` : `ot-agent:${userId}:retry:${attempt}`
         const reply = await turn({agent_id:agent.id,key:convo.id,text,request_id:requestId,reply_language:userMeta.replyLanguage,context},
           {onProgress,onPhase,signal,interactive,personalTeamScope:personalTeamScope(agent,text)})
-        if (signal?.aborted) return sentPair(userId, replyId)
+        if (signal.aborted) return sentPair(userId, replyId)
         run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify({...userMeta,session_id:reply.session_id}), userId)
         run('UPDATE agent_messages SET text=?, status=?, meta=? WHERE id=?', reply.text, 'succeeded',
           JSON.stringify({...replyMeta,engine:'ds-bot',session_id:reply.session_id,turn_id:reply.turn_id,memory_refs:refs,memory_profile_workspace:personalWorkspace}), replyId)
         enqueueCapture(agent, convo, userId, text, remember)
       } catch (error) {
-        if (signal?.aborted) return sentPair(userId, replyId)
+        if (signal.aborted) return sentPair(userId, replyId)
         const failure = {...replyMeta,error:String(error?.code ?? 'agents/failed')}
         const source = unconfirmedNativeReply(failure) ? {...userMeta,nativeInterrupted:true} : userMeta
         run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify(source), userId)
         run('UPDATE agent_messages SET status=?, meta=? WHERE id=?', 'failed',JSON.stringify(failure), replyId)
         if (!returnFailed) throw error
       } finally {
-        run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
+        if (!signal.aborted) run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
       }
       return sentPair(userId, replyId)
-    }, undefined, stop)
+    }, {stop, interrupt})
   }
 
   async function sendWithAttachments(p, agent, convo, text, reference) {
@@ -591,6 +635,8 @@ export function createAgents({ db, host }) {
       run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
       db.exec('COMMIT')
     } catch (error) { db.exec('ROLLBACK'); throw error }
+    const stop = new AbortController()
+    const {signal} = stop
     return trackSend(convo.id, userId, replyId, async (onProgress, onPhase) => {
       let staged = []
       let remaining = 12_000 - (savedExcerpt?.length || 0)
@@ -609,10 +655,11 @@ export function createAgents({ db, host }) {
         const reply = await turn({agent_id:agent.id, key:convo.id, text:prompt, request_id:`ot-agent:${userId}`,
           reply_language:p.reply_language, context}, {
           files,
-          onProgress,onPhase,
-          interactive:!!accepted,
+          onProgress,onPhase,signal,
+          interactive:true,
           personalTeamScope:originalText ? personalTeamScope(agent,originalText) : undefined,
           onStaged(value) {
+            if (signal.aborted) return
             staged = value.map((file, index) => ({
               ...file, ...(files[index]?.resource ? {resource:files[index].resource} : {}), ...(stickerId ? {sticker:true} : {}),
             }))
@@ -624,10 +671,12 @@ export function createAgents({ db, host }) {
             }
           },
         })
+        if (signal.aborted) return result()
         run('UPDATE agent_messages SET text=?, status=?, meta=? WHERE id=?', reply.text, 'succeeded',
           JSON.stringify({clientKey:key,engine:'ds-bot',session_id:reply.session_id,turn_id:reply.turn_id,memory_refs:refs,memory_profile_workspace:personalWorkspace}), replyId)
         enqueueCapture(agent, convo, userId, text, remember)
       } catch (error) {
+        if (signal.aborted) return result()
         const code = typeof error?.code === 'string' ? error.code : 'agents/failed'
         if (!staged.length) {
           run('DELETE FROM agent_messages WHERE id IN (?,?)', userId, replyId)
@@ -638,11 +687,13 @@ export function createAgents({ db, host }) {
         }
         run('UPDATE agent_messages SET status=?, meta=? WHERE id=?', 'failed', JSON.stringify({clientKey:key,error:code}), replyId)
       } finally {
-        run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify({requestHash:hash,clientKey:key,files:staged}), userId)
-        run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
+        if (!signal.aborted) {
+          run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify({requestHash:hash,clientKey:key,files:staged}), userId)
+          run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
+        }
       }
       return result()
-    }, accepted)
+    }, {onAccepted:accepted, stop})
   }
 
   function reserveAgent(p, inheritCapabilities, source) {
@@ -1256,6 +1307,12 @@ export function createAgents({ db, host }) {
     },
     // Send one message to the agent: a native DS-Bot turn on this conversation's session.
     async send(p) {
+      const interrupt = p.interrupt_current === true
+      if (p.interrupt_current !== undefined && typeof p.interrupt_current !== 'boolean') fail('invalid','Invalid reply interrupt flag',400)
+      if (interrupt && (!p.idempotency_key || typeof p.onAccepted !== 'function' ||
+          p.attachments !== undefined || p.sticker_id !== undefined || p.artifact_id !== undefined)) {
+        fail('invalid', 'Only an asynchronous private text message can interrupt a reply', 400)
+      }
       const agent = load(ws(p), p.id)
       const convo = activeConversation(agent,p.conversation_id) ?? await conversationOrDiscussion(agent,p.conversation_id)
       const text = typeof p.text === 'string' ? p.text.trim() : ''
@@ -1283,13 +1340,20 @@ export function createAgents({ db, host }) {
       const hash = key && sha(JSON.stringify([text, p.reply_language || '']))
       const userId = key ? sendId('text', 'user', convo.id, key) : newId()
       const replyId = key ? sendId('text', 'reply', convo.id, key) : newId()
-      const accepted = key && typeof p.onAccepted === 'function' ? () => p.onAccepted(sentPair(userId, replyId)) : null
+      const result = () => ({
+        ...sentPair(userId, replyId),
+        ...(interrupt ? {interrupted_replies:all(`SELECT * FROM agent_messages
+          WHERE conversation_id=? AND role='assistant' AND status='cancelled'
+            AND json_extract(meta,'$.interruptedByReplyId')=?
+          ORDER BY created,rowid`, convo.id, replyId).map(readMessage)} : {}),
+      })
+      const accepted = key && typeof p.onAccepted === 'function' ? () => p.onAccepted(result()) : null
       const prior = key && one('SELECT meta FROM agent_messages WHERE id=?', userId)
       if (prior) {
         if (JSON.parse(prior.meta).requestHash !== hash) fail('conflict', 'Send key was used for a different message', 409)
         const running = activeTurns.get(userId)
         if (running) accepted?.()
-        return running || sentPair(userId, replyId)
+        return running ? (interrupt ? running.then(result) : running) : result()
       }
       if (key) verifySendMode('text', convo.id, key)
       const replyMeta = key ? {clientKey:key,replyAttempt:1} : {}
@@ -1297,19 +1361,23 @@ export function createAgents({ db, host }) {
         ...(key ? {clientKey:key,requestHash:hash} : {}),
         ...(p.reply_language ? {replyLanguage:p.reply_language} : {}),
       }
-      db.exec('BEGIN')
+      let stopped = []
+      db.exec('BEGIN IMMEDIATE')
       try {
         commitMeetingDiscussion(agent,convo)
         requireOpenConversation(agent, convo.id)
+        if (interrupt) stopped = interruptReplies(convo.id, replyId)
         run('INSERT INTO agent_messages VALUES(?,?,?,?,?,?,?)', userId, convo.id, 'user', text, 'sent', now(), JSON.stringify({...userMeta,nativePending:true}))
         run('INSERT INTO agent_messages VALUES(?,?,?,?,?,?,?)', replyId, convo.id, 'assistant', '', 'running', now(), JSON.stringify({...replyMeta,nativePending:true}))
         run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
         db.exec('COMMIT')
       } catch (error) { db.exec('ROLLBACK'); throw error }
 
-      const sending = runTextReply({agent,convo,userId,replyId,text,userMeta,replyMeta,attempt:1,extra:p.context,returnFailed:p.return_failed === true,interactive:!!accepted})
+      for (const progress of stopped) abortReply(progress)
+      const sending = runTextReply({agent,convo,userId,replyId,text,userMeta,replyMeta,attempt:1,extra:p.context,
+        returnFailed:p.return_failed === true,interactive:!!accepted,interrupt})
       accepted?.()
-      return sending
+      return interrupt ? sending.then(result) : sending
     },
     async retryReply(p) {
       const agent = load(ws(p), p.id)
@@ -1374,24 +1442,13 @@ export function createAgents({ db, host }) {
       const queued = progress?.phase === 'queued'
       if (p.only_queued === true && !queued) fail('reply_not_queued', '这条消息已不在排队。', 409)
       if (row.status !== 'running' || !progress?.stop) fail('reply_stop_unavailable', '这次回复已结束。', 409)
-      const partial = progress.text.toWellFormed()
-      const cancelledMeta = queued ? {...meta,cancelledWhileQueued:true} : meta
       db.exec('BEGIN IMMEDIATE')
       try {
-        const changed = run(`UPDATE agent_messages SET status='cancelled',text=?,meta=json_remove(?,'$.nativePending')
-          WHERE id=? AND status='running' AND COALESCE(json_extract(meta,'$.replyAttempt'),1)=?`,
-          partial, JSON.stringify(cancelledMeta), row.id, p.attempt)
-        if (!changed.changes) fail('reply_stop_unavailable', '这次回复已结束。', 409)
-        // A cancelled queue entry stays visible in FlyBot, but its text was
-        // never admitted and must not reach a later turn through history import.
-        run(`UPDATE agent_messages SET meta=json_remove(
-          CASE WHEN ? THEN json_set(meta,'$.cancelledWhileQueued',json('true')) ELSE meta END,'$.nativePending')
-          WHERE id=?`, Number(queued), userId)
+        if (!recordReplyStop(row, progress)) fail('reply_stop_unavailable', '这次回复已结束。', 409)
         run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), id)
         db.exec('COMMIT')
       } catch (error) { db.exec('ROLLBACK'); throw error }
-      progress.stop.abort()
-      for (const waiter of progress.waiters) waiter()
+      abortReply(progress)
       return sentPair(userId, row.id)
     },
     async replyProgress(p) {

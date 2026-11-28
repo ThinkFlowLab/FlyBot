@@ -330,12 +330,13 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       return source?.rpcId === requestId || (source?.resume === true && source.flybotPrivateReply === requestId)
     }
     function completeTurn(session, event) {
-      if (signal?.aborted) { finish(signal.reason); return }
       const reason = event.data?.reason
       if ((reason?.kind !== 'completed' || !parts.length) && resuming(session.id)) {
         resetTurn(true)
+        if (signal?.aborted) cancelQueued()
         return
       }
+      if (signal?.aborted) { finish(signal.reason); return }
       if (admissionOnly && reason?.kind === 'blocked') {
         finish(Object.assign(new Error('DS-Bot blocked the reply before it finished'), {code:'agents/reply-blocked'}))
         return
@@ -408,10 +409,8 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       void Promise.resolve().then(() => rt.resolveAgent(head)).then(agent => {
         if (settled || boundSession || activeSessionId() !== head || rt.isSwitchingPart?.(head)) return
         const message = [...(agent?.inbox?.nextStep ?? []), ...(agent?.inbox?.nextTurn ?? [])]
-          .find(item => item.source?.rpcId === requestId)
-        if (!message) return
-        agent.inbox.remove(message.id)
-        finish(signal.reason)
+          .find(item => sourceMatches(item.source))
+        if (message && agent.inbox.remove(message.id)) finish(signal.reason)
       }).catch(() => {})
     }
     function cancelNative() {
@@ -425,17 +424,21 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       if (!boundSession) { cancelQueued(); return }
       if (boundTurn === undefined) return
       const session = boundSession, turn = boundTurn
+      if (resuming(session.id)) return
       stopping = Promise.resolve().then(() => rt.resolveAgent(session.id)).then(agent => {
-        // Do not stop another turn even if it now owns the same Bot or Session.
-        if (settled || boundSession !== session || agent?.session !== session || boundTurn !== turn ||
-            rt.live?.get(session.id)?.turn !== turn || !ownsLiveChat(rt, botId, session.id)) {
+        // A handoff may replace this binding while the native lookup is pending.
+        if (settled || boundSession !== session || boundTurn !== turn || resuming(session.id)) return
+        if (agent?.session !== session || rt.live?.get(session.id)?.turn !== turn ||
+            !ownsLiveChat(rt, botId, session.id)) {
           if (admissionOnly) finish(signal.reason)
           return
         }
         const children = rt.stopSubagents?.(session.id)
         agent.cancel({kind:'user'})
         return children
-      }).catch(() => { if (admissionOnly) finish(signal.reason) })
+      }).catch(() => {
+        if (admissionOnly && boundSession === session && boundTurn === turn && !resuming(session.id)) finish(signal.reason)
+      })
     }
     signal?.addEventListener('abort', cancelNative, {once:true})
     function discardAttempt() {
@@ -451,6 +454,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       observedSession = undefined
       attempt = undefined
       if (handoff) {
+        stopping = undefined
         partOffset = parts.length
         progress?.discard()
         armWatchdog()
@@ -543,7 +547,11 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       if (admissionOnly || progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/disposed', ({ agent }) => {
           if ((managedGroup || admissionOnly) && boundSession && agent?.session === boundSession && !settled) {
-            if (resuming(boundSession.id)) { resetTurn(true); return }
+            if (resuming(boundSession.id)) {
+              resetTurn(true)
+              if (signal?.aborted) cancelQueued()
+              return
+            }
             finish(signal?.aborted ? signal.reason : emptyReply())
           } else if (agent === lastAgent && !settled && !awaitingHandoff) {
             resetTurn()

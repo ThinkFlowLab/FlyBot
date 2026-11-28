@@ -44,8 +44,9 @@ const publicMessage = (row, workspaceId, agentId) => {
   return {
     ...(attachments.length ? {attachments} : {}),
     ...(row.saved_work ? {saved_work:row.saved_work} : {}),
-    ...(row.reply_phase === 'queued' ? {reply_phase:'queued'} : {}),
+    ...(['queued','interrupting'].includes(row.reply_phase) ? {reply_phase:row.reply_phase} : {}),
     ...(status === 'cancelled' && meta?.cancelledWhileQueued === true ? {cancelled_while_queued:true} : {}),
+    ...(status === 'cancelled' && typeof meta?.interruptedByReplyId === 'string' ? {interrupted_by_message:true} : {}),
     ...(meta?.clientKey ? {client_key:meta.clientKey} : {}),
     ...(isActionCardId(meta?.private_card_id) ? {private_card_id:meta.private_card_id} : {}),
     ...(meta?.memory_refs?.length ? {memory_refs: meta.memory_refs} : {}),
@@ -59,6 +60,7 @@ const publicMessage = (row, workspaceId, agentId) => {
 const publicPair = (result, workspaceId, agentId) => ({
   message: publicMessage(result.message, workspaceId, agentId),
   reply: publicMessage(result.reply, workspaceId, agentId),
+  ...(result.interrupted_replies ? {interrupted_replies:result.interrupted_replies.map(row => publicMessage(row, workspaceId, agentId))} : {}),
 })
 
 export function agentsV1({ endpoints, chatDirectory, host, log }) {
@@ -69,7 +71,7 @@ export function agentsV1({ endpoints, chatDirectory, host, log }) {
       ? CHAT_LANGUAGE_NAMES[code] : body.reply_language
     const payload = {workspace_id:workspaceId,id,agent_id:id,conversation_id:conversationId,
       text:body.body ?? body.text,reply_language:replyLanguage,attachments:body.attachments,
-      idempotency_key:key,return_failed:true}
+      idempotency_key:key,return_failed:true,interrupt_current:body.interrupt_current}
     const project = result => publicPair(result, workspaceId, id)
     const reference = body.artifact_id !== undefined || body.sticker_id !== undefined
     if (reference || (body.accept_pending === true && body.attachments === undefined && key)) {

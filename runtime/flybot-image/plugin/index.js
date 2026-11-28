@@ -129,6 +129,7 @@ export function apply(ctx, config = {}) {
     const nativeTurn = (botId, savedSessionId, text, requestId, options = {}) => bridge.exclusive(async () => {
       options.signal?.throwIfAborted()
       const sessionId = await prepareMappedChat(botId, savedSessionId)
+      options.signal?.throwIfAborted()
       const parts = [], stored = []
       const uploads = ctx.get?.('fileUploads')
       for (const file of options.files || []) {
@@ -146,6 +147,7 @@ export function apply(ctx, config = {}) {
         stored.push({title:file.title, mime:original ? file.mime : ref.mediaType || file.mime, bytes:ref.bytes, image:image && !original, ref})
       }
       if (stored.length) options.onStaged?.(stored)
+      options.signal?.throwIfAborted()
       bridge.requireModel(botId)
       const turn = () => runTurn(rt, ctx, botId, text, requestId, undefined, parts, {
         sessionId, onProgress: options.onProgress, onPhase: options.onPhase, signal: options.signal,
