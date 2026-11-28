@@ -277,13 +277,13 @@ test('explicit group reply statuses distinguish pending, success and fixed error
   assert.equal(groupReplyStatus({status: 'failed', error_code: 'private diagnostic'}), '失败：请求失败');
 });
 
-test('the chat empty state offers two native links to /agents and /guide', () => {
+test('the chat empty state opens Agents and Discover', () => {
   const html = readFileSync(new URL('../flybot_workspace/static/chat/index.html', import.meta.url), 'utf8');
   const start = html.indexOf('id="chat-empty"');
   assert.ok(start > -1, 'the chat page has an empty state');
   const block = html.slice(start, html.indexOf('id="message-list"', start));
   assert.match(block, /<a href="\/agents"[^>]*>浏览智能体<\/a>/);
-  assert.match(block, /<a href="\/guide"[^>]*>查看功能指引<\/a>/);
+  assert.match(block, /<a href="\/discover"[^>]*>发现<\/a>/);
   assert.doesNotMatch(block, /<button[^>]*>帮助中心/, 'the next steps are links, not disabled buttons');
 });
 
@@ -3656,7 +3656,9 @@ test('composer + creation grid opens real editors and generation dialogs', () =>
   for (const kind of ['document', 'slides', 'spreadsheet']) {
     assert.ok(html.includes(`href="/space?new=${kind}" data-create-artifact="${kind}"`),kind);
   }
-  for (const id of ['meeting_prep', 'daily_brief', 'expert_research', 'advance_goals']) assert.ok(html.includes(`/automations?template=${id}`), id);
+  const sheet = html.slice(html.indexOf('class="composer-plus-sheet"'), html.indexOf('</details>', html.indexOf('class="composer-plus-sheet"')));
+  assert.match(sheet, /id="composer-resource-open"/);
+  assert.doesNotMatch(sheet, /href="\/(automations|meetings|skills|memory)/);
   assert.match(html, /id="composer-website-create"[^>]+aria-haspopup="dialog"/);
   assert.match(html, /id="website-create-manual" href="\/space\?new=website"/);
   assert.match(html, /id="website-create-prompt" name="prompt" maxlength="1600"/);

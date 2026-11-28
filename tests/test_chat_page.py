@@ -67,7 +67,7 @@ class ChatPageTests(unittest.TestCase):
         self.assertIn('compose-dialog-submit" disabled', html)
         self.assertNotIn('成员付费', html)
         self.assertNotIn('群主付费', html)
-        self.assertIn('未实现', html)
+        self.assertIn('id="chat-contacts-dialog"', html)
         self.assertIn('id="account-menu"', html)
         self.assertIn('所有设置', html)
         self.assertIn('退出登录', html)
@@ -110,7 +110,7 @@ class ChatPageTests(unittest.TestCase):
         start = html.index('id="chat-empty"')
         block = html[start:html.index('id="message-list"', start)]
         self.assertRegex(block, r'<a href="/agents"[^>]*>浏览智能体</a>')
-        self.assertRegex(block, r'<a href="/guide"[^>]*>查看功能指引</a>')
+        self.assertRegex(block, r'<a href="/discover"[^>]*>发现</a>')
 
     def test_page_rejects_cross_origin_queries_and_writes(self):
         self.assertEqual(self.raw.call('GET', '/chat', origin='https://evil.test')['status'], 403)

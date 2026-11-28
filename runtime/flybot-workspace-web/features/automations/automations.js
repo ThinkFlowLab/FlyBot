@@ -17,6 +17,7 @@ import { automationsV1 } from './v1.js'
 import { importOfficialBundle, recordLegacyRuns } from './migrate.js'
 import { FeatureError, validLongText } from '../../featurekit/http.js'
 import { requireMemoryWorkspace } from '../memory/access.js'
+import { botSchedules } from './bot-schedules.js'
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 export function refuse(status, code, message, details) {
@@ -205,7 +206,7 @@ export function runView(row) {
 const executionPrompt = ({title,prompt}) => `[FlyBot 自动化 · ${title}]\n${prompt}`
 
 export function createAutomations({ db, turn, runtimeReady = () => true, clock = nowSec, tickMs = TICK_MS, log = console.error, personalBinding, saveArtifact,
-  readMeetingAction, readMemoryAction, studioRequest, requireWorkspace, readSavedWorks, draftRuntime }) {
+  readMeetingAction, readMemoryAction, studioRequest, requireWorkspace, readSavedWorks, draftRuntime, readBotSchedules }) {
   db.exec(SCHEMA)
   const inflight = new Map() // run id -> promise
   let activeTurn = null
@@ -1189,7 +1190,7 @@ export function createAutomations({ db, turn, runtimeReady = () => true, clock =
   ops.prepareTaskDraft = prepareTaskDraft
   ops.previewSchedule = previewSchedule
   ops.memoryFollowupsForAction = memoryFollowupsForAction
-  ops.v1 = automationsV1({ endpoints: ops, log, personalBinding, readSavedWorks })
+  ops.v1 = automationsV1({ endpoints: ops, log, personalBinding, readSavedWorks, readBotSchedules })
   ops.importRuns = (p) => ({ imported: recordLegacyRuns(db, p) })
   endpoints['automations/v1'] = ops.v1
   endpoints['automations/import-runs'] = ops.importRuns
@@ -1205,6 +1206,7 @@ export default async function automations(host) {
     draftRuntime: () => host.currentRuntime?.(),
     personalBinding: () => host.call('agents/personal-binding', {}),
     requireWorkspace: workspace => requireMemoryWorkspace(host, workspace),
+    readBotSchedules: request => botSchedules(host, request),
     saveArtifact: payload => host.call('artifacts/saveAutomationRun', payload),
     readSavedWorks: payload => host.call('artifacts/savedAutomationWorks', payload),
     studioRequest: payload => host.call('studio/v1', payload),

@@ -131,8 +131,8 @@ export function mountRegistration(document, navigate, fetcher = globalThis.fetch
     if (result.ok) {
       const confirmation = result.recovered ? '已确认登录' : '账户已创建';
       status.textContent = continuation ? confirmation + '，正在打开你访问的页面…'
-        : result.personalChat ? confirmation + '，正在打开私人聊天…' : confirmation + '，正在打开个人工作区…';
-      navigate(continuation ? '/login' + continuation : result.personalChat || '/');
+        : confirmation + '，正在打开聊天…';
+      navigate(continuation ? '/login' + continuation : result.personalChat || '/chat');
     } else {
       status.dataset.kind = 'error';
       status.textContent = result.message;

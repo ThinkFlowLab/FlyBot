@@ -26,6 +26,9 @@ class AutomationsPageTests(unittest.TestCase):
         self.assertEqual(page['status'], 200)
         html = page['body'].decode()
         self.assertIn('自动化', html)
+        self.assertIn('id="task-view-switcher"', html)
+        self.assertIn('aria-controls="checklist-panel"', html)
+        self.assertIn('aria-controls="bot-schedule-panel"', html)
         self.assertIn('data-category="mine"', html)
         self.assertIn('data-category="work"', html)
         self.assertIn('data-category="life"', html)
@@ -51,6 +54,8 @@ class AutomationsPageTests(unittest.TestCase):
         style = self.raw.call('GET', '/automations/app.css')
         self.assertEqual(script['status'], 200)
         self.assertEqual(style['status'], 200)
+        for asset in ('checklist.mjs', 'bot-schedules.mjs'):
+            self.assertEqual(self.raw.call('GET', f'/automations/{asset}')['status'], 200)
         self.assertIn('text/javascript', script['headers']['Content-Type'])
         self.assertEqual(self.raw.call('GET', '/automations/missing')['status'], 404)
 

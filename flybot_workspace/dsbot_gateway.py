@@ -87,7 +87,7 @@ MOVED_APIS = (
     (re.compile(r'^/v1/discover/works/[a-z0-9][a-z0-9-]{1,28}[a-z0-9](?:/(?:engagement|remix|comments(?:/otwc_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}/(?:like|remove))?))?$'), 'discover'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/[0-9a-f]{32}/discover(?:/revoke)?$'), 'discover'),
     (re.compile(r'^/v1/(?:automation-templates|onboarding/automations)$'), 'automations'),
-    (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/automations(?:/(?:draft|schedule-preview|tick|[0-9a-f]{32}))?$'), 'automations'),
+    (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/automations(?:/(?:bot-schedules|draft|schedule-preview|tick|[0-9a-f]{32}))?$'), 'automations'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/automations/[0-9a-f]{32}/(?:run|remove|runs(?:/[0-9a-f]{32}(?:/(?:cancel|retry|artifact|studio))?)?)$'), 'automations'),
     (re.compile(r'^/v1/workspaces/[0-9a-f]{32}/agents/[0-9a-f]{32}/api-keys(?:/[0-9a-f]{32}/revoke)?$'), 'agent-api'),
     (re.compile(r'^/v1/agent-copy-grants(?:/(?:recipients|otag_[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}/remix))?$'), 'agents'),

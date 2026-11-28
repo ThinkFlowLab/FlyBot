@@ -37,7 +37,7 @@ async function signIn(page, account) {
   await login.locator('input[name="username"]').fill(account.user.username);
   await login.locator('input[name="password"]').fill(fixture.password);
   await login.locator('button[type="submit"]').click();
-  await page.locator('#home-greeting').waitFor({state:'visible'});
+  await page.waitForURL(url => url.pathname === '/chat');
   const session = await page.request.get(fixture.origin+'/v1/auth/session');
   assert.equal((await session.json()).user.id, account.user.id);
 }
@@ -47,7 +47,7 @@ function chatPath({instanceId,agent,chat}) {
 }
 
 async function openNative(page, path, instanceId, selector) {
-  const response = await page.goto(fixture.origin+path);
+  const response = await page.goto(fixture.origin+path) ?? await page.reload();
   assert.equal(response.status(),200,path);
   assert.equal(await page.locator('meta[name="flybot-workspace-instance"]').getAttribute('content'),instanceId,path);
   await page.locator(selector).waitFor({state:'visible'});
@@ -491,7 +491,7 @@ try {
   assert.equal(await page.locator('link[rel="stylesheet"][href="/shell/app.css"]').count(),1);
   await screenshot(page,'desktop-login');
   await signIn(page,fixture.owner);
-  await screenshot(page,'desktop-home');
+  await screenshot(page,'desktop-chat-after-sign-in');
   await chat(page,'desktop-chat',true);
   const scenes = [
     ['/settings','#settings-panel','desktop-settings'],

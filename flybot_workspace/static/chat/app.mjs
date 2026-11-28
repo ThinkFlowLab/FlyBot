@@ -23,6 +23,7 @@ import { mountActionMenus } from '../shell/action-menu.mjs';
 export const SEARCH_JUMP_HIGHLIGHT_MS = 2400;
 const loadGroupInviteModule = deferModule('./group-invite-link.mjs');
 const loadRichContent = deferModule('./rich-content.mjs');
+const loadContactsModule = deferModule('../contacts/directory.mjs');
 let richContent;
 const pendingMessageMarkdown = [];
 import { csrfCookie, canManage, idempotencyKey, statusLabel, conversationLabel, memberChoices, validMessage,
@@ -3417,7 +3418,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       save.type = 'button';
       save.className = 'save-chat-action';
       save.dataset.saveAction = item.id;
-      save.textContent = uiLabel('转为行动', 'Create action');
+      save.textContent = uiLabel('转为任务', 'Create task');
       const agentId = currentAgent.id;
       save.addEventListener('click', () => openSaveChatAction(item, agentId));
       bubble.append(save);
@@ -4221,18 +4222,18 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       if (![200,201].includes(result.status) || saved?.workspace_id !== personal || !/^[0-9a-f]{32}$/.test(saved?.id || '')) {
         saveActionError.textContent = result.status === 409
           ? uiLabel('原消息已经变化，请关闭后重新选择。', 'The original message changed. Close and select it again.')
-          : uiLabel('无法确认行动已保存，请重试。', 'Could not confirm the action was saved. Try again.');
+          : uiLabel('无法确认任务已保存，请重试。', 'Could not confirm the task was saved. Try again.');
         saveActionError.hidden = false;
         return;
       }
       saveActionDialog.close();
       saveActionTarget = null;
-      show('ok', result.status === 201 ? uiLabel('已保存到下一步行动。', 'Saved to Next Actions.')
-        : uiLabel('这条消息已有行动。', 'This message already has an action.'));
+      show('ok', result.status === 201 ? uiLabel('已保存到任务清单。', 'Saved to the task checklist.')
+        : uiLabel('这条消息已有任务。', 'This message already has a task.'));
       const link = document.createElement('a');
       link.className = 'chat-action-receipt';
-      link.href = '/memory?' + new URLSearchParams({workspace:personal,page:'todos',action:saved.id});
-      link.textContent = uiLabel('打开行动', 'Open action');
+      link.href = '/automations#' + new URLSearchParams({workspace:personal,view:'checklist',action:saved.id});
+      link.textContent = uiLabel('打开任务', 'Open task');
       status.append(link);
       link.focus({preventScroll:true});
     } finally {
@@ -5637,11 +5638,14 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       const membersHref = /^[a-f0-9]{32}$/.test(id) ? '/members#workspace=' + id : '/members';
       link.href = personal ? '/contacts' : membersHref;
       link.textContent = personal ? uiLabel('联系人', 'Contacts') : uiLabel('成员', 'Members');
+      if (personal) link.setAttribute('aria-haspopup', 'dialog');
+      else link.removeAttribute('aria-haspopup');
     } else {
       const workspace = workspaceId();
       const agent = currentAgent?.workspace_id && currentAgent.workspace_id !== workspace ? null : currentAgent?.id;
       link.href = agentDirectoryHref(workspace, agent);
       link.textContent = uiLabel('资料', 'Resources');
+      link.removeAttribute('aria-haspopup');
     }
   }
 
@@ -7328,9 +7332,72 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
   const composeMenu = mountActionMenus(document).bind(composeMenuButton, document.getElementById('compose-menu'), {
     onOpen() {
       document.getElementById('compose-add-contact').hidden = inPersonalWorkspace();
-      const meetingNotes = document.getElementById('compose-meeting-notes');
-      if (meetingNotes) meetingNotes.href = '/meetings#' + new URLSearchParams({workspace: workspaceId(), new: '1'});
     },
+  });
+
+  const contactsDialog = document.getElementById('chat-contacts-dialog');
+  let contactDirectory;
+  let loadingContactsModule;
+  let contactsStyles;
+  function loadChatContacts() {
+    if (!contactsDialog?.open) return;
+    if (contactDirectory) return contactDirectory.load();
+    if (loadingContactsModule) return loadingContactsModule;
+    const contactState = document.getElementById('contacts-state');
+    const retry = document.getElementById('chat-contacts-retry');
+    retry.hidden = true;
+    contactState.textContent = uiLabel('正在加载联系人…', 'Loading contacts…');
+    if (!contactsStyles) {
+      contactsStyles = document.createElement('link');
+      contactsStyles.rel = 'stylesheet';
+      contactsStyles.href = new URL('../contacts/app.css', import.meta.url).href;
+      document.head.append(contactsStyles);
+    }
+    loadingContactsModule = loadContactsModule().then(({mountContactsDirectory}) => {
+      if (!contactsDialog.open || !currentUser?.id) return;
+      contactDirectory = mountContactsDirectory(document, {
+        hostDialog: contactsDialog,
+        currentOwner: () => currentUser?.id,
+        fetcher,
+        label: uiLabel,
+        onChange: () => {
+          if (inPersonalWorkspace()) void loadPersonalContacts();
+        },
+        openChat(href, workspace, conversation) {
+          if (workspace !== workspaceId()) {
+            document.defaultView.location.hash = new URL(href, document.baseURI).hash;
+            return;
+          }
+          void openSessionTarget({source:'social', cid:conversation.id, title:conversation.title}).then(opened => {
+            if (opened) void loadSessions();
+          });
+        },
+      });
+      document.getElementById('add-contact').disabled = false;
+    }).catch(() => {
+      if (!contactsDialog.open) return;
+      contactState.textContent = uiLabel('暂时无法打开联系人。', 'Could not open Contacts.');
+      retry.hidden = false;
+    }).finally(() => { loadingContactsModule = null; });
+    return loadingContactsModule;
+  }
+
+  function openContactDirectory(query = '') {
+    if (!contactsDialog || !currentUser?.id || contactsDialog.open) return;
+    composeMenu.close({focus: true});
+    document.getElementById('contact-search').value = query;
+    contactsDialog.showModal();
+    void loadChatContacts();
+  }
+
+  document.getElementById('compose-open-contacts')?.addEventListener('click', () => openContactDirectory());
+  document.getElementById('chat-contacts-close')?.addEventListener('click', () => contactsDialog.close());
+  document.getElementById('chat-contacts-retry')?.addEventListener('click', loadChatContacts);
+  document.getElementById('open-agent-dir').addEventListener('click', event => {
+    if (!contactsDialog || !currentUser?.id || event.currentTarget.getAttribute('aria-haspopup') !== 'dialog' ||
+        event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    openContactDirectory();
   });
 
   function selectedMemberCount() {
@@ -7735,7 +7802,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       id: member.user_id,
       title: member.username,
       preview: member.contact ? '联系人' : '工作区成员',
-      ...(member.contact ? {href:'/contacts'} : {}),
+      ...(member.contact ? {contactHandle:member.handle} : {}),
     }));
   }
 
@@ -7874,6 +7941,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
           if (agentId) await openSessionTarget({source:'agent', cid:item.conversationId, agent:agentId,
             message:item.messageId, title:session?.title || item.title || uiLabel('会话', 'conversation')});
         } else if (item.type === 'contact') {
+          if (item.contactHandle) { openContactDirectory(item.contactHandle); return; }
           openComposeDialog('contact');
           const box = document.querySelector(`#member-choices input[value="${item.id}"]`);
           if (box) box.checked = true;
@@ -8116,6 +8184,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     const unconfirmedSignup = !confirmSignupSession(view, session);
     if (session.status !== 200 || !session.body?.user?.id || unconfirmedSignup) {
       if (banner) banner.hidden = true;
+      if (contactsDialog?.open) contactsDialog.close();
       currentUser = null;
       readingPositions.clear();
       chatSettings = null;
@@ -8149,6 +8218,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
       return;
     }
     if (currentUser && currentUser.id !== session.body.user.id) {
+      if (contactsDialog?.open) contactsDialog.close();
       readingPositions.clear();
       clearSessionTransition();
       currentAgent = null;
@@ -8674,6 +8744,7 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     rememberReadingPosition();
     closePrivateThreadDialogs();
     if (messageLinkDialog?.open) messageLinkDialog.close();
+    if (contactsDialog?.open) contactsDialog.close();
     resetStickerSurface();
     clearSessionTransition();
     cancelStartupLink();
@@ -9422,14 +9493,6 @@ export function mount(document, {fetcher = globalThis.fetch.bind(globalThis)} = 
     await openSessionTarget({source, agent, cid, title, unread: source === 'social' && session?.kind !== 'public' && session?.unread_count > 0}, {resume:true});
   });
 
-  for (const [id, action] of [['start-video-meeting', 'create'], ['join-video-meeting', 'join']]) {
-    const button = document.getElementById(id);
-    button.hidden = !servedByDsbot;
-    button.addEventListener('click', () => {
-      composeMenu.close({focus: true});
-      chatCalls.openMeeting(action);
-    });
-  }
   document.getElementById('group-agent-prompt').addEventListener('input', rememberGroupReplyDraft);
   document.getElementById('group-agent-choices').addEventListener('change', () => {
     document.getElementById('group-agent-choice-status').textContent = '';

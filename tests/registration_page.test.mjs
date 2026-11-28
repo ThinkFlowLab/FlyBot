@@ -50,7 +50,7 @@ test('successful form clears the password and opens private Chat directly', asyn
   assert.equal(all['register-submit'].disabled, true);
 });
 
-test('unmanaged signup and invalid targets keep the Home fallback', async () => {
+test('unmanaged signup and invalid targets keep the Chat fallback', async () => {
   for (const personal_chat of [undefined, {workspace_id: 'https://outside.invalid', agent_id: 'c'.repeat(32)}]) {
     const {all, document} = elements();
     const user = {id: 'a'.repeat(32), username: synthetic};
@@ -59,7 +59,7 @@ test('unmanaged signup and invalid targets keep the Home fallback', async () => 
       ? {status: 201, json: async () => ({user, personal_chat})}
       : {status: 200, json: async () => ({user})});
     await all.submit({preventDefault() {}});
-    assert.equal(destination, '/');
+    assert.equal(destination, '/chat');
   }
 });
 
