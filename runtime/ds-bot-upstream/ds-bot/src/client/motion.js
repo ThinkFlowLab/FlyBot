@@ -1,11 +1,8 @@
 import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { effectsTier, reducedEffects, reducedMotion } from './effects.js'
 
-export const effectsTier = () => {
-  const tier = typeof document === 'undefined' ? undefined : (document.body?.dataset?.btEffects || document.documentElement?.dataset?.btEffects)
-  return tier === 'reduced' || tier === 'off' ? tier : 'full'
-}
-export const reducedMotion = () => effectsTier() === 'off' || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true)
-export const reducedEffects = () => effectsTier() !== 'full' || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true)
+export { effectsTier, reducedEffects, reducedMotion }
+
 // Touch devices never hover: controls revealed on hover need a tap path instead.
 export const noHover = () => window.matchMedia?.('(hover: none)').matches === true
 
@@ -67,6 +64,9 @@ export const SPRING_LEAD = springEasing(784, 48.2)
 export const SPRING_TRAIL = springEasing(289, 29.2)
 // Critically damped layout glide (ω≈31.6, ζ=1) for sidebar row reordering.
 export const SPRING_GLIDE = springEasing(1000, 63)
+// Critically damped pane slide (ω=28, ζ=1, zero overshoot) for bounded edge surfaces
+// like the left sidebar and conversation margins.
+export const SPRING_SLIDE = springEasing(784, 56)
 // A highlight that follows the keyboard and pointer down a list keeps up on stiffer
 // edges (ω=30 and ω=20).
 export const QUICK_EDGES = { lead: springEasing(900, 51), trail: springEasing(400, 34) }
@@ -74,17 +74,22 @@ export const QUICK_EDGES = { lead: springEasing(900, 51), trail: springEasing(40
 export const spring = (curve, ...properties) => properties.map(property => `${property} ${curve.duration}ms ${curve.easing}`).join(',')
 
 // Springs stepped once per frame. A new target keeps the current velocity, so a thumb
-// that is sent somewhere else mid-move turns smoothly instead of starting over. Each
+// or pane sent somewhere else mid-move turns smoothly instead of starting over. Each
 // frame covers the whole time since the last one, like a CSS transition, so a busy
-// page delays the thumb instead of slowing it down.
-function liveSprings(apply) {
+// page delays the move instead of slowing it down.
+export function liveSprings(apply) {
   const values = new Map()
   const current = {}
   let frame = 0
   let last = 0
+  const cancel = () => {
+    if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame)
+    frame = 0
+  }
   const step = (now) => {
-    const dt = Math.min(0.5, Math.max(0.001, (now - last) / 1000))
-    last = now
+    const stamp = Number.isFinite(now) ? now : performance.now()
+    const dt = Math.min(0.5, Math.max(0.001, (stamp - last) / 1000))
+    last = stamp
     const steps = Math.ceil(dt * 240)
     const h = dt / steps
     let moving = false
@@ -96,8 +101,8 @@ function liveSprings(apply) {
       if (Math.abs(value.x - value.to) < 0.05 && Math.abs(value.v) < 1) { value.x = value.to; value.v = 0 } else moving = true
       current[key] = value.x
     }
-    apply(current)
     frame = moving ? requestAnimationFrame(step) : 0
+    apply(current, moving)
   }
   return {
     target: () => {
@@ -106,42 +111,62 @@ function liveSprings(apply) {
       for (const [key, value] of values) out[key] = value.to
       return out
     },
+    current: () => (values.size ? { ...current } : null),
+    isRunning: () => frame !== 0,
+    seed(initial) {
+      cancel()
+      for (const [key, x] of Object.entries(initial)) {
+        const value = values.get(key)
+        if (value) { value.x = x; value.v = 0; value.to = x }
+        else values.set(key, { x, v: 0, to: x, k: 0, c: 0 })
+        current[key] = x
+      }
+    },
     set(targets, curves, jump) {
+      const immediate = jump || typeof requestAnimationFrame !== 'function'
       for (const [key, to] of Object.entries(targets)) {
         const value = values.get(key)
         const { stiffness: k, damping: c } = curves[key]
-        if (!value || jump) { values.set(key, { x: to, v: 0, to, k, c }); current[key] = to }
+        if (!value || immediate) { values.set(key, { x: to, v: 0, to, k, c }); current[key] = to }
         else Object.assign(value, { to, k, c })
       }
-      if (jump) { cancelAnimationFrame(frame); frame = 0; apply(current); return }
+      if (immediate) { cancel(); apply(current, false); return }
       if (!frame) { last = performance.now(); frame = requestAnimationFrame(step) }
     },
-    stop: () => cancelAnimationFrame(frame),
+    reset: () => { values.clear(); for (const key of Object.keys(current)) delete current[key]; cancel() },
+    stop: cancel,
   }
 }
 
 const CHOSEN = '[aria-pressed="true"],[aria-selected="true"],[aria-current="page"]'
 
-// One thumb for a row (or column) of choices that glides to the chosen one. Attach
-// `box` to the positioned container and `thumb` to an absolutely placed child; the
-// thumb appears in place with a new box, then springs on every change of `key`. The
+// One thumb for a row, column, or wrapped grid of choices that glides to the chosen one.
+// Attach `box` to the positioned container and `thumb` to an absolutely placed child;
+// the thumb appears in place with a new box, then springs on every change of `key`. The
 // box gets data-glide once the thumb is placed, so its CSS can drop the chosen item's
 // own fill. `selector` finds the chosen item; with none the thumb gets data-hidden.
+// `axis: 'both'` tracks full 2D geometry (x, y, width, height) for wrapping tracks.
 // `box` takes a ref the caller already holds for the container.
-export function useGlide(key, { axis = 'x', selector = CHOSEN, lead = SPRING_LEAD, trail = SPRING_TRAIL, box: given } = {}) {
+export function useGlide(key, { axis = 'x', selector = CHOSEN, lead = SPRING_LEAD, trail = SPRING_TRAIL, box: given, syncKey } = {}) {
   const ownBox = useRef(null)
   const box = given ?? ownBox
   const thumb = useRef(null)
   const own = useRef(null)
   if (own.current === null) {
     own.current = {
-      key: undefined, axis, node: null, observer: null,
-      springs: liveSprings(({ start, end }) => {
+      key: undefined, syncKey: undefined, axis, node: null, observer: null,
+      springs: liveSprings((values) => {
         const knob = thumb.current
         if (!knob) return
         const currentAxis = own.current.axis
-        knob.style.transform = currentAxis === 'x' ? `translateX(${start}px)` : `translateY(${start}px)`
-        knob.style[currentAxis === 'x' ? 'width' : 'height'] = `${Math.max(0, end - start)}px`
+        if (currentAxis === 'both') {
+          knob.style.transform = `translate3d(${values.x0}px,${values.y0}px,0)`
+          knob.style.width = `${Math.max(0, values.x1 - values.x0)}px`
+          knob.style.height = `${Math.max(0, values.y1 - values.y0)}px`
+          return
+        }
+        knob.style.transform = currentAxis === 'x' ? `translateX(${values.start}px)` : `translateY(${values.start}px)`
+        knob.style[currentAxis === 'x' ? 'width' : 'height'] = `${Math.max(0, values.end - values.start)}px`
       }),
     }
   }
@@ -154,11 +179,33 @@ export function useGlide(key, { axis = 'x', selector = CHOSEN, lead = SPRING_LEA
     const currentAxis = own.current.axis
     const chosen = container.querySelector(selector)
     if (!chosen) { knob.dataset.hidden = ''; return }
-    const start = currentAxis === 'x' ? chosen.offsetLeft : chosen.offsetTop
-    const end = start + (currentAxis === 'x' ? chosen.offsetWidth : chosen.offsetHeight)
     const { springs } = own.current
     const before = springs.target()
     const hidden = knob.dataset.hidden !== undefined
+    if (currentAxis === 'both') {
+      const x0 = chosen.offsetLeft
+      const x1 = x0 + chosen.offsetWidth
+      const y0 = chosen.offsetTop
+      const y1 = y0 + chosen.offsetHeight
+      if (jump && !hidden && before?.x0 === x0 && before?.x1 === x1 && before?.y0 === y0 && before?.y1 === y1 && container.dataset.glide !== undefined) return
+      delete knob.dataset.hidden
+      const forwardX = before === null || x0 >= before.x0
+      const forwardY = before === null || y0 >= before.y0
+      springs.set(
+        { x0, x1, y0, y1 },
+        {
+          x0: forwardX ? trail : lead,
+          x1: forwardX ? lead : trail,
+          y0: forwardY ? trail : lead,
+          y1: forwardY ? lead : trail,
+        },
+        jump || hidden || before === null || reducedMotion(),
+      )
+      container.dataset.glide = ''
+      return
+    }
+    const start = currentAxis === 'x' ? chosen.offsetLeft : chosen.offsetTop
+    const end = start + (currentAxis === 'x' ? chosen.offsetWidth : chosen.offsetHeight)
     if (jump && !hidden && before?.start === start && before?.end === end && container.dataset.glide !== undefined) return
     delete knob.dataset.hidden
     const forward = before === null || start >= before.start
@@ -169,32 +216,135 @@ export function useGlide(key, { axis = 'x', selector = CHOSEN, lead = SPRING_LEA
     const state = own.current
     const node = box.current
     const axisChanged = axis !== state.axis
-    if (node === state.node && key === state.key && !axisChanged) return
-    const fresh = node !== state.node || axisChanged
+    const syncChanged = syncKey !== state.syncKey
+    if (node === state.node && key === state.key && !axisChanged && !syncChanged) return
+    const keyChanged = key !== state.key
+    const fresh = node !== state.node || axisChanged || (!keyChanged && syncChanged)
     state.key = key
+    state.syncKey = syncKey
     if (axisChanged) {
       state.axis = axis
+      state.springs.reset()
       if (thumb.current) {
+        thumb.current.style.transform = ''
         thumb.current.style.width = ''
         thumb.current.style.height = ''
       }
     }
     if (node !== state.node) {
       state.observer?.disconnect()
+      if (!node) state.springs.stop()
       state.node = node
       state.observer = node && typeof ResizeObserver === 'function' ? new ResizeObserver(() => place(true)) : null
       state.observer?.observe(node)
     }
     place(fresh)
   })
-  useEffect(() => () => { own.current.observer?.disconnect(); own.current.springs.stop() }, [])
-  return { box, thumb }
+  useEffect(() => () => { own.current.observer?.disconnect(); own.current.observer = null; own.current.node = null; own.current.springs.stop() }, [])
+  return { box, thumb, sync: () => place(true) }
 }
 
-// Buttons side by side over one thumb that glides to the pressed one (aria-pressed).
+const segButtons = node => Array.from(node.children).filter(child => child.tagName === 'BUTTON' && !child.hidden)
+// Checks only the buttons' own geometry — never `node.scrollWidth` — because a gliding
+// `.bt-thumb` still positioned at an earlier wider layout would otherwise trigger a false
+// overflow when shrinking back down.
+function segOverflow(node, buttons) {
+  const style = typeof getComputedStyle === 'function' ? getComputedStyle(node) : null
+  const padLeft = parseFloat(style?.paddingLeft) || 0
+  const padRight = parseFloat(style?.paddingRight) || 0
+  const rightEdge = node.clientWidth - padRight + 1
+  return buttons.some(button => button.scrollWidth > button.clientWidth + 1
+    || button.offsetLeft < padLeft - 1
+    || button.offsetLeft + button.offsetWidth > rightEdge)
+}
+
+// Chooses the tightest balanced layout that keeps every button inside the track without
+// splitting words mid-word: single row when it fits, symmetric grid for even/6+ counts,
+// wrapped rows for odd counts, and a 1-column stack only when even cells are too narrow.
+export function fitSegmented(node) {
+  if (!node) return undefined
+  const buttons = segButtons(node)
+  if (buttons.length <= 1 || node.clientWidth === 0) {
+    delete node.dataset.layout
+    return undefined
+  }
+  // Reset synchronously before paint to test whether the natural single row fits again.
+  delete node.dataset.layout
+  if (!segOverflow(node, buttons)) return undefined
+  const count = buttons.length
+  const candidates = []
+  if (count >= 6 && count % 3 === 0) candidates.push('grid-3')
+  if (count === 2 || (count >= 4 && count % 2 === 0)) candidates.push('grid-2')
+  else if (count > 2) candidates.push('wrap')
+  candidates.push('stack')
+  for (const layout of candidates) {
+    node.dataset.layout = layout
+    if (!segOverflow(node, buttons)) return layout
+  }
+  return node.dataset.layout
+}
+
+// Buttons side by side (or in a responsive grid when narrow) over one thumb that glides
+// to the pressed one (aria-pressed).
 export function Segmented({ label, value, className, children }) {
-  const glide = useGlide(value)
-  return h('div', { ref: glide.box, className: className ? `bt-seg ${className}` : 'bt-seg', role: 'group', 'aria-label': label },
+  const box = useRef(null)
+  const fitRef = useRef({ sig: null, parentW: -1, rowW: -1, nodeW: -1, observer: null, node: null })
+  const syncThumb = useRef(null)
+
+  const reconcile = (force = false) => {
+    const node = box.current
+    if (!node) return
+    const state = fitRef.current
+    const buttons = segButtons(node)
+    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(buttons[0] ?? node) : null
+    const font = cs ? `${cs.fontWeight}\u0000${cs.fontSize}\u0000${cs.fontFamily}` : ''
+    const sig = `${font}\u0000${buttons.map(button => button.textContent).join('\u0000')}`
+    const parent = node.parentElement
+    const row = typeof node.closest === 'function' ? node.closest('.bt-set-row') : null
+    const parentW = parent?.clientWidth ?? -1
+    const rowW = row?.clientWidth ?? -1
+    const nodeW = node.clientWidth
+    if (!force && sig === state.sig && parentW === state.parentW && rowW === state.rowW && nodeW === state.nodeW) return
+    fitSegmented(node)
+    state.sig = sig
+    state.parentW = parent?.clientWidth ?? -1
+    state.rowW = row?.clientWidth ?? -1
+    state.nodeW = node.clientWidth
+    syncThumb.current?.()
+  }
+
+  useLayoutEffect(() => {
+    const node = box.current
+    const state = fitRef.current
+    if (node !== state.node) {
+      state.observer?.disconnect()
+      state.node = node
+      state.sig = null
+      if (node && typeof ResizeObserver === 'function') {
+        const observer = new ResizeObserver(() => reconcile(false))
+        observer.observe(node)
+        if (node.parentElement) observer.observe(node.parentElement)
+        const row = typeof node.closest === 'function' ? node.closest('.bt-set-row') : null
+        if (row && row !== node.parentElement) observer.observe(row)
+        state.observer = observer
+      } else {
+        state.observer = null
+      }
+    }
+    reconcile(false)
+  })
+  useEffect(() => {
+    let alive = true
+    const fonts = typeof document !== 'undefined' ? document.fonts : null
+    if (fonts && fonts.status !== 'loaded' && fonts.ready) {
+      void fonts.ready.then(() => { if (alive) reconcile(true) }, () => {})
+    }
+    return () => { alive = false; fitRef.current.observer?.disconnect(); fitRef.current.observer = null; fitRef.current.node = null }
+  }, [])
+
+  const glide = useGlide(value, { axis: 'both', box })
+  syncThumb.current = glide.sync
+  return h('div', { ref: box, className: className ? `bt-seg ${className}` : 'bt-seg', role: 'group', 'aria-label': label },
     h('span', { ref: glide.thumb, className: 'bt-thumb', 'aria-hidden': true }), children)
 }
 

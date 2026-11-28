@@ -234,3 +234,453 @@ test('DSH settings pages keep usable height and scrolling (#1359)', async (t) =>
     })
   } finally { await browser.close() }
 })
+
+test('Segmented adapts without clipping across narrow/wide panels, services actions, unbreakable words, and AvatarEditor fits 320px drawer', async (t) => {
+  let browser
+  try {
+    browser = await launchBrowser()
+  } catch (error) {
+    if (!process.env.CI && /not found|doesn't exist|not installed/i.test(error.message)) {
+      t.skip('Chromium or Chrome is required for the segmented layout regression')
+      return
+    }
+    throw error
+  }
+  const { outputFiles: bundleFiles } = await build({
+    stdin: {
+      contents: `
+        import React, { createElement as h, useState } from 'react'
+        import { createRoot } from 'react-dom/client'
+        import { Segmented } from './src/client/motion.js'
+        import { SHELL_CSS } from './src/client/styles.js'
+        import { BOT_SETTINGS_CSS } from './src/client/bot-settings.js'
+        import { SERVICES_CSS } from './src/client/services-settings.js'
+        function Seg({ options, className, initial = 0 }) {
+          const [val, setVal] = useState(options[initial][0])
+          return h(Segmented, { label: 'Choice', value: val, className },
+            options.map(([id, text]) => h('button', { key: id, type: 'button', 'aria-pressed': val === id, onClick: () => setVal(id) }, text)))
+        }
+        window.__SEG_TEST__ = {
+          CSS: [SHELL_CSS, BOT_SETTINGS_CSS, SERVICES_CSS].join('\\n'),
+          mount(rootEl, props) {
+            if (!rootEl._root) rootEl._root = createRoot(rootEl)
+            rootEl._root.render(
+              h('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px', padding: '8px' } },
+                h('div', { id: 'panel-wrap', style: { width: props.panelW + 'px' } },
+                  h('div', { className: 'bt-drawer-body', style: { padding: '16px', boxSizing: 'border-box' } },
+                    h('div', { className: 'bt-drawer-permission' },
+                      h(Seg, { className: 'bt-permissions', initial: 1, options: [['a', 'Read only'], ['b', 'Workspace'], ['c', 'Full access'], ['d', 'Review for me']] })))),
+                h('div', { id: 'svc-wrap', style: { width: '288px' } },
+                  h('div', { className: 'bt-svc' },
+                    h('div', { className: 'bt-set-card' },
+                      h('div', { className: 'bt-set-row' },
+                        h('div', { className: 'bt-set-copy' }, h('span', null, 'Read replies aloud')),
+                        h('div', { className: 'bt-set-control' },
+                          h('div', { className: 'bt-svc-actions' },
+                            h('span', { className: 'bt-svc-state' }, 'Ready'),
+                            h(Seg, { className: 'bt-svc-seg', options: [['a', 'System voice option'], ['b', 'DeepSeek voice option'], ['c', 'Custom provider'], ['d', 'Local offline']] }))))))),
+                h('div', { id: 'long-wrap', style: { width: '200px' } },
+                  h(Seg, { options: [['a', 'First choice'], ['b', 'WiderWord123456']] })),
+                h('div', { id: 'font-wrap', style: { width: '360px' } },
+                  h(Seg, { options: [['a', 'Light mode'], ['b', 'Dark mode'], ['c', 'System']] })),
+                h('div', { id: 'avedit-panel', className: 'bt-panel', style: { width: '320px', height: '400px', position: 'relative', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #ccc' } },
+                  h('div', { className: 'bt-drawer-body bt-set-body' },
+                    h('div', { className: 'bt-bs' },
+                      h('div', { className: 'bt-bs-hero' },
+                        h('div', { className: 'bt-avatar-anchor' },
+                          h('button', { type: 'button', className: 'bt-avatar-trigger' }),
+                          h('div', { className: 'bt-avedit' },
+                            h('div', { className: 'bt-avedit-top' },
+                              h('div', { className: 'bt-avedit-tabs' },
+                                h('button', { type: 'button', className: 'bt-avedit-tab', 'aria-selected': true }, 'Bot'),
+                                h('button', { type: 'button', className: 'bt-avedit-tab' }, 'Hochladen'),
+                                h('button', { type: 'button', className: 'bt-avedit-tab' }, 'Mediathek')),
+                              h('button', { type: 'button', className: 'bt-avedit-tab bt-avedit-reset' }, 'Zurücksetzen'))))))))))
+          },
+        }
+      `,
+      resolveDir: fileURLToPath(new URL('../..', import.meta.url)),
+    },
+    bundle: true, format: 'iife', platform: 'browser', write: false, logLevel: 'silent',
+  })
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    try {
+      await page.setContent('<!doctype html><html><head><style id="s"></style></head><body data-bt-effects="off" style="margin:0;font-family:var(--bt-font)"><div id="root"></div></body></html>')
+      await page.addScriptTag({ content: bundleFiles[0].text })
+      const res = await page.evaluate(async () => {
+        document.getElementById('s').textContent = window.__SEG_TEST__.CSS
+        const root = document.getElementById('root')
+        const wait = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))))
+        window.__SEG_TEST__.mount(root, { panelW: 320, fontSize: 13 })
+        await wait()
+
+        const perm = root.querySelector('#panel-wrap .bt-seg')
+        const layout320 = perm.dataset.layout || 'row'
+        // Click row 2 button ("Review for me") and verify 2D thumb rect matches button rect.
+        const lastBtn = perm.querySelectorAll('button')[3]
+        lastBtn.click()
+        await wait()
+        const tr320 = perm.querySelector('.bt-thumb').getBoundingClientRect()
+        const br320 = lastBtn.getBoundingClientRect()
+        const thumb320Ok = Math.abs(tr320.left - br320.left) < 1.5 && Math.abs(tr320.top - br320.top) < 1.5 && Math.abs(tr320.width - br320.width) < 1.5 && Math.abs(tr320.height - br320.height) < 1.5
+
+        // Widen 320 -> 520 (back to 1 row) then shrink 520 -> 320 (must return to grid-2, not stack).
+        window.__SEG_TEST__.mount(root, { panelW: 520, fontSize: 13 })
+        await wait()
+        const layout520 = perm.dataset.layout || 'row'
+        window.__SEG_TEST__.mount(root, { panelW: 320, fontSize: 13 })
+        await wait()
+        const layoutBack320 = perm.dataset.layout || 'row'
+
+        // Live font-size change (same container width & textContent) re-evaluates Segmented layout.
+        const fontWrap = root.querySelector('#font-wrap')
+        const fontSeg = fontWrap.querySelector('.bt-seg')
+        const initialSegW = Math.ceil(fontSeg.getBoundingClientRect().width)
+        fontWrap.style.width = `${initialSegW + 12}px`
+        await wait()
+        const fontBefore = fontSeg.dataset.layout || 'row'
+        const fontStyle = document.createElement('style')
+        fontStyle.textContent = '#font-wrap .bt-seg button{font-size:20px}'
+        document.head.appendChild(fontStyle)
+        window.__SEG_TEST__.mount(root, { panelW: 320, fontSize: 20 })
+        await wait()
+        const fontAfter = fontSeg.dataset.layout || 'row'
+        fontStyle.remove()
+
+        // Services .bt-svc-actions must stay inside 288px card with zero clipping.
+        const svcCard = root.querySelector('#svc-wrap .bt-set-card')
+        const svcSeg = root.querySelector('#svc-wrap .bt-svc-seg')
+        const svcClipped = svcSeg.getBoundingClientRect().right > svcCard.getBoundingClientRect().right + 1.5
+
+        // Unbreakable word in 200px grid-2 must promote to stack with zero text overflow.
+        const longSeg = root.querySelector('#long-wrap .bt-seg')
+        const longLayout = longSeg.dataset.layout || 'row'
+        const longOver = [...longSeg.querySelectorAll('button')].some(b => b.scrollWidth > b.clientWidth + 1)
+
+        // Verify no redundant data-layout mutation thrash after mount settles (line-height invariant).
+        let mutations = 0
+        const mo = new MutationObserver(() => { mutations += 1 })
+        mo.observe(perm, { attributes: true, attributeFilter: ['data-layout'] })
+        perm.querySelectorAll('button')[0].click()
+        await wait()
+        mo.disconnect()
+
+        // AvatarEditor inside 320px right panel must not cause horizontal scroll or left/right clipping.
+        const avBody = root.querySelector('#avedit-panel .bt-drawer-body')
+        const avPop = root.querySelector('#avedit-panel .bt-avedit')
+        const avBodyRect = avBody.getBoundingClientRect()
+        const avPopRect = avPop.getBoundingClientRect()
+        const avOverflow = avBody.scrollWidth > avBody.clientWidth + 1
+        const avClipped = avPopRect.right > avBodyRect.right + 1 || avPopRect.left < avBodyRect.left - 1
+
+        return { layout320, thumb320Ok, layout520, layoutBack320, mutations, fontBefore, fontAfter, svcLayout: svcSeg.dataset.layout, svcClipped, longLayout, longOver, avOverflow, avClipped }
+      })
+      assert.equal(res.layout320, 'grid-2', JSON.stringify(res))
+      assert.equal(res.thumb320Ok, true, JSON.stringify(res))
+      assert.equal(res.layout520, 'row', JSON.stringify(res))
+      assert.equal(res.layoutBack320, 'grid-2', JSON.stringify(res))
+      assert.equal(res.mutations, 0, JSON.stringify(res))
+      assert.equal(res.fontBefore, 'row', JSON.stringify(res))
+      assert.equal(res.fontAfter, 'wrap', JSON.stringify(res))
+      assert.equal(res.svcClipped, false, JSON.stringify(res))
+      assert.equal(res.longLayout, 'stack', JSON.stringify(res))
+      assert.equal(res.longOver, false, JSON.stringify(res))
+      assert.equal(res.avOverflow, false, JSON.stringify(res))
+      assert.equal(res.avClipped, false, JSON.stringify(res))
+    } finally { await page.close() }
+  } finally { await browser.close() }
+})
+
+test('narrow Bot/group/task/IM settings cards stack inputs and pickers instead of squeezing labels into vertical columns', async (t) => {
+  let browser
+  try {
+    browser = await launchBrowser()
+  } catch (error) {
+    if (!process.env.CI && /not found|doesn't exist|not installed/i.test(error.message)) {
+      t.skip('Chromium or Chrome is required for the narrow settings layout regression')
+      return
+    }
+    throw error
+  }
+  const { outputFiles: cssFiles } = await build({
+    stdin: {
+      contents: `
+        import { SHELL_CSS } from './src/client/styles.js'
+        import { SECRET_CSS } from './src/client/secret-card.js'
+        import { PROVIDERS_CSS } from './src/client/providers-page.js'
+        import { AGENT_PRESET_CSS } from './src/client/agent-preset-menu.js'
+        import { MODEL_CSS } from './src/client/model-menu.js'
+        import { FOLDER_CSS } from './src/client/folder-menu.js'
+        import { BOT_SETTINGS_CSS } from './src/client/bot-settings.js'
+        import { GROUP_SETTINGS_CSS } from './src/client/group-settings.js'
+        import { SCHEDULE_CSS } from './src/client/schedules.js'
+        import { IM_CSS } from './src/client/im-page.js'
+        import { COMPUTER_CSS } from './src/client/computer.js'
+        // Match ds-bot/src/client/index.js injection order: COMPUTER_CSS installs in apply(),
+        // followed by SHELL_SHEETS on surface mount.
+        export const SHEETS = [
+          COMPUTER_CSS,
+          SHELL_CSS,
+          SECRET_CSS + PROVIDERS_CSS,
+          AGENT_PRESET_CSS,
+          MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS,
+          SCHEDULE_CSS,
+          IM_CSS,
+        ]
+      `,
+      resolveDir: fileURLToPath(new URL('../..', import.meta.url)),
+    },
+    bundle: true, format: 'cjs', platform: 'browser', write: false, logLevel: 'silent',
+    external: ['react', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'],
+  })
+  const cssMod = { exports: {} }
+  runInNewContext(cssFiles[0].text, {
+    module: cssMod, exports: cssMod.exports,
+    require: () => ({ createContext: () => ({}), createElement: () => null, Fragment: Symbol('Fragment') }),
+  })
+  const styleTags = cssMod.exports.SHEETS.map(css => `<style>${css}</style>`).join('\n')
+  const cardsMarkup = `
+    <div class="bt-bs">
+      <section class="bt-set-section">
+        <div class="bt-set-card" data-card="profile">
+          <label class="bt-set-row bt-bs-row" id="row-name">
+            <span class="bt-set-copy"><span class="bt-bs-label">名字</span></span>
+            <input class="bt-bs-input" value="新 Bot" />
+          </label>
+          <label class="bt-set-row bt-bs-row" id="row-label">
+            <span class="bt-set-copy"><span class="bt-bs-label">标签</span><span class="bt-set-hint">可选，显示在名字下方。</span></span>
+            <input class="bt-bs-input" placeholder="研究、行政…" value="" />
+          </label>
+          <label class="bt-set-row bt-bs-row" id="row-label-de">
+            <span class="bt-set-copy"><span class="bt-bs-label">Bezeichnung</span><span class="bt-set-hint">Optional. Wird unter dem Namen angezeigt.</span></span>
+            <input class="bt-bs-input" placeholder="Forschung, Verwaltung…" value="" />
+          </label>
+          <label class="bt-set-row bt-bs-row" id="row-group-name">
+            <span class="bt-set-copy"><span class="bt-bs-label">名称</span><span class="bt-set-hint">留空则以成员名字命名群聊。</span></span>
+            <input class="bt-bs-input" placeholder="按成员命名" value="" />
+          </label>
+          <label class="bt-set-row bt-bs-row bt-bs-stack" id="row-instructions">
+            <span class="bt-set-copy"><span class="bt-bs-label">职责说明</span><span class="bt-set-hint">它在团队里的工作。会作为系统提示词的一部分。</span></span>
+            <textarea class="bt-bs-input bt-bs-area">Handle weekly reports.</textarea>
+          </label>
+        </div>
+      </section>
+      <section class="bt-set-section">
+        <div class="bt-set-card" data-card="engine">
+          <div class="bt-set-row bt-bs-row" id="row-engine">
+            <span class="bt-set-copy"><span class="bt-bs-label">内置引擎</span></span>
+            <button type="button" class="bt-soft bt-soft-sm">切换</button>
+          </div>
+          <div class="bt-set-row bt-bs-row" id="row-model">
+            <span class="bt-set-copy"><span class="bt-bs-label">模型</span><span class="bt-set-hint">切换模型不会影响对话历史。</span></span>
+            <button type="button" class="bt-model-trigger"><span class="bt-model-copy"><span class="bt-model-name">Codex · routing-default-model</span></span><span class="bt-model-caret">▾</span></button>
+          </div>
+          <div class="bt-set-row bt-bs-row" id="row-preset">
+            <span class="bt-set-copy"><span class="bt-bs-label">Agent-Voreinstellung</span><span class="bt-set-hint">Standard Agent-Voreinstellung</span></span>
+            <button type="button" class="bt-model-trigger bt-preset-trigger"><span class="bt-model-copy"><span class="bt-model-name">Standard</span></span><span class="bt-model-caret">▾</span></button>
+          </div>
+          <div class="bt-set-row bt-bs-row" id="row-computer">
+            <span class="bt-set-copy"><span class="bt-bs-label">电脑使用</span><span class="bt-set-hint">在提供方就绪前，Bot 不会获得电脑工具。</span></span>
+            <button type="button" class="bt-sel bt-level-pick"><span class="bt-sel-label">后台</span></button>
+          </div>
+          <div class="bt-set-row bt-bs-row" id="row-switch">
+            <span class="bt-set-copy"><span class="bt-bs-label">隐私</span><span class="bt-set-hint">仅在自己的文件夹内工作。</span></span>
+            <button type="button" role="switch" aria-checked="false" class="bt-switch"><span class="bt-switch-knob"></span></button>
+          </div>
+        </div>
+      </section>
+      <section class="bt-set-section">
+        <div class="bt-set-card" data-card="computer-page">
+          <div class="bt-set-row" id="row-computer-page">
+            <div class="bt-set-copy"><span class="bt-comp-bot"><span>Chief of Staff</span></span></div>
+            <div class="bt-set-control"><button type="button" class="bt-sel bt-level-pick"><span class="bt-sel-label">Background</span></button></div>
+          </div>
+        </div>
+      </section>
+      <section class="bt-set-section">
+        <form class="bt-set-card bt-task-form" data-card="task">
+          <div class="bt-set-row bt-bs-row" id="row-task-target">
+            <span class="bt-set-copy"><span class="bt-bs-label">发送给</span></span>
+            <button type="button" class="bt-sel bt-task-bot"><span class="bt-sel-label">Chief of Staff</span></button>
+          </div>
+          <label class="bt-set-row bt-bs-row" id="row-task-name">
+            <span class="bt-set-copy"><span class="bt-bs-label">名称</span></span>
+            <input class="bt-bs-input" placeholder="每日晨报" value="" />
+          </label>
+        </form>
+      </section>
+      <section class="bt-set-section">
+        <div class="bt-set-card bt-im-form" data-card="im">
+          <div class="bt-set-row bt-im-field" id="row-im">
+            <div class="bt-set-copy"><span>Bot Token</span><span class="bt-set-hint">Paste the token from the platform console.</span></div>
+            <div class="bt-set-control bt-im-control"><input class="bt-input" value="token-value" /></div>
+          </div>
+        </div>
+      </section>
+      <section class="bt-set-section">
+        <div class="bt-set-card" data-card="privacy-switch">
+          <div class="bt-set-row" id="row-privacy-switch">
+            <div class="bt-set-copy"><span>Upload Session Log to DeepSeek API</span><span class="bt-set-hint">Sends incremental session logs to DeepSeek when using the official DeepSeek API. Private Bots are always excluded.</span></div>
+            <div class="bt-set-control"><button type="button" role="switch" aria-checked="false" class="bt-switch"><span class="bt-switch-knob"></span></button></div>
+          </div>
+        </div>
+      </section>
+      <section class="bt-set-section">
+        <div class="bt-set-card" data-card="provider-summary">
+          <div class="bt-secret-item bt-provider">
+            <button type="button" class="bt-set-row bt-secret-summary" id="row-provider-summary">
+              <span style="flex:none;width:32px;height:32px;display:inline-block"></span>
+              <span class="bt-set-copy"><span class="bt-secret-title">DeepSeek OpenAI</span><span class="bt-set-hint">deepseek.com</span></span>
+              <span class="bt-set-control"><span class="bt-provider-state">Key set outside DS Bot</span><span class="bt-chevron">▾</span></span>
+            </button>
+          </div>
+        </div>
+      </section>
+      <div class="bt-create-inline">
+        <div class="bt-create-card" id="create-card-probe">
+          <div class="bt-create-looks"><div class="bt-shapes"></div></div>
+        </div>
+      </div>
+    </div>
+  `
+  const inspectScript = () => {
+    const inspect = (scopeId) => {
+      const scope = document.getElementById(scopeId)
+      const cards = [...scope.querySelectorAll('.bt-set-card')]
+      const overflowCards = cards.filter(card => card.scrollWidth > card.clientWidth + 1).map(card => card.dataset.card)
+      const rowIds = ['row-name', 'row-label', 'row-label-de', 'row-group-name', 'row-instructions', 'row-engine', 'row-model', 'row-preset', 'row-computer', 'row-switch', 'row-privacy-switch', 'row-computer-page', 'row-task-target', 'row-task-name', 'row-im']
+      const rows = {}
+      for (const id of rowIds) {
+        const row = scope.querySelector(`#${id}`)
+        const card = row.closest('.bt-set-card')
+        const copy = row.querySelector('.bt-set-copy')
+        const label = row.querySelector('.bt-bs-label, .bt-set-copy > span:first-child')
+        const hint = row.querySelector('.bt-set-hint')
+        const control = row.children[1]
+        const innerControl = control.classList.contains('bt-set-control') ? control.firstElementChild : control
+        const cardRect = card.getBoundingClientRect()
+        const rowRect = row.getBoundingClientRect()
+        const copyRect = copy.getBoundingClientRect()
+        const labelRect = label.getBoundingClientRect()
+        const hintRect = hint ? hint.getBoundingClientRect() : null
+        const ctrlRect = control.getBoundingClientRect()
+        const innerCtrlRect = innerControl.getBoundingClientRect()
+        rows[id] = {
+          innerW: Math.round(rowRect.width - 32),
+          copyW: Math.round(copyRect.width),
+          labelH: Math.round(labelRect.height),
+          hintH: hintRect ? Math.round(hintRect.height) : 0,
+          ctrlW: Math.round(ctrlRect.width),
+          innerCtrlW: Math.round(innerCtrlRect.width),
+          stacked: ctrlRect.top >= copyRect.bottom - 1,
+          clipped: ctrlRect.right > cardRect.right + 1 || innerCtrlRect.right > cardRect.right + 1 || copyRect.right > cardRect.right + 1,
+        }
+      }
+      const createCard = scope.querySelector('#create-card-probe')
+      const createCardOverflow = createCard ? createCard.scrollWidth > createCard.clientWidth + 1 : false
+      const provRow = scope.querySelector('#row-provider-summary')
+      const provCopy = provRow.querySelector('.bt-set-copy').getBoundingClientRect()
+      const provCtrl = provRow.querySelector('.bt-set-control').getBoundingClientRect()
+      const provOverlap = provCopy.right > provCtrl.left + 1 && provCopy.bottom > provCtrl.top + 1 && provCtrl.bottom > provCopy.top + 1
+      const providerSummary = { copyW: Math.round(provCopy.width), overlap: provOverlap }
+      return { overflowCards, createCardOverflow, providerSummary, rows }
+    }
+    return Object.fromEntries([...document.querySelectorAll('.wrap')].map(el => [el.id, inspect(el.id)]))
+  }
+  const docHtml = widths => `<!doctype html><html><head>${styleTags}<style>
+    *{animation:none!important;transition:none!important}
+    body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{box-sizing:border-box}
+  </style></head><body data-bt-effects="off">
+    ${widths.map(([id, w]) => `<div id="${id}" class="wrap" style="width:${w}">${cardsMarkup}</div>`).join('')}
+  </body></html>`
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    try {
+      // .bt-set-card has 0.5px border (1px per side at 1x DPR), so 442px outer width has a 440px
+      // container content-box and 443px outer width crosses the @container (max-width:440px) breakpoint.
+      await page.setContent(docHtml([['narrow', '274px'], ['edge440', '442px'], ['edge441', '443px'], ['wide', '680px']]))
+      const report = await page.evaluate(inspectScript)
+
+      for (const scopeName of ['narrow', 'edge440', 'edge441', 'wide']) {
+        assert.deepEqual(report[scopeName].overflowCards, [], `${scopeName}: ${JSON.stringify(report[scopeName])}`)
+        assert.equal(report[scopeName].createCardOverflow, false, `${scopeName} create card overflowed`)
+        // Multiline .bt-bs-area must stay full-width at every card width (never capped at 58%).
+        const area = report[scopeName].rows['row-instructions']
+        assert.equal(area.stacked, true, `${scopeName} instructions should stack: ${JSON.stringify(area)}`)
+        assert.ok(area.ctrlW >= area.innerW - 2, `${scopeName} instructions textarea capped: ${JSON.stringify(area)}`)
+      }
+
+      const stackedInNarrow = ['row-name', 'row-label', 'row-label-de', 'row-group-name', 'row-model', 'row-preset', 'row-computer', 'row-computer-page', 'row-task-target', 'row-task-name', 'row-im']
+      for (const scopeName of ['narrow', 'edge440']) {
+        for (const id of stackedInNarrow) {
+          const r = report[scopeName].rows[id]
+          assert.equal(r.stacked, true, `${scopeName} ${id} should stack: ${JSON.stringify(r)}`)
+          assert.equal(r.clipped, false, `${scopeName} ${id} clipped: ${JSON.stringify(r)}`)
+          assert.ok(r.copyW >= r.innerW - 2, `${scopeName} ${id} copy width too small: ${JSON.stringify(r)}`)
+          assert.ok(r.innerCtrlW >= r.innerW - 2, `${scopeName} ${id} control width too small: ${JSON.stringify(r)}`)
+          assert.ok(r.labelH <= 24, `${scopeName} ${id} label wrapped vertically: ${JSON.stringify(r)}`)
+        }
+        for (const id of ['row-engine', 'row-switch', 'row-privacy-switch']) {
+          const r = report[scopeName].rows[id]
+          assert.equal(r.stacked, false, `${scopeName} ${id} should stay horizontal: ${JSON.stringify(r)}`)
+          assert.equal(r.clipped, false, `${scopeName} ${id} clipped: ${JSON.stringify(r)}`)
+          assert.ok(r.ctrlW >= r.innerCtrlW - 1, `${scopeName} ${id} control compressed: ${JSON.stringify(r)}`)
+          assert.ok(r.copyW >= 120, `${scopeName} ${id} copy squeezed: ${JSON.stringify(r)}`)
+        }
+        assert.equal(report[scopeName].providerSummary.overlap, false, `${scopeName} provider summary overlapped: ${JSON.stringify(report[scopeName].providerSummary)}`)
+        assert.ok(report[scopeName].providerSummary.copyW >= 100, `${scopeName} provider summary copy squeezed: ${JSON.stringify(report[scopeName].providerSummary)}`)
+      }
+      assert.ok(report.narrow.rows['row-label'].hintH <= 24, `narrow label hint wrapped excessively: ${JSON.stringify(report.narrow.rows['row-label'])}`)
+      assert.ok(report.narrow.rows['row-group-name'].hintH <= 24, `narrow group name hint wrapped excessively: ${JSON.stringify(report.narrow.rows['row-group-name'])}`)
+
+      for (const scopeName of ['edge441', 'wide']) {
+        for (const [id, r] of Object.entries(report[scopeName].rows)) {
+          if (id === 'row-instructions') continue
+          assert.equal(r.stacked, false, `${scopeName} ${id} should stay horizontal: ${JSON.stringify(r)}`)
+          assert.equal(r.clipped, false, `${scopeName} ${id} clipped: ${JSON.stringify(r)}`)
+          assert.ok(r.copyW >= 140, `${scopeName} ${id} copy squeezed: ${JSON.stringify(r)}`)
+          assert.ok(r.labelH <= 24, `${scopeName} ${id} label wrapped vertically: ${JSON.stringify(r)}`)
+        }
+        assert.ok(report[scopeName].rows['row-computer-page'].innerCtrlW <= 200, `${scopeName} computer-page picker exceeded 200px: ${JSON.stringify(report[scopeName].rows['row-computer-page'])}`)
+      }
+
+      // Verify stacked narrow input keeps focus ring and accent border instead of being overridden.
+      const focusState = await page.evaluate(() => {
+        document.documentElement.style.setProperty('--bt-accent', 'rgb(77, 107, 254)')
+        document.documentElement.style.setProperty('--bt-line-2', 'rgba(20, 20, 20, 0.15)')
+        const input = document.querySelector('#narrow #row-label input')
+        const idleBorder = getComputedStyle(input).borderTopColor
+        input.focus()
+        const focusedBorder = getComputedStyle(input).borderTopColor
+        return { idleBorder, focusedBorder }
+      })
+      assert.equal(focusState.focusedBorder, 'rgb(77, 107, 254)', JSON.stringify(focusState))
+      assert.notEqual(focusState.focusedBorder, focusState.idleBorder, JSON.stringify(focusState))
+
+      // Verify @media (max-width:768px) branch at phone (375px) and tablet (700px) viewports.
+      for (const [vpName, vpWidth, cardWidth] of [['phone375', 375, '343px'], ['tablet700', 700, '600px']]) {
+        await page.setViewportSize({ width: vpWidth, height: 812 })
+        await page.setContent(docHtml([[vpName, cardWidth]]))
+        const vpReport = (await page.evaluate(inspectScript))[vpName]
+        assert.deepEqual(vpReport.overflowCards, [], `${vpName}: ${JSON.stringify(vpReport)}`)
+        assert.equal(vpReport.createCardOverflow, false, `${vpName} create card overflowed`)
+        for (const id of [...stackedInNarrow, 'row-instructions']) {
+          const r = vpReport.rows[id]
+          assert.equal(r.stacked, true, `${vpName} ${id} should stack: ${JSON.stringify(r)}`)
+          assert.equal(r.clipped, false, `${vpName} ${id} clipped: ${JSON.stringify(r)}`)
+          assert.ok(r.innerCtrlW >= r.innerW - 2, `${vpName} ${id} control width too small: ${JSON.stringify(r)}`)
+        }
+        for (const id of ['row-engine', 'row-switch', 'row-privacy-switch']) {
+          const r = vpReport.rows[id]
+          assert.equal(r.stacked, false, `${vpName} ${id} should stay horizontal: ${JSON.stringify(r)}`)
+          assert.equal(r.clipped, false, `${vpName} ${id} clipped: ${JSON.stringify(r)}`)
+          assert.ok(r.ctrlW >= r.innerCtrlW - 1, `${vpName} ${id} control compressed: ${JSON.stringify(r)}`)
+        }
+        assert.equal(vpReport.providerSummary.overlap, false, `${vpName} provider summary overlapped: ${JSON.stringify(vpReport.providerSummary)}`)
+        assert.ok(vpReport.providerSummary.copyW >= 100, `${vpName} provider summary copy squeezed: ${JSON.stringify(vpReport.providerSummary)}`)
+      }
+    } finally { await page.close() }
+  } finally { await browser.close() }
+})

@@ -41,7 +41,7 @@ export const clientErrors = () => entries.map(entry => (entry.count > 1 ? { ...e
 
 export function clientFacts() {
   return {
-    surface: window.dshDesktop ? 'DSH Desktop' : 'DSH Web',
+    surface: globalThis.dsBotApp ? 'DS Bot Desktop' : window.dshDesktop ? 'DSH Desktop' : 'DSH Web',
     language: language(),
     userAgent: navigator.userAgent,
   }
@@ -53,6 +53,7 @@ const FAILURES = {
   INVALID_CREDENTIAL: 'The API key is not in the right format',
   AUTH: 'The API key was rejected',
   CONTENT_POLICY: 'The model service blocked the content',
+  CONTENT_REFUSED: 'The model service refused the content',
   QUOTA: 'The account is out of quota',
   ACCOUNT_QUOTA: 'The account is out of quota',
   ACCOUNT_SIGN_IN_REQUIRED: 'The DeepSeek account needs a sign-in',
@@ -60,11 +61,15 @@ const FAILURES = {
   ACCOUNT_TOKEN_INVALID: 'The DeepSeek account sign-in has expired',
   RATE_LIMIT: 'Too many requests to the model',
   CONTEXT_WINDOW_EXCEEDED: 'The conversation is too long for the model',
+  LOCAL_AGENT_SESSION_LOST: 'The local agent session could not be resumed',
   INVALID_REQUEST: 'The model service refused the request',
   SERVER: 'The model service failed',
+  NO_ADAPTER: 'The model service this Bot is set to no longer exists',
   TIMEOUT: 'The model took too long to answer',
   TRANSPORT: 'Could not reach the model service',
   MODEL_SWITCH_COMPACTION_FAILED: "The conversation could not be compacted for the model switch",
+  TURN_PAUSED_LOOP: 'Paused to prevent a repeating loop',
+  TURN_PAUSED_SWITCH_LIMIT: 'Paused after repeated automatic part switches',
   SESSION: 'Its group conversation could not open',
   SESSION_RESET: 'Its group conversation could not open, so it starts a new one next time',
 }

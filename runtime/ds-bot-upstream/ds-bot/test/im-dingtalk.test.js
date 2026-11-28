@@ -104,13 +104,38 @@ test('system pings get a pong, a single chat and an @ group message land, every 
   // The ping sent on connect gets a pong ACK.
   await until(() => fake.acks.includes('sys1'))
   fake.push(ws, callback({ conversationType: '1', senderStaffId: 'u1', senderNick: 'Fei', text: { content: 'hello' }, msgtype: 'text', msgId: 'm1', sessionWebhook: fake.webhook }, 'cb1'))
-  fake.push(ws, callback({ conversationType: '2', conversationId: 'g1', senderStaffId: 'u2', text: { content: 'ping' }, msgtype: 'text', msgId: 'm2', isInAtList: true }, 'cb2'))
+  fake.push(ws, callback({ conversationType: '2', conversationId: 'g1', conversationTitle: 'Team Chat', senderStaffId: 'u2', text: { content: 'ping' }, msgtype: 'text', msgId: 'm2', isInAtList: true }, 'cb2'))
   fake.push(ws, callback({ conversationType: '2', conversationId: 'g1', senderStaffId: 'u2', text: { content: 'noise' }, msgtype: 'text', msgId: 'm3', isInAtList: false }, 'cb3'))
   await until(() => messages.length === 3 && fake.acks.length === 4)
   assert.equal(messages[0].chat.kind, 'direct')
   assert.equal(messages[1].chat.kind, 'group')
   assert.equal(messages[1].mentioned, true)
   assert.equal(messages[2].mentioned, false)
+})
+
+test('group frames carry the conversationTitle so chats can be named (#XXXX)', async (t) => {
+  const fake = await fakeDingtalk()
+  const messages = []
+  const handle = dingtalk.connect(FIELDS, env(fake), { onMessage: async msg => { messages.push(msg) }, onAction: () => {}, onStatus: () => {} })
+  t.after(() => { handle.stop(); fake.close() })
+  const ws = await until(() => fake.sockets[0])
+  await until(() => fake.calls.some(call => call.path === '/v1.0/gateway/connections/open'))
+  // A group frame with a title: the chat carries the group name.
+  fake.push(ws, callback({ conversationType: '2', conversationId: 'g9', conversationTitle: '发布群', senderStaffId: 'u2', senderNick: 'Ming', text: { content: 'hi' }, msgtype: 'text', msgId: 'm9', isInAtList: true }, 'cb9'))
+  await until(() => messages.length === 1)
+  assert.equal(messages[0].chat.kind, 'group')
+  assert.equal(messages[0].chat.title, '发布群')
+  // A group frame without a title (older callback shape or a stripped field):
+  // the title stays empty, nothing crashes.
+  fake.push(ws, callback({ conversationType: '2', conversationId: 'g10', senderStaffId: 'u2', senderNick: 'Ming', text: { content: 'hey' }, msgtype: 'text', msgId: 'm10', isInAtList: true }, 'cb10'))
+  await until(() => messages.length === 2)
+  assert.equal(messages[1].chat.kind, 'group')
+  assert.equal(messages[1].chat.title, '')
+  // A direct chat never picks up a group title.
+  fake.push(ws, callback({ conversationType: '1', senderStaffId: 'u1', senderNick: 'Fei', text: { content: 'dm' }, msgtype: 'text', msgId: 'm11', sessionWebhook: fake.webhook }, 'cb11'))
+  await until(() => messages.length === 3)
+  assert.equal(messages[2].chat.kind, 'direct')
+  assert.equal(messages[2].chat.title, '')
 })
 
 test('send replies through the sessionWebhook when live, else the robot API with msgParam as a JSON string', async (t) => {
@@ -313,4 +338,32 @@ test('DingTalk degrades unsupported BMP, preserves same-chat order, and stop abo
   handle.stop()
   await until(() => holdAbort)
   assert.equal(holdAbort, true)
+})
+
+test('DingTalk stop aborts in-flight send with stopped=true', async (t) => {
+  const fake = await fakeDingtalk()
+  const base = env(fake)
+  let sendEntered = false
+  let sendAborted = false
+  const fetch = async (url, init) => {
+    if (String(url).endsWith('/v1.0/robot/oToMessages/batchSend')) {
+      sendEntered = true
+      return new Promise((_, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          sendAborted = true
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        }, { once: true })
+      })
+    }
+    return base.fetch(url, init)
+  }
+  const handle = dingtalk.connect(FIELDS, { ...base, fetch }, { onMessage: () => {}, onAction: () => {}, onStatus: () => {} })
+  t.after(() => { handle.stop(); fake.close() })
+  await until(() => fake.acks.includes('sys1'))
+
+  const sending = handle.send({ key: 'u9', kind: 'direct' }, { text: 'shutdown check' })
+  await until(() => sendEntered)
+  handle.stop()
+  await assert.rejects(() => sending, (err) => err?.stopped === true)
+  assert.equal(sendAborted, true)
 })

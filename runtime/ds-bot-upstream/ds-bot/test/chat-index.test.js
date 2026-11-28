@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -42,7 +42,46 @@ test('v3 marks and content are rebuilt from logs on the first read', async t => 
   assert.equal(latest.length, 12)
   assert.equal(latest[0], '[#0 · 0] User: message 会议 0')
   const db = new DatabaseSync(path)
-  try { assert.equal(db.prepare('PRAGMA user_version').get().user_version, 4) } finally { db.close() }
+  try { assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5) } finally { db.close() }
+})
+
+test('v4 index rebuilds to v5 so previously indexed scheduled reminders become searchable', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'dsb-chat-index-v4-'))
+  const events = [
+    { seq: 0, time: 1, type: 'user/message', data: { source: { kind: 'schedule' }, content: [{ type: 'text', text: 'reminder_prompt_json: "Check nightly build status"' }] } },
+    { seq: 1, time: 2, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Nightly build is green.' }] } } },
+  ]
+  const dispose = []
+  const { historyEntry } = await import('../src/host/parts.js')
+  const rt = {
+    home,
+    ctx: {
+      effect: fn => dispose.push(fn()),
+      sessionController: { page: async () => ({ records: events.map(event => ({ event })), hasMore: false }) },
+    },
+    partsOf: () => [{ sessionId: 's1', number: 1, startedAt: 0 }],
+    resolveAgent: async () => ({ session: { seq: events.length } }),
+    historyEntry: (event, group) => historyEntry(event, group),
+    clock: time => String(time),
+    warn: (...args) => assert.fail(args.join(' ')),
+  }
+  t.after(() => { for (const close of dispose) close(); rmSync(home, { recursive: true, force: true }) })
+  install(rt)
+  const path = join(home, 'chat-index.sqlite')
+  const old = new DatabaseSync(path)
+  old.exec(`
+    CREATE TABLE messages (id INTEGER PRIMARY KEY, session TEXT NOT NULL, seq INTEGER NOT NULL, time INTEGER NOT NULL, who TEXT NOT NULL, text TEXT NOT NULL, UNIQUE (session, seq));
+    CREATE VIRTUAL TABLE lines USING fts5(text, content='messages', content_rowid='id', tokenize = 'trigram');
+    CREATE TABLE marks (session TEXT PRIMARY KEY, through INTEGER NOT NULL, keep INTEGER NOT NULL, sealed INTEGER NOT NULL, turn INTEGER NOT NULL);
+    INSERT INTO marks VALUES ('s1', 1, 0, 1, -1);
+    PRAGMA user_version = 4;
+  `)
+  old.close()
+  const found = await rt.searchOwnChat('b', 'Check nightly build status', { limit: 10 })
+  assert.equal(found.lines.length, 1)
+  assert.match(found.lines[0], /Check nightly build status/)
+  const db = new DatabaseSync(path)
+  try { assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5) } finally { db.close() }
 })
 
 test('FTS and indexed history agree, including subsequent catch-up and empty reads', async t => {
@@ -64,10 +103,10 @@ test('FTS and indexed history agree, including subsequent catch-up and empty rea
       assert.equal(db.prepare(sql).all(...args).length, 12)
     }
     const source = readFileSync(new URL('../src/host/chat-index.js', import.meta.url), 'utf8')
-    for (const name of ['before', 'from']) {
+    for (const [name, params] of [['before', ['s1', 6, 6]], ['from', ['s1', 6, 6]], ['between', ['s1', 3, 6, 6]]]) {
       const sql = new RegExp(`${name}: db.prepare\\('([^']+)'\\)`).exec(source)?.[1]
       assert.ok(sql)
-      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all('s1', 6, 6).map(row => row.detail).join('\n')
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params).map(row => row.detail).join('\n')
       assert.match(plan, /USING INDEX messages_session_seq/)
       assert.doesNotMatch(plan, /SCAN|TEMP B-TREE/)
     }
@@ -81,4 +120,74 @@ test('FTS and indexed history agree, including subsequent catch-up and empty rea
   rt.partsOf = () => []
   assert.deepEqual(await rt.latestOwnChat('b'), [])
   assert.deepEqual((await rt.searchOwnChat('b', 'message')).lines, [])
+})
+
+test('chat index does not open or leak chat-index.sqlite while or after disposing', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsb-chat-index-dispose-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const disposers = []
+  const rt = {
+    home,
+    ctx: {
+      effect: fn => disposers.push(fn()),
+      sessionController: { page: async () => ({ records: [], hasMore: false }) },
+    },
+    partsOf: () => [{ sessionId: 's1', number: 1, startedAt: 0 }],
+    partLines: async function* () {},
+    resolveAgent: async () => ({ session: { seq: 0 } }),
+    historyEntry: event => ({ text: event.text, who: 'user', keepAnswers: true }),
+    clock: time => String(time),
+    warn: (...args) => assert.fail(args.join(' ')),
+  }
+  install(rt)
+  const indexPath = join(home, 'chat-index.sqlite')
+  // Trigger openIndex() in flight and dispose immediately before it settles.
+  const inflight = rt.latestOwnChat('b', { limit: 5 })
+  await Promise.all(disposers.map(fn => fn()))
+  rmSync(home, { recursive: true, force: true })
+  await inflight
+  // Late post-dispose reads (e.g. an in-flight groupSessionFor calling ownChatBrief)
+  // must fall back cleanly without recreating home or leaking a new SQLite handle.
+  await rt.ownChatBrief({ id: 'b', name: 'Bot' })
+  assert.equal(existsSync(indexPath), false)
+  assert.equal(existsSync(home), false)
+})
+
+test('disposing during in-flight multi-part catchUp never touches the closed database or warns', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'dsb-chat-index-catchup-dispose-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const disposers = []
+  let releasePage
+  let pageCalls = 0
+  const rt = {
+    home,
+    ctx: {
+      effect: fn => disposers.push(fn()),
+      sessionController: {
+        page: async () => {
+          pageCalls += 1
+          if (pageCalls === 1) await new Promise(resolve => { releasePage = resolve })
+          return { records: [{ event: { seq: 0, time: 1, text: 'hello' } }], hasMore: false }
+        },
+      },
+    },
+    partsOf: () => [
+      { sessionId: 's1', number: 1, startedAt: 0 },
+      { sessionId: 's2', number: 2, startedAt: 1 },
+    ],
+    partLines: async function* () {},
+    resolveAgent: async () => ({ session: { seq: 1 } }),
+    historyEntry: event => ({ text: event.text, who: 'user', keepAnswers: true }),
+    clock: time => String(time),
+    warn: (...args) => assert.fail(`unexpected warn during dispose: ${args.join(' ')}`),
+  }
+  install(rt)
+  const pending = rt.latestOwnChat('b', { limit: 5 })
+  // Wait until openIndex() succeeded and part 1 is blocked inside sessionController.page().
+  while (releasePage === undefined) await new Promise(resolve => setTimeout(resolve, 5))
+  await Promise.all(disposers.map(fn => fn()))
+  releasePage()
+  await pending
+  // Second part must never have been indexed against the closed DB.
+  assert.equal(pageCalls, 1)
 })
