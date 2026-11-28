@@ -63,41 +63,44 @@
   </section>
   <section id="main-panel" hidden>
     <header class="page-top">
-      <div class="page-heading">
-        <h1>任务</h1>
+      <h1>任务</h1>
+      <label class="workspace-field">
+        <span>工作区</span>
+        <select id="workspace" aria-describedby="workspace-status"></select>
+      </label>
+      <div class="page-actions">
         <button type="button" id="new-automation" disabled>新建定时任务</button>
         <button type="button" id="new-checklist-action" aria-controls="checklist-editor" aria-expanded="false" hidden disabled>新建待办</button>
       </div>
-
+      <span id="workspace-status" role="status"></span>
     </header>
     <p id="whoami" class="visually-hidden"></p>
-    <div class="page-toolbar">
-      <label class="workspace-field">工作区
-        <select id="workspace" aria-describedby="workspace-status"></select>
-      </label>
-      <span id="workspace-status" role="status"></span>
-    </div>
     <div id="task-view-switcher" class="task-view-switcher" role="tablist" aria-label="任务视图">
       <button type="button" id="scheduled-task-tab" role="tab" aria-controls="list-panel" aria-selected="true">定时任务</button>
       <button type="button" id="checklist-task-tab" role="tab" aria-controls="checklist-panel" aria-selected="false" tabindex="-1">待办</button>
       <button type="button" id="bot-task-tab" role="tab" aria-controls="bot-schedule-panel" aria-selected="false" tabindex="-1">Bot 计划</button>
     </div>
     <section id="list-panel" role="tabpanel" aria-labelledby="scheduled-task-tab">
-      <div class="tabs" role="tablist" aria-label="自动化分类">
-        <button type="button" role="tab" data-category="mine" aria-selected="true">我的定时任务</button>
-        <button type="button" role="tab" data-category="work" aria-selected="false" tabindex="-1">工作模板</button>
-        <button type="button" role="tab" data-category="life" aria-selected="false" tabindex="-1">生活模板</button>
-      </div>
-      <div class="automation-list-controls">
-        <div class="pill-search"><label class="visually-hidden" for="search">搜索我的定时任务</label>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="search" type="search" maxlength="80" autocomplete="off" placeholder="搜索我的定时任务…">
-          <button type="button" id="automation-search-clear" aria-label="清除搜索" hidden>×</button>
+      <div class="schedule-toolbar">
+        <div class="tabs" role="tablist" aria-label="定时任务分类">
+          <button type="button" role="tab" data-category="mine" aria-selected="true">我的定时任务</button>
+          <button type="button" role="tab" data-category="work" aria-selected="false" tabindex="-1">工作模板</button>
+          <button type="button" role="tab" data-category="life" aria-selected="false" tabindex="-1">生活模板</button>
         </div>
-        <button type="button" id="automation-upcoming" class="secondary" aria-pressed="false" aria-controls="automation-list" hidden>即将运行</button>
+        <div class="automation-list-controls">
+          <div class="pill-search"><label class="visually-hidden" for="search">搜索定时任务</label>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="search" type="search" maxlength="80" autocomplete="off" placeholder="搜索定时任务…">
+            <button type="button" id="automation-search-clear" aria-label="清除搜索" hidden>×</button>
+          </div>
+          <button type="button" id="automation-upcoming" class="secondary" aria-pressed="false" aria-controls="automation-list" hidden>即将运行</button>
+        </div>
       </div>
       <ul id="automation-list"></ul>
-      <p id="list-empty" class="empty-state" role="status" hidden>这个分类下还没有自动化。</p>
+      <div class="schedule-empty">
+        <p id="list-empty" role="status" hidden>还没有定时任务。</p>
+        <button type="button" id="list-empty-create" class="secondary" hidden>新建第一个定时任务</button>
+      </div>
       <button type="button" id="automation-list-retry" class="secondary" hidden>重试读取自动化</button>
       <button type="button" id="automation-template-retry" class="secondary" hidden>重试加载模板</button>
     </section>
