@@ -516,9 +516,10 @@ export function createAgents({ db, host }) {
         enqueueCapture(agent, convo, userId, text, remember)
       } catch (error) {
         if (signal?.aborted) return sentPair(userId, replyId)
-        run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify(userMeta), userId)
-        run('UPDATE agent_messages SET status=?, meta=? WHERE id=?', 'failed',
-          JSON.stringify({...replyMeta,error:String(error?.code ?? 'agents/failed')}), replyId)
+        const failure = {...replyMeta,error:String(error?.code ?? 'agents/failed')}
+        const source = unconfirmedNativeReply(failure) ? {...userMeta,nativeInterrupted:true} : userMeta
+        run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify(source), userId)
+        run('UPDATE agent_messages SET status=?, meta=? WHERE id=?', 'failed',JSON.stringify(failure), replyId)
         if (!returnFailed) throw error
       } finally {
         run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)

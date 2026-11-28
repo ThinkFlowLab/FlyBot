@@ -845,13 +845,15 @@ test('an unconfirmed native reply releases the queue without making the request 
   const route = `${root}/${agent.id}/conversations/${conversation.id}`
   const request = legacyRequest(endpoints)
   const firstKey = 'unconfirmed-native-reply', nextKey = 'unconfirmed-follow-up'
-  const send = (key,body) => request(route+'/messages',jsonPost(key,{body,accept_pending:true}))
+  const send = (key,body,accept_pending = true) => request(route+'/messages',jsonPost(key,{body,accept_pending}))
   const first = await (await send(firstKey,'First request')).json()
   await started.promise
   const second = await (await send(nextKey,'Second request')).json()
   assert.equal(second.reply.reply_phase,'queued')
   release.resolve()
-  assert.equal((await (await send(nextKey,'Second request')).json()).reply.body,'Second message answered')
+  const terminal = (await (await send(nextKey,'Second request',false)).json()).reply
+  assert.equal(terminal.status, 'succeeded', terminal.error_code || 'missing completion')
+  assert.equal(terminal.body,'Second message answered')
   const receipt = await (await request(route+'/reply-progress',{},'receipt=1&key='+firstKey)).json()
   assert.deepEqual([receipt.state,receipt.reply.error_code,receipt.reply.can_retry],['failed','reply-blocked',false])
   const retry = await request(route+'/messages/'+first.reply.id+'/retry',jsonPost('new-retry-attempt',{attempt:1}))
