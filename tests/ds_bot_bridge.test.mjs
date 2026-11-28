@@ -410,8 +410,10 @@ test('a queued private request binds on its live successor after the admission w
   rt.chatOwners = new Map([['chat1',bot.id]])
   rt.pastOwners = new Map()
   rt.sendUser = async request => log.push(request)
+  rt.live = new Map([['chat1',{turn:4}]])
   const reply = runTurn(rt,ctx,bot.id,'queued input','own-request',12,[],{sessionId:'chat1',interactive:true})
   await delay(35)
+  rt.live.clear()
   bot.segments = [{sessionId:'chat1'}]
   bot.sessionId = successor.id
   rt.chatOwners.delete('chat1')
@@ -443,6 +445,7 @@ test('a private reply follows only its native continuation across a part switch'
   assert.equal(handoffId,'own-request')
   assert.equal(rt.flybotPrivateReplyForTurn(first.id,10),undefined)
   rt.isSwitchingPart = id => id === first.id
+  rt.switchJobs = () => [{resume:true,flybotPrivateReply:handoffId}]
   event(first,'turn/end',{turn:9,reason:{kind:'error'}})
   assert.equal(rt.flybotPrivateReplyForTurn(first.id,9),undefined)
   bot.segments = [{sessionId:first.id}]
@@ -515,7 +518,7 @@ test('native reply progress matches the admitted request, session, turn and atte
   delta(undefined, 'unidentified late stream data')
   event('llm/retry-started', {turn:5,step:1})
   assert.deepEqual(progress, ['draft to discard', ''])
-  assert.equal(phases.at(-1), 'preparing')
+  assert.equal(phases.at(-1), 'thinking')
 
   stream('start', {attemptId:'retry',turn:5,step:1})
   event('turn/start', {turn:4})

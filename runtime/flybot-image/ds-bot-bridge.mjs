@@ -319,8 +319,8 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       if (binding && bindings.get(binding.sessionId) === binding) bindings.delete(binding.sessionId)
       binding = undefined
     }
-    function resuming() {
-      if (!admissionOnly) return false
+    function resuming(originSessionId) {
+      if (!admissionOnly || (originSessionId !== undefined && rt.isSwitchingPart?.(originSessionId) !== true)) return false
       for (const job of rt.switchJobs?.() ?? []) {
         if (job.resume === true && job.flybotPrivateReply === requestId) return true
       }
@@ -332,7 +332,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
     function completeTurn(session, event) {
       if (signal?.aborted) { finish(signal.reason); return }
       const reason = event.data?.reason
-      if ((reason?.kind !== 'completed' || !parts.length) && resuming()) {
+      if ((reason?.kind !== 'completed' || !parts.length) && resuming(session.id)) {
         resetTurn(true)
         return
       }
@@ -389,7 +389,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
         // Native admission does not mean the model has started. Keep waiting
         // while the native queue is behind an active turn, or our own exact
         // turn/continuation still has a native owner.
-        if ((live !== undefined && (boundTurn === undefined || live === boundTurn)) || resuming()) {
+        if ((live !== undefined && (boundTurn === undefined || live === boundTurn)) || resuming(boundSession?.id)) {
           armWatchdog()
           return
         }
@@ -543,7 +543,7 @@ export function runTurn(rt, ctx, botId, text, requestId, timeoutMs = 170000, fil
       if (admissionOnly || progress || typeof onPhase === 'function') {
         listeners.push(ctx.on('agent/disposed', ({ agent }) => {
           if ((managedGroup || admissionOnly) && boundSession && agent?.session === boundSession && !settled) {
-            if (resuming()) { resetTurn(true); return }
+            if (resuming(boundSession.id)) { resetTurn(true); return }
             finish(signal?.aborted ? signal.reason : emptyReply())
           } else if (agent === lastAgent && !settled && !awaitingHandoff) {
             resetTurn()

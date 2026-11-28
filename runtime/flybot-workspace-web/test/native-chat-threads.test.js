@@ -249,6 +249,7 @@ test('an exact tagged handoff still carries the reply into the next native part'
   echo()
   sessionEvent('assistant/message',{turn:1,text:'Before handoff'})
   rt.switchJobs = () => [{resume:true,flybotPrivateReply:'my-request'}]
+  rt.isSwitchingPart = id => id === session.id
   sessionEvent('turn/end',{turn:1,reason:{kind:'aborted'}})
   const next = {id:'next-part'}
   bot.sessionId = next.id
