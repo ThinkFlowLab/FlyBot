@@ -65,8 +65,8 @@ def main():
         auto_provision = load_auto_provision(args.auto_provision) if args.auto_provision else None
         app = App(store, Config(origin=args.origin, insecure_local=args.insecure_local,
                                 allow_registration=args.open_registration), lifecycle=lifecycle, manager_auth=manager_auth, operator_admin=operator_admin, oidc_registry=oidc_registry, model_http_policy=http_policy, auto_provision=auto_provision)
-    except (OSError, ValueError, TypeError):
-        parser.error('Cannot initialize private storage or origin configuration')
+    except (OSError, ValueError, TypeError) as exc:
+        parser.error(f'{type(exc).__name__}: {exc}')
     page = SettingsPage(app)
     # This development server binds to loopback only.
     with make_server('127.0.0.1', args.port, page, handler_class=QuietHandler, server_class=ThreadedWSGIServer) as server:
