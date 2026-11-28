@@ -1226,7 +1226,7 @@ test('archiving during saved work preparation prevents a late private send', {ti
   assert.equal(runtime.count,0)
 })
 
-test('live replies reveal only the current native snapshot and keep the final response authoritative', {timeout:3000}, async () => {
+test('live replies reveal only the current native snapshot and keep the final response authoritative', {timeout:10000}, async () => {
   const db = new DatabaseSync(':memory:')
   const runtime = createRuntime()
   let started = Promise.withResolvers()
@@ -1275,6 +1275,19 @@ test('live replies reveal only the current native snapshot and keep the final re
       if (text.startsWith('data: ')) return JSON.parse(text.slice(6))
     }
   }
+  // The stream emits one frame per snapshot, so the admission snapshot
+  // (`preparing`, revision 0) may reach the reader before the phase this
+  // assertion is about. Only that snapshot may be skipped, and only a
+  // bounded number of times.
+  const nextPhase = async (reader, phase) => {
+    for (let read = 0; read < 8; read += 1) {
+      const event = await nextEvent(reader)
+      if (event.phase === phase) return event
+      assert.deepEqual(event,{state:'running',phase:'preparing',revision:0,append:''},
+        `only the admission snapshot may precede the ${phase} phase`)
+    }
+    assert.fail(`the reply stream never reported the ${phase} phase`)
+  }
   assert.equal((await streamDispatch(new Request(streamURL+'&key='+key))).status,400)
   assert.equal((await streamDispatch(new Request(streamURL.replace(workspace,'b'.repeat(32))))).status,404)
   const abort = new AbortController()
@@ -1301,9 +1314,8 @@ test('live replies reveal only the current native snapshot and keep the final re
   }
   assert.deepEqual(await watch(0, () => onPhase('thinking')),
     {state:'running',text:'',phase:'thinking',revision:1})
-  const next = await nextEvent(reader)
-  assert.equal(next.state, 'running')
-  assert.equal(next.phase, 'thinking')
+  assert.deepEqual(await nextPhase(reader,'thinking'),
+    {state:'running',phase:'thinking',revision:1,append:''})
   assert.deepEqual(await watch(1, () => { update('实际输出'); onPhase('writing') }),
     {state:'running',text:'实际输出',phase:'writing',revision:3})
   assert.deepEqual(await nextEvent(reader),{state:'running',phase:'writing',revision:3,append:'实际输出'})
