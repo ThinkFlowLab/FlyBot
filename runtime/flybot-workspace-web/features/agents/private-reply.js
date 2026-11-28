@@ -17,3 +17,8 @@ export function textReplyKey(row, meta) {
 export function textReplyAttempt(meta) {
   return Number.isSafeInteger(meta?.replyAttempt) && meta.replyAttempt > 0 ? meta.replyAttempt : 1
 }
+
+
+export function unconfirmedNativeReply(meta) {
+  return meta?.error === 'agents/reply-blocked' || meta?.error === 'agents/reply-interrupted'
+}

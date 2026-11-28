@@ -195,7 +195,7 @@ function bridgedTurn({sendAcknowledgment, ...options} = {}) {
     await sendAcknowledgment
   }
   const reply = runTurn(rt, ctx, bot.id, 'first', 'my-request', 100, [], {sessionId:session.id, ...options})
-  return {rt, events, session, sessionEvent, echo, reply}
+  return {rt, bot, events, session, sessionEvent, echo, reply}
 }
 
 test('an interactive reply can stream and finish after the admission deadline', async t => {
@@ -213,6 +213,82 @@ test('an interactive reply can stream and finish after the admission deadline', 
   assert.deepEqual(phases, ['thinking', 'writing'])
   assert.deepEqual(await reply, {text:'completed reply', sessionId:session.id, turnId:'finished'})
   assert.equal(events.eventNames().length, 0)
+})
+
+test('an acknowledged private send with no echo or native work releases its listeners', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const {rt, events, session, reply} = bridgedTurn({interactive:true})
+  const expectInterruption = assert.rejects(reply, {code:'agents/reply-interrupted'})
+  await new Promise(setImmediate)
+  rt.live.delete(session.id)
+  t.mock.timers.tick(100)
+  await expectInterruption
+  assert.deepEqual(events.eventNames(), [])
+})
+
+test('a blocked private reply settles even when its Bot moves to an untagged part', async () => {
+  for (const interim of ['', 'I will check this.']) {
+    const {rt, bot, echo, events, session, sessionEvent, reply} = bridgedTurn({interactive:true})
+    echo()
+    if (interim) sessionEvent('assistant/message',{turn:1,text:interim})
+    rt.switchJobs = () => [{resume:false}]
+    rt.isSwitchingPart = () => true
+    bot.sessionId = 'next-part'
+    bot.segments.push({sessionId:session.id})
+    rt.chatOwners.delete(session.id)
+    rt.pastOwners.set(session.id,{botId:bot.id})
+    rt.chatOwners.set(bot.sessionId,bot.id)
+    sessionEvent('turn/end',{turn:1,reason:{kind:'blocked'}})
+    await assert.rejects(reply, {code:'agents/reply-blocked'})
+    assert.deepEqual(events.eventNames(), [])
+  }
+})
+
+test('an exact tagged handoff still carries the reply into the next native part', async () => {
+  const {rt, bot, echo, session, sessionEvent, reply} = bridgedTurn({interactive:true})
+  echo()
+  sessionEvent('assistant/message',{turn:1,text:'Before handoff'})
+  rt.switchJobs = () => [{resume:true,flybotPrivateReply:'my-request'}]
+  rt.isSwitchingPart = id => id === session.id
+  sessionEvent('turn/end',{turn:1,reason:{kind:'aborted'}})
+  const next = {id:'next-part'}
+  bot.sessionId = next.id
+  bot.segments.push({sessionId:session.id})
+  rt.chatOwners.delete(session.id)
+  rt.pastOwners.set(session.id,{botId:bot.id})
+  rt.chatOwners.set(next.id,bot.id)
+  rt.switchJobs = () => []
+  sessionEvent('turn/start',{turn:1},next)
+  sessionEvent('user/message',{source:{resume:true,flybotPrivateReply:'my-request'}},next)
+  sessionEvent('assistant/message',{turn:1,text:'After handoff'},next)
+  sessionEvent('turn/end',{turn:1,reason:{kind:'completed'}},next)
+  assert.deepEqual(await reply,{text:'Before handoff\n\nAfter handoff',sessionId:next.id,turnId:null})
+})
+
+test('a missed private terminal event can be recovered from the exact owned session turn', async t => {
+  t.mock.timers.enable({apis:['setTimeout']})
+  const {rt, echo, events, session, sessionEvent, reply} = bridgedTurn({interactive:true})
+  const log = [
+    ['turn/start',{turn:0}],
+    ['user/message',{source:{rpcId:'other-request'}}],
+    ['assistant/message',{turn:0,text:'Do not take this reply'}],
+    ['turn/end',{turn:0,reason:{kind:'completed'}}],
+    ['turn/start',{turn:1}],
+    ['user/message',{source:{rpcId:'my-request'}}],
+    ['assistant/message',{turn:1,text:'The saved answer'}],
+    ['turn/end',{turn:1,reason:{kind:'completed'},turnId:'saved'}],
+  ]
+  session.seq = log.length
+  session.eventAt = seq => {
+    const [type,data] = log[seq]
+    return {type,data,seq}
+  }
+  echo()
+  sessionEvent('assistant/message',{turn:1,text:'The saved answer'})
+  rt.live.delete(session.id)
+  t.mock.timers.tick(100)
+  assert.deepEqual(await reply,{text:'The saved answer',sessionId:session.id,turnId:'saved'})
+  assert.deepEqual(events.eventNames(), [])
 })
 
 test('an unacknowledged send requires an exact native echo before the deadline', async t => {

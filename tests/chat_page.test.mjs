@@ -1453,6 +1453,44 @@ test('a long native reply keeps its partial text and Stop when the stream discon
   } finally { restore(); }
 });
 
+test('the queued reply control cancels only its own accepted message and leaves the head active', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const fields = {workspace_id:'ws-1',agent_id:'agent-1',conversation_id:'private-1'};
+  const first = {...fields,id:'1'.repeat(32),role:'assistant',client_key:'head-private-reply-key',
+    status:'running',attempt:1,can_stop:true};
+  const followUp = {...fields,id:'2'.repeat(32),role:'user',client_key:'queued-private-reply-key',
+    status:'succeeded',body:'补充消息'};
+  const queued = {...fields,id:'3'.repeat(32),role:'assistant',client_key:followUp.client_key,
+    status:'running',reply_phase:'queued',attempt:1,can_stop:true};
+  const stopped = {...queued,reply_phase:undefined,status:'cancelled',can_stop:undefined,cancelled_while_queued:true};
+  const mutations = [];
+  const {doc,el,restore,fetcher} = nativeReplyChat((path, opts, scope) => {
+    if (path === '?limit=50') return json(200,{...scope,items:[first,followUp,queued]});
+    if (path === '/reply-stop' && opts.method === 'POST') {
+      mutations.push(JSON.parse(opts.body));
+      return json(200,{message:followUp,reply:stopped});
+    }
+    assert.fail('Unexpected request: ' + path);
+  });
+  try {
+    await mount(doc,{fetcher});
+    const list = el('message-list');
+    const stop = el('chat-reply-stop');
+    const cancel = descendants(list.children.at(-1)).find(node => node.dataset.cancelQueuedReply === queued.id);
+    assert.equal(cancel?.textContent,'取消排队');
+    assert.equal(descendants(list.children[0]).some(node => node.dataset.cancelQueuedReply),false);
+    assert.equal(stop.hidden,false);
+    await Promise.all([fire(cancel,'click'),fire(cancel,'click')]);
+    assert.deepEqual(mutations,[{key:queued.client_key,attempt:1,only_queued:true}]);
+    assert.equal(stop.hidden,false);
+    assert.equal(list.children[0].dataset.state,'running');
+    assert.equal(list.children[1].dataset.messageId,followUp.id);
+    assert.equal(list.children.at(-1).dataset.state,'cancelled');
+    assert.ok(descendants(list.children.at(-1)).some(node => node.textContent === '已取消排队'));
+    assert.equal(descendants(list.children.at(-1)).some(node => node.dataset.cancelQueuedReply),false);
+  } finally { restore(); }
+});
+
 test('a durable failed reply can be retried in place after reload and a lost retry acknowledgment', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const key = 'msg-retryable-text';

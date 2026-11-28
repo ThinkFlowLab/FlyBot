@@ -17,7 +17,7 @@ import { openDatabase, newId } from '../../src/store.js'
 import { agentsV1 } from './v1.js'
 import { PRIVATE_FILE_COUNT, privateFiles, fingerprintAttachments } from './files.js'
 import { importOfficialBundle, verifyOfficial } from './migrate.js'
-import { PRIVATE_TEXT_LIMIT, sendId, textReplyKey, textReplyAttempt } from './private-reply.js'
+import { PRIVATE_TEXT_LIMIT, sendId, textReplyKey, textReplyAttempt, unconfirmedNativeReply } from './private-reply.js'
 import { replyStream, waitForReplyChange } from './reply-stream.js'
 import { rank, noteBlock, personalizationBlock } from '../chat/recall.js'
 
@@ -112,7 +112,7 @@ export function createAgents({ db, host }) {
   db.exec(`UPDATE agent_messages SET status='failed',
     meta=json_remove(json_set(meta,'$.error','agents/interrupted'),'$.nativePending')
     WHERE role='assistant' AND status='running' AND json_extract(meta,'$.nativePending')=1;
-    UPDATE agent_messages SET meta=json_remove(meta,'$.nativePending')
+    UPDATE agent_messages SET meta=json_set(json_remove(meta,'$.nativePending'),'$.nativeInterrupted',json('true'))
     WHERE role='user' AND json_extract(meta,'$.nativePending')=1;`)
   let draftingAgent = false
   const activeTurns = new Map()
@@ -516,9 +516,10 @@ export function createAgents({ db, host }) {
         enqueueCapture(agent, convo, userId, text, remember)
       } catch (error) {
         if (signal?.aborted) return sentPair(userId, replyId)
-        run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify(userMeta), userId)
-        run('UPDATE agent_messages SET status=?, meta=? WHERE id=?', 'failed',
-          JSON.stringify({...replyMeta,error:String(error?.code ?? 'agents/failed')}), replyId)
+        const failure = {...replyMeta,error:String(error?.code ?? 'agents/failed')}
+        const source = unconfirmedNativeReply(failure) ? {...userMeta,nativeInterrupted:true} : userMeta
+        run('UPDATE agent_messages SET meta=? WHERE id=?', JSON.stringify(source), userId)
+        run('UPDATE agent_messages SET status=?, meta=? WHERE id=?', 'failed',JSON.stringify(failure), replyId)
         if (!returnFailed) throw error
       } finally {
         run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), convo.id)
@@ -1320,7 +1321,8 @@ export function createAgents({ db, host }) {
       }
       const row = one("SELECT * FROM agent_messages WHERE id=? AND conversation_id=? AND role='assistant'", replyId, convo.id)
       if (!row) fail('not-found', 'Reply not found', 404)
-      const sendKey = textReplyKey(row, JSON.parse(row.meta))
+      const interruptedMeta = JSON.parse(row.meta)
+      const sendKey = textReplyKey(row, interruptedMeta)
       if (!sendKey) fail('retry_unavailable', '只能重试文字消息的回复。', 409)
       const userId = sendId('text', 'user', convo.id, sendKey)
       const source = one("SELECT * FROM agent_messages WHERE id=? AND conversation_id=? AND role='user'", userId, convo.id)
@@ -1338,6 +1340,9 @@ export function createAgents({ db, host }) {
           reused = true
         } else {
           requireOpenConversation(agent, convo.id)
+          if (unconfirmedNativeReply(interruptedMeta)) {
+            fail('retry_unavailable', '这条回复的执行结果未确认，无法直接重试。', 409)
+          }
           const changed = run(`UPDATE agent_messages SET text='', status='running', meta=?
             WHERE id=? AND conversation_id=? AND status='failed' AND COALESCE(json_extract(meta,'$.replyAttempt'),1)=?`,
             JSON.stringify({...replyMeta,nativePending:true}), replyId, convo.id, previousAttempt)
@@ -1355,6 +1360,7 @@ export function createAgents({ db, host }) {
     },
     stopReply(p) {
       if (!Number.isSafeInteger(p.attempt) || p.attempt < 1) fail('invalid', 'Provide the current reply attempt', 400)
+      if (p.only_queued !== undefined && p.only_queued !== true) fail('invalid', 'Invalid queued reply stop flag', 400)
       const {id, textId, find} = scopedReplyLookup(p)
       const row = find()
       if (!row) fail('not-found', 'Reply not found', 404)
@@ -1363,16 +1369,24 @@ export function createAgents({ db, host }) {
         fail('reply_stop_unavailable', '这次回复无法停止或已更新。', 409)
       }
       const userId = sendId('text', 'user', id, p.key)
-      if (row.status === 'cancelled') return sentPair(userId, row.id)
+      if (row.status === 'cancelled' && (p.only_queued !== true || meta.cancelledWhileQueued === true)) return sentPair(userId, row.id)
       const progress = liveReplies.get(row.id)
+      const queued = progress?.phase === 'queued'
+      if (p.only_queued === true && !queued) fail('reply_not_queued', '这条消息已不在排队。', 409)
       if (row.status !== 'running' || !progress?.stop) fail('reply_stop_unavailable', '这次回复已结束。', 409)
       const partial = progress.text.toWellFormed()
+      const cancelledMeta = queued ? {...meta,cancelledWhileQueued:true} : meta
       db.exec('BEGIN IMMEDIATE')
       try {
-        const changed = run(`UPDATE agent_messages SET status='cancelled',text=?,meta=json_remove(meta,'$.nativePending')
-          WHERE id=? AND status='running' AND COALESCE(json_extract(meta,'$.replyAttempt'),1)=?`, partial, row.id, p.attempt)
+        const changed = run(`UPDATE agent_messages SET status='cancelled',text=?,meta=json_remove(?,'$.nativePending')
+          WHERE id=? AND status='running' AND COALESCE(json_extract(meta,'$.replyAttempt'),1)=?`,
+          partial, JSON.stringify(cancelledMeta), row.id, p.attempt)
         if (!changed.changes) fail('reply_stop_unavailable', '这次回复已结束。', 409)
-        run(`UPDATE agent_messages SET meta=json_remove(meta,'$.nativePending') WHERE id=?`, userId)
+        // A cancelled queue entry stays visible in FlyBot, but its text was
+        // never admitted and must not reach a later turn through history import.
+        run(`UPDATE agent_messages SET meta=json_remove(
+          CASE WHEN ? THEN json_set(meta,'$.cancelledWhileQueued',json('true')) ELSE meta END,'$.nativePending')
+          WHERE id=?`, Number(queued), userId)
         run('UPDATE agent_conversations SET updated=? WHERE id=?', now(), id)
         db.exec('COMMIT')
       } catch (error) { db.exec('ROLLBACK'); throw error }
