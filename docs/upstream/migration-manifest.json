@@ -1707,7 +1707,7 @@
         "scripts/logo.mjs",
         "scripts/self-test-catalog.mjs"
       ],
-      "file_count": 46
+      "file_count": 45
     },
     "bot-social": {
       "destination": "services/bot-social",
@@ -2258,6 +2258,48 @@
       "license_notice": "MIT (Bot Social snapshot)",
       "new_sha256": "2a477b7e35cdf1d1245486e6980aeb4769d85fc05c82dac774b32814f6325785",
       "bytes": 22655
+    },
+    "runtime/flybot/plugins/social/client.js": {
+      "destination": "runtime/flybot",
+      "path": "plugins/social/client.js",
+      "original_sha256": "351206abc51ba011f0425c060292515b931dd8462109fe9d8e4d343d86ff88af",
+      "original_git_blob_sha": "df78f71716e0713e9151942f3ec0f97b8f0c1e3a",
+      "new_sha256": "4cc8163ed62299a8bad62a42a126ec7ad4bdc1c3f5e4610cc80747d88b38ad4d",
+      "bytes": 272278,
+      "reason": "Repackages the intent of #3356/#3364/#3370 into the vendored plugin: poll only while visible, and draw a failed read as a failed read.",
+      "license_notice": "Apache-2.0 (FlyBot) file modified in this tree; see runtime/flybot/ORIGIN.md."
+    },
+    "runtime/flybot/plugins/social/test/poll-visibility.test.js": {
+      "destination": "runtime/flybot",
+      "path": "plugins/social/test/poll-visibility.test.js",
+      "new_sha256": "0256e99a2f45db639db3c8ec073243fdbe70e958276fb69520e034aa792cda16",
+      "bytes": 8036,
+      "reason": "Test added with the repackage of #3356: a hidden tab holds no poll timer in the approval dock or the requests panel.",
+      "license_notice": "Apache-2.0 (FlyBot) file modified in this tree; see runtime/flybot/ORIGIN.md."
+    },
+    "runtime/flybot/plugins/social/test/paused-chat-read-error.test.js": {
+      "destination": "runtime/flybot",
+      "path": "plugins/social/test/paused-chat-read-error.test.js",
+      "new_sha256": "a26d4df8cda2601df6490480050442df6c5a05245333a5f09f33e527400c8851",
+      "bytes": 3885,
+      "reason": "Test added with the repackage of #3364: a failed paused-chat read is drawn as a failure, not as no pause.",
+      "license_notice": "Apache-2.0 (FlyBot) file modified in this tree; see runtime/flybot/ORIGIN.md."
+    },
+    "runtime/flybot/plugins/social/test/friend-auto-read-error.test.js": {
+      "destination": "runtime/flybot",
+      "path": "plugins/social/test/friend-auto-read-error.test.js",
+      "new_sha256": "db1ec269a7b6c3e89813d8cc240dd21b671f64657774a80542e7f53e96e39d44",
+      "bytes": 3777,
+      "reason": "Test added with the repackage of #3370: a failed Auto-send read is drawn as a failure and the switch is withheld until the value is known.",
+      "license_notice": "Apache-2.0 (FlyBot) file modified in this tree; see runtime/flybot/ORIGIN.md."
+    },
+    "runtime/flybot/plugins/social/test/client-harness.mjs": {
+      "destination": "runtime/flybot",
+      "path": "plugins/social/test/client-harness.mjs",
+      "new_sha256": "3dba189f2e9a54be2b3a65cebdcc48ed3ca3a02fca8651cabfc6097f487b967e",
+      "bytes": 5665,
+      "reason": "Shared render/document/timer bench for the client tests added with the #3364 and #3370 repackage.",
+      "license_notice": "Apache-2.0 (FlyBot) file modified in this tree; see runtime/flybot/ORIGIN.md."
     }
   },
   "core_fork_removed": {
